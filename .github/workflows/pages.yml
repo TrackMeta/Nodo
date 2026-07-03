@@ -5,30 +5,32 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Publicar a la rama gh-pages requiere permiso de escritura de contenido.
+# Despliegue DIRECTO a Pages (source = GitHub Actions). No depende de una
+# rama gh-pages ni de que GitHub reconstruya solo — publica el artefacto.
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: "pages-deploy"
-  cancel-in-progress: true
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # Publica todo el repo (el panel se sirve desde /panel/) a la rama
-      # gh-pages. Método clásico y estable, sin depender de la API de
-      # deploy-pages que venía fallando intermitentemente.
-      - name: Publicar a gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+      - name: Subir artefacto (sitio estático, sin Jekyll)
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          publish_branch: gh-pages
-          keep_files: false
-          enable_jekyll: false
-          commit_message: "Deploy panel ${{ github.sha }}"
+          path: "."
+      - name: Desplegar
+        id: deployment
+        uses: actions/deploy-pages@v4
