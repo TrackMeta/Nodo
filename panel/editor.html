@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nodo · Editor de flujos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --amber:#f0a92b; --red:#e2564a; --radius:12px;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .top a{color:var(--muted);text-decoration:none;font-size:20px}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
+  .fname{font-weight:600}
+  .badge{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+  .badge.on{background:#10281d;color:var(--green);border-color:transparent}
+  .spacer{margin-left:auto}
+  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .main{flex:1;display:flex;min-height:0}
+  .flows{width:210px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .flows .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .flows .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
+  .flowitem{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+  .flowitem:hover{background:var(--surface)}
+  .flowitem.active{background:var(--surface-2)}
+  .flowitem .n{font-weight:600;font-size:13px}
+  .flowitem .m{font-size:11px;color:var(--faint);margin-top:2px}
+  .canvaswrap{flex:1;position:relative;min-width:0}
+  #drawflow{position:absolute;inset:0;background:var(--bg)}
+  .palette{position:absolute;top:12px;left:12px;z-index:5;display:flex;gap:6px;flex-wrap:wrap;max-width:70%}
+  .pbtn{font-size:12px;padding:6px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text)}
+  .pbtn:hover{border-color:var(--brand);color:var(--brand)}
+  .cfg{width:280px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px}
+  .cfg h3{font-size:14px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .cfg label{display:block;font-size:11px;color:var(--muted);margin:12px 0 5px}
+  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;font-family:var(--font)}
+  .ta{min-height:120px;font-family:var(--font-mono,monospace);font-size:12px;resize:vertical}
+  .in:focus,.ta:focus{border-color:var(--brand)}
+  .handle-row{display:flex;gap:6px;margin-bottom:6px}
+  .handle-row .in{flex:1}
+  .hbtn{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--muted);width:32px;flex:none}
+  .row{display:flex;gap:8px;align-items:center}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px}
+  .del{margin-top:16px;width:100%;background:#2c1615;color:var(--red);border:1px solid var(--red);border-radius:8px;height:38px;font-weight:600}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
+  .nd{padding:4px 2px;min-width:120px}
+  .nd .t{font-size:10px;color:var(--brand);text-transform:uppercase;letter-spacing:.4px}
+  .nd .nm{font-size:13px;font-weight:600;margin-top:2px}
+  .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
+  .segb{background:transparent;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px}
+  .segb.active{background:var(--brand);color:#fff}
+  .contentview{position:absolute;inset:0;background:var(--bg);overflow-y:auto;padding:20px;z-index:6}
+  .cnode{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0 auto 12px;max-width:620px}
+  .cnode .ch{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .cnode .ci{font-size:14px;font-weight:600}
+  .cnode .ctag{margin-left:auto;font-size:10px;color:var(--muted);background:var(--surface-2);padding:2px 9px;border-radius:20px}
+  .bubble{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px}
+  .btnrow{display:flex;gap:6px;align-items:center;margin-top:6px}
+  .btnrow .in{flex:1}
+  .chint{font-size:11px;color:var(--faint);margin-top:6px}
+  .cempty{text-align:center;color:var(--faint);padding:50px;max-width:520px;margin:0 auto}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
+  .toast.show{opacity:1}
+  .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+  .df-node .drawflow-node{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text)}
+  .drawflow .drawflow-node.selected{border-color:var(--brand)}
+  .drawflow-node .input,.drawflow-node .output{background:var(--brand)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <a href="index.html" title="Volver a la bandeja">←</a>
+    <a href="productos.html" title="Productos">📦</a>
+    <a href="config.html" title="Configuraciones">⚙️</a>
+    <select class="sel" id="channelSel"></select>
+    <span class="fname" id="fname">—</span>
+    <span class="badge" id="fstate">—</span>
+    <div class="seg" id="viewToggle">
+      <button class="segb active" data-v="estructura">🕸 Estructura</button>
+      <button class="segb" data-v="contenido">✍️ Contenido</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="saveBtn">Guardar</button>
+    <button class="btn primary" id="pubBtn">Publicar</button>
+  </div>
+  <div class="main">
+    <div class="flows">
+      <div class="hd"><span>Flujos</span><button class="add" id="addFlow" title="Nuevo flujo">+</button></div>
+      <div id="flowList" style="overflow-y:auto;flex:1"></div>
+    </div>
+    <div class="canvaswrap">
+      <div class="palette" id="palette"></div>
+      <div id="drawflow"></div>
+      <div id="contentView" class="contentview" style="display:none"></div>
+    </div>
+    <div class="cfg" id="cfg">
+      <div class="empty" style="height:100%"><div style="font-size:26px">🕸</div><div>Elige o crea un flujo</div></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
+
+// Tipos de nodo y sus salidas (handles) por defecto.
+const NODE_DEFS = {
+  mensaje:      { icon:"💬", handles:["continuar"] },
+  pregunta:     { icon:"❓", handles:["continuar"] },
+  condicion:    { icon:"🔀", handles:["ruta:1","si_no_cumple"] },
+  accion:       { icon:"⚡", handles:["continuar"] },
+  ia:           { icon:"✨", handles:["exito","fallo"] },
+  esperar:      { icon:"⏱", handles:["continuar"] },
+  iniciar_flujo:{ icon:"↗", handles:["continuar"] },
+  evento_fb:    { icon:"📘", handles:["continuar"] },
+  fin:          { icon:"⬛", handles:[] },
+};
+
+const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura" };
+let editor;
+const CONTENT_TYPES = new Set(["mensaje","pregunta","ia"]);
+
+function toast(m, err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
+function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function boot(){
+  const { data:{ session } } = await supa.auth.getSession();
+  if(!session){ location.href="index.html"; return; }
+  editor = new Drawflow($("drawflow"));
+  editor.reroute = true;
+  editor.start();
+  editor.on("nodeSelected", (id)=> selectNode(id));
+  editor.on("nodeUnselected", ()=> { st.selected=null; renderCfg(); });
+  // Palette
+  for(const t of Object.keys(NODE_DEFS)){
+    const b=document.createElement("button"); b.className="pbtn"; b.textContent=NODE_DEFS[t].icon+" "+t;
+    b.onclick=()=>addNode(t); $("palette").appendChild(b);
+  }
+  await loadChannels();
+  $("addFlow").onclick = createFlow;
+  $("saveBtn").onclick = save;
+  $("pubBtn").onclick = publish;
+  $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
+}
+
+// ── Toggle Estructura ⇄ Contenido ──
+function setView(v){
+  st.view = v;
+  $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.classList.toggle("active", b.dataset.v===v));
+  const content = v==="contenido";
+  $("contentView").style.display = content ? "block" : "none";
+  $("palette").style.display = content ? "none" : "flex";
+  $("cfg").style.display = content ? "none" : "block";
+  if(content) renderContent();
+}
+
+// La Vista Contenido: formulario autogenerado del esqueleto (solo nodos con cuerpo).
+function renderContent(){
+  const box=$("contentView");
+  if(!st.flowId){ box.innerHTML=`<div class="cempty">Abre un flujo para editar su contenido.</div>`; return; }
+  const exp=editor.export().drawflow.Home.data;
+  const nodes=Object.values(st.model).filter((m)=>CONTENT_TYPES.has(m.tipo));
+  nodes.sort((a,b)=>((exp[a.dfId]?.pos_y||0)-(exp[b.dfId]?.pos_y||0)));
+  if(!nodes.length){ box.innerHTML=`<div class="cempty">Este flujo aún no tiene nodos de contenido.<br>Añade Mensaje / Pregunta / IA desde la vista Estructura.</div>`; return; }
+  box.innerHTML="";
+  let i=1;
+  for(const m of nodes) box.appendChild(contentCard(m, i++));
+}
+function contentCard(m, i){
+  const el=document.createElement("div"); el.className="cnode";
+  el.innerHTML=`<div class="ch"><span class="ci">${i}. ${NODE_DEFS[m.tipo]?.icon||""}</span><input class="in nm" value="${esc(m.nombre)}" style="max-width:240px"/><span class="ctag">${m.tipo}</span></div>`;
+  el.querySelector(".nm").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
+  const body=document.createElement("div");
+  if(m.tipo==="mensaje") buildMensaje(m, body);
+  else if(m.tipo==="pregunta") buildPregunta(m, body);
+  else if(m.tipo==="ia") buildIA(m, body);
+  el.appendChild(body);
+  return el;
+}
+function mkLabel(t){ const l=document.createElement("label"); l.textContent=t; l.style.cssText="font-size:11px;color:var(--muted);display:block;margin:12px 0 5px"; return l; }
+function mkTextarea(v, oninput, min){ const t=document.createElement("textarea"); t.className="ta"; if(min)t.style.minHeight=min; t.value=v||""; t.oninput=()=>oninput(t.value); return t; }
+function mkInput(v, oninput){ const i=document.createElement("input"); i.className="in"; i.value=v||""; i.oninput=()=>oninput(i.value); return i; }
+
+function buildMensaje(m, body){
+  if(!m.config.bubbles) m.config.bubbles=[{text:""}];
+  m.config.bubbles.forEach((b)=>{
+    const w=document.createElement("div"); w.className="bubble";
+    w.appendChild(mkTextarea(b.text, (v)=>b.text=v, "60px"));
+    (b.buttons||[]).forEach((btn)=>{
+      const r=document.createElement("div"); r.className="btnrow";
+      const tag=document.createElement("span"); tag.style.cssText="font-size:11px;color:var(--muted);white-space:nowrap"; tag.textContent="🔘 "+btn.id;
+      r.appendChild(tag);
+      r.appendChild(mkInput(btn.title, (v)=>btn.title=v));
+      w.appendChild(r);
+    });
+    if(b.buttons?.length){ const h=document.createElement("div"); h.className="chint"; h.textContent="Los botones (ids/ramas) se editan en Estructura; aquí solo su texto."; w.appendChild(h); }
+    body.appendChild(w);
+  });
+  const add=document.createElement("button"); add.className="btn"; add.textContent="+ burbuja"; add.style.marginTop="4px";
+  add.onclick=()=>{ m.config.bubbles.push({text:""}); renderContent(); };
+  body.appendChild(add);
+}
+function buildPregunta(m, body){
+  body.appendChild(mkLabel("Mensaje de la pregunta"));
+  body.appendChild(mkTextarea(m.config.text, (v)=>m.config.text=v, "60px"));
+  body.appendChild(mkLabel("Guardar respuesta en (campo)"));
+  body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
+}
+const IA_OPS = [
+  ["generar_texto","Generar texto (respuesta al cliente)"],
+  ["analizar_imagen","Analizar imagen (OCR de comprobante)"],
+  ["extraer","Extraer datos (JSON)"],
+];
+const IA_PROV = [
+  ["auto","Automático (el del canal)"],
+  ["anthropic","Claude (Anthropic)"],
+  ["openai","ChatGPT (OpenAI)"],
+];
+const IA_MODELOS = {
+  anthropic:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"],
+  openai:["gpt-4o","gpt-4o-mini"],
+};
+function mkSelect(opts, val, oninput){
+  const s=document.createElement("select"); s.className="in";
+  opts.forEach(([v,label])=>{ const o=document.createElement("option"); o.value=v; o.textContent=label; if(v===val)o.selected=true; s.appendChild(o); });
+  s.onchange=()=>oninput(s.value); return s;
+}
+function mkDatalist(list, val, ph, oninput){
+  const wrap=document.createElement("div");
+  const i=document.createElement("input"); i.className="in"; i.value=val||""; if(ph)i.placeholder=ph;
+  const id="dl_ia_"+Math.random().toString(36).slice(2,7);
+  i.setAttribute("list",id);
+  const dl=document.createElement("datalist"); dl.id=id;
+  (list||[]).forEach(v=>{ const o=document.createElement("option"); o.value=v; dl.appendChild(o); });
+  i.oninput=()=>oninput(i.value);
+  wrap.appendChild(i); wrap.appendChild(dl); return wrap;
+}
+function buildIA(m, body){
+  if(m.config.modelo==="claude") m.config.modelo="";
+  const op = m.config.operacion||"generar_texto";
+  const prov = m.config.proveedor||"auto";
+
+  body.appendChild(mkLabel("Operación"));
+  body.appendChild(mkSelect(IA_OPS, op, (v)=>{ m.config.operacion=v; renderContent(); }));
+
+  body.appendChild(mkLabel(op==="analizar_imagen" ? "Prompt (qué extraer de la imagen)" : "Prompt (instrucción para la IA)"));
+  body.appendChild(mkTextarea(m.config.prompt, (v)=>m.config.prompt=v, "90px"));
+
+  body.appendChild(mkLabel("Contexto / rol (system, opcional)"));
+  body.appendChild(mkTextarea(m.config.contexto, (v)=>m.config.contexto=v, "50px"));
+
+  body.appendChild(mkLabel("Guardar resultado en (variable/campo, opcional)"));
+  body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
+
+  body.appendChild(mkLabel("Proveedor"));
+  body.appendChild(mkSelect(IA_PROV, prov, (v)=>{ m.config.proveedor=v; renderContent(); }));
+
+  body.appendChild(mkLabel("Modelo (opcional — vacío = el del canal)"));
+  const models = prov==="auto" ? [] : (IA_MODELOS[prov]||[]);
+  body.appendChild(mkDatalist(models, m.config.modelo, "por defecto del canal", (v)=>m.config.modelo=v));
+
+  const enviarDef = (op==="generar_texto");
+  const enviar = (m.config.enviar===undefined) ? enviarDef : m.config.enviar;
+  const lab=document.createElement("label"); lab.className="chk";
+  const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!enviar;
+  cb.onchange=()=>m.config.enviar=cb.checked;
+  lab.appendChild(cb); lab.appendChild(document.createTextNode(" Enviar el resultado al cliente"));
+  body.appendChild(lab);
+}
+
+async function loadChannels(){
+  const { data } = await supa.from("channels").select("id,nombre").eq("activo",true).order("nombre");
+  const sel=$("channelSel"); sel.innerHTML="";
+  (data||[]).forEach(c=>{ const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
+  const params=new URLSearchParams(location.search);
+  const flowParam = params.get("flow");
+  if(flowParam){
+    const { data:f } = await supa.from("flows").select("channel_id").eq("id",flowParam).maybeSingle();
+    if(f) st.channelId = f.channel_id;
+  }
+  st.channelId = st.channelId || params.get("channel") || (data&&data[0]&&data[0].id);
+  if(st.channelId){ sel.value=st.channelId; }
+  sel.onchange=()=>{ st.channelId=sel.value; st.flowId=null; loadFlows(); clearCanvas(); };
+  await loadFlows();
+  if(flowParam) openFlow(flowParam);
+}
+
+async function loadFlows(){
+  const { data } = await supa.from("flows").select("id,nombre,role,estado,kind")
+    .eq("channel_id", st.channelId).order("created_at");
+  const box=$("flowList"); box.innerHTML="";
+  (data||[]).forEach(f=>{
+    const el=document.createElement("div"); el.className="flowitem"+(f.id===st.flowId?" active":"");
+    el.innerHTML=`<div class="n">${esc(f.nombre)}</div><div class="m">${f.kind==="skeleton"?"esqueleto":f.role||"flujo"} · ${f.estado}</div>`;
+    el.onclick=()=>openFlow(f.id); box.appendChild(el);
+  });
+}
+
+async function openFlow(flowId){
+  st.flowId=flowId;
+  const { data:flow } = await supa.from("flows").select("*").eq("id",flowId).maybeSingle();
+  st.flow=flow;
+  $("fname").textContent=flow.nombre;
+  setStateBadge(flow.estado);
+  await loadFlows();
+  clearCanvas();
+  // Cargar nodos.
+  const { data:nodes } = await supa.from("flow_nodes").select("*").eq("flow_id",flowId);
+  const { data:edges } = await supa.from("flow_edges").select("*").eq("flow_id",flowId);
+  for(const n of nodes||[]) addExisting(n);
+  // Conexiones (mapear handle → output index).
+  for(const e of edges||[]){
+    const src=st.model[e.source_node], tgt=st.model[e.target_node];
+    if(!src||!tgt) continue;
+    const idx=(src.handles.indexOf(e.source_handle)); if(idx<0) continue;
+    try{ editor.addConnection(src.dfId, tgt.dfId, "output_"+(idx+1), "input_1"); }catch(_){}
+  }
+  renderCfg();
+  if(st.view==="contenido") renderContent();
+}
+
+function setStateBadge(estado){ const b=$("fstate"); b.textContent=estado; b.className="badge"+(estado==="activo"?" on":""); }
+function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={}; st.selected=null; renderCfg(); }
+
+function nodeHtml(tipo, nombre){
+  return `<div class="nd"><div class="t">${NODE_DEFS[tipo]?.icon||""} ${tipo}</div><div class="nm">${esc(nombre||tipo)}</div></div>`;
+}
+
+// Añadir un nodo existente (de la BD) al canvas.
+function addExisting(n){
+  const def=NODE_DEFS[n.tipo]||{handles:["continuar"]};
+  const handles = handlesFor(n.tipo, n.config, def);
+  const dfId = editor.addNode(n.tipo, 1, handles.length, n.pos_x||100, n.pos_y||100, n.tipo, {}, nodeHtml(n.tipo,n.nombre));
+  st.model[n.id] = { uuid:n.id, tipo:n.tipo, nombre:n.nombre, config:n.config||{}, handles, dfId, es_inicial:n.es_inicial };
+  st.dfToUuid[dfId]=n.id;
+}
+
+// Añadir un nodo nuevo.
+function addNode(tipo){
+  if(!st.flowId){ toast("Abre o crea un flujo primero", true); return; }
+  const def=NODE_DEFS[tipo];
+  const uuid=crypto.randomUUID();
+  const handles=[...def.handles];
+  const cfg=defaultConfig(tipo);
+  const dfId=editor.addNode(tipo, 1, handles.length, 300, 160, tipo, {}, nodeHtml(tipo,tipo));
+  st.model[uuid]={ uuid, tipo, nombre:tipo, config:cfg, handles, dfId, es_inicial:Object.keys(st.model).length===0 };
+  st.dfToUuid[dfId]=uuid;
+}
+
+function defaultConfig(tipo){
+  switch(tipo){
+    case "mensaje": return { bubbles:[{ text:"Escribe el mensaje…" }] };
+    case "pregunta": return { text:"¿Tu pregunta?", guardar_en:"" };
+    case "condicion": return { rutas:[{ handle:"ruta:1", nombre:"Ruta 1", match:"todas", condiciones:[] }] };
+    case "accion": return { acciones:[] };
+    case "ia": return { operacion:"generar_texto", prompt:"", proveedor:"auto", modelo:"" };
+    case "esperar": return { segundos:4 };
+    case "iniciar_flujo": return { target_role:"" };
+    default: return {};
+  }
+}
+function handlesFor(tipo, config, def){
+  if(tipo==="condicion" && config?.rutas) return [...config.rutas.map(r=>r.handle||("ruta:"+r.nombre)), "si_no_cumple"];
+  if(tipo==="mensaje"){ const b=(config?.bubbles||[]).find(x=>x.buttons?.length); if(b) return b.buttons.map(x=>"boton:"+x.id); }
+  return [...(def.handles||["continuar"])];
+}
+
+// ── Panel de configuración ──
+function selectNode(dfId){ st.selected=st.dfToUuid[dfId]; renderCfg(); }
+function renderCfg(){
+  const cfg=$("cfg");
+  if(!st.selected){ cfg.innerHTML=`<div class="empty" style="height:100%"><div style="font-size:26px">🕸</div><div>${st.flowId?"Selecciona un nodo":"Elige o crea un flujo"}</div></div>`; return; }
+  const m=st.model[st.selected];
+  cfg.innerHTML=`
+    <h3>${NODE_DEFS[m.tipo]?.icon||""} ${m.tipo}</h3>
+    <label>Nombre del bloque</label>
+    <input class="in" id="cfgNombre" value="${esc(m.nombre)}" />
+    <label>Contenido (config JSON)</label>
+    <textarea class="ta" id="cfgJson">${esc(JSON.stringify(m.config,null,2))}</textarea>
+    <label>Salidas (handles) — deben coincidir con las conexiones</label>
+    <div id="handles"></div>
+    <button class="btn" id="addHandle" style="width:100%;margin-top:4px">+ salida</button>
+    <label class="chk"><input type="checkbox" id="cfgInicial" ${m.es_inicial?"checked":""}/> Paso inicial del flujo</label>
+    <button class="del" id="delNode">Eliminar nodo</button>`;
+  renderHandles(m);
+  $("cfgNombre").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
+  $("cfgJson").onchange=(e)=>{ try{ m.config=JSON.parse(e.target.value); toast("Config OK"); }catch(_){ toast("JSON inválido", true); } };
+  $("cfgInicial").onchange=(e)=>{ if(e.target.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; } else m.es_inicial=false; };
+  $("addHandle").onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); };
+  $("delNode").onclick=()=>{ editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId]; st.selected=null; renderCfg(); };
+}
+function renderHandles(m){
+  const box=$("handles"); if(!box) return; box.innerHTML="";
+  m.handles.forEach((h,i)=>{
+    const row=document.createElement("div"); row.className="handle-row";
+    row.innerHTML=`<input class="in" value="${esc(h)}"/><button class="hbtn">✕</button>`;
+    row.querySelector("input").onchange=(e)=>{ m.handles[i]=e.target.value; };
+    row.querySelector("button").onclick=()=>{ m.handles.splice(i,1); editor.removeNodeOutput(m.dfId,"output_"+(i+1)); renderHandles(m); };
+    box.appendChild(row);
+  });
+}
+function updateNodeDom(m){
+  const el=document.querySelector(`#node-${m.dfId} .nm`); if(el) el.textContent=m.nombre;
+}
+
+// ── Crear flujo ──
+async function createFlow(){
+  const nombre=prompt("Nombre del esqueleto (plantilla base):"); if(!nombre) return;
+  const { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador" }).select("id").single();
+  if(error){ toast(error.message,true); return; }
+  await loadFlows(); openFlow(data.id);
+}
+
+// ── Guardar ──
+async function save(){
+  if(!st.flowId){ toast("No hay flujo abierto",true); return; }
+  const exp=editor.export().drawflow.Home.data;
+  // 1) Upsert nodos.
+  const rows=[];
+  for(const uuid in st.model){
+    const m=st.model[uuid]; const dfNode=exp[m.dfId];
+    rows.push({ id:uuid, flow_id:st.flowId, tipo:m.tipo, nombre:m.nombre, config:m.config,
+      es_inicial:!!m.es_inicial, pos_x:dfNode?dfNode.pos_x:0, pos_y:dfNode?dfNode.pos_y:0 });
+  }
+  // Borrar nodos que ya no están + reemplazar aristas.
+  const { data:oldNodes } = await supa.from("flow_nodes").select("id").eq("flow_id",st.flowId);
+  const keep=new Set(rows.map(r=>r.id));
+  const toDel=(oldNodes||[]).map(n=>n.id).filter(id=>!keep.has(id));
+  if(toDel.length) await supa.from("flow_nodes").delete().in("id",toDel);
+  if(rows.length){ const { error } = await supa.from("flow_nodes").upsert(rows); if(error){ toast(error.message,true); return; } }
+  // 2) Reconstruir aristas.
+  await supa.from("flow_edges").delete().eq("flow_id",st.flowId);
+  const edges=[];
+  for(const dfId in exp){
+    const node=exp[dfId]; const srcUuid=st.dfToUuid[dfId]; const m=st.model[srcUuid]; if(!m) continue;
+    const outs=node.outputs||{};
+    for(const okey in outs){
+      const idx=parseInt(okey.split("_")[1],10)-1;
+      const handle=m.handles[idx]||"continuar";
+      for(const conn of outs[okey].connections||[]){
+        const tgtUuid=st.dfToUuid[conn.node]; if(!tgtUuid) continue;
+        edges.push({ flow_id:st.flowId, source_node:srcUuid, source_handle:handle, target_node:tgtUuid });
+      }
+    }
+  }
+  if(edges.length){ const { error } = await supa.from("flow_edges").insert(edges); if(error){ toast(error.message,true); return; } }
+  toast("Guardado ✓");
+}
+
+async function publish(){
+  if(!st.flowId) return;
+  await save();
+  const nuevo = st.flow.estado==="activo" ? "borrador" : "activo";
+  const { error } = await supa.from("flows").update({ estado:nuevo }).eq("id",st.flowId);
+  if(error){ toast(error.message,true); return; }
+  st.flow.estado=nuevo; setStateBadge(nuevo); loadFlows();
+  toast(nuevo==="activo"?"Publicado ✓":"Vuelto a borrador");
+}
+
+boot();
+</script>
+</body>
+</html>

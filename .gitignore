@@ -1,0 +1,27 @@
+# Supabase
+supabase/.branches
+supabase/.temp
+supabase/.env
+
+# Secrets / entorno
+.env
+.env.local
+*.env
+!/.env.example
+
+# Node / editores
+node_modules/
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema
+Thumbs.db
+desktop.ini
+
+# Estado local del agente
+.claude/
