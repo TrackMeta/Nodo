@@ -67,6 +67,31 @@ export async function sendButtons(
   });
 }
 
+// Envía una plantilla HSM (para escribir fuera de la ventana de 24h).
+// bodyParams: valores de las variables {{1}},{{2}}… del cuerpo.
+export async function sendTemplate(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  name: string,
+  language: string,
+  bodyParams: string[] = [],
+  headerParams: string[] = [],
+): Promise<string> {
+  const components: any[] = [];
+  if (headerParams.length) {
+    components.push({ type: "header", parameters: headerParams.map((t) => ({ type: "text", text: String(t ?? "") })) });
+  }
+  if (bodyParams.length) {
+    components.push({ type: "body", parameters: bodyParams.map((t) => ({ type: "text", text: String(t ?? "") })) });
+  }
+  return await postMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
+    type: "template",
+    template: { name, language: { code: language || "es" }, ...(components.length ? { components } : {}) },
+  });
+}
+
 // POST genérico a /messages. Devuelve el wamid o lanza MetaApiError.
 async function postMessage(phoneNumberId: string, accessToken: string, payload: unknown): Promise<string> {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;

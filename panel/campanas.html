@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nodo · Campañas</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<style>
+  :root{--bg:#0e1116;--surface:#151a21;--surface-2:#1b222c;--border:#232b36;--text:#e7ecf2;--muted:#8a97a8;--faint:#5c6675;--brand:#2b7fff;--brand-2:#1e6ff0;--green:#22c079;--amber:#f0a92b;--red:#e2564a;--font:"Inter",system-ui,sans-serif;}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .top a{color:var(--muted);text-decoration:none;font-size:20px}.top a.active{color:var(--brand)}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px}
+  .spacer{margin-left:auto}
+  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
+  .btn.danger{color:var(--red);border-color:transparent}
+  .main{flex:1;display:flex;min-height:0}
+  .list{width:250px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .list .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .add{background:#12233f;color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
+  .item{padding:11px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+  .item:hover{background:var(--surface)}.item.active{background:var(--surface-2)}
+  .item .n{font-weight:600;font-size:13px}.item .m{font-size:11px;color:var(--faint);margin-top:2px}
+  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 24px;max-width:720px}
+  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
+  .in:focus{border-color:var(--brand)}
+  .stages{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .sp{background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;user-select:none}
+  .sp.on{background:#12233f;border-color:var(--brand);color:var(--brand)}
+  .stat{display:flex;gap:16px;margin-top:12px}.stat .b{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;flex:1}
+  .stat .k{font-size:11px;color:var(--muted)}.stat .v{font-size:22px;font-weight:700;margin-top:2px}
+  .badge{font-size:10px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+  .hint{font-size:11px;color:var(--faint);margin-top:6px}
+  .empty{color:var(--faint);text-align:center;padding:60px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
+  .toast.show{opacity:1}.toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <a href="index.html" title="Bandeja">💬</a>
+    <a href="editor.html" title="Flujos">🕸</a>
+    <a href="productos.html" title="Productos">📦</a>
+    <a href="secuencias.html" title="Secuencias">🔁</a>
+    <a href="plantillas.html" title="Plantillas">📄</a>
+    <a href="campanas.html" class="active" title="Campañas">📣</a>
+    <a href="dashboard.html" title="Dashboard">📊</a>
+    <a href="config.html" title="Configuraciones">⚙️</a>
+    <select class="sel" id="channelSel"></select>
+    <span class="spacer"></span>
+    <button class="btn primary" id="saveBtn">Guardar</button>
+  </div>
+  <div class="main">
+    <div class="list">
+      <div class="hd"><span>Campañas</span><button class="add" id="addC" title="Nueva">+</button></div>
+      <div id="list" style="overflow-y:auto;flex:1"></div>
+    </div>
+    <div class="detail" id="detail"><div class="empty">Elige o crea una campaña</div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const SUPABASE_URL="https://ahoxdyffbwjlshmdezwi.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
+const supa=createClient(SUPABASE_URL,SUPABASE_ANON_KEY); const $=(id)=>document.getElementById(id);
+const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
+const st={channelId:null,camp:null,templates:[]};
+function toast(m,e){const t=$("toast");t.textContent=m;t.className="toast show"+(e?" err":"");setTimeout(()=>t.className="toast",3000);}
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){location.href="index.html";return;}
+  await loadChannels(); $("addC").onclick=createC; $("saveBtn").onclick=saveC;
+}
+async function loadChannels(){
+  const { data }=await supa.from("channels").select("id,nombre").eq("activo",true).order("nombre");
+  const sel=$("channelSel"); (data||[]).forEach(c=>{const o=document.createElement("option");o.value=c.id;o.textContent=c.nombre;sel.appendChild(o);});
+  st.channelId=(data&&data[0]&&data[0].id); const p=new URLSearchParams(location.search).get("channel"); if(p)st.channelId=p;
+  if(st.channelId)sel.value=st.channelId; sel.onchange=async()=>{st.channelId=sel.value;st.camp=null;await loadTpls();await loadList();renderDetail();};
+  await loadTpls(); await loadList();
+}
+async function loadTpls(){ const { data }=await supa.from("wa_templates").select("id,name,language").eq("channel_id",st.channelId).eq("activa",true).order("name"); st.templates=data||[]; }
+async function loadList(){
+  const { data }=await supa.from("campaigns").select("id,nombre,estado,total,enviados,fallidos").eq("channel_id",st.channelId).order("created_at",{ascending:false});
+  const box=$("list"); box.innerHTML="";
+  (data||[]).forEach(c=>{const el=document.createElement("div");el.className="item"+(st.camp&&st.camp.id===c.id?" active":"");
+    el.innerHTML=`<div class="n">${esc(c.nombre)}</div><div class="m">${esc(c.estado)} · ${c.enviados||0}/${c.total||0}</div>`;
+    el.onclick=()=>openC(c.id); box.appendChild(el);});
+}
+async function createC(){
+  const nombre=prompt("Nombre de la campaña:"); if(!nombre) return;
+  const { data,error }=await supa.from("campaigns").insert({channel_id:st.channelId,nombre,segmento:{stage:[],tags:[],modo:"cualquiera"}}).select("id").single();
+  if(error){toast(error.message,true);return;} await loadList(); openC(data.id);
+}
+async function openC(id){ const { data }=await supa.from("campaigns").select("*").eq("id",id).maybeSingle(); st.camp=data; if(!st.camp.segmento)st.camp.segmento={stage:[],tags:[]}; await loadList(); renderDetail(); }
+function renderDetail(){
+  const d=$("detail"); if(!st.camp){d.innerHTML=`<div class="empty">Elige o crea una campaña</div>`;return;}
+  const c=st.camp; const seg=c.segmento||{}; const stages=seg.stage||[]; const editable=c.estado==="borrador";
+  const dis=editable?"":"disabled";
+  d.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="badge">${esc(c.estado)}</span>
+      ${c.estado!=="borrador"?`<span style="font-size:12px;color:var(--muted)">Enviados ${c.enviados||0} · Fallidos ${c.fallidos||0} · Total ${c.total||0}</span>`:""}
+    </div>
+    <label>Nombre</label><input class="in" id="c_nombre" value="${esc(c.nombre)}" ${dis}/>
+    <label>Plantilla a enviar</label>
+    <select class="in" id="c_tpl" ${dis}>
+      <option value="">— elige —</option>
+      ${st.templates.map(t=>`<option value="${t.id}" ${c.template_id===t.id?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}
+    </select>
+    ${st.templates.length?"":`<div class="hint">No hay plantillas activas. Crea una en 📄 Plantillas.</div>`}
+    <label>Segmento — etapas del embudo</label>
+    <div class="stages" id="c_stages">
+      ${STAGES.map(s=>`<span class="sp ${stages.includes(s)?"on":""}" data-s="${s}">${s}</span>`).join("")}
+    </div>
+    <label>Etiquetas (separadas por coma, opcional)</label>
+    <input class="in" id="c_tags" value="${esc((seg.tags||[]).join(", "))}" ${dis}/>
+    <label>Programar (opcional — vacío = al activar)</label>
+    <input class="in" id="c_prog" type="datetime-local" value="${c.programada_at?new Date(c.programada_at).toISOString().slice(0,16):""}" ${dis}/>
+    <div class="stat"></div>
+    <div style="margin-top:18px;display:flex;gap:8px">
+      ${editable?`<button class="btn primary" id="sendBtn">🚀 Activar envío</button>`:""}
+      ${c.estado==="enviando"?`<button class="btn danger" id="cancelBtn">Cancelar</button>`:""}
+      <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
+    </div>`;
+  if(editable){
+    d.querySelectorAll("#c_stages .sp").forEach(el=>el.onclick=()=>{ el.classList.toggle("on"); });
+    $("sendBtn").onclick=activate;
+  }
+  if($("cancelBtn")) $("cancelBtn").onclick=async()=>{ await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); toast("Cancelada"); await openC(c.id); };
+  $("delBtn").onclick=async()=>{ if(!confirm("¿Eliminar campaña?"))return; await supa.from("campaigns").delete().eq("id",c.id); st.camp=null; await loadList(); renderDetail(); };
+}
+function collectSegment(){
+  const stage=[...document.querySelectorAll("#c_stages .sp.on")].map(el=>el.dataset.s);
+  const tags=$("c_tags").value.split(",").map(x=>x.trim()).filter(Boolean);
+  return { stage, tags, modo:"cualquiera" };
+}
+async function saveC(){
+  if(!st.camp) return; if(st.camp.estado!=="borrador"){ toast("Solo se edita en borrador",true); return; }
+  const prog=$("c_prog").value ? new Date($("c_prog").value).toISOString() : null;
+  const { error }=await supa.from("campaigns").update({
+    nombre:$("c_nombre").value.trim(), template_id:$("c_tpl").value||null,
+    segmento:collectSegment(), programada_at:prog,
+  }).eq("id",st.camp.id);
+  if(error){toast(error.message,true);return;} toast("Guardado ✓"); await openC(st.camp.id);
+}
+async function activate(){
+  if(!$("c_tpl").value){ toast("Elige una plantilla primero",true); return; }
+  await saveC();
+  const { error }=await supa.from("campaigns").update({ estado:"programada" }).eq("id",st.camp.id);
+  if(error){toast(error.message,true);return;}
+  toast("Campaña activada 🚀 — el envío empieza en el próximo minuto"); await openC(st.camp.id);
+}
+boot();
+</script>
+</body>
+</html>

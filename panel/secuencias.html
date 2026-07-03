@@ -57,6 +57,9 @@
     <a href="editor.html" title="Flujos">🕸</a>
     <a href="productos.html" title="Productos">📦</a>
     <a href="secuencias.html" class="active" title="Secuencias">🔁</a>
+    <a href="plantillas.html" title="Plantillas">📄</a>
+    <a href="campanas.html" title="Campañas">📣</a>
+    <a href="dashboard.html" title="Dashboard">📊</a>
     <a href="config.html" title="Configuraciones">⚙️</a>
     <select class="sel" id="channelSel"></select>
     <span class="spacer"></span>
@@ -78,7 +81,7 @@ const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
 const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = (id)=>document.getElementById(id);
-const st = { channelId:null, seq:null, flows:[] };
+const st = { channelId:null, seq:null, flows:[], templates:[] };
 
 const UNITS = [["60","minutos"],["3600","horas"],["86400","días"]];
 function toast(m,err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
@@ -101,11 +104,15 @@ async function loadChannels(){
   const p=new URLSearchParams(location.search).get("channel"); if(p) st.channelId=p;
   if(st.channelId) sel.value=st.channelId;
   sel.onchange=async()=>{ st.channelId=sel.value; st.seq=null; await loadFlows(); await loadList(); renderDetail(); };
-  await loadFlows(); await loadList();
+  await loadFlows(); await loadTemplates(); await loadList();
 }
 async function loadFlows(){
   const { data } = await supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre");
   st.flows=data||[];
+}
+async function loadTemplates(){
+  const { data } = await supa.from("wa_templates").select("id,name,language,params").eq("channel_id",st.channelId).eq("activa",true).order("name");
+  st.templates=data||[];
 }
 async function loadList(){
   const { data } = await supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at");
@@ -173,25 +180,42 @@ function stepCard(paso,i){
   num.oninput=upd; us.onchange=upd;
   seg.appendChild(num); seg.appendChild(us); wrap.appendChild(seg);
 
+  const mode = paso.template_name ? "plantilla" : (paso.flow_id ? "flow" : "mensaje");
   const al=document.createElement("label"); al.textContent="Acción"; wrap.appendChild(al);
   const as=document.createElement("select"); as.className="in";
-  as.innerHTML=`<option value="mensaje"${!isFlow?" selected":""}>Enviar un mensaje</option><option value="flow"${isFlow?" selected":""}>Iniciar un flujo</option>`;
+  as.innerHTML=`
+    <option value="mensaje"${mode==="mensaje"?" selected":""}>Enviar un mensaje (dentro de 24h)</option>
+    <option value="plantilla"${mode==="plantilla"?" selected":""}>Enviar una plantilla (fuera de 24h)</option>
+    <option value="flow"${mode==="flow"?" selected":""}>Iniciar un flujo</option>`;
   wrap.appendChild(as);
 
   const body=document.createElement("div"); wrap.appendChild(body);
   const renderAction=()=>{
     body.innerHTML="";
     if(as.value==="flow"){
-      delete paso.mensaje;
+      delete paso.mensaje; delete paso.template_name;
       const l=document.createElement("label"); l.textContent="Flujo a iniciar"; body.appendChild(l);
       const fs=document.createElement("select"); fs.className="in";
       fs.innerHTML=`<option value="">— elige —</option>`+st.flows.map(f=>`<option value="${f.id}"${paso.flow_id===f.id?" selected":""}>${esc(f.nombre)} ${f.role?"· "+esc(f.role):""}</option>`).join("");
       fs.onchange=()=>paso.flow_id=fs.value||undefined; body.appendChild(fs);
+    } else if(as.value==="plantilla"){
+      delete paso.mensaje; delete paso.flow_id;
+      const l=document.createElement("label"); l.textContent="Plantilla"; body.appendChild(l);
+      const ts=document.createElement("select"); ts.className="in";
+      ts.innerHTML=`<option value="">— elige —</option>`+st.templates.map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}"${paso.template_name===t.name?" selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("");
+      ts.onchange=()=>{ paso.template_name=ts.value||undefined; paso.template_lang=ts.selectedOptions[0]?.dataset.lang||"es"; };
+      body.appendChild(ts);
+      if(!st.templates.length){ const hh=document.createElement("div"); hh.className="hint"; hh.textContent="No hay plantillas activas. Crea una en 📄 Plantillas."; body.appendChild(hh); }
+      else{
+        const pl=document.createElement("label"); pl.textContent="Variables (una por línea: {{nombre}}, texto fijo…)"; body.appendChild(pl);
+        const pta=document.createElement("textarea"); pta.className="ta"; pta.style.minHeight="46px"; pta.value=(paso.template_params||[]).join("\n");
+        pta.oninput=()=>paso.template_params=pta.value.split("\n").map(x=>x.trim()).filter(Boolean); body.appendChild(pta);
+      }
     } else {
-      delete paso.flow_id;
+      delete paso.flow_id; delete paso.template_name;
       const l=document.createElement("label"); l.textContent="Mensaje"; body.appendChild(l);
       const ta=document.createElement("textarea"); ta.className="ta"; ta.value=paso.mensaje||""; ta.oninput=()=>paso.mensaje=ta.value; body.appendChild(ta);
-      const hh=document.createElement("div"); hh.className="hint"; hh.textContent="Nota: fuera de la ventana de 24h, WhatsApp exige plantillas (próxima fase). Dentro de 24h se envía normal."; body.appendChild(hh);
+      const hh=document.createElement("div"); hh.className="hint"; hh.textContent="Dentro de la ventana de 24h se envía normal. Fuera de 24h, usa la opción de plantilla."; body.appendChild(hh);
     }
   };
   as.onchange=renderAction; renderAction();
