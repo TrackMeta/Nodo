@@ -1,133 +1,136 @@
 // ═══════════════════════════════════════════════════════════════════
-// Nodo · ai.ts — puente con la API de Claude (Anthropic Messages API).
-// Lo usa el nodo "ia" del flow-runner: generar texto, analizar imágenes
-// (OCR de comprobantes) y extraer datos estructurados.
-//
-// La API key vive en un secreto global de Supabase (ANTHROPIC_API_KEY),
-// nunca en el repo ni en el navegador. Se lee con Deno.env en el runtime.
+// Nodo · ai.ts — puente multi-proveedor de IA (Claude / ChatGPT).
+// Cada canal define en Configuraciones su proveedor + API key (cifrada
+// en Vault). El nodo "ia" del flow-runner descifra la key por RPC y llama
+// aquí. La key nunca vive en el repo ni en el navegador.
 // ═══════════════════════════════════════════════════════════════════
-const API_URL = "https://api.anthropic.com/v1/messages";
-const API_VERSION = "2023-06-01";
 
-// Modelo por defecto. Cada nodo puede sobreescribirlo en su config (`modelo`),
-// p.ej. claude-haiku-4-5 para respuestas rápidas y baratas, o
-// claude-opus-4-8 para razonamiento más exigente.
-const DEFAULT_MODEL = "claude-opus-4-8";
+// ── Endpoints y modelos por defecto de cada proveedor ──────────────
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION = "2023-06-01";
+const ANTHROPIC_DEFAULT = "claude-opus-4-8";
 
-export interface AiError {
-  type?: string;
-  message?: string;
-  status?: number;
-}
-export class AnthropicError extends Error {
-  info: AiError;
-  constructor(info: AiError) {
-    super(`Anthropic error ${info.status ?? ""} ${info.type ?? ""}: ${info.message ?? ""}`);
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_DEFAULT = "gpt-4o";
+
+export type Provider = "anthropic" | "openai";
+
+export class AiError extends Error {
+  info: { provider?: string; type?: string; status?: number };
+  constructor(info: { provider?: string; type?: string; message?: string; status?: number }) {
+    super(`IA ${info.provider ?? ""} ${info.status ?? ""} ${info.type ?? ""}: ${info.message ?? ""}`);
     this.info = info;
   }
 }
 
-// Bloque de contenido de un mensaje de usuario (texto o imagen).
+// Contenido de un mensaje de usuario (texto y/o imagen).
 export type ContentBlock =
   | { type: "text"; text: string }
-  | {
-      type: "image";
-      source:
-        | { type: "url"; url: string }
-        | { type: "base64"; media_type: string; data: string };
-    };
+  | { type: "image"; url: string; media_type?: string; data?: string };
 
-export interface CallOpts {
+export interface AiCall {
+  provider: Provider;
+  apiKey: string;
+  model?: string;          // modelo específico; si falta usa el del proveedor
   system?: string;
-  content: string | ContentBlock[]; // mensaje de usuario
-  model?: string;
+  content: string | ContentBlock[];
   maxTokens?: number;
-  // structured output opcional: JSON Schema para forzar el formato de salida.
-  jsonSchema?: Record<string, unknown>;
+  jsonSchema?: Record<string, unknown>; // salida estructurada (modo "extraer")
 }
 
-// Llamada base a la API. Devuelve el texto de la respuesta (primer bloque text).
-export async function callClaude(opts: CallOpts): Promise<string> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) {
-    throw new AnthropicError({ message: "ANTHROPIC_API_KEY no configurada en Supabase" });
-  }
+// Despacha al proveedor correcto y devuelve el texto de la respuesta.
+export async function runAI(call: AiCall): Promise<string> {
+  if (!call.apiKey) throw new AiError({ provider: call.provider, message: "API key no configurada" });
+  return call.provider === "openai" ? await callOpenAI(call) : await callAnthropic(call);
+}
 
-  const userContent =
-    typeof opts.content === "string"
-      ? [{ type: "text", text: opts.content }]
-      : opts.content;
-
+// ── Claude (Anthropic Messages API) ────────────────────────────────
+async function callAnthropic(call: AiCall): Promise<string> {
+  const userContent = toAnthropicContent(call.content);
   const body: Record<string, unknown> = {
-    model: opts.model || DEFAULT_MODEL,
-    max_tokens: opts.maxTokens ?? 1024,
+    model: call.model || ANTHROPIC_DEFAULT,
+    max_tokens: call.maxTokens ?? 1024,
     messages: [{ role: "user", content: userContent }],
   };
-  if (opts.system) body.system = opts.system;
-  // Salida estructurada (JSON) — útil para el modo "extraer".
-  if (opts.jsonSchema) {
-    body.output_config = { format: { type: "json_schema", schema: opts.jsonSchema } };
-  }
+  if (call.system) body.system = call.system;
+  if (call.jsonSchema) body.output_config = { format: { type: "json_schema", schema: call.jsonSchema } };
 
-  const res = await fetch(API_URL, {
+  const res = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": API_VERSION,
+      "x-api-key": call.apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
   });
-
   const data = await res.json();
   if (!res.ok || data.type === "error") {
     const e = data.error ?? {};
-    throw new AnthropicError({ type: e.type, message: e.message, status: res.status });
+    throw new AiError({ provider: "anthropic", type: e.type, message: e.message, status: res.status });
   }
-
-  // El modelo puede rehusar por seguridad: no hay texto que devolver.
   if (data.stop_reason === "refusal") {
-    throw new AnthropicError({ type: "refusal", message: "el modelo rechazó la solicitud" });
+    throw new AiError({ provider: "anthropic", type: "refusal", message: "el modelo rechazó la solicitud" });
   }
-
-  // Concatenar todos los bloques de texto de la respuesta.
-  const text = (data.content ?? [])
-    .filter((b: any) => b.type === "text")
-    .map((b: any) => b.text)
-    .join("")
-    .trim();
-  return text;
+  return (data.content ?? [])
+    .filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim();
 }
 
-// Generar texto a partir de un prompt (con contexto opcional en el system).
-export async function generateText(
-  prompt: string,
-  system?: string,
-  model?: string,
-  maxTokens?: number,
-): Promise<string> {
-  return await callClaude({ content: prompt, system, model, maxTokens });
+function toAnthropicContent(content: string | ContentBlock[]): unknown[] {
+  const blocks = typeof content === "string" ? [{ type: "text", text: content } as ContentBlock] : content;
+  return blocks.map((b) => {
+    if (b.type === "text") return { type: "text", text: b.text };
+    // Imagen: base64 si viene data-URI parseado, si no por URL.
+    if (b.data && b.media_type) {
+      return { type: "image", source: { type: "base64", media_type: b.media_type, data: b.data } };
+    }
+    return { type: "image", source: { type: "url", url: b.url } };
+  });
 }
 
-// Analizar una imagen (OCR de comprobantes Yape/Plin, etc.).
-// `imageUrl` puede ser una URL pública o un data-URI base64.
-export async function analyzeImage(
-  imageUrl: string,
-  prompt: string,
-  system?: string,
-  model?: string,
-  maxTokens?: number,
-): Promise<string> {
-  const image = parseImageSource(imageUrl);
-  const content: ContentBlock[] = [image, { type: "text", text: prompt }];
-  return await callClaude({ content, system, model, maxTokens: maxTokens ?? 1024 });
+// ── ChatGPT (OpenAI Chat Completions API) ──────────────────────────
+async function callOpenAI(call: AiCall): Promise<string> {
+  const messages: unknown[] = [];
+  if (call.system) messages.push({ role: "system", content: call.system });
+  messages.push({ role: "user", content: toOpenAIContent(call.content) });
+
+  const body: Record<string, unknown> = {
+    model: call.model || OPENAI_DEFAULT,
+    max_tokens: call.maxTokens ?? 1024,
+    messages,
+  };
+  // OpenAI: para "extraer" forzamos objeto JSON.
+  if (call.jsonSchema) body.response_format = { type: "json_object" };
+
+  const res = await fetch(OPENAI_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${call.apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    const e = data.error ?? {};
+    throw new AiError({ provider: "openai", type: e.type, message: e.message, status: res.status });
+  }
+  return (data.choices?.[0]?.message?.content ?? "").trim();
 }
 
-// Convierte una URL o data-URI base64 en el bloque `image` que espera la API.
-function parseImageSource(src: string): ContentBlock {
+function toOpenAIContent(content: string | ContentBlock[]): unknown {
+  if (typeof content === "string") return content;
+  // Contenido mixto (texto + imagen) → formato de partes de OpenAI.
+  return content.map((b) => {
+    if (b.type === "text") return { type: "text", text: b.text };
+    const url = b.data && b.media_type ? `data:${b.media_type};base64,${b.data}` : b.url;
+    return { type: "image_url", image_url: { url } };
+  });
+}
+
+// ── Helper: convierte una URL o data-URI base64 en ContentBlock ────
+export function imageBlock(src: string): ContentBlock {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(src);
-  if (m) {
-    return { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } };
-  }
-  return { type: "image", source: { type: "url", url: src } };
+  if (m) return { type: "image", url: "", media_type: m[1], data: m[2] };
+  return { type: "image", url: src };
 }

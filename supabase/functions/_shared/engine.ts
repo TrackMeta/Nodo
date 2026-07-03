@@ -5,7 +5,7 @@
 // Respeta el lock por contacto (un solo run activo/esperando).
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { analyzeImage, callClaude, generateText } from "./ai.ts";
+import { imageBlock, runAI, type ContentBlock, type Provider } from "./ai.ts";
 
 export type EngineEvent =
   | { type: "message"; text: string; msgType?: string }
@@ -267,27 +267,38 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
   }
 }
 
-// ── Nodo IA (Claude): generar texto, analizar imagen (OCR) o extraer ─
+// ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const cfg = node.config ?? {};
   const op = cfg.operacion ?? "generar_texto";
-  const model = cfg.modelo || undefined;
   const maxTokens = cfg.max_tokens ? Number(cfg.max_tokens) : undefined;
   const system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
   const prompt = resolve(String(cfg.prompt ?? ""), ctx);
 
   try {
-    let result = "";
+    // Resolver proveedor + key del canal (Vault). `proveedor` del nodo o el
+    // proveedor por defecto del canal si el nodo dice "auto".
+    const wantProvider = cfg.proveedor && cfg.proveedor !== "auto" ? cfg.proveedor : null;
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", {
+      p_channel_id: run.channel_id, p_provider: wantProvider,
+    });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) throw new Error("IA no configurada en este canal (Configuraciones)");
+    const provider = ai.provider as Provider;
+    const model = cfg.modelo || ai.model || undefined;
+
+    let content: string | ContentBlock[] = prompt;
     if (op === "analizar_imagen") {
       // La imagen viene de una variable de config, o del último input del contacto.
       const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image);
       if (!img) throw new Error("no hay imagen para analizar");
-      result = await analyzeImage(String(img), prompt, system, model, maxTokens);
-    } else if (op === "extraer") {
-      result = await callClaude({ content: prompt, system, model, maxTokens, jsonSchema: cfg.json_schema });
-    } else {
-      result = await generateText(prompt, system, model, maxTokens);
+      content = [imageBlock(String(img)), { type: "text", text: prompt }];
     }
+
+    const result = await runAI({
+      provider, apiKey: ai.api_key, model, system, content, maxTokens,
+      jsonSchema: op === "extraer" ? cfg.json_schema : undefined,
+    });
 
     // Guardar el resultado como variable del run y (si existe) campo persistente.
     if (cfg.guardar_en) {

@@ -85,6 +85,7 @@
   <div class="top">
     <a href="index.html" title="Volver a la bandeja">←</a>
     <a href="productos.html" title="Productos">📦</a>
+    <a href="config.html" title="Configuraciones">⚙️</a>
     <select class="sel" id="channelSel"></select>
     <span class="fname" id="fname">—</span>
     <span class="badge" id="fstate">—</span>
@@ -230,21 +231,37 @@ const IA_OPS = [
   ["analizar_imagen","Analizar imagen (OCR de comprobante)"],
   ["extraer","Extraer datos (JSON)"],
 ];
-const IA_MODELOS = [
-  ["claude-opus-4-8","Claude Opus 4.8 (más capaz)"],
-  ["claude-sonnet-5","Claude Sonnet 5 (equilibrado)"],
-  ["claude-haiku-4-5","Claude Haiku 4.5 (rápido y barato)"],
+const IA_PROV = [
+  ["auto","Automático (el del canal)"],
+  ["anthropic","Claude (Anthropic)"],
+  ["openai","ChatGPT (OpenAI)"],
 ];
+const IA_MODELOS = {
+  anthropic:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"],
+  openai:["gpt-4o","gpt-4o-mini"],
+};
 function mkSelect(opts, val, oninput){
   const s=document.createElement("select"); s.className="in";
   opts.forEach(([v,label])=>{ const o=document.createElement("option"); o.value=v; o.textContent=label; if(v===val)o.selected=true; s.appendChild(o); });
   s.onchange=()=>oninput(s.value); return s;
 }
+function mkDatalist(list, val, ph, oninput){
+  const wrap=document.createElement("div");
+  const i=document.createElement("input"); i.className="in"; i.value=val||""; if(ph)i.placeholder=ph;
+  const id="dl_ia_"+Math.random().toString(36).slice(2,7);
+  i.setAttribute("list",id);
+  const dl=document.createElement("datalist"); dl.id=id;
+  (list||[]).forEach(v=>{ const o=document.createElement("option"); o.value=v; dl.appendChild(o); });
+  i.oninput=()=>oninput(i.value);
+  wrap.appendChild(i); wrap.appendChild(dl); return wrap;
+}
 function buildIA(m, body){
-  if(!m.config.modelo || m.config.modelo==="claude") m.config.modelo="claude-opus-4-8";
-  body.appendChild(mkLabel("Operación"));
-  body.appendChild(mkSelect(IA_OPS, m.config.operacion||"generar_texto", (v)=>{ m.config.operacion=v; renderContent(); }));
+  if(m.config.modelo==="claude") m.config.modelo="";
   const op = m.config.operacion||"generar_texto";
+  const prov = m.config.proveedor||"auto";
+
+  body.appendChild(mkLabel("Operación"));
+  body.appendChild(mkSelect(IA_OPS, op, (v)=>{ m.config.operacion=v; renderContent(); }));
 
   body.appendChild(mkLabel(op==="analizar_imagen" ? "Prompt (qué extraer de la imagen)" : "Prompt (instrucción para la IA)"));
   body.appendChild(mkTextarea(m.config.prompt, (v)=>m.config.prompt=v, "90px"));
@@ -255,8 +272,12 @@ function buildIA(m, body){
   body.appendChild(mkLabel("Guardar resultado en (variable/campo, opcional)"));
   body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
 
-  body.appendChild(mkLabel("Modelo"));
-  body.appendChild(mkSelect(IA_MODELOS, m.config.modelo, (v)=>m.config.modelo=v));
+  body.appendChild(mkLabel("Proveedor"));
+  body.appendChild(mkSelect(IA_PROV, prov, (v)=>{ m.config.proveedor=v; renderContent(); }));
+
+  body.appendChild(mkLabel("Modelo (opcional — vacío = el del canal)"));
+  const models = prov==="auto" ? [] : (IA_MODELOS[prov]||[]);
+  body.appendChild(mkDatalist(models, m.config.modelo, "por defecto del canal", (v)=>m.config.modelo=v));
 
   const enviarDef = (op==="generar_texto");
   const enviar = (m.config.enviar===undefined) ? enviarDef : m.config.enviar;
@@ -352,7 +373,7 @@ function defaultConfig(tipo){
     case "pregunta": return { text:"¿Tu pregunta?", guardar_en:"" };
     case "condicion": return { rutas:[{ handle:"ruta:1", nombre:"Ruta 1", match:"todas", condiciones:[] }] };
     case "accion": return { acciones:[] };
-    case "ia": return { operacion:"generar_texto", prompt:"", modelo:"claude-opus-4-8" };
+    case "ia": return { operacion:"generar_texto", prompt:"", proveedor:"auto", modelo:"" };
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_role:"" };
     default: return {};

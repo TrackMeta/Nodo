@@ -44,3 +44,7 @@ verify_jwt = true
 # webchat (banco de pruebas) también requiere usuario autenticado.
 [functions.webchat]
 verify_jwt = true
+
+# ai-config gestiona las API keys de IA por canal desde el panel.
+[functions.ai-config]
+verify_jwt = true
