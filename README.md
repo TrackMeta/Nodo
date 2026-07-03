@@ -81,7 +81,7 @@ const SUPABASE_ANON_KEY = "TU_ANON_KEY";   // Settings → API → anon public
 ### 7. Conectar el webhook en Meta
 En [developers.facebook.com](https://developers.facebook.com) → tu App →
 WhatsApp → Configuración → **Webhook**:
-- **Callback URL:** `https://TU-REF.functions.supabase.co/whatsapp-webhook`
+- **Callback URL:** `https://ahoxdyffbwjlshmdezwi.supabase.co/functions/v1/whatsapp-webhook`
 - **Verify token:** el mismo del paso 5a.
 - Suscribir el campo **messages**.
 
@@ -104,10 +104,10 @@ WhatsApp → Configuración → **Webhook**:
 ## Verificación rápida
 ```bash
 # Verificación del webhook (debe devolver 123)
-curl "https://TU-REF.functions.supabase.co/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=TU_VERIFY_TOKEN&hub.challenge=123"
+curl "https://ahoxdyffbwjlshmdezwi.supabase.co/functions/v1/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=TU_VERIFY_TOKEN&hub.challenge=123"
 
 # POST sin firma → 401
-curl -X POST "https://TU-REF.functions.supabase.co/whatsapp-webhook" \
+curl -X POST "https://ahoxdyffbwjlshmdezwi.supabase.co/functions/v1/whatsapp-webhook" \
   -H "Content-Type: application/json" -d '{"entry":[]}'
 ```
 
