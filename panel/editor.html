@@ -84,6 +84,7 @@
 <div class="app">
   <div class="top">
     <a href="index.html" title="Volver a la bandeja">←</a>
+    <a href="productos.html" title="Productos">📦</a>
     <select class="sel" id="channelSel"></select>
     <span class="fname" id="fname">—</span>
     <span class="badge" id="fstate">—</span>
@@ -236,10 +237,16 @@ async function loadChannels(){
   const sel=$("channelSel"); sel.innerHTML="";
   (data||[]).forEach(c=>{ const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
   const params=new URLSearchParams(location.search);
-  st.channelId = params.get("channel") || (data&&data[0]&&data[0].id);
+  const flowParam = params.get("flow");
+  if(flowParam){
+    const { data:f } = await supa.from("flows").select("channel_id").eq("id",flowParam).maybeSingle();
+    if(f) st.channelId = f.channel_id;
+  }
+  st.channelId = st.channelId || params.get("channel") || (data&&data[0]&&data[0].id);
   if(st.channelId){ sel.value=st.channelId; }
   sel.onchange=()=>{ st.channelId=sel.value; st.flowId=null; loadFlows(); clearCanvas(); };
   await loadFlows();
+  if(flowParam) openFlow(flowParam);
 }
 
 async function loadFlows(){
@@ -362,8 +369,8 @@ function updateNodeDom(m){
 
 // ── Crear flujo ──
 async function createFlow(){
-  const nombre=prompt("Nombre del flujo:"); if(!nombre) return;
-  const { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"flow", nombre, estado:"borrador" }).select("id").single();
+  const nombre=prompt("Nombre del esqueleto (plantilla base):"); if(!nombre) return;
+  const { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador" }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await loadFlows(); openFlow(data.id);
 }
