@@ -5,6 +5,7 @@
 // Respeta el lock por contacto (un solo run activo/esperando).
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { analyzeImage, callClaude, generateText } from "./ai.ts";
 
 export type EngineEvent =
   | { type: "message"; text: string; msgType?: string }
@@ -192,10 +193,14 @@ async function execute(db: SupabaseClient, run: Run) {
         }
         break;
       }
+      case "ia": {
+        await runIa(db, run, node, ctx);
+        break;
+      }
       case "fin": run.estado = "completado"; run.current_node_id = null; break;
       default: {
-        // ia / evento_fb / google_sheets → se implementan en Fase 3.
-        // Por ahora se saltan siguiendo 'continuar' (o 'exito').
+        // evento_fb / google_sheets → se implementan en Fase 3/4.
+        // Por ahora se saltan siguiendo 'exito' (o 'continuar').
         run.current_node_id =
           (await nextNode(db, run.flow_id, node.id, "exito")) ??
           (await nextNode(db, run.flow_id, node.id, "continuar"));
@@ -259,6 +264,49 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); break;
       // subscribe_seq / transfer_human / notify_admin / evento CAPI → Fase 3/4.
     }
+  }
+}
+
+// ── Nodo IA (Claude): generar texto, analizar imagen (OCR) o extraer ─
+async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
+  const cfg = node.config ?? {};
+  const op = cfg.operacion ?? "generar_texto";
+  const model = cfg.modelo || undefined;
+  const maxTokens = cfg.max_tokens ? Number(cfg.max_tokens) : undefined;
+  const system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
+  const prompt = resolve(String(cfg.prompt ?? ""), ctx);
+
+  try {
+    let result = "";
+    if (op === "analizar_imagen") {
+      // La imagen viene de una variable de config, o del último input del contacto.
+      const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image);
+      if (!img) throw new Error("no hay imagen para analizar");
+      result = await analyzeImage(String(img), prompt, system, model, maxTokens);
+    } else if (op === "extraer") {
+      result = await callClaude({ content: prompt, system, model, maxTokens, jsonSchema: cfg.json_schema });
+    } else {
+      result = await generateText(prompt, system, model, maxTokens);
+    }
+
+    // Guardar el resultado como variable del run y (si existe) campo persistente.
+    if (cfg.guardar_en) {
+      run.vars[cfg.guardar_en] = result;
+      await setField(db, run.contact_id, cfg.guardar_en, result);
+    }
+    // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
+    const enviar = cfg.enviar ?? (op === "generar_texto");
+    if (enviar && result) await emit(db, run, { text: result }, ctx);
+
+    run.current_node_id =
+      (await nextNode(db, run.flow_id, node.id, "exito")) ??
+      (await nextNode(db, run.flow_id, node.id, "continuar"));
+  } catch (err) {
+    console.error("nodo ia falló:", (err as any)?.message ?? err);
+    run.vars._ia_error = String((err as any)?.message ?? err);
+    run.current_node_id =
+      (await nextNode(db, run.flow_id, node.id, "fallo")) ??
+      (await nextNode(db, run.flow_id, node.id, "continuar"));
   }
 }
 

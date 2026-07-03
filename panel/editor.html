@@ -225,11 +225,46 @@ function buildPregunta(m, body){
   body.appendChild(mkLabel("Guardar respuesta en (campo)"));
   body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
 }
+const IA_OPS = [
+  ["generar_texto","Generar texto (respuesta al cliente)"],
+  ["analizar_imagen","Analizar imagen (OCR de comprobante)"],
+  ["extraer","Extraer datos (JSON)"],
+];
+const IA_MODELOS = [
+  ["claude-opus-4-8","Claude Opus 4.8 (más capaz)"],
+  ["claude-sonnet-5","Claude Sonnet 5 (equilibrado)"],
+  ["claude-haiku-4-5","Claude Haiku 4.5 (rápido y barato)"],
+];
+function mkSelect(opts, val, oninput){
+  const s=document.createElement("select"); s.className="in";
+  opts.forEach(([v,label])=>{ const o=document.createElement("option"); o.value=v; o.textContent=label; if(v===val)o.selected=true; s.appendChild(o); });
+  s.onchange=()=>oninput(s.value); return s;
+}
 function buildIA(m, body){
-  body.appendChild(mkLabel("Prompt (instrucción para la IA)"));
+  if(!m.config.modelo || m.config.modelo==="claude") m.config.modelo="claude-opus-4-8";
+  body.appendChild(mkLabel("Operación"));
+  body.appendChild(mkSelect(IA_OPS, m.config.operacion||"generar_texto", (v)=>{ m.config.operacion=v; renderContent(); }));
+  const op = m.config.operacion||"generar_texto";
+
+  body.appendChild(mkLabel(op==="analizar_imagen" ? "Prompt (qué extraer de la imagen)" : "Prompt (instrucción para la IA)"));
   body.appendChild(mkTextarea(m.config.prompt, (v)=>m.config.prompt=v, "90px"));
+
+  body.appendChild(mkLabel("Contexto / rol (system, opcional)"));
+  body.appendChild(mkTextarea(m.config.contexto, (v)=>m.config.contexto=v, "50px"));
+
+  body.appendChild(mkLabel("Guardar resultado en (variable/campo, opcional)"));
+  body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
+
   body.appendChild(mkLabel("Modelo"));
-  body.appendChild(mkInput(m.config.modelo||"claude", (v)=>m.config.modelo=v));
+  body.appendChild(mkSelect(IA_MODELOS, m.config.modelo, (v)=>m.config.modelo=v));
+
+  const enviarDef = (op==="generar_texto");
+  const enviar = (m.config.enviar===undefined) ? enviarDef : m.config.enviar;
+  const lab=document.createElement("label"); lab.className="chk";
+  const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!enviar;
+  cb.onchange=()=>m.config.enviar=cb.checked;
+  lab.appendChild(cb); lab.appendChild(document.createTextNode(" Enviar el resultado al cliente"));
+  body.appendChild(lab);
 }
 
 async function loadChannels(){
@@ -317,7 +352,7 @@ function defaultConfig(tipo){
     case "pregunta": return { text:"¿Tu pregunta?", guardar_en:"" };
     case "condicion": return { rutas:[{ handle:"ruta:1", nombre:"Ruta 1", match:"todas", condiciones:[] }] };
     case "accion": return { acciones:[] };
-    case "ia": return { operacion:"generar_texto", prompt:"", modelo:"claude" };
+    case "ia": return { operacion:"generar_texto", prompt:"", modelo:"claude-opus-4-8" };
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_role:"" };
     default: return {};
