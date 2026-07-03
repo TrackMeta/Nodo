@@ -22,7 +22,9 @@ create table if not exists wa_templates (
 );
 
 -- ── Campañas / broadcast ───────────────────────────────────────────
-create type campaign_estado as enum ('borrador','programada','enviando','completada','cancelada');
+do $$ begin
+  create type campaign_estado as enum ('borrador','programada','enviando','completada','cancelada');
+exception when duplicate_object then null; end $$;
 
 create table if not exists campaigns (
   id           uuid primary key default gen_random_uuid(),
