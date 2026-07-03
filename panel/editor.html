@@ -132,13 +132,13 @@ const NODE_DEFS = {
   ia:           { icon:"✨", handles:["exito","fallo"] },
   esperar:      { icon:"⏱", handles:["continuar"] },
   iniciar_flujo:{ icon:"↗", handles:["continuar"] },
-  evento_fb:    { icon:"📘", handles:["continuar"] },
+  evento_fb:    { icon:"📘", handles:["exito","fallo"] },
   fin:          { icon:"⬛", handles:[] },
 };
 
 const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura" };
 let editor;
-const CONTENT_TYPES = new Set(["mensaje","pregunta","ia"]);
+const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
 function toast(m, err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -194,6 +194,7 @@ function contentCard(m, i){
   if(m.tipo==="mensaje") buildMensaje(m, body);
   else if(m.tipo==="pregunta") buildPregunta(m, body);
   else if(m.tipo==="ia") buildIA(m, body);
+  else if(m.tipo==="evento_fb") buildEvento(m, body);
   el.appendChild(body);
   return el;
 }
@@ -254,6 +255,30 @@ function mkDatalist(list, val, ph, oninput){
   (list||[]).forEach(v=>{ const o=document.createElement("option"); o.value=v; dl.appendChild(o); });
   i.oninput=()=>oninput(i.value);
   wrap.appendChild(i); wrap.appendChild(dl); return wrap;
+}
+const FB_EVENTS = [
+  ["Lead","Lead (interés / primer contacto)"],
+  ["InitiateCheckout","InitiateCheckout (empezó a pagar)"],
+  ["Purchase","Purchase (compra confirmada)"],
+];
+function buildEvento(m, body){
+  body.appendChild(mkLabel("Evento de conversión (Meta)"));
+  body.appendChild(mkSelect(FB_EVENTS, m.config.event_name||"Lead", (v)=>{ m.config.event_name=v; renderContent(); }));
+  const ev = m.config.event_name||"Lead";
+
+  if(ev!=="Lead"){
+    body.appendChild(mkLabel("Valor (monto — puede usar {{variable}})"));
+    body.appendChild(mkInput(m.config.value, (v)=>m.config.value=v));
+    body.appendChild(mkLabel("Moneda"));
+    body.appendChild(mkInput(m.config.currency||"PEN", (v)=>m.config.currency=v));
+  }
+  if(ev==="Purchase"){
+    body.appendChild(mkLabel("ID de comprobante / orden (dedup — {{variable}})"));
+    body.appendChild(mkInput(m.config.order_id, (v)=>m.config.order_id=v));
+  }
+  const h=document.createElement("div"); h.className="chint";
+  h.textContent="La atribución Click-to-WhatsApp (ctwa_clid) se toma automáticamente del contacto.";
+  body.appendChild(h);
 }
 function buildIA(m, body){
   if(m.config.modelo==="claude") m.config.modelo="";
@@ -374,6 +399,7 @@ function defaultConfig(tipo){
     case "condicion": return { rutas:[{ handle:"ruta:1", nombre:"Ruta 1", match:"todas", condiciones:[] }] };
     case "accion": return { acciones:[] };
     case "ia": return { operacion:"generar_texto", prompt:"", proveedor:"auto", modelo:"" };
+    case "evento_fb": return { event_name:"Lead", currency:"PEN", value:"", order_id:"" };
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_role:"" };
     default: return {};
