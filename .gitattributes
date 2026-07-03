@@ -1,0 +1,8 @@
+# Normalizar finales de línea a LF en el repo (Edge Functions y SQL corren en Linux).
+* text=auto eol=lf
+
+# Binarios (no tocar).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary

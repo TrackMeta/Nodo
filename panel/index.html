@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nodo · Bandeja</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="../assets/favicon-16x16.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311;
+    --red:#e2564a; --red-bg:#2c1615; --radius:14px;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer}
+  input{font-family:inherit}
+  .hidden{display:none!important}
+
+  /* ── Login ── */
+  #login{height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:360px}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+  .brand img{width:44px;height:44px;border-radius:12px}
+  .brand h1{font-size:20px;font-weight:600;margin:0}
+  .brand span{color:var(--muted);font-size:13px}
+  label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px}
+  .in{width:100%;height:44px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 14px;font-size:14px;outline:none;transition:border .15s}
+  .in:focus{border-color:var(--brand)}
+  .btn{width:100%;height:44px;background:var(--brand);color:#fff;border:none;border-radius:12px;font-weight:600;font-size:14px;margin-top:20px;transition:background .15s}
+  .btn:hover{background:var(--brand-2)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .err{color:var(--red);font-size:13px;margin-top:14px;min-height:18px}
+
+  /* ── App shell ── */
+  #app{height:100%;display:flex}
+  .rail{width:60px;flex:none;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:8px}
+  .rail img{width:36px;height:36px;border-radius:10px;margin-bottom:10px}
+  .rail .icn{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px}
+  .rail .icn.active{background:var(--brand-bg);color:var(--brand)}
+  .rail .bottom{margin-top:auto;display:flex;flex-direction:column;gap:8px;align-items:center}
+
+  /* Lista de conversaciones */
+  .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column}
+  .list .top{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
+  .conv{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+  .conv:hover{background:var(--surface)}
+  .conv.active{background:var(--surface-2)}
+  .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+  .conv .body{min-width:0;flex:1}
+  .conv .r1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .conv .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .conv .tm{font-size:11px;color:var(--faint);flex:none}
+  .conv .pv{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .badge{background:var(--green);color:#04120b;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px}
+
+  /* Chat */
+  .chat{flex:1;min-width:0;display:flex;flex-direction:column}
+  .chat .hd{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+  .chat .hd .nm{font-weight:600}
+  .chat .hd .ph{font-size:12px;color:var(--muted)}
+  .pill{font-size:11px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
+  .pill.on{background:var(--green-bg);color:var(--green)}
+  .pill.off{background:var(--amber-bg);color:var(--amber)}
+  .win{margin-left:auto;font-size:11px;color:var(--muted)}
+  .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
+  .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
+  .msg .meta{font-size:10px;color:var(--faint);margin-top:3px}
+  .in-m{align-self:flex-start;background:var(--surface-2);border-top-left-radius:4px}
+  .out-m{align-self:flex-end;background:var(--brand-bg);border-top-right-radius:4px}
+  .out-m .meta{text-align:right;color:#6f92c8}
+  .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center}
+  .composer input{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
+  .composer input:focus{border-color:var(--brand)}
+  .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center}
+  .send:disabled{opacity:.4}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red-bg);color:var(--red);border:1px solid var(--red);padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="login">
+  <form class="card" id="loginForm">
+    <div class="brand">
+      <img src="../assets/logo-rounded.png" alt="Nodo" />
+      <div><h1>Nodo</h1><span>Bandeja de WhatsApp</span></div>
+    </div>
+    <label>Correo</label>
+    <input class="in" type="email" id="email" autocomplete="username" required />
+    <label>Contraseña</label>
+    <input class="in" type="password" id="password" autocomplete="current-password" required />
+    <button class="btn" id="loginBtn" type="submit">Ingresar</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<!-- ── APP ── -->
+<div id="app" class="hidden">
+  <div class="rail">
+    <img src="../assets/logo-rounded.png" alt="Nodo" />
+    <div class="icn active" title="Bandeja">💬</div>
+    <div class="bottom">
+      <div class="icn" id="logoutBtn" title="Cerrar sesión">⏻</div>
+    </div>
+  </div>
+
+  <div class="list">
+    <div class="top">
+      <select class="sel" id="channelSel"></select>
+    </div>
+    <div id="convList" style="overflow-y:auto;flex:1"></div>
+  </div>
+
+  <div class="chat">
+    <div id="chatEmpty" class="empty">
+      <div style="font-size:30px">💬</div>
+      <div>Elige una conversación</div>
+    </div>
+    <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div class="hd">
+        <div class="av" id="chAv"></div>
+        <div>
+          <div class="nm" id="chName"></div>
+          <div class="ph" id="chPhone"></div>
+        </div>
+        <span class="pill on" id="chBot">● Bot activo</span>
+        <span class="win" id="chWin"></span>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="composer">
+        <input id="msgInput" placeholder="Escribe un mensaje…" autocomplete="off" />
+        <button class="send" id="sendBtn" title="Enviar">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+// ─────────────────────────────────────────────────────────────
+// CONFIG — reemplazar con los valores del proyecto Supabase.
+// (La anon key es PÚBLICA por diseño; protegida por RLS.)
+// ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://TU-REF.supabase.co";
+const SUPABASE_ANON_KEY = "TU_ANON_KEY";
+
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
+
+const state = { channelId: null, contactId: null, rt: null };
+const $ = (id) => document.getElementById(id);
+
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),3500); }
+function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
+
+// ── Auth ──
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("loginErr").textContent = ""; $("loginBtn").disabled = true;
+  const { error } = await supa.auth.signInWithPassword({ email: $("email").value, password: $("password").value });
+  $("loginBtn").disabled = false;
+  if (error) { $("loginErr").textContent = "Credenciales inválidas"; return; }
+  boot();
+});
+$("logoutBtn").addEventListener("click", async () => { await supa.auth.signOut(); location.reload(); });
+
+async function boot() {
+  const { data: { session } } = await supa.auth.getSession();
+  if (!session) { $("login").classList.remove("hidden"); $("app").classList.add("hidden"); return; }
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  await loadChannels();
+  subscribeRealtime();
+}
+
+// ── Canales ──
+async function loadChannels() {
+  const { data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre");
+  const sel = $("channelSel"); sel.innerHTML = "";
+  (data||[]).forEach(c => { const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
+  sel.onchange = () => { state.channelId = sel.value; loadConversations(); };
+  if (data && data.length) { state.channelId = data[0].id; sel.value = data[0].id; await loadConversations(); }
+}
+
+// ── Conversaciones ──
+async function loadConversations() {
+  const { data } = await supa.from("conversations")
+    .select("contact_id,no_leidos,updated_at,expira_at,contact:contacts(id,nombre,wa_id,last_input,bot_activo)")
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(100);
+  const box = $("convList"); box.innerHTML = "";
+  (data||[]).forEach(cv => {
+    const c = cv.contact; if (!c) return;
+    const el = document.createElement("div");
+    el.className = "conv" + (state.contactId === c.id ? " active" : "");
+    el.innerHTML = `
+      <div class="av">${initials(c.nombre, c.wa_id)}</div>
+      <div class="body">
+        <div class="r1"><span class="nm">${esc(c.nombre||c.wa_id)}</span><span class="tm">${rel(cv.updated_at)}</span></div>
+        <div class="r1"><span class="pv">${esc(c.last_input||"")}</span>${cv.no_leidos>0?`<span class="badge">${cv.no_leidos}</span>`:""}</div>
+      </div>`;
+    el.onclick = () => openChat(c);
+    box.appendChild(el);
+  });
+}
+
+// ── Chat ──
+async function openChat(c) {
+  state.contactId = c.id;
+  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  $("chAv").textContent = initials(c.nombre, c.wa_id);
+  $("chName").textContent = c.nombre || c.wa_id;
+  $("chPhone").textContent = "+" + c.wa_id;
+  setBotPill(c.bot_activo);
+  await loadThread();
+  await markRead();
+  loadConversations();
+  updateWindow();
+}
+function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
+
+async function loadThread() {
+  const { data } = await supa.from("messages").select("*").eq("contact_id", state.contactId).order("ts").limit(200);
+  const t = $("thread"); t.innerHTML = "";
+  (data||[]).forEach(renderMsg);
+  t.scrollTop = t.scrollHeight;
+}
+function renderMsg(m) {
+  const t = $("thread");
+  const el = document.createElement("div");
+  el.className = "msg " + (m.direction === "in" ? "in-m" : "out-m");
+  el.dataset.id = m.id;
+  const txt = m.content?.text || m.content?.caption || `[${m.type}]`;
+  el.innerHTML = `${esc(txt)}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
+  t.appendChild(el);
+  t.scrollTop = t.scrollHeight;
+}
+function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"⚠ falló",pending:"…"}[s]||s; }
+
+async function markRead() {
+  await supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", state.contactId);
+}
+async function updateWindow() {
+  const { data } = await supa.from("conversations").select("expira_at").eq("contact_id", state.contactId).maybeSingle();
+  const w = $("chWin");
+  if (!data?.expira_at) { w.textContent = ""; return; }
+  const ms = new Date(data.expira_at) - new Date();
+  if (ms <= 0) { w.textContent = "Ventana 24h cerrada"; return; }
+  const h = Math.floor(ms/3.6e6), mm = Math.floor((ms%3.6e6)/6e4);
+  w.textContent = `Ventana 24h · ${h}h ${mm}m`;
+}
+
+// ── Envío ──
+$("sendBtn").addEventListener("click", sendMsg);
+$("msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
+async function sendMsg() {
+  const input = $("msgInput"); const text = input.value.trim();
+  if (!text || !state.contactId) return;
+  $("sendBtn").disabled = true;
+  const { data: { session } } = await supa.auth.getSession();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/whatsapp-send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ channel_id: state.channelId, contact_id: state.contactId, text }),
+    });
+    const out = await res.json();
+    if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar"); }
+    else { input.value = ""; setBotPill(false); }
+  } catch { toast("Error de red"); }
+  $("sendBtn").disabled = false;
+}
+
+// ── Realtime ──
+function subscribeRealtime() {
+  if (state.rt) supa.removeChannel(state.rt);
+  state.rt = supa.channel("nodo-inbox")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
+      const m = p.new;
+      if (m.contact_id === state.contactId) renderMsg(m);
+      loadConversations();
+    })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
+      const m = p.new;
+      if (m.contact_id === state.contactId) {
+        const el = document.querySelector(`.msg[data-id="${m.id}"] .meta`);
+        if (el && m.direction === "out") el.textContent = `${fmtTime.format(new Date(m.ts))} · ${statusLabel(m.status)}`;
+      }
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversations())
+    .subscribe();
+}
+
+// ── util ──
+function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function rel(ts){ const d=(Date.now()-new Date(ts))/1000; if(d<60)return"ahora"; if(d<3600)return Math.floor(d/60)+"m"; if(d<86400)return Math.floor(d/3600)+"h"; return Math.floor(d/86400)+"d"; }
+
+setInterval(() => { if (state.contactId) updateWindow(); }, 60000);
+boot();
+</script>
+</body>
+</html>
