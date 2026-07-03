@@ -6,6 +6,9 @@
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, type ContentBlock, type Provider } from "./ai.ts";
+import { sendCapiEvent } from "./capi.ts";
+import { sendTelegram } from "./telegram.ts";
+import { getChannelSecrets } from "./db.ts";
 
 export type EngineEvent =
   | { type: "message"; text: string; msgType?: string }
@@ -197,9 +200,13 @@ async function execute(db: SupabaseClient, run: Run) {
         await runIa(db, run, node, ctx);
         break;
       }
+      case "evento_fb": {
+        await runEventoFb(db, run, node, ctx);
+        break;
+      }
       case "fin": run.estado = "completado"; run.current_node_id = null; break;
       default: {
-        // evento_fb / google_sheets → se implementan en Fase 3/4.
+        // google_sheets y otros → se implementan más adelante.
         // Por ahora se saltan siguiendo 'exito' (o 'continuar').
         run.current_node_id =
           (await nextNode(db, run.flow_id, node.id, "exito")) ??
@@ -262,9 +269,31 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         await setField(db, run.contact_id, a.key, prev + resolve(String(a.valor ?? ""), ctx)); break;
       }
       case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); break;
-      // subscribe_seq / transfer_human / notify_admin / evento CAPI → Fase 3/4.
+      case "notify_admin": await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx)); break;
+      case "transfer_human": {
+        await db.from("contacts").update({ bot_activo: false }).eq("id", run.contact_id);
+        await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", run.contact_id);
+        const msg = a.mensaje ? resolve(String(a.mensaje), ctx) : `🙋 ${ctx.nombre || ctx.wa_id} necesita atención humana`;
+        await notifyAdmin(db, run, msg);
+        break;
+      }
+      // subscribe_seq → Fase 4 (secuencias/remarketing).
     }
   }
+}
+
+// Notifica a los admins del canal por Telegram (bot token en Vault).
+async function notifyAdmin(db: SupabaseClient, run: Run, text: string) {
+  if (!text) return;
+  const { data: channel } = await db.from("channels")
+    .select("telegram_chat_ids, nombre").eq("id", run.channel_id).maybeSingle();
+  const chatIds = (channel as any)?.telegram_chat_ids ?? [];
+  if (!chatIds.length) return;
+  const secrets = await getChannelSecrets(db, run.channel_id);
+  const token = secrets?.telegram_bot_token;
+  if (!token) { console.warn("[notify_admin] canal sin telegram_bot_token"); return; }
+  const prefix = (channel as any)?.nombre ? `[${(channel as any).nombre}] ` : "";
+  await sendTelegram(token, chatIds, prefix + text);
 }
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
@@ -319,6 +348,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       (await nextNode(db, run.flow_id, node.id, "fallo")) ??
       (await nextNode(db, run.flow_id, node.id, "continuar"));
   }
+}
+
+// ── Nodo Evento Facebook (CAPI): Lead / InitiateCheckout / Purchase ─
+async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
+  const cfg = node.config ?? {};
+  const eventName = cfg.event_name ?? "Lead";
+  const valRaw = resolve(String(cfg.value ?? ""), ctx).trim();
+  const value = valRaw ? Number(valRaw.replace(",", ".")) : undefined;
+  const orderId = cfg.order_id ? resolve(String(cfg.order_id), ctx).trim() || undefined : undefined;
+  const currency = cfg.currency || "PEN";
+
+  const res = await sendCapiEvent(db, run.channel_id, run.contact_id, {
+    eventName, value: Number.isFinite(value as number) ? value : undefined,
+    currency, orderId,
+  });
+  if (!res.ok) run.vars._capi_error = res.error;
+
+  const handle = res.ok ? "exito" : "fallo";
+  run.current_node_id =
+    (await nextNode(db, run.flow_id, node.id, handle)) ??
+    (await nextNode(db, run.flow_id, node.id, "continuar"));
 }
 
 // ── Contexto y resolución de variables {{ }} ───────────────────────
