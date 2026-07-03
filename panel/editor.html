@@ -59,6 +59,19 @@
   .nd{padding:4px 2px;min-width:120px}
   .nd .t{font-size:10px;color:var(--brand);text-transform:uppercase;letter-spacing:.4px}
   .nd .nm{font-size:13px;font-weight:600;margin-top:2px}
+  .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
+  .segb{background:transparent;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px}
+  .segb.active{background:var(--brand);color:#fff}
+  .contentview{position:absolute;inset:0;background:var(--bg);overflow-y:auto;padding:20px;z-index:6}
+  .cnode{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0 auto 12px;max-width:620px}
+  .cnode .ch{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .cnode .ci{font-size:14px;font-weight:600}
+  .cnode .ctag{margin-left:auto;font-size:10px;color:var(--muted);background:var(--surface-2);padding:2px 9px;border-radius:20px}
+  .bubble{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px}
+  .btnrow{display:flex;gap:6px;align-items:center;margin-top:6px}
+  .btnrow .in{flex:1}
+  .chint{font-size:11px;color:var(--faint);margin-top:6px}
+  .cempty{text-align:center;color:var(--faint);padding:50px;max-width:520px;margin:0 auto}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
   .toast.show{opacity:1}
   .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
@@ -74,6 +87,10 @@
     <select class="sel" id="channelSel"></select>
     <span class="fname" id="fname">—</span>
     <span class="badge" id="fstate">—</span>
+    <div class="seg" id="viewToggle">
+      <button class="segb active" data-v="estructura">🕸 Estructura</button>
+      <button class="segb" data-v="contenido">✍️ Contenido</button>
+    </div>
     <div class="spacer"></div>
     <button class="btn" id="saveBtn">Guardar</button>
     <button class="btn primary" id="pubBtn">Publicar</button>
@@ -86,6 +103,7 @@
     <div class="canvaswrap">
       <div class="palette" id="palette"></div>
       <div id="drawflow"></div>
+      <div id="contentView" class="contentview" style="display:none"></div>
     </div>
     <div class="cfg" id="cfg">
       <div class="empty" style="height:100%"><div style="font-size:26px">🕸</div><div>Elige o crea un flujo</div></div>
@@ -116,8 +134,9 @@ const NODE_DEFS = {
   fin:          { icon:"⬛", handles:[] },
 };
 
-const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null };
+const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura" };
 let editor;
+const CONTENT_TYPES = new Set(["mensaje","pregunta","ia"]);
 
 function toast(m, err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -139,6 +158,77 @@ async function boot(){
   $("addFlow").onclick = createFlow;
   $("saveBtn").onclick = save;
   $("pubBtn").onclick = publish;
+  $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
+}
+
+// ── Toggle Estructura ⇄ Contenido ──
+function setView(v){
+  st.view = v;
+  $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.classList.toggle("active", b.dataset.v===v));
+  const content = v==="contenido";
+  $("contentView").style.display = content ? "block" : "none";
+  $("palette").style.display = content ? "none" : "flex";
+  $("cfg").style.display = content ? "none" : "block";
+  if(content) renderContent();
+}
+
+// La Vista Contenido: formulario autogenerado del esqueleto (solo nodos con cuerpo).
+function renderContent(){
+  const box=$("contentView");
+  if(!st.flowId){ box.innerHTML=`<div class="cempty">Abre un flujo para editar su contenido.</div>`; return; }
+  const exp=editor.export().drawflow.Home.data;
+  const nodes=Object.values(st.model).filter((m)=>CONTENT_TYPES.has(m.tipo));
+  nodes.sort((a,b)=>((exp[a.dfId]?.pos_y||0)-(exp[b.dfId]?.pos_y||0)));
+  if(!nodes.length){ box.innerHTML=`<div class="cempty">Este flujo aún no tiene nodos de contenido.<br>Añade Mensaje / Pregunta / IA desde la vista Estructura.</div>`; return; }
+  box.innerHTML="";
+  let i=1;
+  for(const m of nodes) box.appendChild(contentCard(m, i++));
+}
+function contentCard(m, i){
+  const el=document.createElement("div"); el.className="cnode";
+  el.innerHTML=`<div class="ch"><span class="ci">${i}. ${NODE_DEFS[m.tipo]?.icon||""}</span><input class="in nm" value="${esc(m.nombre)}" style="max-width:240px"/><span class="ctag">${m.tipo}</span></div>`;
+  el.querySelector(".nm").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
+  const body=document.createElement("div");
+  if(m.tipo==="mensaje") buildMensaje(m, body);
+  else if(m.tipo==="pregunta") buildPregunta(m, body);
+  else if(m.tipo==="ia") buildIA(m, body);
+  el.appendChild(body);
+  return el;
+}
+function mkLabel(t){ const l=document.createElement("label"); l.textContent=t; l.style.cssText="font-size:11px;color:var(--muted);display:block;margin:12px 0 5px"; return l; }
+function mkTextarea(v, oninput, min){ const t=document.createElement("textarea"); t.className="ta"; if(min)t.style.minHeight=min; t.value=v||""; t.oninput=()=>oninput(t.value); return t; }
+function mkInput(v, oninput){ const i=document.createElement("input"); i.className="in"; i.value=v||""; i.oninput=()=>oninput(i.value); return i; }
+
+function buildMensaje(m, body){
+  if(!m.config.bubbles) m.config.bubbles=[{text:""}];
+  m.config.bubbles.forEach((b)=>{
+    const w=document.createElement("div"); w.className="bubble";
+    w.appendChild(mkTextarea(b.text, (v)=>b.text=v, "60px"));
+    (b.buttons||[]).forEach((btn)=>{
+      const r=document.createElement("div"); r.className="btnrow";
+      const tag=document.createElement("span"); tag.style.cssText="font-size:11px;color:var(--muted);white-space:nowrap"; tag.textContent="🔘 "+btn.id;
+      r.appendChild(tag);
+      r.appendChild(mkInput(btn.title, (v)=>btn.title=v));
+      w.appendChild(r);
+    });
+    if(b.buttons?.length){ const h=document.createElement("div"); h.className="chint"; h.textContent="Los botones (ids/ramas) se editan en Estructura; aquí solo su texto."; w.appendChild(h); }
+    body.appendChild(w);
+  });
+  const add=document.createElement("button"); add.className="btn"; add.textContent="+ burbuja"; add.style.marginTop="4px";
+  add.onclick=()=>{ m.config.bubbles.push({text:""}); renderContent(); };
+  body.appendChild(add);
+}
+function buildPregunta(m, body){
+  body.appendChild(mkLabel("Mensaje de la pregunta"));
+  body.appendChild(mkTextarea(m.config.text, (v)=>m.config.text=v, "60px"));
+  body.appendChild(mkLabel("Guardar respuesta en (campo)"));
+  body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
+}
+function buildIA(m, body){
+  body.appendChild(mkLabel("Prompt (instrucción para la IA)"));
+  body.appendChild(mkTextarea(m.config.prompt, (v)=>m.config.prompt=v, "90px"));
+  body.appendChild(mkLabel("Modelo"));
+  body.appendChild(mkInput(m.config.modelo||"claude", (v)=>m.config.modelo=v));
 }
 
 async function loadChannels(){
@@ -183,6 +273,7 @@ async function openFlow(flowId){
     try{ editor.addConnection(src.dfId, tgt.dfId, "output_"+(idx+1), "input_1"); }catch(_){}
   }
   renderCfg();
+  if(st.view==="contenido") renderContent();
 }
 
 function setStateBadge(estado){ const b=$("fstate"); b.textContent=estado; b.className="badge"+(estado==="activo"?" on":""); }
