@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nodo · Secuencias</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .top a{color:var(--muted);text-decoration:none;font-size:20px}
+  .top a.active{color:var(--brand)}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
+  .spacer{margin-left:auto}
+  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .btn.danger{color:var(--red);border-color:transparent}
+  .main{flex:1;display:flex;min-height:0}
+  .list{width:240px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .list .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
+  .item{padding:11px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+  .item:hover{background:var(--surface)} .item.active{background:var(--surface-2)}
+  .item .n{font-weight:600;font-size:13px} .item .m{font-size:11px;color:var(--faint);margin-top:2px}
+  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 24px;max-width:760px}
+  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
+  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
+  .ta{min-height:60px}
+  .in:focus,.ta:focus{border-color:var(--brand)}
+  .step{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+  .step .sh{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600;font-size:13px}
+  .row{display:flex;gap:10px;align-items:flex-end}.row>*{flex:1}
+  .seg{display:flex;gap:6px}.seg>*{flex:none}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:12px 0}
+  .empty{color:var(--faint);text-align:center;padding:60px}
+  .hint{font-size:11px;color:var(--faint);margin-top:6px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
+  .toast.show{opacity:1}.toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <a href="index.html" title="Bandeja">💬</a>
+    <a href="editor.html" title="Flujos">🕸</a>
+    <a href="productos.html" title="Productos">📦</a>
+    <a href="secuencias.html" class="active" title="Secuencias">🔁</a>
+    <a href="config.html" title="Configuraciones">⚙️</a>
+    <select class="sel" id="channelSel"></select>
+    <span class="spacer"></span>
+    <button class="btn primary" id="saveBtn">Guardar</button>
+  </div>
+  <div class="main">
+    <div class="list">
+      <div class="hd"><span>Secuencias</span><button class="add" id="addSeq" title="Nueva secuencia">+</button></div>
+      <div id="seqList" style="overflow-y:auto;flex:1"></div>
+    </div>
+    <div class="detail" id="detail"><div class="empty">Elige o crea una secuencia</div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id)=>document.getElementById(id);
+const st = { channelId:null, seq:null, flows:[] };
+
+const UNITS = [["60","minutos"],["3600","horas"],["86400","días"]];
+function toast(m,err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// Descompone segundos en {val,unit} amigable.
+function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
+
+async function boot(){
+  const { data:{ session } } = await supa.auth.getSession();
+  if(!session){ location.href="index.html"; return; }
+  await loadChannels();
+  $("addSeq").onclick=createSeq;
+  $("saveBtn").onclick=saveSeq;
+}
+async function loadChannels(){
+  const { data } = await supa.from("channels").select("id,nombre").eq("activo",true).order("nombre");
+  const sel=$("channelSel"); sel.innerHTML="";
+  (data||[]).forEach(c=>{ const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
+  st.channelId=(data&&data[0]&&data[0].id);
+  const p=new URLSearchParams(location.search).get("channel"); if(p) st.channelId=p;
+  if(st.channelId) sel.value=st.channelId;
+  sel.onchange=async()=>{ st.channelId=sel.value; st.seq=null; await loadFlows(); await loadList(); renderDetail(); };
+  await loadFlows(); await loadList();
+}
+async function loadFlows(){
+  const { data } = await supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre");
+  st.flows=data||[];
+}
+async function loadList(){
+  const { data } = await supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at");
+  const box=$("seqList"); box.innerHTML="";
+  (data||[]).forEach(s=>{
+    const el=document.createElement("div"); el.className="item"+(st.seq&&st.seq.id===s.id?" active":"");
+    el.innerHTML=`<div class="n">${esc(s.nombre)}</div><div class="m">${(s.pasos||[]).length} paso(s) · ${s.activo?"activa":"pausada"}</div>`;
+    el.onclick=()=>openSeq(s.id); box.appendChild(el);
+  });
+}
+async function createSeq(){
+  const nombre=prompt("Nombre de la secuencia (ej. Remarketing pago pendiente):"); if(!nombre) return;
+  const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, pasos:[] }).select("id").single();
+  if(error){ toast(error.message,true); return; }
+  await loadList(); openSeq(data.id);
+}
+async function openSeq(id){
+  const { data }=await supa.from("sequences").select("*").eq("id",id).maybeSingle();
+  st.seq=data; if(!Array.isArray(st.seq.pasos)) st.seq.pasos=[];
+  await loadList(); renderDetail();
+}
+
+function renderDetail(){
+  const d=$("detail");
+  if(!st.seq){ d.innerHTML=`<div class="empty">Elige o crea una secuencia</div>`; return; }
+  d.innerHTML="";
+  const nm=document.createElement("div");
+  nm.innerHTML=`<label>Nombre</label>`;
+  const nmi=document.createElement("input"); nmi.className="in"; nmi.value=st.seq.nombre||""; nmi.oninput=()=>st.seq.nombre=nmi.value;
+  nm.appendChild(nmi); d.appendChild(nm);
+
+  const act=document.createElement("label"); act.className="chk";
+  const acb=document.createElement("input"); acb.type="checkbox"; acb.checked=st.seq.activo!==false; acb.onchange=()=>st.seq.activo=acb.checked;
+  act.appendChild(acb); act.appendChild(document.createTextNode(" Secuencia activa"));
+  d.appendChild(act);
+
+  const h=document.createElement("div"); h.className="hint";
+  h.textContent="Cada paso se dispara tras X tiempo de SILENCIO del cliente (desde su último mensaje). Si el cliente responde, el temporizador se reinicia solo.";
+  d.appendChild(h);
+
+  st.seq.pasos.forEach((paso,i)=>d.appendChild(stepCard(paso,i)));
+
+  const add=document.createElement("button"); add.className="btn"; add.textContent="+ paso"; add.style.marginTop="6px";
+  add.onclick=()=>{ st.seq.pasos.push({ umbral_silencio_seg:3600, mensaje:"" }); renderDetail(); };
+  d.appendChild(add);
+}
+
+function stepCard(paso,i){
+  const wrap=document.createElement("div"); wrap.className="step";
+  const {val,u}=splitDur(paso.umbral_silencio_seg);
+  const isFlow=!!paso.flow_id;
+
+  const sh=document.createElement("div"); sh.className="sh";
+  sh.innerHTML=`<span>Paso ${i+1}</span>`;
+  const del=document.createElement("button"); del.className="btn danger"; del.textContent="Eliminar"; del.style.marginLeft="auto"; del.style.height="28px";
+  del.onclick=()=>{ st.seq.pasos.splice(i,1); renderDetail(); };
+  sh.appendChild(del); wrap.appendChild(sh);
+
+  const lbl=document.createElement("label"); lbl.textContent="Disparar tras (silencio)"; wrap.appendChild(lbl);
+  const seg=document.createElement("div"); seg.className="seg";
+  const num=document.createElement("input"); num.className="in"; num.type="number"; num.min="1"; num.value=val; num.style.maxWidth="90px";
+  const us=document.createElement("select"); us.className="in"; us.style.maxWidth="130px";
+  UNITS.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===u)o.selected=true; us.appendChild(o); });
+  const upd=()=>{ paso.umbral_silencio_seg=Math.max(1,Number(num.value||1))*Number(us.value); };
+  num.oninput=upd; us.onchange=upd;
+  seg.appendChild(num); seg.appendChild(us); wrap.appendChild(seg);
+
+  const al=document.createElement("label"); al.textContent="Acción"; wrap.appendChild(al);
+  const as=document.createElement("select"); as.className="in";
+  as.innerHTML=`<option value="mensaje"${!isFlow?" selected":""}>Enviar un mensaje</option><option value="flow"${isFlow?" selected":""}>Iniciar un flujo</option>`;
+  wrap.appendChild(as);
+
+  const body=document.createElement("div"); wrap.appendChild(body);
+  const renderAction=()=>{
+    body.innerHTML="";
+    if(as.value==="flow"){
+      delete paso.mensaje;
+      const l=document.createElement("label"); l.textContent="Flujo a iniciar"; body.appendChild(l);
+      const fs=document.createElement("select"); fs.className="in";
+      fs.innerHTML=`<option value="">— elige —</option>`+st.flows.map(f=>`<option value="${f.id}"${paso.flow_id===f.id?" selected":""}>${esc(f.nombre)} ${f.role?"· "+esc(f.role):""}</option>`).join("");
+      fs.onchange=()=>paso.flow_id=fs.value||undefined; body.appendChild(fs);
+    } else {
+      delete paso.flow_id;
+      const l=document.createElement("label"); l.textContent="Mensaje"; body.appendChild(l);
+      const ta=document.createElement("textarea"); ta.className="ta"; ta.value=paso.mensaje||""; ta.oninput=()=>paso.mensaje=ta.value; body.appendChild(ta);
+      const hh=document.createElement("div"); hh.className="hint"; hh.textContent="Nota: fuera de la ventana de 24h, WhatsApp exige plantillas (próxima fase). Dentro de 24h se envía normal."; body.appendChild(hh);
+    }
+  };
+  as.onchange=renderAction; renderAction();
+  return wrap;
+}
+
+async function saveSeq(){
+  if(!st.seq) return;
+  const { error }=await supa.from("sequences").update({
+    nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[],
+  }).eq("id",st.seq.id);
+  if(error){ toast(error.message,true); return; }
+  toast("Guardado ✓"); await loadList();
+}
+
+boot();
+</script>
+</body>
+</html>

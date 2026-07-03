@@ -52,3 +52,7 @@ verify_jwt = true
 # channel-config gestiona datos y secretos del canal (WhatsApp/Meta + Telegram).
 [functions.channel-config]
 verify_jwt = true
+
+# scheduler: tick interno (lo llama el cron). Protegido por x-scheduler-secret.
+[functions.scheduler]
+verify_jwt = false

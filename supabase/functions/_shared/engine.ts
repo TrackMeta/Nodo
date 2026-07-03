@@ -9,6 +9,7 @@ import { imageBlock, runAI, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent } from "./capi.ts";
 import { sendTelegram } from "./telegram.ts";
 import { getChannelSecrets } from "./db.ts";
+import { MetaApiError, sendButtons, sendText } from "./meta.ts";
 
 export type EngineEvent =
   | { type: "message"; text: string; msgType?: string }
@@ -218,20 +219,68 @@ async function execute(db: SupabaseClient, run: Run) {
   await saveRun(db, run);
 }
 
+// ── Modo de entrega del canal (WhatsApp real vs webchat de pruebas) ─
+async function ensureDelivery(db: SupabaseClient, run: any) {
+  if (run._delivery !== undefined) return;
+  const { data: ch } = await db.from("channels")
+    .select("channel_type, phone_number_id").eq("id", run.channel_id).maybeSingle();
+  if ((ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id) {
+    const secrets = await getChannelSecrets(db, run.channel_id);
+    run._delivery = { mode: "whatsapp", phoneNumberId: (ch as any).phone_number_id, token: secrets?.access_token ?? null };
+  } else {
+    run._delivery = { mode: "webchat" };
+  }
+}
+
 // ── Emisión de mensajes salientes ──────────────────────────────────
-async function emit(db: SupabaseClient, run: Run, bubble: any, ctx: any) {
+// En WhatsApp real envía por Graph API; en webchat basta con insertar
+// (el panel lo ve por Realtime). Siempre queda registro en messages.
+async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
+  await ensureDelivery(db, run);
   const text = resolve(bubble.text ?? "", ctx);
+  const isInteractive = !!bubble.buttons?.length;
   const content: any = {};
   if (text) content.text = text;
   if (bubble.media_id) content.media_id = bubble.media_id;
-  if (bubble.buttons?.length) content.buttons = bubble.buttons;
+  if (isInteractive) content.buttons = bubble.buttons;
+
+  let wamid = ""; let status = "sent"; let error: any = null;
+  const d = run._delivery;
+  if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (text || isInteractive)) {
+    try {
+      wamid = isInteractive
+        ? await sendButtons(d.phoneNumberId, d.token, ctx.wa_id, text,
+            bubble.buttons.map((b: any) => ({ id: b.id, title: b.title })))
+        : await sendText(d.phoneNumberId, d.token, ctx.wa_id, text);
+    } catch (e) {
+      status = "failed";
+      error = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
+      console.error("[emit] fallo envío WhatsApp:", error);
+    }
+  }
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
-    direction: "out", type: bubble.buttons?.length ? "interactive" : "text",
-    content, status: "sent",
+    direction: "out", type: isInteractive ? "interactive" : "text",
+    content, status, wamid: wamid || null, error,
   });
-  // NOTA: para WhatsApp real, aquí se llamará también a Graph API (Fase 3).
-  //       En webchat (pruebas), basta con insertar → el panel lo ve por Realtime.
+}
+
+// Arranca un flujo concreto para un contacto (usado por el scheduler para
+// remarketing). No interrumpe una conversación activa.
+export async function startFlowRun(db: SupabaseClient, channelId: string, contactId: string, flowId: string): Promise<boolean> {
+  if (await getActiveRun(db, contactId)) return false;
+  const { data: flow } = await db.from("flows").select("id, estado").eq("id", flowId).maybeSingle();
+  if (!flow || (flow as any).estado !== "activo") return false;
+  const run = await startRun(db, channelId, contactId, flow);
+  await execute(db, run);
+  return true;
+}
+
+// Envía un mensaje suelto (paso de secuencia sin flujo).
+export async function deliverMessage(db: SupabaseClient, channelId: string, contactId: string, text: string) {
+  const run: any = { channel_id: channelId, contact_id: contactId };
+  const { data: c } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
+  await emit(db, run, { text }, { wa_id: (c as any)?.wa_id });
 }
 
 // ── Condiciones ────────────────────────────────────────────────────
@@ -277,9 +326,31 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         await notifyAdmin(db, run, msg);
         break;
       }
-      // subscribe_seq → Fase 4 (secuencias/remarketing).
+      case "subscribe_seq": await subscribeSeq(db, run, a); break;
+      case "unsubscribe_seq": await unsubscribeSeq(db, run, a); break;
     }
   }
+}
+
+// Suscribe (o reactiva) al contacto en una secuencia de remarketing.
+async function subscribeSeq(db: SupabaseClient, run: Run, a: any) {
+  let seqId = a.sequence_id;
+  if (!seqId && a.nombre) {
+    const { data } = await db.from("sequences").select("id")
+      .eq("channel_id", run.channel_id).eq("nombre", a.nombre).maybeSingle();
+    seqId = (data as any)?.id;
+  }
+  if (!seqId) return;
+  await db.from("sequence_subscriptions").upsert({
+    channel_id: run.channel_id, contact_id: run.contact_id, sequence_id: seqId,
+    estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
+  }, { onConflict: "contact_id,sequence_id" });
+}
+async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
+  let q = db.from("sequence_subscriptions").update({ estado: "cancelada", updated_at: new Date().toISOString() })
+    .eq("contact_id", run.contact_id);
+  if (a.sequence_id) q = q.eq("sequence_id", a.sequence_id);
+  await q;
 }
 
 // Notifica a los admins del canal por Telegram (bot token en Vault).
