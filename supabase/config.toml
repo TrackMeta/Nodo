@@ -48,3 +48,7 @@ verify_jwt = true
 # ai-config gestiona las API keys de IA por canal desde el panel.
 [functions.ai-config]
 verify_jwt = true
+
+# channel-config gestiona datos y secretos del canal (WhatsApp/Meta + Telegram).
+[functions.channel-config]
+verify_jwt = true

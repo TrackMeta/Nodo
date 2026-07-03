@@ -65,6 +65,14 @@
     <h2>Inteligencia Artificial</h2>
     <p class="sub">Cada canal usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ✨ IA de tus flujos.</p>
     <div id="cards"></div>
+
+    <h2 style="margin-top:30px">WhatsApp / Meta</h2>
+    <p class="sub">Credenciales del número y del pixel: para enviar/recibir mensajes y mandar conversiones (CAPI). Los tokens se guardan cifrados en Vault.</p>
+    <div id="metaCard"></div>
+
+    <h2 style="margin-top:30px">Telegram</h2>
+    <p class="sub">Bot y chats que reciben avisos (transferir a humano, notificaciones de venta).</p>
+    <div id="tgCard"></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -104,11 +112,17 @@ async function loadChannels(){
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
-  const { data:ch } = await supa.from("channels").select("ia_provider").eq("id",st.channelId).maybeSingle();
+  const { data:ch } = await supa.from("channels")
+    .select("ia_provider,phone_number_id,waba_id,verify_token,pixel_id,page_id,telegram_chat_ids")
+    .eq("id",st.channelId).maybeSingle();
   st.iaProvider = ch?.ia_provider ?? null;
+  st.channel = ch || {};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
   st.cfg = {};
   (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
+  // Estado de secretos (qué está configurado) vía Edge Function.
+  st.secrets = {};
+  try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
   render();
 }
 
@@ -145,6 +159,78 @@ function render(){
     box.appendChild(card);
   });
   box.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
+  renderMeta();
+  renderTelegram();
+}
+
+function secBadge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
+function secPlaceholder(on, hint){ return on?'•••••••• guardado':hint; }
+
+function renderMeta(){
+  const c=st.channel||{}, s=st.secrets||{};
+  const card=$("metaCard"); card.className="card";
+  card.innerHTML=`
+    <div class="chd"><span class="ico">🟩</span><span class="nm">WhatsApp Cloud API</span></div>
+    <div class="desc">Datos del número (Meta Developers) y del pixel para conversiones.</div>
+    <div class="row">
+      <div class="f"><label>phone_number_id</label><input class="in" id="m_phone_number_id" value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
+      <div class="f"><label>WABA id (waba_id)</label><input class="in" id="m_waba_id" value="${esc(c.waba_id)}" placeholder="opcional"/></div>
+    </div>
+    <div class="row">
+      <div class="f"><label>Verify token (webhook)</label><input class="in" id="m_verify_token" value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/></div>
+      <div class="f"><label>Pixel id</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="para CAPI"/></div>
+    </div>
+    <div class="row">
+      <div class="f"><label>Page id</label><input class="in" id="m_page_id" value="${esc(c.page_id)}" placeholder="página del anuncio (CTWA)"/></div>
+      <div class="f"></div>
+    </div>
+    <label style="margin-top:16px">Access token de WhatsApp ${secBadge(s.access_token)}</label>
+    <input class="in" type="password" id="s_access_token" autocomplete="off" placeholder="${secPlaceholder(s.access_token,'EAAG...')}"/>
+    <label>App Secret ${secBadge(s.app_secret)}</label>
+    <input class="in" type="password" id="s_app_secret" autocomplete="off" placeholder="${secPlaceholder(s.app_secret,'firma del webhook')}"/>
+    <label>Token CAPI (Conversions API) ${secBadge(s.capi_token)}</label>
+    <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${secPlaceholder(s.capi_token,'token del pixel')}"/>
+    <div class="acts"><button class="btn primary" id="saveMeta">Guardar WhatsApp / Meta</button></div>`;
+  $("saveMeta").onclick=(e)=>saveChannel(e.target, {
+    phone_number_id:$("m_phone_number_id").value, waba_id:$("m_waba_id").value,
+    verify_token:$("m_verify_token").value, pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value,
+    access_token:$("s_access_token").value||undefined, app_secret:$("s_app_secret").value||undefined,
+    capi_token:$("s_capi_token").value||undefined,
+  });
+}
+
+function renderTelegram(){
+  const c=st.channel||{}, s=st.secrets||{};
+  const chats=(c.telegram_chat_ids||[]).join(", ");
+  const card=$("tgCard"); card.className="card";
+  card.innerHTML=`
+    <div class="chd"><span class="ico">✈️</span><span class="nm">Bot de Telegram</span></div>
+    <div class="desc">Crea un bot con @BotFather y pega su token. Los chat ids son de los admins que reciben los avisos.</div>
+    <label>Bot token ${secBadge(s.telegram_bot_token)}</label>
+    <input class="in" type="password" id="s_telegram_bot_token" autocomplete="off" placeholder="${secPlaceholder(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
+    <label>Chat ids (separados por coma)</label>
+    <input class="in" id="tg_chats" value="${esc(chats)}" placeholder="12345678, 87654321"/>
+    <div class="acts"><button class="btn primary" id="saveTg">Guardar Telegram</button></div>`;
+  $("saveTg").onclick=(e)=>saveChannel(e.target, {
+    telegram_bot_token:$("s_telegram_bot_token").value||undefined,
+    telegram_chat_ids:$("tg_chats").value,
+  });
+}
+
+async function saveChannel(btn, fields){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  try{
+    await callFn("channel-config", { action:"save", channel_id:st.channelId, ...fields });
+    toast("Guardado ✓");
+    await loadCfg();
+  }catch(e){ toast(e.message||"error",true); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+
+async function callFn(fn, body){
+  const { data, error } = await supa.functions.invoke(fn, { body });
+  if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
+  return data;
 }
 
 async function call(body){
