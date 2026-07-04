@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nodo · Disparadores</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .spacer{margin-left:auto}
+  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .sel{height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 10px;font-size:13px;outline:none}
+  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:860px;margin:0 auto;width:100%}
+  h2{font-size:17px;margin:0 0 4px} .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+  .crow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .badge{font-size:11px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+  .badge.entrada{background:var(--brand-bg);color:var(--brand);border-color:transparent}
+  .badge.kw{background:var(--green-bg);color:var(--green);border-color:transparent}
+  label{font-size:11px;color:var(--muted);display:block;margin:10px 0 5px}
+  .in{width:100%;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none;font-family:inherit}
+  .in:focus{border-color:var(--brand)}
+  .chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;margin-right:16px}
+  .del{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;height:32px;padding:0 10px;font-size:12px;font-weight:600}
+  .empty{color:var(--faint);text-align:center;padding:50px}
+  .hint{font-size:11px;color:var(--faint);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <span style="font-weight:600;font-size:15px">Disparadores</span>
+    <select class="sel" id="flowSel"></select>
+    <span class="spacer"></span>
+    <button class="btn" id="addKw">+ Palabra clave</button>
+    <button class="btn primary" id="saveBtn">Guardar</button>
+  </div>
+  <div class="wrap">
+    <h2>Disparadores del flujo</h2>
+    <p class="sub">Definen cómo se dispara un flujo. <b>Entrada</b>: el enrutador por defecto del canal (un solo flujo activo). <b>Palabra clave</b>: se dispara cuando el mensaje del cliente coincide. El flujo debe estar <b>activo</b> para que corra.</p>
+    <div id="list"><div class="empty">Cargando…</div></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, flowId:null, flows:[], triggers:[], deleted:[] };
+const MATCH=[["contiene","Contiene"],["exacta","Exacta"],["empieza","Empieza por"]];
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"disparadores" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; loadFlows(); });
+  $("addKw").onclick=()=>{ if(!st.flowId){ toast("Elige un flujo",true); return; } st.triggers.push({ _new:true, tipo:"keyword", config:{ keywords:[], match:"contiene" }, activo:true, interrumpe:false }); render(); };
+  $("saveBtn").onclick=save;
+  await loadFlows();
+}
+async function loadFlows(){
+  const { data }=await supa.from("flows").select("id,nombre,estado,es_entrada").eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
+  st.flows=data||[];
+  const sel=$("flowSel"); sel.innerHTML="";
+  if(!st.flows.length){ const o=document.createElement("option"); o.textContent="(no hay flujos)"; o.value=""; sel.appendChild(o); }
+  st.flows.forEach(f=>{ const o=document.createElement("option"); o.value=f.id; o.textContent=f.nombre+(f.estado==="activo"?"":" · borrador"); sel.appendChild(o); });
+  st.flowId=st.flows[0]?.id||null; if(st.flowId) sel.value=st.flowId;
+  sel.onchange=()=>{ st.flowId=sel.value; loadTriggers(); };
+  await loadTriggers();
+}
+async function loadTriggers(){
+  st.deleted=[];
+  if(!st.flowId){ st.triggers=[]; render(); return; }
+  const { data }=await supa.from("flow_triggers").select("*").eq("flow_id",st.flowId).order("created_at");
+  st.triggers=(data||[]).map(t=>({ ...t, config:t.config||{} }));
+  render();
+}
+function render(){
+  const box=$("list");
+  const flow=st.flows.find(f=>f.id===st.flowId);
+  if(!st.flowId){ box.innerHTML=`<div class="empty">Crea flujos (clonando esqueletos en Productos) para asignarles disparadores.</div>`; return; }
+  box.innerHTML="";
+
+  // Tarjeta "Entrada" (toggle único por canal).
+  const entrada=st.triggers.find(t=>t.tipo==="entrada");
+  const entCard=document.createElement("div"); entCard.className="card";
+  entCard.innerHTML=`
+    <div class="crow"><span class="badge entrada">Entrada</span>
+      <label class="chk" style="margin-left:auto"><input type="checkbox" id="entChk" ${entrada&&entrada.activo?"checked":""}/> Este flujo es el enrutador por defecto del canal</label>
+    </div>
+    <div class="hint">Solo un flujo activo puede ser de entrada por canal. Se dispara cuando el mensaje no coincide con ninguna palabra clave.</div>`;
+  entCard.querySelector("#entChk").onchange=(e)=>{
+    if(e.target.checked){ if(!entrada){ const t={ _new:true, tipo:"entrada", config:{}, activo:true, interrumpe:false }; st.triggers.push(t); } else entrada.activo=true; }
+    else if(entrada){ entrada.activo=false; }
+  };
+  box.appendChild(entCard);
+
+  // Palabras clave.
+  const kws=st.triggers.filter(t=>t.tipo==="keyword");
+  if(!kws.length){ const e=document.createElement("div"); e.className="hint"; e.style.margin="4px 2px 10px"; e.textContent="Sin palabras clave. Añade una con “+ Palabra clave”."; box.appendChild(e); }
+  kws.forEach(t=>{
+    const el=document.createElement("div"); el.className="card";
+    el.innerHTML=`
+      <div class="crow"><span class="badge kw">Palabra clave</span>
+        <label class="chk"><input type="checkbox" class="activo" ${t.activo?"checked":""}/> Activo</label>
+        <label class="chk"><input type="checkbox" class="interrumpe" ${t.interrumpe?"checked":""}/> Interrumpe conversación</label>
+        <button class="del" style="margin-left:auto">Eliminar</button>
+      </div>
+      <label>Palabras clave (separadas por coma)</label>
+      <input class="in kws" value="${esc((t.config.keywords||[]).join(', '))}" placeholder="hola, info, precio"/>
+      <label>Coincidencia</label>
+      <select class="in match">${MATCH.map(([v,l])=>`<option value="${v}" ${(t.config.match||'contiene')===v?"selected":""}>${l}</option>`).join("")}</select>`;
+    el.querySelector(".activo").onchange=(e)=>t.activo=e.target.checked;
+    el.querySelector(".interrumpe").onchange=(e)=>t.interrumpe=e.target.checked;
+    el.querySelector(".kws").oninput=(e)=>t.config.keywords=e.target.value.split(",").map(x=>x.trim()).filter(Boolean);
+    el.querySelector(".match").onchange=(e)=>t.config.match=e.target.value;
+    el.querySelector(".del").onclick=()=>{ if(t.id) st.deleted.push(t.id); st.triggers=st.triggers.filter(x=>x!==t); render(); };
+    box.appendChild(el);
+  });
+}
+async function save(){
+  if(!st.flowId) return;
+  if(st.deleted.length){ const { error }=await supa.from("flow_triggers").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } }
+  const rows=st.triggers.map(t=>{ const r={ flow_id:st.flowId, channel_id:st.channelId, tipo:t.tipo, config:t.config||{}, activo:!!t.activo, interrumpe:!!t.interrumpe }; if(t.id) r.id=t.id; return r; });
+  if(rows.length){ const { error }=await supa.from("flow_triggers").upsert(rows); if(error){ toast(error.message.includes("idx_flows_entrada")||error.message.includes("unique")?"Ya hay otro flujo de entrada activo en este canal":error.message,true); return; } }
+  toast("Guardado ✓"); await loadTriggers();
+}
+boot();
+</script>
+</body>
+</html>

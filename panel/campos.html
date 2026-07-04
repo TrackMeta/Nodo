@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nodo · Campos personalizados</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .spacer{margin-left:auto}
+  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:900px;margin:0 auto;width:100%}
+  h2{font-size:17px;margin:0 0 4px} .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .f{display:flex;flex-direction:column;gap:4px} .f.grow{flex:1;min-width:150px}
+  label{font-size:11px;color:var(--muted)}
+  .in,.sel{height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none;font-family:inherit}
+  .in:focus,.sel:focus{border-color:var(--brand)}
+  .in:disabled{opacity:.6}
+  .del{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;height:36px;width:38px;flex:none}
+  .empty{color:var(--faint);text-align:center;padding:50px}
+  .tagpill{font-size:11px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <span style="font-weight:600;font-size:15px">Campos personalizados</span>
+    <span class="spacer"></span>
+    <button class="btn" id="addBtn">+ Nuevo campo</button>
+    <button class="btn primary" id="saveBtn">Guardar</button>
+  </div>
+  <div class="wrap">
+    <h2>Campos personalizados</h2>
+    <p class="sub">Variables que guardas por contacto y usas en los flujos como <code>{{clave}}</code>. Los <b>dinámicos</b> se llenan durante la conversación; los <b>fijos</b> son propiedades estables del contacto.</p>
+    <div id="list"><div class="empty">Cargando…</div></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, fields:[], deleted:[] };
+const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"],["boolean","Sí/No"]];
+const MODOS=[["dinamico","Dinámico"],["fijo","Fijo"]];
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);}
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"campos" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  $("addBtn").onclick=addField;
+  $("saveBtn").onclick=save;
+  await load();
+}
+async function load(){
+  st.deleted=[];
+  const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
+  st.fields=data||[]; render();
+}
+function addField(){ st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:"dinamico" }); render(); }
+function render(){
+  const box=$("list");
+  if(!st.fields.length){ box.innerHTML=`<div class="empty">Aún no hay campos. Crea el primero con “+ Nuevo campo”.</div>`; return; }
+  box.innerHTML="";
+  st.fields.forEach((f,i)=>{
+    const el=document.createElement("div"); el.className="card";
+    el.innerHTML=`
+      <div class="f grow"><label>Nombre</label><input class="in nombre" value="${esc(f.nombre)}" placeholder="Ej. Email"/></div>
+      <div class="f grow"><label>Clave (variable)</label><input class="in key" value="${esc(f.key)}" placeholder="email" ${f._new?"":"disabled"}/></div>
+      <div class="f"><label>Tipo</label><select class="sel tipo">${TIPOS.map(([v,l])=>`<option value="${v}" ${f.tipo===v?"selected":""}>${l}</option>`).join("")}</select></div>
+      <div class="f"><label>Modo</label><select class="sel modo">${MODOS.map(([v,l])=>`<option value="${v}" ${f.modo===v?"selected":""}>${l}</option>`).join("")}</select></div>
+      <button class="del" title="Eliminar">✕</button>`;
+    const nombreI=el.querySelector(".nombre"), keyI=el.querySelector(".key");
+    nombreI.oninput=(e)=>{ f.nombre=e.target.value; if(f._new && !f._keyEdited){ f.key=slug(e.target.value); keyI.value=f.key; } };
+    keyI.oninput=(e)=>{ f._keyEdited=true; f.key=slug(e.target.value); e.target.value=f.key; };
+    el.querySelector(".tipo").onchange=(e)=>f.tipo=e.target.value;
+    el.querySelector(".modo").onchange=(e)=>f.modo=e.target.value;
+    el.querySelector(".del").onclick=()=>{ if(f.id) st.deleted.push(f.id); st.fields.splice(i,1); render(); };
+    box.appendChild(el);
+  });
+}
+async function save(){
+  // Validación básica.
+  for(const f of st.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
+  if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } }
+  const rows=st.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo }; if(f.id) r.id=f.id; return r; });
+  if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows); if(error){ toast(error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
+  toast("Guardado ✓"); await load();
+}
+boot();
+</script>
+</body>
+</html>
