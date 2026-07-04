@@ -57,9 +57,11 @@
   .chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px}
   .del{margin-top:16px;width:100%;background:#2c1615;color:var(--red);border:1px solid var(--red);border-radius:8px;height:38px;font-weight:600}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
-  .nd{padding:4px 2px;min-width:120px}
-  .nd .t{font-size:10px;color:var(--brand);text-transform:uppercase;letter-spacing:.4px}
-  .nd .nm{font-size:13px;font-weight:600;margin-top:2px}
+  .nd{display:flex;gap:10px;align-items:center;min-width:150px}
+  .nd .nd-ic{width:30px;height:30px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;
+    background:color-mix(in srgb, var(--nd-color, var(--brand)) 20%, transparent)}
+  .nd .t{font-size:9.5px;color:var(--nd-color,var(--brand));text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  .nd .nm{font-size:13px;font-weight:600;margin-top:1px}
   .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
   .segb{background:transparent;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px}
   .segb.active{background:var(--brand);color:#fff}
@@ -76,9 +78,22 @@
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
   .toast.show{opacity:1}
   .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
-  .df-node .drawflow-node{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text)}
-  .drawflow .drawflow-node.selected{border-color:var(--brand)}
-  .drawflow-node .input,.drawflow-node .output{background:var(--brand)}
+  .df-node .drawflow-node{background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);
+    padding:10px 12px 10px 10px;box-shadow:0 4px 16px rgba(0,0,0,.28);border-left:4px solid var(--nd-color,var(--brand))}
+  .drawflow .drawflow-node.selected{border-color:var(--nd-color,var(--brand));box-shadow:0 0 0 2px var(--nd-color,var(--brand))}
+  .drawflow-node .input,.drawflow-node .output{background:var(--nd-color,var(--brand));border:2px solid var(--surface)}
+  /* Color por tipo de nodo */
+  .drawflow-node.mensaje{--nd-color:#2b7fff}
+  .drawflow-node.pregunta{--nd-color:#f0a92b}
+  .drawflow-node.condicion{--nd-color:#9b6cf0}
+  .drawflow-node.accion{--nd-color:#18b7be}
+  .drawflow-node.ia{--nd-color:#e264a8}
+  .drawflow-node.esperar{--nd-color:#8a97a8}
+  .drawflow-node.iniciar_flujo{--nd-color:#22c079}
+  .drawflow-node.evento_fb{--nd-color:#1877f2}
+  .drawflow-node.fin{--nd-color:#e2564a}
+  /* Paleta con color por tipo */
+  .pbtn[data-tipo]{border-left:3px solid var(--nd-color,var(--brand))}
 </style>
 </head>
 <body>
@@ -86,6 +101,7 @@
   <div class="top">
     <span class="fname" id="fname">—</span>
     <span class="badge" id="fstate">—</span>
+    <span class="badge" id="fprod" style="display:none"></span>
     <div class="seg" id="viewToggle">
       <button class="segb active" data-v="estructura">🕸 Estructura</button>
       <button class="segb" data-v="contenido">✍️ Contenido</button>
@@ -145,7 +161,9 @@ async function boot(){
   editor.on("nodeUnselected", ()=> { st.selected=null; renderCfg(); });
   // Palette
   for(const t of Object.keys(NODE_DEFS)){
-    const b=document.createElement("button"); b.className="pbtn"; b.textContent=NODE_DEFS[t].icon+" "+t;
+    const b=document.createElement("button"); b.className="pbtn"; b.dataset.tipo=t;
+    b.style.setProperty("--nd-color", NODE_COLORS[t]||"var(--brand)");
+    b.textContent=NODE_DEFS[t].icon+" "+t;
     b.onclick=()=>addNode(t); $("palette").appendChild(b);
   }
   await loadChannels();
@@ -320,12 +338,13 @@ async function loadChannels(){
 }
 
 async function loadFlows(){
-  const { data } = await supa.from("flows").select("id,nombre,role,estado,kind")
+  const { data } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,products(nombre)")
     .eq("channel_id", st.channelId).order("created_at");
   const box=$("flowList"); box.innerHTML="";
   (data||[]).forEach(f=>{
     const el=document.createElement("div"); el.className="flowitem"+(f.id===st.flowId?" active":"");
-    el.innerHTML=`<div class="n">${esc(f.nombre)}</div><div class="m">${f.kind==="skeleton"?"esqueleto":f.role||"flujo"} · ${f.estado}</div>`;
+    const prod = f.products?.nombre ? ` · 📦 ${esc(f.products.nombre)}` : (f.kind==="skeleton"?" · 🧩 plantilla":"");
+    el.innerHTML=`<div class="n">${esc(f.nombre)}</div><div class="m">${f.kind==="skeleton"?"esqueleto":f.role||"flujo"} · ${f.estado}${prod}</div>`;
     el.onclick=()=>openFlow(f.id); box.appendChild(el);
   });
 }
@@ -336,6 +355,7 @@ async function openFlow(flowId){
   st.flow=flow;
   $("fname").textContent=flow.nombre;
   setStateBadge(flow.estado);
+  await paintProductChip(flow);
   await loadFlows();
   clearCanvas();
   // Cargar nodos.
@@ -354,10 +374,27 @@ async function openFlow(flowId){
 }
 
 function setStateBadge(estado){ const b=$("fstate"); b.textContent=estado; b.className="badge"+(estado==="activo"?" on":""); }
+async function paintProductChip(flow){
+  const fp=$("fprod");
+  if(flow.product_id){
+    const { data:prod } = await supa.from("products").select("nombre").eq("id",flow.product_id).maybeSingle();
+    fp.innerHTML="📦 "+esc(prod?.nombre||"producto");
+    fp.title="Este flujo pertenece al producto "+(prod?.nombre||"");
+  } else {
+    fp.textContent = flow.kind==="skeleton" ? "🧩 Esqueleto (plantilla)" : "Sin producto";
+    fp.title = flow.kind==="skeleton" ? "Plantilla reutilizable; clónala desde Productos" : "Flujo sin producto asignado";
+  }
+  fp.style.display="";
+}
 function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={}; st.selected=null; renderCfg(); }
 
+const NODE_COLORS = {
+  mensaje:"#2b7fff", pregunta:"#f0a92b", condicion:"#9b6cf0", accion:"#18b7be",
+  ia:"#e264a8", esperar:"#8a97a8", iniciar_flujo:"#22c079", evento_fb:"#1877f2", fin:"#e2564a",
+};
 function nodeHtml(tipo, nombre){
-  return `<div class="nd"><div class="t">${NODE_DEFS[tipo]?.icon||""} ${tipo}</div><div class="nm">${esc(nombre||tipo)}</div></div>`;
+  const ic=NODE_DEFS[tipo]?.icon||"●";
+  return `<div class="nd"><div class="nd-ic">${ic}</div><div><div class="t">${tipo}</div><div class="nm">${esc(nombre||tipo)}</div></div></div>`;
 }
 
 // Añadir un nodo existente (de la BD) al canvas.
