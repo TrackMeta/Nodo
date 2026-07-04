@@ -57,6 +57,10 @@ verify_jwt = true
 [functions.media-upload]
 verify_jwt = true
 
+# flow-start: inicia manualmente un flujo sobre un contacto real (Bandeja).
+[functions.flow-start]
+verify_jwt = true
+
 # scheduler: tick interno (lo llama el cron). Protegido por x-scheduler-secret.
 [functions.scheduler]
 verify_jwt = false

@@ -99,6 +99,10 @@ async function startRun(db: SupabaseClient, channelId: string, contactId: string
     channel_id: channelId, contact_id: contactId, flow_id: flow.id,
     current_node_id: initial?.id ?? null, vars: {}, estado: "activo",
   }).select("*").single();
+  // Nombre + producto del flujo (para Timeline y atribución de producto).
+  const { data: f } = await db.from("flows").select("nombre, product_id").eq("id", flow.id).maybeSingle();
+  await logEvent(db, channelId, contactId, "flujo_inicio", "Flujo iniciado", (f as any)?.nombre ?? null);
+  await markProduct(db, contactId, (f as any)?.product_id);
   return data as Run;
 }
 
@@ -145,6 +149,7 @@ async function execute(db: SupabaseClient, run: Run) {
     if (!run.current_node_id) { run.estado = "completado"; break; }
     const node = await getNode(db, run.current_node_id);
     if (!node) { run.estado = "completado"; break; }
+    await logEvent(db, run.channel_id, run.contact_id, "nodo", node.nombre || node.tipo, node.tipo);
 
     const ctx = await buildContext(db, run);
 
@@ -192,6 +197,9 @@ async function execute(db: SupabaseClient, run: Run) {
           run.flow_id = target;
           const init = await initialNode(db, target);
           run.current_node_id = init?.id ?? null;
+          const { data: tf } = await db.from("flows").select("nombre, product_id").eq("id", target).maybeSingle();
+          await logEvent(db, run.channel_id, run.contact_id, "flujo_inicio", "Flujo iniciado", (tf as any)?.nombre ?? null);
+          await markProduct(db, run.contact_id, (tf as any)?.product_id);
         } else {
           run.current_node_id = null;
         }
@@ -216,6 +224,7 @@ async function execute(db: SupabaseClient, run: Run) {
     }
   }
   if (run.estado === "activo") run.estado = "completado"; // agotó MAX_STEPS
+  if (run.estado === "completado") await logEvent(db, run.channel_id, run.contact_id, "flujo_fin", "Flujo finalizado");
   await saveRun(db, run);
 }
 
@@ -319,25 +328,26 @@ async function evalCond(db: SupabaseClient, run: Run, c: any, ctx: any): Promise
 async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: any) {
   for (const a of acciones) {
     switch (a.tipo) {
-      case "add_tag":    await addTag(db, run.channel_id, run.contact_id, a.valor); break;
-      case "remove_tag": await removeTag(db, run.channel_id, run.contact_id, a.valor); break;
-      case "set_field":  await setField(db, run.contact_id, a.key, resolve(String(a.valor ?? ""), ctx)); break;
+      case "add_tag":    await addTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_add", "Etiqueta añadida", a.valor); break;
+      case "remove_tag": await removeTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_del", "Etiqueta quitada", a.valor); break;
+      case "set_field":  await setField(db, run.contact_id, a.key, resolve(String(a.valor ?? ""), ctx)); await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo actualizado", a.key); break;
       case "clear_field":await setField(db, run.contact_id, a.key, null); break;
       case "append_field": {
         const prev = ctx[a.key] ? String(ctx[a.key]) + "\n" : "";
         await setField(db, run.contact_id, a.key, prev + resolve(String(a.valor ?? ""), ctx)); break;
       }
-      case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); break;
+      case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); await logEvent(db, run.channel_id, run.contact_id, "nota", "Etapa: " + a.valor); break;
       case "notify_admin": await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx)); break;
       case "transfer_human": {
         await db.from("contacts").update({ bot_activo: false }).eq("id", run.contact_id);
         await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", run.contact_id);
         const msg = a.mensaje ? resolve(String(a.mensaje), ctx) : `🙋 ${ctx.nombre || ctx.wa_id} necesita atención humana`;
         await notifyAdmin(db, run, msg);
+        await logEvent(db, run.channel_id, run.contact_id, "humano", "Transferido a un humano");
         break;
       }
-      case "subscribe_seq": await subscribeSeq(db, run, a); break;
-      case "unsubscribe_seq": await unsubscribeSeq(db, run, a); break;
+      case "subscribe_seq": await subscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_inicio", "Secuencia suscrita", a.nombre ?? null); break;
+      case "unsubscribe_seq": await unsubscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_cancel", "Secuencia cancelada", a.nombre ?? null); break;
     }
   }
 }
@@ -425,6 +435,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   } catch (err) {
     console.error("nodo ia falló:", (err as any)?.message ?? err);
     run.vars._ia_error = String((err as any)?.message ?? err);
+    await logEvent(db, run.channel_id, run.contact_id, "error", "Error en nodo IA", String((err as any)?.message ?? err));
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "fallo")) ??
       (await nextNode(db, run.flow_id, node.id, "continuar"));
@@ -444,7 +455,21 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     eventName, value: Number.isFinite(value as number) ? value : undefined,
     currency, orderId,
   });
-  if (!res.ok) run.vars._capi_error = res.error;
+  if (!res.ok) { run.vars._capi_error = res.error; await logEvent(db, run.channel_id, run.contact_id, "error", "Error al enviar evento a Meta", String(res.error ?? "")); }
+
+  // En una compra confirmada, registrar la orden (métricas de producto del
+  // Dashboard) y un evento de compra en el Timeline.
+  if (res.ok && eventName === "Purchase") {
+    const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+    await db.from("orders").insert({
+      channel_id: run.channel_id, contact_id: run.contact_id,
+      product_id: (c as any)?.product_id ?? null,
+      amount: Number.isFinite(value as number) ? value : 0,
+      currency, order_id: orderId ?? null, estado: "confirmada",
+      confirmed_at: new Date().toISOString(),
+    }); // si la tabla orders no existe (0017 pendiente) o el order_id se repite, el error se ignora
+    await logEvent(db, run.channel_id, run.contact_id, "compra", "Compra registrada", value ? `${currency} ${value}` : "");
+  }
 
   const handle = res.ok ? "exito" : "fallo";
   run.current_node_id =
@@ -499,6 +524,27 @@ async function resolveTargetFlow(db: SupabaseClient, channelId: string, config: 
   }
   return null;
 }
+// ── Bitácora de actividad del contacto (Timeline de la Bandeja) ────
+// Best-effort: si la tabla contact_events no existe aún (migración 0021
+// pendiente), el error se ignora silenciosamente.
+async function logEvent(
+  db: SupabaseClient, channelId: string, contactId: string,
+  tipo: string, titulo: string, detalle?: string | null,
+) {
+  try {
+    await db.from("contact_events").insert({
+      channel_id: channelId, contact_id: contactId, tipo, titulo, detalle: detalle ?? null,
+    });
+  } catch (_) { /* tabla pendiente de migrar */ }
+}
+
+// Atribuye el contacto al producto del flujo (para el emoji y filtros de la
+// Bandeja). Se activa al entrar a un flujo ligado a un producto.
+async function markProduct(db: SupabaseClient, contactId: string, productId?: string | null) {
+  if (!productId) return;
+  try { await db.from("contacts").update({ product_id: productId }).eq("id", contactId); } catch (_) { /* columna pendiente */ }
+}
+
 async function setField(db: SupabaseClient, contactId: string, key: string, value: string | null) {
   const { data: f } = await db.from("custom_fields").select("id, channel_id")
     .eq("key", key).limit(1).maybeSingle();

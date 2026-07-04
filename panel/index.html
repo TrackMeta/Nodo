@@ -286,6 +286,9 @@
         <button class="ctool" id="attachBtn" title="Adjuntar imagen, audio o archivo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
+        <button class="ctool" id="flowBtn" title="Enviar un flujo a este contacto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+        </button>
         <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
         <input id="msgInput" placeholder="Escribe un mensaje…" autocomplete="off" />
         <button class="send" id="sendBtn" title="Enviar">
@@ -293,6 +296,7 @@
         </button>
         <div class="pop qrpop hidden" id="qrPop"></div>
         <div class="pop emojipop hidden" id="emojiPop"></div>
+        <div class="pop qrpop hidden" id="flowPop" style="left:96px;width:300px"></div>
       </div>
     </div>
   </div>
@@ -308,7 +312,7 @@ import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shel
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [],
-  filters: { sinResponder:false, compro:false, producto:"", tags:new Set() }, products:[], tags:[], quickReplies:[] };
+  filters: { sinResponder:false, compro:false, producto:"", tags:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -334,12 +338,17 @@ async function boot() {
   botSel.innerHTML = shell.channels.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
   if (shell.channelId) botSel.value = shell.channelId;
   botSel.onchange = () => shell.setChannel(botSel.value);
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; if($("botSel")) $("botSel").value = id; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadConversations(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; if($("botSel")) $("botSel").value = id; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); });
   await loadTestFlows();
   await loadFilters();
   await loadQuickReplies();
+  await loadInboxFlows();
   await loadConversations();
   subscribeRealtime();
+}
+async function loadInboxFlows(){
+  const { data }=await supa.from("flows").select("id,nombre,estado,kind").eq("channel_id",state.channelId).eq("kind","flow").order("nombre");
+  state.inboxFlows=(data||[]).filter(f=>f.estado==="activo");
 }
 
 // ── Conversaciones ──
@@ -432,9 +441,31 @@ function toggleEmojiPop(){
   pop.querySelectorAll("button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent));
   pop.classList.remove("hidden");
 }
+// ── Enviar flujo a este contacto ──
+function toggleFlowPop(){
+  const pop=$("flowPop"); const willOpen=pop.classList.contains("hidden");
+  $("qrPop").classList.add("hidden"); $("emojiPop").classList.add("hidden");
+  if(!willOpen){ pop.classList.add("hidden"); return; }
+  if(!state.inboxFlows.length){ pop.innerHTML=`<div class="qempty">No hay flujos activos.<br><a href="editor.html">Publica un flujo →</a></div>`; }
+  else { pop.innerHTML=`<div class="qrfold">Iniciar un flujo</div>`+state.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">🕸️ ${esc(f.nombre)}</div></div>`).join(""); }
+  pop.classList.remove("hidden");
+  pop.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ pop.classList.add("hidden"); startFlowForContact(it.dataset.id); });
+}
+async function startFlowForContact(flowId){
+  const f=state.inboxFlows.find(x=>x.id===flowId); if(!f||!state.contactId) return;
+  if(!confirm(`¿Iniciar el flujo "${f.nombre}" para este contacto? El bot tomará la conversación.`)) return;
+  try{
+    const res=await callFn("flow-start",{ channel_id:state.channelId, contact_id:state.contactId, flow_id:flowId });
+    const out=await res.json().catch(()=>({}));
+    if(!res.ok){ toast(out.detalle||out.error||"No se pudo iniciar el flujo",true); return; }
+    setBotPill(true); if(panelData.contact) panelData.contact.bot_activo=true;
+    toast("Flujo iniciado ✓"); loadThread(); loadConversations();
+  }catch{ toast("Error de red",true); }
+}
 $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleQrPop(); });
 $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleEmojiPop(); });
-document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); } });
+$("flowBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleFlowPop(); });
+document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } });
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
   if (f.sinResponder && !(cv.no_leidos>0)) return false;
