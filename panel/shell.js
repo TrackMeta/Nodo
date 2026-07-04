@@ -101,7 +101,9 @@ export async function mountShell({ active } = {}) {
         ? `<div class="nodo-sec">${it.sec}</div>`
         : it.soon
           ? `<button class="nodo-link soon" title="${it.label} · próximamente" disabled style="opacity:.45;cursor:default">${svg(it.icon)}<span class="lbl">${it.label}</span></button>`
-          : `<a class="nodo-link${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
+          : it.id === "inbox"
+            ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
+            : `<a class="nodo-link${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
       ).join("")}
     </nav>
     <div class="nodo-foot">
