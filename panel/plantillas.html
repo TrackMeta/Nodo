@@ -82,7 +82,7 @@
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, tpl:null, list:[], folder:"__all" };
+const st={ channelId:null, tpl:null, list:[], folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const CATS=["MARKETING","UTILITY","AUTHENTICATION"];
 const CATLABEL={MARKETING:"Marketing",UTILITY:"Utilidad",AUTHENTICATION:"Autenticación"};
@@ -105,16 +105,28 @@ async function loadList(){
   st.list=data||[];
   renderFolders(); renderCards();
 }
+function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(t=>!t.folder).length; return st.list.filter(t=>t.folder===v).length; }
 function renderFolders(){
-  const counts={ __all:st.list.length };
-  CATS.forEach(c=> counts[c]=st.list.filter(t=>(t.categoria||"MARKETING")===c).length);
-  const tabs=[["__all","Todas"],...CATS.map(c=>[c,CATLABEL[c]])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${v}">${l}<span class="cnt">${counts[v]||0}</span></button>`).join("");
-  $("folders").querySelectorAll(".nodo-folder").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+  const isReal=st.folder!=="__all"&&st.folder!=="__none";
+  const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
+}
+async function deleteFolder(){
+  const f=st.folder; if(f==="__all"||f==="__none") return;
+  const n=countIn(f);
+  if(!confirm(n?`La carpeta "${f}" tiene ${n} plantilla(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(n){ const { error }=await supa.from("wa_templates").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
+  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await loadList();
 }
 function renderCards(){
   let list=st.list;
-  if(st.folder!=="__all") list=list.filter(t=>(t.categoria||"MARKETING")===st.folder);
+  if(st.folder==="__none") list=list.filter(t=>!t.folder); else if(st.folder!=="__all") list=list.filter(t=>t.folder===st.folder);
   const box=$("cards");
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8"/></svg></div><h3>Aún no hay plantillas</h3><p>Registra tu primera plantilla aprobada en Meta para usarla en campañas y secuencias.</p></div>`;
@@ -135,8 +147,9 @@ function renderCards(){
 }
 async function createTpl(){
   const name=prompt("Nombre EXACTO de la plantilla registrada en Meta (ej. remarketing_pago):"); if(!name) return;
-  const cat=(st.folder!=="__all"&&CATS.includes(st.folder))?st.folder:"MARKETING";
-  const { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:cat }).select("id").single();
+  const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
+  let { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING", folder }).select("id").single();
+  if(error && /folder|column/.test(error.message)){ ({ data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING" }).select("id").single()); }
   if(error){ toast(error.message,true); return; }
   await loadList(); openTpl(data.id);
 }
@@ -147,7 +160,7 @@ function renderDetail(){
   const t=st.tpl, estado=t.estado_meta||"aprobada";
   d.innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-      <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.5px">${esc(t.name)}</h1><span class="chip ${estado}">${estado}</span>
+      <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado}</span>
     </div>
     <div class="dcard">
       <div class="row">
@@ -157,6 +170,7 @@ function renderDetail(){
       <div class="row">
         <div class="f"><label>Categoría</label><select class="sel" id="f_cat">${CATS.map(x=>`<option value="${x}" ${t.categoria===x?"selected":""}>${CATLABEL[x]}</option>`).join("")}</select></div>
         <div class="f"><label>Estado en Meta</label><select class="sel" id="f_estado">${ESTADOS.map(([v,l])=>`<option value="${v}" ${estado===v?"selected":""}>${l}</option>`).join("")}</select></div>
+        <div class="f"><label>Carpeta</label><select class="sel" id="f_folder"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${t.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
       </div>
       <label>Texto del cuerpo (con {{1}}, {{2}}…)</label>
       <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu {{2}} sigue disponible.">${esc(t.body_preview)}</textarea>
@@ -182,9 +196,9 @@ async function saveTpl(){
   const params=$("f_params").value.split("\n").map(x=>x.trim()).filter(Boolean);
   const patch={ name:$("f_name").value.trim(), language:$("f_lang").value.trim()||"es",
     categoria:$("f_cat").value, body_preview:$("f_body").value, params, activa:$("f_activa").checked };
-  const estado=$("f_estado").value;
-  let { error }=await supa.from("wa_templates").update({ ...patch, estado_meta:estado }).eq("id",st.tpl.id);
-  if(error && /estado_meta|column/.test(error.message)){ ({ error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id)); if(!error) toast("Guardado (aplica 0015 para el estado)"); }
+  const estado=$("f_estado").value, folder=$("f_folder").value||null;
+  let { error }=await supa.from("wa_templates").update({ ...patch, estado_meta:estado, folder }).eq("id",st.tpl.id);
+  if(error && /estado_meta|folder|column/.test(error.message)){ ({ error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id)); if(!error) toast("Guardado (aplica 0015/0018 para estado y carpetas)"); }
   if(error){ toast(error.message,true); return; }
   toast("Guardado ✓"); await openTpl(st.tpl.id);
 }

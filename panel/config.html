@@ -23,7 +23,7 @@
   .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
   .tab svg{width:17px;height:17px}
   .tab img{width:18px;height:18px;border-radius:5px;object-fit:cover}
-  h2{font-size:18px;margin:0 0 4px;font-weight:800;letter-spacing:-.3px}
+  h2{font-size:18px;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
   .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:640px}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
   .card.on{border-color:var(--green)}
@@ -31,7 +31,7 @@
   .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
   .chd .ico svg{width:22px;height:22px}
   .chd .ico img{width:100%;height:100%;object-fit:cover}
-  .chd .nm{font-weight:800;font-size:16.5px;letter-spacing:-.2px}
+  .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
   .badge{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
   .badge.def{background:var(--brand-bg);color:var(--brand);border-color:transparent}
@@ -225,14 +225,10 @@ function renderGsheets(b){
 
       <div class="acts">
         <button class="btn primary" id="saveGs">${connected?'Guardar cambios':'Conectar hoja'}</button>
-        <button class="btn" id="testGs">Probar conexión</button>
+        <button class="btn" id="testGs">Probar y escribir fila</button>
         ${connected?`<button class="btn danger" id="discGs" style="margin-left:auto">Desconectar</button>`:""}
       </div>
-    </div>
-
-    <div class="card" style="background:var(--surface-2)">
-      <div style="font-weight:700;font-size:13.5px;margin-bottom:6px">¿Por qué cuenta de servicio y no “Iniciar sesión con Google”?</div>
-      <div class="desc" style="margin:0">Compartir la hoja con un correo es <b>un solo clic</b> y no expira. El inicio de sesión OAuth exigiría una pantalla de consentimiento de Google, verificación de la app y tokens que caducan — innecesario para uso interno. Tú mantienes el control: revocas el acceso quitando el correo de <b>Compartir</b> cuando quieras.</div>
+      <div class="desc" id="gsTestOut" style="margin-top:12px"></div>
     </div>`;
   const cp=$("copyEmail"); if(cp) cp.onclick=()=>{ navigator.clipboard?.writeText(NODO_GS_SERVICE_EMAIL); toast("Correo copiado ✓"); };
   $("saveGs").onclick=async(e)=>{
@@ -241,8 +237,29 @@ function renderGsheets(b){
     const gs={ connected:true, service_email:NODO_GS_SERVICE_EMAIL, spreadsheet_url:url, spreadsheet_id:sheetIdFrom(url), tab:$("gs_tab").value.trim()||null };
     await saveGsheets(e.target, gs);
   };
-  $("testGs").onclick=(e)=>{ toast("Conexión de prueba: la ejecución real se habilita en la fase de nodos de Sheets."); };
+  $("testGs").onclick=testGsheets;
   const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ connected:false });
+}
+// Prueba REAL de conexión: pide al backend escribir una fila de prueba en la hoja.
+async function testGsheets(e){
+  const btn=e.target, out=$("gsTestOut");
+  const url=$("gs_sheet").value.trim(); const sid=sheetIdFrom(url);
+  if(!sid){ toast("Primero pega el enlace de la hoja",true); return; }
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Probando…"; out.innerHTML="";
+  try{
+    const r=await callFn("gsheets-test",{ channel_id:st.channelId, spreadsheet_id:sid, tab:$("gs_tab").value.trim()||null });
+    out.innerHTML=`<span style="color:var(--green)">✓ Conexión correcta.</span> Se escribió una fila de prueba en la hoja${r?.row?` (fila ${r.row})`:""}. Ya puedes borrarla.`;
+    toast("Hoja conectada ✓");
+  }catch(err){
+    const msg=(err&&err.message)||"error";
+    if(/not found|404|no encontr|Function not found/i.test(msg)){
+      out.innerHTML=`<span style="color:var(--amber)">La comprobación en vivo aún no está desplegada</span> (Edge Function <code>gsheets-test</code>). La configuración quedó guardada; funcionará al habilitar los nodos de Sheets.`;
+    } else if(/permission|403|share|comparti/i.test(msg)){
+      out.innerHTML=`<span style="color:var(--red)">Sin acceso a la hoja.</span> Verifica que la compartiste con <b>${esc(NODO_GS_SERVICE_EMAIL)}</b> como <b>Editor</b>.`;
+    } else {
+      out.innerHTML=`<span style="color:var(--red)">No se pudo conectar:</span> ${esc(msg)}`;
+    }
+  } finally { btn.disabled=false; btn.textContent=old; }
 }
 async function saveGsheets(btn, gs){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";

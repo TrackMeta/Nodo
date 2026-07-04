@@ -81,7 +81,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 /* Encabezado: título grande + subtítulo + acciones integradas */
 .nodo-head{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:8px}
 .nodo-head .grow{flex:1;min-width:220px}
-.nodo-title{font-size:27px;font-weight:800;letter-spacing:-.7px;margin:0;line-height:1.15}
+.nodo-title{font-size:26px;font-weight:700;letter-spacing:-.5px;margin:0;line-height:1.18}
 .nodo-lead{color:var(--muted);font-size:14px;margin:6px 0 0;line-height:1.55;max-width:660px}
 .nodo-head .nodo-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 
@@ -125,7 +125,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nodo-card .c-ic{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;
   background:var(--brand-bg);color:var(--brand);margin-bottom:12px;flex:none}
 .nodo-card .c-ic svg{width:22px;height:22px}
-.nodo-card .c-tt{font-size:16.5px;font-weight:700;letter-spacing:-.2px;line-height:1.25}
+.nodo-card .c-tt{font-size:16px;font-weight:650;letter-spacing:-.1px;line-height:1.25}
 .nodo-card .c-sub{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.5;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .nodo-card .c-foot{margin-top:auto;padding-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}

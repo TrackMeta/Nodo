@@ -123,6 +123,7 @@
       <button class="segb" data-v="contenido">✍️ Contenido</button>
     </div>
     <div class="spacer"></div>
+    <button class="btn" id="delFlowBtn" style="color:var(--red);border-color:transparent" title="Eliminar flujo">🗑</button>
     <button class="btn" id="saveBtn">Guardar</button>
     <button class="btn primary" id="pubBtn">Publicar</button>
   </div>
@@ -157,7 +158,7 @@ const NODE_DEFS = {
   fin:          { icon:"⬛", handles:[] },
 };
 
-const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all" };
+const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all", localFolders:new Set() };
 let editor;
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
@@ -183,6 +184,7 @@ async function boot(){
   $("saveBtn").onclick = save;
   $("pubBtn").onclick = publish;
   $("backBtn").onclick = ()=>{ st.flowId=null; showOverview(); loadFlows(); };
+  $("delFlowBtn").onclick = deleteFlow;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
 }
 function showOverview(){ $("overview").style.display=""; $("editorTop").style.display="none"; $("editorMain").style.display="none"; }
@@ -353,20 +355,36 @@ async function loadChannels(){
 }
 
 async function loadFlows(){
-  const { data } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,products(nombre)")
+  let { data, error } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,folder,products(nombre)")
     .eq("channel_id", st.channelId).order("created_at");
+  if(error){ ({ data } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,products(nombre)").eq("channel_id", st.channelId).order("created_at")); }
   st.flows=data||[];
   renderFolders(); renderFlowCards();
 }
+function allFolders(){ const s=new Set(st.localFolders); st.flows.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function countIn(v){ if(v==="__all") return st.flows.length; if(v==="__none") return st.flows.filter(f=>!f.folder).length; if(v==="__skeleton") return st.flows.filter(f=>f.kind==="skeleton").length; return st.flows.filter(f=>f.folder===v).length; }
 function renderFolders(){
-  const c={ __all:st.flows.length, skeleton:st.flows.filter(f=>f.kind==="skeleton").length, product:st.flows.filter(f=>f.product_id).length };
-  const tabs=[["__all","Todos"],["skeleton","Esqueletos"],["product","De productos"]];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${v}">${l}<span class="cnt">${c[v]||0}</span></button>`).join("");
-  $("folders").querySelectorAll(".nodo-folder").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderFlowCards(); });
+  const isReal=st.filter!=="__all"&&st.filter!=="__none"&&st.filter!=="__skeleton";
+  const tabs=[["__all","Todos"],["__skeleton","Esqueletos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${esc(v)}">${(v==="__all"||v==="__none"||v==="__skeleton")?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderFlowCards(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.filter=n.trim(); renderFolders(); renderFlowCards(); } };
+  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
+}
+async function deleteFolder(){
+  const f=st.filter; if(f==="__all"||f==="__none"||f==="__skeleton") return;
+  const n=countIn(f);
+  if(!confirm(n?`La carpeta "${f}" tiene ${n} flujo(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(n){ const { error }=await supa.from("flows").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
+  st.localFolders.delete(f); st.filter="__all"; toast("Carpeta eliminada ✓"); await loadFlows();
 }
 function renderFlowCards(){
   let list=st.flows;
-  if(st.filter==="skeleton") list=list.filter(f=>f.kind==="skeleton"); else if(st.filter==="product") list=list.filter(f=>f.product_id);
+  if(st.filter==="__skeleton") list=list.filter(f=>f.kind==="skeleton");
+  else if(st.filter==="__none") list=list.filter(f=>!f.folder);
+  else if(st.filter!=="__all") list=list.filter(f=>f.folder===st.filter);
   const box=$("flowCards");
   if(!st.flows.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div><h3>Aún no hay flujos</h3><p>Crea tu primer flujo o esqueleto para empezar a automatizar conversaciones.</p></div>`;
@@ -518,9 +536,20 @@ function updateNodeDom(m){
 // ── Crear flujo ──
 async function createFlow(){
   const nombre=prompt("Nombre del esqueleto (plantilla base):"); if(!nombre) return;
-  const { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador" }).select("id").single();
+  const folder=(st.filter!=="__all"&&st.filter!=="__none"&&st.filter!=="__skeleton")?st.filter:null;
+  let { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador", folder }).select("id").single();
+  if(error && /folder|column/.test(error.message)){ ({ data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador" }).select("id").single()); }
   if(error){ toast(error.message,true); return; }
   await loadFlows(); openFlow(data.id);
+}
+async function deleteFlow(){
+  if(!st.flowId||!st.flow){ toast("No hay flujo abierto",true); return; }
+  if(!confirm(`¿Eliminar el flujo "${st.flow.nombre}"? Se borrarán sus nodos y conexiones. Esta acción no se puede deshacer.`)) return;
+  await supa.from("flow_edges").delete().eq("flow_id",st.flowId);
+  await supa.from("flow_nodes").delete().eq("flow_id",st.flowId);
+  const { error }=await supa.from("flows").delete().eq("id",st.flowId);
+  if(error){ toast(error.message,true); return; }
+  st.flowId=null; st.flow=null; toast("Flujo eliminado ✓"); showOverview(); await loadFlows();
 }
 
 // ── Guardar ──

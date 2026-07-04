@@ -30,7 +30,7 @@
   .qcard .c-foot{margin-top:14px;display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--faint)}
   /* Detalle / editor */
   .dhead{display:flex;align-items:center;gap:14px;margin-bottom:6px;flex-wrap:wrap}
-  .dhead input{flex:1;min-width:220px;height:48px;background:transparent;border:none;border-bottom:2px solid var(--border);color:var(--text);font-size:24px;font-weight:800;letter-spacing:-.5px;outline:none;padding:0}
+  .dhead input{flex:1;min-width:220px;height:48px;background:transparent;border:none;border-bottom:2px solid var(--border);color:var(--text);font-size:23px;font-weight:700;letter-spacing:-.4px;outline:none;padding:0}
   .dhead input:focus{border-color:var(--brand)}
   .toggle{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--muted)}
   .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
@@ -81,7 +81,10 @@
     <div id="detailView" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <button class="nodo-back" id="backBtn" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a secuencias</button>
-        <button class="btn primary" id="saveBtn">Guardar cambios</button>
+        <div style="display:flex;gap:8px">
+          <button class="nodo-btn danger" id="delBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg> Eliminar</button>
+          <button class="btn primary" id="saveBtn">Guardar cambios</button>
+        </div>
       </div>
       <div id="detail" style="margin-top:18px"></div>
     </div>
@@ -103,6 +106,7 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.seq=null; showGrid(); load(); });
   $("addSeq").onclick=createSeq; $("saveBtn").onclick=saveSeq;
+  $("delBtn").onclick=deleteSeq;
   $("backBtn").onclick=()=>{ st.seq=null; showGrid(); load(); };
   await load();
 }
@@ -121,11 +125,28 @@ async function load(){
 function allFolders(){ const s=new Set(st.localFolders); st.seqs.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
 function countIn(v){ if(v==="__all") return st.seqs.length; if(v==="__none") return st.seqs.filter(s=>!s.folder).length; return st.seqs.filter(s=>s.folder===v).length; }
 function renderFolders(){
+  const isReal=st.folder!=="__all"&&st.folder!=="__none";
   const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
   $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
-    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`;
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent" title="Eliminar carpeta">🗑 Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
   $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
+}
+async function deleteFolder(){
+  const f=st.folder; if(f==="__all"||f==="__none") return;
+  const n=countIn(f);
+  if(!confirm(n?`La carpeta "${f}" tiene ${n} secuencia(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(n){ const { error }=await supa.from("sequences").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
+  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await load();
+}
+async function deleteSeq(){
+  if(!st.seq) return;
+  if(!confirm(`¿Eliminar la secuencia "${st.seq.nombre}"? Esta acción no se puede deshacer.`)) return;
+  const { error }=await supa.from("sequences").delete().eq("id",st.seq.id);
+  if(error){ toast(error.message,true); return; }
+  st.seq=null; toast("Secuencia eliminada ✓"); showGrid(); await load();
 }
 function miniTimeline(pasos){
   const p=pasos||[]; if(!p.length) return `<div class="mtl"><span class="more" style="margin:0">Sin pasos aún</span></div>`;

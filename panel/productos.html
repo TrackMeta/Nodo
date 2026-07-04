@@ -61,7 +61,10 @@
     <div id="detailView" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <button class="nodo-back" id="backBtn" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a productos</button>
-        <button class="btn primary" id="saveBtn">Guardar cambios</button>
+        <div style="display:flex;gap:8px">
+          <button class="nodo-btn danger" id="delBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg> Eliminar</button>
+          <button class="btn primary" id="saveBtn">Guardar cambios</button>
+        </div>
       </div>
       <div id="detail" style="margin-top:18px"></div>
     </div>
@@ -71,8 +74,9 @@
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $ = (id) => document.getElementById(id);
-const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], filter:"__all" };
+const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", localFolders:new Set() };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+const EMOJIS=["📕","💪","🏋️","🥊","🎯","🧠","💰","📈","🚀","🔥","⚡","🎓","🍳","🌱","❤️","✨","📱","🎸","🎨","🐶","⚽","🧘","💊","🛠️","📷"];
 
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
@@ -82,6 +86,7 @@ async function boot(){
   shell.onChannel(id=>{ st.channelId=id; st.prod=null; showGrid(); loadProducts(); });
   $("addProduct").onclick = createProduct;
   $("saveBtn").onclick = saveProduct;
+  $("delBtn").onclick = deleteProduct;
   $("backBtn").onclick = ()=>{ st.prod=null; showGrid(); loadProducts(); };
   await loadProducts();
 }
@@ -89,18 +94,32 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function loadProducts(){
-  const { data } = await supa.from("products").select("id,nombre,con_bifurcacion,config").eq("channel_id",st.channelId).order("created_at");
+  let { data, error } = await supa.from("products").select("id,nombre,con_bifurcacion,config,folder,emoji").eq("channel_id",st.channelId).order("created_at");
+  if(error){ ({ data } = await supa.from("products").select("id,nombre,con_bifurcacion,config").eq("channel_id",st.channelId).order("created_at")); }
   st.list=data||[]; renderFolders(); renderCards();
 }
+function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(p=>!p.folder).length; return st.list.filter(p=>p.folder===v).length; }
 function renderFolders(){
-  const c={ __all:st.list.length, multi:st.list.filter(p=>p.con_bifurcacion).length, single:st.list.filter(p=>!p.con_bifurcacion).length };
-  const tabs=[["__all","Todos"],["multi","Con versiones"],["single","Versión única"]];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${v}">${l}<span class="cnt">${c[v]||0}</span></button>`).join("");
-  $("folders").querySelectorAll(".nodo-folder").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderCards(); });
+  const isReal=st.folder!=="__all"&&st.folder!=="__none";
+  const tabs=[["__all","Todos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
+}
+async function deleteFolder(){
+  const f=st.folder; if(f==="__all"||f==="__none") return;
+  const n=countIn(f);
+  if(!confirm(n?`La carpeta "${f}" tiene ${n} producto(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(n){ const { error }=await supa.from("products").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
+  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await loadProducts();
 }
 function renderCards(){
   let list=st.list;
-  if(st.filter==="multi") list=list.filter(p=>p.con_bifurcacion); else if(st.filter==="single") list=list.filter(p=>!p.con_bifurcacion);
+  if(st.folder==="__none") list=list.filter(p=>!p.folder); else if(st.folder!=="__all") list=list.filter(p=>p.folder===st.folder);
   const box=$("cards");
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div><h3>Aún no hay productos</h3><p>Crea tu primer producto para configurar sus versiones, precios y flujos de venta.</p></div>`;
@@ -110,11 +129,12 @@ function renderCards(){
   list.forEach(p=>{
     const el=document.createElement("div"); el.className="nodo-card pcard";
     const precio=p.config&&p.config.precio?`S/ ${esc(p.config.precio)}`:"";
+    const icon = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
     el.innerHTML=`
-      <div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+      <div class="c-ic">${icon}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única"}</div>
-      <div class="c-foot"><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}</div>`;
+      <div class="c-foot"><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">📁 ${esc(p.folder)}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -123,7 +143,9 @@ function renderCards(){
 }
 async function createProduct(){
   const nombre=prompt("Nombre del producto:"); if(!nombre) return;
-  const { data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre }).select("id").single();
+  const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
+  let { data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, folder }).select("id").single();
+  if(error && /folder|column/.test(error.message)){ ({ data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre }).select("id").single()); }
   if(error){ toast(error.message,true); return; }
   await loadProducts(); openProduct(data.id);
 }
@@ -133,11 +155,19 @@ async function openProduct(id){
   st.prod=p; st.versions=vs||[]; st.tab="datos";
   renderDetail(); showDetail();
 }
+async function deleteProduct(){
+  if(!st.prod) return;
+  if(!confirm(`¿Eliminar el producto "${st.prod.nombre}"? Se eliminarán también sus versiones. Esta acción no se puede deshacer.`)) return;
+  await supa.from("product_versions").delete().eq("product_id",st.prod.id);
+  const { error }=await supa.from("products").delete().eq("id",st.prod.id);
+  if(error){ toast(error.message,true); return; }
+  st.prod=null; toast("Producto eliminado ✓"); showGrid(); await loadProducts();
+}
 
 function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
   d.innerHTML=`
-    <h1 style="margin:0 0 16px;font-size:24px;font-weight:800;letter-spacing:-.5px">${esc(st.prod.nombre)}</h1>
+    <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(st.prod.nombre)}</h1>
     <div class="tabs">
       <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
       <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
@@ -149,9 +179,19 @@ function renderDetail(){
 
 function renderDatos(){
   const b=$("tabBody");
+  const folders=allFolders();
   b.innerHTML=`
-    <label>Nombre del producto</label>
-    <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:none"><label style="margin-top:0">Emoji</label>
+        <button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji||"➕"}</button>
+        <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);max-width:280px;flex-wrap:wrap;gap:2px;margin-top:4px"></div>
+      </div>
+      <div style="flex:1;min-width:180px"><label style="margin-top:0">Nombre del producto</label>
+        <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado de la foto del contacto que entró por él).</div>
+    <label>Carpeta</label>
+    <select class="sel" id="pFolder" style="min-width:240px"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select>
     <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con bifurcación (versiones Básica/Premium)</label>
     <label>Campos fijos (config JSON: precio, contexto_producto, datos_pago…)</label>
     <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
@@ -159,6 +199,14 @@ function renderDatos(){
     <div id="versions"></div>
     <button class="btn" id="addVersion" style="margin-top:10px">+ versión</button>`;
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
+  $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
+  const pop=$("emojiPop"), ebtn=$("emojiBtn");
+  pop.innerHTML=EMOJIS.map(e=>`<button class="btn" data-e="${e}" style="width:36px;height:36px;font-size:20px;padding:0;border:none;background:transparent">${e}</button>`).join("")
+    +`<button class="btn" data-e="" style="width:36px;height:36px;padding:0;border:none;background:transparent;color:var(--muted)">✕</button>`;
+  pop.style.display="none";
+  ebtn.onclick=(ev)=>{ ev.stopPropagation(); pop.style.display=pop.style.display==="none"?"flex":"none"; };
+  pop.querySelectorAll("button[data-e]").forEach(b=> b.onclick=()=>{ st.prod.emoji=b.dataset.e||null; ebtn.textContent=st.prod.emoji||"➕"; pop.style.display="none"; });
+  document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); }catch(_){ toast("JSON inválido",true); } };
   $("addVersion").onclick=()=>{ st.versions.push({ nombre:"Nueva versión", price_list:[], drive_link:"", orden:st.versions.length }); renderVersions(); };
@@ -221,10 +269,9 @@ async function renderFlujos(){
 
 async function saveProduct(){
   if(!st.prod){ return; }
-  const { error:e1 } = await supa.from("products").update({
-    nombre:st.prod.nombre, con_bifurcacion:st.prod.con_bifurcacion, config:st.prod.config||{},
-    updated_at:new Date().toISOString(),
-  }).eq("id",st.prod.id);
+  const base={ nombre:st.prod.nombre, con_bifurcacion:st.prod.con_bifurcacion, config:st.prod.config||{}, updated_at:new Date().toISOString() };
+  let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id);
+  if(e1 && /folder|emoji|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update(base).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0018 para carpeta/emoji)"); }
   if(e1){ toast(e1.message,true); return; }
   for(let i=0;i<st.versions.length;i++){
     const v=st.versions[i]; v.orden=i; v.product_id=st.prod.id;

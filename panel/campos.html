@@ -26,7 +26,7 @@
   .btn.primary:hover{background:var(--brand-2)}
   .btn svg{width:15px;height:15px}
   .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:920px;margin:0 auto;width:100%}
-  h1{font-size:26px;margin:0 0 4px;font-weight:800;letter-spacing:-.5px}
+  h1{font-size:26px;margin:0 0 4px;font-weight:700;letter-spacing:-.4px}
   .lead{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.5}
   .lead code{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--brand)}
 
@@ -65,6 +65,7 @@
       <button class="tab" data-t="fijo" id="tabFijo"></button>
     </div>
     <p class="lead" id="lead"></p>
+    <div class="nodo-folders" id="folders" style="margin:14px 0 4px"></div>
     <div id="warn"></div>
     <div id="list"></div>
   </div>
@@ -73,7 +74,7 @@
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, fields:[], deleted:[], tab:"dinamico" };
+const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all", localFolders:new Set() };
 const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"]];
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);}
@@ -103,12 +104,35 @@ async function load(){
   const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
   st.fields=data||[]; render();
 }
-function addField(){ st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"" }); render(); }
+function addField(){ const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null; st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"", folder }); render(); }
+function allFolders(){ const s=new Set(st.localFolders); st.fields.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function inTab(){ return st.fields.filter(f=>(f.modo||"dinamico")===st.tab); }
+function countIn(v){ const t=inTab(); if(v==="__all") return t.length; if(v==="__none") return t.filter(f=>!f.folder).length; return t.filter(f=>f.folder===v).length; }
+function renderFolders(){
+  const isReal=st.folder!=="__all"&&st.folder!=="__none";
+  const tabs=[["__all","Todos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; render(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); render(); } };
+  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
+}
+async function deleteFolder(){
+  const f=st.folder; if(f==="__all"||f==="__none") return;
+  const affected=st.fields.filter(x=>x.folder===f);
+  if(!confirm(affected.length?`La carpeta "${f}" tiene ${affected.length} campo(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  affected.forEach(x=>x.folder=null);
+  if(affected.some(x=>x.id)){ const { error }=await supa.from("custom_fields").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error && !/folder|column/.test(error.message)){ toast(error.message,true); } }
+  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); render();
+}
 function render(){
   $("lead").innerHTML=LEADS[st.tab];
-  const rows=st.fields.filter(f=>(f.modo||"dinamico")===st.tab);
+  renderFolders();
+  let rows=inTab();
+  if(st.folder==="__none") rows=rows.filter(f=>!f.folder); else if(st.folder!=="__all") rows=rows.filter(f=>f.folder===st.folder);
   const box=$("list");
-  if(!rows.length){ box.innerHTML=`<div class="empty">Aún no hay campos ${st.tab==="fijo"?"del Bot":"variables"}. Crea el primero con “Nuevo campo”.</div>`; return; }
+  if(!rows.length){ box.innerHTML=`<div class="empty">Aún no hay campos ${st.tab==="fijo"?"del Bot":"variables"}${st.folder!=="__all"?" en esta carpeta":""}. Crea el primero con “Nuevo campo”.</div>`; return; }
   box.innerHTML="";
   rows.forEach(f=>{
     const el=document.createElement("div"); el.className="card";
@@ -118,7 +142,8 @@ function render(){
         <div class="f grow"><label>Nombre</label><input class="in nombre" value="${esc(f.nombre)}" placeholder="${bot?'Ej. Nombre de la empresa':'Ej. Ciudad'}"/></div>
         <div class="f grow"><label>Clave (variable)</label><input class="in key" value="${esc(f.key)}" placeholder="clave" ${f._new?"":"disabled"}/><div class="varhint">se usa como <b>{{${esc(f.key||'clave')}}}</b></div></div>
         <div class="f"><label>Tipo</label><select class="sel tipo">${TIPOS.map(([v,l])=>`<option value="${v}" ${f.tipo===v?"selected":""}>${l}</option>`).join("")}</select></div>
-        ${bot?`<button class="del" title="Eliminar">${TRASH}</button>`:`<button class="del" title="Eliminar">${TRASH}</button>`}
+        <div class="f"><label>Carpeta</label><select class="sel folder"><option value="">Sin carpeta</option>${allFolders().map(x=>`<option value="${esc(x)}" ${f.folder===x?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+        <button class="del" title="Eliminar">${TRASH}</button>
       </div>
       ${bot?`<div class="cr" style="margin-top:12px">
         <div class="f grow"><label>Valor</label><input class="in valor" value="${esc(f.valor||'')}" placeholder="Valor fijo (p. ej. Prime Digital)"/></div>
@@ -128,6 +153,7 @@ function render(){
     nombreI.oninput=(e)=>{ f.nombre=e.target.value; if(f._new && !f._keyEdited){ f.key=slug(e.target.value); keyI.value=f.key; el.querySelector(".varhint").innerHTML=`se usa como <b>{{${esc(f.key||'clave')}}}</b>`; } };
     keyI.oninput=(e)=>{ f._keyEdited=true; f.key=slug(e.target.value); e.target.value=f.key; el.querySelector(".varhint").innerHTML=`se usa como <b>{{${esc(f.key||'clave')}}}</b>`; };
     el.querySelector(".tipo").onchange=(e)=>f.tipo=e.target.value;
+    el.querySelector(".folder").onchange=(e)=>f.folder=e.target.value||null;
     if(bot){ el.querySelector(".valor").oninput=(e)=>f.valor=e.target.value; el.querySelector(".descripcion").oninput=(e)=>f.descripcion=e.target.value; }
     el.querySelector(".del").onclick=()=>{ if(f.id) st.deleted.push(f.id); st.fields=st.fields.filter(x=>x!==f); render(); };
     box.appendChild(el);
@@ -137,12 +163,17 @@ async function save(){
   for(const f of st.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
   if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
   const rows=st.fields.map(f=>{
-    const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico" };
+    const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico", folder:f.folder||null };
     if((f.modo||"dinamico")==="fijo"){ r.valor=f.valor||null; r.descripcion=f.descripcion||null; }
     if(f.id) r.id=f.id; return r;
   });
   if(rows.length){
-    const { error }=await supa.from("custom_fields").upsert(rows);
+    let { error }=await supa.from("custom_fields").upsert(rows);
+    if(error && /folder|column/.test(error.message)){
+      const rows2=rows.map(({folder,...r})=>r);
+      ({ error }=await supa.from("custom_fields").upsert(rows2));
+      if(!error) toast("Guardado (aplica 0018 para carpetas)");
+    }
     if(error){
       if(/valor|descripcion|column/.test(error.message)){ $("warn").innerHTML=`<div class="warn">Falta aplicar la migración <b>0013</b> (columnas <code>valor</code>/<code>descripcion</code>). Ejecútala en el SQL Editor.</div>`; }
       else toast(error.message.includes("duplicate")?"Hay claves repetidas":error.message,true);

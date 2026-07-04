@@ -21,27 +21,27 @@
   /* KPIs */
   .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin:22px 0 22px}
   .kpi{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px}
-  .kpi .h{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;font-weight:700}
+  .kpi .h{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;font-weight:600}
   .kpi .ic{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
   .kpi .ic svg{width:18px;height:18px}
-  .kpi .v{font-size:29px;font-weight:800;margin-top:12px;letter-spacing:-.6px}
-  .kpi .d{font-size:12px;color:var(--faint);margin-top:3px;font-weight:500}
+  .kpi .v{font-size:27px;font-weight:650;margin-top:12px;letter-spacing:-.5px}
+  .kpi .d{font-size:12px;color:var(--faint);margin-top:3px;font-weight:400}
   .cols{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
   @media(max-width:860px){.cols{grid-template-columns:1fr}}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
-  .panel h3{margin:0 0 2px;font-size:16px;font-weight:800;letter-spacing:-.3px}
+  .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
   .panel .ps{color:var(--muted);font-size:12.5px;margin:0 0 16px}
   .funnel .frow{display:flex;align-items:center;gap:12px;margin-bottom:13px}
-  .funnel .flabel{width:120px;flex:none;font-size:13px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:7px}
+  .funnel .flabel{width:120px;flex:none;font-size:13px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
   .funnel .fbar{flex:1;height:28px;background:var(--surface-2);border-radius:8px;overflow:hidden}
   .funnel .fbar span{display:block;height:100%;border-radius:8px;min-width:2px;transition:width .4s}
-  .funnel .fval{width:56px;flex:none;text-align:right;font-weight:800;font-size:14px}
+  .funnel .fval{width:56px;flex:none;text-align:right;font-weight:650;font-size:14px}
   .stages{display:flex;flex-direction:column;gap:10px}
   .srow{display:flex;align-items:center;gap:12px}
-  .srow .sl{width:100px;flex:none;font-size:12.5px;color:var(--muted);text-transform:capitalize;font-weight:600}
+  .srow .sl{width:100px;flex:none;font-size:12.5px;color:var(--muted);text-transform:capitalize;font-weight:500}
   .srow .sbar{flex:1;height:22px;background:var(--surface-2);border-radius:7px;overflow:hidden}
   .srow .sbar span{display:block;height:100%;background:var(--brand);border-radius:7px;min-width:2px}
-  .srow .sv{width:40px;text-align:right;font-weight:800;font-size:13px}
+  .srow .sv{width:40px;text-align:right;font-weight:650;font-size:13px}
   .empty{color:var(--faint);text-align:center;padding:30px}
   /* Tablas de producto */
   .ptable{width:100%;border-collapse:collapse}
@@ -49,10 +49,10 @@
   .ptable th.r,.ptable td.r{text-align:right}
   .ptable td{padding:13px 12px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle}
   .ptable tr:last-child td{border-bottom:none}
-  .ptable .pname{font-weight:700}
+  .ptable .pname{font-weight:600}
   .ptable .vname{font-size:12px;color:var(--muted);padding-left:18px;font-weight:500}
-  .ptable .money{font-weight:800;font-variant-numeric:tabular-nums}
-  .ptable tr.total td{border-top:2px solid var(--border);font-weight:800;font-size:14px;background:var(--surface-2)}
+  .ptable .money{font-weight:650;font-variant-numeric:tabular-nums}
+  .ptable tr.total td{border-top:2px solid var(--border);font-weight:650;font-size:14px;background:var(--surface-2)}
   .bar-mini{height:6px;border-radius:4px;background:var(--brand);display:inline-block;vertical-align:middle;margin-right:8px;min-width:3px}
   /* Filtro de fechas */
   .datefilter{position:relative}
