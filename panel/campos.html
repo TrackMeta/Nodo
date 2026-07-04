@@ -19,22 +19,35 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
   .spacer{margin-left:auto}
-  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn.primary{background:var(--brand);border:none;color:#fff}
   .btn.primary:hover{background:var(--brand-2)}
-  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:900px;margin:0 auto;width:100%}
-  h2{font-size:17px;margin:0 0 4px} .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .f{display:flex;flex-direction:column;gap:4px} .f.grow{flex:1;min-width:150px}
-  label{font-size:11px;color:var(--muted)}
-  .in,.sel{height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none;font-family:inherit}
+  .btn svg{width:15px;height:15px}
+  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:920px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 4px;font-weight:700}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.5}
+  .lead code{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--brand)}
+
+  .tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--border)}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:10px 6px;margin-right:14px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .tab svg{width:16px;height:16px}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+  .cr{display:flex;gap:12px;flex-wrap:wrap}
+  .f{display:flex;flex-direction:column;gap:5px} .f.grow{flex:1;min-width:150px}
+  label{font-size:11px;color:var(--muted);font-weight:600}
+  .in,.sel{height:38px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13px;outline:none;font-family:inherit}
   .in:focus,.sel:focus{border-color:var(--brand)}
-  .in:disabled{opacity:.6}
-  .del{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;height:36px;width:38px;flex:none}
-  .empty{color:var(--faint);text-align:center;padding:50px}
-  .tagpill{font-size:11px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px}
+  .in:disabled{opacity:.55}
+  .varhint{font-size:11px;color:var(--faint);margin-top:2px}
+  .varhint b{color:var(--brand)}
+  .del{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:9px;height:38px;width:38px;flex:none;align-self:flex-end;display:flex;align-items:center;justify-content:center}
+  .del svg{width:15px;height:15px}
+  .empty{text-align:center;color:var(--faint);padding:44px;border:1px dashed var(--border);border-radius:12px}
+  .warn{background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:12px;padding:12px 15px;font-size:12.5px;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -42,32 +55,47 @@
   <div class="top">
     <span style="font-weight:600;font-size:15px">Campos personalizados</span>
     <span class="spacer"></span>
-    <button class="btn" id="addBtn">+ Nuevo campo</button>
+    <button class="btn" id="addBtn"><span id="plusIc"></span> Nuevo campo</button>
     <button class="btn primary" id="saveBtn">Guardar</button>
   </div>
   <div class="wrap">
-    <h2>Campos personalizados</h2>
-    <p class="sub">Variables que guardas por contacto y usas en los flujos como <code>{{clave}}</code>. Los <b>dinámicos</b> se llenan durante la conversación; los <b>fijos</b> son propiedades estables del contacto.</p>
-    <div id="list"><div class="empty">Cargando…</div></div>
+    <h1>Campos personalizados</h1>
+    <div class="tabs">
+      <button class="tab active" data-t="dinamico" id="tabVar"></button>
+      <button class="tab" data-t="fijo" id="tabFijo"></button>
+    </div>
+    <p class="lead" id="lead"></p>
+    <div id="warn"></div>
+    <div id="list"></div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, fields:[], deleted:[] };
-const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"],["boolean","Sí/No"]];
-const MODOS=[["dinamico","Dinámico"],["fijo","Fijo"]];
+const st={ channelId:null, fields:[], deleted:[], tab:"dinamico" };
+const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"]];
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);}
+const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+const IC_VAR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>';
+const IC_BOT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="12" x="3" y="8" rx="2"/><path d="M12 2v6M9 14h.01M15 14h.01M8 8V6M16 8V6"/></svg>';
+const LEADS={
+  dinamico:'Datos adicionales por contacto (empresa, plan, ciudad, etc.). Se usan en los flujos con <code>{{clave}}</code>.',
+  fijo:'Variables globales con un <b>valor fijo</b> para toda la organización. También se usan en los flujos con <code>{{clave}}</code>.',
+};
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  $("plusIc").innerHTML=PLUS;
+  $("tabVar").innerHTML=IC_VAR+"<span>Campos variables</span>";
+  $("tabFijo").innerHTML=IC_BOT+"<span>Campos del Bot</span>";
   const shell=await mountShell({ active:"campos" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
-  $("addBtn").onclick=addField;
-  $("saveBtn").onclick=save;
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  $("addBtn").onclick=addField; $("saveBtn").onclick=save;
   await load();
 }
 async function load(){
@@ -75,35 +103,53 @@ async function load(){
   const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
   st.fields=data||[]; render();
 }
-function addField(){ st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:"dinamico" }); render(); }
+function addField(){ st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"" }); render(); }
 function render(){
+  $("lead").innerHTML=LEADS[st.tab];
+  const rows=st.fields.filter(f=>(f.modo||"dinamico")===st.tab);
   const box=$("list");
-  if(!st.fields.length){ box.innerHTML=`<div class="empty">Aún no hay campos. Crea el primero con “+ Nuevo campo”.</div>`; return; }
+  if(!rows.length){ box.innerHTML=`<div class="empty">Aún no hay campos ${st.tab==="fijo"?"del Bot":"variables"}. Crea el primero con “Nuevo campo”.</div>`; return; }
   box.innerHTML="";
-  st.fields.forEach((f,i)=>{
+  rows.forEach(f=>{
     const el=document.createElement("div"); el.className="card";
+    const bot = st.tab==="fijo";
     el.innerHTML=`
-      <div class="f grow"><label>Nombre</label><input class="in nombre" value="${esc(f.nombre)}" placeholder="Ej. Email"/></div>
-      <div class="f grow"><label>Clave (variable)</label><input class="in key" value="${esc(f.key)}" placeholder="email" ${f._new?"":"disabled"}/></div>
-      <div class="f"><label>Tipo</label><select class="sel tipo">${TIPOS.map(([v,l])=>`<option value="${v}" ${f.tipo===v?"selected":""}>${l}</option>`).join("")}</select></div>
-      <div class="f"><label>Modo</label><select class="sel modo">${MODOS.map(([v,l])=>`<option value="${v}" ${f.modo===v?"selected":""}>${l}</option>`).join("")}</select></div>
-      <button class="del" title="Eliminar">✕</button>`;
+      <div class="cr">
+        <div class="f grow"><label>Nombre</label><input class="in nombre" value="${esc(f.nombre)}" placeholder="${bot?'Ej. Nombre de la empresa':'Ej. Ciudad'}"/></div>
+        <div class="f grow"><label>Clave (variable)</label><input class="in key" value="${esc(f.key)}" placeholder="clave" ${f._new?"":"disabled"}/><div class="varhint">se usa como <b>{{${esc(f.key||'clave')}}}</b></div></div>
+        <div class="f"><label>Tipo</label><select class="sel tipo">${TIPOS.map(([v,l])=>`<option value="${v}" ${f.tipo===v?"selected":""}>${l}</option>`).join("")}</select></div>
+        ${bot?`<button class="del" title="Eliminar">${TRASH}</button>`:`<button class="del" title="Eliminar">${TRASH}</button>`}
+      </div>
+      ${bot?`<div class="cr" style="margin-top:12px">
+        <div class="f grow"><label>Valor</label><input class="in valor" value="${esc(f.valor||'')}" placeholder="Valor fijo (p. ej. Prime Digital)"/></div>
+        <div class="f grow"><label>Descripción (opcional)</label><input class="in descripcion" value="${esc(f.descripcion||'')}" placeholder="Para qué sirve este campo"/></div>
+      </div>`:""}`;
     const nombreI=el.querySelector(".nombre"), keyI=el.querySelector(".key");
-    nombreI.oninput=(e)=>{ f.nombre=e.target.value; if(f._new && !f._keyEdited){ f.key=slug(e.target.value); keyI.value=f.key; } };
-    keyI.oninput=(e)=>{ f._keyEdited=true; f.key=slug(e.target.value); e.target.value=f.key; };
+    nombreI.oninput=(e)=>{ f.nombre=e.target.value; if(f._new && !f._keyEdited){ f.key=slug(e.target.value); keyI.value=f.key; el.querySelector(".varhint").innerHTML=`se usa como <b>{{${esc(f.key||'clave')}}}</b>`; } };
+    keyI.oninput=(e)=>{ f._keyEdited=true; f.key=slug(e.target.value); e.target.value=f.key; el.querySelector(".varhint").innerHTML=`se usa como <b>{{${esc(f.key||'clave')}}}</b>`; };
     el.querySelector(".tipo").onchange=(e)=>f.tipo=e.target.value;
-    el.querySelector(".modo").onchange=(e)=>f.modo=e.target.value;
-    el.querySelector(".del").onclick=()=>{ if(f.id) st.deleted.push(f.id); st.fields.splice(i,1); render(); };
+    if(bot){ el.querySelector(".valor").oninput=(e)=>f.valor=e.target.value; el.querySelector(".descripcion").oninput=(e)=>f.descripcion=e.target.value; }
+    el.querySelector(".del").onclick=()=>{ if(f.id) st.deleted.push(f.id); st.fields=st.fields.filter(x=>x!==f); render(); };
     box.appendChild(el);
   });
 }
 async function save(){
-  // Validación básica.
   for(const f of st.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
-  if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } }
-  const rows=st.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo }; if(f.id) r.id=f.id; return r; });
-  if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows); if(error){ toast(error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
-  toast("Guardado ✓"); await load();
+  if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
+  const rows=st.fields.map(f=>{
+    const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico" };
+    if((f.modo||"dinamico")==="fijo"){ r.valor=f.valor||null; r.descripcion=f.descripcion||null; }
+    if(f.id) r.id=f.id; return r;
+  });
+  if(rows.length){
+    const { error }=await supa.from("custom_fields").upsert(rows);
+    if(error){
+      if(/valor|descripcion|column/.test(error.message)){ $("warn").innerHTML=`<div class="warn">Falta aplicar la migración <b>0013</b> (columnas <code>valor</code>/<code>descripcion</code>). Ejecútala en el SQL Editor.</div>`; }
+      else toast(error.message.includes("duplicate")?"Hay claves repetidas":error.message,true);
+      return;
+    }
+  }
+  $("warn").innerHTML=""; toast("Guardado ✓"); await load();
 }
 boot();
 </script>

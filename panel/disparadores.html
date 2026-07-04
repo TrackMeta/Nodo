@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Disparadores</title>
+<title>Nodo · Disparadores de IA</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -12,133 +12,167 @@
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
     --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
     --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
-    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .spacer{margin-left:auto}
-  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
-  .btn.primary{background:var(--brand);border:none;color:#fff}
-  .btn.primary:hover{background:var(--brand-2)}
-  .sel{height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 10px;font-size:13px;outline:none}
-  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:860px;margin:0 auto;width:100%}
-  h2{font-size:17px;margin:0 0 4px} .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
-  .crow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .badge{font-size:11px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
-  .badge.entrada{background:var(--brand-bg);color:var(--brand);border-color:transparent}
-  .badge.kw{background:var(--green-bg);color:var(--green);border-color:transparent}
-  label{font-size:11px;color:var(--muted);display:block;margin:10px 0 5px}
-  .in{width:100%;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none;font-family:inherit}
-  .in:focus{border-color:var(--brand)}
-  .chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;margin-right:16px}
-  .del{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;height:32px;padding:0 10px;font-size:12px;font-weight:600}
-  .empty{color:var(--faint);text-align:center;padding:50px}
-  .hint{font-size:11px;color:var(--faint);margin-top:6px}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
+  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:1000px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 4px;font-weight:700}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 22px;max-width:720px;line-height:1.55}
+  .lead b{color:var(--text)}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px}
+  .phd{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .phd .ic{width:34px;height:34px;border-radius:10px;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center}
+  .phd .ic svg{width:19px;height:19px}
+  .phd h3{margin:0;font-size:15px;font-weight:700}
+  .grid{display:grid;grid-template-columns:220px 1fr;gap:14px}
+  .full{grid-column:1 / -1}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 6px;font-weight:600}
+  .in,.sel{width:100%;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none;font-family:inherit}
+  .in:focus,.sel:focus{border-color:var(--brand)}
+  .createrow{display:flex;gap:12px;align-items:flex-end}
+  .createrow>div{flex:1}
+  .btn{height:40px;padding:0 18px;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{background:var(--brand-2)}
+  .btn svg{width:16px;height:16px}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.5}
+
+  .row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);margin-bottom:10px}
+  .chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--green);background:var(--green-bg);border-radius:8px;padding:6px 11px;white-space:nowrap;flex:none}
+  .chip svg{width:15px;height:15px}
+  .row .desc{flex:1;height:38px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13px;outline:none;min-width:0}
+  .row .desc:focus{border-color:var(--brand)}
+  .row .fsel{width:210px;flex:none;height:38px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 10px;font-size:12.5px;outline:none}
+  .iconbtn{width:36px;height:36px;flex:none;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center}
+  .iconbtn:hover{color:var(--red);border-color:var(--red)}
+  .iconbtn svg{width:16px;height:16px}
+  .empty{text-align:center;color:var(--faint);padding:40px;border:1px dashed var(--border);border-radius:12px}
+  .warn{background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.5}
+  code{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:12px}
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="top">
-    <span style="font-weight:600;font-size:15px">Disparadores</span>
-    <select class="sel" id="flowSel"></select>
-    <span class="spacer"></span>
-    <button class="btn" id="addKw">+ Palabra clave</button>
-    <button class="btn primary" id="saveBtn">Guardar</button>
-  </div>
+  <div class="top"><span style="font-weight:600;font-size:15px">Disparadores de IA</span></div>
   <div class="wrap">
-    <h2>Disparadores del flujo</h2>
-    <p class="sub">Definen cómo se dispara un flujo. <b>Entrada</b>: el enrutador por defecto del canal (un solo flujo activo). <b>Palabra clave</b>: se dispara cuando el mensaje del cliente coincide. El flujo debe estar <b>activo</b> para que corra.</p>
-    <div id="list"><div class="empty">Cargando…</div></div>
+    <h1>Disparadores de IA</h1>
+    <p class="lead">Crea gatillos que la IA puede activar por sí misma (por ejemplo: <b>pago_aprobado</b>, <b>quiere_comprar</b>, <b>solicita_asesor</b>). Estos disparadores podrán seleccionarse desde cualquier bloque de <b>IA</b> y, opcionalmente, ejecutar automáticamente un flujo cuando se activen.</p>
+
+    <div id="err"></div>
+
+    <div class="panel">
+      <div class="phd">
+        <span class="ic" id="createIc"></span>
+        <h3>Crear un disparador</h3>
+      </div>
+      <div class="grid">
+        <div>
+          <label>Nombre</label>
+          <input class="in" id="nNombre" placeholder="pago_aprobado"/>
+        </div>
+        <div>
+          <label>¿Cuándo debe activarlo la IA? (opcional)</label>
+          <input class="in" id="nDesc" placeholder="Cuando el comprobante de pago sea válido"/>
+        </div>
+        <div class="full">
+          <label>Flujo a activar (opcional)</label>
+          <div class="createrow">
+            <div><select class="sel" id="nFlow"></select></div>
+            <button class="btn" id="createBtn"><span id="plusIc"></span> Crear</button>
+          </div>
+        </div>
+      </div>
+      <div class="hint">El <b>nombre</b> se usa como identificador (sin espacios). Después, en un bloque de IA marca este disparador. Al activarlo, si le asignaste un <b>flujo a activar</b>, ese flujo se ejecuta automáticamente (p. ej. el de comprobante de pago); si no, puedes enrutar con una <b>Condición</b> que compruebe su variable (igual a «verdadero»).</div>
+    </div>
+
+    <div id="list"></div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, flowId:null, flows:[], triggers:[], deleted:[] };
-const MATCH=[["contiene","Contiene"],["exacta","Exacta"],["empieza","Empieza por"]];
+const st={ channelId:null, triggers:[], flows:[] };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);}
+const IC = {
+  zap:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+};
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  $("createIc").innerHTML=IC.zap; $("plusIc").innerHTML=IC.plus;
   const shell=await mountShell({ active:"disparadores" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; loadFlows(); });
-  $("addKw").onclick=()=>{ if(!st.flowId){ toast("Elige un flujo",true); return; } st.triggers.push({ _new:true, tipo:"keyword", config:{ keywords:[], match:"contiene" }, activo:true, interrumpe:false }); render(); };
-  $("saveBtn").onclick=save;
-  await loadFlows();
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  $("createBtn").onclick=create;
+  $("nNombre").oninput=(e)=>{ e.target.value=slug(e.target.value); };
+  await load();
 }
 async function loadFlows(){
-  const { data }=await supa.from("flows").select("id,nombre,estado,es_entrada").eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
+  const { data }=await supa.from("flows").select("id,nombre,estado,kind").eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
   st.flows=data||[];
-  const sel=$("flowSel"); sel.innerHTML="";
-  if(!st.flows.length){ const o=document.createElement("option"); o.textContent="(no hay flujos)"; o.value=""; sel.appendChild(o); }
-  st.flows.forEach(f=>{ const o=document.createElement("option"); o.value=f.id; o.textContent=f.nombre+(f.estado==="activo"?"":" · borrador"); sel.appendChild(o); });
-  st.flowId=st.flows[0]?.id||null; if(st.flowId) sel.value=st.flowId;
-  sel.onchange=()=>{ st.flowId=sel.value; loadTriggers(); };
-  await loadTriggers();
+  const opts=`<option value="">No lanzar ningún flujo</option>`+st.flows.map(f=>`<option value="${f.id}">${esc(f.nombre)}${f.estado!=="activo"?" (borrador)":""}</option>`).join("");
+  $("nFlow").innerHTML=opts;
+  return opts;
 }
-async function loadTriggers(){
-  st.deleted=[];
-  if(!st.flowId){ st.triggers=[]; render(); return; }
-  const { data }=await supa.from("flow_triggers").select("*").eq("flow_id",st.flowId).order("created_at");
-  st.triggers=(data||[]).map(t=>({ ...t, config:t.config||{} }));
-  render();
+async function load(){
+  $("err").innerHTML="";
+  const opts=await loadFlows();
+  const { data, error }=await supa.from("ai_triggers").select("*").eq("channel_id",st.channelId).order("created_at");
+  if(error){
+    $("list").innerHTML="";
+    $("err").innerHTML=`<div class="warn">Falta aplicar la migración <code>0013_ai_triggers_and_fields.sql</code> (tabla <code>ai_triggers</code>). Ejecútala en el SQL Editor y recarga.</div>`;
+    return;
+  }
+  st.triggers=data||[];
+  render(opts);
 }
-function render(){
+function render(opts){
   const box=$("list");
-  const flow=st.flows.find(f=>f.id===st.flowId);
-  if(!st.flowId){ box.innerHTML=`<div class="empty">Crea flujos (clonando esqueletos en Productos) para asignarles disparadores.</div>`; return; }
+  if(!st.triggers.length){ box.innerHTML=`<div class="empty">Aún no hay disparadores. Crea el primero arriba.</div>`; return; }
   box.innerHTML="";
-
-  // Tarjeta "Entrada" (toggle único por canal).
-  const entrada=st.triggers.find(t=>t.tipo==="entrada");
-  const entCard=document.createElement("div"); entCard.className="card";
-  entCard.innerHTML=`
-    <div class="crow"><span class="badge entrada">Entrada</span>
-      <label class="chk" style="margin-left:auto"><input type="checkbox" id="entChk" ${entrada&&entrada.activo?"checked":""}/> Este flujo es el enrutador por defecto del canal</label>
-    </div>
-    <div class="hint">Solo un flujo activo puede ser de entrada por canal. Se dispara cuando el mensaje no coincide con ninguna palabra clave.</div>`;
-  entCard.querySelector("#entChk").onchange=(e)=>{
-    if(e.target.checked){ if(!entrada){ const t={ _new:true, tipo:"entrada", config:{}, activo:true, interrumpe:false }; st.triggers.push(t); } else entrada.activo=true; }
-    else if(entrada){ entrada.activo=false; }
-  };
-  box.appendChild(entCard);
-
-  // Palabras clave.
-  const kws=st.triggers.filter(t=>t.tipo==="keyword");
-  if(!kws.length){ const e=document.createElement("div"); e.className="hint"; e.style.margin="4px 2px 10px"; e.textContent="Sin palabras clave. Añade una con “+ Palabra clave”."; box.appendChild(e); }
-  kws.forEach(t=>{
-    const el=document.createElement("div"); el.className="card";
+  st.triggers.forEach(t=>{
+    const el=document.createElement("div"); el.className="row";
     el.innerHTML=`
-      <div class="crow"><span class="badge kw">Palabra clave</span>
-        <label class="chk"><input type="checkbox" class="activo" ${t.activo?"checked":""}/> Activo</label>
-        <label class="chk"><input type="checkbox" class="interrumpe" ${t.interrumpe?"checked":""}/> Interrumpe conversación</label>
-        <button class="del" style="margin-left:auto">Eliminar</button>
-      </div>
-      <label>Palabras clave (separadas por coma)</label>
-      <input class="in kws" value="${esc((t.config.keywords||[]).join(', '))}" placeholder="hola, info, precio"/>
-      <label>Coincidencia</label>
-      <select class="in match">${MATCH.map(([v,l])=>`<option value="${v}" ${(t.config.match||'contiene')===v?"selected":""}>${l}</option>`).join("")}</select>`;
-    el.querySelector(".activo").onchange=(e)=>t.activo=e.target.checked;
-    el.querySelector(".interrumpe").onchange=(e)=>t.interrumpe=e.target.checked;
-    el.querySelector(".kws").oninput=(e)=>t.config.keywords=e.target.value.split(",").map(x=>x.trim()).filter(Boolean);
-    el.querySelector(".match").onchange=(e)=>t.config.match=e.target.value;
-    el.querySelector(".del").onclick=()=>{ if(t.id) st.deleted.push(t.id); st.triggers=st.triggers.filter(x=>x!==t); render(); };
+      <span class="chip">${IC.zap} ${esc(t.nombre)}</span>
+      <input class="desc" value="${esc(t.descripcion||'')}" placeholder="¿Cuándo debe activarlo la IA?"/>
+      <select class="fsel">${opts}</select>
+      <button class="iconbtn" title="Eliminar">${IC.trash}</button>`;
+    const fsel=el.querySelector(".fsel"); fsel.value=t.flow_id||"";
+    el.querySelector(".desc").onchange=(e)=>update(t,{ descripcion:e.target.value });
+    fsel.onchange=(e)=>update(t,{ flow_id:e.target.value||null });
+    el.querySelector(".iconbtn").onclick=()=>remove(t);
     box.appendChild(el);
   });
 }
-async function save(){
-  if(!st.flowId) return;
-  if(st.deleted.length){ const { error }=await supa.from("flow_triggers").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } }
-  const rows=st.triggers.map(t=>{ const r={ flow_id:st.flowId, channel_id:st.channelId, tipo:t.tipo, config:t.config||{}, activo:!!t.activo, interrumpe:!!t.interrumpe }; if(t.id) r.id=t.id; return r; });
-  if(rows.length){ const { error }=await supa.from("flow_triggers").upsert(rows); if(error){ toast(error.message.includes("idx_flows_entrada")||error.message.includes("unique")?"Ya hay otro flujo de entrada activo en este canal":error.message,true); return; } }
-  toast("Guardado ✓"); await loadTriggers();
+async function create(){
+  const nombre=slug($("nNombre").value);
+  if(!nombre){ toast("Escribe un nombre para el disparador",true); return; }
+  const { error }=await supa.from("ai_triggers").insert({
+    channel_id:st.channelId, nombre, descripcion:$("nDesc").value.trim()||null, flow_id:$("nFlow").value||null,
+  });
+  if(error){ toast(error.message.includes("duplicate")?"Ya existe un disparador con ese nombre":error.message,true); return; }
+  $("nNombre").value=""; $("nDesc").value=""; $("nFlow").value="";
+  toast("Disparador creado ✓"); await load();
+}
+async function update(t, patch){
+  const { error }=await supa.from("ai_triggers").update(patch).eq("id",t.id);
+  if(error){ toast(error.message,true); return; }
+  Object.assign(t,patch); toast("Guardado ✓");
+}
+async function remove(t){
+  if(!confirm(`¿Eliminar el disparador "${t.nombre}"?`)) return;
+  const { error }=await supa.from("ai_triggers").delete().eq("id",t.id);
+  if(error){ toast(error.message,true); return; }
+  toast("Eliminado ✓"); await load();
 }
 boot();
 </script>

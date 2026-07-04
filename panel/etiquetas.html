@@ -19,94 +19,150 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .spacer{margin-left:auto}
-  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
-  .btn.primary{background:var(--brand);border:none;color:#fff}
-  .btn.primary:hover{background:var(--brand-2)}
-  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:760px;margin:0 auto;width:100%}
-  h2{font-size:17px;margin:0 0 4px} .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;gap:12px;align-items:center}
-  .dot{width:16px;height:16px;border-radius:50%;flex:none}
-  .in{flex:1;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none;font-family:inherit}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
+  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:820px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 4px;font-weight:700}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 22px;line-height:1.5}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px}
+  .panel h3{margin:0 0 14px;font-size:14px;font-weight:700}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 7px;font-weight:600}
+  .in{width:100%;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none;font-family:inherit}
   .in:focus{border-color:var(--brand)}
-  .sel{height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none}
-  .del{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;height:36px;width:38px;flex:none}
-  .empty{color:var(--faint);text-align:center;padding:50px}
-  .preview{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
-  .chip{display:inline-flex;align-items:center;gap:6px;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:600}
+  .createrow{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap}
+  .createrow .fname{flex:1;min-width:180px}
+  .btn{height:40px;padding:0 18px;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{background:var(--brand-2)}
+  .btn svg{width:16px;height:16px}
+
+  .palette{display:flex;gap:8px;flex-wrap:wrap}
+  .sw{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;position:relative;transition:transform .1s}
+  .sw:hover{transform:scale(1.12)}
+  .sw.on{border-color:var(--text);box-shadow:0 0 0 2px var(--surface),0 0 0 4px currentColor}
+  .sw.on::after{content:"✓";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+
+  .prev{margin-top:14px;font-size:12px;color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:7px;border-radius:20px;padding:5px 13px;font-size:12.5px;font-weight:700}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+
+  .tags{display:flex;flex-direction:column;gap:10px}
+  .trow{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+  .trow .name{flex:none;width:190px;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13px;font-weight:600;outline:none}
+  .trow .name:focus{border-color:var(--brand)}
+  .trow .palette{flex:1}
+  .trow .sw{width:22px;height:22px}
+  .iconbtn{width:36px;height:36px;flex:none;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center}
+  .iconbtn:hover{color:var(--red);border-color:var(--red)}
+  .iconbtn svg{width:16px;height:16px}
+  .empty{text-align:center;color:var(--faint);padding:40px;border:1px dashed var(--border);border-radius:12px}
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="top">
-    <span style="font-weight:600;font-size:15px">Etiquetas</span>
-    <span class="spacer"></span>
-    <button class="btn" id="addBtn">+ Nueva etiqueta</button>
-    <button class="btn primary" id="saveBtn">Guardar</button>
-  </div>
+  <div class="top"><span style="font-weight:600;font-size:15px">Etiquetas</span></div>
   <div class="wrap">
-    <h2>Etiquetas</h2>
-    <p class="sub">Segmenta contactos y úsalas en flujos (añadir/quitar etiqueta) y campañas. Se aplican a los contactos desde la bandeja.</p>
-    <div class="preview" id="preview"></div>
-    <div id="list"><div class="empty">Cargando…</div></div>
+    <h1>Etiquetas</h1>
+    <p class="lead">Segmenta contactos y úsalas en flujos (añadir/quitar etiqueta) y campañas. Elige un color haciendo clic en la paleta.</p>
+
+    <div class="panel">
+      <h3>Nueva etiqueta</h3>
+      <div class="createrow">
+        <div class="fname"><label>Nombre</label><input class="in" id="nName" placeholder="Ej. Cliente"/></div>
+        <div><label>Color</label><div class="palette" id="nPalette"></div></div>
+        <button class="btn" id="createBtn"><span id="plusIc"></span> Crear</button>
+      </div>
+      <div class="prev">Vista previa: <span class="chip" id="nPrev"><span class="dot"></span>Cliente</span></div>
+    </div>
+
+    <div class="tags" id="list"></div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, tags:[], deleted:[] };
-const COLORS={ blue:"#2b7fff", green:"#22c079", amber:"#f0a92b", red:"#e2564a", purple:"#9b6cf0", teal:"#18b7be", pink:"#e264a8", gray:"#8a97a8" };
+const st={ channelId:null, tags:[], newColor:null };
+// Paleta visual (hex). El primer color es el por defecto.
+const PALETTE=["#2b7fff","#22c079","#f0a92b","#e2564a","#9b6cf0","#18b7be","#e264a8","#ff7a45","#0ea5e9","#84cc16","#f43f5e","#8a97a8"];
+// Compatibilidad con colores viejos guardados por nombre.
+const NAMED={ blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8" };
+function hex(c){ if(!c) return PALETTE[0]; if(c[0]==="#") return c; return NAMED[c]||PALETTE[0]; }
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-function hex(c){ return COLORS[c]||COLORS.blue; }
+const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+
+function paletteHtml(selected){
+  return PALETTE.map(c=>`<span class="sw${c===selected?" on":""}" data-c="${c}" style="background:${c};color:${c}"></span>`).join("");
+}
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  $("plusIc").innerHTML=PLUS;
   const shell=await mountShell({ active:"etiquetas" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
-  $("addBtn").onclick=()=>{ st.tags.push({ _new:true, nombre:"", color:"blue" }); render(); };
-  $("saveBtn").onclick=save;
+  st.newColor=PALETTE[0];
+  renderNewPalette();
+  $("nName").oninput=updatePreview;
+  $("createBtn").onclick=create;
   await load();
 }
+function renderNewPalette(){
+  $("nPalette").innerHTML=paletteHtml(st.newColor);
+  $("nPalette").querySelectorAll(".sw").forEach(s=> s.onclick=()=>{ st.newColor=s.dataset.c; renderNewPalette(); updatePreview(); });
+  updatePreview();
+}
+function updatePreview(){
+  const name=$("nName").value.trim()||"Etiqueta"; const c=st.newColor;
+  const p=$("nPrev"); p.style.background=c+"22"; p.style.color=c; p.style.border="1px solid "+c+"55";
+  p.innerHTML=`<span class="dot"></span>${esc(name)}`;
+}
 async function load(){
-  st.deleted=[];
   const { data }=await supa.from("tags").select("*").eq("channel_id",st.channelId).order("nombre");
   st.tags=data||[]; render();
 }
 function render(){
-  // Vista previa (chips de color).
-  $("preview").innerHTML = st.tags.filter(t=>t.nombre).map(t=>{
-    const h=hex(t.color); return `<span class="chip" style="background:${h}22;color:${h};border:1px solid ${h}55">● ${esc(t.nombre)}</span>`;
-  }).join("");
   const box=$("list");
-  if(!st.tags.length){ box.innerHTML=`<div class="empty">Aún no hay etiquetas. Crea la primera con “+ Nueva etiqueta”.</div>`; return; }
+  if(!st.tags.length){ box.innerHTML=`<div class="empty">Aún no hay etiquetas. Crea la primera arriba.</div>`; return; }
   box.innerHTML="";
-  st.tags.forEach((t,i)=>{
-    const el=document.createElement("div"); el.className="card";
+  st.tags.forEach(t=>{
+    const c=hex(t.color);
+    const el=document.createElement("div"); el.className="trow";
     el.innerHTML=`
-      <span class="dot" style="background:${hex(t.color)}"></span>
-      <input class="in nombre" value="${esc(t.nombre)}" placeholder="Nombre de la etiqueta"/>
-      <select class="sel color">${Object.keys(COLORS).map(c=>`<option value="${c}" ${t.color===c?"selected":""}>${c}</option>`).join("")}</select>
-      <button class="del" title="Eliminar">✕</button>`;
-    el.querySelector(".nombre").oninput=(e)=>{ t.nombre=e.target.value; renderPreview(); };
-    el.querySelector(".color").onchange=(e)=>{ t.color=e.target.value; render(); };
-    el.querySelector(".del").onclick=()=>{ if(t.id) st.deleted.push(t.id); st.tags.splice(i,1); render(); };
+      <span class="chip" style="background:${c}22;color:${c};border:1px solid ${c}55"><span class="dot"></span></span>
+      <input class="name" value="${esc(t.nombre)}"/>
+      <div class="palette">${paletteHtml(c)}</div>
+      <button class="iconbtn" title="Eliminar">${TRASH}</button>`;
+    const chip=el.querySelector(".chip");
+    el.querySelector(".name").onchange=(e)=>update(t,{ nombre:e.target.value.trim() });
+    el.querySelectorAll(".sw").forEach(s=> s.onclick=()=>{
+      el.querySelectorAll(".sw").forEach(x=>x.classList.remove("on")); s.classList.add("on");
+      const col=s.dataset.c; chip.style.background=col+"22"; chip.style.color=col; chip.style.border="1px solid "+col+"55";
+      update(t,{ color:col });
+    });
+    el.querySelector(".iconbtn").onclick=()=>remove(t);
     box.appendChild(el);
   });
 }
-function renderPreview(){
-  $("preview").innerHTML = st.tags.filter(t=>t.nombre).map(t=>{
-    const h=hex(t.color); return `<span class="chip" style="background:${h}22;color:${h};border:1px solid ${h}55">● ${esc(t.nombre)}</span>`;
-  }).join("");
+async function create(){
+  const nombre=$("nName").value.trim();
+  if(!nombre){ toast("Escribe un nombre",true); return; }
+  const { error }=await supa.from("tags").insert({ channel_id:st.channelId, nombre, color:st.newColor });
+  if(error){ toast(error.message.includes("duplicate")?"Ya existe una etiqueta con ese nombre":error.message,true); return; }
+  $("nName").value=""; st.newColor=PALETTE[0]; renderNewPalette();
+  toast("Etiqueta creada ✓"); await load();
 }
-async function save(){
-  for(const t of st.tags){ if(!t.nombre.trim()){ toast("Cada etiqueta necesita un nombre",true); return; } }
-  if(st.deleted.length){ const { error }=await supa.from("tags").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } }
-  const rows=st.tags.map(t=>{ const r={ channel_id:st.channelId, nombre:t.nombre.trim(), color:t.color }; if(t.id) r.id=t.id; return r; });
-  if(rows.length){ const { error }=await supa.from("tags").upsert(rows); if(error){ toast(error.message.includes("duplicate")?"Hay nombres repetidos":error.message,true); return; } }
-  toast("Guardado ✓"); await load();
+async function update(t, patch){
+  if(patch.nombre!==undefined && !patch.nombre){ toast("El nombre no puede estar vacío",true); return; }
+  const { error }=await supa.from("tags").update(patch).eq("id",t.id);
+  if(error){ toast(error.message.includes("duplicate")?"Nombre repetido":error.message,true); return; }
+  Object.assign(t,patch);
+}
+async function remove(t){
+  if(!confirm(`¿Eliminar la etiqueta "${t.nombre}"?`)) return;
+  const { error }=await supa.from("tags").delete().eq("id",t.id);
+  if(error){ toast(error.message,true); return; }
+  toast("Eliminada ✓"); await load();
 }
 boot();
 </script>
