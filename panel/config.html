@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Configuraciones</title>
+<title>Nodo · Configuración</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -12,329 +12,242 @@
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
     --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
     --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
-    --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .top a{color:var(--muted);text-decoration:none;font-size:20px}
-  .top a.active{color:var(--brand)}
-  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
-  .spacer{margin-left:auto}
-  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
-  .btn.primary{background:var(--brand);border:none;color:#fff}
-  .btn.primary:hover{background:var(--brand-2)}
-  .btn.ghost{color:var(--muted)}
-  .btn.danger{color:var(--red);border-color:transparent}
-  .wrap{flex:1;overflow-y:auto;padding:26px 22px;max-width:760px;margin:0 auto;width:100%}
-  h2{font-size:16px;margin:0 0 4px}
-  .sub{color:var(--muted);font-size:12.5px;margin:0 0 22px}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
+  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:780px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 16px;font-weight:700}
+  .tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:10px 4px;margin-right:20px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .tab svg{width:16px;height:16px}
+  h2{font-size:15px;margin:0 0 4px;font-weight:700}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 18px;line-height:1.5}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px}
   .card.on{border-color:var(--green)}
   .chd{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-  .chd .ico{font-size:22px}
+  .chd .ico{width:34px;height:34px;border-radius:10px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center}
+  .chd .ico svg{width:19px;height:19px}
   .chd .nm{font-weight:700;font-size:15px}
-  .badge{font-size:10px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+  .badge{font-size:10px;padding:3px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:600}
   .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
   .badge.def{background:var(--brand-bg);color:var(--brand);border-color:transparent}
-  .desc{color:var(--faint);font-size:12px;margin:2px 0 14px}
-  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
-  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
+  .desc{color:var(--faint);font-size:12px;margin:2px 0 14px;line-height:1.5}
+  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px;font-weight:600}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px;outline:none;font-family:var(--font)}
   .in:focus{border-color:var(--brand)}
-  .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .row>.f{flex:1;min-width:180px}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .row>.f{flex:1;min-width:170px}
   .acts{display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}
-  .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+  .btn{height:38px;padding:0 15px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="top">
-    <span style="font-weight:600;font-size:15px">Configuración</span>
-    <span class="spacer"></span>
-  </div>
+  <div class="top"><span style="font-weight:600;font-size:15px">Configuración</span></div>
   <div class="wrap">
-    <h2>Identidad del bot</h2>
-    <p class="sub">Nombre y logo que se muestran en el panel para este bot. Si no defines un logo, se usa el de Nodo.</p>
-    <div id="brandCard"></div>
-
-    <h2 style="margin-top:30px">Inteligencia Artificial</h2>
-    <p class="sub">Cada canal usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ✨ IA de tus flujos.</p>
-    <div id="cards"></div>
-
-    <h2 style="margin-top:30px">WhatsApp / Meta</h2>
-    <p class="sub">Credenciales del número y del pixel: para enviar/recibir mensajes y mandar conversiones (CAPI). Los tokens se guardan cifrados en Vault.</p>
-    <div id="metaCard"></div>
-
-    <h2 style="margin-top:30px">Telegram</h2>
-    <p class="sub">Bot y chats que reciben avisos (transferir a humano, notificaciones de venta).</p>
-    <div id="tgCard"></div>
+    <h1>Configuración</h1>
+    <div class="tabs">
+      <button class="tab active" data-t="marca" id="tabMarca"></button>
+      <button class="tab" data-t="ia" id="tabIa"></button>
+      <button class="tab" data-t="pixel" id="tabPixel"></button>
+    </div>
+    <div id="body"></div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $ = (id) => document.getElementById(id);
+const IC={
+  tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2 12 2l2.1 2.2L17 5l-1 3 1 3-2.9.8L12 14l-2.1-2.2L7 11l1-3-1-3z"/><path d="M18 16l.7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7z"/></svg>',
+  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+};
 
 const PROVIDERS = [
-  { id:"anthropic", ico:"🟣", nm:"Claude (Anthropic)", desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
+  { id:"anthropic", nm:"Claude (Anthropic)", desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
     keyHint:"sk-ant-...", models:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"] },
-  { id:"openai", ico:"🟢", nm:"ChatGPT (OpenAI)", desc:"Modelos GPT de OpenAI.",
+  { id:"openai", nm:"ChatGPT (OpenAI)", desc:"Modelos GPT de OpenAI.",
     keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
 ];
-
-const st = { channelId:null, iaProvider:null, cfg:{} }; // cfg[provider] = {model,updated_at}
-
+const st = { channelId:null, tab:"marca", iaProvider:null, cfg:{}, channel:{}, secrets:{}, pendingLogo:null };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
+  $("tabMarca").innerHTML=IC.tag+"<span>Marca del Bot</span>";
+  $("tabIa").innerHTML=IC.spark+"<span>Inteligencia Artificial</span>";
+  $("tabPixel").innerHTML=IC.target+"<span>Pixel de Meta</span>";
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"config" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; loadCfg(); });
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
-  // Resiliente: si logo_url aún no está migrado, reintenta sin esa columna.
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,phone_number_id,waba_id,verify_token,pixel_id,page_id,telegram_chat_ids")
-    .eq("id",st.channelId).maybeSingle();
-  if(chErr){ ({ data:ch } = await supa.from("channels")
-    .select("nombre,ia_provider,phone_number_id,waba_id,verify_token,pixel_id,page_id,telegram_chat_ids")
-    .eq("id",st.channelId).maybeSingle()); }
-  st.iaProvider = ch?.ia_provider ?? null;
-  st.channel = ch || {};
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id").eq("id",st.channelId).maybeSingle()); }
+  st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
-  st.cfg = {};
-  (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
-  // Estado de secretos (qué está configurado) vía Edge Function.
+  st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
   st.secrets = {};
   try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
   render();
 }
 
 function render(){
-  const box=$("cards"); box.innerHTML="";
-  PROVIDERS.forEach(p=>{
-    const cfg = st.cfg[p.id];
-    const isDef = st.iaProvider===p.id;
-    const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
-    const dl = p.models.map(m=>`<option value="${m}">`).join("");
-    card.innerHTML=`
-      <div class="chd">
-        <span class="ico">${p.ico}</span>
-        <span class="nm">${esc(p.nm)}</span>
-        ${cfg?'<span class="badge on">Configurada</span>':'<span class="badge">Sin configurar</span>'}
-        ${isDef?'<span class="badge def">Por defecto</span>':''}
-      </div>
-      <div class="desc">${esc(p.desc)}</div>
-      <label>API key ${cfg?'<span style="color:var(--faint)">(déjala vacía para conservar la actual)</span>':''}</label>
-      <input class="in" type="password" id="key_${p.id}" autocomplete="off" placeholder="${cfg?'•••••••• guardada':p.keyHint}"/>
-      <div class="row" style="margin-top:2px">
-        <div class="f">
-          <label>Modelo por defecto</label>
-          <input class="in" id="model_${p.id}" list="dl_${p.id}" value="${esc(cfg?.model||p.models[0])}" placeholder="${esc(p.models[0])}"/>
-          <datalist id="dl_${p.id}">${dl}</datalist>
-        </div>
-      </div>
-      <div class="acts">
-        <button class="btn primary" data-a="save" data-p="${p.id}">Guardar</button>
-        <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
-        ${!isDef && cfg?`<button class="btn ghost" data-a="default" data-p="${p.id}">Usar por defecto</button>`:''}
-        ${cfg?`<button class="btn danger" data-a="delete" data-p="${p.id}">Eliminar</button>`:''}
-      </div>`;
-    box.appendChild(card);
-  });
-  box.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
-  renderBranding();
-  renderMeta();
-  renderTelegram();
+  const b=$("body");
+  if(st.tab==="marca") renderBranding(b);
+  else if(st.tab==="ia") renderIA(b);
+  else renderPixel(b);
 }
 
-function renderBranding(){
-  const c=st.channel||{};
-  const card=$("brandCard"); card.className="card";
-  const logo = c.logo_url || "../assets/logo-rounded.png";
-  card.innerHTML=`
-    <div class="chd"><span class="ico">🏷️</span><span class="nm">Marca del bot</span></div>
-    <div class="desc">Se muestran en el menú lateral del panel para este bot.</div>
-    <div class="row" style="align-items:center;gap:16px">
-      <img id="brandPrev" src="${esc(logo)}" alt="" style="width:54px;height:54px;border-radius:12px;object-fit:cover;background:var(--surface-2);border:1px solid var(--border)"/>
-      <div class="f"><label>Nombre del bot</label><input class="in" id="b_nombre" value="${esc(c.nombre||'')}"/></div>
-    </div>
-    <label>Logo del bot</label>
-    <div class="acts" style="margin-top:0">
-      <button class="btn" id="uploadBtn">⬆ Subir desde la PC</button>
-      <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
-      <span class="desc" style="margin:0">o pega una URL abajo</span>
-    </div>
-    <input class="in" id="b_logo" value="${esc((c.logo_url||'').startsWith('data:')?'':(c.logo_url||''))}" placeholder="https://.../logo.png" style="margin-top:8px"/>
-    <div class="acts"><button class="btn primary" id="saveBrand">Guardar marca</button></div>`;
-  $("b_logo").oninput=(e)=>{ st.pendingLogo=null; $("brandPrev").src = e.target.value.trim() || "../assets/logo-rounded.png"; };
+// ── Marca del Bot ───────────────────────────────────────────────────
+function renderBranding(b){
+  const c=st.channel||{}; const logo=c.logo_url||"../assets/logo-rounded.png";
+  b.innerHTML=`
+    <h2>Marca del Bot</h2><p class="sub">Nombre y logo que se muestran en el panel para este bot. Si no defines un logo, se usa el de Nodo.</p>
+    <div class="card">
+      <div class="row" style="align-items:center;gap:16px">
+        <img id="brandPrev" src="${esc(logo)}" alt="" style="width:56px;height:56px;border-radius:13px;object-fit:cover;background:var(--surface-2);border:1px solid var(--border)"/>
+        <div class="f"><label>Nombre del bot</label><input class="in" id="b_nombre" value="${esc(c.nombre||'')}"/></div>
+      </div>
+      <label>Logo del bot</label>
+      <div class="acts" style="margin-top:0">
+        <button class="btn" id="uploadBtn">⬆ Subir desde la PC</button>
+        <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
+        <span class="desc" style="margin:0">o pega una URL abajo</span>
+      </div>
+      <input class="in" id="b_logo" value="${esc((c.logo_url||'').startsWith('data:')?'':(c.logo_url||''))}" placeholder="https://.../logo.png" style="margin-top:8px"/>
+      <div class="acts"><button class="btn primary" id="saveBrand">Guardar marca</button></div>
+    </div>`;
+  $("b_logo").oninput=(e)=>{ st.pendingLogo=null; $("brandPrev").src=e.target.value.trim()||"../assets/logo-rounded.png"; };
   $("uploadBtn").onclick=()=>$("logoFile").click();
   $("logoFile").onchange=(e)=>handleLogoFile(e.target.files[0]);
   $("saveBrand").onclick=(e)=>saveBrand(e.target);
 }
-// Reescala la imagen en el navegador y la devuelve como data URL (sin Storage).
 function downscaleImage(file, size=96){
-  return new Promise((res,rej)=>{
-    const img=new Image(); const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      const c=document.createElement("canvas"); c.width=size; c.height=size;
-      const ctx=c.getContext("2d");
-      const scale=Math.min(size/img.width, size/img.height);
-      const w=img.width*scale, h=img.height*scale;
-      ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h);
-      URL.revokeObjectURL(url);
-      res(c.toDataURL("image/png"));
-    };
-    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("no se pudo leer la imagen")); };
-    img.src=url;
-  });
+  return new Promise((res,rej)=>{ const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{ const c=document.createElement("canvas"); c.width=size; c.height=size; const ctx=c.getContext("2d");
+      const s=Math.min(size/img.width,size/img.height), w=img.width*s, h=img.height*s;
+      ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h); URL.revokeObjectURL(url); res(c.toDataURL("image/png")); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("no se pudo leer la imagen")); }; img.src=url; });
 }
 async function handleLogoFile(file){
-  if(!file) return;
-  if(file.size>4*1024*1024){ toast("Imagen muy grande (máx 4MB)",true); return; }
-  try{
-    const dataUrl=await downscaleImage(file, 96);
-    st.pendingLogo=dataUrl;
-    const prev=$("brandPrev"); if(prev) prev.src=dataUrl;
-    toast("Imagen cargada — pulsa Guardar marca");
-  }catch(e){ toast(e.message||"error al leer imagen",true); }
+  if(!file) return; if(file.size>4*1024*1024){ toast("Imagen muy grande (máx 4MB)",true); return; }
+  try{ const d=await downscaleImage(file,96); st.pendingLogo=d; $("brandPrev").src=d; toast("Imagen cargada — pulsa Guardar marca"); }
+  catch(e){ toast(e.message||"error",true); }
 }
 async function saveBrand(btn){
   const nombre=$("b_nombre").value.trim();
   const logo_url = st.pendingLogo || ($("b_logo").value.trim()||null);
   if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  const { error } = await supa.from("channels").update({ nombre, logo_url }).eq("id",st.channelId);
+  const { error }=await supa.from("channels").update({ nombre, logo_url }).eq("id",st.channelId);
   btn.disabled=false; btn.textContent=old;
-  if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message, true); return; }
+  if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message,true); return; }
   toast("Marca guardada ✓");
-  // Reflejar en el sidebar al instante.
   const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-rounded.png";
   const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
   const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
   st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null;
 }
 
-function secBadge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
-function secPlaceholder(on, hint){ return on?'•••••••• guardado':hint; }
-
-function renderMeta(){
-  const c=st.channel||{}, s=st.secrets||{};
-  const card=$("metaCard"); card.className="card";
-  card.innerHTML=`
-    <div class="chd"><span class="ico">🟩</span><span class="nm">WhatsApp Cloud API</span></div>
-    <div class="desc">Datos del número (Meta Developers) y del pixel para conversiones.</div>
-    <div class="row">
-      <div class="f"><label>phone_number_id</label><input class="in" id="m_phone_number_id" value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
-      <div class="f"><label>WABA id (waba_id)</label><input class="in" id="m_waba_id" value="${esc(c.waba_id)}" placeholder="opcional"/></div>
-    </div>
-    <div class="row">
-      <div class="f"><label>Verify token (webhook)</label><input class="in" id="m_verify_token" value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/></div>
-      <div class="f"><label>Pixel id</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="para CAPI"/></div>
-    </div>
-    <div class="row">
-      <div class="f"><label>Page id</label><input class="in" id="m_page_id" value="${esc(c.page_id)}" placeholder="página del anuncio (CTWA)"/></div>
-      <div class="f"></div>
-    </div>
-    <label style="margin-top:16px">Access token de WhatsApp ${secBadge(s.access_token)}</label>
-    <input class="in" type="password" id="s_access_token" autocomplete="off" placeholder="${secPlaceholder(s.access_token,'EAAG...')}"/>
-    <label>App Secret ${secBadge(s.app_secret)}</label>
-    <input class="in" type="password" id="s_app_secret" autocomplete="off" placeholder="${secPlaceholder(s.app_secret,'firma del webhook')}"/>
-    <label>Token CAPI (Conversions API) ${secBadge(s.capi_token)}</label>
-    <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${secPlaceholder(s.capi_token,'token del pixel')}"/>
-    <div class="acts"><button class="btn primary" id="saveMeta">Guardar WhatsApp / Meta</button></div>`;
-  $("saveMeta").onclick=(e)=>saveChannel(e.target, {
-    phone_number_id:$("m_phone_number_id").value, waba_id:$("m_waba_id").value,
-    verify_token:$("m_verify_token").value, pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value,
-    access_token:$("s_access_token").value||undefined, app_secret:$("s_app_secret").value||undefined,
-    capi_token:$("s_capi_token").value||undefined,
+// ── Inteligencia Artificial ─────────────────────────────────────────
+function renderIA(box){
+  box.innerHTML=`<h2>Inteligencia Artificial</h2><p class="sub">Cada bot usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ✨ IA de tus flujos.</p><div id="cards"></div>`;
+  const cont=$("cards");
+  PROVIDERS.forEach(p=>{
+    const cfg=st.cfg[p.id], isDef=st.iaProvider===p.id;
+    const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
+    const dl=p.models.map(m=>`<option value="${m}">`).join("");
+    card.innerHTML=`
+      <div class="chd"><span class="ico">${IC.spark}</span><span class="nm">${esc(p.nm)}</span>
+        ${cfg?'<span class="badge on">Configurada</span>':'<span class="badge">Sin configurar</span>'}
+        ${isDef?'<span class="badge def">Por defecto</span>':''}</div>
+      <div class="desc">${esc(p.desc)}</div>
+      <label>API key ${cfg?'<span style="color:var(--faint)">(vacía para conservar la actual)</span>':''}</label>
+      <input class="in" type="password" id="key_${p.id}" autocomplete="off" placeholder="${cfg?'•••••••• guardada':p.keyHint}"/>
+      <label>Modelo por defecto</label>
+      <input class="in" id="model_${p.id}" list="dl_${p.id}" value="${esc(cfg?.model||p.models[0])}" placeholder="${esc(p.models[0])}"/>
+      <datalist id="dl_${p.id}">${dl}</datalist>
+      <div class="acts">
+        <button class="btn primary" data-a="save" data-p="${p.id}">Guardar</button>
+        <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
+        ${!isDef&&cfg?`<button class="btn ghost" data-a="default" data-p="${p.id}">Usar por defecto</button>`:''}
+        ${cfg?`<button class="btn danger" data-a="delete" data-p="${p.id}">Eliminar</button>`:''}
+      </div>`;
+    cont.appendChild(card);
   });
+  cont.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
 }
 
-function renderTelegram(){
+// ── Pixel de Meta (CAPI) ────────────────────────────────────────────
+function renderPixel(box){
   const c=st.channel||{}, s=st.secrets||{};
-  const chats=(c.telegram_chat_ids||[]).join(", ");
-  const card=$("tgCard"); card.className="card";
-  card.innerHTML=`
-    <div class="chd"><span class="ico">✈️</span><span class="nm">Bot de Telegram</span></div>
-    <div class="desc">Crea un bot con @BotFather y pega su token. Los chat ids son de los admins que reciben los avisos.</div>
-    <label>Bot token ${secBadge(s.telegram_bot_token)}</label>
-    <input class="in" type="password" id="s_telegram_bot_token" autocomplete="off" placeholder="${secPlaceholder(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
-    <label>Chat ids (separados por coma)</label>
-    <input class="in" id="tg_chats" value="${esc(chats)}" placeholder="12345678, 87654321"/>
-    <div class="acts"><button class="btn primary" id="saveTg">Guardar Telegram</button></div>`;
-  $("saveTg").onclick=(e)=>saveChannel(e.target, {
-    telegram_bot_token:$("s_telegram_bot_token").value||undefined,
-    telegram_chat_ids:$("tg_chats").value,
-  });
+  box.innerHTML=`
+    <h2>Conexión del Pixel de Meta</h2>
+    <p class="sub">Envío de conversiones a Meta (Conversions API) para optimizar tus campañas de Click-to-WhatsApp: Lead, InitiateCheckout y Purchase.</p>
+    <div class="card">
+      <div class="chd"><span class="ico">${IC.target}</span><span class="nm">Pixel / Conversions API</span></div>
+      <div class="desc">El Pixel ID y el Page ID identifican tu activo publicitario; el token CAPI autoriza el envío de eventos.</div>
+      <div class="row">
+        <div class="f"><label>Pixel ID</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/></div>
+        <div class="f"><label>Page ID</label><input class="in" id="m_page_id" value="${esc(c.page_id)}" placeholder="página del anuncio (CTWA)"/></div>
+      </div>
+      <label>Token CAPI (Conversions API) ${s.capi_token?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'}</label>
+      <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':'token del pixel (Eventos → Configuración)'}"/>
+      <div class="acts"><button class="btn primary" id="savePixel">Guardar Pixel</button></div>
+    </div>`;
+  $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value, capi_token:$("s_capi_token").value||undefined });
 }
 
 async function saveChannel(btn, fields){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  try{
-    await callFn("channel-config", { action:"save", channel_id:st.channelId, ...fields });
-    toast("Guardado ✓");
-    await loadCfg();
-  }catch(e){ toast(e.message||"error",true); }
+  try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...fields }); toast("Guardado ✓"); await loadCfg(); }
+  catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
-
 async function callFn(fn, body){
   const { data, error } = await supa.functions.invoke(fn, { body });
   if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
   return data;
 }
-
 async function call(body){
   const { data, error } = await supa.functions.invoke("ai-config", { body });
-  if(error){
-    // Intentar leer el detalle del cuerpo de error.
-    let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{}
-    throw new Error(d||error.message||"error");
-  }
+  if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
   return data;
 }
-
 async function onAction(action, provider, btn){
-  const key = $("key_"+provider)?.value?.trim() || null;
-  const model = $("model_"+provider)?.value?.trim() || null;
+  const key=$("key_"+provider)?.value?.trim()||null;
+  const model=$("model_"+provider)?.value?.trim()||null;
   btn.disabled=true; const old=btn.textContent;
   try{
     if(action==="save"){
       if(!key && !st.cfg[provider]){ toast("Pega la API key primero",true); return; }
-      const makeDef = !st.iaProvider; // primer proveedor configurado → por defecto
-      await call({ action:"save", channel_id:st.channelId, provider, api_key:key, model, make_default:makeDef });
+      await call({ action:"save", channel_id:st.channelId, provider, api_key:key, model, make_default:!st.iaProvider });
       toast("Guardado ✓");
     } else if(action==="test"){
       btn.textContent="Probando…";
       const r=await call({ action:"test", channel_id:st.channelId, provider });
-      if(r?.ok) toast("IA responde ✓ ("+(r.respuesta||"").slice(0,20)+")");
-      else toast("Falló la prueba: "+(r?.detalle||r?.error||""),true);
-      return;
-    } else if(action==="default"){
-      await call({ action:"default", channel_id:st.channelId, provider });
-      toast("Proveedor por defecto actualizado ✓");
-    } else if(action==="delete"){
-      if(!confirm("¿Eliminar la configuración de "+provider+"? La API key se borra de Vault.")) return;
-      await call({ action:"delete", channel_id:st.channelId, provider });
-      toast("Eliminado ✓");
-    }
+      if(r?.ok) toast("IA responde ✓"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
+    } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto ✓"); }
+    else if(action==="delete"){ if(!confirm("¿Eliminar la configuración de "+provider+"?")) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado ✓"); }
     await loadCfg();
   }catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
-
 boot();
 </script>
 </body>
