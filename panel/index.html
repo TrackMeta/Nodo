@@ -89,6 +89,22 @@
   .btnchip{font-size:12px;padding:6px 14px;border:1px solid var(--brand);border-radius:20px;color:var(--brand);background:transparent}
   .btnchip:hover{background:var(--brand-bg)}
   .testtag{font-size:11px;background:var(--amber-bg);color:var(--amber);padding:2px 8px;border-radius:20px;margin-left:8px}
+
+  /* Panel de contacto (derecha) */
+  .cpanel{width:290px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:16px 16px 28px}
+  .cpanel h4{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:20px 0 8px}
+  .cpanel .chd{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .cpanel .bigav{width:60px;height:60px;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}
+  .cpanel .cnm{font-weight:600;font-size:15px}
+  .cpanel .cph{font-size:12px;color:var(--muted)}
+  .tagchip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:3px 8px 3px 11px;font-size:12px;margin:0 5px 5px 0}
+  .tagchip button{background:none;border:none;color:var(--faint);font-size:14px;line-height:1;padding:0;cursor:pointer}
+  .tagchip button:hover{color:var(--red)}
+  .cfield{margin-bottom:9px}
+  .cfield label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+  .cinput,.cselect{width:100%;height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 9px;font-size:13px;outline:none;font-family:inherit}
+  .cinput:focus,.cselect:focus{border-color:var(--brand)}
+  .cmuted{font-size:12px;color:var(--faint)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red-bg);color:var(--red);border:1px solid var(--red);padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
 </style>
@@ -116,7 +132,7 @@
   <div class="list">
     <div class="top">
       <span style="font-weight:600;font-size:14px">Bandeja</span>
-      <button class="testbtn" id="testBtn" title="Probar flujos sin WhatsApp">🧪 Probar</button>
+      <button class="testbtn" id="testBtn" title="Reinicia la conversación de prueba para empezar de cero">🗑 Borrar chat</button>
     </div>
     <div id="convList" style="overflow-y:auto;flex:1"></div>
   </div>
@@ -143,6 +159,8 @@
       </div>
     </div>
   </div>
+
+  <aside class="cpanel hidden" id="cpanel"></aside>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -172,7 +190,7 @@ async function boot() {
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
   const shell = await mountShell({ active: "inbox" });
   state.channelId = shell.channelId;
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); loadConversations(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadConversations(); });
   await loadConversations();
   subscribeRealtime();
 }
@@ -212,6 +230,74 @@ async function openChat(c) {
   await markRead();
   loadConversations();
   updateWindow();
+  loadContactPanel(c);
+}
+
+// ── Panel de contacto: etapa, etiquetas, campos personalizados ──
+const STAGES = ["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
+let panelData = {};
+async function loadContactPanel(c){
+  const p = $("cpanel"); p.classList.remove("hidden");
+  p.innerHTML = `<div class="cmuted" style="padding:20px 0;text-align:center">Cargando…</div>`;
+  const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes] = await Promise.all([
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo").eq("id", c.id).maybeSingle(),
+    supa.from("tags").select("id,nombre").eq("channel_id", state.channelId).order("nombre"),
+    supa.from("contact_tags").select("tag_id").eq("contact_id", c.id),
+    supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id", state.channelId).order("nombre"),
+    supa.from("contact_field_values").select("field_id,value").eq("contact_id", c.id),
+  ]);
+  if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
+  const contact = ctRes.data || c;
+  const allTags = tagsRes.data || [];
+  const assigned = new Set((ctagsRes.data||[]).map(r=>r.tag_id));
+  const fields = fieldsRes.data || [];
+  const vals = Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id, v.value]));
+  panelData = { contact, allTags, assigned, fields, vals };
+  renderContactPanel();
+}
+function renderContactPanel(){
+  const { contact, allTags, assigned, fields, vals } = panelData;
+  const p = $("cpanel");
+  const isTest = contact.wa_id === "webchat-test";
+  const avail = allTags.filter(t=>!assigned.has(t.id));
+  p.innerHTML = `
+    <div class="chd">
+      <div class="bigav">${initials(contact.nombre, contact.wa_id)}</div>
+      <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>
+      <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
+    </div>
+    <h4>Etapa del embudo</h4>
+    <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
+    <h4>Etiquetas</h4>
+    <div id="pTags">${
+      [...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); return t?`<span class="tagchip">${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar">×</button></span>`:""; }).join("")
+      || '<span class="cmuted">Sin etiquetas</span>'
+    }</div>
+    ${avail.length
+      ? `<select class="cselect" id="pAddTag" style="margin-top:7px"><option value="">+ añadir etiqueta…</option>${avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("")}</select>`
+      : '<div class="cmuted" style="margin-top:7px">Crea etiquetas en la sección Etiquetas</div>'}
+    <h4>Campos personalizados</h4>
+    <div id="pFields">${
+      fields.length
+        ? fields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
+        : '<span class="cmuted">Este canal no tiene campos personalizados aún</span>'
+    }</div>`;
+  $("pStage").onchange = async (e)=>{ await supa.from("contacts").update({ stage:e.target.value }).eq("id",contact.id); contact.stage=e.target.value; toast("Etapa actualizada ✓"); };
+  p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{
+    await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
+    assigned.delete(b.dataset.tag); renderContactPanel();
+  });
+  const add=$("pAddTag"); if(add) add.onchange=async()=>{
+    if(!add.value) return;
+    await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:add.value }, { onConflict:"contact_id,tag_id" });
+    assigned.add(add.value); renderContactPanel();
+  };
+  p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{
+    await supa.from("contact_field_values").upsert(
+      { contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },
+      { onConflict:"contact_id,field_id" });
+    vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓");
+  });
 }
 function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
 
@@ -268,17 +354,18 @@ async function callFn(name, body) {
   });
 }
 
-// ── Modo prueba (webchat) ──
-$("testBtn").addEventListener("click", startTest);
-async function startTest() {
+// ── Modo prueba (webchat): "Borrar chat" reinicia la conversación de prueba ──
+$("testBtn").addEventListener("click", clearTestChat);
+async function clearTestChat() {
   if (!state.channelId) return;
-  await callFn("webchat", { channel_id: state.channelId, reset: true });
-  const res = await callFn("webchat", { channel_id: state.channelId, text: "hola" });
-  const out = await res.json();
+  if (!confirm("¿Borrar la conversación de prueba y empezar de cero? (escribe como el cliente para disparar el flujo)")) return;
+  const res = await callFn("webchat", { channel_id: state.channelId, reset: true });
+  const out = await res.json().catch(() => ({}));
+  await loadConversations();
   if (out.contact_id) {
-    await loadConversations();
     openChat({ id: out.contact_id, nombre: "🧪 Prueba (webchat)", wa_id: "webchat-test", bot_activo: true });
-  } else { toast(out.detalle || out.error || "No se pudo iniciar la prueba", true); }
+    toast("Chat de prueba reiniciado ✓ — escribe como el cliente");
+  } else { toast(out.detalle || out.error || "No se pudo reiniciar", true); }
 }
 async function sendButton(id, title) {
   await callFn("webchat", { channel_id: state.channelId, buttonId: id, text: title });
