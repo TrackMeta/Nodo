@@ -8,39 +8,57 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
-  :root{--bg:#0e1116;--surface:#151a21;--surface-2:#1b222c;--border:#232b36;--text:#e7ecf2;--muted:#8a97a8;--faint:#5c6675;--brand:#2b7fff;--brand-2:#1e6ff0;--green:#22c079;--amber:#f0a92b;--red:#e2564a;--font:"Inter",system-ui,sans-serif;}
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .top a{color:var(--muted);text-decoration:none;font-size:20px}.top a.active{color:var(--brand)}
-  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
   .spacer{margin-left:auto}
-  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:1080px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 2px;font-weight:700}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 18px}
+  .folders{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  .fchip{height:32px;padding:0 13px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .fchip.on{background:var(--brand-bg);color:var(--brand);border-color:transparent}
+  .fchip svg{width:14px;height:14px}
+  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--brand)} .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
-  .main{flex:1;display:flex;min-height:0}
-  .list{width:250px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .list .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
-  .item{padding:11px 12px;border-bottom:1px solid var(--border);cursor:pointer}
-  .item:hover{background:var(--surface)}.item.active{background:var(--surface-2)}
-  .item .n{font-weight:600;font-size:13px}.item .m{font-size:11px;color:var(--faint);margin-top:2px}
-  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 24px;max-width:720px}
-  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
-  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
-  .in:focus{border-color:var(--brand)}
-  .stages{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
-  .sp{background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;user-select:none}
-  .sp.on{background:var(--brand-bg);border-color:var(--brand);color:var(--brand)}
-  .stat{display:flex;gap:16px;margin-top:12px}.stat .b{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;flex:1}
-  .stat .k{font-size:11px;color:var(--muted)}.stat .v{font-size:22px;font-weight:700;margin-top:2px}
-  .badge{font-size:10px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
-  .hint{font-size:11px;color:var(--faint);margin-top:6px}
-  .empty{color:var(--faint);text-align:center;padding:60px}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}.toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .cc{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .cc .ch{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .cc .cn{font-weight:700;font-size:14.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .est{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .est.borrador{background:var(--surface-2);color:var(--muted)} .est.programada{background:var(--brand-bg);color:var(--brand)}
+  .est.enviando{background:var(--amber-bg);color:var(--amber)} .est.completada{background:var(--green-bg);color:var(--green)} .est.cancelada{background:var(--red-bg);color:var(--red)}
+  .meta{font-size:12px;color:var(--muted);line-height:1.7}
+  .meta b{color:var(--text)}
+  .bars{height:6px;background:var(--surface-2);border-radius:4px;overflow:hidden;margin:10px 0 4px;display:flex}
+  .bars .sent{background:var(--green)} .bars .fail{background:var(--red)}
+  .cacts{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .cacts .btn{height:32px;font-size:12px;padding:0 11px}
+  .empty{text-align:center;color:var(--faint);padding:50px;border:1px dashed var(--border);border-radius:14px}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal.show{display:flex}
+  .mbox{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+  .mbox h3{margin:0 0 4px;font-size:17px} .mbox .ms{color:var(--muted);font-size:12px;margin:0 0 16px}
+  label{display:block;font-size:11px;color:var(--muted);margin:14px 0 6px;font-weight:600}
+  .in,.sel{width:100%;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13px;outline:none;font-family:inherit}
+  .in:focus,.sel:focus{border-color:var(--brand)}
+  .tagpick,.stagepick{display:flex;flex-wrap:wrap;gap:6px}
+  .pk{padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+  .pk.on{border-color:transparent}
+  .warnbox{background:var(--amber-bg);border:1px solid var(--amber);color:var(--amber);border-radius:10px;padding:10px 12px;font-size:11.5px;margin-top:16px;line-height:1.5}
+  .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 </style>
 </head>
 <body>
@@ -48,102 +66,139 @@
   <div class="top">
     <span style="font-weight:600;font-size:15px">Campañas</span>
     <span class="spacer"></span>
-    <button class="btn primary" id="saveBtn">Guardar</button>
+    <button class="btn primary" id="newBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva campaña</button>
   </div>
-  <div class="main">
-    <div class="list">
-      <div class="hd"><span>Campañas</span><button class="add" id="addC" title="Nueva">+</button></div>
-      <div id="list" style="overflow-y:auto;flex:1"></div>
-    </div>
-    <div class="detail" id="detail"><div class="empty">Elige o crea una campaña</div></div>
+  <div class="wrap">
+    <h1>Campañas</h1>
+    <p class="sub">Envía mensajes masivos con <b>plantillas aprobadas</b>, segmentando por etiquetas y etapas. Organízalas por carpetas.</p>
+    <div class="folders" id="folders"></div>
+    <div class="grid" id="grid"></div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+
+<div class="modal" id="modal"><div class="mbox">
+  <h3 id="mTitle">Nueva campaña</h3><p class="ms">Se envía con una plantilla aprobada a los contactos del segmento.</p>
+  <label>Nombre</label><input class="in" id="m_nombre" placeholder="Promo de octubre"/>
+  <label>Carpeta</label><select class="sel" id="m_folder"></select>
+  <label>Plantilla a enviar</label><select class="sel" id="m_tpl"></select>
+  <label>Segmento — etiquetas</label><div class="tagpick" id="m_tags"></div>
+  <label>Segmento — etapas del embudo</label><div class="stagepick" id="m_stages"></div>
+  <label>Coincidencia</label>
+  <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera (une los filtros)</option><option value="todas">Todas (intersección)</option></select>
+  <label>Programar envío (opcional)</label><input class="in" id="m_prog" type="datetime-local"/>
+  <div class="warnbox">⚠ Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo con listas con consentimiento.</div>
+  <div class="mfoot"><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar</button></div>
+</div></div>
+
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
-const st={channelId:null,camp:null,templates:[]};
+const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set() };
+const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
+
 async function boot(){
-  const { data:{session} }=await supa.auth.getSession(); if(!session){location.href="index.html";return;}
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"campanas" });
   st.channelId=shell.channelId;
-  shell.onChannel(async id=>{ st.channelId=id; st.camp=null; await loadTpls(); await loadList(); renderDetail(); });
-  await loadTpls(); await loadList();
-  $("addC").onclick=createC; $("saveBtn").onclick=saveC;
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  $("newBtn").onclick=()=>openModal();
+  $("m_cancel").onclick=()=>$("modal").classList.remove("show");
+  $("m_save").onclick=saveCampaign;
+  await load();
 }
-async function loadTpls(){ const { data }=await supa.from("wa_templates").select("id,name,language").eq("channel_id",st.channelId).eq("activa",true).order("name"); st.templates=data||[]; }
-async function loadList(){
-  const { data }=await supa.from("campaigns").select("id,nombre,estado,total,enviados,fallidos").eq("channel_id",st.channelId).order("created_at",{ascending:false});
-  const box=$("list"); box.innerHTML="";
-  (data||[]).forEach(c=>{const el=document.createElement("div");el.className="item"+(st.camp&&st.camp.id===c.id?" active":"");
-    el.innerHTML=`<div class="n">${esc(c.nombre)}</div><div class="m">${esc(c.estado)} · ${c.enviados||0}/${c.total||0}</div>`;
-    el.onclick=()=>openC(c.id); box.appendChild(el);});
+async function load(){
+  const [{ data:c },{ data:tpl },{ data:tg }]=await Promise.all([
+    supa.from("campaigns").select("*").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
+    supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
+    supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
+  ]);
+  st.camps=c||[]; st.templates=tpl||[]; st.tags=tg||[];
+  renderFolders(); renderGrid();
 }
-async function createC(){
-  const nombre=prompt("Nombre de la campaña:"); if(!nombre) return;
-  const { data,error }=await supa.from("campaigns").insert({channel_id:st.channelId,nombre,segmento:{stage:[],tags:[],modo:"cualquiera"}}).select("id").single();
-  if(error){toast(error.message,true);return;} await loadList(); openC(data.id);
+function allFolders(){
+  const s=new Set(st.localFolders);
+  st.camps.forEach(c=>{ if(c.folder) s.add(c.folder); });
+  return [...s].sort();
 }
-async function openC(id){ const { data }=await supa.from("campaigns").select("*").eq("id",id).maybeSingle(); st.camp=data; if(!st.camp.segmento)st.camp.segmento={stage:[],tags:[]}; await loadList(); renderDetail(); }
-function renderDetail(){
-  const d=$("detail"); if(!st.camp){d.innerHTML=`<div class="empty">Elige o crea una campaña</div>`;return;}
-  const c=st.camp; const seg=c.segmento||{}; const stages=seg.stage||[]; const editable=c.estado==="borrador";
-  const dis=editable?"":"disabled";
-  d.innerHTML=`
-    <div style="display:flex;align-items:center;gap:10px">
-      <span class="badge">${esc(c.estado)}</span>
-      ${c.estado!=="borrador"?`<span style="font-size:12px;color:var(--muted)">Enviados ${c.enviados||0} · Fallidos ${c.fallidos||0} · Total ${c.total||0}</span>`:""}
-    </div>
-    <label>Nombre</label><input class="in" id="c_nombre" value="${esc(c.nombre)}" ${dis}/>
-    <label>Plantilla a enviar</label>
-    <select class="in" id="c_tpl" ${dis}>
-      <option value="">— elige —</option>
-      ${st.templates.map(t=>`<option value="${t.id}" ${c.template_id===t.id?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}
-    </select>
-    ${st.templates.length?"":`<div class="hint">No hay plantillas activas. Crea una en 📄 Plantillas.</div>`}
-    <label>Segmento — etapas del embudo</label>
-    <div class="stages" id="c_stages">
-      ${STAGES.map(s=>`<span class="sp ${stages.includes(s)?"on":""}" data-s="${s}">${s}</span>`).join("")}
-    </div>
-    <label>Etiquetas (separadas por coma, opcional)</label>
-    <input class="in" id="c_tags" value="${esc((seg.tags||[]).join(", "))}" ${dis}/>
-    <label>Programar (opcional — vacío = al activar)</label>
-    <input class="in" id="c_prog" type="datetime-local" value="${c.programada_at?new Date(c.programada_at).toISOString().slice(0,16):""}" ${dis}/>
-    <div class="stat"></div>
-    <div style="margin-top:18px;display:flex;gap:8px">
-      ${editable?`<button class="btn primary" id="sendBtn">🚀 Activar envío</button>`:""}
-      ${c.estado==="enviando"?`<button class="btn danger" id="cancelBtn">Cancelar</button>`:""}
-      <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
-    </div>`;
-  if(editable){
-    d.querySelectorAll("#c_stages .sp").forEach(el=>el.onclick=()=>{ el.classList.toggle("on"); });
-    $("sendBtn").onclick=activate;
+function renderFolders(){
+  const folders=allFolders();
+  const tabs=[["__all","Todas"],["__none","Sin carpeta"],...folders.map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="fchip ${st.folder===v?'on':''}" data-f="${esc(v)}">${esc(l)}</button>`).join("")
+    +`<button class="btn" id="newFolder" style="height:32px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva carpeta</button>`;
+  $("folders").querySelectorAll(".fchip").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderGrid(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderGrid(); } };
+}
+function renderGrid(){
+  let list=st.camps;
+  if(st.folder==="__none") list=list.filter(c=>!c.folder);
+  else if(st.folder!=="__all") list=list.filter(c=>c.folder===st.folder);
+  const box=$("grid");
+  if(!list.length){ box.innerHTML=`<div class="empty">No hay campañas en esta vista. Crea una con “Nueva campaña”.</div>`; return; }
+  box.innerHTML="";
+  list.forEach(c=>{
+    const tpl=st.templates.find(t=>t.id===c.template_id);
+    const seg=c.segmento||{}; const total=c.total||0, sent=c.enviados||0, fail=c.fallidos||0;
+    const el=document.createElement("div"); el.className="cc";
+    el.innerHTML=`
+      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${c.estado}</span></div>
+      <div class="meta">Plantilla: <b>${tpl?esc(tpl.name):"—"}</b><br>
+        Segmento: <b>${(seg.tags||[]).length?esc((seg.tags||[]).join(", ")):"todos"}</b>${(seg.stage||[]).length?` · ${esc((seg.stage||[]).join(", "))}`:""}<br>
+        ${c.programada_at?`Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:"Envío inmediato al activar"}</div>
+      ${c.estado!=="borrador"?`<div class="bars"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div>
+        <div class="meta">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
+      <div class="cacts">
+        ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">🚀 Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
+        ${(c.estado==="programada"||c.estado==="enviando")?`<button class="btn danger" data-a="cancel">Cancelar</button>`:""}
+        <button class="btn danger" data-a="del" style="margin-left:auto">Eliminar</button>
+      </div>`;
+    el.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>action(b.dataset.a,c));
+    box.appendChild(el);
+  });
+}
+async function action(a, c){
+  if(a==="edit") return openModal(c);
+  if(a==="del"){ if(!confirm("¿Eliminar campaña?")) return; await supa.from("campaigns").delete().eq("id",c.id); toast("Eliminada ✓"); return load(); }
+  if(a==="cancel"){ await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); toast("Cancelada"); return load(); }
+  if(a==="activate"){
+    if(!c.template_id){ toast("La campaña necesita una plantilla",true); return openModal(c); }
+    await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id);
+    toast("Campaña activada 🚀 — el envío empieza pronto"); return load();
   }
-  if($("cancelBtn")) $("cancelBtn").onclick=async()=>{ await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); toast("Cancelada"); await openC(c.id); };
-  $("delBtn").onclick=async()=>{ if(!confirm("¿Eliminar campaña?"))return; await supa.from("campaigns").delete().eq("id",c.id); st.camp=null; await loadList(); renderDetail(); };
 }
-function collectSegment(){
-  const stage=[...document.querySelectorAll("#c_stages .sp.on")].map(el=>el.dataset.s);
-  const tags=$("c_tags").value.split(",").map(x=>x.trim()).filter(Boolean);
-  return { stage, tags, modo:"cualquiera" };
+function openModal(c){
+  st.editing=c||null;
+  $("mTitle").textContent=c?"Editar campaña":"Nueva campaña";
+  $("m_nombre").value=c?.nombre||"";
+  const folders=allFolders();
+  $("m_folder").innerHTML=`<option value="">Sin carpeta</option>`+folders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join("");
+  $("m_folder").value=c?.folder||(st.folder!=="__all"&&st.folder!=="__none"?st.folder:"");
+  $("m_tpl").innerHTML=`<option value="">— elige —</option>`+st.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.language)})</option>`).join("");
+  $("m_tpl").value=c?.template_id||"";
+  const seg=c?.segmento||{};
+  st.pickTags=new Set(seg.tags||[]); st.pickStages=new Set(seg.stage||[]);
+  $("m_tags").innerHTML=st.tags.length?st.tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}" style="${st.pickTags.has(t.nombre)?`background:${h}22;color:${h}`:''}">${esc(t.nombre)}</span>`;}).join(""):'<span style="color:var(--faint);font-size:12px">Sin etiquetas (crea en Etiquetas)</span>';
+  $("m_stages").innerHTML=STAGES.map(s=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}" style="${st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${s}</span>`).join("");
+  $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const n=el.dataset.t; if(st.pickTags.has(n))st.pickTags.delete(n); else st.pickTags.add(n); const t=st.tags.find(x=>x.nombre===n),h=tagHex(t?.color); el.classList.toggle("on"); el.style.cssText=st.pickTags.has(n)?`background:${h}22;color:${h}`:''; });
+  $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.s; if(st.pickStages.has(s))st.pickStages.delete(s); else st.pickStages.add(s); el.classList.toggle("on"); el.style.cssText=st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
+  $("m_modo").value=seg.modo||"cualquiera";
+  $("m_prog").value=c?.programada_at?new Date(c.programada_at).toISOString().slice(0,16):"";
+  $("modal").classList.add("show");
 }
-async function saveC(){
-  if(!st.camp) return; if(st.camp.estado!=="borrador"){ toast("Solo se edita en borrador",true); return; }
-  const prog=$("c_prog").value ? new Date($("c_prog").value).toISOString() : null;
-  const { error }=await supa.from("campaigns").update({
-    nombre:$("c_nombre").value.trim(), template_id:$("c_tpl").value||null,
-    segmento:collectSegment(), programada_at:prog,
-  }).eq("id",st.camp.id);
-  if(error){toast(error.message,true);return;} toast("Guardado ✓"); await openC(st.camp.id);
-}
-async function activate(){
-  if(!$("c_tpl").value){ toast("Elige una plantilla primero",true); return; }
-  await saveC();
-  const { error }=await supa.from("campaigns").update({ estado:"programada" }).eq("id",st.camp.id);
-  if(error){toast(error.message,true);return;}
-  toast("Campaña activada 🚀 — el envío empieza en el próximo minuto"); await openC(st.camp.id);
+async function saveCampaign(){
+  const nombre=$("m_nombre").value.trim();
+  if(!nombre){ toast("Escribe un nombre",true); return; }
+  const segmento={ tags:[...st.pickTags], stage:[...st.pickStages], modo:$("m_modo").value };
+  const row={ channel_id:st.channelId, nombre, folder:$("m_folder").value||null, template_id:$("m_tpl").value||null,
+    segmento, programada_at:$("m_prog").value?new Date($("m_prog").value).toISOString():null };
+  let error;
+  if(st.editing){ ({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id)); }
+  else { ({ error }=await supa.from("campaigns").insert(row)); }
+  if(error && /folder|column/.test(error.message)){ delete row.folder; if(st.editing){({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id));} else {({ error }=await supa.from("campaigns").insert(row));} if(!error) toast("Guardado (aplica 0015 para carpetas)"); }
+  if(error){ toast(error.message,true); return; }
+  $("modal").classList.remove("show"); toast("Campaña guardada ✓"); await load();
 }
 boot();
 </script>

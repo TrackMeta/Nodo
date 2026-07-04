@@ -8,35 +8,47 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
-  :root{--bg:#0e1116;--surface:#151a21;--surface-2:#1b222c;--border:#232b36;--text:#e7ecf2;--muted:#8a97a8;--faint:#5c6675;--brand:#2b7fff;--brand-2:#1e6ff0;--green:#22c079;--red:#e2564a;--font:"Inter",system-ui,sans-serif;}
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .top a{color:var(--muted);text-decoration:none;font-size:20px}.top a.active{color:var(--brand)}
-  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
   .spacer{margin-left:auto}
-  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
+  .btn svg{width:15px;height:15px}
   .main{flex:1;display:flex;min-height:0}
-  .list{width:250px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .list .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
-  .item{padding:11px 12px;border-bottom:1px solid var(--border);cursor:pointer}
-  .item:hover{background:var(--surface)}.item.active{background:var(--surface-2)}
-  .item .n{font-weight:600;font-size:13px}.item .m{font-size:11px;color:var(--faint);margin-top:2px}
-  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 24px;max-width:720px}
-  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
-  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
-  .ta{min-height:70px}.in:focus,.ta:focus{border-color:var(--brand)}
-  .row{display:flex;gap:10px}.row>*{flex:1}
-  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:12px 0}
-  .empty{color:var(--faint);text-align:center;padding:60px}
-  .hint{font-size:11px;color:var(--faint);margin-top:6px}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}.toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+  .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .list .lh{padding:14px 16px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;border-bottom:1px solid var(--border)}
+  .item{padding:13px 16px;border-bottom:1px solid var(--border);cursor:pointer}
+  .item:hover{background:var(--surface)} .item.active{background:var(--surface-2)}
+  .item .n{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
+  .item .m{font-size:11.5px;color:var(--faint);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chip{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
+  .cat{font-size:10px;padding:2px 8px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:600}
+  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 26px;max-width:720px}
+  label{display:block;font-size:11px;color:var(--muted);margin:14px 0 6px;font-weight:600}
+  .in,.ta,.sel{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
+  .ta{min-height:80px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
+  .row{display:flex;gap:12px;flex-wrap:wrap} .row>.f{flex:1;min-width:150px}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:14px}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5}
+  .preview{background:#0b141a;border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:8px}
+  .bubble{background:#075e54;color:#e9edef;border-radius:10px;border-top-left-radius:3px;padding:8px 11px;font-size:13px;max-width:320px;white-space:pre-wrap;line-height:1.5}
+  .bubble .v{background:#128c7e;border-radius:4px;padding:0 4px;font-weight:600}
+  .info{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:6px}
+  .info h4{margin:0 0 8px;font-size:13px} .info p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.6}
+  .info b{color:var(--text)}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);padding:40px;text-align:center}
 </style>
 </head>
 <body>
@@ -44,73 +56,107 @@
   <div class="top">
     <span style="font-weight:600;font-size:15px">Plantillas</span>
     <span class="spacer"></span>
-    <button class="btn primary" id="saveBtn">Guardar</button>
+    <button class="btn primary" id="addBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva plantilla</button>
   </div>
   <div class="main">
     <div class="list">
-      <div class="hd"><span>Plantillas</span><button class="add" id="addTpl" title="Nueva">+</button></div>
+      <div class="lh">Plantillas HSM</div>
       <div id="tplList" style="overflow-y:auto;flex:1"></div>
     </div>
-    <div class="detail" id="detail"><div class="empty">Elige o crea una plantilla</div></div>
+    <div class="detail" id="detail"></div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={channelId:null,tpl:null};
+const st={ channelId:null, tpl:null, list:[] };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const CATS=["MARKETING","UTILITY","AUTHENTICATION"];
+const ESTADOS=[["aprobada","Aprobada"],["pendiente","Pendiente"],["rechazada","Rechazada"]];
+
 async function boot(){
-  const { data:{session} }=await supa.auth.getSession(); if(!session){location.href="index.html";return;}
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"plantillas" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; st.tpl=null; renderDetail(); loadList(); });
-  await loadList();
-  $("addTpl").onclick=createTpl; $("saveBtn").onclick=saveTpl;
+  shell.onChannel(id=>{ st.channelId=id; st.tpl=null; loadList(); renderDetail(); });
+  $("addBtn").onclick=createTpl;
+  await loadList(); renderDetail();
 }
 async function loadList(){
-  const { data }=await supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).order("created_at");
+  const { data }=await supa.from("wa_templates").select("*").eq("channel_id",st.channelId).order("created_at");
+  st.list=data||[];
   const box=$("tplList"); box.innerHTML="";
-  (data||[]).forEach(t=>{const el=document.createElement("div");el.className="item"+(st.tpl&&st.tpl.id===t.id?" active":"");
-    el.innerHTML=`<div class="n">${esc(t.name)}</div><div class="m">${esc(t.language)} · ${t.activa?"activa":"inactiva"}</div>`;
-    el.onclick=()=>openTpl(t.id); box.appendChild(el);});
+  if(!st.list.length){ box.innerHTML=`<div style="padding:22px;color:var(--faint);font-size:12.5px">Aún no hay plantillas.</div>`; return; }
+  st.list.forEach(t=>{
+    const estado=t.estado_meta||"aprobada";
+    const el=document.createElement("div"); el.className="item"+(st.tpl&&st.tpl.id===t.id?" active":"");
+    el.innerHTML=`<div class="n">${esc(t.name)}</div><div class="m"><span class="chip ${estado}">${estado}</span><span class="cat">${esc(t.categoria||"—")}</span><span>${esc(t.language)}</span></div>`;
+    el.onclick=()=>openTpl(t.id); box.appendChild(el);
+  });
 }
 async function createTpl(){
-  const name=prompt("Nombre EXACTO de la plantilla en Meta (ej. remarketing_pago):"); if(!name) return;
-  const { data,error }=await supa.from("wa_templates").insert({channel_id:st.channelId,name,language:"es",params:[]}).select("id").single();
-  if(error){toast(error.message,true);return;} await loadList(); openTpl(data.id);
+  const name=prompt("Nombre EXACTO de la plantilla registrada en Meta (ej. remarketing_pago):"); if(!name) return;
+  const { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING" }).select("id").single();
+  if(error){ toast(error.message,true); return; }
+  await loadList(); openTpl(data.id);
 }
-async function openTpl(id){ const { data }=await supa.from("wa_templates").select("*").eq("id",id).maybeSingle(); st.tpl=data; if(!Array.isArray(st.tpl.params))st.tpl.params=[]; await loadList(); renderDetail(); }
+async function openTpl(id){ const { data }=await supa.from("wa_templates").select("*").eq("id",id).maybeSingle(); st.tpl=data; await loadList(); renderDetail(); }
+
 function renderDetail(){
-  const d=$("detail"); if(!st.tpl){d.innerHTML=`<div class="empty">Elige o crea una plantilla</div>`;return;}
-  const t=st.tpl;
+  const d=$("detail");
+  if(!st.tpl){
+    d.innerHTML=`
+      <div class="info">
+        <h4>¿Cómo funcionan las plantillas?</h4>
+        <p>WhatsApp exige <b>plantillas aprobadas</b> para escribir fuera de la ventana de 24 h y para campañas masivas. Se <b>crean y aprueban en Meta</b> (WhatsApp Manager); la revisión la hace Meta, no Nodo. Aquí <b>registras</b> el nombre exacto, idioma y variables para poder usarlas en <b>Campañas</b>. Las variables son posicionales: <b>{{1}}</b>, <b>{{2}}</b>…</p>
+      </div>
+      <div class="empty">Elige una plantilla o crea una nueva.</div>`;
+    return;
+  }
+  const t=st.tpl, estado=t.estado_meta||"aprobada";
   d.innerHTML=`
-    <div class="row">
-      <div><label>Nombre (en Meta)</label><input class="in" id="f_name" value="${esc(t.name)}"/></div>
-      <div><label>Idioma</label><input class="in" id="f_lang" value="${esc(t.language||'es')}" placeholder="es / es_MX / en"/></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <h3 style="margin:0;font-size:16px">${esc(t.name)}</h3><span class="chip ${estado}">${estado}</span>
     </div>
-    <label>Categoría</label>
-    <select class="in" id="f_cat">
-      ${["MARKETING","UTILITY","AUTHENTICATION"].map(x=>`<option ${t.categoria===x?"selected":""}>${x}</option>`).join("")}
-    </select>
-    <label>Texto del cuerpo (con {{1}}, {{2}}… — solo referencia/vista)</label>
+    <div class="row">
+      <div class="f"><label>Nombre (exacto en Meta)</label><input class="in" id="f_name" value="${esc(t.name)}"/></div>
+      <div class="f"><label>Idioma</label><input class="in" id="f_lang" value="${esc(t.language||'es')}" placeholder="es / es_MX / en"/></div>
+    </div>
+    <div class="row">
+      <div class="f"><label>Categoría</label><select class="sel" id="f_cat">${CATS.map(x=>`<option ${t.categoria===x?"selected":""}>${x}</option>`).join("")}</select></div>
+      <div class="f"><label>Estado en Meta</label><select class="sel" id="f_estado">${ESTADOS.map(([v,l])=>`<option value="${v}" ${estado===v?"selected":""}>${l}</option>`).join("")}</select></div>
+    </div>
+    <label>Texto del cuerpo (con {{1}}, {{2}}…)</label>
     <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu {{2}} sigue disponible.">${esc(t.body_preview)}</textarea>
-    <label>Variables — una por línea, en orden ({{nombre}}, {{producto}}, texto fijo…)</label>
+    <label>Vista previa</label>
+    <div class="preview"><div class="bubble" id="prev"></div></div>
+    <label>Variables — una por línea, en orden</label>
     <textarea class="ta" id="f_params" placeholder="{{nombre}}&#10;{{producto}}">${esc((t.params||[]).join("\n"))}</textarea>
-    <div class="hint">La 1ª línea llena {{1}}, la 2ª {{2}}, etc. Puedes usar variables del contacto o texto fijo.</div>
-    <label class="chk"><input type="checkbox" id="f_activa" ${t.activa!==false?"checked":""}/> Plantilla activa</label>
-    <button class="btn danger" id="delBtn" style="margin-top:8px">Eliminar</button>`;
-  $("delBtn").onclick=deleteTpl;
+    <div class="hint">La 1ª línea llena {{1}}, la 2ª {{2}}, etc. Usa variables del contacto (p. ej. {{nombre}}) o texto fijo.</div>
+    <label class="chk"><input type="checkbox" id="f_activa" ${t.activa!==false?"checked":""}/> Plantilla activa (disponible para campañas)</label>
+    <div style="display:flex;gap:8px;margin-top:20px">
+      <button class="btn primary" id="saveBtn">Guardar</button>
+      <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
+    </div>`;
+  const upd=()=>renderPreview($("f_body").value);
+  $("f_body").oninput=upd; renderPreview(t.body_preview||"");
+  $("saveBtn").onclick=saveTpl; $("delBtn").onclick=deleteTpl;
+}
+function renderPreview(body){
+  const html=esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>');
+  $("prev").innerHTML=html;
 }
 async function saveTpl(){
   if(!st.tpl) return;
   const params=$("f_params").value.split("\n").map(x=>x.trim()).filter(Boolean);
-  const { error }=await supa.from("wa_templates").update({
-    name:$("f_name").value.trim(), language:$("f_lang").value.trim()||"es",
-    categoria:$("f_cat").value, body_preview:$("f_body").value, params,
-    activa:$("f_activa").checked,
-  }).eq("id",st.tpl.id);
-  if(error){toast(error.message,true);return;} toast("Guardado ✓"); await loadList();
+  const patch={ name:$("f_name").value.trim(), language:$("f_lang").value.trim()||"es",
+    categoria:$("f_cat").value, body_preview:$("f_body").value, params, activa:$("f_activa").checked };
+  const estado=$("f_estado").value;
+  let { error }=await supa.from("wa_templates").update({ ...patch, estado_meta:estado }).eq("id",st.tpl.id);
+  if(error && /estado_meta|column/.test(error.message)){ ({ error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id)); if(!error) toast("Guardado (aplica 0015 para el estado)"); }
+  if(error){ toast(error.message,true); return; }
+  toast("Guardado ✓"); await openTpl(st.tpl.id);
 }
 async function deleteTpl(){
   if(!confirm("¿Eliminar esta plantilla?")) return;
