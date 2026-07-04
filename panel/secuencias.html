@@ -12,44 +12,55 @@
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
     --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
     --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
-    --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .top a{color:var(--muted);text-decoration:none;font-size:20px}
-  .top a.active{color:var(--brand)}
-  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
   .spacer{margin-left:auto}
-  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
-  .btn.primary{background:var(--brand);border:none;color:#fff}
-  .btn.primary:hover{background:var(--brand-2)}
+  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{border-color:var(--brand)} .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
   .main{flex:1;display:flex;min-height:0}
-  .list{width:240px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .list .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
-  .item{padding:11px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+  .list{width:320px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .lh{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap}
+  .fchip{height:28px;padding:0 11px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600}
+  .fchip.on{background:var(--brand-bg);color:var(--brand);border-color:transparent}
+  .item{padding:13px 15px;border-bottom:1px solid var(--border);cursor:pointer}
   .item:hover{background:var(--surface)} .item.active{background:var(--surface-2)}
-  .item .n{font-weight:600;font-size:13px} .item .m{font-size:11px;color:var(--faint);margin-top:2px}
-  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 24px;max-width:760px}
-  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
-  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
-  .ta{min-height:60px}
-  .in:focus,.ta:focus{border-color:var(--brand)}
-  .step{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
-  .step .sh{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600;font-size:13px}
-  .row{display:flex;gap:10px;align-items:flex-end}.row>*{flex:1}
-  .seg{display:flex;gap:6px}.seg>*{flex:none}
-  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:12px 0}
-  .empty{color:var(--faint);text-align:center;padding:60px}
-  .hint{font-size:11px;color:var(--faint);margin-top:6px}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}.toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+  .item .n{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
+  .item .m{font-size:11.5px;color:var(--faint);margin-top:4px;display:flex;gap:10px}
+  .pill{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;text-transform:uppercase}
+  .pill.on{background:var(--green-bg);color:var(--green)} .pill.off{background:var(--amber-bg);color:var(--amber)}
+  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 26px;max-width:760px}
+  .dh{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .dh input{flex:1;height:42px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:18px;font-weight:700;outline:none}
+  .dh input:focus{border-color:var(--brand)}
+  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+  .sw{width:38px;height:22px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--green-bg);border-color:transparent} .sw.on::after{left:18px;background:var(--green)}
+  .hint{font-size:11.5px;color:var(--faint);margin:8px 0 18px;line-height:1.5}
+  .tl{position:relative;padding-left:34px}
+  .tl::before{content:"";position:absolute;left:13px;top:6px;bottom:26px;width:2px;background:var(--border)}
+  .step{position:relative;margin-bottom:14px}
+  .dot{position:absolute;left:-34px;top:2px;width:28px;height:28px;border-radius:50%;background:var(--brand-bg);color:var(--brand);border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px}
+  .scard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .srow{display:flex;align-items:center;gap:8px}
+  .delay{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px;font-weight:600}
+  .in,.ta,.sel{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
+  .ta{min-height:56px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
+  .num{max-width:84px} .unit{max-width:120px}
+  .del{background:transparent;border:none;color:var(--faint);margin-left:auto;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px}
+  .del:hover{color:var(--red)} .del svg{width:14px;height:14px}
+  .addstep{border:1px dashed var(--border);border-radius:12px;padding:11px;width:100%;color:var(--muted);font-weight:600;background:transparent;font-size:13px}
+  .addstep:hover{border-color:var(--brand);color:var(--brand)}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);padding:40px;text-align:center}
 </style>
 </head>
 <body>
@@ -58,162 +69,149 @@
     <span style="font-weight:600;font-size:15px">Secuencias</span>
     <span class="spacer"></span>
     <button class="btn primary" id="saveBtn">Guardar</button>
+    <button class="btn" id="addSeq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva</button>
   </div>
   <div class="main">
     <div class="list">
-      <div class="hd"><span>Secuencias</span><button class="add" id="addSeq" title="Nueva secuencia">+</button></div>
+      <div class="lh" id="folders"></div>
       <div id="seqList" style="overflow-y:auto;flex:1"></div>
     </div>
-    <div class="detail" id="detail"><div class="empty">Elige o crea una secuencia</div></div>
+    <div class="detail" id="detail"><div class="empty">Elige o crea una secuencia de mensajes (drip).</div></div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
-const $ = (id)=>document.getElementById(id);
-const st = { channelId:null, seq:null, flows:[], templates:[] };
-
-const UNITS = [["60","minutos"],["3600","horas"],["86400","días"]];
-function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-// Descompone segundos en {val,unit} amigable.
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], folder:"__all", localFolders:new Set() };
+const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 
 async function boot(){
-  const { data:{ session } } = await supa.auth.getSession();
-  if(!session){ location.href="index.html"; return; }
+  const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"secuencias" });
   st.channelId=shell.channelId;
-  shell.onChannel(async id=>{ st.channelId=id; st.seq=null; await loadFlows(); await loadList(); renderDetail(); });
-  await loadFlows(); await loadTemplates(); await loadList();
-  $("addSeq").onclick=createSeq;
-  $("saveBtn").onclick=saveSeq;
+  shell.onChannel(id=>{ st.channelId=id; st.seq=null; load(); });
+  $("addSeq").onclick=createSeq; $("saveBtn").onclick=saveSeq;
+  await load();
 }
-async function loadFlows(){
-  const { data } = await supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre");
-  st.flows=data||[];
+async function load(){
+  const [{ data:seqs },{ data:flows },{ data:tpl }]=await Promise.all([
+    supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
+    supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
+  ]);
+  st.seqs=seqs||[]; st.flows=flows||[]; st.templates=tpl||[];
+  renderFolders(); renderList(); if(!st.seq) renderDetail();
 }
-async function loadTemplates(){
-  const { data } = await supa.from("wa_templates").select("id,name,language,params").eq("channel_id",st.channelId).eq("activa",true).order("name");
-  st.templates=data||[];
+function allFolders(){ const s=new Set(st.localFolders); st.seqs.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function renderFolders(){
+  const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="fchip ${st.folder===v?'on':''}" data-f="${esc(v)}">${esc(l)}</button>`).join("")
+    +`<button class="fchip" id="newFolder">+ Carpeta</button>`;
+  $("folders").querySelectorAll(".fchip[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderList(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderList(); } };
 }
-async function loadList(){
-  const { data } = await supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at");
+function renderList(){
+  let list=st.seqs;
+  if(st.folder==="__none") list=list.filter(s=>!s.folder); else if(st.folder!=="__all") list=list.filter(s=>s.folder===st.folder);
   const box=$("seqList"); box.innerHTML="";
-  (data||[]).forEach(s=>{
+  if(!list.length){ box.innerHTML=`<div style="padding:22px;color:var(--faint);font-size:12.5px">Sin secuencias en esta vista.</div>`; return; }
+  list.forEach(s=>{
     const el=document.createElement("div"); el.className="item"+(st.seq&&st.seq.id===s.id?" active":"");
-    el.innerHTML=`<div class="n">${esc(s.nombre)}</div><div class="m">${(s.pasos||[]).length} paso(s) · ${s.activo?"activa":"pausada"}</div>`;
+    el.innerHTML=`<div class="n">${esc(s.nombre)} <span class="pill ${s.activo!==false?'on':'off'}" style="margin-left:auto">${s.activo!==false?'Activa':'Pausada'}</span></div>
+      <div class="m"><span>${(s.pasos||[]).length} paso(s)</span>${s.folder?`<span>📁 ${esc(s.folder)}</span>`:""}</div>`;
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
 }
 async function createSeq(){
   const nombre=prompt("Nombre de la secuencia (ej. Remarketing pago pendiente):"); if(!nombre) return;
-  const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, pasos:[] }).select("id").single();
-  if(error){ toast(error.message,true); return; }
-  await loadList(); openSeq(data.id);
+  const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
+  const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, pasos:[], folder }).select("id").single();
+  if(error){ if(/folder|column/.test(error.message)){ const r=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, pasos:[] }).select("id").single(); if(r.error){toast(r.error.message,true);return;} await load(); return openSeq(r.data.id); } toast(error.message,true); return; }
+  await load(); openSeq(data.id);
 }
 async function openSeq(id){
   const { data }=await supa.from("sequences").select("*").eq("id",id).maybeSingle();
   st.seq=data; if(!Array.isArray(st.seq.pasos)) st.seq.pasos=[];
-  await loadList(); renderDetail();
+  renderList(); renderDetail();
 }
-
 function renderDetail(){
   const d=$("detail");
-  if(!st.seq){ d.innerHTML=`<div class="empty">Elige o crea una secuencia</div>`; return; }
-  d.innerHTML="";
-  const nm=document.createElement("div");
-  nm.innerHTML=`<label>Nombre</label>`;
-  const nmi=document.createElement("input"); nmi.className="in"; nmi.value=st.seq.nombre||""; nmi.oninput=()=>st.seq.nombre=nmi.value;
-  nm.appendChild(nmi); d.appendChild(nm);
-
-  const act=document.createElement("label"); act.className="chk";
-  const acb=document.createElement("input"); acb.type="checkbox"; acb.checked=st.seq.activo!==false; acb.onchange=()=>st.seq.activo=acb.checked;
-  act.appendChild(acb); act.appendChild(document.createTextNode(" Secuencia activa"));
-  d.appendChild(act);
-
-  const h=document.createElement("div"); h.className="hint";
-  h.textContent="Cada paso se dispara tras X tiempo de SILENCIO del cliente (desde su último mensaje). Si el cliente responde, el temporizador se reinicia solo.";
-  d.appendChild(h);
-
-  st.seq.pasos.forEach((paso,i)=>d.appendChild(stepCard(paso,i)));
-
-  const add=document.createElement("button"); add.className="btn"; add.textContent="+ paso"; add.style.marginTop="6px";
-  add.onclick=()=>{ st.seq.pasos.push({ umbral_silencio_seg:3600, mensaje:"" }); renderDetail(); };
-  d.appendChild(add);
+  if(!st.seq){ d.innerHTML=`<div class="empty">Elige o crea una secuencia de mensajes (drip).</div>`; return; }
+  const s=st.seq;
+  d.innerHTML=`
+    <div class="dh">
+      <input id="s_nombre" value="${esc(s.nombre||"")}"/>
+      <div class="toggle"><span id="s_state">${s.activo!==false?"Activa":"Pausada"}</span><div class="sw ${s.activo!==false?'on':''}" id="s_toggle"></div></div>
+    </div>
+    <label style="margin-top:6px">Carpeta</label>
+    <select class="sel" id="s_folder" style="max-width:280px"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${s.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select>
+    <div class="hint">Cada paso se dispara tras X tiempo de <b>silencio</b> del cliente (desde su último mensaje). Si el cliente responde, el temporizador se reinicia solo.</div>
+    <div class="tl" id="steps"></div>
+    <button class="addstep" id="addStep">+ Añadir paso</button>`;
+  $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
+  $("s_folder").onchange=(e)=>s.folder=e.target.value||null;
+  $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
+  const steps=$("steps");
+  s.pasos.forEach((p,i)=>steps.appendChild(stepCard(p,i)));
+  $("addStep").onclick=()=>{ s.pasos.push({ umbral_silencio_seg:3600, mensaje:"" }); renderDetail(); };
 }
-
 function stepCard(paso,i){
   const wrap=document.createElement("div"); wrap.className="step";
   const {val,u}=splitDur(paso.umbral_silencio_seg);
-  const isFlow=!!paso.flow_id;
-
-  const sh=document.createElement("div"); sh.className="sh";
-  sh.innerHTML=`<span>Paso ${i+1}</span>`;
-  const del=document.createElement("button"); del.className="btn danger"; del.textContent="Eliminar"; del.style.marginLeft="auto"; del.style.height="28px";
-  del.onclick=()=>{ st.seq.pasos.splice(i,1); renderDetail(); };
-  sh.appendChild(del); wrap.appendChild(sh);
-
-  const lbl=document.createElement("label"); lbl.textContent="Disparar tras (silencio)"; wrap.appendChild(lbl);
-  const seg=document.createElement("div"); seg.className="seg";
-  const num=document.createElement("input"); num.className="in"; num.type="number"; num.min="1"; num.value=val; num.style.maxWidth="90px";
-  const us=document.createElement("select"); us.className="in"; us.style.maxWidth="130px";
-  UNITS.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===u)o.selected=true; us.appendChild(o); });
-  const upd=()=>{ paso.umbral_silencio_seg=Math.max(1,Number(num.value||1))*Number(us.value); };
-  num.oninput=upd; us.onchange=upd;
-  seg.appendChild(num); seg.appendChild(us); wrap.appendChild(seg);
-
   const mode = paso.template_name ? "plantilla" : (paso.flow_id ? "flow" : "mensaje");
-  const al=document.createElement("label"); al.textContent="Acción"; wrap.appendChild(al);
-  const as=document.createElement("select"); as.className="in";
-  as.innerHTML=`
-    <option value="mensaje"${mode==="mensaje"?" selected":""}>Enviar un mensaje (dentro de 24h)</option>
-    <option value="plantilla"${mode==="plantilla"?" selected":""}>Enviar una plantilla (fuera de 24h)</option>
-    <option value="flow"${mode==="flow"?" selected":""}>Iniciar un flujo</option>`;
-  wrap.appendChild(as);
-
-  const body=document.createElement("div"); wrap.appendChild(body);
+  wrap.innerHTML=`
+    <div class="dot">${i+1}</div>
+    <div class="scard">
+      <div class="srow">
+        <div class="delay">Tras <input class="in num" type="number" min="1" value="${val}"/>
+          <select class="sel unit">${UNITS.map(([v,l])=>`<option value="${v}" ${v===u?"selected":""}>${l}</option>`).join("")}</select> de silencio</div>
+        <button class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Quitar</button>
+      </div>
+      <label>Acción</label>
+      <select class="sel act">
+        <option value="mensaje" ${mode==="mensaje"?"selected":""}>Enviar un mensaje (dentro de 24h)</option>
+        <option value="plantilla" ${mode==="plantilla"?"selected":""}>Enviar una plantilla (fuera de 24h)</option>
+        <option value="flow" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
+      </select>
+      <div class="body"></div>
+    </div>`;
+  const num=wrap.querySelector(".num"), unit=wrap.querySelector(".unit");
+  const upd=()=>paso.umbral_silencio_seg=Math.max(1,Number(num.value||1))*Number(unit.value);
+  num.oninput=upd; unit.onchange=upd;
+  wrap.querySelector(".del").onclick=()=>{ st.seq.pasos.splice(i,1); renderDetail(); };
+  const as=wrap.querySelector(".act"), body=wrap.querySelector(".body");
   const renderAction=()=>{
     body.innerHTML="";
     if(as.value==="flow"){
       delete paso.mensaje; delete paso.template_name;
-      const l=document.createElement("label"); l.textContent="Flujo a iniciar"; body.appendChild(l);
-      const fs=document.createElement("select"); fs.className="in";
-      fs.innerHTML=`<option value="">— elige —</option>`+st.flows.map(f=>`<option value="${f.id}"${paso.flow_id===f.id?" selected":""}>${esc(f.nombre)} ${f.role?"· "+esc(f.role):""}</option>`).join("");
-      fs.onchange=()=>paso.flow_id=fs.value||undefined; body.appendChild(fs);
+      body.innerHTML=`<label>Flujo a iniciar</label><select class="sel fs"><option value="">— elige —</option>${st.flows.map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}</option>`).join("")}</select>`;
+      body.querySelector(".fs").onchange=(e)=>paso.flow_id=e.target.value||undefined;
     } else if(as.value==="plantilla"){
       delete paso.mensaje; delete paso.flow_id;
-      const l=document.createElement("label"); l.textContent="Plantilla"; body.appendChild(l);
-      const ts=document.createElement("select"); ts.className="in";
-      ts.innerHTML=`<option value="">— elige —</option>`+st.templates.map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}"${paso.template_name===t.name?" selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("");
-      ts.onchange=()=>{ paso.template_name=ts.value||undefined; paso.template_lang=ts.selectedOptions[0]?.dataset.lang||"es"; };
-      body.appendChild(ts);
-      if(!st.templates.length){ const hh=document.createElement("div"); hh.className="hint"; hh.textContent="No hay plantillas activas. Crea una en 📄 Plantillas."; body.appendChild(hh); }
-      else{
-        const pl=document.createElement("label"); pl.textContent="Variables (una por línea: {{nombre}}, texto fijo…)"; body.appendChild(pl);
-        const pta=document.createElement("textarea"); pta.className="ta"; pta.style.minHeight="46px"; pta.value=(paso.template_params||[]).join("\n");
-        pta.oninput=()=>paso.template_params=pta.value.split("\n").map(x=>x.trim()).filter(Boolean); body.appendChild(pta);
-      }
+      body.innerHTML=`<label>Plantilla</label><select class="sel ts"><option value="">— elige —</option>${st.templates.map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
+        ${st.templates.length?`<label>Variables (una por línea)</label><textarea class="ta pta">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div class="hint">No hay plantillas activas.</div>`}`;
+      body.querySelector(".ts").onchange=(e)=>{ paso.template_name=e.target.value||undefined; paso.template_lang=e.target.selectedOptions[0]?.dataset.lang||"es"; };
+      const pta=body.querySelector(".pta"); if(pta) pta.oninput=()=>paso.template_params=pta.value.split("\n").map(x=>x.trim()).filter(Boolean);
     } else {
       delete paso.flow_id; delete paso.template_name;
-      const l=document.createElement("label"); l.textContent="Mensaje"; body.appendChild(l);
-      const ta=document.createElement("textarea"); ta.className="ta"; ta.value=paso.mensaje||""; ta.oninput=()=>paso.mensaje=ta.value; body.appendChild(ta);
-      const hh=document.createElement("div"); hh.className="hint"; hh.textContent="Dentro de la ventana de 24h se envía normal. Fuera de 24h, usa la opción de plantilla."; body.appendChild(hh);
+      body.innerHTML=`<label>Mensaje</label><textarea class="ta ms">${esc(paso.mensaje||"")}</textarea>`;
+      body.querySelector(".ms").oninput=(e)=>paso.mensaje=e.target.value;
     }
   };
   as.onchange=renderAction; renderAction();
   return wrap;
 }
-
 async function saveSeq(){
-  if(!st.seq) return;
-  const { error }=await supa.from("sequences").update({
-    nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[],
-  }).eq("id",st.seq.id);
+  if(!st.seq){ toast("No hay secuencia abierta",true); return; }
+  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null };
+  let { error }=await supa.from("sequences").update(row).eq("id",st.seq.id);
+  if(error && /folder|column/.test(error.message)){ delete row.folder; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0016 para carpetas)"); }
   if(error){ toast(error.message,true); return; }
-  toast("Guardado ✓"); await loadList();
+  toast("Guardado ✓"); await load();
 }
-
 boot();
 </script>
 </body>
