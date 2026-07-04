@@ -129,7 +129,9 @@ export async function mountShell({ active } = {}) {
   const botSel = nav.querySelector("#nodoBot");
   const logo = nav.querySelector("#nodoLogo");
   const brandName = nav.querySelector("#nodoBrandName");
-  const { data } = await supa.from("channels").select("id,nombre,logo_url").eq("activo", true).order("nombre");
+  // Resiliente: si la columna logo_url aún no está migrada en la BD, reintenta sin ella.
+  let { data, error } = await supa.from("channels").select("id,nombre,logo_url").eq("activo", true).order("nombre");
+  if (error) ({ data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre"));
   state.channels = data || [];
   botSel.innerHTML = "";
   state.channels.forEach((c) => {
