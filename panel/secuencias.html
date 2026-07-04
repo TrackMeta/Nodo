@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Nodo · Secuencias</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
 <style>
   :root{
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
@@ -53,15 +54,7 @@
 <body>
 <div class="app">
   <div class="top">
-    <a href="index.html" title="Bandeja">💬</a>
-    <a href="editor.html" title="Flujos">🕸</a>
-    <a href="productos.html" title="Productos">📦</a>
-    <a href="secuencias.html" class="active" title="Secuencias">🔁</a>
-    <a href="plantillas.html" title="Plantillas">📄</a>
-    <a href="campanas.html" title="Campañas">📣</a>
-    <a href="dashboard.html" title="Dashboard">📊</a>
-    <a href="config.html" title="Configuraciones">⚙️</a>
-    <select class="sel" id="channelSel"></select>
+    <span style="font-weight:600;font-size:15px">Secuencias</span>
     <span class="spacer"></span>
     <button class="btn primary" id="saveBtn">Guardar</button>
   </div>
@@ -76,15 +69,11 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
-const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { supa, mountShell, toast } from "./shell.js";
 const $ = (id)=>document.getElementById(id);
 const st = { channelId:null, seq:null, flows:[], templates:[] };
 
 const UNITS = [["60","minutos"],["3600","horas"],["86400","días"]];
-function toast(m,err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // Descompone segundos en {val,unit} amigable.
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
@@ -92,19 +81,12 @@ function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
-  await loadChannels();
+  const shell=await mountShell({ active:"secuencias" });
+  st.channelId=shell.channelId;
+  shell.onChannel(async id=>{ st.channelId=id; st.seq=null; await loadFlows(); await loadList(); renderDetail(); });
+  await loadFlows(); await loadTemplates(); await loadList();
   $("addSeq").onclick=createSeq;
   $("saveBtn").onclick=saveSeq;
-}
-async function loadChannels(){
-  const { data } = await supa.from("channels").select("id,nombre").eq("activo",true).order("nombre");
-  const sel=$("channelSel"); sel.innerHTML="";
-  (data||[]).forEach(c=>{ const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
-  st.channelId=(data&&data[0]&&data[0].id);
-  const p=new URLSearchParams(location.search).get("channel"); if(p) st.channelId=p;
-  if(st.channelId) sel.value=st.channelId;
-  sel.onchange=async()=>{ st.channelId=sel.value; st.seq=null; await loadFlows(); await loadList(); renderDetail(); };
-  await loadFlows(); await loadTemplates(); await loadList();
 }
 async function loadFlows(){
   const { data } = await supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre");

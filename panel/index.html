@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="icon" type="image/png" sizes="16x16" href="../assets/favicon-16x16.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png" />
+<link rel="stylesheet" href="shell.css" />
 <style>
   :root{
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
@@ -112,24 +113,9 @@
 
 <!-- ── APP ── -->
 <div id="app" class="hidden">
-  <div class="rail">
-    <img src="../assets/logo-rounded.png" alt="Nodo" />
-    <div class="icn active" title="Bandeja">💬</div>
-    <a class="icn" href="editor.html" title="Flujos" style="text-decoration:none">🕸</a>
-    <a class="icn" href="productos.html" title="Productos" style="text-decoration:none">📦</a>
-    <a class="icn" href="secuencias.html" title="Secuencias" style="text-decoration:none">🔁</a>
-    <a class="icn" href="plantillas.html" title="Plantillas" style="text-decoration:none">📄</a>
-    <a class="icn" href="campanas.html" title="Campañas" style="text-decoration:none">📣</a>
-    <a class="icn" href="dashboard.html" title="Dashboard" style="text-decoration:none">📊</a>
-    <a class="icn" href="config.html" title="Configuraciones" style="text-decoration:none">⚙️</a>
-    <div class="bottom">
-      <div class="icn" id="logoutBtn" title="Cerrar sesión">⏻</div>
-    </div>
-  </div>
-
   <div class="list">
     <div class="top">
-      <select class="sel" id="channelSel"></select>
+      <span style="font-weight:600;font-size:14px">Bandeja</span>
       <button class="testbtn" id="testBtn" title="Probar flujos sin WhatsApp">🧪 Probar</button>
     </div>
     <div id="convList" style="overflow-y:auto;flex:1"></div>
@@ -162,22 +148,13 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { supa, mountShell, toast } from "./shell.js";
 
-// ─────────────────────────────────────────────────────────────
-// CONFIG — reemplazar con los valores del proyecto Supabase.
-// (La anon key es PÚBLICA por diseño; protegida por RLS.)
-// ─────────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
-
-const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null };
 const $ = (id) => document.getElementById(id);
 
-function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),3500); }
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
 
 // ── Auth ──
@@ -189,23 +166,15 @@ $("loginForm").addEventListener("submit", async (e) => {
   if (error) { $("loginErr").textContent = "Credenciales inválidas"; return; }
   boot();
 });
-$("logoutBtn").addEventListener("click", async () => { await supa.auth.signOut(); location.reload(); });
-
 async function boot() {
   const { data: { session } } = await supa.auth.getSession();
   if (!session) { $("login").classList.remove("hidden"); $("app").classList.add("hidden"); return; }
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
-  await loadChannels();
+  const shell = await mountShell({ active: "inbox" });
+  state.channelId = shell.channelId;
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); loadConversations(); });
+  await loadConversations();
   subscribeRealtime();
-}
-
-// ── Canales ──
-async function loadChannels() {
-  const { data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre");
-  const sel = $("channelSel"); sel.innerHTML = "";
-  (data||[]).forEach(c => { const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
-  sel.onchange = () => { state.channelId = sel.value; loadConversations(); };
-  if (data && data.length) { state.channelId = data[0].id; sel.value = data[0].id; await loadConversations(); }
 }
 
 // ── Conversaciones ──
@@ -309,7 +278,7 @@ async function startTest() {
   if (out.contact_id) {
     await loadConversations();
     openChat({ id: out.contact_id, nombre: "🧪 Prueba (webchat)", wa_id: "webchat-test", bot_activo: true });
-  } else { toast(out.detalle || out.error || "No se pudo iniciar la prueba"); }
+  } else { toast(out.detalle || out.error || "No se pudo iniciar la prueba", true); }
 }
 async function sendButton(id, title) {
   await callFn("webchat", { channel_id: state.channelId, buttonId: id, text: title });
@@ -329,10 +298,10 @@ async function sendMsg() {
     } else {
       const res = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, text });
       const out = await res.json();
-      if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar"); }
+      if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); }
       else { input.value = ""; setBotPill(false); }
     }
-  } catch { toast("Error de red"); }
+  } catch { toast("Error de red", true); }
   $("sendBtn").disabled = false;
 }
 

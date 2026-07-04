@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Nodo · Dashboard</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
 <style>
   :root{--bg:#0e1116;--surface:#151a21;--surface-2:#1b222c;--border:#232b36;--text:#e7ecf2;--muted:#8a97a8;--faint:#5c6675;--brand:#2b7fff;--green:#22c079;--amber:#f0a92b;--red:#e2564a;--font:"Inter",system-ui,sans-serif;}
   *{box-sizing:border-box} html,body{height:100%;margin:0}
@@ -28,17 +29,6 @@
 </head>
 <body>
 <div class="app">
-  <div class="top">
-    <a href="index.html" title="Bandeja">💬</a>
-    <a href="editor.html" title="Flujos">🕸</a>
-    <a href="productos.html" title="Productos">📦</a>
-    <a href="secuencias.html" title="Secuencias">🔁</a>
-    <a href="plantillas.html" title="Plantillas">📄</a>
-    <a href="campanas.html" title="Campañas">📣</a>
-    <a href="dashboard.html" class="active" title="Dashboard">📊</a>
-    <a href="config.html" title="Configuraciones">⚙️</a>
-    <select class="sel" id="channelSel"></select>
-  </div>
   <div class="wrap">
     <h2>Resumen del canal</h2>
     <div class="grid" id="cards"></div>
@@ -47,18 +37,16 @@
   </div>
 </div>
 <script type="module">
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-const SUPABASE_URL="https://ahoxdyffbwjlshmdezwi.supabase.co";
-const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
-const supa=createClient(SUPABASE_URL,SUPABASE_ANON_KEY); const $=(id)=>document.getElementById(id);
+import { supa, mountShell } from "./shell.js";
+const $=(id)=>document.getElementById(id);
 let channelId=null;
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
-  const { data }=await supa.from("channels").select("id,nombre").eq("activo",true).order("nombre");
-  const sel=$("channelSel"); (data||[]).forEach(c=>{const o=document.createElement("option");o.value=c.id;o.textContent=c.nombre;sel.appendChild(o);});
-  channelId=(data&&data[0]&&data[0].id); const p=new URLSearchParams(location.search).get("channel"); if(p)channelId=p;
-  if(channelId)sel.value=channelId; sel.onchange=()=>{channelId=sel.value;load();}; load();
+  const shell=await mountShell({ active:"dashboard" });
+  channelId=shell.channelId;
+  shell.onChannel(id=>{ channelId=id; load(); });
+  load();
 }
 async function load(){
   const { data, error }=await supa.rpc("dashboard_stats",{ p_channel_id:channelId });

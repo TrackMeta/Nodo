@@ -1,0 +1,65 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Nodo · shell.css — estilos compartidos del cascarón (sidebar + tema)
+   Las variables OSCURAS las define cada página en su :root (compat).
+   Aquí solo añadimos el override de TEMA CLARO y los estilos del sidebar,
+   todos basados en variables → cambian de tema automáticamente.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Tema claro (override de mayor especificidad que :root) ────────── */
+html[data-theme="light"]{
+  --bg:#f4f6fa; --surface:#ffffff; --surface-2:#eef1f6; --border:#dce1ea;
+  --text:#1a2230; --muted:#5b6676; --faint:#8a94a4;
+  --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#e7f0ff;
+  --green:#12a05e; --green-bg:#e3f7ec; --amber:#c67c0a; --amber-bg:#fdf2dd;
+  --red:#d63a2e; --red-bg:#fdeae8;
+}
+html{transition:background .2s ease}
+
+/* ── Cascarón: sidebar fijo a la izquierda ────────────────────────── */
+body.nodo-shelled{display:flex}
+
+.nodo-nav{
+  width:238px;flex:none;height:100vh;position:sticky;top:0;z-index:30;
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:12px 10px;
+  transition:width .16s ease;overflow:hidden;
+}
+.nodo-nav.collapsed{width:66px}
+
+.nodo-brand{display:flex;align-items:center;gap:10px;padding:6px 8px 4px;min-height:44px}
+.nodo-brand img{width:34px;height:34px;border-radius:9px;flex:none;object-fit:cover;background:var(--surface-2)}
+.nodo-brand .bt{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nodo-nav.collapsed .nodo-brand{justify-content:center;padding:6px 0 4px}
+.nodo-nav.collapsed .nodo-brand .bt{display:none}
+
+.nodo-bot{padding:10px 4px 8px}
+.nodo-bot select{
+  width:100%;height:36px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:9px;color:var(--text);padding:0 10px;font-size:13px;font-family:inherit;outline:none;
+}
+.nodo-bot select:focus{border-color:var(--brand)}
+.nodo-nav.collapsed .nodo-bot{display:none}
+
+.nodo-links{display:flex;flex-direction:column;gap:2px;overflow-y:auto;overflow-x:hidden}
+.nodo-sec{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);
+  padding:12px 12px 4px;white-space:nowrap}
+.nodo-nav.collapsed .nodo-sec{opacity:0;height:8px;padding:0}
+
+.nodo-link{
+  display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:10px;
+  color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:500;white-space:nowrap;
+  border:none;background:transparent;width:100%;text-align:left;cursor:pointer;
+}
+.nodo-link:hover{background:var(--surface-2);color:var(--text)}
+.nodo-link.active{background:var(--brand-bg);color:var(--brand);font-weight:600}
+.nodo-link svg{width:20px;height:20px;flex:none;stroke-width:2}
+.nodo-link .lbl{overflow:hidden;text-overflow:ellipsis}
+.nodo-nav.collapsed .nodo-link{justify-content:center;padding:0}
+.nodo-nav.collapsed .nodo-link .lbl{display:none}
+
+.nodo-foot{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:8px;
+  border-top:1px solid var(--border)}
+
+/* Contenido de la página ocupa el resto */
+body.nodo-shelled > .app,
+body.nodo-shelled > #app{flex:1;min-width:0}

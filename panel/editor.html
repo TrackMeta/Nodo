@@ -6,6 +6,7 @@
 <title>Nodo · Editor de flujos</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.css" />
+<link rel="stylesheet" href="shell.css" />
 <style>
   :root{
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
@@ -83,14 +84,6 @@
 <body>
 <div class="app">
   <div class="top">
-    <a href="index.html" title="Volver a la bandeja">←</a>
-    <a href="productos.html" title="Productos">📦</a>
-    <a href="secuencias.html" title="Secuencias">🔁</a>
-    <a href="plantillas.html" title="Plantillas">📄</a>
-    <a href="campanas.html" title="Campañas">📣</a>
-    <a href="dashboard.html" title="Dashboard">📊</a>
-    <a href="config.html" title="Configuraciones">⚙️</a>
-    <select class="sel" id="channelSel"></select>
     <span class="fname" id="fname">—</span>
     <span class="badge" id="fstate">—</span>
     <div class="seg" id="viewToggle">
@@ -120,11 +113,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
-const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { supa, mountShell, toast } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 
 // Tipos de nodo y sus salidas (handles) por defecto.
@@ -144,7 +133,6 @@ const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, sele
 let editor;
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
-function toast(m, err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(()=>t.className="toast",3000); }
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 async function boot(){
@@ -318,18 +306,15 @@ function buildIA(m, body){
 }
 
 async function loadChannels(){
-  const { data } = await supa.from("channels").select("id,nombre").eq("activo",true).order("nombre");
-  const sel=$("channelSel"); sel.innerHTML="";
-  (data||[]).forEach(c=>{ const o=document.createElement("option"); o.value=c.id; o.textContent=c.nombre; sel.appendChild(o); });
+  const shell=await mountShell({ active:"editor" });
+  st.channelId = shell.channelId;
   const params=new URLSearchParams(location.search);
   const flowParam = params.get("flow");
   if(flowParam){
     const { data:f } = await supa.from("flows").select("channel_id").eq("id",flowParam).maybeSingle();
-    if(f) st.channelId = f.channel_id;
+    if(f){ st.channelId = f.channel_id; shell.setChannel(st.channelId, { silent:true }); }
   }
-  st.channelId = st.channelId || params.get("channel") || (data&&data[0]&&data[0].id);
-  if(st.channelId){ sel.value=st.channelId; }
-  sel.onchange=()=>{ st.channelId=sel.value; st.flowId=null; loadFlows(); clearCanvas(); };
+  shell.onChannel(id=>{ st.channelId=id; st.flowId=null; loadFlows(); clearCanvas(); });
   await loadFlows();
   if(flowParam) openFlow(flowParam);
 }
