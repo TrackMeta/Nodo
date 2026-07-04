@@ -5,6 +5,12 @@
    todos basados en variables → cambian de tema automáticamente.
    ═══════════════════════════════════════════════════════════════════ */
 
+/* ── Defaults OSCUROS de tokens de fondo (para páginas cuyo :root no los
+      define). Cada página puede sobrescribirlos; el tema claro los conmuta. */
+:root{
+  --brand-bg:#12233f; --green-bg:#10281d; --red-bg:#2c1615; --amber-bg:#2c2311;
+}
+
 /* ── Tema claro (override de mayor especificidad que :root) ────────── */
 html[data-theme="light"]{
   --bg:#f4f6fa; --surface:#ffffff; --surface-2:#eef1f6; --border:#dce1ea;

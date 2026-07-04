@@ -34,12 +34,12 @@
   h2{font-size:16px;margin:0 0 4px}
   .sub{color:var(--muted);font-size:12.5px;margin:0 0 22px}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px}
-  .card.on{border-color:#20603f}
+  .card.on{border-color:var(--green)}
   .chd{display:flex;align-items:center;gap:10px;margin-bottom:4px}
   .chd .ico{font-size:22px}
   .chd .nm{font-weight:700;font-size:15px}
   .badge{font-size:10px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
-  .badge.on{background:#10281d;color:var(--green);border-color:transparent}
+  .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
   .badge.def{background:var(--brand-bg);color:var(--brand);border-color:transparent}
   .desc{color:var(--faint);font-size:12px;margin:2px 0 14px}
   label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
@@ -170,15 +170,49 @@ function renderBranding(){
       <img id="brandPrev" src="${esc(logo)}" alt="" style="width:54px;height:54px;border-radius:12px;object-fit:cover;background:var(--surface-2);border:1px solid var(--border)"/>
       <div class="f"><label>Nombre del bot</label><input class="in" id="b_nombre" value="${esc(c.nombre||'')}"/></div>
     </div>
-    <label>URL del logo <span style="color:var(--faint)">(imagen pública; vacío = logo de Nodo)</span></label>
-    <input class="in" id="b_logo" value="${esc(c.logo_url||'')}" placeholder="https://.../logo.png"/>
+    <label>Logo del bot</label>
+    <div class="acts" style="margin-top:0">
+      <button class="btn" id="uploadBtn">⬆ Subir desde la PC</button>
+      <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
+      <span class="desc" style="margin:0">o pega una URL abajo</span>
+    </div>
+    <input class="in" id="b_logo" value="${esc((c.logo_url||'').startsWith('data:')?'':(c.logo_url||''))}" placeholder="https://.../logo.png" style="margin-top:8px"/>
     <div class="acts"><button class="btn primary" id="saveBrand">Guardar marca</button></div>`;
-  $("b_logo").oninput=(e)=>{ $("brandPrev").src = e.target.value.trim() || "../assets/logo-rounded.png"; };
+  $("b_logo").oninput=(e)=>{ st.pendingLogo=null; $("brandPrev").src = e.target.value.trim() || "../assets/logo-rounded.png"; };
+  $("uploadBtn").onclick=()=>$("logoFile").click();
+  $("logoFile").onchange=(e)=>handleLogoFile(e.target.files[0]);
   $("saveBrand").onclick=(e)=>saveBrand(e.target);
+}
+// Reescala la imagen en el navegador y la devuelve como data URL (sin Storage).
+function downscaleImage(file, size=96){
+  return new Promise((res,rej)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const c=document.createElement("canvas"); c.width=size; c.height=size;
+      const ctx=c.getContext("2d");
+      const scale=Math.min(size/img.width, size/img.height);
+      const w=img.width*scale, h=img.height*scale;
+      ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h);
+      URL.revokeObjectURL(url);
+      res(c.toDataURL("image/png"));
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("no se pudo leer la imagen")); };
+    img.src=url;
+  });
+}
+async function handleLogoFile(file){
+  if(!file) return;
+  if(file.size>4*1024*1024){ toast("Imagen muy grande (máx 4MB)",true); return; }
+  try{
+    const dataUrl=await downscaleImage(file, 96);
+    st.pendingLogo=dataUrl;
+    const prev=$("brandPrev"); if(prev) prev.src=dataUrl;
+    toast("Imagen cargada — pulsa Guardar marca");
+  }catch(e){ toast(e.message||"error al leer imagen",true); }
 }
 async function saveBrand(btn){
   const nombre=$("b_nombre").value.trim();
-  const logo_url=$("b_logo").value.trim()||null;
+  const logo_url = st.pendingLogo || ($("b_logo").value.trim()||null);
   if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
   const { error } = await supa.from("channels").update({ nombre, logo_url }).eq("id",st.channelId);
@@ -189,7 +223,7 @@ async function saveBrand(btn){
   const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-rounded.png";
   const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
   const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
-  st.channel.nombre=nombre; st.channel.logo_url=logo_url;
+  st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null;
 }
 
 function secBadge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
