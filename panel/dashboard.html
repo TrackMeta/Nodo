@@ -8,67 +8,167 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
-  :root{--bg:#0e1116;--surface:#151a21;--surface-2:#1b222c;--border:#232b36;--text:#e7ecf2;--muted:#8a97a8;--faint:#5c6675;--brand:#2b7fff;--green:#22c079;--amber:#f0a92b;--red:#e2564a;--font:"Inter",system-ui,sans-serif;}
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --green:#22c079; --amber:#f0a92b; --red:#e2564a; --purple:#9b6cf0;
+    --font:"Inter",system-ui,sans-serif;
+  }
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
-  a{color:var(--muted);text-decoration:none}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .top a{font-size:20px}.top a.active{color:var(--brand)}
-  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px}
-  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:1000px;margin:0 auto;width:100%}
-  h2{font-size:17px;margin:0 0 18px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
-  .card .k{font-size:12px;color:var(--muted)} .card .v{font-size:28px;font-weight:700;margin-top:6px}
-  .card .v.green{color:var(--green)} .card .v.amber{color:var(--amber)} .card .v.brand{color:var(--brand)}
-  .sub{color:var(--muted);font-size:12px;margin:22px 0 10px;text-transform:uppercase;letter-spacing:.4px}
-  .stages{display:flex;flex-wrap:wrap;gap:8px}
-  .pill{background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px}
-  .pill b{color:var(--text)}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
+  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:1120px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 2px;font-weight:700}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:14px;margin-bottom:20px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:15px 16px}
+  .kpi .h{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px;font-weight:600}
+  .kpi .ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
+  .kpi .ic svg{width:17px;height:17px}
+  .kpi .v{font-size:27px;font-weight:800;margin-top:10px;letter-spacing:-.5px}
+  .kpi .d{font-size:11.5px;color:var(--faint);margin-top:3px}
+  .cols{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
+  @media(max-width:820px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px}
+  .panel h3{margin:0 0 2px;font-size:14px;font-weight:700}
+  .panel .ps{color:var(--muted);font-size:11.5px;margin:0 0 14px}
+  .funnel .frow{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+  .funnel .flabel{width:118px;flex:none;font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .funnel .fbar{flex:1;height:26px;background:var(--surface-2);border-radius:7px;overflow:hidden}
+  .funnel .fbar span{display:block;height:100%;border-radius:7px;min-width:2px;transition:width .4s}
+  .funnel .fval{width:56px;flex:none;text-align:right;font-weight:700;font-size:13px}
+  .stages{display:flex;flex-direction:column;gap:9px}
+  .srow{display:flex;align-items:center;gap:12px}
+  .srow .sl{width:96px;flex:none;font-size:12px;color:var(--muted);text-transform:capitalize}
+  .srow .sbar{flex:1;height:20px;background:var(--surface-2);border-radius:6px;overflow:hidden}
+  .srow .sbar span{display:block;height:100%;background:var(--brand);border-radius:6px;min-width:2px}
+  .srow .sv{width:38px;text-align:right;font-weight:700;font-size:12.5px}
+  .muted{color:var(--faint);font-size:12px}
+  .empty{color:var(--faint);text-align:center;padding:30px}
 </style>
 </head>
 <body>
 <div class="app">
+  <div class="top"><span style="font-weight:600;font-size:15px">Dashboard</span></div>
   <div class="wrap">
-    <h2>Resumen del canal</h2>
-    <div class="grid" id="cards"></div>
-    <div class="sub">Contactos por etapa</div>
-    <div class="stages" id="stages"></div>
+    <h1>Panel de control</h1>
+    <p class="sub" id="subtitle">Resumen del bot</p>
+    <div class="kpis" id="kpis"></div>
+    <div class="cols">
+      <div class="panel">
+        <h3>Ventas — últimos 14 días</h3><p class="ps" id="salesSum">—</p>
+        <div id="salesChart"></div>
+      </div>
+      <div class="panel">
+        <h3>Embudo de conversión</h3><p class="ps">Eventos enviados a Meta (30 días)</p>
+        <div class="funnel" id="funnel"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Contactos por etapa</h3><p class="ps">Distribución actual del embudo</p>
+      <div class="stages" id="stages"></div>
+    </div>
   </div>
 </div>
+
 <script type="module">
 import { supa, mountShell } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 let channelId=null;
-function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const money=(n)=>"S/ "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const IC={
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>',
+  lead:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  flow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+  repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+};
+
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"dashboard" });
   channelId=shell.channelId;
-  shell.onChannel(id=>{ channelId=id; load(); });
+  const c=shell.channels.find(x=>x.id===channelId);
+  $("subtitle").textContent="Resumen de "+(c?c.nombre:"tu bot");
+  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Resumen de "+(cc?cc.nombre:"tu bot"); load(); });
   load();
 }
+
+function kpi(icon, color, label, value, sub){
+  return `<div class="kpi"><div class="h"><span class="ic" style="background:${color}22;color:${color}">${IC[icon]}</span>${esc(label)}</div>
+    <div class="v">${value}</div>${sub?`<div class="d">${esc(sub)}</div>`:""}</div>`;
+}
+
 async function load(){
   const { data, error }=await supa.rpc("dashboard_stats",{ p_channel_id:channelId });
-  if(error){ $("cards").innerHTML=`<div class="card"><div class="k">Error</div><div class="v">${esc(error.message)}</div></div>`; return; }
   const s=data||{};
-  const cards=[
-    ["Contactos", s.contactos??0, ""],
-    ["Ingresos (compras)", "S/ "+Number(s.ingresos??0).toFixed(2), "green"],
-    ["Compras", s.purchases??0, "green"],
-    ["Leads", s.leads??0, "brand"],
-    ["Mensajes hoy (entrada)", s.mensajes_hoy_in??0, ""],
-    ["Mensajes hoy (salida)", s.mensajes_hoy_out??0, ""],
-    ["Flujos activos", s.runs_activos??0, "brand"],
-    ["En remarketing", s.subs_activas??0, "amber"],
-    ["Requieren humano", s.requiere_humano??0, "amber"],
-  ];
-  $("cards").innerHTML=cards.map(([k,v,cl])=>`<div class="card"><div class="k">${esc(k)}</div><div class="v ${cl}">${esc(v)}</div></div>`).join("");
-  const st=s.por_stage||{};
-  $("stages").innerHTML=Object.keys(st).length
-    ? Object.entries(st).map(([k,v])=>`<span class="pill">${esc(k)} · <b>${v}</b></span>`).join("")
-    : `<span class="pill" style="color:var(--faint)">sin datos aún</span>`;
+  if(error){ $("kpis").innerHTML=`<div class="kpi"><div class="v" style="font-size:14px">${esc(error.message)}</div></div>`; }
+  else {
+    $("kpis").innerHTML=[
+      kpi("money","#22c079","Ingresos", money(s.ingresos), "compras confirmadas"),
+      kpi("cart","#22c079","Compras", s.purchases??0),
+      kpi("lead","#2b7fff","Leads", s.leads??0),
+      kpi("users","#2b7fff","Contactos", s.contactos??0),
+      kpi("chat","#9b6cf0","Mensajes hoy", (Number(s.mensajes_hoy_in||0)+Number(s.mensajes_hoy_out||0)), `${s.mensajes_hoy_in||0} in · ${s.mensajes_hoy_out||0} out`),
+      kpi("flow","#2b7fff","Flujos activos", s.runs_activos??0),
+      kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0),
+      kpi("bell","#f0a92b","Requieren humano", s.requiere_humano??0),
+    ].join("");
+    renderStages(s.por_stage||{});
+  }
+  await loadEvents();
+}
+
+function renderStages(st){
+  const box=$("stages"); const entries=Object.entries(st);
+  if(!entries.length){ box.innerHTML=`<div class="empty">Sin datos de etapas aún</div>`; return; }
+  const max=Math.max(1,...entries.map(([,v])=>v));
+  box.innerHTML=entries.map(([k,v])=>`<div class="srow"><div class="sl">${esc(k)}</div><div class="sbar"><span style="width:${Math.round(v/max*100)}%"></span></div><div class="sv">${v}</div></div>`).join("");
+}
+
+async function loadEvents(){
+  const since=new Date(Date.now()-30*864e5).toISOString();
+  const { data, error }=await supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",since).order("created_at");
+  const ev=error?[]:(data||[]);
+  // Embudo (30 días).
+  const counts={ Lead:0, InitiateCheckout:0, Purchase:0 };
+  ev.forEach(e=>{ if(counts[e.event_name]!==undefined) counts[e.event_name]++; });
+  renderFunnel(counts);
+  // Ventas por día (14 días).
+  const days=[]; const fmt=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",day:"2-digit",month:"2-digit"});
+  const key=(d)=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/Lima"}).format(d);
+  const map={};
+  for(let i=13;i>=0;i--){ const d=new Date(Date.now()-i*864e5); const k=key(d); map[k]=0; days.push({k,label:fmt.format(d)}); }
+  let total=0;
+  ev.forEach(e=>{ if(e.event_name==="Purchase" && e.value){ const k=key(new Date(e.created_at)); if(k in map){ map[k]+=Number(e.value); total+=Number(e.value); } } });
+  $("salesSum").textContent = total>0 ? `${money(total)} en ventas` : "Sin ventas registradas en el periodo";
+  renderBars(days.map(d=>({label:d.label, value:map[d.k]})));
+}
+
+function renderFunnel(c){
+  const rows=[["Lead","Leads","#2b7fff",c.Lead],["InitiateCheckout","Checkout","#f0a92b",c.InitiateCheckout],["Purchase","Compras","#22c079",c.Purchase]];
+  const max=Math.max(1,c.Lead,c.InitiateCheckout,c.Purchase);
+  $("funnel").innerHTML=rows.map(([k,l,col,v])=>`<div class="frow"><div class="flabel"><span style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block"></span>${l}</div><div class="fbar"><span style="width:${Math.round(v/max*100)}%;background:${col}"></span></div><div class="fval">${v}</div></div>`).join("");
+}
+
+function renderBars(data){
+  const W=560,H=170,pad=24,bw=(W-pad*2)/data.length;
+  const max=Math.max(1,...data.map(d=>d.value));
+  let bars="", labels="";
+  data.forEach((d,i)=>{
+    const bh=Math.round((d.value/max)*(H-46));
+    const x=pad+i*bw, y=H-26-bh;
+    bars+=`<rect x="${x+bw*0.16}" y="${y}" width="${bw*0.68}" height="${bh}" rx="3" fill="url(#g)"><title>${esc(d.label)}: ${money(d.value)}</title></rect>`;
+    if(i%2===0) labels+=`<text x="${x+bw/2}" y="${H-8}" text-anchor="middle" font-size="9" fill="var(--faint)">${d.label}</text>`;
+  });
+  $("salesChart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22c079"/><stop offset="1" stop-color="#22c07955"/></linearGradient></defs>
+    ${bars}${labels}</svg>`;
 }
 boot();
 </script>
