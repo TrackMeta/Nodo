@@ -59,7 +59,11 @@
     <span class="spacer"></span>
   </div>
   <div class="wrap">
-    <h2>Inteligencia Artificial</h2>
+    <h2>Identidad del bot</h2>
+    <p class="sub">Nombre y logo que se muestran en el panel para este bot. Si no defines un logo, se usa el de Nodo.</p>
+    <div id="brandCard"></div>
+
+    <h2 style="margin-top:30px">Inteligencia Artificial</h2>
     <p class="sub">Cada canal usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ✨ IA de tus flujos.</p>
     <div id="cards"></div>
 
@@ -98,9 +102,13 @@ async function boot(){
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
-  const { data:ch } = await supa.from("channels")
-    .select("ia_provider,phone_number_id,waba_id,verify_token,pixel_id,page_id,telegram_chat_ids")
+  // Resiliente: si logo_url aún no está migrado, reintenta sin esa columna.
+  let { data:ch, error:chErr } = await supa.from("channels")
+    .select("nombre,logo_url,ia_provider,phone_number_id,waba_id,verify_token,pixel_id,page_id,telegram_chat_ids")
     .eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch } = await supa.from("channels")
+    .select("nombre,ia_provider,phone_number_id,waba_id,verify_token,pixel_id,page_id,telegram_chat_ids")
+    .eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null;
   st.channel = ch || {};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
@@ -145,8 +153,42 @@ function render(){
     box.appendChild(card);
   });
   box.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
+  renderBranding();
   renderMeta();
   renderTelegram();
+}
+
+function renderBranding(){
+  const c=st.channel||{};
+  const card=$("brandCard"); card.className="card";
+  const logo = c.logo_url || "../assets/logo-rounded.png";
+  card.innerHTML=`
+    <div class="chd"><span class="ico">🏷️</span><span class="nm">Marca del bot</span></div>
+    <div class="desc">Se muestran en el menú lateral del panel para este bot.</div>
+    <div class="row" style="align-items:center;gap:16px">
+      <img id="brandPrev" src="${esc(logo)}" alt="" style="width:54px;height:54px;border-radius:12px;object-fit:cover;background:var(--surface-2);border:1px solid var(--border)"/>
+      <div class="f"><label>Nombre del bot</label><input class="in" id="b_nombre" value="${esc(c.nombre||'')}"/></div>
+    </div>
+    <label>URL del logo <span style="color:var(--faint)">(imagen pública; vacío = logo de Nodo)</span></label>
+    <input class="in" id="b_logo" value="${esc(c.logo_url||'')}" placeholder="https://.../logo.png"/>
+    <div class="acts"><button class="btn primary" id="saveBrand">Guardar marca</button></div>`;
+  $("b_logo").oninput=(e)=>{ $("brandPrev").src = e.target.value.trim() || "../assets/logo-rounded.png"; };
+  $("saveBrand").onclick=(e)=>saveBrand(e.target);
+}
+async function saveBrand(btn){
+  const nombre=$("b_nombre").value.trim();
+  const logo_url=$("b_logo").value.trim()||null;
+  if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  const { error } = await supa.from("channels").update({ nombre, logo_url }).eq("id",st.channelId);
+  btn.disabled=false; btn.textContent=old;
+  if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message, true); return; }
+  toast("Marca guardada ✓");
+  // Reflejar en el sidebar al instante.
+  const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-rounded.png";
+  const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
+  const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
+  st.channel.nombre=nombre; st.channel.logo_url=logo_url;
 }
 
 function secBadge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
