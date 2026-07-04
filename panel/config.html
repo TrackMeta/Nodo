@@ -18,43 +18,56 @@
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
-  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:780px;margin:0 auto;width:100%}
-  h1{font-size:20px;margin:0 0 16px;font-weight:700}
-  .tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:10px 4px;margin-right:20px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px}
+  .tabs{display:flex;gap:2px;margin:24px 0 22px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:14px;font-weight:600;padding:11px 4px;margin-right:22px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:8px}
   .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
-  .tab svg{width:16px;height:16px}
-  h2{font-size:15px;margin:0 0 4px;font-weight:700}
-  .sub{color:var(--muted);font-size:12.5px;margin:0 0 18px;line-height:1.5}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px}
+  .tab svg{width:17px;height:17px}
+  .tab img{width:18px;height:18px;border-radius:5px;object-fit:cover}
+  h2{font-size:18px;margin:0 0 4px;font-weight:800;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:640px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
   .card.on{border-color:var(--green)}
-  .chd{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-  .chd .ico{width:34px;height:34px;border-radius:10px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center}
-  .chd .ico svg{width:19px;height:19px}
-  .chd .nm{font-weight:700;font-size:15px}
-  .badge{font-size:10px;padding:3px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:600}
+  .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+  .chd .ico svg{width:22px;height:22px}
+  .chd .ico img{width:100%;height:100%;object-fit:cover}
+  .chd .nm{font-weight:800;font-size:16.5px;letter-spacing:-.2px}
+  .badge{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
   .badge.def{background:var(--brand-bg);color:var(--brand);border-color:transparent}
-  .desc{color:var(--faint);font-size:12px;margin:2px 0 14px;line-height:1.5}
-  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px;font-weight:600}
-  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px;outline:none;font-family:var(--font)}
+  .desc{color:var(--muted);font-size:12.5px;margin:12px 0 4px;line-height:1.55}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
   .in:focus{border-color:var(--brand)}
   .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
   .row>.f{flex:1;min-width:170px}
-  .acts{display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap}
-  .btn{height:38px;padding:0 15px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
   .btn.primary{background:var(--brand);border:none;color:#fff}
   .btn.primary:hover{background:var(--brand-2)}
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
+  /* Google Sheets — pasos guiados */
+  .steps{counter-reset:s;margin:4px 0 8px}
+  .step{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)}
+  .step:last-child{border-bottom:none}
+  .step .num{counter-increment:s;width:28px;height:28px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .step .num::before{content:counter(s)}
+  .step .st-b{flex:1;min-width:0}
+  .step .st-t{font-weight:700;font-size:14px;margin-bottom:3px}
+  .step .st-d{font-size:12.5px;color:var(--muted);line-height:1.55}
+  .copybox{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12px;font-family:monospace;word-break:break-all}
+  .copybox button{margin-left:auto;flex:none;background:var(--brand-bg);color:var(--brand);border:none;border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:700}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="top"><span style="font-weight:600;font-size:15px">Configuración</span></div>
-  <div class="wrap">
-    <h1>Configuración</h1>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:820px">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Configuración</h1>
+        <p class="nodo-lead">Marca, comportamiento e integraciones de este bot. Cada canal guarda sus propios ajustes.</p>
+      </div>
+    </div>
     <div class="tabs">
       <button class="tab active" data-t="marca" id="tabMarca"></button>
       <button class="tab" data-t="general" id="tabGeneral"></button>
@@ -85,10 +98,11 @@ const TIMEZONES=[
   ["America/New_York","EE. UU. (Este) · UTC-5"],["Europe/Madrid","España (Madrid) · UTC+1"],
 ];
 
+const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png", meta:"../assets/apps/meta.png", sheets:"../assets/apps/sheets.png" };
 const PROVIDERS = [
-  { id:"anthropic", nm:"Claude (Anthropic)", desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
+  { id:"anthropic", nm:"Claude (Anthropic)", logo:LOGO.claude, desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
     keyHint:"sk-ant-...", models:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"] },
-  { id:"openai", nm:"ChatGPT (OpenAI)", desc:"Modelos GPT de OpenAI.",
+  { id:"openai", nm:"ChatGPT (OpenAI)", logo:LOGO.chatgpt, desc:"Modelos GPT de OpenAI.",
     keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
 ];
 const st = { channelId:null, tab:"marca", iaProvider:null, cfg:{}, channel:{}, secrets:{}, pendingLogo:null };
@@ -100,8 +114,8 @@ async function boot(){
   $("tabMarca").innerHTML=IC.tag+"<span>Marca del Bot</span>";
   $("tabGeneral").innerHTML=IC.sliders+"<span>General</span>";
   $("tabIa").innerHTML=IC.spark+"<span>Inteligencia Artificial</span>";
-  $("tabPixel").innerHTML=IC.target+"<span>Pixel de Meta</span>";
-  $("tabSheets").innerHTML=IC.sheet+"<span>Google Sheets</span>";
+  $("tabPixel").innerHTML=`<img src="${LOGO.meta}" alt=""/><span>Pixel de Meta</span>`;
+  $("tabSheets").innerHTML=`<img src="${LOGO.sheets}" alt=""/><span>Google Sheets</span>`;
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"config" });
   st.channelId=shell.channelId;
@@ -159,31 +173,75 @@ function renderGeneral(b){
   };
 }
 
-// ── Google Sheets (integración preparada) ───────────────────────────
+// ── Google Sheets (cuenta de servicio) ──────────────────────────────
+// Correo de la cuenta de servicio de Nodo: se comparte la hoja con este
+// correo (permiso Editor) y listo. No requiere que el usuario pase por la
+// pantalla de consentimiento de Google ni cree su propio proyecto en GCP.
+const NODO_GS_SERVICE_EMAIL = "nodo-sheets@nodo-crm.iam.gserviceaccount.com";
+function sheetIdFrom(v){ const m=(v||"").match(/\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:(v||"").trim(); }
 function renderGsheets(b){
   const g=(st.channel&&st.channel.gsheets)||{};
   const connected=!!g.connected;
   b.innerHTML=`
-    <h2>Google Sheets</h2><p class="sub">Deja preparada la integración para que los nodos de Google Sheets funcionen dentro de tus flujos (registrar contactos, ventas, comprobantes, etc.).</p>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+      <img src="${LOGO.sheets}" alt="" style="width:38px;height:38px;border-radius:10px"/>
+      <div><h2 style="margin:0">Google Sheets</h2>
+        <p class="sub" style="margin:2px 0 0">Registra contactos, ventas y comprobantes en tus hojas directamente desde los flujos.</p></div>
+    </div>
+
     <div class="card ${connected?'on':''}">
-      <div class="chd"><span class="ico" style="background:#0c3a22;color:#22c079">${IC.sheet}</span><span class="nm">Conexión con Google Sheets</span>
-        <span class="badge ${connected?'on':''}" style="margin-left:auto">${connected?'Conectado':'Sin conectar'}</span></div>
-      <div class="desc">Comparte tu hoja de cálculo con la cuenta de servicio (permiso de <b>Editor</b>) y pega su correo y el ID de la hoja. Así los nodos podrán leer/escribir filas.</div>
-      <label>Correo de la cuenta de servicio</label>
-      <input class="in" id="gs_email" value="${esc(g.service_email||'')}" placeholder="nodo@tu-proyecto.iam.gserviceaccount.com"/>
-      <label>ID de la hoja por defecto (opcional)</label>
-      <input class="in" id="gs_sheet" value="${esc(g.spreadsheet_id||'')}" placeholder="1AbC...def (de la URL de la hoja)"/>
-      <div class="acts">
-        <button class="btn primary" id="saveGs">Guardar</button>
-        ${connected?`<button class="btn danger" id="discGs">Desconectar</button>`:""}
+      <div class="chd">
+        <span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${LOGO.sheets}" alt=""/></span>
+        <div><div class="nm">Conexión de la hoja</div><div class="desc" style="margin:2px 0 0">Sin claves ni JSON — solo compartes la hoja.</div></div>
+        <span class="badge ${connected?'on':''}" style="margin-left:auto">${connected?'Conectada':'Sin conectar'}</span>
       </div>
-      <div class="desc" style="margin-top:14px">Nota: la ejecución real (API de Google) se habilita en una fase posterior; aquí dejas guardada la configuración.</div>
+
+      <div class="steps" style="margin-top:14px">
+        <div class="step">
+          <div class="num"></div>
+          <div class="st-b">
+            <div class="st-t">Comparte tu hoja con Nodo</div>
+            <div class="st-d">Abre tu hoja en Google Sheets → botón <b>Compartir</b> → pega este correo y dale permiso de <b>Editor</b>. Es la cuenta de servicio de Nodo; con eso puede leer y escribir filas por ti.</div>
+            <div class="copybox">${esc(NODO_GS_SERVICE_EMAIL)}<button id="copyEmail">Copiar</button></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num"></div>
+          <div class="st-b">
+            <div class="st-t">Pega el enlace de la hoja</div>
+            <div class="st-d">Copia la URL desde la barra del navegador (o solo el ID). Nodo la usará por defecto en los nodos de Sheets.</div>
+            <input class="in" id="gs_sheet" style="margin-top:8px" value="${esc(g.spreadsheet_url||g.spreadsheet_id||'')}" placeholder="https://docs.google.com/spreadsheets/d/1AbC...def/edit"/>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num"></div>
+          <div class="st-b">
+            <div class="st-t">Nombre de la pestaña (opcional)</div>
+            <div class="st-d">La hoja/pestaña donde se agregan las filas. Si lo dejas vacío se usa la primera.</div>
+            <input class="in" id="gs_tab" style="margin-top:8px;max-width:280px" value="${esc(g.tab||'')}" placeholder="Ventas"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="acts">
+        <button class="btn primary" id="saveGs">${connected?'Guardar cambios':'Conectar hoja'}</button>
+        <button class="btn" id="testGs">Probar conexión</button>
+        ${connected?`<button class="btn danger" id="discGs" style="margin-left:auto">Desconectar</button>`:""}
+      </div>
+    </div>
+
+    <div class="card" style="background:var(--surface-2)">
+      <div style="font-weight:700;font-size:13.5px;margin-bottom:6px">¿Por qué cuenta de servicio y no “Iniciar sesión con Google”?</div>
+      <div class="desc" style="margin:0">Compartir la hoja con un correo es <b>un solo clic</b> y no expira. El inicio de sesión OAuth exigiría una pantalla de consentimiento de Google, verificación de la app y tokens que caducan — innecesario para uso interno. Tú mantienes el control: revocas el acceso quitando el correo de <b>Compartir</b> cuando quieras.</div>
     </div>`;
+  const cp=$("copyEmail"); if(cp) cp.onclick=()=>{ navigator.clipboard?.writeText(NODO_GS_SERVICE_EMAIL); toast("Correo copiado ✓"); };
   $("saveGs").onclick=async(e)=>{
-    const gs={ connected:true, service_email:$("gs_email").value.trim(), spreadsheet_id:$("gs_sheet").value.trim() };
-    if(!gs.service_email){ toast("Pega el correo de la cuenta de servicio",true); return; }
+    const url=$("gs_sheet").value.trim();
+    if(!url){ toast("Pega el enlace de tu hoja",true); return; }
+    const gs={ connected:true, service_email:NODO_GS_SERVICE_EMAIL, spreadsheet_url:url, spreadsheet_id:sheetIdFrom(url), tab:$("gs_tab").value.trim()||null };
     await saveGsheets(e.target, gs);
   };
+  $("testGs").onclick=(e)=>{ toast("Conexión de prueba: la ejecución real se habilita en la fase de nodos de Sheets."); };
   const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ connected:false });
 }
 async function saveGsheets(btn, gs){
@@ -254,7 +312,8 @@ function renderIA(box){
     const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
     const dl=p.models.map(m=>`<option value="${m}">`).join("");
     card.innerHTML=`
-      <div class="chd"><span class="ico">${IC.spark}</span><span class="nm">${esc(p.nm)}</span>
+      <div class="chd"><span class="ico"><img src="${p.logo}" alt=""/></span>
+        <span class="nm">${esc(p.nm)}</span>
         ${cfg?'<span class="badge on">Configurada</span>':'<span class="badge">Sin configurar</span>'}
         ${isDef?'<span class="badge def">Por defecto</span>':''}</div>
       <div class="desc">${esc(p.desc)}</div>
@@ -281,7 +340,7 @@ function renderPixel(box){
     <h2>Conexión del Pixel de Meta</h2>
     <p class="sub">Envío de conversiones a Meta (Conversions API) para optimizar tus campañas de Click-to-WhatsApp: Lead, InitiateCheckout y Purchase.</p>
     <div class="card">
-      <div class="chd"><span class="ico">${IC.target}</span><span class="nm">Pixel / Conversions API</span></div>
+      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Pixel / Conversions API</span></div>
       <div class="desc">El Pixel ID y el Page ID identifican tu activo publicitario; el token CAPI autoriza el envío de eventos.</div>
       <div class="row">
         <div class="f"><label>Pixel ID</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/></div>

@@ -18,65 +18,73 @@
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
-  .spacer{margin-left:auto}
-  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  /* Tarjeta de secuencia */
+  .qcard .c-top{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .qcard .c-tt{font-size:16.5px;font-weight:700;letter-spacing:-.2px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qcard .c-sub{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+  .mtl{display:flex;align-items:center;gap:0;margin-top:auto}
+  .mtl .md{width:11px;height:11px;border-radius:50%;background:var(--brand);flex:none;box-shadow:0 0 0 3px var(--brand-bg)}
+  .mtl .ml{flex:1;height:2px;background:var(--border);min-width:8px}
+  .mtl .more{font-size:11px;color:var(--faint);margin-left:8px;font-weight:600;white-space:nowrap}
+  .qcard.paused{opacity:.72}
+  .qcard .c-foot{margin-top:14px;display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--faint)}
+  /* Detalle / editor */
+  .dhead{display:flex;align-items:center;gap:14px;margin-bottom:6px;flex-wrap:wrap}
+  .dhead input{flex:1;min-width:220px;height:48px;background:transparent;border:none;border-bottom:2px solid var(--border);color:var(--text);font-size:24px;font-weight:800;letter-spacing:-.5px;outline:none;padding:0}
+  .dhead input:focus{border-color:var(--brand)}
+  .toggle{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--muted)}
+  .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--green-bg);border-color:transparent} .sw.on::after{left:20px;background:var(--green)}
+  .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 6px}
+  .banner{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:12px;padding:13px 16px;font-size:13px;color:var(--muted);line-height:1.55;margin:8px 0 24px}
+  .banner b{color:var(--text)}
+  .editwrap{max-width:720px}
+  .tl{position:relative;padding-left:40px}
+  .tl::before{content:"";position:absolute;left:15px;top:8px;bottom:30px;width:2px;background:var(--border)}
+  .step{position:relative;margin-bottom:16px}
+  .dot{position:absolute;left:-40px;top:2px;width:32px;height:32px;border-radius:50%;background:var(--brand-bg);color:var(--brand);border:3px solid var(--bg);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+  .scard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
+  .srow{display:flex;align-items:center;gap:8px}
+  .delay{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .in,.ta,.sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .in,.ta{width:100%} .ta{min-height:64px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
+  .num{max-width:80px;text-align:center} .unit{min-width:110px}
+  .del{background:transparent;border:none;color:var(--faint);margin-left:auto;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px}
+  .del:hover{color:var(--red)} .del svg{width:14px;height:14px}
+  .addstep{border:1.5px dashed var(--border);border-radius:14px;padding:14px;width:100%;color:var(--muted);font-weight:700;background:transparent;font-size:13.5px}
+  .addstep:hover{border-color:var(--brand);color:var(--brand)}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{border-color:var(--brand)} .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
-  .btn.danger{color:var(--red);border-color:transparent}
-  .main{flex:1;display:flex;min-height:0}
-  .list{width:320px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .lh{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap}
-  .fchip{height:28px;padding:0 11px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600}
-  .fchip.on{background:var(--brand-bg);color:var(--brand);border-color:transparent}
-  .item{padding:13px 15px;border-bottom:1px solid var(--border);cursor:pointer}
-  .item:hover{background:var(--surface)} .item.active{background:var(--surface-2)}
-  .item .n{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
-  .item .m{font-size:11.5px;color:var(--faint);margin-top:4px;display:flex;gap:10px}
-  .pill{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;text-transform:uppercase}
-  .pill.on{background:var(--green-bg);color:var(--green)} .pill.off{background:var(--amber-bg);color:var(--amber)}
-  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 26px;max-width:760px}
-  .dh{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-  .dh input{flex:1;height:42px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:18px;font-weight:700;outline:none}
-  .dh input:focus{border-color:var(--brand)}
-  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
-  .sw{width:38px;height:22px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none}
-  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:.15s}
-  .sw.on{background:var(--green-bg);border-color:transparent} .sw.on::after{left:18px;background:var(--green)}
-  .hint{font-size:11.5px;color:var(--faint);margin:8px 0 18px;line-height:1.5}
-  .tl{position:relative;padding-left:34px}
-  .tl::before{content:"";position:absolute;left:13px;top:6px;bottom:26px;width:2px;background:var(--border)}
-  .step{position:relative;margin-bottom:14px}
-  .dot{position:absolute;left:-34px;top:2px;width:28px;height:28px;border-radius:50%;background:var(--brand-bg);color:var(--brand);border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px}
-  .scard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
-  .srow{display:flex;align-items:center;gap:8px}
-  .delay{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
-  label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px;font-weight:600}
-  .in,.ta,.sel{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
-  .ta{min-height:56px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
-  .num{max-width:84px} .unit{max-width:120px}
-  .del{background:transparent;border:none;color:var(--faint);margin-left:auto;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px}
-  .del:hover{color:var(--red)} .del svg{width:14px;height:14px}
-  .addstep{border:1px dashed var(--border);border-radius:12px;padding:11px;width:100%;color:var(--muted);font-weight:600;background:transparent;font-size:13px}
-  .addstep:hover{border-color:var(--brand);color:var(--brand)}
-  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);padding:40px;text-align:center}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="top">
-    <span style="font-weight:600;font-size:15px">Secuencias</span>
-    <span class="spacer"></span>
-    <button class="btn primary" id="saveBtn">Guardar</button>
-    <button class="btn" id="addSeq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva</button>
-  </div>
-  <div class="main">
-    <div class="list">
-      <div class="lh" id="folders"></div>
-      <div id="seqList" style="overflow-y:auto;flex:1"></div>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <!-- VISTA TARJETAS -->
+    <div id="gridView">
+      <div class="nodo-head">
+        <div class="grow">
+          <h1 class="nodo-title">Secuencias</h1>
+          <p class="nodo-lead">Series de mensajes automáticos (drip) que reenganchan al cliente tras un tiempo de silencio. Si responde, el temporizador se reinicia solo.</p>
+        </div>
+        <div class="nodo-actions">
+          <button class="nodo-btn primary" id="addSeq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva secuencia</button>
+        </div>
+      </div>
+      <div class="nodo-folders" id="folders"></div>
+      <div class="nodo-cards" id="cards"></div>
     </div>
-    <div class="detail" id="detail"><div class="empty">Elige o crea una secuencia de mensajes (drip).</div></div>
+    <!-- VISTA DETALLE -->
+    <div id="detailView" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <button class="nodo-back" id="backBtn" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a secuencias</button>
+        <button class="btn primary" id="saveBtn">Guardar cambios</button>
+      </div>
+      <div id="detail" style="margin-top:18px"></div>
+    </div>
   </div>
 </div>
 
@@ -87,15 +95,20 @@ const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], folder:"__
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
+function durLabel(sec){ const {val,u}=splitDur(sec); const l={"60":"min","3600":"h","86400":"d"}[u]; return `${val}${l}`; }
 
 async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"secuencias" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; st.seq=null; load(); });
+  shell.onChannel(id=>{ st.channelId=id; st.seq=null; showGrid(); load(); });
   $("addSeq").onclick=createSeq; $("saveBtn").onclick=saveSeq;
+  $("backBtn").onclick=()=>{ st.seq=null; showGrid(); load(); };
   await load();
 }
+function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
+function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
+
 async function load(){
   const [{ data:seqs },{ data:flows },{ data:tpl }]=await Promise.all([
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
@@ -103,27 +116,49 @@ async function load(){
     supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
   ]);
   st.seqs=seqs||[]; st.flows=flows||[]; st.templates=tpl||[];
-  renderFolders(); renderList(); if(!st.seq) renderDetail();
+  renderFolders(); renderCards();
 }
 function allFolders(){ const s=new Set(st.localFolders); st.seqs.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function countIn(v){ if(v==="__all") return st.seqs.length; if(v==="__none") return st.seqs.filter(s=>!s.folder).length; return st.seqs.filter(s=>s.folder===v).length; }
 function renderFolders(){
   const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="fchip ${st.folder===v?'on':''}" data-f="${esc(v)}">${esc(l)}</button>`).join("")
-    +`<button class="fchip" id="newFolder">+ Carpeta</button>`;
-  $("folders").querySelectorAll(".fchip[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderList(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderList(); } };
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`;
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
 }
-function renderList(){
+function miniTimeline(pasos){
+  const p=pasos||[]; if(!p.length) return `<div class="mtl"><span class="more" style="margin:0">Sin pasos aún</span></div>`;
+  const show=p.slice(0,4);
+  let html=show.map((s,i)=>`${i>0?'<span class="ml"></span>':''}<span class="md" title="${esc(durLabel(s.umbral_silencio_seg))} de silencio"></span>`).join("");
+  if(p.length>4) html+=`<span class="ml"></span><span class="more">+${p.length-4}</span>`;
+  return `<div class="mtl">${html}</div>`;
+}
+function renderCards(){
   let list=st.seqs;
   if(st.folder==="__none") list=list.filter(s=>!s.folder); else if(st.folder!=="__all") list=list.filter(s=>s.folder===st.folder);
-  const box=$("seqList"); box.innerHTML="";
-  if(!list.length){ box.innerHTML=`<div style="padding:22px;color:var(--faint);font-size:12.5px">Sin secuencias en esta vista.</div>`; return; }
+  const box=$("cards");
+  if(!st.seqs.length){
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></div><h3>Aún no hay secuencias</h3><p>Crea tu primera secuencia de reenganche para recuperar clientes que dejaron de responder.</p></div>`;
+    return;
+  }
+  box.innerHTML="";
+  // Tarjeta "Nueva"
+  const add=document.createElement("div"); add.className="nodo-card new";
+  add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nueva secuencia</div>`;
+  add.onclick=createSeq;
+  if(!list.length){ box.appendChild(add); const e=document.createElement("div"); e.className="nodo-empty"; e.style.gridColumn="1/-1"; e.innerHTML="<p>Sin secuencias en esta vista.</p>"; box.appendChild(e); return; }
   list.forEach(s=>{
-    const el=document.createElement("div"); el.className="item"+(st.seq&&st.seq.id===s.id?" active":"");
-    el.innerHTML=`<div class="n">${esc(s.nombre)} <span class="pill ${s.activo!==false?'on':'off'}" style="margin-left:auto">${s.activo!==false?'Activa':'Pausada'}</span></div>
-      <div class="m"><span>${(s.pasos||[]).length} paso(s)</span>${s.folder?`<span>📁 ${esc(s.folder)}</span>`:""}</div>`;
+    const on=s.activo!==false; const n=(s.pasos||[]).length;
+    const el=document.createElement("div"); el.className="nodo-card qcard"+(on?"":" paused");
+    el.innerHTML=`
+      <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="nodo-pill ${on?'on':'off'}">${on?'Activa':'Pausada'}</span></div>
+      <div class="c-sub">${n} paso${n===1?'':'s'} · reenganche por silencio</div>
+      ${miniTimeline(s.pasos)}
+      <div class="c-foot">${s.folder?`<span>📁 ${esc(s.folder)}</span>`:'<span>Sin carpeta</span>'}</div>`;
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
+  box.appendChild(add);
 }
 async function createSeq(){
   const nombre=prompt("Nombre de la secuencia (ej. Remarketing pago pendiente):"); if(!nombre) return;
@@ -135,22 +170,25 @@ async function createSeq(){
 async function openSeq(id){
   const { data }=await supa.from("sequences").select("*").eq("id",id).maybeSingle();
   st.seq=data; if(!Array.isArray(st.seq.pasos)) st.seq.pasos=[];
-  renderList(); renderDetail();
+  renderDetail(); showDetail();
 }
 function renderDetail(){
-  const d=$("detail");
-  if(!st.seq){ d.innerHTML=`<div class="empty">Elige o crea una secuencia de mensajes (drip).</div>`; return; }
+  const d=$("detail"); if(!st.seq) return;
   const s=st.seq;
   d.innerHTML=`
-    <div class="dh">
-      <input id="s_nombre" value="${esc(s.nombre||"")}"/>
+    <div class="dhead">
+      <input id="s_nombre" value="${esc(s.nombre||"")}" placeholder="Nombre de la secuencia"/>
       <div class="toggle"><span id="s_state">${s.activo!==false?"Activa":"Pausada"}</span><div class="sw ${s.activo!==false?'on':''}" id="s_toggle"></div></div>
     </div>
-    <label style="margin-top:6px">Carpeta</label>
-    <select class="sel" id="s_folder" style="max-width:280px"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${s.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select>
-    <div class="hint">Cada paso se dispara tras X tiempo de <b>silencio</b> del cliente (desde su último mensaje). Si el cliente responde, el temporizador se reinicia solo.</div>
-    <div class="tl" id="steps"></div>
-    <button class="addstep" id="addStep">+ Añadir paso</button>`;
+    <div class="toolbar">
+      <div><label style="margin:0 0 4px">Carpeta</label>
+        <select class="sel" id="s_folder" style="min-width:240px"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${s.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+    </div>
+    <div class="banner">Cada paso se dispara tras X tiempo de <b>silencio</b> del cliente (desde su último mensaje). Si el cliente responde, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras hay conversación.</div>
+    <div class="editwrap">
+      <div class="tl" id="steps"></div>
+      <button class="addstep" id="addStep">+ Añadir paso</button>
+    </div>`;
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
   $("s_folder").onchange=(e)=>s.folder=e.target.value||null;
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
@@ -171,7 +209,7 @@ function stepCard(paso,i){
         <button class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Quitar</button>
       </div>
       <label>Acción</label>
-      <select class="sel act">
+      <select class="sel act" style="width:100%">
         <option value="mensaje" ${mode==="mensaje"?"selected":""}>Enviar un mensaje (dentro de 24h)</option>
         <option value="plantilla" ${mode==="plantilla"?"selected":""}>Enviar una plantilla (fuera de 24h)</option>
         <option value="flow" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
@@ -187,12 +225,12 @@ function stepCard(paso,i){
     body.innerHTML="";
     if(as.value==="flow"){
       delete paso.mensaje; delete paso.template_name;
-      body.innerHTML=`<label>Flujo a iniciar</label><select class="sel fs"><option value="">— elige —</option>${st.flows.map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}</option>`).join("")}</select>`;
+      body.innerHTML=`<label>Flujo a iniciar</label><select class="sel fs" style="width:100%"><option value="">— elige —</option>${st.flows.map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}</option>`).join("")}</select>`;
       body.querySelector(".fs").onchange=(e)=>paso.flow_id=e.target.value||undefined;
     } else if(as.value==="plantilla"){
       delete paso.mensaje; delete paso.flow_id;
-      body.innerHTML=`<label>Plantilla</label><select class="sel ts"><option value="">— elige —</option>${st.templates.map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
-        ${st.templates.length?`<label>Variables (una por línea)</label><textarea class="ta pta">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div class="hint">No hay plantillas activas.</div>`}`;
+      body.innerHTML=`<label>Plantilla</label><select class="sel ts" style="width:100%"><option value="">— elige —</option>${st.templates.map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
+        ${st.templates.length?`<label>Variables (una por línea)</label><textarea class="ta pta">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div class="banner" style="margin:8px 0 0">No hay plantillas activas.</div>`}`;
       body.querySelector(".ts").onchange=(e)=>{ paso.template_name=e.target.value||undefined; paso.template_lang=e.target.selectedOptions[0]?.dataset.lang||"es"; };
       const pta=body.querySelector(".pta"); if(pta) pta.oninput=()=>paso.template_params=pta.value.split("\n").map(x=>x.trim()).filter(Boolean);
     } else {

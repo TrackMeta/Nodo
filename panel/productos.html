@@ -12,77 +12,66 @@
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
     --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
     --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
-    --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
-  .top a{color:var(--muted);text-decoration:none;font-size:20px}
-  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
-  .spacer{margin-left:auto}
-  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
-  .btn.primary{background:var(--brand);border:none;color:#fff}
-  .btn.primary:hover{background:var(--brand-2)}
-  .main{flex:1;display:flex;min-height:0}
-  .list{width:230px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .list .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
-  .item{padding:11px 12px;border-bottom:1px solid var(--border);cursor:pointer}
-  .item:hover{background:var(--surface)}
-  .item.active{background:var(--surface-2)}
-  .item .n{font-weight:600;font-size:13px}
-  .item .m{font-size:11px;color:var(--faint);margin-top:2px}
-  .detail{flex:1;min-width:0;overflow-y:auto;padding:20px 24px}
-  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border)}
-  .tab{background:transparent;border:none;color:var(--muted);font-size:13px;font-weight:600;padding:8px 14px;border-bottom:2px solid transparent}
+  .pcard .c-tt{font-size:16.5px;font-weight:700;letter-spacing:-.2px}
+  .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border)}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:14px;font-weight:600;padding:10px 16px;border-bottom:2px solid transparent}
   .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
-  label{display:block;font-size:11px;color:var(--muted);margin:14px 0 6px}
-  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
+  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
   .ta{min-height:90px;font-family:monospace;font-size:12px}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:40px;padding:0 12px;font-size:13.5px;outline:none}
   .in:focus,.ta:focus{border-color:var(--brand)}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
-  .card h4{margin:0 0 4px;font-size:13px}
-  .row{display:flex;gap:10px;align-items:center}
-  .row>*{flex:1}
-  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px}
-  .flowrow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
-  .badge{font-size:10px;padding:2px 9px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px}
+  .card h4{margin:0 0 4px;font-size:14px;font-weight:700}
+  .row{display:flex;gap:12px;align-items:center} .row>*{flex:1}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;margin-top:14px}
+  .flowrow{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--border)}
+  .badge{font-size:10px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
-  .linkbtn{font-size:12px;padding:5px 11px;border:1px solid var(--border);border-radius:8px;color:var(--text);text-decoration:none}
-  .empty{color:var(--faint);text-align:center;padding:60px}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}
-  .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
+  .linkbtn{font-size:12.5px;padding:6px 12px;border:1px solid var(--border);border-radius:9px;color:var(--text);text-decoration:none;font-weight:600}
+  .empty{color:var(--faint);text-align:center;padding:40px}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff} .btn.primary:hover{background:var(--brand-2)}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="top">
-    <span style="font-weight:600;font-size:15px">Productos</span>
-    <span class="spacer"></span>
-    <button class="btn primary" id="saveBtn">Guardar</button>
-  </div>
-  <div class="main">
-    <div class="list">
-      <div class="hd"><span>Productos</span><button class="add" id="addProduct" title="Nuevo producto">+</button></div>
-      <div id="prodList" style="overflow-y:auto;flex:1"></div>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <!-- VISTA TARJETAS -->
+    <div id="gridView">
+      <div class="nodo-head">
+        <div class="grow">
+          <h1 class="nodo-title">Productos</h1>
+          <p class="nodo-lead">Tu catálogo de infoproductos. Cada producto define sus versiones, precios, entrega y los flujos que lo venden.</p>
+        </div>
+        <div class="nodo-actions">
+          <button class="nodo-btn primary" id="addProduct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo producto</button>
+        </div>
+      </div>
+      <div class="nodo-folders" id="folders"></div>
+      <div class="nodo-cards" id="cards"></div>
     </div>
-    <div class="detail" id="detail">
-      <div class="empty">Elige o crea un producto</div>
+    <!-- VISTA DETALLE -->
+    <div id="detailView" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <button class="nodo-back" id="backBtn" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a productos</button>
+        <button class="btn primary" id="saveBtn">Guardar cambios</button>
+      </div>
+      <div id="detail" style="margin-top:18px"></div>
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $ = (id) => document.getElementById(id);
-const st = { channelId:null, prod:null, versions:[], tab:"datos" };
-
+const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], filter:"__all" };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 async function boot(){
@@ -90,19 +79,47 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"productos" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; st.prod=null; renderDetail(); loadProducts(); });
-  await loadProducts();
+  shell.onChannel(id=>{ st.channelId=id; st.prod=null; showGrid(); loadProducts(); });
   $("addProduct").onclick = createProduct;
   $("saveBtn").onclick = saveProduct;
+  $("backBtn").onclick = ()=>{ st.prod=null; showGrid(); loadProducts(); };
+  await loadProducts();
 }
+function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
+function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
+
 async function loadProducts(){
-  const { data } = await supa.from("products").select("id,nombre,con_bifurcacion").eq("channel_id",st.channelId).order("created_at");
-  const box=$("prodList"); box.innerHTML="";
-  (data||[]).forEach(p=>{
-    const el=document.createElement("div"); el.className="item"+(st.prod&&st.prod.id===p.id?" active":"");
-    el.innerHTML=`<div class="n">${esc(p.nombre)}</div><div class="m">${p.con_bifurcacion?"con versiones":"versión única"}</div>`;
+  const { data } = await supa.from("products").select("id,nombre,con_bifurcacion,config").eq("channel_id",st.channelId).order("created_at");
+  st.list=data||[]; renderFolders(); renderCards();
+}
+function renderFolders(){
+  const c={ __all:st.list.length, multi:st.list.filter(p=>p.con_bifurcacion).length, single:st.list.filter(p=>!p.con_bifurcacion).length };
+  const tabs=[["__all","Todos"],["multi","Con versiones"],["single","Versión única"]];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${v}">${l}<span class="cnt">${c[v]||0}</span></button>`).join("");
+  $("folders").querySelectorAll(".nodo-folder").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderCards(); });
+}
+function renderCards(){
+  let list=st.list;
+  if(st.filter==="multi") list=list.filter(p=>p.con_bifurcacion); else if(st.filter==="single") list=list.filter(p=>!p.con_bifurcacion);
+  const box=$("cards");
+  if(!st.list.length){
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div><h3>Aún no hay productos</h3><p>Crea tu primer producto para configurar sus versiones, precios y flujos de venta.</p></div>`;
+    return;
+  }
+  box.innerHTML="";
+  list.forEach(p=>{
+    const el=document.createElement("div"); el.className="nodo-card pcard";
+    const precio=p.config&&p.config.precio?`S/ ${esc(p.config.precio)}`:"";
+    el.innerHTML=`
+      <div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+      <div class="c-tt">${esc(p.nombre)}</div>
+      <div class="c-sub">${p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única"}</div>
+      <div class="c-foot"><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
+  const add=document.createElement("div"); add.className="nodo-card new";
+  add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nuevo producto</div>`;
+  add.onclick=createProduct; box.appendChild(add);
 }
 async function createProduct(){
   const nombre=prompt("Nombre del producto:"); if(!nombre) return;
@@ -114,13 +131,13 @@ async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   st.prod=p; st.versions=vs||[]; st.tab="datos";
-  await loadProducts(); renderDetail();
+  renderDetail(); showDetail();
 }
 
 function renderDetail(){
-  const d=$("detail");
-  if(!st.prod){ d.innerHTML=`<div class="empty">Elige o crea un producto</div>`; return; }
+  const d=$("detail"); if(!st.prod) return;
   d.innerHTML=`
+    <h1 style="margin:0 0 16px;font-size:24px;font-weight:800;letter-spacing:-.5px">${esc(st.prod.nombre)}</h1>
     <div class="tabs">
       <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
       <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
@@ -138,9 +155,9 @@ function renderDatos(){
     <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con bifurcación (versiones Básica/Premium)</label>
     <label>Campos fijos (config JSON: precio, contexto_producto, datos_pago…)</label>
     <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
-    <label style="margin-top:20px">Versiones</label>
+    <label style="margin-top:22px">Versiones</label>
     <div id="versions"></div>
-    <button class="btn" id="addVersion" style="margin-top:8px">+ versión</button>`;
+    <button class="btn" id="addVersion" style="margin-top:10px">+ versión</button>`;
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); }catch(_){ toast("JSON inválido",true); } };
@@ -153,8 +170,8 @@ function renderVersions(){
     const el=document.createElement("div"); el.className="card";
     el.innerHTML=`
       <div class="row">
-        <div><label>Nombre</label><input class="in vn" value="${esc(v.nombre)}"/></div>
-        <div><label>Precios (escalera, separados por coma)</label><input class="in vp" value="${esc((v.price_list||[]).join(', '))}"/></div>
+        <div><label style="margin-top:0">Nombre</label><input class="in vn" value="${esc(v.nombre)}"/></div>
+        <div><label style="margin-top:0">Precios (escalera, separados por coma)</label><input class="in vp" value="${esc((v.price_list||[]).join(', '))}"/></div>
       </div>
       <label>Link de entrega (Drive)</label>
       <div class="row"><input class="in vl" value="${esc(v.drive_link||'')}"/><button class="btn vdel" style="flex:0 0 auto">✕</button></div>`;
@@ -176,20 +193,18 @@ async function renderFlujos(){
         <input class="in" id="skRole" placeholder="rol (bienvenida, pago…)"/>
         <button class="btn primary" id="skAdd" style="flex:0 0 auto">Clonar</button>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:8px">Los esqueletos se crean en el editor (🕸). El clon queda ligado a este producto.</div>
+      <div style="font-size:12px;color:var(--faint);margin-top:8px">Los esqueletos se crean en el editor (🕸). El clon queda ligado a este producto.</div>
     </div>`;
-  // Flujos del producto.
   const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id).order("created_at");
   const fb=$("flowbox"); fb.innerHTML="";
   if(!flows||!flows.length){ fb.innerHTML=`<div class="empty" style="padding:24px">Aún no hay flujos. Clona un esqueleto abajo.</div>`; }
   (flows||[]).forEach(f=>{
     const el=document.createElement("div"); el.className="flowrow";
-    el.innerHTML=`<div style="flex:1"><div style="font-weight:600;font-size:13px">${esc(f.nombre)}</div><div style="font-size:11px;color:var(--faint)">${esc(f.role||"flujo")}</div></div>
+    el.innerHTML=`<div style="flex:1"><div style="font-weight:700;font-size:14px">${esc(f.nombre)}</div><div style="font-size:12px;color:var(--faint)">${esc(f.role||"flujo")}</div></div>
       <span class="badge ${f.estado==='activo'?'on':''}">${f.estado}</span>
       <a class="linkbtn" href="editor.html?flow=${f.id}">Editar 🕸</a>`;
     fb.appendChild(el);
   });
-  // Esqueletos disponibles.
   const { data:sks } = await supa.from("flows").select("id,nombre").eq("channel_id",st.channelId).eq("kind","skeleton").order("nombre");
   const sel=$("skSel"); sel.innerHTML="";
   if(!sks||!sks.length){ const o=document.createElement("option"); o.textContent="(no hay esqueletos — créalos en el editor)"; o.value=""; sel.appendChild(o); }
@@ -211,7 +226,6 @@ async function saveProduct(){
     updated_at:new Date().toISOString(),
   }).eq("id",st.prod.id);
   if(e1){ toast(e1.message,true); return; }
-  // Versiones: upsert las presentes.
   for(let i=0;i<st.versions.length;i++){
     const v=st.versions[i]; v.orden=i; v.product_id=st.prod.id;
     const row={ product_id:st.prod.id, nombre:v.nombre, price_list:v.price_list||[], drive_link:v.drive_link||null, orden:i };
@@ -221,7 +235,6 @@ async function saveProduct(){
   }
   toast("Guardado ✓"); loadProducts();
 }
-
 boot();
 </script>
 </body>

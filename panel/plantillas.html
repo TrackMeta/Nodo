@@ -18,134 +18,164 @@
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
-  .spacer{margin-left:auto}
-  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  /* Tarjeta de plantilla */
+  .tcard .c-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .tcard .c-tt{font-size:16px;font-weight:700;letter-spacing:-.2px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
+  .cat{font-size:10px;padding:2px 9px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
+  .tprev{background:#0b141a;border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:12.5px;color:var(--muted);line-height:1.55;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:56px}
+  .tprev .v{color:var(--brand);font-weight:600}
+  .tcard .c-meta{margin-top:12px;font-size:11.5px;color:var(--faint);display:flex;gap:10px;align-items:center}
+  /* Detalle */
+  label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
+  .in,.ta,.sel{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .ta{min-height:90px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
+  .row{display:flex;gap:14px;flex-wrap:wrap} .row>.f{flex:1;min-width:160px}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;margin-top:16px}
+  .hint{font-size:12px;color:var(--faint);margin-top:7px;line-height:1.55}
+  .preview{background:#0b141a;border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:8px}
+  .bubble{background:#075e54;color:#e9edef;border-radius:10px;border-top-left-radius:3px;padding:9px 12px;font-size:13.5px;max-width:340px;white-space:pre-wrap;line-height:1.55}
+  .bubble .v{background:#128c7e;border-radius:4px;padding:0 4px;font-weight:600}
+  .dcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;max-width:680px}
+  .info{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin:20px 0 4px;display:flex;gap:14px}
+  .info .i-ic{width:40px;height:40px;border-radius:11px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
+  .info .i-ic svg{width:20px;height:20px}
+  .info h4{margin:0 0 5px;font-size:14px;font-weight:700} .info p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.6}
+  .info b{color:var(--text)}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
-  .btn svg{width:15px;height:15px}
-  .main{flex:1;display:flex;min-height:0}
-  .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .list .lh{padding:14px 16px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;border-bottom:1px solid var(--border)}
-  .item{padding:13px 16px;border-bottom:1px solid var(--border);cursor:pointer}
-  .item:hover{background:var(--surface)} .item.active{background:var(--surface-2)}
-  .item .n{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
-  .item .m{font-size:11.5px;color:var(--faint);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .chip{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
-  .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
-  .cat{font-size:10px;padding:2px 8px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:600}
-  .detail{flex:1;min-width:0;overflow-y:auto;padding:22px 26px;max-width:720px}
-  label{display:block;font-size:11px;color:var(--muted);margin:14px 0 6px;font-weight:600}
-  .in,.ta,.sel{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;outline:none;font-family:var(--font)}
-  .ta{min-height:80px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
-  .row{display:flex;gap:12px;flex-wrap:wrap} .row>.f{flex:1;min-width:150px}
-  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:14px}
-  .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5}
-  .preview{background:#0b141a;border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:8px}
-  .bubble{background:#075e54;color:#e9edef;border-radius:10px;border-top-left-radius:3px;padding:8px 11px;font-size:13px;max-width:320px;white-space:pre-wrap;line-height:1.5}
-  .bubble .v{background:#128c7e;border-radius:4px;padding:0 4px;font-weight:600}
-  .info{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:6px}
-  .info h4{margin:0 0 8px;font-size:13px} .info p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.6}
-  .info b{color:var(--text)}
-  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);padding:40px;text-align:center}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="top">
-    <span style="font-weight:600;font-size:15px">Plantillas</span>
-    <span class="spacer"></span>
-    <button class="btn primary" id="addBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva plantilla</button>
-  </div>
-  <div class="main">
-    <div class="list">
-      <div class="lh">Plantillas HSM</div>
-      <div id="tplList" style="overflow-y:auto;flex:1"></div>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <!-- VISTA TARJETAS -->
+    <div id="gridView">
+      <div class="nodo-head">
+        <div class="grow">
+          <h1 class="nodo-title">Plantillas</h1>
+          <p class="nodo-lead">Mensajes aprobados por WhatsApp (HSM) para escribir fuera de la ventana de 24 h y en campañas masivas.</p>
+        </div>
+        <div class="nodo-actions">
+          <button class="nodo-btn primary" id="addBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva plantilla</button>
+        </div>
+      </div>
+      <div class="info">
+        <span class="i-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
+        <div><h4>¿Cómo funcionan las plantillas?</h4>
+          <p>Se <b>crean y aprueban en Meta</b> (WhatsApp Manager); la revisión la hace Meta, no Nodo. Aquí <b>registras</b> el nombre exacto, idioma y variables para usarlas en <b>Campañas</b> y <b>Secuencias</b>. Las variables son posicionales: <b>{{1}}</b>, <b>{{2}}</b>…</p></div>
+      </div>
+      <div class="nodo-folders" id="folders"></div>
+      <div class="nodo-cards" id="cards"></div>
     </div>
-    <div class="detail" id="detail"></div>
+    <!-- VISTA DETALLE -->
+    <div id="detailView" style="display:none">
+      <button class="nodo-back" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a plantillas</button>
+      <div id="detail"></div>
+    </div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, tpl:null, list:[] };
+const st={ channelId:null, tpl:null, list:[], folder:"__all" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const CATS=["MARKETING","UTILITY","AUTHENTICATION"];
+const CATLABEL={MARKETING:"Marketing",UTILITY:"Utilidad",AUTHENTICATION:"Autenticación"};
 const ESTADOS=[["aprobada","Aprobada"],["pendiente","Pendiente"],["rechazada","Rechazada"]];
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"plantillas" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; st.tpl=null; loadList(); renderDetail(); });
+  shell.onChannel(id=>{ st.channelId=id; st.tpl=null; showGrid(); loadList(); });
   $("addBtn").onclick=createTpl;
-  await loadList(); renderDetail();
+  $("backBtn").onclick=()=>{ st.tpl=null; showGrid(); };
+  await loadList();
 }
+function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
+function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
+
 async function loadList(){
   const { data }=await supa.from("wa_templates").select("*").eq("channel_id",st.channelId).order("created_at");
   st.list=data||[];
-  const box=$("tplList"); box.innerHTML="";
-  if(!st.list.length){ box.innerHTML=`<div style="padding:22px;color:var(--faint);font-size:12.5px">Aún no hay plantillas.</div>`; return; }
-  st.list.forEach(t=>{
+  renderFolders(); renderCards();
+}
+function renderFolders(){
+  const counts={ __all:st.list.length };
+  CATS.forEach(c=> counts[c]=st.list.filter(t=>(t.categoria||"MARKETING")===c).length);
+  const tabs=[["__all","Todas"],...CATS.map(c=>[c,CATLABEL[c]])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${v}">${l}<span class="cnt">${counts[v]||0}</span></button>`).join("");
+  $("folders").querySelectorAll(".nodo-folder").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+}
+function renderCards(){
+  let list=st.list;
+  if(st.folder!=="__all") list=list.filter(t=>(t.categoria||"MARKETING")===st.folder);
+  const box=$("cards");
+  if(!st.list.length){
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8"/></svg></div><h3>Aún no hay plantillas</h3><p>Registra tu primera plantilla aprobada en Meta para usarla en campañas y secuencias.</p></div>`;
+    return;
+  }
+  if(!list.length){ box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><p>Sin plantillas en esta categoría.</p></div>`; return; }
+  box.innerHTML="";
+  list.forEach(t=>{
     const estado=t.estado_meta||"aprobada";
-    const el=document.createElement("div"); el.className="item"+(st.tpl&&st.tpl.id===t.id?" active":"");
-    el.innerHTML=`<div class="n">${esc(t.name)}</div><div class="m"><span class="chip ${estado}">${estado}</span><span class="cat">${esc(t.categoria||"—")}</span><span>${esc(t.language)}</span></div>`;
+    const prev=esc(t.body_preview||"(sin cuerpo)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>');
+    const el=document.createElement("div"); el.className="nodo-card tcard";
+    el.innerHTML=`
+      <div class="c-top"><span class="c-tt">${esc(t.name)}</span><span class="chip ${estado}">${estado}</span></div>
+      <div class="tprev">${prev}</div>
+      <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}</div>`;
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
   });
 }
 async function createTpl(){
   const name=prompt("Nombre EXACTO de la plantilla registrada en Meta (ej. remarketing_pago):"); if(!name) return;
-  const { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING" }).select("id").single();
+  const cat=(st.folder!=="__all"&&CATS.includes(st.folder))?st.folder:"MARKETING";
+  const { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:cat }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await loadList(); openTpl(data.id);
 }
-async function openTpl(id){ const { data }=await supa.from("wa_templates").select("*").eq("id",id).maybeSingle(); st.tpl=data; await loadList(); renderDetail(); }
+async function openTpl(id){ const { data }=await supa.from("wa_templates").select("*").eq("id",id).maybeSingle(); st.tpl=data; renderDetail(); showDetail(); }
 
 function renderDetail(){
-  const d=$("detail");
-  if(!st.tpl){
-    d.innerHTML=`
-      <div class="info">
-        <h4>¿Cómo funcionan las plantillas?</h4>
-        <p>WhatsApp exige <b>plantillas aprobadas</b> para escribir fuera de la ventana de 24 h y para campañas masivas. Se <b>crean y aprueban en Meta</b> (WhatsApp Manager); la revisión la hace Meta, no Nodo. Aquí <b>registras</b> el nombre exacto, idioma y variables para poder usarlas en <b>Campañas</b>. Las variables son posicionales: <b>{{1}}</b>, <b>{{2}}</b>…</p>
-      </div>
-      <div class="empty">Elige una plantilla o crea una nueva.</div>`;
-    return;
-  }
+  const d=$("detail"); if(!st.tpl) return;
   const t=st.tpl, estado=t.estado_meta||"aprobada";
   d.innerHTML=`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <h3 style="margin:0;font-size:16px">${esc(t.name)}</h3><span class="chip ${estado}">${estado}</span>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.5px">${esc(t.name)}</h1><span class="chip ${estado}">${estado}</span>
     </div>
-    <div class="row">
-      <div class="f"><label>Nombre (exacto en Meta)</label><input class="in" id="f_name" value="${esc(t.name)}"/></div>
-      <div class="f"><label>Idioma</label><input class="in" id="f_lang" value="${esc(t.language||'es')}" placeholder="es / es_MX / en"/></div>
-    </div>
-    <div class="row">
-      <div class="f"><label>Categoría</label><select class="sel" id="f_cat">${CATS.map(x=>`<option ${t.categoria===x?"selected":""}>${x}</option>`).join("")}</select></div>
-      <div class="f"><label>Estado en Meta</label><select class="sel" id="f_estado">${ESTADOS.map(([v,l])=>`<option value="${v}" ${estado===v?"selected":""}>${l}</option>`).join("")}</select></div>
-    </div>
-    <label>Texto del cuerpo (con {{1}}, {{2}}…)</label>
-    <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu {{2}} sigue disponible.">${esc(t.body_preview)}</textarea>
-    <label>Vista previa</label>
-    <div class="preview"><div class="bubble" id="prev"></div></div>
-    <label>Variables — una por línea, en orden</label>
-    <textarea class="ta" id="f_params" placeholder="{{nombre}}&#10;{{producto}}">${esc((t.params||[]).join("\n"))}</textarea>
-    <div class="hint">La 1ª línea llena {{1}}, la 2ª {{2}}, etc. Usa variables del contacto (p. ej. {{nombre}}) o texto fijo.</div>
-    <label class="chk"><input type="checkbox" id="f_activa" ${t.activa!==false?"checked":""}/> Plantilla activa (disponible para campañas)</label>
-    <div style="display:flex;gap:8px;margin-top:20px">
-      <button class="btn primary" id="saveBtn">Guardar</button>
-      <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
+    <div class="dcard">
+      <div class="row">
+        <div class="f"><label>Nombre (exacto en Meta)</label><input class="in" id="f_name" value="${esc(t.name)}"/></div>
+        <div class="f"><label>Idioma</label><input class="in" id="f_lang" value="${esc(t.language||'es')}" placeholder="es / es_MX / en"/></div>
+      </div>
+      <div class="row">
+        <div class="f"><label>Categoría</label><select class="sel" id="f_cat">${CATS.map(x=>`<option value="${x}" ${t.categoria===x?"selected":""}>${CATLABEL[x]}</option>`).join("")}</select></div>
+        <div class="f"><label>Estado en Meta</label><select class="sel" id="f_estado">${ESTADOS.map(([v,l])=>`<option value="${v}" ${estado===v?"selected":""}>${l}</option>`).join("")}</select></div>
+      </div>
+      <label>Texto del cuerpo (con {{1}}, {{2}}…)</label>
+      <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu {{2}} sigue disponible.">${esc(t.body_preview)}</textarea>
+      <label>Vista previa</label>
+      <div class="preview"><div class="bubble" id="prev"></div></div>
+      <label>Variables — una por línea, en orden</label>
+      <textarea class="ta" id="f_params" placeholder="{{nombre}}&#10;{{producto}}">${esc((t.params||[]).join("\n"))}</textarea>
+      <div class="hint">La 1ª línea llena {{1}}, la 2ª {{2}}, etc. Usa variables del contacto (p. ej. {{nombre}}) o texto fijo.</div>
+      <label class="chk"><input type="checkbox" id="f_activa" ${t.activa!==false?"checked":""}/> Plantilla activa (disponible para campañas)</label>
+      <div style="display:flex;gap:8px;margin-top:22px">
+        <button class="btn primary" id="saveBtn">Guardar</button>
+        <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
+      </div>
     </div>`;
-  const upd=()=>renderPreview($("f_body").value);
-  $("f_body").oninput=upd; renderPreview(t.body_preview||"");
+  $("f_body").oninput=()=>renderPreview($("f_body").value); renderPreview(t.body_preview||"");
   $("saveBtn").onclick=saveTpl; $("delBtn").onclick=deleteTpl;
 }
 function renderPreview(body){
-  const html=esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>');
-  $("prev").innerHTML=html;
+  $("prev").innerHTML=esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>');
 }
 async function saveTpl(){
   if(!st.tpl) return;
@@ -160,7 +190,7 @@ async function saveTpl(){
 }
 async function deleteTpl(){
   if(!confirm("¿Eliminar esta plantilla?")) return;
-  await supa.from("wa_templates").delete().eq("id",st.tpl.id); st.tpl=null; await loadList(); renderDetail(); toast("Eliminada ✓");
+  await supa.from("wa_templates").delete().eq("id",st.tpl.id); st.tpl=null; await loadList(); showGrid(); toast("Eliminada ✓");
 }
 boot();
 </script>

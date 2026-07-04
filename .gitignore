@@ -25,3 +25,6 @@ desktop.ini
 
 # Estado local del agente
 .claude/
+
+# Originales pesados de iconos (ya reescalados a assets/apps/)
+Recursos Iconos Apps/

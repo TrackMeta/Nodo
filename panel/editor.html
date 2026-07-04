@@ -32,15 +32,12 @@
   .btn.primary{background:var(--brand);border:none;color:#fff}
   .btn.primary:hover{background:var(--brand-2)}
   .main{flex:1;display:flex;min-height:0}
-  .flows{width:210px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .flows .hd{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .flows .add{background:var(--brand-bg);color:var(--brand);border:none;border-radius:8px;width:26px;height:26px;font-size:16px}
-  .flowitem{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer}
-  .flowitem:hover{background:var(--surface)}
-  .flowitem.active{background:var(--surface-2)}
-  .flowitem .n{font-weight:600;font-size:13px}
-  .flowitem .m{font-size:11px;color:var(--faint);margin-top:2px}
   .canvaswrap{flex:1;position:relative;min-width:0}
+  /* Vista general de flujos (tarjetas) */
+  #overview{flex:1;min-width:0;overflow-y:auto}
+  .fcard .c-tt{font-size:16px;font-weight:700;letter-spacing:-.2px;line-height:1.25}
+  .back{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px 0 9px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;font-weight:600}
+  .back:hover{color:var(--text);border-color:var(--brand)} .back svg{width:16px;height:16px}
   #drawflow{position:absolute;inset:0;background:var(--bg)}
   .palette{position:absolute;top:12px;left:12px;z-index:5;display:flex;gap:6px;flex-wrap:wrap;max-width:70%}
   .pbtn{font-size:12px;padding:6px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text)}
@@ -99,7 +96,25 @@
 </head>
 <body>
 <div class="app">
-  <div class="top">
+  <!-- VISTA GENERAL: tarjetas de flujos -->
+  <div id="overview">
+    <div class="nodo-wrap">
+      <div class="nodo-head">
+        <div class="grow">
+          <h1 class="nodo-title">Flujos</h1>
+          <p class="nodo-lead">Conversaciones automáticas con nodos visuales. Los <b>esqueletos</b> son plantillas reutilizables; los <b>flujos de producto</b> son copias ligadas a un producto.</p>
+        </div>
+        <div class="nodo-actions">
+          <button class="nodo-btn primary" id="addFlow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo flujo</button>
+        </div>
+      </div>
+      <div class="nodo-folders" id="folders"></div>
+      <div class="nodo-cards" id="flowCards"></div>
+    </div>
+  </div>
+  <!-- EDITOR (canvas) -->
+  <div class="top" id="editorTop" style="display:none">
+    <button class="back" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Flujos</button>
     <span class="fname" id="fname">—</span>
     <span class="badge" id="fstate">—</span>
     <span class="badge" id="fprod" style="display:none"></span>
@@ -111,11 +126,7 @@
     <button class="btn" id="saveBtn">Guardar</button>
     <button class="btn primary" id="pubBtn">Publicar</button>
   </div>
-  <div class="main">
-    <div class="flows">
-      <div class="hd"><span>Flujos</span><button class="add" id="addFlow" title="Nuevo flujo">+</button></div>
-      <div id="flowList" style="overflow-y:auto;flex:1"></div>
-    </div>
+  <div class="main" id="editorMain" style="display:none">
     <div class="canvaswrap">
       <div class="palette" id="palette"></div>
       <div id="drawflow"></div>
@@ -146,7 +157,7 @@ const NODE_DEFS = {
   fin:          { icon:"⬛", handles:[] },
 };
 
-const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura" };
+const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all" };
 let editor;
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
@@ -171,8 +182,11 @@ async function boot(){
   $("addFlow").onclick = createFlow;
   $("saveBtn").onclick = save;
   $("pubBtn").onclick = publish;
+  $("backBtn").onclick = ()=>{ st.flowId=null; showOverview(); loadFlows(); };
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
 }
+function showOverview(){ $("overview").style.display=""; $("editorTop").style.display="none"; $("editorMain").style.display="none"; }
+function showEditor(){ $("overview").style.display="none"; $("editorTop").style.display="flex"; $("editorMain").style.display="flex"; }
 
 // ── Toggle Estructura ⇄ Contenido ──
 function setView(v){
@@ -333,7 +347,7 @@ async function loadChannels(){
     const { data:f } = await supa.from("flows").select("channel_id").eq("id",flowParam).maybeSingle();
     if(f){ st.channelId = f.channel_id; shell.setChannel(st.channelId, { silent:true }); }
   }
-  shell.onChannel(id=>{ st.channelId=id; st.flowId=null; loadFlows(); clearCanvas(); });
+  shell.onChannel(id=>{ st.channelId=id; st.flowId=null; showOverview(); loadFlows(); clearCanvas(); });
   await loadFlows();
   if(flowParam) openFlow(flowParam);
 }
@@ -341,23 +355,48 @@ async function loadChannels(){
 async function loadFlows(){
   const { data } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,products(nombre)")
     .eq("channel_id", st.channelId).order("created_at");
-  const box=$("flowList"); box.innerHTML="";
-  (data||[]).forEach(f=>{
-    const el=document.createElement("div"); el.className="flowitem"+(f.id===st.flowId?" active":"");
-    const prod = f.products?.nombre ? ` · 📦 ${esc(f.products.nombre)}` : (f.kind==="skeleton"?" · 🧩 plantilla":"");
-    el.innerHTML=`<div class="n">${esc(f.nombre)}</div><div class="m">${f.kind==="skeleton"?"esqueleto":f.role||"flujo"} · ${f.estado}${prod}</div>`;
+  st.flows=data||[];
+  renderFolders(); renderFlowCards();
+}
+function renderFolders(){
+  const c={ __all:st.flows.length, skeleton:st.flows.filter(f=>f.kind==="skeleton").length, product:st.flows.filter(f=>f.product_id).length };
+  const tabs=[["__all","Todos"],["skeleton","Esqueletos"],["product","De productos"]];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${v}">${l}<span class="cnt">${c[v]||0}</span></button>`).join("");
+  $("folders").querySelectorAll(".nodo-folder").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderFlowCards(); });
+}
+function renderFlowCards(){
+  let list=st.flows;
+  if(st.filter==="skeleton") list=list.filter(f=>f.kind==="skeleton"); else if(st.filter==="product") list=list.filter(f=>f.product_id);
+  const box=$("flowCards");
+  if(!st.flows.length){
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div><h3>Aún no hay flujos</h3><p>Crea tu primer flujo o esqueleto para empezar a automatizar conversaciones.</p></div>`;
+    return;
+  }
+  box.innerHTML="";
+  list.forEach(f=>{
+    const isSk=f.kind==="skeleton"; const on=f.estado==="activo";
+    const prod = f.products?.nombre ? `📦 ${esc(f.products.nombre)}` : (isSk?"🧩 Esqueleto reutilizable":"Sin producto");
+    const el=document.createElement("div"); el.className="nodo-card fcard";
+    el.innerHTML=`
+      <div class="c-ic" style="${isSk?'background:var(--amber-bg);color:var(--amber)':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
+      <div class="c-tt">${esc(f.nombre)}</div>
+      <div class="c-sub">${isSk?"esqueleto":esc(f.role||"flujo")}</div>
+      <div class="c-foot"><span class="nodo-pill ${on?'on':'neutral'}">${on?'Activo':esc(f.estado)}</span><span style="font-size:11.5px;color:var(--faint)">${prod}</span></div>`;
     el.onclick=()=>openFlow(f.id); box.appendChild(el);
   });
+  const add=document.createElement("div"); add.className="nodo-card new";
+  add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nuevo flujo</div>`;
+  add.onclick=createFlow; box.appendChild(add);
 }
 
 async function openFlow(flowId){
   st.flowId=flowId;
+  showEditor();
   const { data:flow } = await supa.from("flows").select("*").eq("id",flowId).maybeSingle();
   st.flow=flow;
   $("fname").textContent=flow.nombre;
   setStateBadge(flow.estado);
   await paintProductChip(flow);
-  await loadFlows();
   clearCanvas();
   // Cargar nodos.
   const { data:nodes } = await supa.from("flow_nodes").select("*").eq("flow_id",flowId);
