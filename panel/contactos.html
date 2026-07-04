@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Contactos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
+  .wrap{flex:1;overflow-y:auto;padding:24px;max-width:1200px;margin:0 auto;width:100%}
+  h1{font-size:20px;margin:0 0 2px;font-weight:700}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 18px}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .search{flex:1;min-width:220px;position:relative}
+  .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint)}
+  .search input{width:100%;height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px 0 36px;font-size:13.5px;outline:none}
+  .search input:focus{border-color:var(--brand)}
+  .sel{height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 10px;font-size:13px;outline:none;max-width:170px}
+  .btn{height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--brand)}
+  .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+
+  .table{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .thead,.trow{display:grid;grid-template-columns:1.4fr 1.3fr 1.6fr 1fr .8fr 44px;gap:12px;align-items:center;padding:13px 18px}
+  .thead{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;border-bottom:1px solid var(--border)}
+  .trow{border-bottom:1px solid var(--border)}
+  .trow:last-child{border-bottom:none}
+  .trow:hover{background:var(--surface-2)}
+  .nm{font-weight:600}
+  .ph{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:7px}
+  .ph svg{width:14px;height:14px;color:var(--faint)}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .chip{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:2px 8px;font-size:11.5px;font-weight:600}
+  .chip button{background:none;border:none;color:inherit;opacity:.7;font-size:12px;line-height:1;padding:0;cursor:pointer}
+  .addtag{width:22px;height:22px;border-radius:50%;border:1px dashed var(--border);background:transparent;color:var(--muted);font-size:14px;line-height:1}
+  .addtag:hover{border-color:var(--brand);color:var(--brand)}
+  .pill{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;background:var(--green-bg);color:var(--green)}
+  .pill.off{background:var(--amber-bg,#2c2311);color:var(--amber)}
+  .reg{color:var(--muted);font-size:12.5px}
+  .icobtn{width:32px;height:32px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--faint);display:flex;align-items:center;justify-content:center}
+  .icobtn:hover{color:var(--red);border-color:var(--red)}
+  .icobtn svg{width:15px;height:15px}
+  .empty{text-align:center;color:var(--faint);padding:50px}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal.show{display:flex}
+  .mbox{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;width:100%;max-width:400px}
+  .mbox h3{margin:0 0 16px;font-size:16px}
+  .mbox label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px;font-weight:600}
+  .mbox .in{width:100%;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none}
+  .mbox .in:focus{border-color:var(--brand)}
+  .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top"><span style="font-weight:600;font-size:15px">Contactos</span></div>
+  <div class="wrap">
+    <h1>Contactos</h1>
+    <p class="sub" id="sub">Tu base de clientes en un solo lugar: organiza, etiqueta e importa/exporta para reactivar ventas.</p>
+
+    <div class="bar">
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" placeholder="Buscar por nombre o teléfono…"/></div>
+      <select class="sel" id="fTag"></select>
+      <select class="sel" id="fSource"></select>
+      <select class="sel" id="fSort">
+        <option value="recent">Más recientes</option>
+        <option value="old">Más antiguos</option>
+        <option value="name">Nombre (A–Z)</option>
+      </select>
+      <button class="btn" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg> Importar</button>
+      <input type="file" id="importFile" accept=".csv,text/csv" hidden/>
+      <button class="btn" id="exportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Exportar</button>
+      <button class="btn primary" id="newBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo contacto</button>
+    </div>
+
+    <div class="table">
+      <div class="thead"><div>Nombre</div><div>Contacto</div><div>Etiquetas</div><div>Registrado</div><div>Estado</div><div></div></div>
+      <div id="rows"><div class="empty">Cargando…</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal"><div class="mbox">
+  <h3>Nuevo contacto</h3>
+  <label>Nombre</label><input class="in" id="cNombre" placeholder="Nombre del cliente"/>
+  <label>Teléfono (con código de país, sin +)</label><input class="in" id="cPhone" placeholder="51999888777"/>
+  <div class="mfoot"><button class="btn" id="cCancel">Cancelar</button><button class="btn primary" id="cSave">Crear</button></div>
+</div></div>
+
+<script type="module">
+import { supa, mountShell, toast } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, contacts:[], tags:[] };
+const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"2-digit",year:"numeric" });
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
+const PHONE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"contactos" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  ["q","fTag","fSource","fSort"].forEach(id=> $(id).addEventListener("input", render));
+  $("newBtn").onclick=()=>{ $("cNombre").value=""; $("cPhone").value=""; $("modal").classList.add("show"); };
+  $("cCancel").onclick=()=>$("modal").classList.remove("show");
+  $("cSave").onclick=createContact;
+  $("exportBtn").onclick=exportCsv;
+  $("importBtn").onclick=()=>$("importFile").click();
+  $("importFile").onchange=(e)=>{ const f=e.target.files[0]; e.target.value=""; if(f) importCsv(f); };
+  await load();
+}
+async function load(){
+  const [{ data:cs }, { data:tg }] = await Promise.all([
+    supa.from("contacts").select("id,nombre,wa_id,stage,source,bot_activo,created_at,contact_tags(tag_id)").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000),
+    supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
+  ]);
+  st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test");
+  st.tags=tg||[];
+  // Filtros.
+  $("fTag").innerHTML=`<option value="">Todas las etiquetas</option>`+st.tags.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("");
+  const sources=[...new Set(st.contacts.map(c=>c.source).filter(Boolean))];
+  $("fSource").innerHTML=`<option value="">Todos los orígenes</option>`+sources.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  render();
+}
+function render(){
+  const q=$("q").value.trim().toLowerCase(), ftag=$("fTag").value, fsrc=$("fSource").value, sort=$("fSort").value;
+  let list=st.contacts.filter(c=>{
+    if(q && !((c.nombre||"").toLowerCase().includes(q) || (c.wa_id||"").includes(q))) return false;
+    if(ftag && !(c.contact_tags||[]).some(x=>x.tag_id===ftag)) return false;
+    if(fsrc && c.source!==fsrc) return false;
+    return true;
+  });
+  if(sort==="name") list.sort((a,b)=>(a.nombre||a.wa_id||"").localeCompare(b.nombre||b.wa_id||""));
+  else if(sort==="old") list.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  else list.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  $("sub").textContent=`Tu base de clientes en un solo lugar: organiza, etiqueta e importa/exporta para reactivar ventas. ${st.contacts.length} contacto(s).`;
+  const box=$("rows");
+  if(!list.length){ box.innerHTML=`<div class="empty">No hay contactos que coincidan.</div>`; return; }
+  box.innerHTML="";
+  list.forEach(c=>{
+    const el=document.createElement("div"); el.className="trow";
+    el.innerHTML=`
+      <div class="nm">${esc(c.nombre||"—")}</div>
+      <div class="ph">${PHONE}+${esc(c.wa_id)}</div>
+      <div class="tags"></div>
+      <div class="reg">${fmt.format(new Date(c.created_at))}</div>
+      <div><span class="pill ${c.bot_activo?'':'off'}">${c.bot_activo?'Activo':'Pausado'}</span></div>
+      <div><button class="icobtn" title="Eliminar">${TRASH}</button></div>`;
+    renderTags(el.querySelector(".tags"), c);
+    el.querySelector(".icobtn").onclick=()=>removeContact(c);
+    box.appendChild(el);
+  });
+}
+function renderTags(cell, c){
+  cell.innerHTML="";
+  (c.contact_tags||[]).forEach(ct=>{
+    const t=st.tags.find(x=>x.id===ct.tag_id); if(!t) return;
+    const h=tagHex(t.color);
+    const chip=document.createElement("span"); chip.className="chip"; chip.style.cssText=`background:${h}22;color:${h};border:1px solid ${h}55`;
+    chip.innerHTML=`${esc(t.nombre)}<button title="Quitar">×</button>`;
+    chip.querySelector("button").onclick=()=>toggleTag(c,t.id,false);
+    cell.appendChild(chip);
+  });
+  const avail=st.tags.filter(t=>!(c.contact_tags||[]).some(x=>x.tag_id===t.id));
+  if(avail.length){
+    const add=document.createElement("button"); add.className="addtag"; add.textContent="+"; add.title="Añadir etiqueta";
+    add.onclick=()=>{
+      const sel=document.createElement("select"); sel.className="sel"; sel.style.height="26px"; sel.style.fontSize="12px";
+      sel.innerHTML=`<option value="">Etiqueta…</option>`+avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("");
+      sel.onchange=()=>{ if(sel.value) toggleTag(c,sel.value,true); };
+      add.replaceWith(sel); sel.focus();
+    };
+    cell.appendChild(add);
+  }
+}
+async function toggleTag(c, tagId, add){
+  if(add){ const { error }=await supa.from("contact_tags").upsert({ contact_id:c.id, tag_id:tagId },{ onConflict:"contact_id,tag_id" }); if(error){ toast(error.message,true); return; } c.contact_tags=[...(c.contact_tags||[]),{tag_id:tagId}]; }
+  else { const { error }=await supa.from("contact_tags").delete().eq("contact_id",c.id).eq("tag_id",tagId); if(error){ toast(error.message,true); return; } c.contact_tags=(c.contact_tags||[]).filter(x=>x.tag_id!==tagId); }
+  render();
+}
+async function createContact(){
+  const nombre=$("cNombre").value.trim();
+  const wa=$("cPhone").value.replace(/[^0-9]/g,"");
+  if(!wa){ toast("Escribe un teléfono",true); return; }
+  const { error }=await supa.from("contacts").upsert({ channel_id:st.channelId, wa_id:wa, nombre:nombre||null },{ onConflict:"channel_id,wa_id" });
+  if(error){ toast(error.message,true); return; }
+  $("modal").classList.remove("show"); toast("Contacto guardado ✓"); await load();
+}
+async function removeContact(c){
+  if(!confirm(`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación e historial.`)) return;
+  const { error }=await supa.from("contacts").delete().eq("id",c.id);
+  if(error){ toast(error.message,true); return; }
+  toast("Contacto eliminado ✓"); await load();
+}
+function exportCsv(){
+  const rows=[["nombre","telefono","etiquetas","origen","registrado","estado"]];
+  st.contacts.forEach(c=>{
+    const tags=(c.contact_tags||[]).map(ct=>st.tags.find(t=>t.id===ct.tag_id)?.nombre).filter(Boolean).join("|");
+    rows.push([c.nombre||"", c.wa_id, tags, c.source||"", new Date(c.created_at).toISOString(), c.bot_activo?"Activo":"Pausado"]);
+  });
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="contactos.csv"; a.click(); URL.revokeObjectURL(a.href);
+}
+async function importCsv(file){
+  const text=await file.text();
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length) return;
+  // Detectar cabecera.
+  const head=lines[0].toLowerCase();
+  let start=0, ci={nombre:0, tel:1};
+  if(/nombre|tel|phone|whatsapp/.test(head)){
+    const cols=head.split(/[,;]/).map(s=>s.replace(/"/g,"").trim());
+    ci.nombre=cols.findIndex(c=>/nombre|name/.test(c)); ci.tel=cols.findIndex(c=>/tel|phone|whats|numero|número/.test(c));
+    if(ci.tel<0) ci.tel=1; if(ci.nombre<0) ci.nombre=0; start=1;
+  }
+  const rows=[];
+  for(let i=start;i<lines.length;i++){
+    const cols=lines[i].split(/[,;]/).map(s=>s.replace(/^"|"$/g,"").trim());
+    const wa=(cols[ci.tel]||"").replace(/[^0-9]/g,""); if(!wa) continue;
+    rows.push({ channel_id:st.channelId, wa_id:wa, nombre:(cols[ci.nombre]||"")||null });
+  }
+  if(!rows.length){ toast("No se encontraron teléfonos válidos",true); return; }
+  const { error }=await supa.from("contacts").upsert(rows,{ onConflict:"channel_id,wa_id" });
+  if(error){ toast(error.message,true); return; }
+  toast(`${rows.length} contacto(s) importados ✓`); await load();
+}
+boot();
+</script>
+</body>
+</html>
