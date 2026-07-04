@@ -48,6 +48,18 @@
   .rail .icn.active{background:var(--brand-bg);color:var(--brand)}
   .rail .bottom{margin-top:auto;display:flex;flex-direction:column;gap:8px;align-items:center}
 
+  /* Panel de filtros (izquierda) */
+  .filters{width:206px;flex:none;border-right:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px 14px 24px}
+  .filters .ft{font-size:12px;font-weight:700;letter-spacing:.3px;color:var(--text);display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .filters h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);margin:18px 0 7px;font-weight:700}
+  .fchk{display:flex;align-items:center;gap:9px;font-size:13px;padding:6px 0;cursor:pointer;color:var(--text)}
+  .fchk input{accent-color:var(--brand);width:15px;height:15px}
+  .fsel{width:100%;height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 9px;font-size:13px;outline:none;font-family:inherit}
+  .tagf{display:flex;flex-direction:column;gap:1px;max-height:190px;overflow-y:auto}
+  .tagdot{width:9px;height:9px;border-radius:50%;flex:none}
+  .fclear{margin-top:18px;width:100%;height:34px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:9px;font-size:12.5px;font-weight:600}
+  .fclear:hover{border-color:var(--brand);color:var(--text)}
+
   /* Lista de conversaciones */
   .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column}
   .list .top{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
@@ -94,13 +106,31 @@
   .in-m{align-self:flex-start;background:var(--surface-2);border-top-left-radius:4px}
   .out-m{align-self:flex-end;background:var(--brand-bg);border-top-right-radius:4px}
   .out-m .meta{text-align:right;color:#6f92c8}
-  .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center}
-  .composer input{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
-  .composer input:focus{border-color:var(--brand)}
-  .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center}
-  .send:disabled{opacity:.4}
-  .attach{width:40px;height:42px;flex:none;border:none;background:transparent;color:var(--muted);font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:50%}
-  .attach:hover{color:var(--brand);background:var(--surface-2)}
+  .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;position:relative}
+  .composer input#msgInput{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
+  .composer input#msgInput:focus{border-color:var(--brand)}
+  .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;display:flex;align-items:center;justify-content:center}
+  .send svg{width:19px;height:19px} .send:disabled{opacity:.4}
+  .ctool{width:38px;height:42px;flex:none;border:none;background:transparent;color:var(--muted);font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:10px}
+  .ctool:hover{color:var(--brand);background:var(--surface-2)} .ctool svg{width:20px;height:20px}
+  /* Popovers del compositor */
+  .pop{position:absolute;bottom:60px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 44px rgba(0,0,0,.45);z-index:40;overflow:hidden}
+  .pop.hidden{display:none}
+  .qrpop{left:16px;width:330px;max-height:360px;display:flex;flex-direction:column}
+  .qrpop .qs{padding:10px;border-bottom:1px solid var(--border)}
+  .qrpop .qs input{width:100%;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 12px;outline:none;font-family:inherit;font-size:13px}
+  .qrpop .qlist{overflow-y:auto;padding:6px}
+  .qrfold{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:8px 8px 4px}
+  .qritem{padding:9px 10px;border-radius:9px;cursor:pointer}
+  .qritem:hover{background:var(--surface-2)}
+  .qritem .qt{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+  .qritem .qt .atajo{font-size:10.5px;font-family:monospace;background:var(--brand-bg);color:var(--brand);padding:1px 6px;border-radius:5px;font-weight:700}
+  .qritem .qp{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qempty{padding:24px;text-align:center;color:var(--faint);font-size:12.5px}
+  .qempty a{color:var(--brand)}
+  .emojipop{left:56px;width:290px;padding:8px;display:flex;flex-wrap:wrap;gap:2px}
+  .emojipop button{width:34px;height:34px;border:none;background:transparent;font-size:20px;border-radius:8px;cursor:pointer}
+  .emojipop button:hover{background:var(--surface-2)}
   .msg img,.msg video{max-width:230px;border-radius:10px;display:block}
   .msg audio{max-width:230px}
   .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
@@ -158,6 +188,7 @@
 
 <!-- ── APP ── -->
 <div id="app" class="hidden">
+  <aside class="filters" id="filters"></aside>
   <div class="list">
     <div class="top" style="gap:10px">
       <span style="font-weight:700;font-size:15px;letter-spacing:-.3px">Bandeja</span>
@@ -201,10 +232,22 @@
         <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
       </div>
       <div class="composer">
-        <button class="attach" id="attachBtn" title="Adjuntar imagen, audio o archivo">📎</button>
+        <button class="ctool" id="qrBtn" title="Respuestas rápidas">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+        </button>
+        <button class="ctool" id="emojiBtn" title="Emojis">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        </button>
+        <button class="ctool" id="attachBtn" title="Adjuntar imagen, audio o archivo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
         <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
         <input id="msgInput" placeholder="Escribe un mensaje…" autocomplete="off" />
-        <button class="send" id="sendBtn" title="Enviar">➤</button>
+        <button class="send" id="sendBtn" title="Enviar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
+        </button>
+        <div class="pop qrpop hidden" id="qrPop"></div>
+        <div class="pop emojipop hidden" id="emojiPop"></div>
       </div>
     </div>
   </div>
@@ -219,7 +262,8 @@ import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shel
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
-const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [] };
+const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [],
+  filters: { sinResponder:false, compro:false, producto:"", tags:new Set() }, products:[], tags:[], quickReplies:[] };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -245,30 +289,125 @@ async function boot() {
   botSel.innerHTML = shell.channels.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
   if (shell.channelId) botSel.value = shell.channelId;
   botSel.onchange = () => shell.setChannel(botSel.value);
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; if($("botSel")) $("botSel").value = id; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadConversations(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; if($("botSel")) $("botSel").value = id; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadConversations(); });
   await loadTestFlows();
+  await loadFilters();
+  await loadQuickReplies();
   await loadConversations();
   subscribeRealtime();
 }
 
 // ── Conversaciones ──
 async function loadConversations() {
-  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,requiere_humano,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage${p?",product:products(emoji)":""})`;
+  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,requiere_humano,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage${p?",product_id,product:products(emoji),contact_tags(tag_id)":""})`;
   let { data, error } = await supa.from("conversations").select(sel(true))
-    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(100);
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200);
   if (error) { ({ data } = await supa.from("conversations").select(sel(false))
-    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(100)); }
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200)); }
   state.convs = (data||[]).filter(cv=>cv.contact);
   renderConversations();
+}
+
+// ── Panel de filtros ──
+async function loadFilters(){
+  const [pr, tg] = await Promise.all([
+    supa.from("products").select("id,nombre,emoji").eq("channel_id", state.channelId).order("nombre"),
+    supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
+  ]);
+  state.products = pr.error ? [] : (pr.data||[]);
+  state.tags = tg.data||[];
+  renderFilters();
+}
+function renderFilters(){
+  const f = state.filters;
+  const box = $("filters");
+  box.innerHTML = `
+    <div class="ft">${svgFilter()} FILTROS</div>
+    <h4>Estado</h4>
+    <label class="fchk"><input type="checkbox" id="fSin" ${f.sinResponder?"checked":""}/> Sin responder</label>
+    <label class="fchk"><input type="checkbox" id="fComp" ${f.compro?"checked":""}/> Compró producto</label>
+    <h4>Producto</h4>
+    <select class="fsel" id="fProd"><option value="">Todos</option>${state.products.map(p=>`<option value="${p.id}" ${f.producto===p.id?"selected":""}>${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
+    <h4>Etiquetas</h4>
+    <div class="tagf" id="fTags">${
+      state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<label class="fchk"><input type="checkbox" data-tag="${t.id}" ${f.tags.has(t.id)?"checked":""}/><span class="tagdot" style="background:${c}"></span>${esc(t.nombre)}</label>`; }).join("")
+        : '<span class="cmuted">Sin etiquetas en este canal</span>'
+    }</div>
+    <button class="fclear" id="fClear">Limpiar filtros</button>`;
+  $("fSin").onchange=(e)=>{ f.sinResponder=e.target.checked; renderConversations(); };
+  $("fComp").onchange=(e)=>{ f.compro=e.target.checked; renderConversations(); };
+  $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
+  box.querySelectorAll("#fTags input[data-tag]").forEach(inp=> inp.onchange=()=>{ inp.checked?f.tags.add(inp.dataset.tag):f.tags.delete(inp.dataset.tag); renderConversations(); });
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, compro:false, producto:"", tags:new Set() }; renderFilters(); renderConversations(); };
+}
+function svgFilter(){ return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>'; }
+
+// ── Respuestas rápidas + emojis (compositor) ──
+async function loadQuickReplies(){
+  const { data, error } = await supa.from("quick_replies").select("*").eq("channel_id", state.channelId).order("orden");
+  state.quickReplies = error ? [] : (data||[]);
+}
+function insertAtCursor(text){
+  const inp = $("msgInput");
+  const s = inp.selectionStart ?? inp.value.length, e = inp.selectionEnd ?? inp.value.length;
+  inp.value = inp.value.slice(0,s) + text + inp.value.slice(e);
+  const pos = s + text.length; inp.focus(); try{ inp.setSelectionRange(pos,pos); }catch(_){}
+}
+function applyVars(text){ return (text||"").replace(/\{\{\s*nombre\s*\}\}/gi, state.contactName||""); }
+function toggleQrPop(){
+  const pop=$("qrPop"); const willOpen=pop.classList.contains("hidden");
+  $("emojiPop").classList.add("hidden");
+  if(!willOpen){ pop.classList.add("hidden"); return; }
+  pop.innerHTML=`<div class="qs"><input id="qrSearch" placeholder="Buscar respuesta…" autocomplete="off"/></div><div class="qlist" id="qrList"></div>`;
+  renderQrList(""); $("qrSearch").oninput=(e)=>renderQrList(e.target.value);
+  pop.classList.remove("hidden"); $("qrSearch").focus();
+}
+function renderQrList(q){
+  const box=$("qrList"); if(!box) return;
+  const list = state.quickReplies.filter(r=> !q || (r.titulo+" "+(r.atajo||"")+" "+r.cuerpo).toLowerCase().includes(q.toLowerCase()));
+  if(!state.quickReplies.length){ box.innerHTML=`<div class="qempty">Aún no hay respuestas rápidas.<br><a href="respuestas.html">Crear en “Respuestas rápidas” →</a></div>`; return; }
+  if(!list.length){ box.innerHTML=`<div class="qempty">Sin coincidencias.</div>`; return; }
+  const folders={}; list.forEach(r=>{ const f=r.folder||"__none"; (folders[f]=folders[f]||[]).push(r); });
+  let body="";
+  Object.keys(folders).sort((a,b)=>a==="__none"?1:(b==="__none"?-1:a.localeCompare(b))).forEach(f=>{
+    body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;
+    folders[f].forEach(r=>{ body+=`<div class="qritem" data-id="${r.id}"><div class="qt">${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`; });
+  });
+  box.innerHTML=body;
+  box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{
+    const r=state.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return;
+    insertAtCursor(applyVars(r.cuerpo)); $("qrPop").classList.add("hidden");
+  });
+}
+const EMOJI_SET=["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😉","🙂","🙌","👏","👍","👎","🙏","💪","🔥","✨","⭐","🎉","❤️","💚","💙","💛","🧡","💜","✅","❌","⚠️","💰","💵","📦","🎁","📌","📞","📲","🕒","🚀","👀","🤝","🫶","😅","😢","😡","🤔"];
+function toggleEmojiPop(){
+  const pop=$("emojiPop"); $("qrPop").classList.add("hidden");
+  if(!pop.classList.contains("hidden")){ pop.classList.add("hidden"); return; }
+  pop.innerHTML=EMOJI_SET.map(e=>`<button type="button">${e}</button>`).join("");
+  pop.querySelectorAll("button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent));
+  pop.classList.remove("hidden");
+}
+$("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleQrPop(); });
+$("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleEmojiPop(); });
+document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); } });
+function applyFilters(cv){
+  const f = state.filters, c = cv.contact;
+  if (f.sinResponder && !(cv.no_leidos>0)) return false;
+  if (f.compro && c.stage !== "comprado") return false;
+  if (f.producto && c.product_id !== f.producto) return false;
+  if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
+  return true;
 }
 function renderConversations(){
   const box = $("convList"); box.innerHTML = "";
   const isBot = (cv)=> cv.contact.bot_activo !== false;
-  const list = state.convs.filter(cv => state.mode==="bot" ? isBot(cv) : !isBot(cv));
-  // contador en las pestañas
-  const nBot = state.convs.filter(isBot).length, nHum = state.convs.length - nBot;
+  const list = state.convs.filter(cv => (state.mode==="bot" ? isBot(cv) : !isBot(cv)) && applyFilters(cv));
+  // contador en las pestañas (sobre el total del canal, sin el filtro de modo)
+  const byFilter = state.convs.filter(applyFilters);
+  const nBot = byFilter.filter(isBot).length, nHum = byFilter.length - nBot;
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').textContent=`🤖 Bot (${nBot})`; mt.querySelector('[data-mode="humano"]').textContent=`👤 Humano (${nHum})`; }
-  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano"}</div>`; return; }
+  const anyFilter = state.filters.sinResponder||state.filters.compro||state.filters.producto||state.filters.tags.size;
+  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano")}</div>`; return; }
   list.forEach(cv => {
     const c = cv.contact;
     const bot = c.bot_activo !== false;
@@ -294,6 +433,7 @@ function renderConversations(){
 // ── Chat ──
 async function openChat(c) {
   state.contactId = c.id;
+  state.contactName = c.nombre || c.wa_id;
   state.isTest = (c.wa_id === "webchat-test");
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
   $("chAv").textContent = initials(c.nombre, c.wa_id);

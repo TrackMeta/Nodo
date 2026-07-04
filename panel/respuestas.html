@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Respuestas rápidas</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .qcard .c-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .qcard .c-tt{font-size:15.5px;font-weight:650;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .atajo{font-size:11px;font-weight:700;font-family:monospace;background:var(--brand-bg);color:var(--brand);padding:2px 8px;border-radius:6px}
+  .qbody{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--muted);line-height:1.5;
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;min-height:60px;white-space:pre-wrap}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
+  .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .ta{min-height:140px;resize:vertical;line-height:1.55} .in:focus,.ta:focus{border-color:var(--brand)}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:42px;padding:0 12px;font-size:13.5px;outline:none;width:100%}
+  .row{display:flex;gap:14px;flex-wrap:wrap} .row>.f{flex:1;min-width:160px}
+  .dcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;max-width:680px}
+  .hint{font-size:12px;color:var(--faint);margin-top:7px;line-height:1.55}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
+  .btn.danger{color:var(--red);border-color:transparent}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <div id="gridView">
+      <div class="nodo-head">
+        <div class="grow">
+          <h1 class="nodo-title">Respuestas rápidas</h1>
+          <p class="nodo-lead">Mensajes predefinidos que el operador envía al cliente con un clic desde la Bandeja. Organízalas por carpetas y dales un atajo (ej. <b>/precio</b>).</p>
+        </div>
+        <div class="nodo-actions">
+          <button class="nodo-btn primary" id="addBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva respuesta</button>
+        </div>
+      </div>
+      <div class="nodo-folders" id="folders"></div>
+      <div class="nodo-cards" id="cards"></div>
+    </div>
+    <div id="detailView" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <button class="nodo-back" id="backBtn" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a respuestas</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn danger" id="delBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg> Eliminar</button>
+          <button class="btn primary" id="saveBtn">Guardar</button>
+        </div>
+      </div>
+      <div id="detail" style="margin-top:18px"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"respuestas" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; st.qr=null; showGrid(); load(); });
+  $("addBtn").onclick=createQR;
+  $("backBtn").onclick=()=>{ st.qr=null; showGrid(); };
+  $("saveBtn").onclick=saveQR; $("delBtn").onclick=deleteQR;
+  await load();
+}
+function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
+function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
+
+async function load(){
+  const { data }=await supa.from("quick_replies").select("*").eq("channel_id",st.channelId).order("orden").order("created_at");
+  st.list=data||[]; renderFolders(); renderCards();
+}
+function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(x=>!x.folder).length; return st.list.filter(x=>x.folder===v).length; }
+function renderFolders(){
+  const isReal=st.folder!=="__all"&&st.folder!=="__none";
+  const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
+}
+async function deleteFolder(){
+  const f=st.folder; if(f==="__all"||f==="__none") return;
+  const n=countIn(f);
+  if(!confirm(n?`La carpeta "${f}" tiene ${n} respuesta(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(n){ const { error }=await supa.from("quick_replies").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
+  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await load();
+}
+function renderCards(){
+  let list=st.list;
+  if(st.folder==="__none") list=list.filter(x=>!x.folder); else if(st.folder!=="__all") list=list.filter(x=>x.folder===st.folder);
+  const box=$("cards");
+  if(!st.list.length){
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg></div><h3>Aún no hay respuestas rápidas</h3><p>Crea mensajes predefinidos para responder al instante desde la Bandeja.</p></div>`;
+    return;
+  }
+  if(!list.length){ box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><p>Sin respuestas en esta carpeta.</p></div>`; return; }
+  box.innerHTML="";
+  list.forEach(q=>{
+    const el=document.createElement("div"); el.className="nodo-card qcard";
+    el.innerHTML=`
+      <div class="c-top"><span class="c-tt">${esc(q.titulo)}</span>${q.atajo?`<span class="atajo">${esc(q.atajo)}</span>`:''}</div>
+      <div class="qbody">${esc(q.cuerpo||"(vacío)")}</div>
+      ${q.folder?`<div style="margin-top:10px;font-size:11.5px;color:var(--faint)">📁 ${esc(q.folder)}</div>`:''}`;
+    el.onclick=()=>openQR(q.id); box.appendChild(el);
+  });
+}
+async function createQR(){
+  const titulo=prompt("Título de la respuesta (ej. Saludo, Precio, Datos de pago):"); if(!titulo) return;
+  const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
+  const { data,error }=await supa.from("quick_replies").insert({ channel_id:st.channelId, titulo:titulo.trim(), cuerpo:"", folder, orden:st.list.length }).select("id").single();
+  if(error){ toast(error.message,true); return; }
+  await load(); openQR(data.id);
+}
+async function openQR(id){ const { data }=await supa.from("quick_replies").select("*").eq("id",id).maybeSingle(); st.qr=data; renderDetail(); showDetail(); }
+function renderDetail(){
+  const q=st.qr; if(!q) return;
+  $("detail").innerHTML=`
+    <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(q.titulo)}</h1>
+    <div class="dcard">
+      <div class="row">
+        <div class="f"><label>Título</label><input class="in" id="q_titulo" value="${esc(q.titulo)}"/></div>
+        <div class="f"><label>Atajo (opcional)</label><input class="in" id="q_atajo" value="${esc(q.atajo||'')}" placeholder="/precio"/></div>
+        <div class="f"><label>Carpeta</label><select class="sel" id="q_folder"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${q.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+      </div>
+      <label>Mensaje</label>
+      <textarea class="ta" id="q_cuerpo" placeholder="Escribe el mensaje que se enviará al cliente…">${esc(q.cuerpo)}</textarea>
+      <div class="hint">Puedes usar variables del contacto, p. ej. <b>{{nombre}}</b>. Se reemplazan al enviar.</div>
+    </div>`;
+}
+async function saveQR(){
+  if(!st.qr) return;
+  const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:$("q_folder").value||null, cuerpo:$("q_cuerpo").value };
+  if(!patch.titulo){ toast("El título no puede estar vacío",true); return; }
+  const { error }=await supa.from("quick_replies").update(patch).eq("id",st.qr.id);
+  if(error){ toast(error.message,true); return; }
+  toast("Guardado ✓"); await load(); await openQR(st.qr.id);
+}
+async function deleteQR(){
+  if(!st.qr) return;
+  if(!confirm(`¿Eliminar la respuesta "${st.qr.titulo}"?`)) return;
+  await supa.from("quick_replies").delete().eq("id",st.qr.id); st.qr=null; toast("Eliminada ✓"); showGrid(); await load();
+}
+boot();
+</script>
+</body>
+</html>
