@@ -143,9 +143,10 @@
 <!-- ── APP ── -->
 <div id="app" class="hidden">
   <div class="list">
-    <div class="top">
-      <span style="font-weight:600;font-size:14px">Bandeja</span>
-      <button class="testbtn" id="testBtn" title="Reinicia la conversación de prueba para empezar de cero">🗑 Borrar chat</button>
+    <div class="top" style="gap:8px;flex-wrap:wrap">
+      <span style="font-weight:600;font-size:14px;flex:1">Bandeja</span>
+      <select class="sel" id="flowTestSel" title="Flujo a probar en el Web Chat" style="max-width:128px"></select>
+      <button class="testbtn" id="testBtn" title="Reinicia la conversación de prueba con el flujo elegido">🗑 Borrar chat</button>
     </div>
     <div id="convList" style="overflow-y:auto;flex:1"></div>
   </div>
@@ -213,7 +214,8 @@ async function boot() {
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
   const shell = await mountShell({ active: "inbox" });
   state.channelId = shell.channelId;
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadConversations(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadConversations(); });
+  await loadTestFlows();
   await loadConversations();
   subscribeRealtime();
 }
@@ -401,17 +403,34 @@ async function callFn(name, body) {
   });
 }
 
-// ── Modo prueba (webchat): "Borrar chat" reinicia la conversación de prueba ──
+// ── Modo prueba (webchat): selector de flujo + "Borrar chat" reinicia ──
+async function loadTestFlows() {
+  const sel = $("flowTestSel"); if (!sel) return;
+  const { data } = await supa.from("flows").select("id,nombre,estado,kind")
+    .eq("channel_id", state.channelId).eq("kind", "flow").order("nombre");
+  sel.innerHTML = `<option value="">Auto (por disparador)</option>` +
+    (data || []).map(f => `<option value="${f.id}">${esc(f.nombre)}${f.estado !== "activo" ? " (borrador)" : ""}</option>`).join("");
+}
 $("testBtn").addEventListener("click", clearTestChat);
 async function clearTestChat() {
   if (!state.channelId) return;
-  if (!confirm("¿Borrar la conversación de prueba y empezar de cero? (escribe como el cliente para disparar el flujo)")) return;
+  const flowId = $("flowTestSel")?.value || "";
+  const msg = flowId
+    ? "¿Reiniciar la conversación de prueba y arrancar el flujo elegido?"
+    : "¿Borrar la conversación de prueba y empezar de cero? (escribe como el cliente para disparar el flujo)";
+  if (!confirm(msg)) return;
   const res = await callFn("webchat", { channel_id: state.channelId, reset: true });
   const out = await res.json().catch(() => ({}));
+  if (flowId) {
+    // Forzar el arranque del flujo seleccionado (aunque esté en borrador).
+    const r = await callFn("webchat", { channel_id: state.channelId, flow_id: flowId });
+    const o = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(o.detalle || o.error || "No se pudo iniciar el flujo", true); }
+  }
   await loadConversations();
   if (out.contact_id) {
     openChat({ id: out.contact_id, nombre: "🧪 Prueba (webchat)", wa_id: "webchat-test", bot_activo: true });
-    toast("Chat de prueba reiniciado ✓ — escribe como el cliente");
+    toast(flowId ? "Flujo iniciado ✓ — responde como el cliente" : "Chat reiniciado ✓ — escribe como el cliente");
   } else { toast(out.detalle || out.error || "No se pudo reiniciar", true); }
 }
 async function sendButton(id, title) {

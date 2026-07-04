@@ -267,10 +267,20 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
 
 // Arranca un flujo concreto para un contacto (usado por el scheduler para
 // remarketing). No interrumpe una conversación activa.
-export async function startFlowRun(db: SupabaseClient, channelId: string, contactId: string, flowId: string): Promise<boolean> {
-  if (await getActiveRun(db, contactId)) return false;
+export async function startFlowRun(
+  db: SupabaseClient, channelId: string, contactId: string, flowId: string,
+  opts?: { force?: boolean },
+): Promise<boolean> {
+  if (opts?.force) {
+    // Modo prueba: cancela cualquier run y arranca el flujo aunque esté en borrador.
+    await db.from("flow_runs").update({ estado: "cancelado" })
+      .eq("contact_id", contactId).in("estado", ["activo", "esperando"]);
+  } else if (await getActiveRun(db, contactId)) {
+    return false;
+  }
   const { data: flow } = await db.from("flows").select("id, estado").eq("id", flowId).maybeSingle();
-  if (!flow || (flow as any).estado !== "activo") return false;
+  if (!flow) return false;
+  if (!opts?.force && (flow as any).estado !== "activo") return false;
   const run = await startRun(db, channelId, contactId, flow);
   await execute(db, run);
   return true;

@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { runEngine } from "../_shared/engine.ts";
+import { runEngine, startFlowRun } from "../_shared/engine.ts";
 
 const db = serviceClient();
 const TEST_WA_ID = "webchat-test";
@@ -24,11 +24,11 @@ Deno.serve(async (req) => {
   if (!member) return json({ error: "not_member" }, 403);
 
   let body: {
-    channel_id?: string; text?: string; buttonId?: string; reset?: boolean;
+    channel_id?: string; text?: string; buttonId?: string; reset?: boolean; flow_id?: string;
     media?: { kind?: string; url?: string; mime?: string; caption?: string };
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, text, buttonId, reset, media } = body;
+  const { channel_id, text, buttonId, reset, media, flow_id } = body;
   if (!channel_id) return json({ error: "falta_channel" }, 400);
   const mediaKind = media?.url ? (media.kind || "document") : null;
 
@@ -60,6 +60,18 @@ Deno.serve(async (req) => {
     await db.from("flow_runs").update({ estado: "cancelado" }).eq("contact_id", contactId).in("estado", ["activo", "esperando"]);
     await db.from("messages").delete().eq("contact_id", contactId);
     return json({ ok: true, reset: true, contact_id: contactId });
+  }
+
+  // Forzar el arranque de un flujo concreto (selector "Flujo a probar").
+  if (flow_id && !text && !buttonId && !mediaKind) {
+    try {
+      const ok = await startFlowRun(db, channel_id, contactId, flow_id, { force: true });
+      if (!ok) return json({ error: "no_se_pudo_iniciar", detalle: "El flujo no tiene nodo inicial" }, 400);
+    } catch (e) {
+      console.error("[webchat] force flow error:", e);
+      return json({ error: "engine_error", detalle: String(e) }, 500);
+    }
+    return json({ ok: true, contact_id: contactId, started: flow_id });
   }
 
   // Guardar el mensaje entrante (del "cliente").
