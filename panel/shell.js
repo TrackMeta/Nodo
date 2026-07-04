@@ -38,6 +38,7 @@ const P = {
   moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   panel:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
   logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${P[n]||""}</svg>`;
 
@@ -104,6 +105,7 @@ export async function mountShell({ active } = {}) {
       ).join("")}
     </nav>
     <div class="nodo-foot">
+      <a class="nodo-link${active === "perfil" ? " active" : ""}" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
       <button class="nodo-link" id="nodoTheme" title="Cambiar tema"></button>
       <button class="nodo-link" id="nodoCollapse" title="Comprimir menú">${svg("panel")}<span class="lbl">Comprimir</span></button>
       <button class="nodo-link" id="nodoLogout" title="Cerrar sesión">${svg("logout")}<span class="lbl">Cerrar sesión</span></button>

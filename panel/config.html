@@ -57,8 +57,10 @@
     <h1>Configuración</h1>
     <div class="tabs">
       <button class="tab active" data-t="marca" id="tabMarca"></button>
+      <button class="tab" data-t="general" id="tabGeneral"></button>
       <button class="tab" data-t="ia" id="tabIa"></button>
       <button class="tab" data-t="pixel" id="tabPixel"></button>
+      <button class="tab" data-t="gsheets" id="tabSheets"></button>
     </div>
     <div id="body"></div>
   </div>
@@ -71,7 +73,17 @@ const IC={
   tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
   spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2 12 2l2.1 2.2L17 5l-1 3 1 3-2.9.8L12 14l-2.1-2.2L7 11l1-3-1-3z"/><path d="M18 16l.7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7z"/></svg>',
   target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
+  sheet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',
 };
+const TIMEZONES=[
+  ["America/Lima","Perú (Lima) · UTC-5"],["America/Bogota","Colombia (Bogotá) · UTC-5"],
+  ["America/Mexico_City","México (CDMX) · UTC-6"],["America/Santiago","Chile (Santiago) · UTC-3/-4"],
+  ["America/Argentina/Buenos_Aires","Argentina (Bs. As.) · UTC-3"],["America/Guayaquil","Ecuador (Guayaquil) · UTC-5"],
+  ["America/La_Paz","Bolivia (La Paz) · UTC-4"],["America/Caracas","Venezuela (Caracas) · UTC-4"],
+  ["America/Santo_Domingo","Rep. Dominicana · UTC-4"],["America/Guatemala","Guatemala · UTC-6"],
+  ["America/New_York","EE. UU. (Este) · UTC-5"],["Europe/Madrid","España (Madrid) · UTC+1"],
+];
 
 const PROVIDERS = [
   { id:"anthropic", nm:"Claude (Anthropic)", desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
@@ -86,8 +98,10 @@ async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   $("tabMarca").innerHTML=IC.tag+"<span>Marca del Bot</span>";
+  $("tabGeneral").innerHTML=IC.sliders+"<span>General</span>";
   $("tabIa").innerHTML=IC.spark+"<span>Inteligencia Artificial</span>";
   $("tabPixel").innerHTML=IC.target+"<span>Pixel de Meta</span>";
+  $("tabSheets").innerHTML=IC.sheet+"<span>Google Sheets</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"config" });
   st.channelId=shell.channelId;
@@ -96,8 +110,8 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id").eq("id",st.channelId).maybeSingle();
-  if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id").eq("id",st.channelId).maybeSingle()); }
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
   st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
@@ -109,8 +123,75 @@ async function loadCfg(){
 function render(){
   const b=$("body");
   if(st.tab==="marca") renderBranding(b);
+  else if(st.tab==="general") renderGeneral(b);
   else if(st.tab==="ia") renderIA(b);
-  else renderPixel(b);
+  else if(st.tab==="pixel") renderPixel(b);
+  else renderGsheets(b);
+}
+
+// ── General: retraso de respuesta + zona horaria ────────────────────
+function renderGeneral(b){
+  const c=st.channel||{};
+  const delay = c.buffer_default_seg ?? 4;
+  const tz = c.timezone || "America/Lima";
+  b.innerHTML=`
+    <h2>Ajustes generales</h2><p class="sub">Comportamiento del bot y zona horaria de este canal.</p>
+    <div class="card">
+      <div class="chd"><span class="ico">${IC.sliders}</span><span class="nm">Retraso de respuesta del bot</span></div>
+      <div class="desc">Si el usuario envía varios mensajes seguidos, el bot espera este tiempo y los agrupa en una sola respuesta. <b>0</b> = responde de inmediato. Aplica solo a conversaciones individuales.</div>
+      <label>Segundos</label>
+      <input class="in" id="g_delay" type="number" min="0" max="60" value="${Number(delay)}" style="max-width:140px"/>
+    </div>
+    <div class="card">
+      <div class="chd"><span class="ico">${IC.target}</span><span class="nm">Zona horaria</span></div>
+      <div class="desc">Define cuándo empieza y termina el día para <b>todas las métricas</b>: leads por día, resúmenes, reportes, campañas programadas, automatizaciones y conversiones.</div>
+      <label>País / zona horaria</label>
+      <select class="in" id="g_tz" style="max-width:340px">${TIMEZONES.map(([v,l])=>`<option value="${v}" ${v===tz?"selected":""}>${l}</option>`).join("")}</select>
+    </div>
+    <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
+  $("saveGeneral").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const patch={ buffer_default_seg:Math.max(0,parseInt($("g_delay").value||"0",10)), timezone:$("g_tz").value };
+    const { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
+    st.channel.buffer_default_seg=patch.buffer_default_seg; st.channel.timezone=patch.timezone; toast("Guardado ✓");
+  };
+}
+
+// ── Google Sheets (integración preparada) ───────────────────────────
+function renderGsheets(b){
+  const g=(st.channel&&st.channel.gsheets)||{};
+  const connected=!!g.connected;
+  b.innerHTML=`
+    <h2>Google Sheets</h2><p class="sub">Deja preparada la integración para que los nodos de Google Sheets funcionen dentro de tus flujos (registrar contactos, ventas, comprobantes, etc.).</p>
+    <div class="card ${connected?'on':''}">
+      <div class="chd"><span class="ico" style="background:#0c3a22;color:#22c079">${IC.sheet}</span><span class="nm">Conexión con Google Sheets</span>
+        <span class="badge ${connected?'on':''}" style="margin-left:auto">${connected?'Conectado':'Sin conectar'}</span></div>
+      <div class="desc">Comparte tu hoja de cálculo con la cuenta de servicio (permiso de <b>Editor</b>) y pega su correo y el ID de la hoja. Así los nodos podrán leer/escribir filas.</div>
+      <label>Correo de la cuenta de servicio</label>
+      <input class="in" id="gs_email" value="${esc(g.service_email||'')}" placeholder="nodo@tu-proyecto.iam.gserviceaccount.com"/>
+      <label>ID de la hoja por defecto (opcional)</label>
+      <input class="in" id="gs_sheet" value="${esc(g.spreadsheet_id||'')}" placeholder="1AbC...def (de la URL de la hoja)"/>
+      <div class="acts">
+        <button class="btn primary" id="saveGs">Guardar</button>
+        ${connected?`<button class="btn danger" id="discGs">Desconectar</button>`:""}
+      </div>
+      <div class="desc" style="margin-top:14px">Nota: la ejecución real (API de Google) se habilita en una fase posterior; aquí dejas guardada la configuración.</div>
+    </div>`;
+  $("saveGs").onclick=async(e)=>{
+    const gs={ connected:true, service_email:$("gs_email").value.trim(), spreadsheet_id:$("gs_sheet").value.trim() };
+    if(!gs.service_email){ toast("Pega el correo de la cuenta de servicio",true); return; }
+    await saveGsheets(e.target, gs);
+  };
+  const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ connected:false });
+}
+async function saveGsheets(btn, gs){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  const { error }=await supa.from("channels").update({ gsheets:gs }).eq("id",st.channelId);
+  btn.disabled=false; btn.textContent=old;
+  if(error){ toast(/gsheets|column/.test(error.message)?"Falta aplicar la migración 0014 (gsheets)":error.message,true); return; }
+  st.channel.gsheets=gs; toast("Guardado ✓"); render();
 }
 
 // ── Marca del Bot ───────────────────────────────────────────────────
