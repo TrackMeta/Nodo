@@ -166,6 +166,43 @@
   .segbtn.active{background:var(--brand);color:#fff}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red-bg);color:var(--red);border:1px solid var(--red);padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
+
+  /* Cabecera del chat: toggle Chat/Actividad + menú de acciones */
+  .chat{position:relative}
+  .hdtoggle{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;margin-left:12px}
+  .htb{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:7px}
+  .htb.active{background:var(--brand);color:#fff}
+  .hdmenu{width:34px;height:34px;border:none;background:transparent;color:var(--muted);font-size:20px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .hdmenu:hover{background:var(--surface-2);color:var(--text)}
+  .actmenu{position:absolute;top:54px;right:12px;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);padding:6px;min-width:230px}
+  .actmenu.hidden{display:none}
+  .actitem{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;border:none;background:transparent;color:var(--text);font-size:13px;border-radius:8px;text-align:left;cursor:pointer;font-family:inherit}
+  .actitem:hover{background:var(--surface-2)}
+  .actitem.danger{color:var(--red)} .actitem svg{width:16px;height:16px;flex:none;color:var(--muted)} .actitem.danger svg{color:var(--red)}
+  .actsep{height:1px;background:var(--border);margin:5px 4px}
+
+  /* Timeline (vista Actividad dentro del chat) */
+  .tlview{flex:1;overflow-y:auto;padding:22px 24px}
+  .tlitem{display:flex;gap:13px;padding-bottom:16px;position:relative}
+  .tlitem::before{content:"";position:absolute;left:16px;top:34px;bottom:-2px;width:2px;background:var(--border)}
+  .tlitem:last-child::before{display:none}
+  .tldot{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--surface-2);border:1px solid var(--border);z-index:1}
+  .tlbody{flex:1;min-width:0;padding-top:3px}
+  .tltitle{font-size:13.5px;font-weight:600}
+  .tldet{font-size:12.5px;color:var(--muted);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+  .tltime{font-size:11px;color:var(--faint);margin-top:3px}
+
+  /* Panel derecho: secciones ricas */
+  .cpanel .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border)}
+  .cpanel .kv .k{color:var(--muted);flex:none} .cpanel .kv .v{color:var(--text);text-align:right;word-break:break-word;min-width:0}
+  .media-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .media-grid a{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--surface-2);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--muted);font-size:20px;text-decoration:none}
+  .media-grid img,.media-grid video{width:100%;height:100%;object-fit:cover}
+  .runrow{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .runrow .rdot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none} .runrow .rdot.wait{background:var(--amber)}
+  .runrow .rt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .runrow .rs{font-size:10.5px;color:var(--faint)}
+  .cempty{font-size:12px;color:var(--faint);padding:6px 0}
 </style>
 </head>
 <body>
@@ -200,9 +237,10 @@
         <button class="modebtn active" data-mode="bot">🤖 Bot</button>
       </div>
     </div>
-    <div class="top" style="gap:8px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px">
-      <select class="sel" id="flowTestSel" title="Flujo a probar en el Web Chat" style="flex:1;max-width:none"></select>
-      <button class="testbtn" id="testBtn" title="Reinicia la conversación de prueba con el flujo elegido">🗑 Borrar chat</button>
+    <!-- El Web Chat de prueba se movió a la sección "Probar Flujos" -->
+    <div class="top hidden" style="gap:8px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px">
+      <select class="sel" id="flowTestSel" style="flex:1;max-width:none"></select>
+      <button class="testbtn" id="testBtn">🗑 Borrar chat</button>
     </div>
     <div id="convList" style="overflow-y:auto;flex:1"></div>
   </div>
@@ -215,14 +253,21 @@
     <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
       <div class="hd">
         <div class="av" id="chAv"></div>
-        <div>
+        <div style="min-width:0">
           <div class="nm" id="chName"></div>
           <div class="ph" id="chPhone"></div>
         </div>
         <span class="pill on" id="chBot">● Bot activo</span>
         <span class="win" id="chWin"></span>
+        <div class="hdtoggle" id="viewToggle">
+          <button class="htb active" data-v="chat">Chat</button>
+          <button class="htb" data-v="timeline">Actividad</button>
+        </div>
+        <button class="hdmenu" id="actionsBtn" title="Acciones del contacto">⋮</button>
+        <div class="actmenu hidden" id="actionsMenu"></div>
       </div>
       <div class="thread" id="thread"></div>
+      <div class="tlview hidden" id="timeline"></div>
       <div class="testbar hidden" id="testBar">
         <span class="lb">Escribir como:</span>
         <div class="seg2">
@@ -299,12 +344,12 @@ async function boot() {
 
 // ── Conversaciones ──
 async function loadConversations() {
-  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,requiere_humano,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage${p?",product_id,product:products(emoji),contact_tags(tag_id)":""})`;
+  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage${p?",product_id,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   let { data, error } = await supa.from("conversations").select(sel(true))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200);
   if (error) { ({ data } = await supa.from("conversations").select(sel(false))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200)); }
-  state.convs = (data||[]).filter(cv=>cv.contact);
+  state.convs = (data||[]).filter(cv=>cv.contact && !cv.archivada && !cv.contact.bloqueado && cv.contact.wa_id!=="webchat-test");
   renderConversations();
 }
 
@@ -442,6 +487,8 @@ async function openChat(c) {
   setBotPill(c.bot_activo);
   $("testBar").classList.toggle("hidden", !state.isTest);
   updateComposerMode();
+  setChatView("chat");
+  renderActionsMenu();
   await loadThread();
   await markRead();
   loadConversations();
@@ -449,39 +496,89 @@ async function openChat(c) {
   loadContactPanel(c);
 }
 
-// ── Panel de contacto: etapa, etiquetas, campos personalizados ──
+// ── Toggle Chat / Actividad (timeline) ──
+function setChatView(v){
+  state.chatView = v;
+  $("thread").classList.toggle("hidden", v!=="chat");
+  $("timeline").classList.toggle("hidden", v!=="timeline");
+  document.querySelectorAll("#viewToggle .htb").forEach(b=> b.classList.toggle("active", b.dataset.v===v));
+  if(v==="timeline") renderTimeline();
+}
+document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(state.contactId) setChatView(b.dataset.v); });
+
+// ── Panel de contacto: datos, medios, flujos, secuencias, timeline ──
 const STAGES = ["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
 let panelData = {};
+const TZ_BY_PREFIX={ "593":"America/Guayaquil","591":"America/La_Paz","502":"America/Guatemala","503":"America/El_Salvador","506":"America/Costa_Rica","507":"America/Panama","51":"America/Lima","52":"America/Mexico_City","57":"America/Bogota","56":"America/Santiago","54":"America/Argentina/Buenos_Aires","58":"America/Caracas","34":"Europe/Madrid","1":"America/New_York" };
+const COUNTRY_BY_PREFIX={ "593":"🇪🇨 Ecuador","591":"🇧🇴 Bolivia","502":"🇬🇹 Guatemala","503":"🇸🇻 El Salvador","506":"🇨🇷 Costa Rica","507":"🇵🇦 Panamá","51":"🇵🇪 Perú","52":"🇲🇽 México","57":"🇨🇴 Colombia","56":"🇨🇱 Chile","54":"🇦🇷 Argentina","58":"🇻🇪 Venezuela","34":"🇪🇸 España","1":"🇺🇸 / 🇨🇦" };
+function prefixLook(wa, map, def){ const w=(wa||"").replace(/\D/g,""); for(const len of [3,2,1]){ const p=w.slice(0,len); if(map[p]) return map[p]; } return def; }
+function localTime(wa){ try{ return new Intl.DateTimeFormat("es",{timeZone:prefixLook(wa,TZ_BY_PREFIX,"America/Lima"),hour:"2-digit",minute:"2-digit"}).format(new Date()); }catch(_){ return "—"; } }
+function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(ts)); }catch(_){ return "—"; } }
+function mediaThumb(m){ const u=esc(m.content.media_url);
+  if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" loading="lazy"/></a>`;
+  if(m.type==="video") return `<a href="${u}" target="_blank"><video src="${u}"></video></a>`;
+  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">🎵</a>`;
+  return `<a href="${u}" target="_blank" title="Archivo">📎</a>`; }
+
 async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
   p.innerHTML = `<div class="cmuted" style="padding:20px 0;text-align:center">Cargando…</div>`;
-  const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo").eq("id", c.id).maybeSingle(),
+  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,source,primera_interaccion,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
+  const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes] = await Promise.all([
+    supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id", c.id),
     supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id", state.channelId).order("nombre"),
     supa.from("contact_field_values").select("field_id,value").eq("contact_id", c.id),
+    supa.from("messages").select("id,type,content,ts,direction").eq("contact_id", c.id).order("ts",{ascending:false}).limit(120),
+    supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id", c.id).order("created_at",{ascending:false}),
+    supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id", c.id).order("suscrito_at",{ascending:false}),
+    supa.from("contact_events").select("*").eq("contact_id", c.id).order("created_at",{ascending:false}).limit(100),
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
-  const contact = ctRes.data || c;
-  const allTags = tagsRes.data || [];
-  const assigned = new Set((ctagsRes.data||[]).map(r=>r.tag_id));
-  const fields = fieldsRes.data || [];
-  const vals = Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id, v.value]));
-  panelData = { contact, allTags, assigned, fields, vals };
+  panelData = {
+    contact: ctRes.data || c,
+    allTags: tagsRes.data || [],
+    assigned: new Set((ctagsRes.data||[]).map(r=>r.tag_id)),
+    fields: fieldsRes.data || [],
+    vals: Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id, v.value])),
+    media: (msgRes.data||[]).filter(m=> m.content && m.content.media_url),
+    runs: runsRes.error ? [] : (runsRes.data||[]),
+    subs: subsRes.error ? [] : (subsRes.data||[]),
+    events: evRes.error ? [] : (evRes.data||[]),
+  };
   renderContactPanel();
+  if(state.chatView==="timeline") renderTimeline();
 }
 function renderContactPanel(){
-  const { contact, allTags, assigned, fields, vals } = panelData;
+  const { contact, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
   const p = $("cpanel");
   const isTest = contact.wa_id === "webchat-test";
   const avail = allTags.filter(t=>!assigned.has(t.id));
+  const emoji = contact.product && contact.product.emoji ? contact.product.emoji : "";
+  const runsA = runs.filter(r=>["activo","esperando"].includes(r.estado));
+  const subsA = subs.filter(s=>s.estado==="activa");
+  const nodos = events.filter(e=>e.tipo==="nodo");
+  const errs  = events.filter(e=>e.tipo==="error");
+  const datosRows = isTest ? "" : `
+    <h4>Datos</h4>
+    <div class="kv"><span class="k">ID de contacto</span><span class="v">${esc(contact.wa_id)}</span></div>
+    <div class="kv"><span class="k">Teléfono</span><span class="v">+${esc(contact.wa_id)}</span></div>
+    <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
+    <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
+    <div class="kv"><span class="k">Contacto desde</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
+    <div class="kv"><span class="k">Origen</span><span class="v">${esc(contact.source||"Directo")}</span></div>
+    ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?emoji+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}`;
   p.innerHTML = `
     <div class="chd">
-      <div class="bigav">${initials(contact.nombre, contact.wa_id)}</div>
+      <div style="position:relative">
+        <div class="bigav">${initials(contact.nombre, contact.wa_id)}</div>
+        ${emoji?`<span style="position:absolute;right:-4px;bottom:-2px;font-size:19px">${emoji}</span>`:""}
+      </div>
       <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
     </div>
+    ${datosRows}
     <h4>Etapa del embudo</h4>
     <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
@@ -497,15 +594,27 @@ function renderContactPanel(){
       fields.length
         ? fields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
         : '<span class="cmuted">Este canal no tiene campos personalizados aún</span>'
-    }</div>`;
-  $("pStage").onchange = async (e)=>{ await supa.from("contacts").update({ stage:e.target.value }).eq("id",contact.id); contact.stage=e.target.value; toast("Etapa actualizada ✓"); };
+    }</div>
+    <h4>Medios y archivos</h4>
+    ${media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>` : '<div class="cempty">Sin archivos enviados</div>'}
+    <h4>Flujos en ejecución</h4>
+    ${runsA.length ? runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc(r.estado)}</span></div>`).join("") : '<div class="cempty">Ningún flujo activo</div>'}
+    <h4>Secuencias suscritas</h4>
+    ${subsA.length ? subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join("") : '<div class="cempty">Sin secuencias activas</div>'}
+    <h4>Nodos ejecutados</h4>
+    ${nodos.length ? nodos.slice(0,15).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">El motor registrará aquí los nodos ejecutados</div>'}
+    <h4>Registro de errores</h4>
+    ${errs.length ? errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">Sin errores registrados</div>'}`;
+  const st=$("pStage"); if(st) st.onchange = async (e)=>{ await supa.from("contacts").update({ stage:e.target.value }).eq("id",contact.id); contact.stage=e.target.value; logEvent(contact.id,"nota","Etapa cambiada a "+e.target.value); toast("Etapa actualizada ✓"); loadConversations(); };
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{
     await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
+    const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre);
     assigned.delete(b.dataset.tag); renderContactPanel();
   });
   const add=$("pAddTag"); if(add) add.onchange=async()=>{
     if(!add.value) return;
     await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:add.value }, { onConflict:"contact_id,tag_id" });
+    const t=allTags.find(x=>x.id===add.value); logEvent(contact.id,"etiqueta_add","Etiqueta añadida",t?.nombre);
     assigned.add(add.value); renderContactPanel();
   };
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{
@@ -515,6 +624,71 @@ function renderContactPanel(){
     vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓");
   });
 }
+// ── Eventos / Timeline ──
+async function logEvent(contactId, tipo, titulo, detalle){
+  try{ await supa.from("contact_events").insert({ channel_id:state.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){}
+}
+const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
+function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts)); }catch(_){ return ""; } }
+function renderTimeline(){
+  const box=$("timeline"); if(!panelData||!panelData.contact){ box.innerHTML=""; return; }
+  const items=[];
+  (panelData.events||[]).forEach(e=> items.push({ t:e.created_at, tipo:e.tipo, titulo:e.titulo, det:e.detalle }));
+  (panelData.runs||[]).forEach(r=> items.push({ t:r.created_at, tipo:"flujo_inicio", titulo:"Flujo iniciado", det:r.flow?.nombre }));
+  (panelData.subs||[]).forEach(s=> items.push({ t:s.suscrito_at, tipo:"secuencia_inicio", titulo:"Secuencia suscrita", det:s.sequence?.nombre }));
+  if(panelData.contact.stage==="comprado") items.push({ t:panelData.contact.primera_interaccion, tipo:"compra", titulo:"Marcado como comprado", det:"" });
+  items.sort((a,b)=> new Date(b.t||0)-new Date(a.t||0));
+  if(!items.length){ box.innerHTML=`<div class="empty" style="height:100%;text-align:center"><div style="font-size:28px">🧭</div><div>Sin actividad registrada aún</div><div style="font-size:12px;color:var(--faint);max-width:280px">El motor irá registrando aquí cada acción sobre el contacto (etiquetas, flujos, compras, intervenciones…).</div></div>`; return; }
+  box.innerHTML=items.map(it=>`<div class="tlitem"><div class="tldot">${TL_ICON[it.tipo]||"•"}</div><div class="tlbody"><div class="tltitle">${esc(it.titulo)}</div>${it.det?`<div class="tldet">${esc(it.det)}</div>`:""}<div class="tltime">${it.t?fmtFull(it.t):""}</div></div></div>`).join("");
+}
+
+// ── Menú de acciones del contacto ──
+function renderActionsMenu(){
+  const m=$("actionsMenu");
+  m.innerHTML=`
+    <button class="actitem" data-a="tag">🏷️ Agregar etiqueta</button>
+    <button class="actitem" data-a="rebot">▶️ Reactivar bot</button>
+    <button class="actitem" data-a="follow">🔖 Marcar como seguimiento</button>
+    <button class="actitem" data-a="unread">✉️ Marcar como no leído</button>
+    <button class="actitem" data-a="archive">🗄️ Archivar</button>
+    <button class="actitem" data-a="export">⬇️ Exportar mensajes</button>
+    <div class="actsep"></div>
+    <button class="actitem danger" data-a="block">🚫 Bloquear contacto</button>
+    <button class="actitem danger" data-a="clearinfo">🧹 Borrar información</button>
+    <button class="actitem danger" data-a="delchat">🗑️ Eliminar chat</button>`;
+  m.querySelectorAll(".actitem").forEach(b=> b.onclick=()=>{ m.classList.add("hidden"); actionHandler(b.dataset.a); });
+}
+function backToList(){ state.contactId=null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); }
+async function actionHandler(a){
+  const cid=state.contactId; if(!cid) return;
+  const conv=()=>supa.from("conversations");
+  if(a==="tag"){ const sel=$("pAddTag"); if(sel){ sel.scrollIntoView({block:"center"}); setTimeout(()=>sel.focus(),150); } else toast("Crea etiquetas en la sección Etiquetas",true); return; }
+  if(a==="rebot"){ await supa.from("contacts").update({ bot_activo:true }).eq("id",cid); setBotPill(true); if(panelData.contact) panelData.contact.bot_activo=true; logEvent(cid,"bot_reactiva","Bot reactivado"); toast("Bot reactivado ✓"); loadConversations(); return; }
+  if(a==="follow"){ await conv().update({ requiere_humano:true }).eq("contact_id",cid); logEvent(cid,"nota","Marcado para seguimiento"); toast("Marcado para seguimiento ✓"); loadConversations(); return; }
+  if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído ✓"); backToList(); loadConversations(); return; }
+  if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado ✓"); backToList(); loadConversations(); return; }
+  if(a==="export"){ return exportMessages(); }
+  if(a==="block"){ if(!confirm("¿Bloquear este contacto? El bot dejará de responderle y saldrá de la bandeja.")) return;
+    let { error }=await supa.from("contacts").update({ bloqueado:true }).eq("id",cid);
+    if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
+    logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado ✓"); backToList(); loadConversations(); return; }
+  if(a==="clearinfo"){ if(!confirm("¿Borrar todos los campos personalizados de este contacto?")) return;
+    await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
+    loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }
+  if(a==="delchat"){ if(!confirm("¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.")) return;
+    await supa.from("messages").delete().eq("contact_id",cid); await conv().delete().eq("contact_id",cid);
+    toast("Chat eliminado ✓"); backToList(); loadConversations(); return; }
+}
+async function exportMessages(){
+  const { data }=await supa.from("messages").select("direction,type,content,ts").eq("contact_id",state.contactId).order("ts");
+  const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Nodo"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
+  const blob=new Blob([`Conversación con ${state.contactName||""}\n\n`+lines.join("\n")],{type:"text/plain;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`chat_${(state.contactName||state.contactId).toString().replace(/\W+/g,"_")}.txt`; a.click(); URL.revokeObjectURL(a.href);
+  toast("Mensajes exportados ✓");
+}
+$("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.contactId) return; $("actionsMenu").classList.toggle("hidden"); });
+document.addEventListener("click",(e)=>{ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); });
+
 function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
 function updateComposerMode(){
   if(!state.isTest){ $("msgInput").placeholder = "Escribe un mensaje…"; return; }

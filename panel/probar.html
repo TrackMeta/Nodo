@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Probar flujos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:760px;margin:0 auto;width:100%;height:100%;display:flex;flex-direction:column;padding:22px 20px}
+  .head h1{font-size:24px;font-weight:700;letter-spacing:-.4px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:13.5px;margin:0 0 16px;line-height:1.5}
+  .bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .sel{flex:1;min-width:180px;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none}
+  .btn{height:40px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600}
+  .btn:hover{border-color:var(--brand)} .btn.primary{background:var(--brand);border:none;color:#fff}
+  .card{flex:1;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+  .thread{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:8px}
+  .msg{max-width:74%;padding:8px 12px;border-radius:14px;font-size:13.5px;white-space:pre-wrap;word-wrap:break-word}
+  .in-m{align-self:flex-start;background:var(--surface-2);border-top-left-radius:4px}
+  .out-m{align-self:flex-end;background:var(--brand-bg);border-top-right-radius:4px}
+  .meta{font-size:10px;color:var(--faint);margin-top:3px}
+  .msg img,.msg video{max-width:230px;border-radius:10px;display:block} .msg audio{max-width:230px}
+  .btns{align-self:flex-start;display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}
+  .btnchip{font-size:12px;padding:6px 14px;border:1px solid var(--brand);border-radius:20px;color:var(--brand);background:transparent}
+  .btnchip:hover{background:var(--brand-bg)}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px;text-align:center;padding:20px}
+  .testbar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--border)}
+  .lb{font-size:12px;color:var(--muted)}
+  .seg2{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
+  .segbtn{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px}
+  .segbtn.active{background:var(--brand);color:#fff}
+  .composer{padding:12px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+  .composer input{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
+  .composer input:focus{border-color:var(--brand)}
+  .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;display:flex;align-items:center;justify-content:center}
+  .send svg{width:19px;height:19px} .attach{width:40px;height:42px;border:none;background:transparent;color:var(--muted);border-radius:10px}
+  .attach:hover{color:var(--brand);background:var(--surface-2)} .attach svg{width:20px;height:20px}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="wrap">
+    <div class="head">
+      <h1>Probar flujos</h1>
+      <p class="lead">Simula una conversación de WhatsApp para probar tus flujos antes de publicarlos. Escribe como el <b>cliente</b> para dispararlos, o como el <b>bot</b> para ensayar respuestas. Nada de esto llega a un número real.</p>
+    </div>
+    <div class="bar">
+      <select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select>
+      <button class="btn primary" id="startBtn">Iniciar / Reiniciar prueba</button>
+    </div>
+    <div class="card">
+      <div class="empty" id="empty">
+        <div style="font-size:30px">🧪</div>
+        <div>Pulsa “Iniciar / Reiniciar prueba” para empezar</div>
+      </div>
+      <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+        <div class="thread" id="thread"></div>
+        <div class="testbar">
+          <span class="lb">Escribir como:</span>
+          <div class="seg2">
+            <button class="segbtn active" data-as="cliente">🧑 Cliente</button>
+            <button class="segbtn" data-as="bot">🤖 Bot</button>
+          </div>
+          <span class="lb" id="hint">— dispara el flujo automáticamente</span>
+        </div>
+        <div class="composer">
+          <button class="attach" id="attachBtn" title="Adjuntar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
+          <input id="msgInput" placeholder="Escribe como el cliente…" autocomplete="off" />
+          <button class="send" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
+const st={ channelId:null, contactId:null, as:"cliente", rt:null };
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+const FN=(n)=>`${SUPABASE_URL}/functions/v1/${n}`;
+async function callFn(name, body){
+  const { data:{ session } }=await supa.auth.getSession();
+  const token=session?.access_token||SUPABASE_ANON_KEY;
+  return fetch(FN(name),{ method:"POST", headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${token}` }, body:JSON.stringify(body) });
+}
+
+async function boot(){
+  const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"probar" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); loadFlows(); loadExisting(); });
+  $("startBtn").onclick=startTest;
+  $("sendBtn").onclick=sendMsg;
+  $("msgInput").addEventListener("keydown",e=>{ if(e.key==="Enter") sendMsg(); });
+  $("attachBtn").onclick=()=>$("fileInput").click();
+  $("fileInput").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) sendAttachment(f); };
+  document.querySelectorAll(".segbtn").forEach(b=> b.onclick=()=>{ st.as=b.dataset.as; document.querySelectorAll(".segbtn").forEach(x=>x.classList.toggle("active",x===b)); $("msgInput").placeholder=st.as==="bot"?"Escribe como el BOT…":"Escribe como el cliente…"; $("hint").textContent=st.as==="bot"?"— se muestra como respuesta del bot":"— dispara el flujo automáticamente"; });
+  await loadFlows();
+  await loadExisting();
+  subscribe();
+}
+function reset(){ $("chatView").classList.add("hidden"); $("empty").classList.remove("hidden"); }
+async function loadFlows(){
+  const { data }=await supa.from("flows").select("id,nombre,estado,kind").eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
+  $("flowSel").innerHTML=`<option value="">Auto (por disparador)</option>`+(data||[]).map(f=>`<option value="${f.id}">${esc(f.nombre)}${f.estado!=="activo"?" (borrador)":""}</option>`).join("");
+}
+async function loadExisting(){
+  const { data:c }=await supa.from("contacts").select("id").eq("channel_id",st.channelId).eq("wa_id","webchat-test").maybeSingle();
+  if(c){ st.contactId=c.id; $("empty").classList.add("hidden"); $("chatView").classList.remove("hidden"); await loadThread(); }
+}
+async function startTest(){
+  const flowId=$("flowSel").value;
+  const res=await callFn("webchat",{ channel_id:st.channelId, reset:true });
+  const out=await res.json().catch(()=>({}));
+  if(!out.contact_id){ toast(out.detalle||out.error||"No se pudo iniciar",true); return; }
+  st.contactId=out.contact_id;
+  if(flowId){ const r=await callFn("webchat",{ channel_id:st.channelId, flow_id:flowId }); const o=await r.json().catch(()=>({})); if(!r.ok) toast(o.detalle||o.error||"No se pudo iniciar el flujo",true); }
+  $("empty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  await loadThread();
+  toast(flowId?"Flujo iniciado ✓ — responde como el cliente":"Prueba reiniciada ✓");
+}
+async function loadThread(){
+  const { data }=await supa.from("messages").select("*").eq("contact_id",st.contactId).order("ts").limit(200);
+  const t=$("thread"); t.innerHTML=""; (data||[]).forEach(renderMsg); t.scrollTop=t.scrollHeight;
+}
+function renderMsg(m){
+  const t=$("thread"); const el=document.createElement("div");
+  el.className="msg "+(m.direction==="in"?"in-m":"out-m"); el.dataset.id=m.id;
+  const txt=m.content?.text||m.content?.caption||m.content?.title||`[${m.type}]`;
+  el.innerHTML=`${mediaHtml(m)||esc(txt)}<div class="meta">${fmtTime.format(new Date(m.ts))}</div>`;
+  t.appendChild(el);
+  if(m.direction==="out" && m.content?.buttons?.length){
+    const bd=document.createElement("div"); bd.className="btns";
+    m.content.buttons.forEach(b=>{ const chip=document.createElement("button"); chip.className="btnchip"; chip.textContent=b.title; chip.onclick=()=>sendButton(b.id,b.title); bd.appendChild(chip); });
+    t.appendChild(bd);
+  }
+  t.scrollTop=t.scrollHeight;
+}
+function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; const u=esc(url); const cap=m.content?.caption?`<div style="margin-top:5px">${esc(m.content.caption)}</div>`:"";
+  if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}"/></a>${cap}`;
+  if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
+  if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
+  return `<a href="${u}" target="_blank" style="color:inherit">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`; }
+async function sendMsg(){
+  const inp=$("msgInput"); const text=inp.value.trim(); if(!text||!st.contactId) return;
+  $("sendBtn").disabled=true;
+  try{
+    if(st.as==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error) toast(error.message,true); else inp.value=""; }
+    else { await callFn("webchat",{ channel_id:st.channelId, text }); inp.value=""; }
+  }catch{ toast("Error de red",true); }
+  $("sendBtn").disabled=false;
+}
+async function sendButton(id,title){ await callFn("webchat",{ channel_id:st.channelId, buttonId:id, text:title }); }
+function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+async function sendAttachment(file){
+  if(!st.contactId) return; if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
+  $("attachBtn").disabled=true; toast("Subiendo…");
+  try{
+    const dataUrl=await fileToDataURL(file);
+    const up=await (await callFn("media-upload",{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataUrl })).json();
+    if(!up.url){ toast(up.detalle||up.error||"No se pudo subir",true); return; }
+    const media={ kind:up.kind, url:up.url, mime:file.type, filename:file.name };
+    if(st.as==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:"", mime:media.mime, filename:media.filename }, status:"sent" }); }
+    else await callFn("webchat",{ channel_id:st.channelId, media });
+  }catch{ toast("Error al adjuntar",true); }
+  finally{ $("attachBtn").disabled=false; }
+}
+function subscribe(){
+  if(st.rt) supa.removeChannel(st.rt);
+  st.rt=supa.channel("nodo-probar").on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages" },(p)=>{ if(p.new.contact_id===st.contactId) renderMsg(p.new); }).subscribe();
+}
+boot();
+</script>
+</body>
+</html>
