@@ -201,11 +201,23 @@ function renderDatos(){
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
   const pop=$("emojiPop"), ebtn=$("emojiBtn");
-  pop.innerHTML=EMOJIS.map(e=>`<button class="btn" data-e="${e}" style="width:36px;height:36px;font-size:20px;padding:0;border:none;background:transparent">${e}</button>`).join("")
-    +`<button class="btn" data-e="" style="width:36px;height:36px;padding:0;border:none;background:transparent;color:var(--muted)">✕</button>`;
+  pop.style.flexDirection="column";
+  pop.innerHTML=`
+    <input id="emojiAny" placeholder="Escribe o pega cualquier emoji…" maxlength="8"
+      style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:16px;outline:none;margin-bottom:6px"/>
+    <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Tip: <b>Win + .</b> (o <b>Ctrl+Cmd+Espacio</b> en Mac) abre el teclado de emojis.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:2px">
+      ${EMOJIS.map(e=>`<button type="button" data-e="${e}" style="width:34px;height:34px;font-size:20px;padding:0;border:none;background:transparent;cursor:pointer;border-radius:8px">${e}</button>`).join("")}
+      <button type="button" data-e="" title="Sin emoji" style="width:34px;height:34px;padding:0;border:none;background:transparent;color:var(--muted);cursor:pointer;border-radius:8px">✕</button>
+    </div>`;
   pop.style.display="none";
-  ebtn.onclick=(ev)=>{ ev.stopPropagation(); pop.style.display=pop.style.display==="none"?"flex":"none"; };
-  pop.querySelectorAll("button[data-e]").forEach(b=> b.onclick=()=>{ st.prod.emoji=b.dataset.e||null; ebtn.textContent=st.prod.emoji||"➕"; pop.style.display="none"; });
+  ebtn.onclick=(ev)=>{ ev.stopPropagation(); pop.style.display=pop.style.display==="none"?"flex":"none"; if(pop.style.display==="flex"){ const inp=$("emojiAny"); if(inp){ inp.value=st.prod.emoji||""; inp.focus(); } } };
+  pop.onclick=(ev)=>ev.stopPropagation();
+  const setEmoji=(v)=>{ st.prod.emoji=(v&&v.trim())||null; ebtn.textContent=st.prod.emoji||"➕"; };
+  pop.querySelectorAll("button[data-e]").forEach(b=> b.onclick=()=>{ setEmoji(b.dataset.e); pop.style.display="none"; });
+  const any=$("emojiAny");
+  any.oninput=(e)=>setEmoji(e.target.value);
+  any.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); pop.style.display="none"; } };
   document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); }catch(_){ toast("JSON inválido",true); } };

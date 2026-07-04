@@ -84,13 +84,27 @@ export function applyTheme(t) { document.documentElement.dataset.theme = t; loca
 applyTheme(getTheme()); // aplicar cuanto antes (evita parpadeo)
 
 // ── Cascarón ────────────────────────────────────────────────────────
-export async function mountShell({ active } = {}) {
+export async function mountShell({ active, minimal } = {}) {
   const subs = [];
   const state = { channelId: null, channels: [] };
 
   const nav = document.createElement("aside");
-  nav.className = "nodo-nav" + (localStorage.getItem("nodo.collapsed") === "1" ? " collapsed" : "");
-  nav.innerHTML = `
+  const startCollapsed = minimal || localStorage.getItem("nodo.collapsed") === "1";
+  nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "") + (minimal ? " minimal" : "");
+  nav.innerHTML = minimal
+    ? `
+    <div class="nodo-brand"><a href="dashboard.html" title="Ir al panel" style="display:flex"><img id="nodoLogo" src="${FALLBACK_LOGO}" alt="" /></a></div>
+    <nav class="nodo-links">
+      <a class="nodo-link" href="dashboard.html" title="Volver al panel">${svg("panel")}<span class="lbl">Panel</span></a>
+      <a class="nodo-link active" href="index.html" title="Bandeja">${svg("inbox")}<span class="lbl">Bandeja</span></a>
+      <a class="nodo-link" href="contactos.html" title="Contactos">${svg("contactos")}<span class="lbl">Contactos</span></a>
+    </nav>
+    <div class="nodo-foot">
+      <a class="nodo-link" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
+      <button class="nodo-link" id="nodoTheme" title="Cambiar tema"></button>
+      <button class="nodo-link" id="nodoLogout" title="Cerrar sesión">${svg("logout")}<span class="lbl">Cerrar sesión</span></button>
+    </div>`
+    : `
     <div class="nodo-brand">
       <img id="nodoLogo" src="${FALLBACK_LOGO}" alt="" />
       <span class="bt" id="nodoBrandName">Nodo</span>
@@ -124,8 +138,9 @@ export async function mountShell({ active } = {}) {
   paintTheme();
   themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); };
 
-  // Comprimir
-  nav.querySelector("#nodoCollapse").onclick = () => {
+  // Comprimir (no existe en modo minimal)
+  const collapseBtn = nav.querySelector("#nodoCollapse");
+  if (collapseBtn) collapseBtn.onclick = () => {
     nav.classList.toggle("collapsed");
     localStorage.setItem("nodo.collapsed", nav.classList.contains("collapsed") ? "1" : "0");
   };
@@ -133,7 +148,7 @@ export async function mountShell({ active } = {}) {
   // Logout
   nav.querySelector("#nodoLogout").onclick = async () => { await supa.auth.signOut(); location.href = "index.html"; };
 
-  // Selector de bot + logo dinámico
+  // Selector de bot + logo dinámico (el select no existe en modo minimal)
   const botSel = nav.querySelector("#nodoBot");
   const logo = nav.querySelector("#nodoLogo");
   const brandName = nav.querySelector("#nodoBrandName");
@@ -141,23 +156,25 @@ export async function mountShell({ active } = {}) {
   let { data, error } = await supa.from("channels").select("id,nombre,logo_url").eq("activo", true).order("nombre");
   if (error) ({ data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre"));
   state.channels = data || [];
-  botSel.innerHTML = "";
-  state.channels.forEach((c) => {
-    const o = document.createElement("option"); o.value = c.id; o.textContent = c.nombre; botSel.appendChild(o);
-  });
+  if (botSel) {
+    botSel.innerHTML = "";
+    state.channels.forEach((c) => {
+      const o = document.createElement("option"); o.value = c.id; o.textContent = c.nombre; botSel.appendChild(o);
+    });
+  }
   let saved = localStorage.getItem("nodo.channelId");
   if (!state.channels.find((c) => c.id === saved)) saved = state.channels[0]?.id || null;
   state.channelId = saved;
-  if (saved) botSel.value = saved;
+  if (botSel && saved) botSel.value = saved;
 
   const paintBrand = () => {
     const c = state.channels.find((x) => x.id === state.channelId);
-    logo.src = (c && c.logo_url) ? c.logo_url : FALLBACK_LOGO;
-    brandName.textContent = c ? c.nombre : "Nodo";
+    if (logo) logo.src = (c && c.logo_url) ? c.logo_url : FALLBACK_LOGO;
+    if (brandName) brandName.textContent = c ? c.nombre : "Nodo";
   };
   paintBrand();
 
-  botSel.onchange = () => {
+  if (botSel) botSel.onchange = () => {
     state.channelId = botSel.value;
     localStorage.setItem("nodo.channelId", state.channelId);
     paintBrand();
@@ -172,7 +189,7 @@ export async function mountShell({ active } = {}) {
       if (!state.channels.find((c) => c.id === id)) return;
       state.channelId = id;
       localStorage.setItem("nodo.channelId", id);
-      botSel.value = id;
+      if (botSel) botSel.value = id;
       paintBrand();
       if (!silent) subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
     },

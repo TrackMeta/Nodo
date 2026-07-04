@@ -159,6 +159,10 @@
 <!-- ── APP ── -->
 <div id="app" class="hidden">
   <div class="list">
+    <div class="top" style="gap:10px">
+      <span style="font-weight:700;font-size:15px;letter-spacing:-.3px">Bandeja</span>
+      <select class="sel" id="botSel" title="Bot / número activo" style="margin-left:auto;flex:1;max-width:none"></select>
+    </div>
     <div class="top" style="gap:8px;flex-wrap:wrap">
       <div class="modewrap" id="modeToggle">
         <button class="modebtn" data-mode="humano">👤 Humano</button>
@@ -234,9 +238,14 @@ async function boot() {
   const { data: { session } } = await supa.auth.getSession();
   if (!session) { $("login").classList.remove("hidden"); $("app").classList.add("hidden"); return; }
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
-  const shell = await mountShell({ active: "inbox" });
+  const shell = await mountShell({ active: "inbox", minimal: true });
   state.channelId = shell.channelId;
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadConversations(); });
+  // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
+  const botSel = $("botSel");
+  botSel.innerHTML = shell.channels.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
+  if (shell.channelId) botSel.value = shell.channelId;
+  botSel.onchange = () => shell.setChannel(botSel.value);
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; if($("botSel")) $("botSel").value = id; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadConversations(); });
   await loadTestFlows();
   await loadConversations();
   subscribeRealtime();
@@ -244,9 +253,11 @@ async function boot() {
 
 // ── Conversaciones ──
 async function loadConversations() {
-  const { data } = await supa.from("conversations")
-    .select("contact_id,no_leidos,updated_at,expira_at,requiere_humano,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage)")
+  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,requiere_humano,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage${p?",product:products(emoji)":""})`;
+  let { data, error } = await supa.from("conversations").select(sel(true))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(100);
+  if (error) { ({ data } = await supa.from("conversations").select(sel(false))
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(100)); }
   state.convs = (data||[]).filter(cv=>cv.contact);
   renderConversations();
 }
@@ -267,8 +278,9 @@ function renderConversations(){
     const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
       + (cv.requiere_humano?'<span class="idot paused">⏳ Seguimiento</span>':'')
       + (bought?'<span class="idot bought">★ Compró</span>':'');
+    const pEmoji = c.product && c.product.emoji ? `<span class="av-emoji">${esc(c.product.emoji)}</span>` : "";
     el.innerHTML = `
-      <div class="avwrap"><div class="av">${initials(c.nombre, c.wa_id)}</div></div>
+      <div class="avwrap"><div class="av">${initials(c.nombre, c.wa_id)}</div>${pEmoji}</div>
       <div class="body">
         <div class="r1"><span class="nm">${esc(c.nombre||c.wa_id)}</span><span class="tm">${rel(cv.updated_at)}</span></div>
         <div class="r1"><span class="pv">${esc(c.last_input||"")}</span>${cv.no_leidos>0?`<span class="badge">${cv.no_leidos}</span>`:""}</div>
