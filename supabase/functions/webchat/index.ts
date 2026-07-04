@@ -23,16 +23,21 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { channel_id?: string; text?: string; buttonId?: string; reset?: boolean };
+  let body: {
+    channel_id?: string; text?: string; buttonId?: string; reset?: boolean;
+    media?: { kind?: string; url?: string; mime?: string; caption?: string };
+  };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, text, buttonId, reset } = body;
+  const { channel_id, text, buttonId, reset, media } = body;
   if (!channel_id) return json({ error: "falta_channel" }, 400);
+  const mediaKind = media?.url ? (media.kind || "document") : null;
 
   // Contacto de prueba del canal.
   const { data: contact } = await db.from("contacts").upsert(
     {
       channel_id, wa_id: TEST_WA_ID, nombre: "🧪 Prueba (webchat)",
-      last_input: text ?? buttonId ?? "", last_input_type: buttonId ? "interactive" : "text",
+      last_input: media?.caption ?? text ?? buttonId ?? (mediaKind ? `[${mediaKind}]` : ""),
+      last_input_type: mediaKind ?? (buttonId ? "interactive" : "text"),
       ultimo_mensaje_at: new Date().toISOString(),
       ultimo_mensaje_cliente_at: new Date().toISOString(),
     },
@@ -58,18 +63,20 @@ Deno.serve(async (req) => {
   }
 
   // Guardar el mensaje entrante (del "cliente").
+  const content = mediaKind
+    ? { media_url: media!.url, caption: media?.caption ?? "", mime: media?.mime ?? "" }
+    : (buttonId ? { id: buttonId, title: body.text ?? buttonId } : { text: text ?? "" });
   await db.from("messages").insert({
     channel_id, contact_id: contactId, direction: "in",
-    type: buttonId ? "interactive" : "text",
-    content: buttonId ? { id: buttonId, title: body.text ?? buttonId } : { text: text ?? "" },
-    status: "delivered",
+    type: mediaKind ?? (buttonId ? "interactive" : "text"),
+    content, status: "delivered",
   });
 
   // Correr el motor.
   try {
     const event = buttonId
       ? { type: "button" as const, buttonId }
-      : { type: "message" as const, text: text ?? "", msgType: "text" };
+      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text" };
     await runEngine(db, channel_id, contactId, event);
   } catch (e) {
     console.error("[webchat] engine error:", e);

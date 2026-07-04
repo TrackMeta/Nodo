@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets } from "../_shared/db.ts";
-import { sendText, MetaApiError } from "../_shared/meta.ts";
+import { sendText, sendMedia, MetaApiError } from "../_shared/meta.ts";
 
 const db = serviceClient();
 
@@ -23,10 +23,14 @@ Deno.serve(async (req) => {
   if (!member) return json({ error: "not_member" }, 403);
 
   // ── Body ──────────────────────────────────────────────────────────
-  let body: { channel_id?: string; contact_id?: string; text?: string };
+  let body: {
+    channel_id?: string; contact_id?: string; text?: string;
+    media?: { kind?: string; url?: string; caption?: string; filename?: string };
+  };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, contact_id, text } = body;
-  if (!channel_id || !contact_id || !text?.trim()) {
+  const { channel_id, contact_id, text, media } = body;
+  const mediaKind = media?.url ? (["image", "audio", "video", "document"].includes(media.kind || "") ? media.kind! : "document") : null;
+  if (!channel_id || !contact_id || (!text?.trim() && !mediaKind)) {
     return json({ error: "faltan_campos" }, 400);
   }
 
@@ -56,11 +60,19 @@ Deno.serve(async (req) => {
   // Pausar el bot para este contacto (humano interviene).
   await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
 
+  const caption = text?.trim() || "";
+  const msgType = mediaKind ?? "text";
+  const outContent = mediaKind
+    ? { media_url: media!.url, caption, mime: "", filename: media?.filename }
+    : { text: caption };
+
   try {
-    const wamid = await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, text.trim());
+    const wamid = mediaKind
+      ? await sendMedia(channel.phone_number_id, secrets.access_token, contact.wa_id, mediaKind as any, media!.url!, caption, media?.filename)
+      : await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, caption);
     await db.from("messages").insert({
-      channel_id, contact_id, direction: "out", type: "text",
-      content: { text: text.trim() }, wamid, status: "sent",
+      channel_id, contact_id, direction: "out", type: msgType,
+      content: outContent, wamid, status: "sent",
     });
     // El operador está atendiendo → marcar leído.
     await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
@@ -70,8 +82,8 @@ Deno.serve(async (req) => {
     const meta = e instanceof MetaApiError ? e.meta : { message: String(e) };
     console.error("[send] fallo:", meta);
     await db.from("messages").insert({
-      channel_id, contact_id, direction: "out", type: "text",
-      content: { text: text.trim() }, status: "failed", error: meta,
+      channel_id, contact_id, direction: "out", type: msgType,
+      content: outContent, status: "failed", error: meta,
     });
     return json({ error: "meta_error", detalle: meta }, 502);
   }

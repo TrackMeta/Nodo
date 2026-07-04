@@ -53,6 +53,10 @@ verify_jwt = true
 [functions.channel-config]
 verify_jwt = true
 
+# media-upload: sube adjuntos del panel al bucket público `media`.
+[functions.media-upload]
+verify_jwt = true
+
 # scheduler: tick interno (lo llama el cron). Protegido por x-scheduler-secret.
 [functions.scheduler]
 verify_jwt = false

@@ -83,6 +83,11 @@
   .composer input:focus{border-color:var(--brand)}
   .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center}
   .send:disabled{opacity:.4}
+  .attach{width:40px;height:42px;flex:none;border:none;background:transparent;color:var(--muted);font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .attach:hover{color:var(--brand);background:var(--surface-2)}
+  .msg img,.msg video{max-width:230px;border-radius:10px;display:block}
+  .msg audio{max-width:230px}
+  .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
   .testbtn{background:var(--brand-bg);color:var(--brand);border:1px solid var(--border);border-radius:10px;height:36px;padding:0 12px;font-size:13px;font-weight:600;white-space:nowrap}
   .testbtn:hover{border-color:var(--brand)}
@@ -170,6 +175,8 @@
         <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
       </div>
       <div class="composer">
+        <button class="attach" id="attachBtn" title="Adjuntar imagen, audio o archivo">📎</button>
+        <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
         <input id="msgInput" placeholder="Escribe un mensaje…" autocomplete="off" />
         <button class="send" id="sendBtn" title="Enviar">➤</button>
       </div>
@@ -337,8 +344,9 @@ function renderMsg(m) {
   const el = document.createElement("div");
   el.className = "msg " + (m.direction === "in" ? "in-m" : "out-m");
   el.dataset.id = m.id;
+  const mh = mediaHtml(m);
   const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
-  el.innerHTML = `${esc(txt)}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
+  el.innerHTML = `${mh || esc(txt)}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
   t.appendChild(el);
   // En modo prueba, los botones del bot se pueden tocar (como el cliente).
   if (m.direction === "out" && m.content?.buttons?.length && state.isTest) {
@@ -354,6 +362,15 @@ function renderMsg(m) {
   t.scrollTop = t.scrollHeight;
 }
 function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"⚠ falló",pending:"…"}[s]||s; }
+function mediaHtml(m){
+  const url = m.content?.media_url; if(!url) return null;
+  const cap = m.content?.caption ? `<div style="margin-top:5px">${esc(m.content.caption)}</div>` : "";
+  const u = esc(url);
+  if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" alt=""/></a>${cap}`;
+  if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
+  if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
+  return `<a class="file" href="${u}" target="_blank">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`;
+}
 
 async function markRead() {
   await supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", state.contactId);
@@ -429,6 +446,39 @@ async function sendMsg() {
     }
   } catch { toast("Error de red", true); }
   $("sendBtn").disabled = false;
+}
+
+// ── Adjuntar media (imagen / audio / video / archivo) ──
+$("attachBtn").addEventListener("click", () => { if (state.contactId) $("fileInput").click(); });
+$("fileInput").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) sendAttachment(f); });
+function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+async function sendAttachment(file){
+  if (!state.contactId) return;
+  if (file.size > 16*1024*1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+  $("attachBtn").disabled = true; toast("Subiendo…");
+  try {
+    const dataUrl = await fileToDataURL(file);
+    const up = await (await callFn("media-upload", { channel_id: state.channelId, filename: file.name, content_type: file.type, data: dataUrl })).json();
+    if (!up.url) { toast(up.detalle || up.error || "No se pudo subir", true); return; }
+    const media = { kind: up.kind, url: up.url, mime: file.type, filename: file.name };
+    if (state.isTest) {
+      if (state.testAs === "bot") {
+        const { error } = await supa.from("messages").insert({
+          channel_id: state.channelId, contact_id: state.contactId, direction: "out",
+          type: media.kind, content: { media_url: media.url, caption: "", mime: media.mime, filename: media.filename }, status: "sent",
+        });
+        if (error) toast(error.message, true);
+      } else {
+        await callFn("webchat", { channel_id: state.channelId, media });
+      }
+    } else {
+      const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, media });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "Error al enviar", true); }
+      else setBotPill(false);
+    }
+  } catch { toast("Error al adjuntar", true); }
+  finally { $("attachBtn").disabled = false; }
 }
 
 // ── Realtime ──

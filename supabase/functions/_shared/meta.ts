@@ -24,25 +24,29 @@ export async function sendText(
   toWaId: string,
   text: string,
 ): Promise<string> {
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: toWaId,
-      type: "text",
-      text: { preview_url: false, body: text },
-    }),
-  });
-
   return await postMessage(phoneNumberId, accessToken, {
     messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
     type: "text", text: { preview_url: false, body: text },
+  });
+}
+
+// Envía media por URL pública. kind ∈ image|audio|video|document. Devuelve wamid.
+export async function sendMedia(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  kind: "image" | "audio" | "video" | "document",
+  link: string,
+  caption?: string,
+  filename?: string,
+): Promise<string> {
+  const media: Record<string, unknown> = { link };
+  // El audio no admite caption en la Cloud API.
+  if (caption && kind !== "audio") media.caption = caption;
+  if (kind === "document" && filename) media.filename = filename;
+  return await postMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
+    type: kind, [kind]: media,
   });
 }
 
