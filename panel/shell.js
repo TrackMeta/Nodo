@@ -41,45 +41,64 @@ const P = {
   panel:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
   logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
   user:'<circle cx="12" cy="8" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/>',
+  chevron:'<path d="m6 9 6 6 6-6"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${P[n]||""}</svg>`;
 
-const NAV = [
-  { sec:"Conversaciones" },
-  { id:"inbox",       label:"Bandeja",              href:"index.html",      icon:"inbox" },
-  { id:"contactos",   label:"Contactos",            href:"contactos.html",  icon:"contactos" },
-  { id:"campanas",    label:"Campañas",             href:"campanas.html",   icon:"campanas" },
-  { id:"respuestas",  label:"Respuestas rápidas",   href:"respuestas.html", icon:"respuestas" },
-  { sec:"Automatización" },
-  { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
-  { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
-  { id:"disparadores",label:"Disparadores",         href:"disparadores.html", icon:"disparadores" },
-  { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
-  { sec:"Catálogo & datos" },
-  { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
-  { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
-  { id:"campos",      label:"Campos personalizados",href:"campos.html",     icon:"campos" },
-  { id:"etiquetas",   label:"Etiquetas",            href:"etiquetas.html",  icon:"etiquetas" },
-  { sec:"Análisis & ajustes" },
-  { id:"dashboard",   label:"Dashboard",            href:"dashboard.html",  icon:"dashboard" },
-  { id:"canales",     label:"Canales",              href:"canales.html",    icon:"canales" },
-  { id:"config",      label:"Configuración",        href:"config.html",     icon:"config" },
+// Navegación agrupada (DESIGN_SYSTEM.md §7.2). El grupo sin `sec` va
+// arriba sin etiqueta; los demás son colapsables (estado en localStorage).
+const NAV_GROUPS = [
+  { key:"top", items:[
+    { id:"dashboard",   label:"Dashboard",            href:"dashboard.html",  icon:"dashboard" },
+    { id:"inbox",       label:"Bandeja",              href:"index.html",      icon:"inbox", cta:true },
+  ]},
+  { key:"conv", sec:"Conversaciones", items:[
+    { id:"contactos",   label:"Contactos",            href:"contactos.html",  icon:"contactos" },
+    { id:"respuestas",  label:"Respuestas rápidas",   href:"respuestas.html", icon:"respuestas" },
+    { id:"campanas",    label:"Campañas",             href:"campanas.html",   icon:"campanas" },
+  ]},
+  { key:"auto", sec:"Automatización", items:[
+    { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
+    { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
+    { id:"disparadores",label:"Disparadores",         href:"disparadores.html", icon:"disparadores" },
+    { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
+  ]},
+  { key:"cat", sec:"Catálogo", items:[
+    { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
+    { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
+    { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
+    { id:"etiquetas",   label:"Etiquetas",            href:"etiquetas.html",  icon:"etiquetas" },
+  ]},
+  { key:"conf", sec:"Configuración", items:[
+    { id:"canales",     label:"Canales",              href:"canales.html",    icon:"canales" },
+    { id:"config",      label:"Ajustes",              href:"config.html",     icon:"config" },
+  ]},
 ];
 
-// ── toast global ────────────────────────────────────────────────────
+// ── grupos del sidebar colapsados (persistencia) ────────────────────
+function closedGroups() {
+  try { return JSON.parse(localStorage.getItem("nodo.navClosed") || "[]"); } catch { return []; }
+}
+function toggleGroup(key, closed) {
+  const set = new Set(closedGroups());
+  closed ? set.add(key) : set.delete(key);
+  localStorage.setItem("nodo.navClosed", JSON.stringify([...set]));
+}
+
+// ── toast global (DS §12: esquina inferior derecha, nivel 2) ────────
 export function toast(msg, err) {
   let t = document.getElementById("nodo-toast");
   if (!t) {
     t = document.createElement("div"); t.id = "nodo-toast";
-    t.style.cssText = "position:fixed;bottom:22px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;font-size:13px;font-weight:500;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9999;border:1px solid";
+    t.style.cssText = "position:fixed;bottom:24px;right:24px;display:flex;align-items:center;gap:9px;padding:10px 16px;border-radius:12px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;border:1px solid var(--border-strong,#334);background:var(--surface,#151E32);color:var(--text,#F1F5F9);box-shadow:var(--shadow-2,0 8px 24px rgba(0,0,0,.35));max-width:min(420px,calc(100vw - 48px))";
+    t.innerHTML = '<span id="nodo-toast-dot" style="width:8px;height:8px;border-radius:50%;flex:none"></span><span id="nodo-toast-msg"></span>';
     document.body.appendChild(t);
   }
-  t.textContent = msg;
-  t.style.background = err ? "var(--red-bg,#2c1615)" : "var(--green-bg,#10281d)";
-  t.style.color = err ? "var(--red,#e2564a)" : "var(--green,#22c079)";
-  t.style.borderColor = err ? "var(--red,#e2564a)" : "var(--green,#22c079)";
-  t.style.opacity = "1";
-  clearTimeout(t._h); t._h = setTimeout(() => (t.style.opacity = "0"), 3200);
+  t.querySelector("#nodo-toast-msg").textContent = msg;
+  t.querySelector("#nodo-toast-dot").style.background = err ? "var(--red,#EF4444)" : "var(--green,#10B981)";
+  t.style.opacity = "1"; t.style.transform = "translateY(0)";
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(8px)"; }, 4000);
 }
 
 // ── tema ────────────────────────────────────────────────────────────
@@ -115,14 +134,18 @@ export async function mountShell({ active, minimal } = {}) {
     </div>
     <div class="nodo-bot"><select id="nodoBot" title="Bot / número activo"></select></div>
     <nav class="nodo-links">
-      ${NAV.map((it) => it.sec
-        ? `<div class="nodo-sec">${it.sec}</div>`
-        : it.soon
-          ? `<button class="nodo-link soon" title="${it.label} · próximamente" disabled style="opacity:.45;cursor:default">${svg(it.icon)}<span class="lbl">${it.label}</span></button>`
-          : it.id === "inbox"
-            ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
-            : `<a class="nodo-link${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
-      ).join("")}
+      ${NAV_GROUPS.map((g) => {
+        const items = g.items.map((it) => it.cta
+          ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
+          : `<a class="nodo-link${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
+        ).join("");
+        if (!g.sec) return items;
+        const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
+        return `<div class="nodo-group${closed ? " closed" : ""}" data-g="${g.key}">
+          <button class="nodo-sec" type="button">${g.sec}${svg("chevron")}</button>
+          <div class="nodo-gitems">${items}</div>
+        </div>`;
+      }).join("")}
     </nav>
     <div class="nodo-foot">
       <a class="nodo-link${active === "perfil" ? " active" : ""}" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
@@ -141,6 +164,15 @@ export async function mountShell({ active, minimal } = {}) {
   };
   paintTheme();
   themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); };
+
+  // Grupos colapsables (persisten en localStorage)
+  nav.querySelectorAll(".nodo-group > .nodo-sec").forEach((btn) => {
+    btn.onclick = () => {
+      const g = btn.parentElement;
+      g.classList.toggle("closed");
+      toggleGroup(g.dataset.g, g.classList.contains("closed"));
+    };
+  });
 
   // Comprimir (no existe en modo minimal)
   const collapseBtn = nav.querySelector("#nodoCollapse");
