@@ -108,17 +108,43 @@ export function getTheme() { return localStorage.getItem("nodo.theme") || "dark"
 export function applyTheme(t) { document.documentElement.dataset.theme = t; localStorage.setItem("nodo.theme", t); }
 applyTheme(getTheme()); // aplicar cuanto antes (evita parpadeo)
 
+// ── Marca cacheada (evita el parpadeo del logo al navegar) ──────────
+// Guardamos el logo/nombre del bot activo para pintarlos al instante en
+// la siguiente página, sin esperar la consulta a Supabase.
+function readBrandCache() {
+  try { return JSON.parse(localStorage.getItem("nodo.brand") || "null"); } catch { return null; }
+}
+function writeBrandCache(b) {
+  try { localStorage.setItem("nodo.brand", JSON.stringify(b)); } catch {}
+}
+// Favicon dinámico = logo del bot elegido.
+export function setFavicon(href) {
+  if (!href) return;
+  document.querySelectorAll('link[rel~="icon"]').forEach((l) => l.parentNode.removeChild(l));
+  const l = document.createElement("link");
+  l.rel = "icon"; l.href = href;
+  document.head.appendChild(l);
+}
+
 // ── Cascarón ────────────────────────────────────────────────────────
 export async function mountShell({ active, minimal } = {}) {
   const subs = [];
   const state = { channelId: null, channels: [] };
+
+  // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
+  const savedId = localStorage.getItem("nodo.channelId");
+  const cachedBrand = readBrandCache();
+  const brandHit = cachedBrand && cachedBrand.id === savedId;
+  const initLogo = brandHit && cachedBrand.logo ? cachedBrand.logo : FALLBACK_LOGO;
+  const initName = brandHit && cachedBrand.name ? cachedBrand.name : "Nodo";
+  setFavicon(initLogo); // aplica el favicon del bot cuanto antes
 
   const nav = document.createElement("aside");
   const startCollapsed = minimal || localStorage.getItem("nodo.collapsed") === "1";
   nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "") + (minimal ? " minimal" : "");
   nav.innerHTML = minimal
     ? `
-    <div class="nodo-brand"><a href="dashboard.html" title="Ir al panel" style="display:flex"><img id="nodoLogo" src="${FALLBACK_LOGO}" alt="" /></a></div>
+    <div class="nodo-brand"><a href="dashboard.html" title="Ir al panel" style="display:flex"><img id="nodoLogo" src="${initLogo}" alt="" /></a></div>
     <nav class="nodo-links">
       <a class="nodo-link" href="dashboard.html" title="Volver al panel">${svg("panel")}<span class="lbl">Panel</span></a>
       <a class="nodo-link active" href="index.html" title="Bandeja">${svg("inbox")}<span class="lbl">Bandeja</span></a>
@@ -131,8 +157,8 @@ export async function mountShell({ active, minimal } = {}) {
     </div>`
     : `
     <div class="nodo-brand">
-      <img id="nodoLogo" src="${FALLBACK_LOGO}" alt="" />
-      <span class="bt" id="nodoBrandName">Nodo</span>
+      <img id="nodoLogo" src="${initLogo}" alt="" />
+      <span class="bt" id="nodoBrandName">${initName}</span>
     </div>
     <div class="nodo-bot"><select id="nodoBot" title="Bot / número activo"></select></div>
     <nav class="nodo-links">
@@ -207,8 +233,12 @@ export async function mountShell({ active, minimal } = {}) {
 
   const paintBrand = () => {
     const c = state.channels.find((x) => x.id === state.channelId);
-    if (logo) logo.src = (c && c.logo_url) ? c.logo_url : FALLBACK_LOGO;
-    if (brandName) brandName.textContent = c ? c.nombre : "Nodo";
+    const src = (c && c.logo_url) ? c.logo_url : FALLBACK_LOGO;
+    const name = c ? c.nombre : "Nodo";
+    if (logo) logo.src = src;
+    if (brandName) brandName.textContent = name;
+    setFavicon(src); // favicon = logo del bot activo
+    if (c) writeBrandCache({ id: c.id, logo: c.logo_url || null, name }); // caché anti-parpadeo
   };
   paintBrand();
 
