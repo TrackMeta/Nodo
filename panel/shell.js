@@ -43,6 +43,8 @@ const P = {
   logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
   user:'<circle cx="12" cy="8" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/>',
   chevron:'<path d="m6 9 6 6 6-6"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${P[n]||""}</svg>`;
 
@@ -403,7 +405,14 @@ export async function mountShell({ active, minimal } = {}) {
       <span class="bt" id="nodoBrandName">${initName}</span>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú">${svg("panel")}</button>
     </div>
-    <div class="nodo-bot"><select id="nodoBot" title="Bot / número activo"></select></div>
+    <div class="nodo-bot">
+      <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
+        <img class="nb-logo" id="nodoBotLogo" src="${initLogo}" alt="" />
+        <span class="nb-name" id="nodoBotName">${initName}</span>
+        <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="nodo-botpop" id="nodoBotPop" hidden></div>
+    </div>
     <nav class="nodo-primary">${primaryHTML}</nav>
     <nav class="nodo-links">${groupsHTML}</nav>
     <div class="nodo-foot">
@@ -453,25 +462,43 @@ export async function mountShell({ active, minimal } = {}) {
   loadMe(nav);
 
   // Selector de bot + logo dinámico (el select no existe en modo minimal)
-  const botSel = nav.querySelector("#nodoBot");
+  const botBtn = nav.querySelector("#nodoBotBtn");
+  const botLogo = nav.querySelector("#nodoBotLogo");
+  const botName = nav.querySelector("#nodoBotName");
+  const botPop = nav.querySelector("#nodoBotPop");
   const logo = nav.querySelector("#nodoLogo");
   const brandName = nav.querySelector("#nodoBrandName");
-  S.botSel = botSel; S.logo = logo; S.brandName = brandName;
+  S.botBtn = botBtn; S.botLogo = botLogo; S.botName = botName; S.botPop = botPop; S.logo = logo; S.brandName = brandName;
   // Resiliente: si la columna logo_url aún no está migrada en la BD, reintenta sin ella.
   let { data, error } = await supa.from("channels").select("id,nombre,logo_url").eq("activo", true).order("nombre");
   if (error) ({ data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre"));
   S.channels = data || [];
-  if (botSel) {
-    botSel.innerHTML = "";
-    S.channels.forEach((c) => {
-      const o = document.createElement("option"); o.value = c.id; o.textContent = c.nombre; botSel.appendChild(o);
-    });
-  }
   let saved = localStorage.getItem("nodo.channelId");
   if (!S.channels.find((c) => c.id === saved)) saved = S.channels[0]?.id || null;
   S.channelId = saved;
   S.loaded = true;
-  if (botSel && saved) botSel.value = saved;
+
+  // Selector de bot personalizado (con logos + "Crear nuevo bot")
+  const escBot = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const closeBotPop = () => { if (botPop) { botPop.hidden = true; if (botBtn) botBtn.classList.remove("open"); } };
+  const renderBotPop = () => {
+    if (!botPop) return;
+    botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
+      + `<a class="nb-create" href="canales.html">${svg("plus")}<span>Crear nuevo bot</span></a>`;
+    botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = () => { S.api.setChannel(b.dataset.id); closeBotPop(); }; });
+    const cr = botPop.querySelector(".nb-create"); if (cr) cr.addEventListener("click", closeBotPop);
+  };
+  if (botBtn) botBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (botPop.hidden) { renderBotPop(); botPop.hidden = false; botBtn.classList.add("open"); } else closeBotPop();
+  };
+  // Cerrar el popover al hacer clic fuera (listener único por documento).
+  if (!S.botDocClose) {
+    S.botDocClose = true;
+    document.addEventListener("click", (e) => {
+      if (S.botPop && !S.botPop.hidden && !e.target.closest(".nodo-bot")) { S.botPop.hidden = true; if (S.botBtn) S.botBtn.classList.remove("open"); }
+    });
+  }
 
   const paintBrand = () => {
     const c = S.channels.find((x) => x.id === S.channelId);
@@ -479,18 +506,13 @@ export async function mountShell({ active, minimal } = {}) {
     const name = c ? c.nombre : "Nodo";
     if (S.logo) S.logo.src = src;
     if (S.brandName) S.brandName.textContent = name;
+    if (S.botLogo) S.botLogo.src = src;
+    if (S.botName) S.botName.textContent = name;
     setFavicon(src); // favicon = logo del bot activo
     if (c) writeBrandCache({ id: c.id, logo: c.logo_url || null, name }); // caché anti-parpadeo
   };
   S.paintBrand = paintBrand;
   paintBrand();
-
-  if (botSel) botSel.onchange = () => {
-    S.channelId = botSel.value;
-    localStorage.setItem("nodo.channelId", S.channelId);
-    paintBrand();
-    S.subs.forEach((cb) => { try { cb(S.channelId); } catch (e) { console.error(e); } });
-  };
 
   S.api = {
     get channelId() { return S.channelId; },
@@ -501,7 +523,6 @@ export async function mountShell({ active, minimal } = {}) {
       if (!S.channels.find((c) => c.id === id)) return;
       S.channelId = id;
       localStorage.setItem("nodo.channelId", id);
-      if (S.botSel) S.botSel.value = id;
       paintBrand();
       if (!silent) S.subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
     },
