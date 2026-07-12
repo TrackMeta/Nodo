@@ -263,26 +263,39 @@ function fxDraw() {
   const cx = FX.cx;
   cx.clearRect(0, 0, FX.W, FX.H);
   if (FX.level === "off") return;
-  const maxD = 140 * FX.DPR;
+  const maxD = 140 * FX.DPR, mR = 190 * FX.DPR;
+  const mx = FX.mouse.x, my = FX.mouse.y, hasM = mx > -9000;
   FX.t = (FX.t || 0) + 1;
-  // aristas (constelación)
+  // aristas base + refuerzo cerca del cursor
   for (let i = 0; i < FX.nodes.length; i++) for (let j = i + 1; j < FX.nodes.length; j++) {
     const a = FX.nodes[i], b = FX.nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
     if (d < maxD) {
+      let al = .12 * (1 - d / maxD);
+      if (hasM) { const md = Math.hypot((a.x + b.x) / 2 - mx, (a.y + b.y) / 2 - my); if (md < mR) al += .4 * (1 - md / mR); }
       cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y);
-      cx.strokeStyle = `rgba(${a.c},${.12 * (1 - d / maxD)})`; cx.lineWidth = 1 * FX.DPR; cx.stroke();
+      cx.strokeStyle = `rgba(${a.c},${al})`; cx.lineWidth = 1 * FX.DPR; cx.stroke();
     }
   }
-  // estrellas HD: halo (sprite) + núcleo nítido + parpadeo sutil
+  // constelación al cursor: une entre sí las estrellas cercanas al puntero
+  if (hasM) {
+    const near = [];
+    for (const p of FX.nodes) if (Math.hypot(p.x - mx, p.y - my) < mR) near.push(p);
+    for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) {
+      const a = near[i], b = near[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < mR) { cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.strokeStyle = `rgba(${a.c},${.18 * (1 - d / mR)})`; cx.lineWidth = 1 * FX.DPR; cx.stroke(); }
+    }
+  }
+  // estrellas HD: halo + núcleo nítido + parpadeo (brillan cerca del cursor)
   for (const p of FX.nodes) {
     p.x += p.vx; p.y += p.vy;
     if (p.y < -14) p.y = FX.H + 14; if (p.x < -14) p.x = FX.W + 14; if (p.x > FX.W + 14) p.x = -14;
     const tw = .72 + .28 * Math.sin(FX.t * p.tw + p.ph);
-    const size = p.r * 7;
-    cx.globalAlpha = tw;
+    const boost = hasM ? Math.max(0, 1 - Math.hypot(p.x - mx, p.y - my) / mR) : 0;
+    const size = p.r * 7 * (1 + boost * .5);
+    cx.globalAlpha = Math.min(1, tw + boost * .4);
     cx.drawImage(FX.sprites[p.c] || FX.sig, p.x - size / 2, p.y - size / 2, size, size);
-    cx.globalAlpha = Math.min(1, tw + .18);
-    cx.beginPath(); cx.arc(p.x, p.y, p.r * .9, 0, 7); cx.fillStyle = "rgba(234,241,255,.95)"; cx.fill();
+    cx.globalAlpha = Math.min(1, tw + .18 + boost * .3);
+    cx.beginPath(); cx.arc(p.x, p.y, p.r * .9 * (1 + boost * .3), 0, 7); cx.fillStyle = "rgba(234,241,255,.95)"; cx.fill();
   }
   cx.globalAlpha = 1;
   // señales viajando por las conexiones (datos fluyendo)
@@ -329,6 +342,8 @@ function ensureFX() {
     FX.built = true;
     fxBuildSprites(); fxResize();
     addEventListener("resize", fxResize, { passive: true });
+    addEventListener("pointermove", (e) => { FX.mouse.x = e.clientX * FX.DPR; FX.mouse.y = e.clientY * FX.DPR; }, { passive: true });
+    document.addEventListener("mouseleave", () => { FX.mouse.x = -1e4; FX.mouse.y = -1e4; });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") fxStop(); else applyEffects();
     });
@@ -357,6 +372,18 @@ export async function mountShell({ active, minimal } = {}) {
   const nav = document.createElement("aside");
   const startCollapsed = minimal || localStorage.getItem("nodo.collapsed") === "1";
   nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "") + (minimal ? " minimal" : "");
+  // Ítems: el grupo primario (Bandeja/Dashboard/Pedidos) va FIJO fuera del
+  // scroll; los demás grupos van dentro del área scrolleable.
+  const itemHTML = (it) => it.cta
+    ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
+    : `<a class="nodo-link${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`;
+  const topGroup = NAV_GROUPS.find((g) => !g.sec);
+  const primaryHTML = (topGroup ? topGroup.items : []).map(itemHTML).join("");
+  const groupsHTML = NAV_GROUPS.filter((g) => g.sec).map((g) => {
+    const items = g.items.map(itemHTML).join("");
+    const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
+    return `<div class="nodo-group${closed ? " closed" : ""}" data-g="${g.key}"><button class="nodo-sec" type="button">${g.sec}${svg("chevron")}</button><div class="nodo-gitems">${items}</div></div>`;
+  }).join("");
   nav.innerHTML = minimal
     ? `
     <div class="nodo-brand"><a href="dashboard.html" title="Ir al panel" style="display:flex"><img id="nodoLogo" src="${initLogo}" alt="" /></a></div>
@@ -374,30 +401,19 @@ export async function mountShell({ active, minimal } = {}) {
     <div class="nodo-brand">
       <img id="nodoLogo" src="${initLogo}" alt="" />
       <span class="bt" id="nodoBrandName">${initName}</span>
+      <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú">${svg("panel")}</button>
     </div>
     <div class="nodo-bot"><select id="nodoBot" title="Bot / número activo"></select></div>
-    <nav class="nodo-links">
-      ${NAV_GROUPS.map((g) => {
-        const items = g.items.map((it) => it.cta
-          ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
-          : `<a class="nodo-link${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
-        ).join("");
-        if (!g.sec) return items;
-        const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
-        return `<div class="nodo-group${closed ? " closed" : ""}" data-g="${g.key}">
-          <button class="nodo-sec" type="button">${g.sec}${svg("chevron")}</button>
-          <div class="nodo-gitems">${items}</div>
-        </div>`;
-      }).join("")}
-    </nav>
+    <nav class="nodo-primary">${primaryHTML}</nav>
+    <nav class="nodo-links">${groupsHTML}</nav>
     <div class="nodo-foot">
-      <button class="nodo-link" id="nodoTheme" title="Cambiar tema"></button>
-      <button class="nodo-link" id="nodoCollapse" title="Comprimir menú">${svg("panel")}<span class="lbl">Comprimir</span></button>
-      <a class="nodo-user${active === "perfil" ? " active" : ""}" data-nav="perfil" href="perfil.html" title="Mi perfil y cuenta">
-        <span class="nu-av" id="nodoUserAv">?</span>
-        <span class="nu-meta"><b id="nodoUserName">Perfil</b><small id="nodoUserRole">Mi cuenta</small></span>
-        ${svg("chevron")}
-      </a>
+      <div class="nodo-userrow">
+        <a class="nodo-user${active === "perfil" ? " active" : ""}" data-nav="perfil" href="perfil.html" title="Mi perfil y cuenta">
+          <span class="nu-av" id="nodoUserAv">?</span>
+          <span class="nu-meta"><b id="nodoUserName">Perfil</b><small id="nodoUserRole">Mi cuenta</small></span>
+        </a>
+        <button class="nodo-icnbtn" id="nodoTheme" title="Cambiar tema"></button>
+      </div>
     </div>`;
   document.body.classList.add("nodo-shelled");
   document.body.insertBefore(nav, document.body.firstChild);
@@ -407,7 +423,8 @@ export async function mountShell({ active, minimal } = {}) {
   const themeBtn = nav.querySelector("#nodoTheme");
   const paintTheme = () => {
     const dark = getTheme() === "dark";
-    themeBtn.innerHTML = `${svg(dark ? "sun" : "moon")}<span class="lbl">${dark ? "Tema claro" : "Tema oscuro"}</span>`;
+    themeBtn.innerHTML = svg(dark ? "sun" : "moon");
+    themeBtn.title = dark ? "Cambiar a tema claro" : "Cambiar a tema oscuro";
   };
   paintTheme();
   themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); fxRetheme(); };

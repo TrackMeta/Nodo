@@ -140,9 +140,9 @@ html[data-nfx="off"] .nfx-canvas{display:none}
    Tokens de vidrio por tema; se aplican al sidebar y a las tarjetas
    comunes de las páginas (sin editar cada una). Opacidad alta para que
    el texto siga legible sobre la aurora. */
-html:not([data-theme="light"]){ --glass:rgba(17,24,42,.66); --glass-brd:rgba(255,255,255,.08) }
-html[data-theme="light"]{ --glass:rgba(255,255,255,.72); --glass-brd:rgba(15,23,42,.07) }
-.nodo-nav{ background:var(--glass); backdrop-filter:blur(22px) saturate(1.35); -webkit-backdrop-filter:blur(22px) saturate(1.35); border-right-color:var(--glass-brd) }
+html:not([data-theme="light"]){ --glass:rgba(17,24,42,.6); --glass-nav:rgba(12,18,33,.42); --glass-brd:rgba(255,255,255,.10) }
+html[data-theme="light"]{ --glass:rgba(255,255,255,.72); --glass-nav:rgba(255,255,255,.52); --glass-brd:rgba(15,23,42,.07) }
+.nodo-nav{ background:var(--glass-nav); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border-right-color:var(--glass-brd) }
 body.nodo-shelled .nodo-card,
 body.nodo-shelled .card,
 body.nodo-shelled .dcard,
@@ -180,8 +180,8 @@ body.nodo-shelled{display:flex}
 /* Marca */
 .nodo-brand{display:flex;align-items:center;gap:10px;padding:8px 8px 6px;min-height:48px}
 .nodo-brand img{width:32px;height:32px;border-radius:8px;flex:none;object-fit:cover;background:var(--surface-2)}
-.nodo-brand .bt{font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nodo-nav.collapsed .nodo-brand{justify-content:center;padding:8px 0 6px}
+.nodo-brand .bt{flex:1;min-width:0;font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nodo-nav.collapsed .nodo-brand{flex-direction:column;gap:8px;padding:8px 0 6px}
 .nodo-nav.collapsed .nodo-brand .bt{display:none}
 
 /* Selector de bot (workspace switcher compacto) */
@@ -194,6 +194,15 @@ body.nodo-shelled{display:flex}
 .nodo-bot select:hover{border-color:var(--faint)}
 .nodo-bot select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
 .nodo-nav.collapsed .nodo-bot{display:none}
+
+/* Botón-ícono compacto (comprimir en el header, tema en el pie) */
+.nodo-icnbtn{width:32px;height:32px;flex:none;display:grid;place-items:center;border:none;background:transparent;
+  color:var(--muted);border-radius:8px;cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
+.nodo-icnbtn:hover{background:var(--surface-2);color:var(--text)}
+.nodo-icnbtn svg{width:17px;height:17px;stroke-width:2}
+
+/* Grupo primario FIJO (Bandeja/Dashboard/Pedidos) — fuera del scroll */
+.nodo-primary{display:flex;flex-direction:column;gap:4px;flex:none;padding-bottom:4px;margin-bottom:2px}
 
 /* Navegación */
 .nodo-links{display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
@@ -248,36 +257,36 @@ body.nodo-shelled{display:flex}
 .nodo-nav.collapsed .nodo-link{justify-content:center;padding:0}
 .nodo-nav.collapsed .nodo-link .lbl{display:none}
 
-/* CTA Bandeja — único ítem con tratamiento especial (§7).
-   Borde cónico giratorio (glow) + relleno indigo→violeta, ligado al
-   nivel de efectos (Ajustes → Apariencia). */
+/* CTA Bandeja — botón destacado: relleno indigo→violeta con flujo suave
+   + destello periódico que lo recorre. Limpio y centrado; el movimiento
+   se liga al nivel de efectos (Ajustes → Apariencia). */
 .nodo-link.nodo-cta{
-  position:relative;margin:4px 0 16px;height:50px;color:#fff;font-weight:700;font-size:14.5px;letter-spacing:-.1px;
-  background:transparent;border:none;overflow:visible;
-  box-shadow:0 10px 26px -10px rgba(124,58,237,.75);
+  position:relative;margin:2px 0 4px;height:50px;color:#fff;font-weight:700;font-size:14.5px;letter-spacing:-.1px;overflow:hidden;
+  background:linear-gradient(120deg,var(--brand),var(--purple,#8B5CF6) 55%,var(--brand-2));
+  background-size:180% 180%;animation:ctaFlow 9s ease infinite;
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 8px 22px -8px rgba(124,58,237,.7),inset 0 1px 0 rgba(255,255,255,.18);
 }
-.nodo-link.nodo-cta::before{ /* anillo cónico giratorio */
-  content:"";position:absolute;inset:-2px;border-radius:inherit;z-index:0;
-  background:conic-gradient(from 0deg,var(--info,#22D3EE),var(--purple,#8B5CF6),var(--brand),var(--brand-2),var(--info,#22D3EE));
-  filter:blur(6px);opacity:.85;animation:ctaSpin 6s linear infinite;
-}
-.nodo-link.nodo-cta .cta-in{ /* relleno del botón, encima del cónico */
-  position:absolute;inset:0;border-radius:inherit;z-index:0;
-  background:linear-gradient(150deg,var(--brand),var(--purple,#8B5CF6) 62%,var(--brand-2));
+.nodo-link.nodo-cta .cta-in{ /* destello que recorre el botón */
+  position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.30) 50%,transparent 62%);
+  transform:translateX(-120%);animation:ctaShine 5.5s ease-in-out infinite;
 }
 .nodo-link.nodo-cta > svg,.nodo-link.nodo-cta > .lbl,.nodo-link.nodo-cta > .cta-dot{position:relative;z-index:1}
 .nodo-link.nodo-cta svg{width:21px;height:21px;stroke-width:2.3}
-.nodo-link.nodo-cta:hover{transform:scale(1.02)}
+.nodo-link.nodo-cta:hover{filter:brightness(1.06)}
 .nodo-link.nodo-cta .cta-dot{
   margin-left:auto;width:8px;height:8px;border-radius:50%;flex:none;
   background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:ctaPulse 2.4s infinite;
 }
 .nodo-nav.collapsed .nodo-link.nodo-cta{height:44px}
 .nodo-nav.collapsed .nodo-link.nodo-cta .cta-dot{position:absolute;top:5px;right:5px;margin:0;background:var(--green)}
-html[data-nfx="suave"] .nodo-link.nodo-cta::before{animation-duration:12s}
-html[data-nfx="off"] .nodo-link.nodo-cta::before{animation:none;opacity:.55;filter:blur(3px)}
-@media(prefers-reduced-motion:reduce){.nodo-link.nodo-cta::before{animation:none}}
-@keyframes ctaSpin{to{transform:rotate(360deg)}}
+html[data-nfx="suave"] .nodo-link.nodo-cta{animation-duration:16s}
+html[data-nfx="off"] .nodo-link.nodo-cta{animation:none}
+html[data-nfx="off"] .nodo-link.nodo-cta .cta-in{display:none}
+@media(prefers-reduced-motion:reduce){.nodo-link.nodo-cta{animation:none}.nodo-link.nodo-cta .cta-in{display:none}}
+@keyframes ctaFlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes ctaShine{0%,55%{transform:translateX(-120%)}82%,100%{transform:translateX(120%)}}
 @keyframes ctaPulse{
   0%{box-shadow:0 0 0 0 rgba(255,255,255,.6)}
   70%{box-shadow:0 0 0 6px rgba(255,255,255,0)}
@@ -288,8 +297,11 @@ html[data-nfx="off"] .nodo-link.nodo-cta::before{animation:none;opacity:.55;filt
 .nodo-foot{margin-top:auto;display:flex;flex-direction:column;gap:3px;padding-top:10px;
   border-top:1px solid var(--border)}
 
+/* Pie: fila con el chip de usuario + botón de tema (icono) */
+.nodo-userrow{display:flex;align-items:center;gap:6px;margin-top:4px}
+.nodo-nav.collapsed .nodo-userrow{flex-direction:column;gap:8px}
 /* Chip de usuario → configura el perfil (foto, nombre, cerrar sesión) */
-.nodo-user{display:flex;align-items:center;gap:10px;margin-top:5px;padding:7px 8px;border-radius:var(--r-sm);
+.nodo-user{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:var(--r-sm);
   text-decoration:none;color:var(--text);cursor:pointer;transition:background var(--t-fast)}
 .nodo-user:hover{background:var(--surface-2)}
 .nodo-user.active{background:var(--brand-bg)}
