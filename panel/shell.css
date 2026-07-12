@@ -152,7 +152,23 @@ body.nodo-shelled{display:flex}
 .nodo-nav.collapsed .nodo-bot{display:none}
 
 /* Navegación */
-.nodo-links{display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+.nodo-links{display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+/* Scrollbar del sidebar — fino, redondeado e integrado a la superficie.
+   Usa tokens temáticos → se adapta a claro/oscuro. Casi invisible en
+   reposo; se marca al pasar el cursor por el sidebar y toma el indigo
+   de la marca al agarrar el thumb. Anula el scrollbar global (10px). */
+.nodo-links{scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+.nodo-links:hover{scrollbar-color:var(--faint) transparent}
+.nodo-links::-webkit-scrollbar{width:8px}
+.nodo-links::-webkit-scrollbar-track{background:transparent;margin:6px 0}
+.nodo-links::-webkit-scrollbar-thumb{
+  background:var(--border-strong);border-radius:999px;
+  border:2px solid transparent;background-clip:content-box;
+  transition:background var(--t-fast);
+}
+.nodo-links:hover::-webkit-scrollbar-thumb{background:var(--faint);background-clip:content-box}
+.nodo-links::-webkit-scrollbar-thumb:hover{background:var(--brand-border);background-clip:content-box}
+.nodo-nav.collapsed .nodo-links::-webkit-scrollbar{width:0}   /* oculto al comprimir */
 .nodo-group{flex:none}
 
 /* Etiqueta de grupo (Overline §4) — clickeable para colapsar el grupo */
