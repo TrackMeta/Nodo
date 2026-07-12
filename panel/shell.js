@@ -531,9 +531,16 @@ export async function mountShell({ active, minimal } = {}) {
     if (!botBtn || !botPop) return;
     const collapsed = nav.classList.contains("collapsed");
     botPop.classList.toggle("mini", collapsed); // comprimido = solo logos
-    const r = botBtn.getBoundingClientRect();
+    const nr = nav.getBoundingClientRect(), r = botBtn.getBoundingClientRect();
     botPop.style.top = (r.bottom + 6) + "px"; // siempre baja
-    botPop.style.left = r.left + "px";
+    if (collapsed) { // centrado en el rail
+      const MINI_W = 48;
+      botPop.style.width = MINI_W + "px";
+      botPop.style.left = (nr.left + (nr.width - MINI_W) / 2) + "px";
+    } else { // ocupa el ancho del sidebar (centrado, con márgenes)
+      botPop.style.width = (nr.width - 16) + "px";
+      botPop.style.left = (nr.left + 8) + "px";
+    }
   };
   if (botBtn) botBtn.onclick = (e) => {
     e.stopPropagation();

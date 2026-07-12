@@ -285,7 +285,7 @@ body.nodo-shelled{display:flex}
 .nodo-group.closed .nodo-gitems{display:none}
 /* Comprimido: se ocultan los títulos y cada grupo se separa con una línea */
 .nodo-nav.collapsed .nodo-sec{display:none}
-.nodo-nav.collapsed .nodo-group{margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-brd)}
+.nodo-nav.collapsed .nodo-group{margin-top:8px;padding-top:8px;border-top:1px solid var(--border-strong)}
 .nodo-nav.collapsed .nodo-group.closed .nodo-gitems{display:flex}
 .nodo-nav.collapsed .nodo-gitems{gap:4px}
 
