@@ -154,6 +154,47 @@ export function refreshUserChip(info) {
   const merged = Object.assign({}, readMeCache() || {}, info || {});
   writeMeCache(merged); paintUserChip(merged);
 }
+
+// ── Crear nuevo bot (= nuevo canal / espacio independiente) ─────────
+// Un bot es un `channels` con su propia bandeja, contactos, flujos,
+// productos, configuración y pixel. Solo `nombre` es obligatorio; el
+// número de WhatsApp/pixel se conectan luego en Canales.
+function openCreateBot() {
+  if (document.getElementById("nb-modal")) return;
+  const back = document.createElement("div");
+  back.id = "nb-modal"; back.className = "nodo-modal-back";
+  back.innerHTML = `
+    <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crear nuevo bot">
+      <h3>Crear nuevo bot</h3>
+      <p>Cada bot es un <b>espacio independiente</b> dentro de tu cuenta: su propia bandeja, contactos, flujos, productos, configuración y pixel. El número de WhatsApp y el pixel se conectan después, en <b>Canales</b>.</p>
+      <label for="nbName">Nombre del bot</label>
+      <input id="nbName" placeholder="Ej. Digital Prime 2" maxlength="60" autocomplete="off" />
+      <div class="nb-acts">
+        <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>
+        <button class="nb-btn primary" id="nbCreate" type="button">Crear bot</button>
+      </div>
+    </div>`;
+  document.body.appendChild(back);
+  const input = back.querySelector("#nbName");
+  const close = () => back.remove();
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+  back.querySelector("#nbCancel").onclick = close;
+  const create = async () => {
+    const nombre = input.value.trim();
+    if (!nombre) { input.focus(); return; }
+    const btn = back.querySelector("#nbCreate"); btn.disabled = true; btn.textContent = "Creando…";
+    const { data, error } = await supa.from("channels").insert({ nombre }).select("id,nombre").single();
+    if (error) { btn.disabled = false; btn.textContent = "Crear bot"; toast(error.message || "No se pudo crear el bot", true); return; }
+    S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });
+    S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+    close();
+    toast("Bot creado ✓ — conéctalo en Canales");
+    S.api.setChannel(data.id); // cambia al bot nuevo (recarga los datos de la página)
+  };
+  back.querySelector("#nbCreate").onclick = create;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") create(); else if (e.key === "Escape") close(); });
+  setTimeout(() => input.focus(), 30);
+}
 // Favicon dinámico = logo del bot elegido.
 export function setFavicon(href) {
   if (!href) return;
@@ -401,16 +442,12 @@ export async function mountShell({ active, minimal } = {}) {
     </div>`
     : `
     <div class="nodo-brand">
-      <img id="nodoLogo" src="${initLogo}" alt="" />
-      <span class="bt" id="nodoBrandName">${initName}</span>
-      <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú">${svg("panel")}</button>
-    </div>
-    <div class="nodo-bot">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
         <img class="nb-logo" id="nodoBotLogo" src="${initLogo}" alt="" />
         <span class="nb-name" id="nodoBotName">${initName}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
+      <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú">${svg("panel")}</button>
       <div class="nodo-botpop" id="nodoBotPop" hidden></div>
     </div>
     <nav class="nodo-primary">${primaryHTML}</nav>
@@ -484,9 +521,9 @@ export async function mountShell({ active, minimal } = {}) {
   const renderBotPop = () => {
     if (!botPop) return;
     botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
-      + `<a class="nb-create" href="canales.html">${svg("plus")}<span>Crear nuevo bot</span></a>`;
+      + `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>`;
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = () => { S.api.setChannel(b.dataset.id); closeBotPop(); }; });
-    const cr = botPop.querySelector(".nb-create"); if (cr) cr.addEventListener("click", closeBotPop);
+    const cr = botPop.querySelector(".nb-create"); if (cr) cr.onclick = () => { closeBotPop(); openCreateBot(); };
   };
   if (botBtn) botBtn.onclick = (e) => {
     e.stopPropagation();
@@ -496,7 +533,7 @@ export async function mountShell({ active, minimal } = {}) {
   if (!S.botDocClose) {
     S.botDocClose = true;
     document.addEventListener("click", (e) => {
-      if (S.botPop && !S.botPop.hidden && !e.target.closest(".nodo-bot")) { S.botPop.hidden = true; if (S.botBtn) S.botBtn.classList.remove("open"); }
+      if (S.botPop && !S.botPop.hidden && !e.target.closest(".nodo-brand")) { S.botPop.hidden = true; if (S.botBtn) S.botBtn.classList.remove("open"); }
     });
   }
 
