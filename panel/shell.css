@@ -9,6 +9,22 @@
    ═══════════════════════════════════════════════════════════════════ */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap");
 
+/* ── Transiciones de navegación entre páginas ──────────────────────
+   View Transitions API (Chrome/Edge): al cambiar de sección el
+   navegador hace un cross-fade suave del contenido en vez del flash
+   blanco de recarga. El sidebar se trata como elemento propio y NO se
+   anima → se mantiene estable llegue temprano o tarde en la nueva
+   página (evita que "salte"). Firefox/Safari lo ignoran y quedan
+   exactamente como hoy (degradación limpia, sin romper nada). */
+@view-transition { navigation: auto; }
+.nodo-nav{ view-transition-name: nodo-nav; }
+::view-transition-group(nodo-nav){ animation-duration: 0s; }
+::view-transition-old(root),
+::view-transition-new(root){ animation-duration: .18s; animation-timing-function: ease; }
+@media (prefers-reduced-motion: reduce){
+  @view-transition { navigation: none; }
+}
+
 /* ── Tokens no temáticos (radios, transiciones, tipografía) ────────── */
 :root{
   --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
