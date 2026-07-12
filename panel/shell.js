@@ -126,11 +126,26 @@ export function setFavicon(href) {
   document.head.appendChild(l);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  SPA — estado singleton + router client-side
+//  El shell (sidebar) se monta UNA vez y persiste; al navegar entre
+//  páginas de shell completo se hace fetch del HTML destino y se cambia
+//  solo el contenido (sin recargar). Bandeja (minimal) y Editor son
+//  "fronteras": navegación normal. Ante cualquier fallo → location.href.
+// ═══════════════════════════════════════════════════════════════════
+const BOUNDARY = new Set(["index.html", "editor.html"]); // navegación normal
+const pageCache = new Map();  // pathname → html (para navegaciones repetidas)
+const S = {
+  nav: null, api: null, botSel: null, logo: null, brandName: null,
+  paintBrand: null, subs: [], leaves: [],
+  channels: [], channelId: null, loaded: false,
+  routerReady: false, pageStyles: [],
+};
+
+const fileOf = (path) => path.split("/").pop() || "";
+
 // ── Cascarón ────────────────────────────────────────────────────────
 export async function mountShell({ active, minimal } = {}) {
-  const subs = [];
-  const state = { channelId: null, channels: [] };
-
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
   const savedId = localStorage.getItem("nodo.channelId");
   const cachedBrand = readBrandCache();
@@ -138,6 +153,13 @@ export async function mountShell({ active, minimal } = {}) {
   const initLogo = brandHit && cachedBrand.logo ? cachedBrand.logo : FALLBACK_LOGO;
   const initName = brandHit && cachedBrand.name ? cachedBrand.name : "Nodo";
   setFavicon(initLogo); // aplica el favicon del bot cuanto antes
+
+  // ── Re-entrada SPA: el shell completo ya está montado → no reconstruir.
+  if (!minimal && S.nav && document.body.contains(S.nav) && !S.nav.classList.contains("minimal")) {
+    S.subs = []; S.leaves = [];      // limpia suscripciones/cleanups de la página anterior
+    updateActive(active);
+    return S.api;
+  }
 
   const nav = document.createElement("aside");
   const startCollapsed = minimal || localStorage.getItem("nodo.collapsed") === "1";
@@ -164,8 +186,8 @@ export async function mountShell({ active, minimal } = {}) {
     <nav class="nodo-links">
       ${NAV_GROUPS.map((g) => {
         const items = g.items.map((it) => it.cta
-          ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
-          : `<a class="nodo-link${it.id === active ? " active" : ""}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
+          ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
+          : `<a class="nodo-link${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
         ).join("");
         if (!g.sec) return items;
         const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
@@ -176,13 +198,14 @@ export async function mountShell({ active, minimal } = {}) {
       }).join("")}
     </nav>
     <div class="nodo-foot">
-      <a class="nodo-link${active === "perfil" ? " active" : ""}" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
+      <a class="nodo-link${active === "perfil" ? " active" : ""}" data-nav="perfil" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
       <button class="nodo-link" id="nodoTheme" title="Cambiar tema"></button>
       <button class="nodo-link" id="nodoCollapse" title="Comprimir menú">${svg("panel")}<span class="lbl">Comprimir</span></button>
       <button class="nodo-link" id="nodoLogout" title="Cerrar sesión">${svg("logout")}<span class="lbl">Cerrar sesión</span></button>
     </div>`;
   document.body.classList.add("nodo-shelled");
   document.body.insertBefore(nav, document.body.firstChild);
+  S.nav = nav;
 
   // Tema toggle
   const themeBtn = nav.querySelector("#nodoTheme");
@@ -216,52 +239,173 @@ export async function mountShell({ active, minimal } = {}) {
   const botSel = nav.querySelector("#nodoBot");
   const logo = nav.querySelector("#nodoLogo");
   const brandName = nav.querySelector("#nodoBrandName");
+  S.botSel = botSel; S.logo = logo; S.brandName = brandName;
   // Resiliente: si la columna logo_url aún no está migrada en la BD, reintenta sin ella.
   let { data, error } = await supa.from("channels").select("id,nombre,logo_url").eq("activo", true).order("nombre");
   if (error) ({ data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre"));
-  state.channels = data || [];
+  S.channels = data || [];
   if (botSel) {
     botSel.innerHTML = "";
-    state.channels.forEach((c) => {
+    S.channels.forEach((c) => {
       const o = document.createElement("option"); o.value = c.id; o.textContent = c.nombre; botSel.appendChild(o);
     });
   }
   let saved = localStorage.getItem("nodo.channelId");
-  if (!state.channels.find((c) => c.id === saved)) saved = state.channels[0]?.id || null;
-  state.channelId = saved;
+  if (!S.channels.find((c) => c.id === saved)) saved = S.channels[0]?.id || null;
+  S.channelId = saved;
+  S.loaded = true;
   if (botSel && saved) botSel.value = saved;
 
   const paintBrand = () => {
-    const c = state.channels.find((x) => x.id === state.channelId);
+    const c = S.channels.find((x) => x.id === S.channelId);
     const src = (c && c.logo_url) ? c.logo_url : FALLBACK_LOGO;
     const name = c ? c.nombre : "Nodo";
-    if (logo) logo.src = src;
-    if (brandName) brandName.textContent = name;
+    if (S.logo) S.logo.src = src;
+    if (S.brandName) S.brandName.textContent = name;
     setFavicon(src); // favicon = logo del bot activo
     if (c) writeBrandCache({ id: c.id, logo: c.logo_url || null, name }); // caché anti-parpadeo
   };
+  S.paintBrand = paintBrand;
   paintBrand();
 
   if (botSel) botSel.onchange = () => {
-    state.channelId = botSel.value;
-    localStorage.setItem("nodo.channelId", state.channelId);
+    S.channelId = botSel.value;
+    localStorage.setItem("nodo.channelId", S.channelId);
     paintBrand();
-    subs.forEach((cb) => { try { cb(state.channelId); } catch (e) { console.error(e); } });
+    S.subs.forEach((cb) => { try { cb(S.channelId); } catch (e) { console.error(e); } });
   };
 
-  const api = {
-    get channelId() { return state.channelId; },
-    get channels() { return state.channels; },
-    onChannel(cb) { subs.push(cb); },
+  S.api = {
+    get channelId() { return S.channelId; },
+    get channels() { return S.channels; },
+    onChannel(cb) { S.subs.push(cb); },
+    onLeave(cb) { S.leaves.push(cb); }, // cleanup al salir de la página (SPA)
     setChannel(id, { silent } = {}) {
-      if (!state.channels.find((c) => c.id === id)) return;
-      state.channelId = id;
+      if (!S.channels.find((c) => c.id === id)) return;
+      S.channelId = id;
       localStorage.setItem("nodo.channelId", id);
-      if (botSel) botSel.value = id;
+      if (S.botSel) S.botSel.value = id;
       paintBrand();
-      if (!silent) subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
+      if (!silent) S.subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
     },
   };
-  window.NodoShell = api;
-  return api;
+  window.NodoShell = S.api;
+
+  if (!minimal) setupRouter(); // activa la navegación SPA (no en Bandeja)
+  return S.api;
+}
+
+// ── Resalta el ítem activo del sidebar sin reconstruirlo (SPA) ──────
+function updateActive(active) {
+  if (!S.nav) return;
+  S.nav.querySelectorAll(".nodo-link.active").forEach((l) => l.classList.remove("active"));
+  const el = S.nav.querySelector(`[data-nav="${active}"]`);
+  if (el) {
+    el.classList.add("active");
+    const grp = el.closest(".nodo-group");
+    if (grp) grp.classList.remove("closed"); // abre el grupo que contiene el activo
+  }
+}
+
+// ── Router client-side ──────────────────────────────────────────────
+function setupRouter() {
+  if (S.routerReady) return;
+  // No activar el router en las páginas frontera (Editor): allí la
+  // navegación es normal para no arrastrar su canvas/estado pesado.
+  if (BOUNDARY.has(fileOf(location.pathname))) return;
+  S.routerReady = true;
+  S.pageStyles = Array.from(document.head.querySelectorAll("style")); // estilos de la página actual
+  document.addEventListener("click", onNavClick);
+  window.addEventListener("popstate", () => navigate(location.href, { push: false }));
+}
+
+function onNavClick(e) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest("a[href]");
+  if (!a) return;
+  const navEl = a.closest(".nodo-nav");
+  if (!navEl || navEl.classList.contains("minimal")) return; // solo sidebar completo
+  if (a.target === "_blank") return;
+  const href = a.getAttribute("href");
+  if (!href || !href.endsWith(".html")) return;
+  if (BOUNDARY.has(fileOf(href))) return; // Bandeja/Editor = navegación normal
+  const dest = new URL(href, location.href);
+  if (dest.origin !== location.origin) return;
+  if (dest.pathname === location.pathname) { e.preventDefault(); return; } // ya estás aquí
+  e.preventDefault();
+  navigate(dest.href);
+}
+
+// Reemplaza el contenido (todo el <body> salvo el sidebar y el toast).
+function removeContentNodes() {
+  Array.from(document.body.children).forEach((el) => {
+    if (el === S.nav || el.id === "nodo-toast") return;
+    el.remove();
+  });
+}
+
+// Re-ejecuta los <script> de la página destino (los inyectados por
+// innerHTML no corren solos; recrearlos sí). Cada uno en su módulo.
+function runScripts(scripts) {
+  scripts.forEach((old) => {
+    const s = document.createElement("script");
+    if (old.type) s.type = old.type;
+    if (old.src) s.src = old.getAttribute("src");
+    else s.textContent = old.textContent;
+    document.body.appendChild(s);
+  });
+}
+
+// Ejecuta cleanups registrados por la página saliente y limpia subs.
+function teardown() {
+  S.leaves.forEach((cb) => { try { cb(); } catch (e) { console.error(e); } });
+  S.leaves = [];
+  S.subs = [];
+}
+
+async function navigate(href, { push = true } = {}) {
+  const dest = new URL(href, location.href);
+  if (BOUNDARY.has(fileOf(dest.pathname)) || dest.origin !== location.origin) {
+    location.href = dest.href; return; // frontera → navegación normal
+  }
+  try {
+    let html = pageCache.get(dest.pathname);
+    if (html == null) {
+      const res = await fetch(dest.href, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("fetch " + res.status);
+      html = await res.text();
+      pageCache.set(dest.pathname, html);
+    }
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const newStyles = Array.from(doc.head.querySelectorAll("style")).map((s) => s.cloneNode(true));
+    const contentNodes = []; const scripts = [];
+    Array.from(doc.body.childNodes).forEach((n) => {
+      if (n.nodeType === 1 && n.tagName === "SCRIPT") scripts.push(n);
+      else contentNodes.push(document.importNode(n, true));
+    });
+
+    teardown(); // limpia la página saliente ANTES de quitar su DOM
+
+    const doSwap = () => {
+      document.title = doc.title || document.title;
+      S.pageStyles.forEach((s) => s.remove());       // fuera estilos de la página anterior
+      S.pageStyles = newStyles;
+      newStyles.forEach((s) => document.head.appendChild(s)); // estilos de la nueva
+      removeContentNodes();
+      contentNodes.forEach((n) => document.body.appendChild(n));
+    };
+    if (document.startViewTransition) {
+      const t = document.startViewTransition(doSwap);
+      try { await t.updateCallbackDone; } catch {}
+    } else { doSwap(); }
+
+    if (push) history.pushState({ spa: true }, "", dest.href);
+    runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)
+
+    const page = document.querySelector(".nodo-page");
+    if (page) page.scrollTop = 0; else window.scrollTo(0, 0);
+  } catch (e) {
+    console.error("[SPA] fallback a navegación normal:", e);
+    location.href = dest.href; // degradación limpia
+  }
 }

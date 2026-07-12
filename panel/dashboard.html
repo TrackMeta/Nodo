@@ -182,14 +182,16 @@ function renderCustom(){
     closePop(); applyRange();
   };
 }
-function openPop(){ $("dfPop").classList.add("open"); }
-function closePop(){ $("dfPop").classList.remove("open"); }
+function openPop(){ $("dfPop")?.classList.add("open"); }
+function closePop(){ $("dfPop")?.classList.remove("open"); }
 function applyRange(){ const r=computeRange(); $("dfLabel").textContent=r.label; load(); }
-document.addEventListener("click",(e)=>{ if(!e.target.closest(".datefilter")) closePop(); });
+function onDocClickDF(e){ if(!e.target.closest(".datefilter")) closePop(); }
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"dashboard" });
+  document.addEventListener("click",onDocClickDF);
+  shell.onLeave?.(()=>document.removeEventListener("click",onDocClickDF));
   channelId=shell.channelId;
   const c=shell.channels.find(x=>x.id===channelId);
   $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");

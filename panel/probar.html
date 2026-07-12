@@ -104,6 +104,7 @@ async function callFn(name, body){
 async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"probar" });
+  shell.onLeave?.(()=>{ if(st.rt) supa.removeChannel(st.rt); }); // limpia realtime al salir (SPA)
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); loadFlows(); loadExisting(); });
   $("startBtn").onclick=startTest;
