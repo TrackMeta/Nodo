@@ -117,6 +117,41 @@ function readBrandCache() {
 function writeBrandCache(b) {
   try { localStorage.setItem("nodo.brand", JSON.stringify(b)); } catch {}
 }
+
+// ── Usuario (chip de perfil en el pie del sidebar) ──────────────────
+function readMeCache() { try { return JSON.parse(localStorage.getItem("nodo.me") || "null"); } catch { return null; } }
+function writeMeCache(m) { try { localStorage.setItem("nodo.me", JSON.stringify(m)); } catch {} }
+const ROLE_ES = { admin: "Administrador", owner: "Propietario", propietario: "Propietario", operador: "Operador", operator: "Operador", viewer: "Solo lectura" };
+export function paintUserChip(info) { // usado por el shell y por Perfil (tras guardar)
+  const nav = S.nav || document.querySelector(".nodo-nav");
+  if (!nav || !info) return;
+  const nm = nav.querySelector("#nodoUserName"), rl = nav.querySelector("#nodoUserRole"), av = nav.querySelector("#nodoUserAv");
+  if (nm) nm.textContent = info.name || "Perfil";
+  if (rl) rl.textContent = info.role || "Mi cuenta";
+  if (av) { if (info.avatar) av.innerHTML = `<img src="${info.avatar}" alt="" />`; else av.textContent = (info.name || "?").trim().charAt(0).toUpperCase() || "?"; }
+}
+async function loadMe(nav) {
+  try {
+    const cached = readMeCache();
+    if (cached) paintUserChip(cached);
+    const { data: { session } } = await supa.auth.getSession();
+    if (!session) return;
+    let me = null;
+    try { ({ data: me } = await supa.from("app_users").select("nombre,role,avatar_url").eq("id", session.user.id).maybeSingle()); } catch {}
+    const rl = (me?.role || "").toString();
+    const info = {
+      name: (me?.nombre && me.nombre.trim()) || (session.user.email || "").split("@")[0] || "Perfil",
+      role: ROLE_ES[rl.toLowerCase()] || rl || "Mi cuenta",
+      avatar: me?.avatar_url || null,
+    };
+    writeMeCache(info); paintUserChip(info);
+  } catch (e) { console.error("[me]", e); }
+}
+// Permite que Perfil refresque el chip tras editar nombre/foto (merge con lo cacheado).
+export function refreshUserChip(info) {
+  const merged = Object.assign({}, readMeCache() || {}, info || {});
+  writeMeCache(merged); paintUserChip(merged);
+}
 // Favicon dinámico = logo del bot elegido.
 export function setFavicon(href) {
   if (!href) return;
@@ -197,7 +232,8 @@ function fxResize() {
   FX.nodes = Array.from({ length: n }, () => ({
     x: Math.random() * FX.W, y: Math.random() * FX.H,
     vx: (Math.random() - .5) * .10 * FX.DPR, vy: (-Math.random() * .14 - .03) * FX.DPR,
-    r: (Math.random() * 1.8 + 1.1) * FX.DPR, c: FX.COL[(Math.random() * FX.COL.length) | 0],
+    r: (Math.random() * 1.9 + 1.2) * FX.DPR, c: FX.COL[(Math.random() * FX.COL.length) | 0],
+    tw: .02 + Math.random() * .03, ph: Math.random() * 6.28, // parpadeo (estrellas)
   }));
   fxSeedSignals();
 }
@@ -224,26 +260,29 @@ function fxSeedSignals() {
 }
 function fxDraw() {
   if (!FX.cx) return;
-  FX.cx.clearRect(0, 0, FX.W, FX.H);
+  const cx = FX.cx;
+  cx.clearRect(0, 0, FX.W, FX.H);
   if (FX.level === "off") return;
-  const maxD = 140 * FX.DPR, mR = 170 * FX.DPR, cx = FX.cx;
-  // aristas (se iluminan cerca del cursor)
+  const maxD = 140 * FX.DPR;
+  FX.t = (FX.t || 0) + 1;
+  // aristas (constelación)
   for (let i = 0; i < FX.nodes.length; i++) for (let j = i + 1; j < FX.nodes.length; j++) {
     const a = FX.nodes[i], b = FX.nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
     if (d < maxD) {
-      const md = Math.hypot((a.x + b.x) / 2 - FX.mouse.x, (a.y + b.y) / 2 - FX.mouse.y), near = md < mR ? (1 - md / mR) : 0;
       cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y);
-      cx.strokeStyle = `rgba(${a.c},${(.09 * (1 - d / maxD)) + near * .2})`; cx.lineWidth = (near > 0 ? 1.3 : 1) * FX.DPR; cx.stroke();
+      cx.strokeStyle = `rgba(${a.c},${.12 * (1 - d / maxD)})`; cx.lineWidth = 1 * FX.DPR; cx.stroke();
     }
   }
-  // nodos (glow con sprite pre-renderizado)
+  // estrellas HD: halo (sprite) + núcleo nítido + parpadeo sutil
   for (const p of FX.nodes) {
     p.x += p.vx; p.y += p.vy;
     if (p.y < -14) p.y = FX.H + 14; if (p.x < -14) p.x = FX.W + 14; if (p.x > FX.W + 14) p.x = -14;
-    const md = Math.hypot(p.x - FX.mouse.x, p.y - FX.mouse.y), near = md < mR ? (1 - md / mR) : 0;
-    const size = (p.r * 6) + near * 6 * FX.DPR;
-    cx.globalAlpha = .55 + near * .45;
+    const tw = .72 + .28 * Math.sin(FX.t * p.tw + p.ph);
+    const size = p.r * 7;
+    cx.globalAlpha = tw;
     cx.drawImage(FX.sprites[p.c] || FX.sig, p.x - size / 2, p.y - size / 2, size, size);
+    cx.globalAlpha = Math.min(1, tw + .18);
+    cx.beginPath(); cx.arc(p.x, p.y, p.r * .9, 0, 7); cx.fillStyle = "rgba(234,241,255,.95)"; cx.fill();
   }
   cx.globalAlpha = 1;
   // señales viajando por las conexiones (datos fluyendo)
@@ -284,17 +323,12 @@ function ensureFX() {
     FX.reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
     const box = document.createElement("div");
     box.id = "nodo-fx"; box.className = "nodo-fx"; box.setAttribute("aria-hidden", "true");
-    box.innerHTML = `<div class="nfx-aurora"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div><canvas class="nfx-canvas"></canvas><div class="nfx-spot"></div><div class="nfx-veil"></div>`;
+    box.innerHTML = `<div class="nfx-aurora"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div><canvas class="nfx-canvas"></canvas><div class="nfx-veil"></div>`;
     document.body.insertBefore(box, document.body.firstChild);
     FX.cv = box.querySelector(".nfx-canvas"); FX.cx = FX.cv.getContext("2d");
     FX.built = true;
     fxBuildSprites(); fxResize();
     addEventListener("resize", fxResize, { passive: true });
-    addEventListener("pointermove", (e) => {
-      FX.mouse.x = e.clientX * FX.DPR; FX.mouse.y = e.clientY * FX.DPR;
-      const r = document.documentElement.style;
-      r.setProperty("--nfx-mx", e.clientX + "px"); r.setProperty("--nfx-my", e.clientY + "px");
-    }, { passive: true });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") fxStop(); else applyEffects();
     });
@@ -345,7 +379,7 @@ export async function mountShell({ active, minimal } = {}) {
     <nav class="nodo-links">
       ${NAV_GROUPS.map((g) => {
         const items = g.items.map((it) => it.cta
-          ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
+          ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
           : `<a class="nodo-link${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`
         ).join("");
         if (!g.sec) return items;
@@ -357,10 +391,13 @@ export async function mountShell({ active, minimal } = {}) {
       }).join("")}
     </nav>
     <div class="nodo-foot">
-      <a class="nodo-link${active === "perfil" ? " active" : ""}" data-nav="perfil" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
       <button class="nodo-link" id="nodoTheme" title="Cambiar tema"></button>
       <button class="nodo-link" id="nodoCollapse" title="Comprimir menú">${svg("panel")}<span class="lbl">Comprimir</span></button>
-      <button class="nodo-link" id="nodoLogout" title="Cerrar sesión">${svg("logout")}<span class="lbl">Cerrar sesión</span></button>
+      <a class="nodo-user${active === "perfil" ? " active" : ""}" data-nav="perfil" href="perfil.html" title="Mi perfil y cuenta">
+        <span class="nu-av" id="nodoUserAv">?</span>
+        <span class="nu-meta"><b id="nodoUserName">Perfil</b><small id="nodoUserRole">Mi cuenta</small></span>
+        ${svg("chevron")}
+      </a>
     </div>`;
   document.body.classList.add("nodo-shelled");
   document.body.insertBefore(nav, document.body.firstChild);
@@ -391,8 +428,12 @@ export async function mountShell({ active, minimal } = {}) {
     localStorage.setItem("nodo.collapsed", nav.classList.contains("collapsed") ? "1" : "0");
   };
 
-  // Logout
-  nav.querySelector("#nodoLogout").onclick = async () => { await supa.auth.signOut(); location.href = "index.html"; };
+  // Logout (solo existe en el rail minimal; en el completo vive en Perfil)
+  const logoutBtn = nav.querySelector("#nodoLogout");
+  if (logoutBtn) logoutBtn.onclick = async () => { await supa.auth.signOut(); location.href = "index.html"; };
+
+  // Chip de usuario (perfil) en el pie del sidebar completo
+  loadMe(nav);
 
   // Selector de bot + logo dinámico (el select no existe en modo minimal)
   const botSel = nav.querySelector("#nodoBot");

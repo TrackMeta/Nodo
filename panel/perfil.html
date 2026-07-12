@@ -80,11 +80,16 @@
       </div>
       <div class="acts"><button class="btn primary" id="savePw">Cambiar contraseña</button></div>
     </div>
+
+    <div class="card">
+      <h3>Sesión</h3><p class="cs">Cierra tu sesión en este dispositivo.</p>
+      <div class="acts"><button class="btn" id="logoutBtn" style="color:var(--red);border-color:transparent">Cerrar sesión</button></div>
+    </div>
   </div>
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, refreshUserChip } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ uid:null, email:null, me:{}, pendingAvatar:null };
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"long",year:"numeric" });
@@ -107,6 +112,7 @@ async function boot(){
   $("avatarFile").onchange=(e)=>handleAvatar(e.target.files[0]);
   $("saveProfile").onclick=saveProfile;
   $("savePw").onclick=changePassword;
+  $("logoutBtn").onclick=async()=>{ await supa.auth.signOut(); location.href="index.html"; };
 }
 function paintAvatar(url){
   const a=$("avatar");
@@ -133,6 +139,7 @@ async function saveProfile(e){
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(/avatar_url|column/.test(error.message)?"Falta aplicar la migración 0014 (avatar_url)":error.message,true); return; }
   st.me.nombre=patch.nombre; if(patch.avatar_url) st.me.avatar_url=patch.avatar_url; st.pendingAvatar=null;
+  refreshUserChip({ name:patch.nombre||(st.email||"").split("@")[0]||"Perfil", avatar:st.me.avatar_url||null }); // actualiza el chip del sidebar
   toast("Perfil guardado ✓");
 }
 async function changePassword(e){

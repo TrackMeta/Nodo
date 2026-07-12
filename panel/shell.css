@@ -126,7 +126,6 @@ html[data-theme="light"] .nfx-aurora i{mix-blend-mode:multiply;filter:blur(100px
 .nfx-aurora .a2{width:50vw;height:50vw;right:-16vw;bottom:-18vw;background:radial-gradient(circle,var(--info,#22D3EE),transparent 62%);animation:nfxD2 30s ease-in-out infinite}
 .nfx-aurora .a3{width:44vw;height:44vw;left:34vw;top:22vh;background:radial-gradient(circle,var(--purple,#8B5CF6),transparent 60%);animation:nfxD3 27s ease-in-out infinite}
 .nfx-canvas{position:absolute;inset:0;width:100%;height:100%}
-.nfx-spot{position:absolute;inset:0;background:radial-gradient(560px 480px at var(--nfx-mx,50%) var(--nfx-my,-10%),rgba(99,102,241,.12),transparent 72%);transition:background .1s}
 .nfx-veil{position:absolute;inset:0;background:radial-gradient(120% 92% at 50% 0%,transparent 44%,rgba(2,6,18,.5) 100%)}
 html[data-theme="light"] .nfx-veil{background:radial-gradient(120% 92% at 50% 0%,transparent 46%,rgba(255,255,255,.45) 100%)}
 @keyframes nfxD1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(9vw,7vh) scale(1.14)}}
@@ -135,7 +134,25 @@ html[data-theme="light"] .nfx-veil{background:radial-gradient(120% 92% at 50% 0%
 /* Niveles de intensidad */
 html[data-nfx="suave"] .nfx-aurora i{animation-duration:46s}
 html[data-nfx="off"] .nfx-aurora i{animation:none;opacity:.26}
-html[data-nfx="off"] .nfx-spot,html[data-nfx="off"] .nfx-canvas{display:none}
+html[data-nfx="off"] .nfx-canvas{display:none}
+
+/* ═══ Glass — sidebar + tarjetas translúcidas sobre el fondo animado ═══
+   Tokens de vidrio por tema; se aplican al sidebar y a las tarjetas
+   comunes de las páginas (sin editar cada una). Opacidad alta para que
+   el texto siga legible sobre la aurora. */
+html:not([data-theme="light"]){ --glass:rgba(17,24,42,.66); --glass-brd:rgba(255,255,255,.08) }
+html[data-theme="light"]{ --glass:rgba(255,255,255,.72); --glass-brd:rgba(15,23,42,.07) }
+.nodo-nav{ background:var(--glass); backdrop-filter:blur(22px) saturate(1.35); -webkit-backdrop-filter:blur(22px) saturate(1.35); border-right-color:var(--glass-brd) }
+body.nodo-shelled .nodo-card,
+body.nodo-shelled .card,
+body.nodo-shelled .dcard,
+body.nodo-shelled .panel,
+body.nodo-shelled .kpi,
+body.nodo-shelled .tbl{
+  background:var(--glass)!important;
+  backdrop-filter:blur(16px) saturate(1.3); -webkit-backdrop-filter:blur(16px) saturate(1.3);
+  border-color:var(--glass-brd)!important;
+}
 @media (prefers-reduced-motion:reduce){.nfx-aurora i{animation:none!important}}
 *::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:8px;border:3px solid transparent;background-clip:content-box}
@@ -232,28 +249,35 @@ body.nodo-shelled{display:flex}
 .nodo-nav.collapsed .nodo-link .lbl{display:none}
 
 /* CTA Bandeja — único ítem con tratamiento especial (§7).
-   Botón destacado: relleno indigo sólido, texto blanco y glow suave,
-   para que la Bandeja resalte por encima del resto de la navegación. */
+   Borde cónico giratorio (glow) + relleno indigo→violeta, ligado al
+   nivel de efectos (Ajustes → Apariencia). */
 .nodo-link.nodo-cta{
-  margin:4px 0 16px;height:50px;color:#fff;font-weight:700;font-size:14.5px;letter-spacing:-.1px;
-  background:linear-gradient(180deg,var(--brand),var(--brand-2));
-  border:1px solid var(--brand);
-  box-shadow:0 3px 14px -2px rgba(99,102,241,.6),inset 0 1px 0 rgba(255,255,255,.14);
+  position:relative;margin:4px 0 16px;height:50px;color:#fff;font-weight:700;font-size:14.5px;letter-spacing:-.1px;
+  background:transparent;border:none;overflow:visible;
+  box-shadow:0 10px 26px -10px rgba(124,58,237,.75);
 }
+.nodo-link.nodo-cta::before{ /* anillo cónico giratorio */
+  content:"";position:absolute;inset:-2px;border-radius:inherit;z-index:0;
+  background:conic-gradient(from 0deg,var(--info,#22D3EE),var(--purple,#8B5CF6),var(--brand),var(--brand-2),var(--info,#22D3EE));
+  filter:blur(6px);opacity:.85;animation:ctaSpin 6s linear infinite;
+}
+.nodo-link.nodo-cta .cta-in{ /* relleno del botón, encima del cónico */
+  position:absolute;inset:0;border-radius:inherit;z-index:0;
+  background:linear-gradient(150deg,var(--brand),var(--purple,#8B5CF6) 62%,var(--brand-2));
+}
+.nodo-link.nodo-cta > svg,.nodo-link.nodo-cta > .lbl,.nodo-link.nodo-cta > .cta-dot{position:relative;z-index:1}
 .nodo-link.nodo-cta svg{width:21px;height:21px;stroke-width:2.3}
-.nodo-link.nodo-cta:hover{
-  color:#fff;background:linear-gradient(180deg,var(--brand-2),var(--brand-2));
-  box-shadow:0 4px 16px -2px rgba(99,102,241,.7),inset 0 1px 0 rgba(255,255,255,.14);
-}
-/* La barra lateral de "activo" no aplica: el CTA ya es sólido */
-.nodo-link.nodo-cta.active{color:#fff;background:linear-gradient(180deg,var(--brand),var(--brand-2))}
-.nodo-link.nodo-cta.active::before{display:none}
+.nodo-link.nodo-cta:hover{transform:scale(1.02)}
 .nodo-link.nodo-cta .cta-dot{
   margin-left:auto;width:8px;height:8px;border-radius:50%;flex:none;
   background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:ctaPulse 2.4s infinite;
 }
 .nodo-nav.collapsed .nodo-link.nodo-cta{height:44px}
 .nodo-nav.collapsed .nodo-link.nodo-cta .cta-dot{position:absolute;top:5px;right:5px;margin:0;background:var(--green)}
+html[data-nfx="suave"] .nodo-link.nodo-cta::before{animation-duration:12s}
+html[data-nfx="off"] .nodo-link.nodo-cta::before{animation:none;opacity:.55;filter:blur(3px)}
+@media(prefers-reduced-motion:reduce){.nodo-link.nodo-cta::before{animation:none}}
+@keyframes ctaSpin{to{transform:rotate(360deg)}}
 @keyframes ctaPulse{
   0%{box-shadow:0 0 0 0 rgba(255,255,255,.6)}
   70%{box-shadow:0 0 0 6px rgba(255,255,255,0)}
@@ -261,8 +285,23 @@ body.nodo-shelled{display:flex}
 }
 
 /* Pie del sidebar */
-.nodo-foot{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:10px;
+.nodo-foot{margin-top:auto;display:flex;flex-direction:column;gap:3px;padding-top:10px;
   border-top:1px solid var(--border)}
+
+/* Chip de usuario → configura el perfil (foto, nombre, cerrar sesión) */
+.nodo-user{display:flex;align-items:center;gap:10px;margin-top:5px;padding:7px 8px;border-radius:var(--r-sm);
+  text-decoration:none;color:var(--text);cursor:pointer;transition:background var(--t-fast)}
+.nodo-user:hover{background:var(--surface-2)}
+.nodo-user.active{background:var(--brand-bg)}
+.nu-av{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;overflow:hidden;
+  color:#fff;font-weight:700;font-size:14px;background:linear-gradient(135deg,var(--brand),var(--purple,#8B5CF6))}
+.nu-av img{width:100%;height:100%;object-fit:cover}
+.nu-meta{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.25}
+.nu-meta b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nu-meta small{font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nodo-user svg{width:15px;height:15px;flex:none;color:var(--faint);transform:rotate(-90deg)}
+.nodo-nav.collapsed .nodo-user{justify-content:center;padding:7px 0}
+.nodo-nav.collapsed .nu-meta,.nodo-nav.collapsed .nodo-user svg{display:none}
 
 /* Contenido de la página ocupa el resto */
 body.nodo-shelled > .app,
