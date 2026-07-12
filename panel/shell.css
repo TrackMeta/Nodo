@@ -214,6 +214,13 @@ body.nodo-shelled{display:flex}
   color:var(--brand-2);font:inherit;font-size:13px;font-weight:600;text-align:left;border-radius:8px;cursor:pointer}
 .nb-create:hover{background:var(--brand-bg)}
 .nb-create svg{width:17px;height:17px;flex:none;stroke-width:2.2}
+/* Comprimido: el popover baja mostrando solo los logos (estrecho) */
+.nodo-botpop.mini{width:auto}
+.nodo-botpop.mini .nb-item{justify-content:center;padding:6px}
+.nodo-botpop.mini .nb-item span,.nodo-botpop.mini .nb-item svg{display:none}
+.nodo-botpop.mini .nb-item.on{box-shadow:0 0 0 2px var(--brand) inset}
+.nodo-botpop.mini .nb-create{justify-content:center;padding:9px 6px}
+.nodo-botpop.mini .nb-create span{display:none}
 
 /* Modal: crear nuevo bot */
 .nodo-modal-back{position:fixed;inset:0;z-index:9998;display:grid;place-items:center;padding:20px;

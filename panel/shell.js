@@ -448,7 +448,6 @@ export async function mountShell({ active, minimal } = {}) {
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú">${svg("panel")}</button>
-      <div class="nodo-botpop" id="nodoBotPop" hidden></div>
     </div>
     <nav class="nodo-primary">${primaryHTML}</nav>
     <nav class="nodo-links">${groupsHTML}</nav>
@@ -502,7 +501,10 @@ export async function mountShell({ active, minimal } = {}) {
   const botBtn = nav.querySelector("#nodoBotBtn");
   const botLogo = nav.querySelector("#nodoBotLogo");
   const botName = nav.querySelector("#nodoBotName");
-  const botPop = nav.querySelector("#nodoBotPop");
+  // El popover va en <body> (no dentro del sidebar) porque el backdrop-filter
+  // del nav recorta a los hijos position:fixed.
+  let botPop = document.getElementById("nodoBotPop");
+  if (!botPop) { botPop = document.createElement("div"); botPop.id = "nodoBotPop"; botPop.className = "nodo-botpop"; botPop.hidden = true; document.body.appendChild(botPop); }
   const logo = nav.querySelector("#nodoLogo");
   const brandName = nav.querySelector("#nodoBrandName");
   S.botBtn = botBtn; S.botLogo = botLogo; S.botName = botName; S.botPop = botPop; S.logo = logo; S.brandName = brandName;
@@ -527,9 +529,11 @@ export async function mountShell({ active, minimal } = {}) {
   };
   const positionBotPop = () => {
     if (!botBtn || !botPop) return;
+    const collapsed = nav.classList.contains("collapsed");
+    botPop.classList.toggle("mini", collapsed); // comprimido = solo logos
     const r = botBtn.getBoundingClientRect();
-    if (nav.classList.contains("collapsed")) { botPop.style.left = (r.right + 8) + "px"; botPop.style.top = r.top + "px"; }
-    else { botPop.style.left = r.left + "px"; botPop.style.top = (r.bottom + 6) + "px"; }
+    botPop.style.top = (r.bottom + 6) + "px"; // siempre baja
+    botPop.style.left = r.left + "px";
   };
   if (botBtn) botBtn.onclick = (e) => {
     e.stopPropagation();
@@ -539,7 +543,7 @@ export async function mountShell({ active, minimal } = {}) {
   if (!S.botDocClose) {
     S.botDocClose = true;
     document.addEventListener("click", (e) => {
-      if (S.botPop && !S.botPop.hidden && !e.target.closest(".nodo-brand")) { S.botPop.hidden = true; if (S.botBtn) S.botBtn.classList.remove("open"); }
+      if (S.botPop && !S.botPop.hidden && !e.target.closest(".nodo-brand") && !e.target.closest("#nodoBotPop")) { S.botPop.hidden = true; if (S.botBtn) S.botBtn.classList.remove("open"); }
     });
   }
 
@@ -620,7 +624,7 @@ function onNavClick(e) {
 // Reemplaza el contenido (todo el <body> salvo el sidebar y el toast).
 function removeContentNodes() {
   Array.from(document.body.children).forEach((el) => {
-    if (el === S.nav || el.id === "nodo-toast" || el.id === "nodo-fx") return; // persisten
+    if (el === S.nav || el.id === "nodo-toast" || el.id === "nodo-fx" || el.id === "nodoBotPop") return; // persisten
     el.remove();
   });
 }
