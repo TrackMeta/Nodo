@@ -525,9 +525,15 @@ export async function mountShell({ active, minimal } = {}) {
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = () => { S.api.setChannel(b.dataset.id); closeBotPop(); }; });
     const cr = botPop.querySelector(".nb-create"); if (cr) cr.onclick = () => { closeBotPop(); openCreateBot(); };
   };
+  const positionBotPop = () => {
+    if (!botBtn || !botPop) return;
+    const r = botBtn.getBoundingClientRect();
+    if (nav.classList.contains("collapsed")) { botPop.style.left = (r.right + 8) + "px"; botPop.style.top = r.top + "px"; }
+    else { botPop.style.left = r.left + "px"; botPop.style.top = (r.bottom + 6) + "px"; }
+  };
   if (botBtn) botBtn.onclick = (e) => {
     e.stopPropagation();
-    if (botPop.hidden) { renderBotPop(); botPop.hidden = false; botBtn.classList.add("open"); } else closeBotPop();
+    if (botPop.hidden) { renderBotPop(); positionBotPop(); botPop.hidden = false; botBtn.classList.add("open"); } else closeBotPop();
   };
   // Cerrar el popover al hacer clic fuera (listener único por documento).
   if (!S.botDocClose) {
