@@ -110,6 +110,33 @@ html:not([data-theme="light"]) body, html[data-theme="light"] body{
   accent-color:var(--brand);
 }
 ::selection{background:var(--brand-bg);color:var(--text)}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Capa de efectos — fondo aurora + constelación de nodos (concepto de
+   marca: Nodo = nodos + flujos). Vive detrás de todo el contenido
+   (z-index:-1). Intensidad y FPS configurables en Ajustes → Apariencia
+   (localStorage nodo.fx.level = full|suave|off, nodo.fx.fps). El canvas
+   lo dibuja shell.js; aquí van la aurora, el foco y el velo.
+   ═══════════════════════════════════════════════════════════════════ */
+.nodo-fx{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.nfx-aurora{position:absolute;inset:0}
+.nfx-aurora i{position:absolute;border-radius:50%;filter:blur(80px);mix-blend-mode:screen;opacity:.5;will-change:transform}
+html[data-theme="light"] .nfx-aurora i{mix-blend-mode:multiply;filter:blur(100px);opacity:.4}
+.nfx-aurora .a1{width:56vw;height:56vw;left:-14vw;top:-18vw;background:radial-gradient(circle,var(--brand),transparent 62%);animation:nfxD1 24s ease-in-out infinite}
+.nfx-aurora .a2{width:50vw;height:50vw;right:-16vw;bottom:-18vw;background:radial-gradient(circle,var(--info,#22D3EE),transparent 62%);animation:nfxD2 30s ease-in-out infinite}
+.nfx-aurora .a3{width:44vw;height:44vw;left:34vw;top:22vh;background:radial-gradient(circle,var(--purple,#8B5CF6),transparent 60%);animation:nfxD3 27s ease-in-out infinite}
+.nfx-canvas{position:absolute;inset:0;width:100%;height:100%}
+.nfx-spot{position:absolute;inset:0;background:radial-gradient(560px 480px at var(--nfx-mx,50%) var(--nfx-my,-10%),rgba(99,102,241,.12),transparent 72%);transition:background .1s}
+.nfx-veil{position:absolute;inset:0;background:radial-gradient(120% 92% at 50% 0%,transparent 44%,rgba(2,6,18,.5) 100%)}
+html[data-theme="light"] .nfx-veil{background:radial-gradient(120% 92% at 50% 0%,transparent 46%,rgba(255,255,255,.45) 100%)}
+@keyframes nfxD1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(9vw,7vh) scale(1.14)}}
+@keyframes nfxD2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-8vw,-6vh) scale(1.18)}}
+@keyframes nfxD3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vw,9vh) scale(1.1)}}
+/* Niveles de intensidad */
+html[data-nfx="suave"] .nfx-aurora i{animation-duration:46s}
+html[data-nfx="off"] .nfx-aurora i{animation:none;opacity:.26}
+html[data-nfx="off"] .nfx-spot,html[data-nfx="off"] .nfx-canvas{display:none}
+@media (prefers-reduced-motion:reduce){.nfx-aurora i{animation:none!important}}
 *::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:8px;border:3px solid transparent;background-clip:content-box}
 *::-webkit-scrollbar-thumb:hover{background:var(--faint);border:3px solid transparent;background-clip:content-box}

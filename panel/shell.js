@@ -144,6 +144,164 @@ const S = {
 
 const fileOf = (path) => path.split("/").pop() || "";
 
+// ═══════════════════════════════════════════════════════════════════
+//  Efectos de fondo — aurora + constelación de nodos (concepto de marca)
+//  Configurable en Ajustes → Apariencia. Salvaguardas de rendimiento:
+//  se pausa al ocultar la pestaña, tope de 64 nodos, glow con sprite
+//  (sin shadowBlur), FPS configurable y respeta prefers-reduced-motion.
+// ═══════════════════════════════════════════════════════════════════
+const FX_LEVELS = ["full", "suave", "off"];
+export function getEffects() {
+  let level = localStorage.getItem("nodo.fx.level");
+  if (!FX_LEVELS.includes(level)) level = "suave"; // default responsable (Full queda a un clic)
+  let fps = parseInt(localStorage.getItem("nodo.fx.fps") || "60", 10);
+  if (!Number.isFinite(fps)) fps = 60;
+  fps = Math.min(60, Math.max(20, fps));
+  return { level, fps };
+}
+export function setEffects({ level, fps } = {}) {
+  if (level && FX_LEVELS.includes(level)) localStorage.setItem("nodo.fx.level", level);
+  if (fps) localStorage.setItem("nodo.fx.fps", String(Math.min(60, Math.max(20, fps | 0))));
+  applyEffects();
+  return getEffects();
+}
+
+const FX = { built: false, cv: null, cx: null, W: 0, H: 0, DPR: 1, nodes: [], signals: [], sprites: {}, sig: null, COL: [], raf: 0, last: 0, mouse: { x: -1e4, y: -1e4 }, reduce: false, level: "suave", fps: 60 };
+
+function fxColors() {
+  return getTheme() !== "light" ? ["99,102,241", "34,211,238", "139,92,246"] : ["90,93,232", "8,145,178", "124,58,237"];
+}
+function fxSprite(rgb) {
+  const r = 16, s = document.createElement("canvas"); s.width = s.height = r * 2;
+  const g = s.getContext("2d"), grd = g.createRadialGradient(r, r, 0, r, r, r);
+  grd.addColorStop(0, `rgba(${rgb},.95)`); grd.addColorStop(.45, `rgba(${rgb},.35)`); grd.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = grd; g.beginPath(); g.arc(r, r, r, 0, 7); g.fill(); return s;
+}
+function fxBuildSprites() {
+  FX.COL = fxColors();
+  FX.sprites = {}; FX.COL.forEach((c) => { FX.sprites[c] = fxSprite(c); });
+  FX.sig = fxSprite("226,244,255");
+}
+function fxRetheme() { // recolorea al cambiar de tema (claro/oscuro)
+  if (!FX.built) return;
+  fxBuildSprites();
+  FX.nodes.forEach((p) => { p.c = FX.COL[(Math.random() * FX.COL.length) | 0]; });
+}
+function fxResize() {
+  if (!FX.cv) return;
+  FX.DPR = Math.min(devicePixelRatio || 1, 2);
+  FX.W = FX.cv.width = Math.floor(innerWidth * FX.DPR);
+  FX.H = FX.cv.height = Math.floor(innerHeight * FX.DPR);
+  FX.cv.style.width = innerWidth + "px"; FX.cv.style.height = innerHeight + "px";
+  const n = Math.min(64, Math.max(20, Math.round(innerWidth * innerHeight / 26000))); // tope de nodos
+  FX.nodes = Array.from({ length: n }, () => ({
+    x: Math.random() * FX.W, y: Math.random() * FX.H,
+    vx: (Math.random() - .5) * .10 * FX.DPR, vy: (-Math.random() * .14 - .03) * FX.DPR,
+    r: (Math.random() * 1.8 + 1.1) * FX.DPR, c: FX.COL[(Math.random() * FX.COL.length) | 0],
+  }));
+  fxSeedSignals();
+}
+function fxNeighbors(i, maxD) {
+  const out = [];
+  for (let j = 0; j < FX.nodes.length; j++) {
+    if (j === i) continue;
+    const dx = FX.nodes[i].x - FX.nodes[j].x, dy = FX.nodes[i].y - FX.nodes[j].y;
+    if (dx * dx + dy * dy < maxD * maxD) out.push(j);
+  }
+  return out;
+}
+function fxNewSignal() {
+  if (!FX.nodes.length) return null;
+  const maxD = 140 * FX.DPR, i = (Math.random() * FX.nodes.length) | 0, nb = fxNeighbors(i, maxD);
+  if (!nb.length) return null;
+  const j = nb[(Math.random() * nb.length) | 0];
+  return { a: i, b: j, t: 0, spd: .006 + Math.random() * .01 };
+}
+function fxSeedSignals() {
+  const cap = FX.level === "off" ? 0 : FX.level === "suave" ? 2 : 6;
+  FX.signals = [];
+  for (let k = 0; k < cap; k++) { const s = fxNewSignal(); if (s) FX.signals.push(s); }
+}
+function fxDraw() {
+  if (!FX.cx) return;
+  FX.cx.clearRect(0, 0, FX.W, FX.H);
+  if (FX.level === "off") return;
+  const maxD = 140 * FX.DPR, mR = 170 * FX.DPR, cx = FX.cx;
+  // aristas (se iluminan cerca del cursor)
+  for (let i = 0; i < FX.nodes.length; i++) for (let j = i + 1; j < FX.nodes.length; j++) {
+    const a = FX.nodes[i], b = FX.nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (d < maxD) {
+      const md = Math.hypot((a.x + b.x) / 2 - FX.mouse.x, (a.y + b.y) / 2 - FX.mouse.y), near = md < mR ? (1 - md / mR) : 0;
+      cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y);
+      cx.strokeStyle = `rgba(${a.c},${(.09 * (1 - d / maxD)) + near * .2})`; cx.lineWidth = (near > 0 ? 1.3 : 1) * FX.DPR; cx.stroke();
+    }
+  }
+  // nodos (glow con sprite pre-renderizado)
+  for (const p of FX.nodes) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.y < -14) p.y = FX.H + 14; if (p.x < -14) p.x = FX.W + 14; if (p.x > FX.W + 14) p.x = -14;
+    const md = Math.hypot(p.x - FX.mouse.x, p.y - FX.mouse.y), near = md < mR ? (1 - md / mR) : 0;
+    const size = (p.r * 6) + near * 6 * FX.DPR;
+    cx.globalAlpha = .55 + near * .45;
+    cx.drawImage(FX.sprites[p.c] || FX.sig, p.x - size / 2, p.y - size / 2, size, size);
+  }
+  cx.globalAlpha = 1;
+  // señales viajando por las conexiones (datos fluyendo)
+  for (let k = 0; k < FX.signals.length; k++) {
+    const s = FX.signals[k]; s.t += s.spd;
+    if (s.t >= 1) { FX.signals[k] = fxNewSignal() || { a: s.b, b: s.a, t: 0, spd: s.spd }; continue; }
+    const a = FX.nodes[s.a], b = FX.nodes[s.b]; if (!a || !b) { FX.signals[k] = fxNewSignal() || s; continue; }
+    const x = a.x + (b.x - a.x) * s.t, y = a.y + (b.y - a.y) * s.t, sz = 10 * FX.DPR;
+    cx.drawImage(FX.sig, x - sz / 2, y - sz / 2, sz, sz);
+  }
+}
+function fxStop() { cancelAnimationFrame(FX.raf); FX.raf = 0; }
+function fxStart() {
+  fxStop();
+  if (FX.reduce) { fxDraw(); return; } // sin animación: un solo cuadro
+  const loop = (now) => {
+    FX.raf = requestAnimationFrame(loop);
+    if (FX.level === "off") return;
+    if (now - FX.last < 1000 / FX.fps) return; // throttle a los FPS elegidos
+    FX.last = now;
+    fxDraw();
+  };
+  FX.last = performance.now();
+  FX.raf = requestAnimationFrame(loop);
+}
+function applyEffects() {
+  const e = getEffects();
+  FX.level = e.level; FX.fps = e.fps;
+  document.documentElement.setAttribute("data-nfx", e.level);
+  if (!FX.built) return;
+  fxSeedSignals();
+  if (e.level === "off") { fxStop(); FX.cx && FX.cx.clearRect(0, 0, FX.W, FX.H); }
+  else if (document.visibilityState !== "hidden") { fxStart(); }
+}
+function ensureFX() {
+  if (FX.built || document.getElementById("nodo-fx")) return;
+  try {
+    FX.reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
+    const box = document.createElement("div");
+    box.id = "nodo-fx"; box.className = "nodo-fx"; box.setAttribute("aria-hidden", "true");
+    box.innerHTML = `<div class="nfx-aurora"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div><canvas class="nfx-canvas"></canvas><div class="nfx-spot"></div><div class="nfx-veil"></div>`;
+    document.body.insertBefore(box, document.body.firstChild);
+    FX.cv = box.querySelector(".nfx-canvas"); FX.cx = FX.cv.getContext("2d");
+    FX.built = true;
+    fxBuildSprites(); fxResize();
+    addEventListener("resize", fxResize, { passive: true });
+    addEventListener("pointermove", (e) => {
+      FX.mouse.x = e.clientX * FX.DPR; FX.mouse.y = e.clientY * FX.DPR;
+      const r = document.documentElement.style;
+      r.setProperty("--nfx-mx", e.clientX + "px"); r.setProperty("--nfx-my", e.clientY + "px");
+    }, { passive: true });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") fxStop(); else applyEffects();
+    });
+    applyEffects();
+  } catch (e) { console.error("[FX]", e); } // decorativo: nunca romper la app
+}
+
 // ── Cascarón ────────────────────────────────────────────────────────
 export async function mountShell({ active, minimal } = {}) {
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
@@ -153,6 +311,7 @@ export async function mountShell({ active, minimal } = {}) {
   const initLogo = brandHit && cachedBrand.logo ? cachedBrand.logo : FALLBACK_LOGO;
   const initName = brandHit && cachedBrand.name ? cachedBrand.name : "Nodo";
   setFavicon(initLogo); // aplica el favicon del bot cuanto antes
+  ensureFX();           // capa de efectos de fondo (se auto-protege de doble init)
 
   // ── Re-entrada SPA: el shell completo ya está montado → no reconstruir.
   if (!minimal && S.nav && document.body.contains(S.nav) && !S.nav.classList.contains("minimal")) {
@@ -214,7 +373,7 @@ export async function mountShell({ active, minimal } = {}) {
     themeBtn.innerHTML = `${svg(dark ? "sun" : "moon")}<span class="lbl">${dark ? "Tema claro" : "Tema oscuro"}</span>`;
   };
   paintTheme();
-  themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); };
+  themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); fxRetheme(); };
 
   // Grupos colapsables (persisten en localStorage)
   nav.querySelectorAll(".nodo-group > .nodo-sec").forEach((btn) => {
@@ -339,7 +498,7 @@ function onNavClick(e) {
 // Reemplaza el contenido (todo el <body> salvo el sidebar y el toast).
 function removeContentNodes() {
   Array.from(document.body.children).forEach((el) => {
-    if (el === S.nav || el.id === "nodo-toast") return;
+    if (el === S.nav || el.id === "nodo-toast" || el.id === "nodo-fx") return; // persisten
     el.remove();
   });
 }
