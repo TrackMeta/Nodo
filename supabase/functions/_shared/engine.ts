@@ -508,24 +508,58 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string) {
 }
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
+// Conocimiento del canal (negocio + perfiles de IA por rol), cacheado por run.
+async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any }> {
+  let info = (run as any)._chIa;
+  if (!info) {
+    info = { negocio: null, perfiles: {} };
+    try {
+      const { data: ch } = await db.from("channels")
+        .select("negocio, ia_perfiles").eq("id", run.channel_id).maybeSingle();
+      info.negocio = (ch as any)?.negocio ?? null;
+      info.perfiles = (ch as any)?.ia_perfiles ?? {};
+    } catch (_) { /* migración 0023 pendiente */ }
+    (run as any)._chIa = info;
+  }
+  return info;
+}
+// Perfil por defecto según la operación del nodo (§6-OCTIES).
+const PERFIL_POR_OP: Record<string, string> = {
+  generar_texto: "ventas", analizar_imagen: "ocr", extraer: "extraccion",
+};
+
 async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const cfg = node.config ?? {};
   const op = cfg.operacion ?? "generar_texto";
   const maxTokens = cfg.max_tokens ? Number(cfg.max_tokens) : undefined;
-  const system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
   const prompt = resolve(String(cfg.prompt ?? ""), ctx);
+  const info = await channelIaInfo(db, run);
+
+  // Prompt de sistema en 3 niveles (§6-OCTIES): negocio → producto → nodo.
+  let system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
+  if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
+    const parts: string[] = [];
+    if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
+    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
+    if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
+    if (system) parts.push(system);
+    if (parts.length) system = parts.join("\n\n");
+  }
 
   try {
-    // Resolver proveedor + key del canal (Vault). `proveedor` del nodo o el
-    // proveedor por defecto del canal si el nodo dice "auto".
-    const wantProvider = cfg.proveedor && cfg.proveedor !== "auto" ? cfg.proveedor : null;
+    // Resolver proveedor + modelo: override del nodo > perfil del rol > default del canal.
+    const perfilKey = cfg.perfil || PERFIL_POR_OP[op];
+    const perfil = perfilKey ? (info.perfiles?.[perfilKey] ?? null) : null;
+    const wantProvider = cfg.proveedor && cfg.proveedor !== "auto"
+      ? cfg.proveedor
+      : (perfil?.proveedor && perfil.proveedor !== "auto" ? perfil.proveedor : null);
     const { data: aiRows } = await db.rpc("get_channel_ai_active", {
       p_channel_id: run.channel_id, p_provider: wantProvider,
     });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (!ai?.api_key) throw new Error("IA no configurada en este canal (Configuraciones)");
     const provider = ai.provider as Provider;
-    const model = cfg.modelo || ai.model || undefined;
+    const model = cfg.modelo || (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
 
     let content: string | ContentBlock[] = prompt;
     if (op === "analizar_imagen") {
@@ -608,15 +642,50 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 // ── Contexto y resolución de variables {{ }} ───────────────────────
 async function buildContext(db: SupabaseClient, run: Run) {
   const { data: c } = await db.from("contacts")
-    .select("nombre, wa_id, stage, last_input, last_input_type").eq("id", run.contact_id).maybeSingle();
+    .select("nombre, wa_id, stage, last_input, last_input_type, product_id").eq("id", run.contact_id).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id);
   const ctx: any = {
     nombre: c?.nombre ?? "", telefono: c?.wa_id ?? "", wa_id: c?.wa_id ?? "",
     stage: c?.stage ?? "", last_input: c?.last_input ?? "",
     last_input_type: (c as any)?.last_input_type ?? "",
-    ...run.vars,
   };
+  // Campos FIJOS del producto (§6-SEXIES): la ficha del producto expone sus
+  // datos como variables ({{precio}}, {{link_entrega}}, {{producto_nombre}},
+  // {{adelanto}}, {{envio_*}}…). Cacheado por run (no cambian a mitad).
+  try {
+    const prodId = (c as any)?.product_id;
+    if (prodId) {
+      let pc = (run as any)._prodCtx;
+      if (!pc || pc._id !== prodId) {
+        const { data: p } = await db.from("products").select("nombre, config").eq("id", prodId).maybeSingle();
+        pc = { _id: prodId };
+        if (p) {
+          pc.producto_nombre = (p as any).nombre;
+          for (const [k, v] of Object.entries((p as any).config ?? {})) {
+            if (v == null || typeof v === "object") continue;
+            pc[k] = v;
+          }
+          const env = (p as any).config?.envio;
+          if (env && typeof env === "object") {
+            for (const [k, v] of Object.entries(env)) {
+              if (v == null || typeof v === "object") continue;
+              pc["envio_" + k] = v;
+            }
+            // {{adelanto}} listo para usar (modo fijo; % se calcula sobre precio)
+            const val = Number(env.adelanto_valor ?? 0);
+            const precio = Number((p as any).config?.precio);
+            pc.adelanto = env.adelanto_modo === "porcentaje" && Number.isFinite(precio) && precio > 0
+              ? (precio * val / 100).toFixed(2)
+              : val;
+          }
+        }
+        (run as any)._prodCtx = pc;
+      }
+      for (const [k, v] of Object.entries(pc)) if (k !== "_id") ctx[k] = v;
+    }
+  } catch (_) { /* columnas pendientes */ }
+  Object.assign(ctx, run.vars);
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
   // notificación de físicos (guía, saldo, clave de recojo…). Best-effort.

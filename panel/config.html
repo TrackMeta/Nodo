@@ -127,7 +127,8 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle();
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
@@ -189,14 +190,24 @@ function renderGeneral(b){
       <label>País / zona horaria</label>
       <select class="in" id="g_tz" style="max-width:340px">${TIMEZONES.map(([v,l])=>`<option value="${v}" ${v===tz?"selected":""}>${l}</option>`).join("")}</select>
     </div>
+    <div class="card">
+      <div class="chd"><span class="ico">${IC.spark}</span><span class="nm">Conocimiento del negocio</span></div>
+      <div class="desc">Contexto que el bot conoce <b>en todas las conversaciones de este bot</b>: quiénes somos, tono de venta, políticas de envío y cambios, horarios de despacho, preguntas frecuentes generales. Se inyecta automáticamente a los nodos ✨ IA. Lo específico de cada producto (descripción, FAQ del producto) se escribe en su ficha de <b>Productos</b>.</div>
+      <textarea class="in" id="g_negocio" rows="9" style="height:auto;min-height:170px;padding:11px 12px;line-height:1.55;font-family:var(--font);resize:vertical" placeholder="Ej.: Somos Digital Prime, vendemos guías y programas por WhatsApp. Tono: cercano y directo, tuteo, emojis con moderación…&#10;Envíos: Lima contraentrega (24h), provincia por Shalom/Olva con adelanto.&#10;Pagos: Yape/Plin al 999 999 999 (Percy Flores).&#10;Nunca prometemos resultados médicos. Si piden hablar con una persona, transferir.">${esc(c.negocio||"")}</textarea>
+    </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const patch={ buffer_default_seg:Math.max(0,parseInt($("g_delay").value||"0",10)), timezone:$("g_tz").value };
-    const { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    const patch={ buffer_default_seg:Math.max(0,parseInt($("g_delay").value||"0",10)), timezone:$("g_tz").value, negocio:$("g_negocio").value.trim()||null };
+    let { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    if(error && /negocio|column/.test(error.message)){
+      delete patch.negocio;
+      ({ error }=await supa.from("channels").update(patch).eq("id",st.channelId));
+      if(!error) toast("Guardado sin el conocimiento (aplica la migración 0023)",true);
+    }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.buffer_default_seg=patch.buffer_default_seg; st.channel.timezone=patch.timezone; toast("Guardado ✓");
+    st.channel.buffer_default_seg=patch.buffer_default_seg; st.channel.timezone=patch.timezone; st.channel.negocio=patch.negocio??st.channel.negocio; toast("Guardado ✓");
   };
 }
 
@@ -375,6 +386,56 @@ function renderIA(box){
     cont.appendChild(card);
   });
   cont.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
+  renderPerfiles(cont);
+}
+
+// ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────
+// Cambias el modelo de una TAREA en un solo lugar; los nodos IA usan el
+// perfil de su operación salvo que el nodo especifique otro.
+const PERFILES=[
+  ["ventas","🗣 Conversación / ventas","Nodos IA que responden dudas y venden (generar texto)."],
+  ["ocr","🧾 Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
+  ["extraccion","🔍 Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
+];
+function renderPerfiles(cont){
+  const perf=(st.channel&&st.channel.ia_perfiles)||{};
+  const allModels=[...new Set(PROVIDERS.flatMap(p=>p.models))];
+  const card=document.createElement("div"); card.className="card";
+  card.innerHTML=`
+    <div class="chd"><span class="ico">${IC.sliders}</span><span class="nm">Perfiles por tarea</span></div>
+    <div class="desc">Qué proveedor y modelo usa cada <b>tipo de trabajo</b>. Cambiarlo aquí actualiza todos los flujos de una vez; un nodo IA puede seguir forzando su propio modelo si lo necesitas.</div>
+    ${PERFILES.map(([k,nm,d])=>{
+      const v=perf[k]||{};
+      return `<div style="border-top:1px solid var(--border);padding:12px 0 2px;margin-top:12px">
+        <div style="font-weight:700;font-size:13.5px">${nm}</div>
+        <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">${d}</div>
+        <div class="row">
+          <div class="f"><label style="margin-top:0">Proveedor</label>
+            <select class="in" id="pf_prov_${k}">
+              <option value="" ${!v.proveedor?"selected":""}>Por defecto del bot</option>
+              <option value="anthropic" ${v.proveedor==="anthropic"?"selected":""}>Claude (Anthropic)</option>
+              <option value="openai" ${v.proveedor==="openai"?"selected":""}>ChatGPT (OpenAI)</option>
+            </select></div>
+          <div class="f"><label style="margin-top:0">Modelo</label>
+            <input class="in" id="pf_mod_${k}" list="pf_dl" value="${esc(v.modelo||"")}" placeholder="(el del proveedor)"/></div>
+        </div>
+      </div>`;
+    }).join("")}
+    <datalist id="pf_dl">${allModels.map(m=>`<option value="${m}">`).join("")}</datalist>
+    <div class="acts"><button class="btn primary" id="savePerfiles">Guardar perfiles</button></div>`;
+  cont.appendChild(card);
+  card.querySelector("#savePerfiles").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const ia_perfiles={};
+    PERFILES.forEach(([k])=>{
+      const prov=$("pf_prov_"+k).value, mod=$("pf_mod_"+k).value.trim();
+      if(prov||mod) ia_perfiles[k]={ ...(prov?{proveedor:prov}:{}), ...(mod?{modelo:mod}:{}) };
+    });
+    const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
+    st.channel.ia_perfiles=ia_perfiles; toast("Perfiles guardados ✓");
+  };
 }
 
 // ── Pixel de Meta (CAPI) ────────────────────────────────────────────

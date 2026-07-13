@@ -48,8 +48,51 @@ Deno.serve(async (req) => {
   try { await processCampaigns(db); }
   catch (e) { console.error("[scheduler] campaigns:", (e as any)?.message ?? e); }
 
-  return json({ ok: true, woke, fired });
+  // ── 4) Recordatorios anclados a pedido (§6-SEPTIES) ───────────────
+  // Trigger tipo `pedido_recordatorio` config { estado, horas }: si un pedido
+  // lleva ≥ horas en ese estado, dispara el flujo UNA sola vez (marca en
+  // shipping). Ej.: esperando_adelanto sin pago → nudge; en_agencia sin
+  // cobrar el saldo → nudge urgente (la agencia devuelve el paquete).
+  let nudged = 0;
+  try { nudged = await processOrderReminders(now); }
+  catch (e) { console.error("[scheduler] pedidos:", (e as any)?.message ?? e); }
+
+  return json({ ok: true, woke, fired, nudged });
 });
+
+async function processOrderReminders(now: number): Promise<number> {
+  const { data: trigs } = await db.from("flow_triggers")
+    .select("flow_id, channel_id, config, interrumpe, flows!inner(estado)")
+    .eq("tipo", "pedido_recordatorio").eq("activo", true).limit(50);
+  let n = 0;
+  for (const t of trigs ?? []) {
+    if ((t as any).flows?.estado !== "activo") continue;
+    const estado = (t as any).config?.estado;
+    const horas = Number((t as any).config?.horas ?? 24);
+    if (!estado || !(horas > 0)) continue;
+    const cutoff = new Date(now - horas * 3600 * 1000).toISOString();
+    const { data: ords } = await db.from("orders")
+      .select("id, contact_id, shipping")
+      .eq("channel_id", (t as any).channel_id).eq("estado", estado)
+      .lte("updated_at", cutoff).limit(25);
+    for (const o of ords ?? []) {
+      if (!(o as any).contact_id) continue;
+      const ship = (o as any).shipping ?? {};
+      const mark = "_nudge_" + estado; // una sola vez por estado
+      if (ship[mark]) continue;
+      try {
+        const ok = await startFlowRun(db, (t as any).channel_id, (o as any).contact_id,
+          (t as any).flow_id, { force: !!(t as any).interrumpe });
+        if (ok) {
+          await db.from("orders").update({ shipping: { ...ship, [mark]: new Date().toISOString() } })
+            .eq("id", (o as any).id);
+          n++;
+        }
+      } catch (e) { console.error("[scheduler] nudge:", (e as any)?.message ?? e); }
+    }
+  }
+  return n;
+}
 
 async function processSub(s: any, now: number): Promise<boolean> {
   const { data: seq } = await db.from("sequences").select("pasos, activo").eq("id", s.sequence_id).maybeSingle();

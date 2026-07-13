@@ -202,7 +202,15 @@ function renderDatos(){
     </div>
     <div id="envioCard"></div>
     <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con bifurcación (versiones Básica/Premium)</label>
-    <label>Campos fijos (config JSON: precio, contexto_producto, datos_pago…)</label>
+    <div class="card" style="margin-top:16px">
+      <h4>🧠 Conocimiento del producto (para la IA)</h4>
+      <div style="font-size:12px;color:var(--faint)">Los nodos ✨ IA lo reciben automáticamente al conversar sobre este producto, junto con el "Conocimiento del negocio" de Ajustes → General.</div>
+      <label>Descripción / contexto del producto</label>
+      <textarea class="in" id="pContexto" rows="5" style="height:auto;min-height:100px;padding:10px 12px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Qué es, qué incluye, para quién es, beneficios, precio y versiones, cómo se entrega…">${esc((st.prod.config||{}).contexto_producto||"")}</textarea>
+      <label>FAQ / objeciones frecuentes</label>
+      <textarea class="in" id="pFaq" rows="5" style="height:auto;min-height:100px;padding:10px 12px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="P: ¿Cómo lo recibo? R: …&#10;P: ¿Tiene garantía? R: …&#10;Objeción: 'está caro' → responder con el valor y la escalera de precios.">${esc((st.prod.config||{}).faq||"")}</textarea>
+    </div>
+    <label>Campos fijos (config JSON: precio, datos_pago, links…)</label>
     <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
     <label style="margin-top:22px">Versiones</label>
     <div id="versions"></div>
@@ -229,7 +237,10 @@ function renderDatos(){
   any.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); pop.style.display="none"; } };
   document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
-  $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); }catch(_){ toast("JSON inválido",true); } };
+  $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); $("pContexto").value=st.prod.config.contexto_producto||""; $("pFaq").value=st.prod.config.faq||""; }catch(_){ toast("JSON inválido",true); } };
+  const syncCfg=()=>{ const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
+  $("pContexto").onchange=(e)=>{ (st.prod.config=st.prod.config||{}).contexto_producto=e.target.value.trim()||undefined; if(!e.target.value.trim()) delete st.prod.config.contexto_producto; syncCfg(); };
+  $("pFaq").onchange=(e)=>{ (st.prod.config=st.prod.config||{}).faq=e.target.value.trim()||undefined; if(!e.target.value.trim()) delete st.prod.config.faq; syncCfg(); };
   $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderEnvio(); };
   $("addVersion").onclick=()=>{ st.versions.push({ nombre:"Nueva versión", price_list:[], drive_link:"", orden:st.versions.length }); renderVersions(); };
   renderEnvio();

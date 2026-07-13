@@ -561,12 +561,13 @@ function updateNodeDom(m){
 // ── Disparadores del flujo (flow_triggers) ──
 // Cuándo arranca este flujo: palabra clave, flujo de entrada (fallback),
 // estado de pedido (el Kanban lo dispara al mover la tarjeta) o anuncio CTWA.
-const TRIG_LABEL={ entrada:"★ Flujo de entrada", keyword:"🔑 Palabra clave", pedido_estado:"📦 Estado de pedido", referral:"📣 Anuncio (referral)", boton:"🔘 Botón", ia:"✨ Disparador IA", api:"🔌 API" };
+const TRIG_LABEL={ entrada:"★ Flujo de entrada", keyword:"🔑 Palabra clave", pedido_estado:"📦 Estado de pedido", pedido_recordatorio:"⏰ Recordatorio de pedido", referral:"📣 Anuncio (referral)", boton:"🔘 Botón", ia:"✨ Disparador IA", api:"🔌 API" };
 const PEDIDO_ESTADOS=["confirmado","en_reparto","entregado_cobrado","esperando_adelanto","adelanto_validado","por_despachar","despachado","en_agencia","saldo_pagado","recogido","reprogramado","rechazado","no_recogido","cancelado"];
 function trigDesc(t){
   const c=t.config||{};
   if(t.tipo==="keyword") return (c.keywords||[]).join(", ")+" · coincidencia: "+(c.match||"contiene")+(t.interrumpe?" · interrumpe":"");
   if(t.tipo==="pedido_estado") return "al pasar a: "+(c.estados||[]).join(", ")+(t.interrumpe?" · interrumpe la conversación":"");
+  if(t.tipo==="pedido_recordatorio") return "si lleva ≥ "+(c.horas||24)+" h en "+(c.estado||"?")+(t.interrumpe?" · interrumpe":"")+" (una vez)";
   if(t.tipo==="referral") return "Ad IDs: "+(c.ad_ids||[]).join(", ");
   if(t.tipo==="entrada") return "recibe todo mensaje que no coincida con otro disparador";
   return JSON.stringify(c);
@@ -583,6 +584,7 @@ async function openTriggers(){
       <select id="tgTipo">
         <option value="keyword">🔑 Palabra clave</option>
         <option value="pedido_estado">📦 Estado de pedido (Kanban)</option>
+        <option value="pedido_recordatorio">⏰ Recordatorio de pedido (horas en un estado)</option>
         <option value="referral">📣 Anuncio CTWA (Ad ID)</option>
         <option value="entrada">★ Flujo de entrada (fallback del canal)</option>
       </select>
@@ -633,6 +635,14 @@ function renderTgCfg(ov){
       <div class="tg-chips" id="tgEstados">${PEDIDO_ESTADOS.map(e=>`<button type="button" data-e="${e}">${e.replace(/_/g," ")}</button>`).join("")}</div>
       <label class="chkline"><input type="checkbox" id="tgInt" checked/> Interrumpe la conversación activa (recomendado para notificar ya)</label>`;
     box.querySelectorAll("#tgEstados button").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
+  } else if(tipo==="pedido_recordatorio"){
+    box.innerHTML=`
+      <label>Cuando el pedido lleve demasiado tiempo en…</label>
+      <select id="tgEstadoR">${PEDIDO_ESTADOS.map(e=>`<option value="${e}">${e.replace(/_/g," ")}</option>`).join("")}</select>
+      <label>Horas de espera antes de recordar</label>
+      <input id="tgHoras" type="number" min="1" value="24"/>
+      <label class="chkline"><input type="checkbox" id="tgInt"/> Interrumpe una conversación activa</label>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">Se dispara UNA sola vez por pedido. Típico: esperando_adelanto ≥ 12 h → recordar el pago; en_agencia ≥ 24 h → avisar que la agencia devuelve el paquete.</div>`;
   } else if(tipo==="referral"){
     box.innerHTML=`
       <label>Ad IDs del anuncio (separados por coma)</label>
@@ -654,6 +664,11 @@ async function addTrigger(ov){
     const estados=[...ov.querySelectorAll("#tgEstados button.on")].map(b=>b.dataset.e);
     if(!estados.length){ toast("Elige al menos un estado",true); return; }
     config={ estados };
+    interrumpe=ov.querySelector("#tgInt").checked;
+  } else if(tipo==="pedido_recordatorio"){
+    const horas=parseFloat(ov.querySelector("#tgHoras").value)||0;
+    if(!(horas>0)){ toast("Indica las horas de espera",true); return; }
+    config={ estado:ov.querySelector("#tgEstadoR").value, horas };
     interrumpe=ov.querySelector("#tgInt").checked;
   } else if(tipo==="referral"){
     const ads=(ov.querySelector("#tgAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
