@@ -395,7 +395,7 @@ function ensureFX() {
 }
 
 // ── Cascarón ────────────────────────────────────────────────────────
-export async function mountShell({ active, minimal } = {}) {
+export async function mountShell({ active } = {}) {
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
   const savedId = localStorage.getItem("nodo.channelId");
   const cachedBrand = readBrandCache();
@@ -405,8 +405,8 @@ export async function mountShell({ active, minimal } = {}) {
   setFavicon(initLogo); // aplica el favicon del bot cuanto antes
   ensureFX();           // capa de efectos de fondo (se auto-protege de doble init)
 
-  // ── Re-entrada SPA: el shell completo ya está montado → no reconstruir.
-  if (!minimal && S.nav && document.body.contains(S.nav) && !S.nav.classList.contains("minimal")) {
+  // ── Re-entrada SPA: el shell ya está montado → no reconstruir.
+  if (S.nav && document.body.contains(S.nav)) {
     S.subs = []; S.leaves = [];      // limpia suscripciones/cleanups de la página anterior
     updateActive(active);
     applyInboxCollapse(active);
@@ -414,8 +414,8 @@ export async function mountShell({ active, minimal } = {}) {
   }
 
   const nav = document.createElement("aside");
-  const startCollapsed = minimal || localStorage.getItem("nodo.collapsed") === "1";
-  nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "") + (minimal ? " minimal" : "");
+  const startCollapsed = localStorage.getItem("nodo.collapsed") === "1";
+  nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "");
   // Ítems: el grupo primario (Bandeja/Dashboard/Pedidos) va FIJO fuera del
   // scroll; los demás grupos van dentro del área scrolleable.
   const itemHTML = (it) => it.cta
@@ -428,20 +428,7 @@ export async function mountShell({ active, minimal } = {}) {
     const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
     return `<div class="nodo-group${closed ? " closed" : ""}" data-g="${g.key}"><button class="nodo-sec" type="button">${g.sec}${svg("chevron")}</button><div class="nodo-gitems">${items}</div></div>`;
   }).join("");
-  nav.innerHTML = minimal
-    ? `
-    <div class="nodo-brand"><a href="dashboard.html" title="Ir al panel" style="display:flex"><img id="nodoLogo" src="${initLogo}" alt="" /></a></div>
-    <nav class="nodo-links">
-      <a class="nodo-link" href="dashboard.html" title="Volver al panel">${svg("panel")}<span class="lbl">Panel</span></a>
-      <a class="nodo-link active" href="index.html" title="Bandeja">${svg("inbox")}<span class="lbl">Bandeja</span></a>
-      <a class="nodo-link" href="contactos.html" title="Contactos">${svg("contactos")}<span class="lbl">Contactos</span></a>
-    </nav>
-    <div class="nodo-foot">
-      <a class="nodo-link" href="perfil.html" title="Perfil">${svg("user")}<span class="lbl">Perfil</span></a>
-      <button class="nodo-link" id="nodoTheme" title="Cambiar tema"></button>
-      <button class="nodo-link" id="nodoLogout" title="Cerrar sesión">${svg("logout")}<span class="lbl">Cerrar sesión</span></button>
-    </div>`
-    : `
+  nav.innerHTML = `
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
         <img class="nb-logo" id="nodoBotLogo" src="${initLogo}" alt="" />
@@ -462,6 +449,7 @@ export async function mountShell({ active, minimal } = {}) {
       </div>
     </div>`;
   document.body.classList.add("nodo-shelled");
+  document.querySelectorAll(".nodo-nav").forEach((n) => n.remove()); // sin sidebars duplicados
   document.body.insertBefore(nav, document.body.firstChild);
   S.nav = nav;
 
@@ -585,14 +573,14 @@ export async function mountShell({ active, minimal } = {}) {
   window.NodoShell = S.api;
 
   applyInboxCollapse(active); // Bandeja arranca colapsada
-  if (!minimal) setupRouter(); // activa la navegación SPA
+  setupRouter(); // activa la navegación SPA
   return S.api;
 }
 
 // La Bandeja colapsa el sidebar (más espacio para el chat) sin persistir;
 // las demás secciones respetan la preferencia guardada del usuario.
 function applyInboxCollapse(active) {
-  if (!S.nav || S.nav.classList.contains("minimal")) return;
+  if (!S.nav) return;
   if (active === "inbox") S.nav.classList.add("collapsed");
   else S.nav.classList.toggle("collapsed", localStorage.getItem("nodo.collapsed") === "1");
 }
