@@ -7,7 +7,17 @@
    `html[data-theme=light]` (claro) — mayor especificidad que :root,
    independiente del orden de carga. Las páginas solo consumen tokens.
    ═══════════════════════════════════════════════════════════════════ */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap");
+/* Inter auto-alojada (subconjunto latin, 47KB, variable 400–800) en vez del
+   @import a Google Fonts, que serializaba 2 peticiones externas + DNS. Mismo
+   origen, cacheada con la app; display:swap cae a Segoe UI mientras carga. */
+@font-face{
+  font-family:'Inter';
+  font-style:normal;
+  font-weight:400 800;
+  font-display:swap;
+  src:url("vendor/inter-latin.woff2") format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
 
 /* ── Transiciones de navegación entre páginas ──────────────────────
    View Transitions API (Chrome/Edge): al cambiar de sección el
@@ -161,8 +171,13 @@ body.nodo-shelled .panel,
 body.nodo-shelled .kpi,
 body.nodo-shelled .tbl{
   background:var(--glass)!important;
-  backdrop-filter:blur(16px) saturate(1.3); -webkit-backdrop-filter:blur(16px) saturate(1.3);
   border-color:var(--glass-brd)!important;
+}
+/* El backdrop-filter (frost) solo aporta si hay textura detrás = fondo animado
+   encendido. Con el fondo apagado, blurear un color sólido es puro costo de GPU
+   (peor al hacer scroll con muchas tarjetas) → se aplica solo en suave/full. */
+:is(html[data-nfx="suave"],html[data-nfx="full"]) body.nodo-shelled :is(.card,.dcard,.panel,.kpi,.tbl){
+  backdrop-filter:blur(14px) saturate(1.3); -webkit-backdrop-filter:blur(14px) saturate(1.3);
 }
 @media (prefers-reduced-motion:reduce){.nfx-aurora i{animation:none!important}}
 *::-webkit-scrollbar{width:10px;height:10px}
@@ -183,9 +198,12 @@ body.nodo-shelled{display:flex}
 .nodo-nav{
   width:248px;flex:none;height:100vh;position:sticky;top:0;z-index:30;
   background:var(--glass-nav);border-right:1px solid var(--glass-brd);
-  backdrop-filter:blur(20px) saturate(1.4); -webkit-backdrop-filter:blur(20px) saturate(1.4);
   display:flex;flex-direction:column;padding:12px;
   transition:width var(--t-med);overflow:hidden;
+}
+/* frost del sidebar solo con fondo animado encendido (ver nota en las tarjetas) */
+:is(html[data-nfx="suave"],html[data-nfx="full"]) .nodo-nav{
+  backdrop-filter:blur(18px) saturate(1.4); -webkit-backdrop-filter:blur(18px) saturate(1.4);
 }
 .nodo-nav.collapsed{width:72px}
 

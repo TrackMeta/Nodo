@@ -420,6 +420,9 @@ export async function mountShell({ active } = {}) {
   const initLogo = brandHit && cachedBrand.logo ? cachedBrand.logo : FALLBACK_LOGO;
   const initName = brandHit && cachedBrand.name ? cachedBrand.name : "Nodo";
   setFavicon(initLogo); // aplica el favicon del bot cuanto antes
+  // Marcar el nivel de efectos SIEMPRE (incluso "off") para que el CSS pueda
+  // condicionar el glass/backdrop-filter (caro) a cuando hay fondo que frostear.
+  document.documentElement.setAttribute("data-nfx", getEffects().level);
   ensureFX();           // capa de efectos de fondo (se auto-protege de doble init)
 
   // ── Re-entrada SPA: el shell ya está montado → no reconstruir.
