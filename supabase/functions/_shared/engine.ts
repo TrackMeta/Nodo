@@ -75,9 +75,19 @@ export async function runEngine(
       if (!ready) return;
     }
   }
-  // La última imagen del cliente queda disponible para el nodo IA (OCR).
+  // Imagen entrante (ej. comprobante): se sube a almacenamiento propio para
+  // tener un LINK PÚBLICO reutilizable → {{ultima_imagen}} (Sheets, Telegram)
+  // y el nodo IA (OCR) la lee de esa misma URL. Si la subida falla, se usa la
+  // referencia original como respaldo.
   if (event.type === "message" && event.mediaRef && (event.msgType === "image" || !event.msgType)) {
-    run.vars._last_image = event.mediaRef;
+    const url = await ingestImage(db, channelId, contactId, event.mediaRef).catch((e) => {
+      console.error("[ingestImage]", (e as any)?.message ?? e); return null;
+    });
+    run.vars._last_image = url ?? event.mediaRef;
+    if (url) {
+      run.vars.ultima_imagen = url;
+      await setField(db, channelId, contactId, "ultima_imagen", url);
+    }
   }
   await execute(db, run);
 }
@@ -393,6 +403,25 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
   return texto || null;
 }
 
+// Sube una imagen entrante (comprobante) a Storage y devuelve su URL pública.
+// WhatsApp no da URL pública del media; el webchat sí (se devuelve tal cual).
+async function ingestImage(db: SupabaseClient, channelId: string, contactId: string, mediaRef: string): Promise<string | null> {
+  if (/^https?:/.test(mediaRef)) return mediaRef;            // webchat: ya pública
+  if (!mediaRef.startsWith("wa-media:")) return null;
+  const secrets = await getChannelSecrets(db, channelId);
+  if (!secrets?.access_token) return null;
+  const { bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token);
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const path = `comprobantes/${contactId}/${Date.now()}.${ext}`;
+  let up = await db.storage.from("media").upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
+  if (up.error && /bucket|not found/i.test(up.error.message)) {
+    await db.storage.createBucket("media", { public: true }).catch(() => {}); // 1ª vez
+    up = await db.storage.from("media").upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
+  }
+  if (up.error) { console.error("[ingestImage] upload:", up.error.message); return null; }
+  return db.storage.from("media").getPublicUrl(path).data?.publicUrl ?? null;
+}
+
 // Guarda la transcripción dentro de la burbuja del audio → el operador la lee
 // en la Bandeja bajo la nota de voz. Best-effort.
 async function annotateAudioTranscript(db: SupabaseClient, contactId: string, texto: string) {
@@ -448,7 +477,12 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         break;
       }
       case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); await logEvent(db, run.channel_id, run.contact_id, "nota", "Etapa: " + a.valor); break;
-      case "notify_admin": await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx)); break;
+      case "notify_admin": {
+        // `foto` opcional: adjunta la imagen (p.ej. {{ultima_imagen}}) como foto.
+        const foto = a.foto ? resolve(String(a.foto), ctx) : undefined;
+        await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx), foto);
+        break;
+      }
       case "transfer_human": {
         await db.from("contacts").update({ bot_activo: false }).eq("id", run.contact_id);
         await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", run.contact_id);
@@ -555,7 +589,7 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
 }
 
 // Notifica a los admins del canal por Telegram (bot token en Vault).
-async function notifyAdmin(db: SupabaseClient, run: Run, text: string) {
+async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?: string) {
   if (!text) return;
   const { data: channel } = await db.from("channels")
     .select("telegram_chat_ids, nombre").eq("id", run.channel_id).maybeSingle();
@@ -565,7 +599,7 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string) {
   const token = secrets?.telegram_bot_token;
   if (!token) { console.warn("[notify_admin] canal sin telegram_bot_token"); return; }
   const prefix = (channel as any)?.nombre ? `[${(channel as any).nombre}] ` : "";
-  await sendTelegram(token, chatIds, prefix + text);
+  await sendTelegram(token, chatIds, prefix + text, photoUrl);
 }
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
@@ -674,18 +708,27 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", run.channel_id).maybeSingle();
     const url = (ch as any)?.gsheets?.webhook_url;
     if (!url) throw new Error("Google Sheets no está conectado (Ajustes → Google Sheets)");
+    const accion = cfg.accion === "update" ? "update" : "append";
     // columnas: [{ col:"Fecha", valor:"{{fecha_compra}}" }, …] → { Fecha: "13/07/2026", … }
+    // En "append" = celdas de la fila nueva; en "update" = celdas a modificar.
     const fila: Record<string, string> = {};
     for (const c of cfg.columnas ?? []) {
       if (!c?.col) continue;
       fila[String(c.col)] = resolve(String(c.valor ?? ""), ctx);
     }
+    const payload: Record<string, unknown> = { accion, hoja: cfg.hoja || undefined, fila };
+    if (accion === "update") {
+      // buscar: [{ col:"Nº Operación", valor:"{{op}}" }] → localizar la fila.
+      const buscar: Record<string, string> = {};
+      for (const b of cfg.buscar ?? []) if (b?.col) buscar[String(b.col)] = resolve(String(b.valor ?? ""), ctx);
+      payload.buscar = buscar;
+    }
     const res = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hoja: cfg.hoja || undefined, fila }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error("Apps Script respondió " + res.status);
-    await logEvent(db, run.channel_id, run.contact_id, "nota", "📊 Fila enviada a Google Sheets");
+    await logEvent(db, run.channel_id, run.contact_id, "nota", accion === "update" ? "📊 Fila actualizada en Google Sheets" : "📊 Fila enviada a Google Sheets");
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "exito")) ??
       (await nextNode(db, run.flow_id, node.id, "continuar"));

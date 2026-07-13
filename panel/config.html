@@ -218,18 +218,36 @@ const GS_SCRIPT = `function doPost(e) {
   var data = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = data.hoja ? (ss.getSheetByName(data.hoja) || ss.insertSheet(data.hoja)) : ss.getSheets()[0];
-  var fila = data.fila || {};
+  var fila = data.fila || {}, buscar = data.buscar || {};
   var headers = sh.getLastColumn() > 0 ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0] : [];
-  if (headers.join('') === '') {
-    headers = Object.keys(fila);
-    if (headers.length) sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  function col(name) {
+    var i = headers.indexOf(name);
+    if (i === -1) { headers.push(name); sh.getRange(1, headers.length).setValue(name); i = headers.length - 1; }
+    return i;
   }
-  Object.keys(fila).forEach(function (k) {
-    if (headers.indexOf(k) === -1) { headers.push(k); sh.getRange(1, headers.length).setValue(k); }
-  });
+  if (headers.join('') === '') { headers = Object.keys(buscar).concat(Object.keys(fila)); if (headers.length) sh.getRange(1, 1, 1, headers.length).setValues([headers]); }
+  Object.keys(buscar).forEach(col); Object.keys(fila).forEach(col);
+
+  if (data.accion === 'update') {
+    var last = sh.getLastRow();
+    var rows = last > 1 ? sh.getRange(2, 1, last - 1, headers.length).getValues() : [];
+    for (var r = 0; r < rows.length; r++) {
+      var match = true;
+      for (var b in buscar) { if (String(rows[r][headers.indexOf(b)]) !== String(buscar[b])) { match = false; break; } }
+      if (match) {
+        Object.keys(fila).forEach(function (k) { sh.getRange(r + 2, headers.indexOf(k) + 1).setValue(fila[k]); });
+        return out({ ok: true, updated: r + 2 });
+      }
+    }
+    var merged = {}; for (var x in buscar) merged[x] = buscar[x]; for (var y in fila) merged[y] = fila[y];
+    sh.appendRow(headers.map(function (h) { return merged[h] !== undefined ? merged[h] : ''; }));
+    return out({ ok: true, appended: true });
+  }
+
   sh.appendRow(headers.map(function (h) { return fila[h] !== undefined ? fila[h] : ''; }));
-  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
-}`;
+  return out({ ok: true });
+}
+function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }`;
 function renderGsheets(b){
   const g=(st.channel&&st.channel.gsheets)||{};
   const connected=!!(g.connected && g.webhook_url);
