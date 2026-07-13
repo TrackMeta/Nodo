@@ -32,6 +32,8 @@
 :root{
   --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  /* Azul/celeste del logo de la app (CTA Bandeja) */
+  --inbox:#007dfd; --inbox-2:#3aa5ff; --inbox-3:#5ec6ff;
   --r-sm:8px; --r-md:12px; --r-lg:16px; --r-full:999px;
   --t-fast:150ms ease-out;
   --t-med:200ms cubic-bezier(.2,.8,.2,1);
@@ -318,10 +320,10 @@ body.nodo-shelled{display:flex}
    se liga al nivel de efectos (Ajustes → Apariencia). */
 .nodo-link.nodo-cta{
   position:relative;margin:2px 0 4px;height:50px;color:#fff;font-weight:700;font-size:14.5px;letter-spacing:-.1px;overflow:hidden;
-  background:linear-gradient(120deg,var(--brand),var(--purple,#8B5CF6) 55%,var(--brand-2));
+  background:linear-gradient(120deg,var(--inbox),var(--inbox-2) 52%,var(--inbox-3));
   background-size:180% 180%;animation:ctaFlow 9s ease infinite;
-  border:1px solid rgba(255,255,255,.16);
-  box-shadow:0 8px 22px -8px rgba(124,58,237,.7),inset 0 1px 0 rgba(255,255,255,.18);
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow:0 8px 22px -8px rgba(0,125,253,.6),inset 0 1px 0 rgba(255,255,255,.22);
 }
 .nodo-link.nodo-cta .cta-in{ /* destello que recorre el botón */
   position:absolute;inset:0;z-index:0;pointer-events:none;
