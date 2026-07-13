@@ -678,18 +678,13 @@ async function navigate(href, { push = true } = {}) {
 
     teardown(); // limpia la página saliente ANTES de quitar su DOM
 
-    const doSwap = () => {
-      document.title = doc.title || document.title;
-      S.pageStyles.forEach((s) => s.remove());       // fuera estilos de la página anterior
-      S.pageStyles = newStyles;
-      newStyles.forEach((s) => document.head.appendChild(s)); // estilos de la nueva
-      removeContentNodes();
-      contentNodes.forEach((n) => document.body.appendChild(n));
-    };
-    if (document.startViewTransition) {
-      const t = document.startViewTransition(doSwap);
-      try { await t.updateCallbackDone; } catch {}
-    } else { doSwap(); }
+    // Swap instantáneo del contenido (el sidebar y el fondo no se tocan).
+    document.title = doc.title || document.title;
+    S.pageStyles.forEach((s) => s.remove());       // fuera estilos de la página anterior
+    S.pageStyles = newStyles;
+    newStyles.forEach((s) => document.head.appendChild(s)); // estilos de la nueva
+    removeContentNodes();
+    contentNodes.forEach((n) => document.body.appendChild(n));
 
     if (push) history.pushState({ spa: true }, "", dest.href);
     runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)

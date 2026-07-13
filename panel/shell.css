@@ -17,10 +17,13 @@
    página (evita que "salte"). Firefox/Safari lo ignoran y quedan
    exactamente como hoy (degradación limpia, sin romper nada). */
 @view-transition { navigation: auto; }
+/* Solo aplica a navegaciones de documento completo (fronteras: Bandeja/
+   Editor). El sidebar se mantiene fijo. Entre secciones de shell completo
+   el swap es instantáneo (SPA), sin fundido → no da sensación de recarga. */
 .nodo-nav{ view-transition-name: nodo-nav; }
 ::view-transition-group(nodo-nav){ animation-duration: 0s; }
 ::view-transition-old(root),
-::view-transition-new(root){ animation-duration: .18s; animation-timing-function: ease; }
+::view-transition-new(root){ animation-duration: .16s; animation-timing-function: ease; }
 @media (prefers-reduced-motion: reduce){
   @view-transition { navigation: none; }
 }
