@@ -700,13 +700,22 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 // ── Contexto y resolución de variables {{ }} ───────────────────────
 async function buildContext(db: SupabaseClient, run: Run) {
   const { data: c } = await db.from("contacts")
-    .select("nombre, wa_id, stage, last_input, last_input_type, product_id").eq("id", run.contact_id).maybeSingle();
+    .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at")
+    .eq("id", run.contact_id).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id);
+  // Fecha/hora actuales en la zona del negocio (para {{fecha}}, {{fecha_hora}}).
+  const now = new Date();
+  const fFecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+  const fHora = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" }).format(now);
   const ctx: any = {
     nombre: c?.nombre ?? "", telefono: c?.wa_id ?? "", wa_id: c?.wa_id ?? "",
     stage: c?.stage ?? "", last_input: c?.last_input ?? "",
     last_input_type: (c as any)?.last_input_type ?? "",
+    // Atribución del anuncio (Click-to-WhatsApp) capturada en el primer mensaje.
+    ad_id: (c as any)?.ad_id ?? "", ctwa_clid: (c as any)?.ctwa_clid ?? "", origen: (c as any)?.source ?? "",
+    // Fecha/hora de AHORA (para sellar {{fecha}} de compra con un set_field).
+    fecha: fFecha, hora: fHora, fecha_hora: `${fFecha} ${fHora}`,
   };
   // PRECEDENCIA (de menos a más específico; lo de abajo pisa a lo de arriba):
   //   Campos del Bot (global) → datos del Producto → run.vars → Campos del
