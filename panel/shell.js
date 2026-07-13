@@ -211,7 +211,7 @@ export function setFavicon(href) {
 //  solo el contenido (sin recargar). Bandeja (minimal) y Editor son
 //  "fronteras": navegación normal. Ante cualquier fallo → location.href.
 // ═══════════════════════════════════════════════════════════════════
-const BOUNDARY = new Set(["index.html"]); // solo la Bandeja (minimal) recarga; el resto es SPA
+const BOUNDARY = new Set(); // todo navega por SPA (la Bandeja colapsa el sidebar en vez de recargar)
 const pageCache = new Map();  // pathname → html (para navegaciones repetidas)
 const S = {
   nav: null, api: null, botSel: null, logo: null, brandName: null,
@@ -409,6 +409,7 @@ export async function mountShell({ active, minimal } = {}) {
   if (!minimal && S.nav && document.body.contains(S.nav) && !S.nav.classList.contains("minimal")) {
     S.subs = []; S.leaves = [];      // limpia suscripciones/cleanups de la página anterior
     updateActive(active);
+    applyInboxCollapse(active);
     return S.api;
   }
 
@@ -583,8 +584,17 @@ export async function mountShell({ active, minimal } = {}) {
   };
   window.NodoShell = S.api;
 
-  if (!minimal) setupRouter(); // activa la navegación SPA (no en Bandeja)
+  applyInboxCollapse(active); // Bandeja arranca colapsada
+  if (!minimal) setupRouter(); // activa la navegación SPA
   return S.api;
+}
+
+// La Bandeja colapsa el sidebar (más espacio para el chat) sin persistir;
+// las demás secciones respetan la preferencia guardada del usuario.
+function applyInboxCollapse(active) {
+  if (!S.nav || S.nav.classList.contains("minimal")) return;
+  if (active === "inbox") S.nav.classList.add("collapsed");
+  else S.nav.classList.toggle("collapsed", localStorage.getItem("nodo.collapsed") === "1");
 }
 
 // ── Resalta el ítem activo del sidebar sin reconstruirlo (SPA) ──────

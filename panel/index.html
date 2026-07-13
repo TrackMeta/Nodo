@@ -208,7 +208,7 @@
 <body>
 
 <!-- ── LOGIN ── -->
-<div id="login">
+<div id="login" class="hidden">
   <form class="card" id="loginForm">
     <div class="brand">
       <img src="../assets/logo-rounded.png" alt="Nodo" />
@@ -331,8 +331,15 @@ async function boot() {
   const { data: { session } } = await supa.auth.getSession();
   if (!session) { $("login").classList.remove("hidden"); $("app").classList.add("hidden"); return; }
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
-  const shell = await mountShell({ active: "inbox", minimal: true });
+  const shell = await mountShell({ active: "inbox" });
   state.channelId = shell.channelId;
+  // Al entrar a la Bandeja el sidebar se colapsa; al salir (SPA) se limpia todo.
+  shell.onLeave?.(() => {
+    if (state.rt) { supa.removeChannel(state.rt); state.rt = null; }
+    clearInterval(winTimer);
+    document.removeEventListener("click", onDocClickComposer);
+    document.removeEventListener("click", onDocClickActions);
+  });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   const botSel = $("botSel");
   botSel.innerHTML = shell.channels.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
@@ -465,7 +472,8 @@ async function startFlowForContact(flowId){
 $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleQrPop(); });
 $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleEmojiPop(); });
 $("flowBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleFlowPop(); });
-document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } });
+function onDocClickComposer(e){ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } }
+document.addEventListener("click",onDocClickComposer);
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
   if (f.sinResponder && !(cv.no_leidos>0)) return false;
@@ -718,7 +726,8 @@ async function exportMessages(){
   toast("Mensajes exportados ✓");
 }
 $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.contactId) return; $("actionsMenu").classList.toggle("hidden"); });
-document.addEventListener("click",(e)=>{ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); });
+function onDocClickActions(e){ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); }
+document.addEventListener("click",onDocClickActions);
 
 function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
 function updateComposerMode(){
@@ -924,7 +933,7 @@ function subscribeRealtime() {
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function rel(ts){ const d=(Date.now()-new Date(ts))/1000; if(d<60)return"ahora"; if(d<3600)return Math.floor(d/60)+"m"; if(d<86400)return Math.floor(d/3600)+"h"; return Math.floor(d/86400)+"d"; }
 
-setInterval(() => { if (state.contactId) updateWindow(); }, 60000);
+const winTimer = setInterval(() => { if (state.contactId) updateWindow(); }, 60000);
 boot();
 </script>
 </body>
