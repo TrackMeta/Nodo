@@ -923,13 +923,21 @@ async function sendAttachment(file){
 }
 
 // ── Realtime ──
+// Los eventos de tiempo real pueden llegar en ráfaga (un flujo que envía varios
+// mensajes seguidos). Agrupamos las recargas de la lista para no re-consultar y
+// re-renderizar toda la bandeja en cada evento (evita picos de CPU con tráfico).
+let convReloadTimer = null;
+function loadConversationsSoon() {
+  clearTimeout(convReloadTimer);
+  convReloadTimer = setTimeout(() => loadConversations(), 400);
+}
 function subscribeRealtime() {
   if (state.rt) supa.removeChannel(state.rt);
   state.rt = supa.channel("nodo-inbox")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
       const m = p.new;
       if (m.contact_id === state.contactId) renderMsg(m);
-      loadConversations();
+      loadConversationsSoon();
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
       const m = p.new;
@@ -938,7 +946,7 @@ function subscribeRealtime() {
         if (el && m.direction === "out") el.textContent = `${fmtTime.format(new Date(m.ts))} · ${statusLabel(m.status)}`;
       }
     })
-    .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversations())
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversationsSoon())
     .subscribe();
 }
 

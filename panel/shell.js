@@ -231,25 +231,23 @@ const fileOf = (path) => path.split("/").pop() || "";
 //  (sin shadowBlur), FPS configurable y respeta prefers-reduced-motion.
 // ═══════════════════════════════════════════════════════════════════
 const FX_LEVELS = ["full", "suave", "off"];
-// Máquina modesta = pocos núcleos o poca RAM. En esos equipos el fondo animado
-// se siente en toda la UI, así que arranca APAGADO por defecto (el usuario lo
-// puede encender en Ajustes → Apariencia; su elección explícita siempre gana).
-function fxWeakDevice() {
-  const cores = navigator.hardwareConcurrency || 8;
-  const mem = navigator.deviceMemory || 8;
-  return cores <= 4 || mem <= 4;
-}
+// El fondo animado (constelación) es un canvas a pantalla completa que se
+// redibuja y RECOMPONE cada frame → cuesta CPU/GPU de forma continua y hace
+// sentir pesado todo el navegador apenas se abre la app. Es decorativo, así
+// que va APAGADO por defecto (opt-in): quien lo quiera lo enciende en
+// Ajustes → Apariencia y su elección se recuerda.
 export function getEffects() {
   let level = localStorage.getItem("nodo.fx.level");
-  if (!FX_LEVELS.includes(level)) level = fxWeakDevice() ? "off" : "suave";
+  if (!FX_LEVELS.includes(level)) level = "off"; // default: sin fondo animado
   let fps = parseInt(localStorage.getItem("nodo.fx.fps") || "", 10);
-  if (!Number.isFinite(fps)) fps = fxWeakDevice() ? 30 : 60; // menos FPS si lo encienden en equipo modesto
+  if (!Number.isFinite(fps)) fps = 45; // si lo encienden, 45 fps basta y cuesta menos
   fps = Math.min(60, Math.max(20, fps));
   return { level, fps };
 }
 export function setEffects({ level, fps } = {}) {
   if (level && FX_LEVELS.includes(level)) localStorage.setItem("nodo.fx.level", level);
   if (fps) localStorage.setItem("nodo.fx.fps", String(Math.min(60, Math.max(20, fps | 0))));
+  if (getEffects().level !== "off") ensureFX(); // encenderlo desde Ajustes → monta la capa si aún no existe
   applyEffects();
   return getEffects();
 }
@@ -366,8 +364,8 @@ function fxStart() {
   fxStop();
   if (FX.reduce) { fxDraw(); return; } // sin animación: un solo cuadro
   const loop = (now) => {
+    if (FX.level === "off") { FX.raf = 0; return; } // apagado → detener el bucle del todo
     FX.raf = requestAnimationFrame(loop);
-    if (FX.level === "off") return;
     if (now - FX.last < 1000 / FX.fps) return; // throttle a los FPS elegidos
     FX.last = now;
     fxDraw();
@@ -387,6 +385,7 @@ function applyEffects() {
 }
 function ensureFX() {
   if (FX.built || document.getElementById("nodo-fx")) return;
+  if (getEffects().level === "off") return; // apagado → ni siquiera montar la capa (aurora CSS incluida)
   try {
     FX.reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
     const box = document.createElement("div");
