@@ -124,7 +124,10 @@ html:not([data-theme="light"]) body, html[data-theme="light"] body{
 .nodo-fx{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
 .nfx-aurora{position:absolute;inset:0}
 .nfx-aurora i{position:absolute;border-radius:50%;filter:blur(80px);mix-blend-mode:screen;opacity:.5;will-change:transform}
-html[data-theme="light"] .nfx-aurora i{mix-blend-mode:multiply;filter:blur(100px);opacity:.4}
+/* Modo claro = día: sin estrellas/constelación (eso es de noche). Solo un
+   lavado pastel suave y aireado sobre el fondo claro. */
+html[data-theme="light"] .nfx-aurora i{mix-blend-mode:multiply;filter:blur(130px);opacity:.3}
+html[data-theme="light"] .nfx-canvas{display:none}
 .nfx-aurora .a1{width:56vw;height:56vw;left:-14vw;top:-18vw;background:radial-gradient(circle,var(--brand),transparent 62%);animation:nfxD1 24s ease-in-out infinite}
 .nfx-aurora .a2{width:50vw;height:50vw;right:-16vw;bottom:-18vw;background:radial-gradient(circle,var(--info,#22D3EE),transparent 62%);animation:nfxD2 30s ease-in-out infinite}
 .nfx-aurora .a3{width:44vw;height:44vw;left:34vw;top:22vh;background:radial-gradient(circle,var(--purple,#8B5CF6),transparent 60%);animation:nfxD3 27s ease-in-out infinite}

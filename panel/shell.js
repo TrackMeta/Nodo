@@ -260,10 +260,11 @@ function fxBuildSprites() {
   FX.sprites = {}; FX.COL.forEach((c) => { FX.sprites[c] = fxSprite(c); });
   FX.sig = fxSprite("226,244,255");
 }
-function fxRetheme() { // recolorea al cambiar de tema (claro/oscuro)
+function fxRetheme() { // recolorea + arranca/detiene el canvas según el tema
   if (!FX.built) return;
   fxBuildSprites();
   FX.nodes.forEach((p) => { p.c = FX.COL[(Math.random() * FX.COL.length) | 0]; });
+  applyEffects();
 }
 function fxResize() {
   if (!FX.cv) return;
@@ -370,7 +371,8 @@ function applyEffects() {
   document.documentElement.setAttribute("data-nfx", e.level);
   if (!FX.built) return;
   fxSeedSignals();
-  if (e.level === "off") { fxStop(); FX.cx && FX.cx.clearRect(0, 0, FX.W, FX.H); }
+  const dark = getTheme() !== "light"; // sin estrellas de día → canvas detenido
+  if (e.level === "off" || !dark) { fxStop(); FX.cx && FX.cx.clearRect(0, 0, FX.W, FX.H); }
   else if (document.visibilityState !== "hidden") { fxStart(); }
 }
 function ensureFX() {

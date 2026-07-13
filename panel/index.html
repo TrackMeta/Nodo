@@ -229,7 +229,6 @@
   <div class="list">
     <div class="top" style="gap:10px">
       <span style="font-weight:700;font-size:15px;letter-spacing:-.3px">Bandeja</span>
-      <select class="sel" id="botSel" title="Bot / número activo" style="margin-left:auto;flex:1;max-width:none"></select>
     </div>
     <div class="top" style="gap:8px;flex-wrap:wrap">
       <div class="modewrap" id="modeToggle">
@@ -341,11 +340,8 @@ async function boot() {
     document.removeEventListener("click", onDocClickActions);
   });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
-  const botSel = $("botSel");
-  botSel.innerHTML = shell.channels.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
-  if (shell.channelId) botSel.value = shell.channelId;
-  botSel.onchange = () => shell.setChannel(botSel.value);
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; if($("botSel")) $("botSel").value = id; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); });
+  // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); });
   await loadTestFlows();
   await loadFilters();
   await loadQuickReplies();
