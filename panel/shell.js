@@ -11,13 +11,15 @@
 //   shell.channelId            // canal activo
 //   shell.onChannel(cb)        // se llama al cambiar de bot
 // ═══════════════════════════════════════════════════════════════════
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+// Bundle auto-alojado (un solo archivo, mismo origen) en vez del `/+esm` de
+// jsdelivr, que se fragmentaba en ~9 peticiones encadenadas + DNS externo.
+import { createClient } from "./vendor/supabase.min.js";
 
 export const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
 export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
 
 export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-export const FALLBACK_LOGO = "../assets/logo-rounded.png";
+export const FALLBACK_LOGO = "../assets/logo-128.png";
 
 // ── Iconos (Lucide, stroke=currentColor) ───────────────────────────
 const P = {
@@ -229,11 +231,19 @@ const fileOf = (path) => path.split("/").pop() || "";
 //  (sin shadowBlur), FPS configurable y respeta prefers-reduced-motion.
 // ═══════════════════════════════════════════════════════════════════
 const FX_LEVELS = ["full", "suave", "off"];
+// Máquina modesta = pocos núcleos o poca RAM. En esos equipos el fondo animado
+// se siente en toda la UI, así que arranca APAGADO por defecto (el usuario lo
+// puede encender en Ajustes → Apariencia; su elección explícita siempre gana).
+function fxWeakDevice() {
+  const cores = navigator.hardwareConcurrency || 8;
+  const mem = navigator.deviceMemory || 8;
+  return cores <= 4 || mem <= 4;
+}
 export function getEffects() {
   let level = localStorage.getItem("nodo.fx.level");
-  if (!FX_LEVELS.includes(level)) level = "suave"; // default responsable (Full queda a un clic)
-  let fps = parseInt(localStorage.getItem("nodo.fx.fps") || "60", 10);
-  if (!Number.isFinite(fps)) fps = 60;
+  if (!FX_LEVELS.includes(level)) level = fxWeakDevice() ? "off" : "suave";
+  let fps = parseInt(localStorage.getItem("nodo.fx.fps") || "", 10);
+  if (!Number.isFinite(fps)) fps = fxWeakDevice() ? 30 : 60; // menos FPS si lo encienden en equipo modesto
   fps = Math.min(60, Math.max(20, fps));
   return { level, fps };
 }

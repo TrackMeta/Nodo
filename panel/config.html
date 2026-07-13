@@ -309,7 +309,7 @@ async function saveGsheets(btn, gs){
 
 // ── Marca del Bot ───────────────────────────────────────────────────
 function renderBranding(b){
-  const c=st.channel||{}; const logo=c.logo_url||"../assets/logo-rounded.png";
+  const c=st.channel||{}; const logo=c.logo_url||"../assets/logo-128.png";
   b.innerHTML=`
     <h2>Marca del Bot</h2><p class="sub">Nombre y logo que se muestran en el panel para este bot. Si no defines un logo, se usa el de Nodo.</p>
     <div class="card">
@@ -326,7 +326,7 @@ function renderBranding(b){
       <input class="in" id="b_logo" value="${esc((c.logo_url||'').startsWith('data:')?'':(c.logo_url||''))}" placeholder="https://.../logo.png" style="margin-top:8px"/>
       <div class="acts"><button class="btn primary" id="saveBrand">Guardar marca</button></div>
     </div>`;
-  $("b_logo").oninput=(e)=>{ st.pendingLogo=null; $("brandPrev").src=e.target.value.trim()||"../assets/logo-rounded.png"; };
+  $("b_logo").oninput=(e)=>{ st.pendingLogo=null; $("brandPrev").src=e.target.value.trim()||"../assets/logo-128.png"; };
   $("uploadBtn").onclick=()=>$("logoFile").click();
   $("logoFile").onchange=(e)=>handleLogoFile(e.target.files[0]);
   $("saveBrand").onclick=(e)=>saveBrand(e.target);
@@ -352,7 +352,7 @@ async function saveBrand(btn){
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message,true); return; }
   toast("Marca guardada ✓");
-  const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-rounded.png";
+  const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-128.png";
   const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
   const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
   st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null;
