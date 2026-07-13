@@ -19,7 +19,7 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   /* KPIs */
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:6px 0 22px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:14px;margin:6px 0 22px}
   @media(max-width:820px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
   .kpi .k-l{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
@@ -123,9 +123,12 @@ function renderKpis(){
   const pend=st.list.filter(o=>o.estado==="pendiente").length;
   const ticket=conf.length?ing/conf.length:0;
   const cur=(st.list[0]&&st.list[0].currency)||"PEN";
+  let extraUnits=0, extraIng=0;
+  conf.forEach(o=>(o.order_bumps||[]).forEach(b=>{ extraUnits++; extraIng+=Number(b.precio||0); }));
   const K=[
     ["Compras confirmadas",String(conf.length),"pedidos cerrados"],
-    ["Ingresos confirmados",money(ing,cur),"base + order bumps"],
+    ["Ingresos confirmados",money(ing,cur),"base + compras extra"],
+    ["Compras extra",String(extraUnits),`${money(extraIng,cur)} en ingresos`],
     ["Adelantos / pendientes",String(pend),"por confirmar"],
     ["Ticket promedio",money(ticket,cur),"por compra confirmada"],
   ];
@@ -152,7 +155,7 @@ function render(){
       <div class="prod"><span class="em">${esc(p.emoji||"📦")}</span><div style="min-width:0"><div class="pn">${esc(p.nombre||"—")}</div>${v.nombre?`<div class="vv">${esc(v.nombre)}</div>`:""}</div></div>
       <div><span class="badge ${esc(o.estado||"confirmada")}">${esc(o.estado||"confirmada")}</span></div>
       <div class="when">${fecha(o.created_at)}</div>
-      <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} bump${bumps>1?"s":""}</span>`:""}</div>
+      <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} compra${bumps>1?"s":""} extra</span>`:""}</div>
     </div>`;
   }).join("");
 }

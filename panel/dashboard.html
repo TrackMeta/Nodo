@@ -111,7 +111,7 @@
 
     <div class="cols">
       <div class="panel">
-        <h3>Order Bumps</h3><p class="ps">Complementos vendidos junto al producto principal</p>
+        <h3>Compras extra</h3><p class="ps">Productos vendidos junto al principal</p>
         <div id="bumps"></div>
       </div>
       <div class="panel">
@@ -228,7 +228,7 @@ async function load(){
   orders.forEach(o=>{
     ingBase+=Number(o.amount||0);
     (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0); ingBump+=p; bumpUnits++;
-      const k=b.nombre||"Order bump"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
+      const k=b.nombre||"Compra extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
   });
   const ingTotal=ingBase+ingBump;
   const compras=orders.length;
@@ -236,11 +236,11 @@ async function load(){
   const leads=ev.filter(e=>e.event_name==="Lead").length;
 
   $("kpis").innerHTML=[
-    kpi("money","#22c079","Ingresos confirmados", money(ingTotal), `${money(ingBase)} + ${money(ingBump)} bumps`),
+    kpi("money","#22c079","Ingresos confirmados", money(ingTotal), `${money(ingBase)} + ${money(ingBump)} extra`),
     kpi("cart","#22c079","Compras", compras, "órdenes confirmadas"),
     kpi("ticket","#2b7fff","Ticket promedio", money(ticket)),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
-    kpi("bump","#f0a92b","Order bumps", bumpUnits, `${money(ingBump)} en ingresos`),
+    kpi("bump","#f0a92b","Compras extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("users","#9b6cf0","Contactos", s.contactos??0, "total en vivo"),
     kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0),
     kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0),
@@ -324,10 +324,10 @@ function renderBumps(bumpMap, ingBump, unavailable){
   const box=$("bumps");
   if(unavailable){ box.innerHTML=`<div class="empty">Requiere la migración 0017.</div>`; return; }
   const list=Object.entries(bumpMap).sort((a,b)=>b[1].ing-a[1].ing);
-  if(!list.length){ box.innerHTML=`<div class="empty">Sin order bumps vendidos en el periodo.</div>`; return; }
+  if(!list.length){ box.innerHTML=`<div class="empty">Sin compras extra vendidas en el periodo.</div>`; return; }
   let rows=list.map(([nombre,d])=>`<tr><td class="pname">${esc(nombre)}</td><td class="r">${d.n}</td><td class="r money">${money(d.ing)}</td></tr>`).join("");
   rows+=`<tr class="total"><td>Total</td><td class="r">${list.reduce((a,[,d])=>a+d.n,0)}</td><td class="r money">${money(ingBump)}</td></tr>`;
-  box.innerHTML=`<table class="ptable"><thead><tr><th>Order bump</th><th class="r">Vendidos</th><th class="r">Ingresos</th></tr></thead><tbody>${rows}</tbody></table>`;
+  box.innerHTML=`<table class="ptable"><thead><tr><th>Compra extra</th><th class="r">Vendidos</th><th class="r">Ingresos</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderStages(st){
