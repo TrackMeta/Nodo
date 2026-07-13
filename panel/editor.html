@@ -541,23 +541,74 @@ function renderCfg(){
   const cfg=$("cfg");
   if(!st.selected){ cfg.innerHTML=`<div class="empty" style="height:100%"><div style="font-size:26px">🕸</div><div>${st.flowId?"Selecciona un nodo":"Elige o crea un flujo"}</div></div>`; return; }
   const m=st.model[st.selected];
+  const isSheets = m.tipo==="google_sheets";
   cfg.innerHTML=`
     <h3>${NODE_DEFS[m.tipo]?.icon||""} ${m.tipo}</h3>
     <label>Nombre del bloque</label>
     <input class="in" id="cfgNombre" value="${esc(m.nombre)}" />
-    <label>Contenido (config JSON)</label>
-    <textarea class="ta" id="cfgJson">${esc(JSON.stringify(m.config,null,2))}</textarea>
+    ${isSheets?`<div id="sheetsForm"></div>`:""}
+    <label>${isSheets?"Config avanzada (JSON)":"Contenido (config JSON)"}</label>
+    <textarea class="ta" id="cfgJson" ${isSheets?'style="min-height:90px"':""}>${esc(JSON.stringify(m.config,null,2))}</textarea>
     <label>Salidas (handles) — deben coincidir con las conexiones</label>
     <div id="handles"></div>
     <button class="btn" id="addHandle" style="width:100%;margin-top:4px">+ salida</button>
     <label class="chk"><input type="checkbox" id="cfgInicial" ${m.es_inicial?"checked":""}/> Paso inicial del flujo</label>
     <button class="del" id="delNode">Eliminar nodo</button>`;
   renderHandles(m);
+  if(isSheets) buildSheetsForm(m);
   $("cfgNombre").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
-  $("cfgJson").onchange=(e)=>{ try{ m.config=JSON.parse(e.target.value); toast("Config OK"); }catch(_){ toast("JSON inválido", true); } };
+  $("cfgJson").onchange=(e)=>{ try{ m.config=JSON.parse(e.target.value); toast("Config OK"); if(m.tipo==="google_sheets") buildSheetsForm(m); }catch(_){ toast("JSON inválido", true); } };
   $("cfgInicial").onchange=(e)=>{ if(e.target.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; } else m.es_inicial=false; };
   $("addHandle").onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); };
   $("delNode").onclick=()=>{ editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId]; st.selected=null; renderCfg(); };
+}
+// Formulario amigable del nodo Google Sheets (mantiene el JSON en sync).
+const GS_VARS=["{{nombre}}","{{telefono}}","{{producto_nombre}}","{{valor}}","{{ad_id}}","{{origen}}","{{fecha}}","{{fecha_compra}}","{{fecha_hora}}","{{ultima_imagen}}","{{order_bump}}","{{stage}}"];
+function buildSheetsForm(m){
+  const box=$("sheetsForm"); if(!box) return;
+  const c=m.config||(m.config={});
+  if(!Array.isArray(c.columnas)) c.columnas=[];
+  if(!Array.isArray(c.buscar)) c.buscar=[];
+  if(c.accion!=="update") c.accion="append";
+  const isUpd=c.accion==="update";
+  const sync=()=>{ const t=$("cfgJson"); if(t) t.value=JSON.stringify(m.config,null,2); };
+  box.innerHTML=`
+    <label style="margin-top:12px">¿Qué hace?</label>
+    <select class="sel" id="gsAccion" style="width:100%">
+      <option value="append" ${!isUpd?"selected":""}>➕ Agregar una fila nueva (registrar venta)</option>
+      <option value="update" ${isUpd?"selected":""}>✏️ Actualizar una fila (ej. compra extra en la misma fila)</option>
+    </select>
+    <label style="margin-top:12px">Pestaña de la hoja (opcional)</label>
+    <input class="in" id="gsHoja" value="${esc(c.hoja||'')}" placeholder="Ventas"/>
+    ${isUpd?`<label style="margin-top:14px">Buscar la fila donde…</label>
+      <div style="font-size:11px;color:var(--faint);margin:-2px 0 6px">Columnas que identifican la fila a actualizar (ej. Teléfono = {{telefono}}).</div>
+      <div id="gsBuscar"></div><button class="btn" id="gsAddBuscar" style="width:100%;margin-top:6px">+ criterio</button>`:""}
+    <label style="margin-top:14px">${isUpd?"Celdas a actualizar":"Columnas de la fila"}</label>
+    <div id="gsCols"></div>
+    <button class="btn" id="gsAddCol" style="width:100%;margin-top:6px">+ columna</button>
+    <datalist id="gsVars">${GS_VARS.map(v=>`<option value="${v}">`).join("")}</datalist>
+    <div style="font-size:11px;color:var(--faint);margin-top:8px">En “valor” escribe texto fijo o variables: {{nombre}}, {{valor}}, {{ultima_imagen}}…</div>`;
+  function renderRows(listKey, containerId){
+    const cont=$(containerId); if(!cont) return; cont.innerHTML="";
+    c[listKey].forEach((row,i)=>{
+      const el=document.createElement("div");
+      el.style.cssText="display:flex;gap:6px;margin-bottom:6px;align-items:center";
+      el.innerHTML=`<input class="in gcol" placeholder="Columna en tu hoja" value="${esc(row.col||'')}" style="flex:1;min-width:0"/>
+        <span style="color:var(--faint)">→</span>
+        <input class="in gval" placeholder="Valor / {{variable}}" list="gsVars" value="${esc(row.valor||'')}" style="flex:1.2;min-width:0"/>
+        <button class="btn gdel" style="flex:0 0 auto;padding:0 10px;color:var(--red)">✕</button>`;
+      el.querySelector(".gcol").oninput=(e)=>{ row.col=e.target.value; sync(); };
+      el.querySelector(".gval").oninput=(e)=>{ row.valor=e.target.value; sync(); };
+      el.querySelector(".gdel").onclick=()=>{ c[listKey].splice(i,1); renderRows(listKey,containerId); sync(); };
+      cont.appendChild(el);
+    });
+  }
+  renderRows("columnas","gsCols");
+  if(isUpd) renderRows("buscar","gsBuscar");
+  $("gsAccion").onchange=(e)=>{ c.accion=e.target.value; sync(); buildSheetsForm(m); };
+  $("gsHoja").oninput=(e)=>{ c.hoja=e.target.value||undefined; sync(); };
+  $("gsAddCol").onclick=()=>{ c.columnas.push({col:"",valor:""}); renderRows("columnas","gsCols"); sync(); };
+  const ab=$("gsAddBuscar"); if(ab) ab.onclick=()=>{ c.buscar.push({col:"",valor:""}); renderRows("buscar","gsBuscar"); sync(); };
 }
 function renderHandles(m){
   const box=$("handles"); if(!box) return; box.innerHTML="";
