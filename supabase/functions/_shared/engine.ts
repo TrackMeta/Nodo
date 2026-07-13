@@ -168,7 +168,7 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return false;
   }
   if (aw.type === "input" && event.type === "message") {
-    if (aw.guardar_en) await setField(db, run.contact_id, aw.guardar_en, event.text);
+    if (aw.guardar_en) await setField(db, run.channel_id, run.contact_id, aw.guardar_en, event.text);
     run.vars[aw.guardar_en] = event.text;
     run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
     delete run.vars._await;
@@ -429,11 +429,20 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
     switch (a.tipo) {
       case "add_tag":    await addTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_add", "Etiqueta añadida", a.valor); break;
       case "remove_tag": await removeTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_del", "Etiqueta quitada", a.valor); break;
-      case "set_field":  await setField(db, run.contact_id, a.key, resolve(String(a.valor ?? ""), ctx)); await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo actualizado", a.key); break;
-      case "clear_field":await setField(db, run.contact_id, a.key, null); break;
+      case "set_field": {
+        const v = resolve(String(a.valor ?? ""), ctx);
+        run.vars[a.key] = v; // disponible ya en este run (Condiciones posteriores)
+        await setField(db, run.channel_id, run.contact_id, a.key, v);
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo actualizado", a.key);
+        break;
+      }
+      case "clear_field": delete run.vars[a.key]; await setField(db, run.channel_id, run.contact_id, a.key, null); break;
       case "append_field": {
         const prev = ctx[a.key] ? String(ctx[a.key]) + "\n" : "";
-        await setField(db, run.contact_id, a.key, prev + resolve(String(a.valor ?? ""), ctx)); break;
+        const v = prev + resolve(String(a.valor ?? ""), ctx);
+        run.vars[a.key] = v;
+        await setField(db, run.channel_id, run.contact_id, a.key, v);
+        break;
       }
       case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); await logEvent(db, run.channel_id, run.contact_id, "nota", "Etapa: " + a.valor); break;
       case "notify_admin": await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx)); break;
@@ -634,7 +643,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Guardar el resultado como variable del run y (si existe) campo persistente.
     if (cfg.guardar_en) {
       run.vars[cfg.guardar_en] = result;
-      await setField(db, run.contact_id, cfg.guardar_en, result);
+      await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
     }
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");
@@ -818,9 +827,22 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
   try { await db.from("contacts").update({ product_id: productId }).eq("id", contactId); } catch (_) { /* columna pendiente */ }
 }
 
-async function setField(db: SupabaseClient, contactId: string, key: string, value: string | null) {
-  const { data: f } = await db.from("custom_fields").select("id, channel_id")
-    .eq("key", key).limit(1).maybeSingle();
+async function setField(db: SupabaseClient, channelId: string, contactId: string, key: string, value: string | null) {
+  if (!key) return;
+  let { data: f } = await db.from("custom_fields").select("id")
+    .eq("channel_id", channelId).eq("key", key).limit(1).maybeSingle();
+  // Si el flujo escribe en un campo que no existe, se crea solo (dinámico) →
+  // el dato persiste y aparece en el panel del contacto. Cumple "declarar
+  // campos desde los nodos" sin obligar a crearlos antes en la sección Campos.
+  if (!f) {
+    const nombre = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    await db.from("custom_fields").upsert(
+      { channel_id: channelId, key, nombre, tipo: "text", modo: "dinamico" },
+      { onConflict: "channel_id,key", ignoreDuplicates: true },
+    );
+    ({ data: f } = await db.from("custom_fields").select("id")
+      .eq("channel_id", channelId).eq("key", key).maybeSingle());
+  }
   if (!f) return;
   await db.from("contact_field_values").upsert(
     { contact_id: contactId, field_id: (f as any).id, value, updated_at: new Date().toISOString() },
