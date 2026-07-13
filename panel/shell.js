@@ -211,7 +211,7 @@ export function setFavicon(href) {
 //  solo el contenido (sin recargar). Bandeja (minimal) y Editor son
 //  "fronteras": navegación normal. Ante cualquier fallo → location.href.
 // ═══════════════════════════════════════════════════════════════════
-const BOUNDARY = new Set(["index.html", "editor.html"]); // navegación normal
+const BOUNDARY = new Set(["index.html"]); // solo la Bandeja (minimal) recarga; el resto es SPA
 const pageCache = new Map();  // pathname → html (para navegaciones repetidas)
 const S = {
   nav: null, api: null, botSel: null, logo: null, brandName: null,
@@ -606,7 +606,7 @@ function setupRouter() {
   // navegación es normal para no arrastrar su canvas/estado pesado.
   if (BOUNDARY.has(fileOf(location.pathname))) return;
   S.routerReady = true;
-  S.pageStyles = Array.from(document.head.querySelectorAll("style")); // estilos de la página actual
+  S.pageStyles = pageHeadAssets(document); // estilos de la página actual (style + link externos)
   document.addEventListener("click", onNavClick);
   window.addEventListener("popstate", () => navigate(location.href, { push: false }));
 }
@@ -628,6 +628,13 @@ function onNavClick(e) {
   navigate(dest.href);
 }
 
+// Estilos propios de una página (para intercambiar al navegar): los <style>
+// inline + los <link rel=stylesheet> externos, EXCEPTO shell.css (compartido).
+function pageHeadAssets(docLike) {
+  return Array.from(docLike.head.querySelectorAll('style, link[rel="stylesheet"]'))
+    .filter((el) => !(el.tagName === "LINK" && /(^|\/)shell\.css(\?|#|$)/.test(el.getAttribute("href") || "")));
+}
+
 // Reemplaza el contenido (todo el <body> salvo el sidebar y el toast).
 function removeContentNodes() {
   Array.from(document.body.children).forEach((el) => {
@@ -636,16 +643,21 @@ function removeContentNodes() {
   });
 }
 
-// Re-ejecuta los <script> de la página destino (los inyectados por
-// innerHTML no corren solos; recrearlos sí). Cada uno en su módulo.
-function runScripts(scripts) {
-  scripts.forEach((old) => {
+// Re-ejecuta los <script> de la página destino en orden. Los externos
+// (src, p. ej. Drawflow) se esperan a que carguen ANTES de seguir, para
+// que el script de módulo de la página ya tenga sus dependencias listas.
+async function runScripts(scripts) {
+  for (const old of scripts) {
     const s = document.createElement("script");
     if (old.type) s.type = old.type;
-    if (old.src) s.src = old.getAttribute("src");
-    else s.textContent = old.textContent;
-    document.body.appendChild(s);
-  });
+    if (old.src) {
+      s.src = old.getAttribute("src");
+      await new Promise((res) => { s.onload = s.onerror = res; document.body.appendChild(s); });
+    } else {
+      s.textContent = old.textContent;
+      document.body.appendChild(s);
+    }
+  }
 }
 
 // Ejecuta cleanups registrados por la página saliente y limpia subs.
@@ -669,7 +681,7 @@ async function navigate(href, { push = true } = {}) {
       pageCache.set(dest.pathname, html);
     }
     const doc = new DOMParser().parseFromString(html, "text/html");
-    const newStyles = Array.from(doc.head.querySelectorAll("style")).map((s) => s.cloneNode(true));
+    const newStyles = pageHeadAssets(doc).map((s) => s.cloneNode(true));
     const contentNodes = []; const scripts = [];
     Array.from(doc.body.childNodes).forEach((n) => {
       if (n.nodeType === 1 && n.tagName === "SCRIPT") scripts.push(n);
@@ -687,10 +699,9 @@ async function navigate(href, { push = true } = {}) {
     contentNodes.forEach((n) => document.body.appendChild(n));
 
     if (push) history.pushState({ spa: true }, "", dest.href);
-    runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)
-
     const page = document.querySelector(".nodo-page");
     if (page) page.scrollTop = 0; else window.scrollTo(0, 0);
+    await runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)
   } catch (e) {
     console.error("[SPA] fallback a navegación normal:", e);
     location.href = dest.href; // degradación limpia
