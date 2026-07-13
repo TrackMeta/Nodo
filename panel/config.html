@@ -211,91 +211,99 @@ function renderGeneral(b){
   };
 }
 
-// ── Google Sheets (cuenta de servicio) ──────────────────────────────
-// Correo de la cuenta de servicio de Nodo: se comparte la hoja con este
-// correo (permiso Editor) y listo. No requiere que el usuario pase por la
-// pantalla de consentimiento de Google ni cree su propio proyecto en GCP.
-const NODO_GS_SERVICE_EMAIL = "nodo-sheets@nodo-crm.iam.gserviceaccount.com";
-function sheetIdFrom(v){ const m=(v||"").match(/\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:(v||"").trim(); }
+// ── Google Sheets (vía Apps Script — sin claves ni Google Cloud) ─────
+// El usuario pega un mini-script en su propia hoja y lo publica como "app
+// web"; eso da una URL a la que Nodo hace POST con cada fila. Simple y gratis.
+const GS_SCRIPT = `function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = data.hoja ? (ss.getSheetByName(data.hoja) || ss.insertSheet(data.hoja)) : ss.getSheets()[0];
+  var fila = data.fila || {};
+  var headers = sh.getLastColumn() > 0 ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0] : [];
+  if (headers.join('') === '') {
+    headers = Object.keys(fila);
+    if (headers.length) sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  Object.keys(fila).forEach(function (k) {
+    if (headers.indexOf(k) === -1) { headers.push(k); sh.getRange(1, headers.length).setValue(k); }
+  });
+  sh.appendRow(headers.map(function (h) { return fila[h] !== undefined ? fila[h] : ''; }));
+  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+}`;
 function renderGsheets(b){
   const g=(st.channel&&st.channel.gsheets)||{};
-  const connected=!!g.connected;
+  const connected=!!(g.connected && g.webhook_url);
   b.innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
       <img src="${LOGO.sheets}" alt="" style="width:38px;height:38px;border-radius:10px"/>
       <div><h2 style="margin:0">Google Sheets</h2>
-        <p class="sub" style="margin:2px 0 0">Registra contactos, ventas y comprobantes en tus hojas directamente desde los flujos.</p></div>
+        <p class="sub" style="margin:2px 0 0">Registra ventas, contactos y datos en tu hoja desde los flujos (nodo 📊 Google Sheets). Sin claves ni Google Cloud.</p></div>
     </div>
 
     <div class="card ${connected?'on':''}">
       <div class="chd">
         <span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${LOGO.sheets}" alt=""/></span>
-        <div><div class="nm">Conexión de la hoja</div><div class="desc" style="margin:2px 0 0">Sin claves ni JSON — solo compartes la hoja.</div></div>
+        <div><div class="nm">Conexión por Apps Script</div><div class="desc" style="margin:2px 0 0">Un mini-script en tu hoja recibe las filas.</div></div>
         <span class="badge ${connected?'on':''}" style="margin-left:auto">${connected?'Conectada':'Sin conectar'}</span>
       </div>
 
       <div class="steps" style="margin-top:14px">
-        <div class="step">
-          <div class="num"></div>
-          <div class="st-b">
-            <div class="st-t">Comparte tu hoja con Nodo</div>
-            <div class="st-d">Abre tu hoja en Google Sheets → botón <b>Compartir</b> → pega este correo y dale permiso de <b>Editor</b>. Es la cuenta de servicio de Nodo; con eso puede leer y escribir filas por ti.</div>
-            <div class="copybox">${esc(NODO_GS_SERVICE_EMAIL)}<button id="copyEmail">Copiar</button></div>
-          </div>
-        </div>
-        <div class="step">
-          <div class="num"></div>
-          <div class="st-b">
-            <div class="st-t">Pega el enlace de la hoja</div>
-            <div class="st-d">Copia la URL desde la barra del navegador (o solo el ID). Nodo la usará por defecto en los nodos de Sheets.</div>
-            <input class="in" id="gs_sheet" style="margin-top:8px" value="${esc(g.spreadsheet_url||g.spreadsheet_id||'')}" placeholder="https://docs.google.com/spreadsheets/d/1AbC...def/edit"/>
-          </div>
-        </div>
-        <div class="step">
-          <div class="num"></div>
-          <div class="st-b">
-            <div class="st-t">Nombre de la pestaña (opcional)</div>
-            <div class="st-d">La hoja/pestaña donde se agregan las filas. Si lo dejas vacío se usa la primera.</div>
-            <input class="in" id="gs_tab" style="margin-top:8px;max-width:280px" value="${esc(g.tab||'')}" placeholder="Ventas"/>
-          </div>
-        </div>
+        <div class="step"><div class="num"></div><div class="st-b">
+          <div class="st-t">Abre el editor de scripts de tu hoja</div>
+          <div class="st-d">En tu Google Sheet: menú <b>Extensiones → Apps Script</b>. Borra lo que haya y pega este código, luego 💾 guarda.</div>
+          <textarea class="in" id="gs_code" readonly style="margin-top:8px;height:150px;font-family:monospace;font-size:11.5px;white-space:pre;resize:vertical"></textarea>
+          <button class="btn" id="copyScript" style="margin-top:8px">Copiar código</button>
+        </div></div>
+        <div class="step"><div class="num"></div><div class="st-b">
+          <div class="st-t">Publícalo como “app web”</div>
+          <div class="st-d">Arriba a la derecha: <b>Implementar → Nueva implementación → Aplicación web</b>. En “Ejecutar como” elige <b>Yo</b>; en “Quién tiene acceso” elige <b>Cualquier usuario</b>. Copia la <b>URL</b> que te da.</div>
+        </div></div>
+        <div class="step"><div class="num"></div><div class="st-b">
+          <div class="st-t">Pega aquí la URL de la app web</div>
+          <div class="st-d">Termina en <code>/exec</code>. Es a donde Nodo enviará cada fila.</div>
+          <input class="in" id="gs_url" style="margin-top:8px" value="${esc(g.webhook_url||'')}" placeholder="https://script.google.com/macros/s/AKfy.../exec"/>
+        </div></div>
+        <div class="step"><div class="num"></div><div class="st-b">
+          <div class="st-t">Nombre de la pestaña (opcional)</div>
+          <div class="st-d">La pestaña donde se agregan las filas. Vacío = la primera. También se puede fijar por nodo.</div>
+          <input class="in" id="gs_tab" style="margin-top:8px;max-width:280px" value="${esc(g.tab||'')}" placeholder="Ventas"/>
+        </div></div>
       </div>
 
       <div class="acts">
-        <button class="btn primary" id="saveGs">${connected?'Guardar cambios':'Conectar hoja'}</button>
+        <button class="btn primary" id="saveGs">${connected?'Guardar cambios':'Conectar'}</button>
         <button class="btn" id="testGs">Probar y escribir fila</button>
         ${connected?`<button class="btn danger" id="discGs" style="margin-left:auto">Desconectar</button>`:""}
       </div>
       <div class="desc" id="gsTestOut" style="margin-top:12px"></div>
     </div>`;
-  const cp=$("copyEmail"); if(cp) cp.onclick=()=>{ navigator.clipboard?.writeText(NODO_GS_SERVICE_EMAIL); toast("Correo copiado ✓"); };
+  $("gs_code").value=GS_SCRIPT;
+  $("copyScript").onclick=()=>{ navigator.clipboard?.writeText(GS_SCRIPT); toast("Código copiado ✓"); };
   $("saveGs").onclick=async(e)=>{
-    const url=$("gs_sheet").value.trim();
-    if(!url){ toast("Pega el enlace de tu hoja",true); return; }
-    const gs={ connected:true, service_email:NODO_GS_SERVICE_EMAIL, spreadsheet_url:url, spreadsheet_id:sheetIdFrom(url), tab:$("gs_tab").value.trim()||null };
-    await saveGsheets(e.target, gs);
+    const url=$("gs_url").value.trim();
+    if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)){ toast("La URL debe terminar en /exec (app web de Apps Script)",true); return; }
+    await saveGsheets(e.target, { connected:true, mode:"apps_script", webhook_url:url, tab:$("gs_tab").value.trim()||null });
   };
   $("testGs").onclick=testGsheets;
   const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ connected:false });
 }
-// Prueba REAL de conexión: pide al backend escribir una fila de prueba en la hoja.
+// Prueba REAL: el backend hace POST de una fila de prueba a tu app web
+// (no se puede desde el navegador por CORS de Google).
 async function testGsheets(e){
   const btn=e.target, out=$("gsTestOut");
-  const url=$("gs_sheet").value.trim(); const sid=sheetIdFrom(url);
-  if(!sid){ toast("Primero pega el enlace de la hoja",true); return; }
+  const url=$("gs_url").value.trim();
+  if(!/\/exec/.test(url)){ toast("Primero pega la URL de la app web",true); return; }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Probando…"; out.innerHTML="";
   try{
-    const r=await callFn("gsheets-test",{ channel_id:st.channelId, spreadsheet_id:sid, tab:$("gs_tab").value.trim()||null });
-    out.innerHTML=`<span style="color:var(--green)">✓ Conexión correcta.</span> Se escribió una fila de prueba en la hoja${r?.row?` (fila ${r.row})`:""}. Ya puedes borrarla.`;
-    toast("Hoja conectada ✓");
+    const r=await callFn("gsheets-test",{ webhook_url:url, tab:$("gs_tab").value.trim()||null });
+    if(r&&r.ok){ out.innerHTML=`<span style="color:var(--green)">✓ Funcionó.</span> Se escribió una fila de prueba en tu hoja. Ya puedes borrarla.`; toast("Google Sheets conectado ✓"); }
+    else { out.innerHTML=`<span style="color:var(--red)">La app web respondió pero con error:</span> ${esc((r&&r.detalle)||JSON.stringify(r))}`; }
   }catch(err){
     const msg=(err&&err.message)||"error";
-    if(/not found|404|no encontr|Function not found/i.test(msg)){
-      out.innerHTML=`<span style="color:var(--amber)">La comprobación en vivo aún no está desplegada</span> (Edge Function <code>gsheets-test</code>). La configuración quedó guardada; funcionará al habilitar los nodos de Sheets.`;
-    } else if(/permission|403|share|comparti/i.test(msg)){
-      out.innerHTML=`<span style="color:var(--red)">Sin acceso a la hoja.</span> Verifica que la compartiste con <b>${esc(NODO_GS_SERVICE_EMAIL)}</b> como <b>Editor</b>.`;
+    if(/not found|404|Function not found/i.test(msg)){
+      out.innerHTML=`<span style="color:var(--amber)">La comprobación en vivo aún no está desplegada.</span> Guarda la URL igual; funcionará en los flujos.`;
     } else {
-      out.innerHTML=`<span style="color:var(--red)">No se pudo conectar:</span> ${esc(msg)}`;
+      out.innerHTML=`<span style="color:var(--red)">No se pudo escribir:</span> ${esc(msg)}. Revisa que publicaste con acceso “Cualquier usuario”.`;
     }
   } finally { btn.disabled=false; btn.textContent=old; }
 }

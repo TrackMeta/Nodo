@@ -68,3 +68,7 @@ verify_jwt = false
 # order-update: el Kanban de Pedidos avanza estados y dispara flujos pedido_estado.
 [functions.order-update]
 verify_jwt = true
+
+# gsheets-test: escribe una fila de prueba en la app web de Apps Script del usuario.
+[functions.gsheets-test]
+verify_jwt = true

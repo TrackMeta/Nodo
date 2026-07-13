@@ -277,10 +277,13 @@ async function execute(db: SupabaseClient, run: Run) {
         }
         break;
       }
+      case "google_sheets": {
+        await runGoogleSheets(db, run, node, ctx);
+        break;
+      }
       case "fin": run.estado = "completado"; run.current_node_id = null; break;
       default: {
-        // google_sheets y otros → se implementan más adelante.
-        // Por ahora se saltan siguiendo 'exito' (o 'continuar').
+        // Nodo desconocido → se salta siguiendo 'exito' (o 'continuar').
         run.current_node_id =
           (await nextNode(db, run.flow_id, node.id, "exito")) ??
           (await nextNode(db, run.flow_id, node.id, "continuar"));
@@ -656,6 +659,38 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     console.error("nodo ia falló:", (err as any)?.message ?? err);
     run.vars._ia_error = String((err as any)?.message ?? err);
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error en nodo IA", String((err as any)?.message ?? err));
+    run.current_node_id =
+      (await nextNode(db, run.flow_id, node.id, "fallo")) ??
+      (await nextNode(db, run.flow_id, node.id, "continuar"));
+  }
+}
+
+// ── Nodo Google Sheets: registra una fila vía webhook de Apps Script ─
+// El usuario publica un Apps Script en su hoja (Ajustes → Google Sheets) que
+// recibe { hoja, fila } y agrega la fila. Nodo solo hace POST a esa URL.
+async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: any) {
+  const cfg = node.config ?? {};
+  try {
+    const { data: ch } = await db.from("channels").select("gsheets").eq("id", run.channel_id).maybeSingle();
+    const url = (ch as any)?.gsheets?.webhook_url;
+    if (!url) throw new Error("Google Sheets no está conectado (Ajustes → Google Sheets)");
+    // columnas: [{ col:"Fecha", valor:"{{fecha_compra}}" }, …] → { Fecha: "13/07/2026", … }
+    const fila: Record<string, string> = {};
+    for (const c of cfg.columnas ?? []) {
+      if (!c?.col) continue;
+      fila[String(c.col)] = resolve(String(c.valor ?? ""), ctx);
+    }
+    const res = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hoja: cfg.hoja || undefined, fila }),
+    });
+    if (!res.ok) throw new Error("Apps Script respondió " + res.status);
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "📊 Fila enviada a Google Sheets");
+    run.current_node_id =
+      (await nextNode(db, run.flow_id, node.id, "exito")) ??
+      (await nextNode(db, run.flow_id, node.id, "continuar"));
+  } catch (err) {
+    await logEvent(db, run.channel_id, run.contact_id, "error", "Error al escribir en Google Sheets", String((err as any)?.message ?? err));
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "fallo")) ??
       (await nextNode(db, run.flow_id, node.id, "continuar"));

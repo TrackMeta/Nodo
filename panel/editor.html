@@ -177,6 +177,7 @@ const NODE_DEFS = {
   iniciar_flujo:{ icon:"↗", handles:["continuar"] },
   evento_fb:    { icon:"📘", handles:["exito","fallo"] },
   plantilla:    { icon:"📋", handles:["exito","fallo"] },
+  google_sheets:{ icon:"📊", handles:["exito","fallo"] },
   fin:          { icon:"⬛", handles:[] },
 };
 
@@ -472,7 +473,7 @@ function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={
 const NODE_COLORS = {
   mensaje:"#2b7fff", pregunta:"#f0a92b", condicion:"#9b6cf0", accion:"#18b7be",
   ia:"#e264a8", esperar:"#8a97a8", iniciar_flujo:"#22c079", evento_fb:"#1877f2",
-  plantilla:"#0aa984", fin:"#e2564a",
+  plantilla:"#0aa984", google_sheets:"#0f9d58", fin:"#e2564a",
 };
 function nodeHtml(tipo, nombre){
   const ic=NODE_DEFS[tipo]?.icon||"●";
@@ -509,6 +510,14 @@ function defaultConfig(tipo){
     case "ia": return { operacion:"generar_texto", prompt:"", proveedor:"auto", modelo:"" };
     case "evento_fb": return { event_name:"Lead", currency:"PEN", value:"", order_id:"" };
     case "plantilla": return { template_name:"", template_lang:"es", params:[] };
+    case "google_sheets": return { hoja:"Ventas", columnas:[
+      { col:"Fecha", valor:"{{fecha_compra}}" },
+      { col:"Cliente", valor:"{{nombre}}" },
+      { col:"Teléfono", valor:"{{telefono}}" },
+      { col:"Producto", valor:"{{producto_nombre}}" },
+      { col:"Monto", valor:"{{valor}}" },
+      { col:"Ad ID", valor:"{{ad_id}}" },
+    ] };
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_role:"" };
     default: return {};
