@@ -4,6 +4,8 @@
 > **Documento vivo.** Se actualiza cada vez que Rodrigo aporta información (specs, aclaraciones, capturas). Es el brief maestro del que saldrá el plan técnico final. **Aún NO se construye código** — estamos en fase de definición hasta llegar al 100% de claridad.
 >
 > **Última actualización:** 2026-07-02 · **Versión:** 0.36 (auditada)
+>
+> **Terminología (2026-07-12):** lo que en este documento aparece como **"order bump" / "Order Bump"** se llama en la plataforma **"Compra extra"** (nombre visible en la UI: Dashboard, Compras/Pedidos, etc.). Las menciones históricas del changelog y los nombres de etiquetas/flujos **observados de ScaleChat** se conservan tal cual para no perder ese contexto; el término de producto de ahora en adelante es **Compra extra**. A nivel de datos el campo interno sigue siendo `order_bumps`.
 
 ---
 
