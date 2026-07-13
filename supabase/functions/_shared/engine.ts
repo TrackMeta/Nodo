@@ -5,12 +5,12 @@
 // Respeta el lock por contacto (un solo run activo/esperando).
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { imageBlock, runAI, type ContentBlock, type Provider } from "./ai.ts";
+import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent } from "./capi.ts";
 import { sendTelegram } from "./telegram.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getChannelSecrets } from "./db.ts";
-import { fetchMediaAsDataUri, MetaApiError, sendButtons, sendText } from "./meta.ts";
+import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendText } from "./meta.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -41,6 +41,21 @@ interface Node {
 export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
+  // STT: si entra una nota de voz, transcribirla a texto ANTES de todo, para
+  // que los triggers de palabra clave, condiciones y la IA la entiendan como
+  // si el cliente hubiera escrito. El audio original queda guardado igual.
+  if (event.type === "message" && event.msgType === "audio" && event.mediaRef) {
+    const texto = await transcribeIncoming(db, channelId, event.mediaRef).catch((e) => {
+      console.error("[STT]", (e as any)?.message ?? e); return null;
+    });
+    if (texto) {
+      event = { ...event, text: texto };
+      await db.from("contacts").update({ last_input: texto }).eq("id", contactId);
+      await annotateAudioTranscript(db, contactId, texto);
+      await logEvent(db, channelId, contactId, "nota", "🎙️ Audio transcrito", texto.slice(0, 140));
+    }
+  }
+
   let run = await getActiveRun(db, contactId);
 
   if (run) {
@@ -350,6 +365,40 @@ export async function deliverMessage(db: SupabaseClient, channelId: string, cont
   const run: any = { channel_id: channelId, contact_id: contactId };
   const { data: c } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
   await emit(db, run, { text }, { wa_id: (c as any)?.wa_id });
+}
+
+// ── STT: descarga el audio entrante y lo transcribe (OpenAI Whisper) ─
+// mediaRef = "wa-media:<id>" (WhatsApp, se baja por Graph con el token del
+// canal) o una URL pública (webchat de pruebas).
+async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRef: string): Promise<string | null> {
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: "openai" });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) { console.warn("[STT] el canal no tiene API key de OpenAI → no se transcribe el audio"); return null; }
+
+  let bytes: Uint8Array, mime: string;
+  if (mediaRef.startsWith("wa-media:")) {
+    const secrets = await getChannelSecrets(db, channelId);
+    if (!secrets?.access_token) return null;
+    ({ bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token));
+  } else {
+    const r = await fetch(mediaRef);
+    if (!r.ok) return null;
+    mime = r.headers.get("content-type") || "audio/ogg";
+    bytes = new Uint8Array(await r.arrayBuffer());
+  }
+  const texto = await transcribeAudio(ai.api_key, bytes, mime);
+  return texto || null;
+}
+
+// Guarda la transcripción dentro de la burbuja del audio → el operador la lee
+// en la Bandeja bajo la nota de voz. Best-effort.
+async function annotateAudioTranscript(db: SupabaseClient, contactId: string, texto: string) {
+  try {
+    const { data: m } = await db.from("messages")
+      .select("id, content").eq("contact_id", contactId).eq("direction", "in").eq("type", "audio")
+      .order("ts", { ascending: false }).limit(1).maybeSingle();
+    if (m) await db.from("messages").update({ content: { ...((m as any).content ?? {}), transcription: texto } }).eq("id", (m as any).id);
+  } catch (_) { /* best-effort */ }
 }
 
 // ── Condiciones ────────────────────────────────────────────────────

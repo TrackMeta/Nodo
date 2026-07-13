@@ -90,8 +90,8 @@ Deno.serve(async (req) => {
       ? { type: "button" as const, buttonId }
       : {
         type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text",
-        // Imagen de prueba (URL pública de Storage) → disponible para el nodo IA (OCR).
-        mediaRef: mediaKind === "image" ? media!.url : undefined,
+        // Media de prueba (URL pública de Storage): imagen → OCR, audio → STT.
+        mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined,
       };
     await runEngine(db, channel_id, contactId, event);
   } catch (e) {

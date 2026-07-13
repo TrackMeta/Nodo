@@ -178,12 +178,15 @@ async function processInbound(
   } else if (type === "image") {
     // Imagen (ej. comprobante) → inmediata, con referencia para el nodo IA.
     event = { type: "message", text, msgType: "image", mediaRef: `wa-media:${content.media_id}`, adId };
+  } else if (type === "audio") {
+    // Nota de voz → referencia para que el motor la transcriba (STT).
+    event = { type: "message", text, msgType: "audio", mediaRef: content.media_id ? `wa-media:${content.media_id}` : undefined, adId };
   } else if (type === "text") {
     // Texto → con debounce (junta mensajes seguidos, anti respuesta triple).
     event = { type: "message", text, msgType: "text", adId };
     debounce = true;
   } else {
-    // audio/video/document/sticker/location → el flujo decide por last_input_type.
+    // video/document/sticker/location → el flujo decide por last_input_type.
     event = { type: "message", text, msgType: type, adId };
   }
   if (!event) return;

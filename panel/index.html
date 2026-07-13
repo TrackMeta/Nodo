@@ -141,6 +141,7 @@
   .emojipop button:hover{background:var(--surface-2)}
   .msg img,.msg video{max-width:230px;border-radius:10px;display:block}
   .msg audio{max-width:230px}
+  .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
   .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
   .testbtn{background:var(--brand-bg);color:var(--brand);border:1px solid var(--border);border-radius:10px;height:36px;padding:0 12px;font-size:13px;font-weight:600;white-space:nowrap}
@@ -770,7 +771,10 @@ function renderMsg(m) {
   el.dataset.id = m.id;
   const mh = mediaHtml(m);
   const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
-  el.innerHTML = `${mh || esc(txt)}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
+  // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
+  const tr = m.content?.transcription
+    ? `<div class="transcript" title="Transcripción automática del audio">🎙️ ${esc(m.content.transcription)}</div>` : "";
+  el.innerHTML = `${mh || esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
   t.appendChild(el);
   // En modo prueba, los botones del bot se pueden tocar (como el cliente).
   if (m.direction === "out" && m.content?.buttons?.length && state.isTest) {

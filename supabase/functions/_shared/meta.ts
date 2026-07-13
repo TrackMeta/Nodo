@@ -96,10 +96,12 @@ export async function sendTemplate(
   });
 }
 
-// Descarga un media entrante (imagen de comprobante, etc.) y lo devuelve
-// como data-URI base64. Los media de WhatsApp NO tienen URL pública: hay
-// que pedir la URL firmada a Graph y descargarla con el token del canal.
-export async function fetchMediaAsDataUri(mediaId: string, accessToken: string): Promise<string> {
+// Descarga un media entrante de WhatsApp (imagen, audio…) como bytes crudos.
+// Los media de WhatsApp NO tienen URL pública: hay que pedir la URL firmada a
+// Graph y descargarla con el token del canal.
+export async function fetchMediaBytes(
+  mediaId: string, accessToken: string,
+): Promise<{ bytes: Uint8Array; mime: string }> {
   const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -110,12 +112,17 @@ export async function fetchMediaAsDataUri(mediaId: string, accessToken: string):
   }
   const bin = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!bin.ok) throw new MetaApiError({ code: bin.status, message: "no se pudo descargar el media" });
-  const mime = meta.mime_type || bin.headers.get("content-type") || "image/jpeg";
-  const bytes = new Uint8Array(await bin.arrayBuffer());
+  const mime = meta.mime_type || bin.headers.get("content-type") || "application/octet-stream";
+  return { bytes: new Uint8Array(await bin.arrayBuffer()), mime };
+}
+
+// Igual que arriba pero devuelve un data-URI base64 (para pasar imágenes al LLM).
+export async function fetchMediaAsDataUri(mediaId: string, accessToken: string): Promise<string> {
+  const { bytes, mime } = await fetchMediaBytes(mediaId, accessToken);
   let s = "";
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  return `data:${mime};base64,${btoa(s)}`;
+  return `data:${mime || "image/jpeg"};base64,${btoa(s)}`;
 }
 
 // POST genérico a /messages. Devuelve el wamid o lanza MetaApiError.

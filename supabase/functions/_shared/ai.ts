@@ -128,6 +128,37 @@ function toOpenAIContent(content: string | ContentBlock[]): unknown {
   });
 }
 
+// ── STT: transcribe una nota de voz a texto (OpenAI Whisper) ───────
+// Los clientes en Perú mandan mucho audio; esto lo convierte a texto para
+// que los triggers y la IA lo entiendan. Requiere una API key de OpenAI
+// (la de visión/conversación del canal sirve). Devuelve el texto o "".
+export async function transcribeAudio(
+  apiKey: string,
+  bytes: Uint8Array,
+  mime = "audio/ogg",
+  opts: { model?: string; language?: string; filename?: string } = {},
+): Promise<string> {
+  if (!apiKey) throw new AiError({ provider: "openai", message: "falta API key de OpenAI para transcribir" });
+  const form = new FormData();
+  const ext = mime.includes("mp3") || mime.includes("mpeg") ? "mp3"
+    : mime.includes("wav") ? "wav" : mime.includes("m4a") || mime.includes("mp4") ? "m4a"
+    : mime.includes("webm") ? "webm" : "ogg";
+  form.append("file", new Blob([bytes], { type: mime }), opts.filename || `audio.${ext}`);
+  form.append("model", opts.model || "whisper-1");
+  form.append("language", opts.language || "es"); // español por defecto (mejora la precisión)
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    const e = data.error ?? {};
+    throw new AiError({ provider: "openai", type: e.type, message: e.message, status: res.status });
+  }
+  return String(data.text ?? "").trim();
+}
+
 // ── Helper: convierte una URL o data-URI base64 en ContentBlock ────
 export function imageBlock(src: string): ContentBlock {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(src);
