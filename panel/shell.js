@@ -240,7 +240,7 @@ export function getEffects() {
   let level = localStorage.getItem("nodo.fx.level");
   if (!FX_LEVELS.includes(level)) level = "off"; // default: sin fondo animado
   let fps = parseInt(localStorage.getItem("nodo.fx.fps") || "", 10);
-  if (!Number.isFinite(fps)) fps = 45; // si lo encienden, 45 fps basta y cuesta menos
+  if (!Number.isFinite(fps)) fps = 30; // si lo encienden, 30 fps se ve fluido y cuesta la mitad
   fps = Math.min(60, Math.max(20, fps));
   return { level, fps };
 }
@@ -276,11 +276,15 @@ function fxRetheme() { // recolorea + arranca/detiene el canvas según el tema
 }
 function fxResize() {
   if (!FX.cv) return;
-  FX.DPR = Math.min(devicePixelRatio || 1, 2);
+  // El canvas es decorativo y va detrás de todo → renderizar a DPR 1 (no 2)
+  // reduce ~4× el trabajo de píxeles/compositing. "full" sube a 1.5.
+  FX.DPR = Math.min(devicePixelRatio || 1, FX.level === "full" ? 1.5 : 1);
   FX.W = FX.cv.width = Math.floor(innerWidth * FX.DPR);
   FX.H = FX.cv.height = Math.floor(innerHeight * FX.DPR);
   FX.cv.style.width = innerWidth + "px"; FX.cv.style.height = innerHeight + "px";
-  const n = Math.min(64, Math.max(20, Math.round(innerWidth * innerHeight / 26000))); // tope de nodos
+  // Menos nodos = menos O(n²) por frame. Tope 40 (full) / 28 (suave).
+  const cap = FX.level === "full" ? 40 : 28;
+  const n = Math.min(cap, Math.max(16, Math.round(innerWidth * innerHeight / 44000)));
   FX.nodes = Array.from({ length: n }, () => ({
     x: Math.random() * FX.W, y: Math.random() * FX.H,
     vx: (Math.random() - .5) * .10 * FX.DPR, vy: (-Math.random() * .14 - .03) * FX.DPR,
@@ -385,7 +389,9 @@ function applyEffects() {
 }
 function ensureFX() {
   if (FX.built || document.getElementById("nodo-fx")) return;
-  if (getEffects().level === "off") return; // apagado → ni siquiera montar la capa (aurora CSS incluida)
+  const eff = getEffects();
+  if (eff.level === "off") return; // apagado → ni siquiera montar la capa (aurora CSS incluida)
+  FX.level = eff.level; FX.fps = eff.fps; // fijar nivel ANTES del primer fxResize (elige DPR/nodos)
   try {
     FX.reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
     const box = document.createElement("div");

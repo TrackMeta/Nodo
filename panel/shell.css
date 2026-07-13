@@ -125,14 +125,16 @@ html:not([data-theme="light"]) body, html[data-theme="light"] body{
    ═══════════════════════════════════════════════════════════════════ */
 .nodo-fx{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
 .nfx-aurora{position:absolute;inset:0}
-.nfx-aurora i{position:absolute;border-radius:50%;filter:blur(80px);mix-blend-mode:screen;opacity:.5;will-change:transform}
+/* blur GRANDE sobre manchas grandes = lo más caro en GPU. El degradado radial
+   ya es suave (transparente al 62%), así que basta un blur pequeño. */
+.nfx-aurora i{position:absolute;border-radius:50%;filter:blur(38px);mix-blend-mode:screen;opacity:.5}
 /* Modo claro = día: sin estrellas/constelación (eso es de noche). Solo un
    lavado pastel suave y aireado sobre el fondo claro. */
-html[data-theme="light"] .nfx-aurora i{mix-blend-mode:multiply;filter:blur(130px);opacity:.3}
+html[data-theme="light"] .nfx-aurora i{mix-blend-mode:multiply;filter:blur(56px);opacity:.3}
 html[data-theme="light"] .nfx-canvas{display:none}
-.nfx-aurora .a1{width:56vw;height:56vw;left:-14vw;top:-18vw;background:radial-gradient(circle,var(--brand),transparent 62%);animation:nfxD1 24s ease-in-out infinite}
-.nfx-aurora .a2{width:50vw;height:50vw;right:-16vw;bottom:-18vw;background:radial-gradient(circle,var(--info,#22D3EE),transparent 62%);animation:nfxD2 30s ease-in-out infinite}
-.nfx-aurora .a3{width:44vw;height:44vw;left:34vw;top:22vh;background:radial-gradient(circle,var(--inbox-3,#5ec6ff),transparent 60%);animation:nfxD3 27s ease-in-out infinite}
+.nfx-aurora .a1{width:42vw;height:42vw;left:-10vw;top:-14vw;background:radial-gradient(circle,var(--brand),transparent 62%);animation:nfxD1 24s ease-in-out infinite}
+.nfx-aurora .a2{width:38vw;height:38vw;right:-12vw;bottom:-14vw;background:radial-gradient(circle,var(--info,#22D3EE),transparent 62%);animation:nfxD2 30s ease-in-out infinite}
+.nfx-aurora .a3{width:34vw;height:34vw;left:38vw;top:24vh;background:radial-gradient(circle,var(--inbox-3,#5ec6ff),transparent 60%);animation:nfxD3 27s ease-in-out infinite}
 .nfx-canvas{position:absolute;inset:0;width:100%;height:100%}
 .nfx-veil{position:absolute;inset:0;background:radial-gradient(120% 92% at 50% 0%,transparent 44%,rgba(2,6,18,.5) 100%)}
 html[data-theme="light"] .nfx-veil{background:radial-gradient(120% 92% at 50% 0%,transparent 46%,rgba(255,255,255,.45) 100%)}
@@ -140,7 +142,7 @@ html[data-theme="light"] .nfx-veil{background:radial-gradient(120% 92% at 50% 0%
 @keyframes nfxD2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-8vw,-6vh) scale(1.18)}}
 @keyframes nfxD3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vw,9vh) scale(1.1)}}
 /* Niveles de intensidad */
-html[data-nfx="suave"] .nfx-aurora i{animation-duration:46s}
+html[data-nfx="suave"] .nfx-aurora i{animation-duration:46s;filter:blur(26px);opacity:.42}
 html[data-nfx="off"] .nfx-aurora i{animation:none;opacity:.26}
 html[data-nfx="off"] .nfx-canvas{display:none}
 
