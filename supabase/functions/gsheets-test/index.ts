@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
+import { getAccessToken, sheetsAppend } from "../_shared/gsheets.ts";
 
 const db = serviceClient();
 
@@ -19,14 +20,29 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { webhook_url?: string; tab?: string };
+  let body: { webhook_url?: string; tab?: string; oauth?: boolean; channel_id?: string; spreadsheet_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
+  const fecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" }).format(new Date());
+
+  // ── Modo OAuth: escribir vía la Sheets API con el token del canal ──
+  if (body.oauth) {
+    if (!body.channel_id || !body.spreadsheet_id) return json({ error: "faltan_datos" }, 400);
+    const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: body.channel_id });
+    if (!refresh) return json({ ok: false, detalle: "El canal no está conectado con Google (reconecta)" });
+    try {
+      const token = await getAccessToken(String(refresh));
+      await sheetsAppend(token, body.spreadsheet_id, body.tab || undefined, { Prueba: "Nodo ✓", Fecha: fecha });
+      return json({ ok: true });
+    } catch (e) {
+      return json({ ok: false, detalle: String((e as any)?.message ?? e) });
+    }
+  }
+
+  // ── Modo Apps Script: POST a la app web ──
   const url = body.webhook_url?.trim();
   if (!url || !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)) {
     return json({ error: "url_invalida", detalle: "La URL debe ser una app web de Apps Script (/exec)" }, 400);
   }
-
-  const fecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" }).format(new Date());
   try {
     const res = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json" },

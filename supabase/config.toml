@@ -72,3 +72,11 @@ verify_jwt = true
 # gsheets-test: escribe una fila de prueba en la app web de Apps Script del usuario.
 [functions.gsheets-test]
 verify_jwt = true
+
+# gsheets-connect: devuelve la URL de "Acceder con Google" (OAuth) para Sheets.
+[functions.gsheets-connect]
+verify_jwt = true
+
+# gsheets-callback: Google redirige aquí tras el consentimiento (PÚBLICA).
+[functions.gsheets-callback]
+verify_jwt = false

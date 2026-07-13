@@ -9,6 +9,7 @@ import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } 
 import { sendCapiEvent } from "./capi.ts";
 import { sendTelegram } from "./telegram.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
+import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendText } from "./meta.ts";
 
@@ -706,8 +707,7 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
   const cfg = node.config ?? {};
   try {
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", run.channel_id).maybeSingle();
-    const url = (ch as any)?.gsheets?.webhook_url;
-    if (!url) throw new Error("Google Sheets no está conectado (Ajustes → Google Sheets)");
+    const g = (ch as any)?.gsheets ?? {};
     const accion = cfg.accion === "update" ? "update" : "append";
     // columnas: [{ col:"Fecha", valor:"{{fecha_compra}}" }, …] → { Fecha: "13/07/2026", … }
     // En "append" = celdas de la fila nueva; en "update" = celdas a modificar.
@@ -716,18 +716,30 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
       if (!c?.col) continue;
       fila[String(c.col)] = resolve(String(c.valor ?? ""), ctx);
     }
-    const payload: Record<string, unknown> = { accion, hoja: cfg.hoja || undefined, fila };
-    if (accion === "update") {
-      // buscar: [{ col:"Nº Operación", valor:"{{op}}" }] → localizar la fila.
-      const buscar: Record<string, string> = {};
-      for (const b of cfg.buscar ?? []) if (b?.col) buscar[String(b.col)] = resolve(String(b.valor ?? ""), ctx);
-      payload.buscar = buscar;
+    const buscar: Record<string, string> = {};
+    if (accion === "update") for (const b of cfg.buscar ?? []) if (b?.col) buscar[String(b.col)] = resolve(String(b.valor ?? ""), ctx);
+    const hoja = cfg.hoja || g.tab || undefined;
+
+    if (g.mode === "oauth") {
+      // OAuth: llamamos a la Sheets API con el token del canal (Vault).
+      const spreadsheetId = g.spreadsheet_id;
+      if (!spreadsheetId) throw new Error("Falta elegir la hoja en Ajustes → Google Sheets");
+      const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: run.channel_id });
+      if (!refresh) throw new Error("Google Sheets desconectado (reconecta en Ajustes)");
+      const token = await getAccessToken(String(refresh));
+      if (accion === "update") await sheetsUpdate(token, spreadsheetId, hoja, buscar, fila);
+      else await sheetsAppend(token, spreadsheetId, hoja, fila);
+    } else if (g.webhook_url) {
+      // Apps Script: POST a la app web del usuario.
+      const payload: Record<string, unknown> = { accion, hoja, fila };
+      if (accion === "update") payload.buscar = buscar;
+      const res = await fetch(g.webhook_url, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Apps Script respondió " + res.status);
+    } else {
+      throw new Error("Google Sheets no está conectado (Ajustes → Google Sheets)");
     }
-    const res = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error("Apps Script respondió " + res.status);
     await logEvent(db, run.channel_id, run.contact_id, "nota", accion === "update" ? "📊 Fila actualizada en Google Sheets" : "📊 Fila enviada a Google Sheets");
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "exito")) ??

@@ -123,6 +123,17 @@ async function boot(){
   const shell=await mountShell({ active:"config" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; loadCfg(); });
+  // Retorno del login de Google (gsheets-callback redirige con ?gs=...).
+  const gsRet=new URLSearchParams(location.search).get("gs");
+  if(gsRet){
+    st.tab="gsheets"; st.gsMethod="oauth";
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="gsheets"));
+    if(gsRet==="ok") toast("Google conectado ✓ — ahora elige tu hoja");
+    else if(gsRet==="sin_refresh") toast("Google no devolvió permiso permanente. Reintenta y acepta todos los permisos.",true);
+    else if(gsRet==="expirado") toast("El enlace expiró, vuelve a conectar.",true);
+    else toast("No se pudo conectar con Google. Reintenta.",true);
+    history.replaceState(null,"",location.pathname);
+  }
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
@@ -248,46 +259,108 @@ const GS_SCRIPT = `function doPost(e) {
   return out({ ok: true });
 }
 function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }`;
+function sheetIdFrom(v){ const m=(v||"").match(/\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:(v||"").trim(); }
 function renderGsheets(b){
   const g=(st.channel&&st.channel.gsheets)||{};
-  const connected=!!(g.connected && g.webhook_url);
+  const curMode = g.mode || (g.webhook_url ? "apps_script" : (g.google_email ? "oauth" : null));
+  const method = st.gsMethod || curMode || "oauth";
   b.innerHTML=`
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
       <img src="${LOGO.sheets}" alt="" style="width:38px;height:38px;border-radius:10px"/>
       <div><h2 style="margin:0">Google Sheets</h2>
-        <p class="sub" style="margin:2px 0 0">Registra ventas, contactos y datos en tu hoja desde los flujos (nodo 📊 Google Sheets). Sin claves ni Google Cloud.</p></div>
+        <p class="sub" style="margin:2px 0 0">Registra ventas y datos en tu hoja desde los flujos (nodo 📊). Elige cómo conectarla.</p></div>
     </div>
+    <div class="tabs" style="margin-bottom:16px">
+      <button class="tab ${method==='oauth'?'active':''}" data-gm="oauth">🔗 Acceder con Google</button>
+      <button class="tab ${method==='apps_script'?'active':''}" data-gm="apps_script">📝 Apps Script</button>
+    </div>
+    <div id="gsBody"></div>`;
+  b.querySelectorAll("[data-gm]").forEach(btn=> btn.onclick=()=>{ st.gsMethod=btn.dataset.gm; renderGsheets(b); });
+  if(method==="oauth") renderGsOauth($("gsBody"), g); else renderGsScript($("gsBody"), g);
+}
 
+// ── Método 1: Acceder con Google (OAuth) ────────────────────────────
+function renderGsOauth(box, g){
+  const connected = g.mode==="oauth" && g.google_email;
+  box.innerHTML=`
     <div class="card ${connected?'on':''}">
       <div class="chd">
         <span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${LOGO.sheets}" alt=""/></span>
-        <div><div class="nm">Conexión por Apps Script</div><div class="desc" style="margin:2px 0 0">Un mini-script en tu hoja recibe las filas.</div></div>
+        <div><div class="nm">Acceder con Google</div><div class="desc" style="margin:2px 0 0">Un clic y listo, sin claves ni scripts.</div></div>
         <span class="badge ${connected?'on':''}" style="margin-left:auto">${connected?'Conectada':'Sin conectar'}</span>
       </div>
+      ${connected?`
+        <div class="desc" style="margin-top:12px">Conectada con <b>${esc(g.google_email)}</b>.</div>
+        <label>Enlace de la hoja donde escribir</label>
+        <input class="in" id="gso_url" value="${esc(g.spreadsheet_url||'')}" placeholder="https://docs.google.com/spreadsheets/d/1AbC.../edit"/>
+        <label>Pestaña (opcional)</label>
+        <input class="in" id="gso_tab" style="max-width:280px" value="${esc(g.tab||'')}" placeholder="Ventas"/>
+        <div class="acts">
+          <button class="btn primary" id="gsoSave">Guardar hoja</button>
+          <button class="btn" id="gsoTest">Probar y escribir fila</button>
+          <button class="btn danger" id="gsoDisc" style="margin-left:auto">Desconectar</button>
+        </div>`
+      :`
+        <div class="desc" style="margin-top:12px">Inicia sesión con la cuenta de Google dueña de tu hoja y dale permiso. Nodo escribirá las filas por ti. La primera vez Google puede mostrar “app no verificada” → <b>Avanzado → Continuar</b> (es tu propia app, es seguro).</div>
+        <div class="acts"><button class="btn primary" id="gsoConnect">🔗 Conectar con Google</button></div>`}
+      <div class="desc" id="gsoOut" style="margin-top:12px"></div>
+    </div>`;
+  const conn=$("gsoConnect");
+  if(conn) conn.onclick=async(e)=>{
+    e.target.disabled=true; const old=e.target.textContent; e.target.textContent="Abriendo Google…";
+    try{ const r=await callFn("gsheets-connect",{ channel_id:st.channelId }); if(r&&r.url) location.href=r.url; else throw new Error(r?.detalle||"no se pudo iniciar"); }
+    catch(err){ $("gsoOut").innerHTML=`<span style="color:var(--red)">${esc(err.message||"error")}</span>${/sin_configurar|CLIENT_ID/.test(err.message||"")?" — falta que el administrador configure el cliente OAuth de Google.":""}`; e.target.disabled=false; e.target.textContent=old; }
+  };
+  const save=$("gsoSave");
+  if(save) save.onclick=async(e)=>{
+    const url=$("gso_url").value.trim(); const id=sheetIdFrom(url);
+    if(!id){ toast("Pega el enlace de la hoja",true); return; }
+    await saveGsheets(e.target, { ...g, connected:true, mode:"oauth", spreadsheet_url:url, spreadsheet_id:id, tab:$("gso_tab").value.trim()||null });
+  };
+  const test=$("gsoTest");
+  if(test) test.onclick=async(e)=>{
+    const id=sheetIdFrom($("gso_url").value.trim()); if(!id){ toast("Guarda primero la hoja",true); return; }
+    const out=$("gsoOut"); e.target.disabled=true; const old=e.target.textContent; e.target.textContent="Probando…"; out.innerHTML="";
+    try{ const r=await callFn("gsheets-test",{ oauth:true, channel_id:st.channelId, spreadsheet_id:id, tab:$("gso_tab").value.trim()||null });
+      out.innerHTML = r&&r.ok ? `<span style="color:var(--green)">✓ Se escribió una fila de prueba en tu hoja.</span> Ya puedes borrarla.` : `<span style="color:var(--red)">${esc((r&&r.detalle)||"error")}</span>`;
+    }catch(err){ out.innerHTML=`<span style="color:var(--red)">${esc(err.message||"error")}</span>`; }
+    finally{ e.target.disabled=false; e.target.textContent=old; }
+  };
+  const disc=$("gsoDisc");
+  if(disc) disc.onclick=async(e)=>{ if(!confirm("¿Desconectar Google Sheets?")) return; try{ await callFn("gsheets-connect",{ channel_id:st.channelId, disconnect:true }); }catch(_){} await saveGsheets(e.target,{ connected:false }); };
+}
 
+// ── Método 2: Apps Script (sin Google Cloud) ────────────────────────
+function renderGsScript(box, g){
+  const connected=!!(g.mode==="apps_script" && g.webhook_url);
+  box.innerHTML=`
+    <div class="card ${connected?'on':''}">
+      <div class="chd">
+        <span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${LOGO.sheets}" alt=""/></span>
+        <div><div class="nm">Conexión por Apps Script</div><div class="desc" style="margin:2px 0 0">Un mini-script en tu hoja recibe las filas. Sin Google Cloud.</div></div>
+        <span class="badge ${connected?'on':''}" style="margin-left:auto">${connected?'Conectada':'Sin conectar'}</span>
+      </div>
       <div class="steps" style="margin-top:14px">
         <div class="step"><div class="num"></div><div class="st-b">
           <div class="st-t">Abre el editor de scripts de tu hoja</div>
-          <div class="st-d">En tu Google Sheet: menú <b>Extensiones → Apps Script</b>. Borra lo que haya y pega este código, luego 💾 guarda.</div>
+          <div class="st-d">En tu Google Sheet: <b>Extensiones → Apps Script</b>. Borra lo que haya, pega este código y 💾 guarda.</div>
           <textarea class="in" id="gs_code" readonly style="margin-top:8px;height:150px;font-family:monospace;font-size:11.5px;white-space:pre;resize:vertical"></textarea>
           <button class="btn" id="copyScript" style="margin-top:8px">Copiar código</button>
         </div></div>
         <div class="step"><div class="num"></div><div class="st-b">
           <div class="st-t">Publícalo como “app web”</div>
-          <div class="st-d">Arriba a la derecha: <b>Implementar → Nueva implementación → Aplicación web</b>. En “Ejecutar como” elige <b>Yo</b>; en “Quién tiene acceso” elige <b>Cualquier usuario</b>. Copia la <b>URL</b> que te da.</div>
+          <div class="st-d"><b>Implementar → Nueva implementación → Aplicación web</b>. “Ejecutar como” <b>Yo</b>; “Quién tiene acceso” <b>Cualquier usuario</b>. Copia la URL.</div>
         </div></div>
         <div class="step"><div class="num"></div><div class="st-b">
-          <div class="st-t">Pega aquí la URL de la app web</div>
-          <div class="st-d">Termina en <code>/exec</code>. Es a donde Nodo enviará cada fila.</div>
+          <div class="st-t">Pega la URL de la app web</div>
+          <div class="st-d">Termina en <code>/exec</code>.</div>
           <input class="in" id="gs_url" style="margin-top:8px" value="${esc(g.webhook_url||'')}" placeholder="https://script.google.com/macros/s/AKfy.../exec"/>
         </div></div>
         <div class="step"><div class="num"></div><div class="st-b">
-          <div class="st-t">Nombre de la pestaña (opcional)</div>
-          <div class="st-d">La pestaña donde se agregan las filas. Vacío = la primera. También se puede fijar por nodo.</div>
+          <div class="st-t">Pestaña (opcional)</div>
           <input class="in" id="gs_tab" style="margin-top:8px;max-width:280px" value="${esc(g.tab||'')}" placeholder="Ventas"/>
         </div></div>
       </div>
-
       <div class="acts">
         <button class="btn primary" id="saveGs">${connected?'Guardar cambios':'Conectar'}</button>
         <button class="btn" id="testGs">Probar y escribir fila</button>
