@@ -708,7 +708,26 @@ async function buildContext(db: SupabaseClient, run: Run) {
     stage: c?.stage ?? "", last_input: c?.last_input ?? "",
     last_input_type: (c as any)?.last_input_type ?? "",
   };
-  // Campos FIJOS del producto (§6-SEXIES): la ficha del producto expone sus
+  // PRECEDENCIA (de menos a más específico; lo de abajo pisa a lo de arriba):
+  //   Campos del Bot (global) → datos del Producto → run.vars → Campos del
+  //   contacto. Así lo específico gana: el dato de un producto pisa al global,
+  //   y el dato propio del contacto pisa a todo.
+
+  // 1) Campos del Bot (sección Campos → "Campos del Bot"): globales fijos del
+  //    canal, su valor vive en custom_fields.valor y aplica a TODA conversación.
+  try {
+    let bf = (run as any)._botFields;
+    if (!bf) {
+      bf = {};
+      const { data: fixed } = await db.from("custom_fields")
+        .select("key, valor").eq("channel_id", run.channel_id).eq("modo", "fijo");
+      for (const f of fixed ?? []) if ((f as any).valor != null) bf[(f as any).key] = (f as any).valor;
+      (run as any)._botFields = bf;
+    }
+    for (const [k, v] of Object.entries(bf)) ctx[k] = v;
+  } catch (_) { /* columna valor pendiente (0013) */ }
+
+  // 2) Campos FIJOS del producto (§6-SEXIES): la ficha del producto expone sus
   // datos como variables ({{precio}}, {{link_entrega}}, {{producto_nombre}},
   // {{adelanto}}, {{envio_*}}…). Cacheado por run (no cambian a mitad).
   try {
@@ -743,20 +762,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
       for (const [k, v] of Object.entries(pc)) if (k !== "_id") ctx[k] = v;
     }
   } catch (_) { /* columnas pendientes */ }
-  // Campos del Bot (sección Campos → "Campos del Bot"): globales fijos del
-  // canal, su valor vive en custom_fields.valor y aplica a TODA conversación.
-  // Cacheado por run. (Los per-contacto y run.vars los pisan más abajo.)
-  try {
-    let bf = (run as any)._botFields;
-    if (!bf) {
-      bf = {};
-      const { data: fixed } = await db.from("custom_fields")
-        .select("key, valor").eq("channel_id", run.channel_id).eq("modo", "fijo");
-      for (const f of fixed ?? []) if ((f as any).valor != null) bf[(f as any).key] = (f as any).valor;
-      (run as any)._botFields = bf;
-    }
-    for (const [k, v] of Object.entries(bf)) ctx[k] = v;
-  } catch (_) { /* columna valor pendiente (0013) */ }
+  // 3) Variables del run en curso, y 4) Campos del contacto (lo más específico).
   Object.assign(ctx, run.vars);
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
