@@ -88,7 +88,11 @@ Deno.serve(async (req) => {
   try {
     const event = buttonId
       ? { type: "button" as const, buttonId }
-      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text" };
+      : {
+        type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text",
+        // Imagen de prueba (URL pública de Storage) → disponible para el nodo IA (OCR).
+        mediaRef: mediaKind === "image" ? media!.url : undefined,
+      };
     await runEngine(db, channel_id, contactId, event);
   } catch (e) {
     console.error("[webchat] engine error:", e);

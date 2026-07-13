@@ -96,6 +96,28 @@ export async function sendTemplate(
   });
 }
 
+// Descarga un media entrante (imagen de comprobante, etc.) y lo devuelve
+// como data-URI base64. Los media de WhatsApp NO tienen URL pública: hay
+// que pedir la URL firmada a Graph y descargarla con el token del canal.
+export async function fetchMediaAsDataUri(mediaId: string, accessToken: string): Promise<string> {
+  const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const meta = await metaRes.json();
+  if (!metaRes.ok || meta.error || !meta.url) {
+    const e = meta.error ?? {};
+    throw new MetaApiError({ code: e.code, subcode: e.error_subcode, message: e.message ?? "media sin url", type: e.type, fbtrace_id: e.fbtrace_id });
+  }
+  const bin = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!bin.ok) throw new MetaApiError({ code: bin.status, message: "no se pudo descargar el media" });
+  const mime = meta.mime_type || bin.headers.get("content-type") || "image/jpeg";
+  const bytes = new Uint8Array(await bin.arrayBuffer());
+  let s = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return `data:${mime};base64,${btoa(s)}`;
+}
+
 // POST genérico a /messages. Devuelve el wamid o lanza MetaApiError.
 async function postMessage(phoneNumberId: string, accessToken: string, payload: unknown): Promise<string> {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;

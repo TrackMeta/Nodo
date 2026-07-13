@@ -9,10 +9,13 @@ import { imageBlock, runAI, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent } from "./capi.ts";
 import { sendTelegram } from "./telegram.ts";
 import { getChannelSecrets } from "./db.ts";
-import { MetaApiError, sendButtons, sendText } from "./meta.ts";
+import { fetchMediaAsDataUri, MetaApiError, sendButtons, sendText } from "./meta.ts";
 
 export type EngineEvent =
-  | { type: "message"; text: string; msgType?: string }
+  // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
+  // URL pública en webchat) — la consume el nodo IA "analizar imagen".
+  // adId: source_id del referral CTWA (solo primer mensaje desde un anuncio).
+  | { type: "message"; text: string; msgType?: string; mediaRef?: string; adId?: string }
   | { type: "button"; buttonId: string; title?: string }
   | { type: "resume" }; // despertar tras Esperar
 
@@ -44,11 +47,23 @@ export async function runEngine(
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
     if (event.type !== "message") return;
-    const flow = await matchTrigger(db, channelId, event.text);
+    const flow = await matchTrigger(db, channelId, event.text, event.adId);
     if (!flow) return; // ningún flujo maneja este mensaje
     run = await startRun(db, channelId, contactId, flow);
+    if (!run) {
+      // Perdió la carrera del lock (dos webhooks casi simultáneos): otro run
+      // ya está activo → entregar este evento a ese run como reanudación.
+      run = await getActiveRun(db, contactId);
+      if (!run) return;
+      const ready = await resumeRun(db, run, event);
+      if (!ready) return;
+    }
   }
-  await execute(db, run!);
+  // La última imagen del cliente queda disponible para el nodo IA (OCR).
+  if (event.type === "message" && event.mediaRef && (event.msgType === "image" || !event.msgType)) {
+    run.vars._last_image = event.mediaRef;
+  }
+  await execute(db, run);
 }
 
 // ── Estado del run ─────────────────────────────────────────────────
@@ -68,17 +83,24 @@ async function saveRun(db: SupabaseClient, run: Run) {
 }
 
 // ── Triggers ───────────────────────────────────────────────────────
-async function matchTrigger(db: SupabaseClient, channelId: string, text: string) {
+async function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?: string) {
   const norm = normalize(text);
   const { data: triggers } = await db.from("flow_triggers")
     .select("flow_id, tipo, config, flows!inner(id, estado, es_entrada)")
     .eq("channel_id", channelId).eq("activo", true);
 
   let entrada: any = null;
+  let kwHit: any = null;
   for (const t of triggers ?? []) {
     const flow = (t as any).flows;
     if (!flow || flow.estado !== "activo") continue;
     if (t.tipo === "entrada") { entrada = flow; continue; }
+    // Referral CTWA: el anuncio identifica el producto sin depender del texto.
+    // Gana sobre keyword (solo viene en el primer mensaje desde el anuncio).
+    if (t.tipo === "referral" && adId) {
+      const ads: string[] = (t.config?.ad_ids ?? []).map(String);
+      if (ads.includes(String(adId))) return flow;
+    }
     if (t.tipo === "keyword") {
       const kws: string[] = (t.config?.keywords ?? []).map(normalize);
       const mode = t.config?.match ?? "contiene";
@@ -87,18 +109,24 @@ async function matchTrigger(db: SupabaseClient, channelId: string, text: string)
           : mode === "empieza" ? norm.startsWith(k)
           : norm.includes(k)
       );
-      if (hit) return flow; // keyword gana (más específico)
+      if (hit && !kwHit) kwHit = flow; // keyword gana sobre entrada
     }
   }
-  return entrada; // fallback: flujo de entrada
+  return kwHit ?? entrada; // prioridad: referral > keyword > flujo de entrada
 }
 
-async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any): Promise<Run> {
+async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any): Promise<Run | null> {
   const initial = await initialNode(db, flow.id);
-  const { data } = await db.from("flow_runs").insert({
+  const { data, error } = await db.from("flow_runs").insert({
     channel_id: channelId, contact_id: contactId, flow_id: flow.id,
     current_node_id: initial?.id ?? null, vars: {}, estado: "activo",
   }).select("*").single();
+  // 23505 = ya hay un run activo para este contacto (índice idx_runs_lock):
+  // dos webhooks simultáneos → el que pierde la carrera lo maneja el caller.
+  if (error) {
+    if ((error as any).code === "23505") return null;
+    throw new Error(`startRun: ${error.message}`);
+  }
   // Nombre + producto del flujo (para Timeline y atribución de producto).
   const { data: f } = await db.from("flows").select("nombre, product_id").eq("id", flow.id).maybeSingle();
   await logEvent(db, channelId, contactId, "flujo_inicio", "Flujo iniciado", (f as any)?.nombre ?? null);
@@ -291,6 +319,7 @@ export async function startFlowRun(
   if (!flow) return false;
   if (!opts?.force && (flow as any).estado !== "activo") return false;
   const run = await startRun(db, channelId, contactId, flow);
+  if (!run) return false; // otro run ganó la carrera del lock
   await execute(db, run);
   return true;
 }
@@ -412,7 +441,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // La imagen viene de una variable de config, o del último input del contacto.
       const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image);
       if (!img) throw new Error("no hay imagen para analizar");
-      content = [imageBlock(String(img)), { type: "text", text: prompt }];
+      let src = String(img);
+      // "wa-media:<id>" = media privado de WhatsApp → descargar con el token
+      // del canal y pasarlo como base64 (el LLM no puede leer URLs firmadas).
+      if (src.startsWith("wa-media:")) {
+        const secrets = await getChannelSecrets(db, run.channel_id);
+        if (!secrets?.access_token) throw new Error("canal sin access_token para leer el media");
+        src = await fetchMediaAsDataUri(src.slice("wa-media:".length), secrets.access_token);
+      }
+      content = [imageBlock(src), { type: "text", text: prompt }];
     }
 
     const result = await runAI({
@@ -480,12 +517,13 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 // ── Contexto y resolución de variables {{ }} ───────────────────────
 async function buildContext(db: SupabaseClient, run: Run) {
   const { data: c } = await db.from("contacts")
-    .select("nombre, wa_id, stage, last_input").eq("id", run.contact_id).maybeSingle();
+    .select("nombre, wa_id, stage, last_input, last_input_type").eq("id", run.contact_id).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id);
   const ctx: any = {
     nombre: c?.nombre ?? "", telefono: c?.wa_id ?? "", wa_id: c?.wa_id ?? "",
     stage: c?.stage ?? "", last_input: c?.last_input ?? "",
+    last_input_type: (c as any)?.last_input_type ?? "",
     ...run.vars,
   };
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;

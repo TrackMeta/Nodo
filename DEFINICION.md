@@ -3,7 +3,7 @@
 
 > **Documento vivo.** Se actualiza cada vez que Rodrigo aporta información (specs, aclaraciones, capturas). Es el brief maestro del que saldrá el plan técnico final. **Aún NO se construye código** — estamos en fase de definición hasta llegar al 100% de claridad.
 >
-> **Última actualización:** 2026-07-02 · **Versión:** 0.36 (auditada)
+> **Última actualización:** 2026-07-13 · **Versión:** 0.37
 >
 > **Terminología (2026-07-12):** lo que en este documento aparece como **"order bump" / "Order Bump"** se llama en la plataforma **"Compra extra"** (nombre visible en la UI: Dashboard, Compras/Pedidos, etc.). Las menciones históricas del changelog y los nombres de etiquetas/flujos **observados de ScaleChat** se conservan tal cual para no perder ese contexto; el término de producto de ahora en adelante es **Compra extra**. A nivel de datos el campo interno sigue siendo `order_bumps`.
 
@@ -27,6 +27,8 @@
 | Módulos avanzados (rotador, warmup, landings, tienda) | 🟢 Decidido | **Descartados** (warmup no aplica a Cloud API; tienda/landings/rotador fuera) |
 | Autoría (Esqueletos/Productos/Contenido) | 🟢 Claro | §6-SEXIES modelo final: esqueleto=molde, producto=copias+cuerpo, campos fijos por producto |
 | Robustez del motor | 🟢 Auditado | Lock por contacto, wake_at para esperas, gate único de ventana, keyword no interrumpe run activo (ver PLAN §7) |
+| **Productos FÍSICOS** | 🟢 Decidido | §6-SEPTIES: diseño cerrado 2026-07-13 (bot cierra adelanto+datos, humano opera logística desde Kanban; adelanto fijo/%, envío gratis y Lima-COD configurables; plantillas Utility OK; variantes sí). Construcción pendiente |
+| Conocimiento del negocio + perfiles IA | 🟡 Propuesta | §6-OCTIES: contexto IA en 3 niveles (negocio/producto/nodo) + perfiles de modelo por rol |
 
 ---
 
@@ -580,6 +582,63 @@ sequence_subscriptions  → contact_id, sequence_id, paso_actual,
 
 ---
 
+## 6-SEPTIES. Venta de productos FÍSICOS — DECIDIDO (2026-07-13)
+
+> Rodrigo quiere vender también **productos físicos** además de infoproductos. Proceso real descrito por él: keyword → mensajes iniciales → IA atiende hasta cerrar → bifurcación **Lima** (contraentrega: coordinar dirección, motorizado al día siguiente, cobro en puerta) vs **Provincia** (adelanto de monto configurable → validar comprobante → despacho por agencia — Shalom / Olva Courier — → enviar guía → al llegar el pedido, cobrar el saldo → enviar clave de recojo → cliente recoge).
+
+**🔑 Principio de diseño: "la conversación vive en FLUJOS; el pedido vive en ESTADOS".**
+- La parte **conversacional** (captación, dudas, decisión, datos, adelanto) es la MISMA maquinaria de digital: keyword → bienvenida → asistente IA → **ruteo determinista** (botones + campo + Condición, §6-QUINQUE, con `zona_entrega ∈ {lima, provincia}` en lugar de `version_elegida`) → **mismo motor OCR** de comprobantes (valida contra el `adelanto` o el `saldo` esperado según el estado del pedido — extensión natural de la validación consciente de versión).
+- Lo genuinamente NUEVO: el físico tiene un **ciclo de vida de DÍAS con acciones humanas** (despachar, registrar guía, marcar llegada, entregar/cobrar). Eso NO se modela con nodos Esperar: se modela como **estados del PEDIDO** (`orders`), operados desde la sección **Pedidos** convertida en **Kanban** (el Kanban decidido de SendyPro encuentra aquí su lugar natural). El flujo crea/escribe el pedido; el operador lo avanza; **cada cambio de estado puede disparar un flujo de notificación** al cliente.
+
+**Ciclo de estados propuesto (`orders.estado`):**
+- Común: `carrito` (datos incompletos) → `confirmado`.
+- **Lima (contraentrega):** `confirmado` → `en_reparto` (motorizado asignado) → `entregado_cobrado` ✅ (aquí el CAPI **Purchase**, valor total) · salidas: `reprogramado`, `rechazado`.
+- **Provincia:** `esperando_adelanto` → `adelanto_validado` (OCR ok → aviso Telegram) → `por_despachar` → `despachado` (operador registra agencia + nº guía + foto → bot envía la guía) → `en_agencia` (llegó a destino) → flujo de **cobro de saldo** → `saldo_pagado` (OCR del saldo ok → **Purchase** valor total → bot envía **clave de recojo**) → `recogido` ✅ · salidas: `no_recogido`, `cancelado`.
+- Digital sigue usando su ciclo corto actual (confirmada) — misma tabla `orders`.
+
+**Datos a capturar en conversación** (campos dinámicos, por Pregunta encadenada o IA "extraer datos" + **resumen final con botón "✅ Confirmar pedido"** determinista): nombre completo · teléfono · **DNI** (recojo en agencia) · Lima: distrito, dirección, referencia, día preferido · Provincia: departamento/provincia, agencia preferida (Shalom/Olva) y sede.
+
+**Piezas nuevas que requiere:**
+1. `products.tipo ∈ {digital, fisico}` + config de envío por producto físico (monto de adelanto, costo de envío Lima/provincia, agencias habilitadas).
+2. Ampliar `orders`: estados de arriba + `shipping` jsonb (dirección/distrito/referencia · DNI · agencia/sede · nº guía + foto · clave_recojo · adelanto/saldo/cobrado).
+3. **Pedidos = tablero Kanban operativo**: columnas por estado, acciones rápidas (registrar guía, marcar llegada, marcar cobrado), filtros Lima/Provincia. Para digital es consulta; para físico es el centro de operación diario.
+4. Acción de flujo **"crear/actualizar pedido"** + **trigger `pedido_estado`** (al pasar a estado X → disparar flujo de notificación). Es el trigger "API/evento" de §6-BIS que estaba en futuro, acotado a pedidos.
+5. **⚠️ Plantillas Utility (HSM) — la implicación técnica más importante:** en provincia pasan DÍAS entre despacho y llegada → la **ventana 24h se cierra**. "Llegó tu pedido, paga el saldo" y "clave de recojo" (incluso "hoy llega tu pedido" en Lima) pueden necesitar **plantilla aprobada por Meta**. → Se adelanta la pieza mínima de plantillas (la tabla `wa_templates` ya existe) para notificaciones de pedido; el broadcast masivo sigue en fase posterior. El gate único de ventana decide: ventana abierta → mensaje libre; cerrada → plantilla equivalente.
+6. **Recordatorios anclados al pedido** (reutiliza el scheduler existente): `esperando_adelanto` sin pago tras Nh → nudge; `en_agencia` sin saldo tras Nh → nudge urgente (la agencia devuelve el paquete tras unos días).
+
+**Esqueletos nuevos para la biblioteca:** Venta física (bienvenida + cierre IA + bifurcación Lima/Prov + captura de datos + adelanto) · Notificación de despacho (guía) · Cobro de saldo + clave de recojo · Recordatorios de pedido.
+
+**División de trabajo BOT ↔ HUMANO (decidida por Rodrigo 2026-07-13):**
+- **Bot (conversacional):** vende, resuelve dudas, bifurca Lima/Provincia, captura los datos de envío y **cierra + valida el ADELANTO** (OCR). Ahí termina su parte de cierre.
+- **Humano (logística, desde el Kanban de Pedidos):** despacha, registra guía + clave de recojo, marca llegada a agencia, marca cobrado/entregado/recogido. **Los cambios de estado son SIEMPRE manuales del operador** (sin tracking automático de agencias).
+- **Mensajería post-despacho — refinamiento recomendado, configurable por producto:** al marcar un estado, el bot se encarga de ESCRIBIR los mensajes (enviar la guía, plantilla de cobro de saldo al marcar llegada, validar el comprobante del saldo con el mismo OCR, y soltar la clave de recojo solo tras validarlo). El humano mueve tarjetas; el bot teclea. Toggle **"cobro de saldo: Bot | Humano"** por producto para quien prefiera cerrar a mano. Marcar la compra como finalizada (`recogido`/`entregado_cobrado`) = siempre humano.
+
+**✅ Decisiones cerradas (Rodrigo 2026-07-13):**
+1. **Adelanto provincia:** monto **fijo** por producto (lo habitual), con opción **porcentual** — configurable (`modo: fijo | porcentaje`).
+2. **Llegada a agencia:** la marca el **operador manualmente** en el Kanban. El bot solo cierra adelanto + datos de envío; la logística la opera el humano (ver división de trabajo arriba).
+3. **Costo de envío:** hoy lo asume el negocio (**envío gratis**), pero configurable: toggle envío gratis sí/no (+ costo Lima/provincia si no).
+4. **Lima:** 100% **contraentrega**, también configurable (poder exigir adelanto en Lima si algún producto lo necesita).
+5. **Plantillas Utility de Meta:** ✅ aprobado crearlas — necesarias para el tránsito multi-día.
+6. **Variantes en físicos:** SÍ (talla, versión, color…) → se reutilizan las `product_versions` tal cual (cada variante con su precio y su config).
+
+**Config resultante del producto físico (ficha → Datos):** `tipo=fisico` · variantes (`product_versions`) · adelanto `{modo: fijo|porcentaje, valor}` · envío `{gratis: bool, costo_lima, costo_provincia}` · `lima_contraentrega: bool` · agencias habilitadas `[shalom, olva]` · `cobro_saldo: bot|humano`.
+
+---
+
+## 6-OCTIES. Conocimiento del negocio + perfiles de IA — PROPUESTA (2026-07-13)
+
+**Contexto de la IA en 3 NIVELES (evita duplicar la info del negocio en cada prompt):**
+1. **Negocio (por canal/bot):** sección "Conocimiento del negocio" — quiénes somos, tono de venta, políticas (envíos, cambios, garantía), FAQ generales, horarios de despacho. Se **inyecta automáticamente a TODOS los nodos IA** del canal.
+2. **Producto (ficha → Datos):** descripción, beneficios, FAQ/objeciones del producto. Formaliza el campo fijo `contexto_producto` que ya existía (§6-SEXIES) como campos estructurados de la ficha.
+3. **Nodo (rol):** el prompt del rol específico (vendedor / validador de pagos / post-venta) — ya es "cuerpo" editable en la vista Contenido.
+El prompt final de un nodo IA = plantilla que concatena (1) + (2) + (3). Se edita cada nivel UNA vez.
+
+**Perfiles de IA por ROL (refina la decisión "configurable por nodo"):** en Config → IA se definen **perfiles nombrados**: `Conversación/Ventas` · `Visión/OCR comprobantes` · `Extracción de datos` · `STT`. Cada perfil = proveedor + modelo (+ temperatura). Los nodos IA **referencian un perfil** (default según su operación) con override puntual por nodo si hace falta. Ventaja: cambiar el modelo del OCR en UN lugar y no en 20 nodos (misma filosofía Contenido/Estructura aplicada a la IA). `channel_ai` (0007) ya guarda las keys por proveedor; faltaría persistir los perfiles. Sugerencia inicial: OCR/validación → Claude Sonnet (visión) · ventas → Sonnet (o GPT-4o-mini si el costo aprieta) · extracción de datos → Haiku · STT → Whisper.
+
+**¿"Modo ventas digitales" vs "modo ventas físicas"? → NO son modos de la app.** El tipo es **propiedad del PRODUCTO** (`products.tipo`): un mismo número puede vender ambos; comparten ~80% de la maquinaria (keyword, bienvenida, IA, OCR, remarketing, Telegram, Sheets, CAPI). La UI se **adapta por tipo**: al crear el producto eliges Digital/Físico y la ficha muestra link de entrega O config de envío, y sugiere los esqueletos del tipo. El Kanban de Pedidos cobra protagonismo solo con físicos.
+
+---
+
 ## 7-UI. Diseño de interfaz (en progreso)
 
 **Marca (2026-07-02):** logo entregado por Rodrigo en `logo.png` (1080×1080) — una "N" de nodos conectados sobre degradado azul (encaja con "Nodo"). Versiones redondeadas (14%) generadas en `assets/`: `logo-rounded.png`, `logo-512.png`, `apple-touch-icon.png` (180), `favicon-32x32.png`, `favicon-16x16.png`, `favicon.png`. Se enlazan en el `<head>` del panel cuando se construya. El azul del logo puede servir de color de acento de marca.
@@ -663,6 +722,8 @@ Resueltos y consolidados: detalle del Flujo Principal ✅ (§4-TER) · alcance d
 
 ## 9. Changelog del documento
 
+- **v0.38 (2026-07-13):** ✅ **Productos físicos: las 6 decisiones abiertas CERRADAS por Rodrigo** — §6-SEPTIES pasa a DECIDIDO. Adelanto fijo (con opción %), llegada a agencia manual, envío gratis configurable, Lima 100% COD configurable, plantillas Utility aprobadas, variantes sí (`product_versions`). Definida la **división de trabajo bot↔humano**: bot vende + cierra adelanto + captura datos de envío; humano opera la logística desde el Kanban de Pedidos (estados siempre manuales); refinamiento recomendado = el bot escribe los mensajes post-despacho al marcar estados (guía, cobro de saldo con OCR, clave de recojo), con toggle `cobro_saldo: bot|humano` por producto. Añadida la config completa de la ficha de producto físico.
+- **v0.37 (2026-07-13):** 📦 **Productos FÍSICOS** (§6-SEPTIES, PROPUESTA): principio "conversación en flujos, pedido en estados"; bifurcación Lima (contraentrega) / Provincia (adelanto + agencia Shalom/Olva) con el mismo ruteo determinista de §6-QUINQUE (`zona_entrega`); ciclo de estados de `orders` + Pedidos como Kanban operativo; acción "crear/actualizar pedido" + trigger `pedido_estado`; **implicación clave: plantillas Utility** (la ventana 24h se cierra durante el tránsito); recordatorios anclados al pedido; 6 decisiones abiertas para Rodrigo. **Conocimiento del negocio + perfiles de IA** (§6-OCTIES, PROPUESTA): contexto IA en 3 niveles (negocio/producto/nodo) y perfiles de modelo por rol (Ventas/OCR/Extracción/STT) referenciados por los nodos. Confirmado: **NO hay "modo digital/físico"** — el tipo es propiedad del producto.
 - **v0.36 (2026-07-02):** 🔍 **AUDITORÍA COMPLETA.** Corregidas incongruencias: fila Canales de §4.1 (Telegram), §5 CAPI (+InitiateCheckout, +page_id, Lead automático de sistema), reconciliación §6-SEXIES (copy vive en vista Contenido; ficha = Datos·Flujos·Medios), renombrado módulo "Plantillas"→"Exportar/Importar" (colisión con Esqueletos), semáforo/pendientes/decisiones refrescados, versión de cabecera. Añadidas reglas de robustez: **lock por contacto** (concurrencia webhook), **wake_at** para Esperar/debounce (Edge Functions no esperan), **gate único de ventana** (3 emisores, 1 validador), **keyword NO interrumpe run activo** (default, flag por keyword), **alcance del Reset contacto** (limpia tags/campos/suscripciones; conserva identidad/historial/ventas/atribución), `consecutive_failed_reply` al modelo, `page_id` a channels, límites Free cuantificados. +10 mejoras UX/UI (§7-UI). PLAN.md actualizado en espejo.
 - **v0.1 (2026-07-02):** Creación. Consolidado brief original + análisis de ScaleChat 2.0 (§1-8.3). Decisiones tomadas: Realtime, infra desde cero, App Secret por canal, **Flow Builder visual = SÍ**. Pendiente: secciones 9-23 del análisis, alcance de nodos, módulos a incluir.
 - **v0.2 (2026-07-02):** Añadida §4-BIS con relevamiento de **SendyPro** (diferenciadores: IA con audio realista, IA multimodal que lee imágenes/audios, **OCR IA de comprobantes con auto-confirmación**, CRM Kanban, integraciones). **ChatLevel** sin info pública → pendiente que Rodrigo lo describa. Actualizado el landing de ScaleChat (solo marketing, sin aporte nuevo).

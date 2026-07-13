@@ -5,8 +5,14 @@
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
+import { runEngine, type EngineEvent } from "../_shared/engine.ts";
+
+// Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
+// (Meta exige un 200 rápido; el motor puede tardar por el LLM).
+declare const EdgeRuntime: { waitUntil?: (p: Promise<unknown>) => void } | undefined;
 
 const db = serviceClient();
+const MAX_BUFFER_SEG = 20; // tope de seguridad para el debounce configurable
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -51,7 +57,7 @@ Deno.serve(async (req) => {
 
   const { data: channel } = await db
     .from("channels")
-    .select("id")
+    .select("id, buffer_default_seg")
     .eq("phone_number_id", phoneNumberId)
     .eq("activo", true)
     .maybeSingle();
@@ -69,7 +75,7 @@ Deno.serve(async (req) => {
 
   // Procesar (idempotente por wamid). Si falla, devolvemos 500 y Meta reintenta.
   try {
-    await processPayload(channel.id, payload);
+    await processPayload(channel, payload);
   } catch (e) {
     console.error("[webhook] error procesando:", e);
     return new Response("Server Error", { status: 500 });
@@ -78,14 +84,14 @@ Deno.serve(async (req) => {
 });
 
 // ── Procesamiento del payload ──────────────────────────────────────
-async function processPayload(channelId: string, payload: any) {
+async function processPayload(channel: { id: string; buffer_default_seg?: number }, payload: any) {
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
       const profileName = value.contacts?.[0]?.profile?.name as string | undefined;
 
       for (const msg of value.messages ?? []) {
-        await processInbound(channelId, msg, profileName);
+        await processInbound(channel, msg, profileName);
       }
       for (const st of value.statuses ?? []) {
         await processStatus(st);
@@ -94,7 +100,12 @@ async function processPayload(channelId: string, payload: any) {
   }
 }
 
-async function processInbound(channelId: string, msg: any, profileName?: string) {
+async function processInbound(
+  channel: { id: string; buffer_default_seg?: number },
+  msg: any,
+  profileName?: string,
+) {
+  const channelId = channel.id;
   const waId: string = msg.from;
   const { text, type, content } = extractContent(msg);
   const ref = msg.referral; // Click-to-WhatsApp (oro para atribución)
@@ -118,7 +129,7 @@ async function processInbound(channelId: string, msg: any, profileName?: string)
   const { data: contact, error: upErr } = await db
     .from("contacts")
     .upsert(patch, { onConflict: "channel_id,wa_id" })
-    .select("id")
+    .select("id, bot_activo")
     .single();
   if (upErr) throw new Error(`upsert contact: ${upErr.message}`);
 
@@ -147,9 +158,82 @@ async function processInbound(channelId: string, msg: any, profileName?: string)
     status: "delivered",
     ts: new Date(Number(msg.timestamp) * 1000).toISOString(),
   });
-  // 23505 = unique_violation → mensaje repetido (reintento de Meta). Ignorar.
-  if (msgErr && (msgErr as any).code !== "23505") {
+  // 23505 = unique_violation → mensaje repetido (reintento de Meta). No
+  // volver a correr el motor: la primera entrega ya lo hizo (idempotencia).
+  if (msgErr) {
+    if ((msgErr as any).code === "23505") return;
     throw new Error(`insert message: ${msgErr.message}`);
+  }
+
+  // ── Motor de flujos ────────────────────────────────────────────────
+  // Bot pausado para este contacto (humano atendiendo) → no responder.
+  if ((contact as any).bot_activo === false) return;
+
+  const adId = ref?.source_id ? String(ref.source_id) : undefined;
+  let event: EngineEvent | null = null;
+  let debounce = false;
+  if (type === "interactive") {
+    // Botón tocado → ruteo determinista inmediato (sin buffer).
+    if (content?.id) event = { type: "button", buttonId: String(content.id), title: content.title };
+  } else if (type === "image") {
+    // Imagen (ej. comprobante) → inmediata, con referencia para el nodo IA.
+    event = { type: "message", text, msgType: "image", mediaRef: `wa-media:${content.media_id}`, adId };
+  } else if (type === "text") {
+    // Texto → con debounce (junta mensajes seguidos, anti respuesta triple).
+    event = { type: "message", text, msgType: "text", adId };
+    debounce = true;
+  } else {
+    // audio/video/document/sticker/location → el flujo decide por last_input_type.
+    event = { type: "message", text, msgType: type, adId };
+  }
+  if (!event) return;
+
+  const bufferSeg = Math.min(Math.max(Number(channel.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG);
+  const task = runEngineTask(channelId, contact.id, event, msg.id, debounce ? bufferSeg : 0);
+  // Responder 200 a Meta ya; el motor sigue en segundo plano.
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(task);
+  else await task;
+}
+
+// Corre el motor tras el buffer configurable del canal. Si durante la espera
+// llegó un mensaje más nuevo, NO hace nada: la invocación de ese mensaje se
+// encarga (y une toda la cadena de textos seguidos en un solo evento).
+async function runEngineTask(
+  channelId: string,
+  contactId: string,
+  event: EngineEvent,
+  wamid: string,
+  bufferSeg: number,
+) {
+  try {
+    if (bufferSeg > 0 && event.type === "message") {
+      await new Promise((r) => setTimeout(r, bufferSeg * 1000));
+      const { data: msgs } = await db.from("messages")
+        .select("wamid, ts, type, content")
+        .eq("contact_id", contactId).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(10);
+      if (!msgs?.length) return;
+      // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno.
+      if ((msgs[0] as any).wamid !== wamid) return;
+      // Unir la cadena de textos con separación ≤ buffer (más reciente hacia
+      // atrás) en un solo texto, en orden cronológico.
+      const chain: string[] = [];
+      for (let i = 0; i < msgs.length; i++) {
+        const m: any = msgs[i];
+        if (m.type !== "text") break;
+        if (i > 0) {
+          const gap = new Date((msgs[i - 1] as any).ts).getTime() - new Date(m.ts).getTime();
+          if (gap > bufferSeg * 1000) break;
+        }
+        chain.unshift(m.content?.text ?? "");
+      }
+      if (chain.length > 1) event = { ...event, text: chain.join("\n") };
+    }
+    await runEngine(db, channelId, contactId, event);
+  } catch (e) {
+    // El mensaje ya quedó guardado; un error del motor no debe hacer que
+    // Meta reintente el webhook. Solo se registra.
+    console.error("[webhook] engine:", (e as any)?.message ?? e);
   }
 }
 
