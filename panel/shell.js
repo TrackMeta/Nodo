@@ -247,7 +247,7 @@ export function setEffects({ level, fps } = {}) {
 const FX = { built: false, cv: null, cx: null, W: 0, H: 0, DPR: 1, nodes: [], signals: [], sprites: {}, sig: null, COL: [], raf: 0, last: 0, mouse: { x: -1e4, y: -1e4 }, reduce: false, level: "suave", fps: 60 };
 
 function fxColors() {
-  return getTheme() !== "light" ? ["99,102,241", "34,211,238", "139,92,246"] : ["90,93,232", "8,145,178", "124,58,237"];
+  return getTheme() !== "light" ? ["0,125,253", "56,189,248", "96,165,250"] : ["0,113,230", "14,165,233", "59,130,246"];
 }
 function fxSprite(rgb) {
   const r = 16, s = document.createElement("canvas"); s.width = s.height = r * 2;
