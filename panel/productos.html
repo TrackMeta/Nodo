@@ -48,7 +48,7 @@
       <div class="nodo-head">
         <div class="grow">
           <h1 class="nodo-title">Productos</h1>
-          <p class="nodo-lead">Tu catálogo de infoproductos. Cada producto define sus versiones, precios, entrega y los flujos que lo venden.</p>
+          <p class="nodo-lead">Tu catálogo de productos digitales y físicos. Cada producto define sus versiones, precios, entrega o envío, y los flujos que lo venden.</p>
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addProduct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo producto</button>
@@ -94,7 +94,8 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function loadProducts(){
-  let { data, error } = await supa.from("products").select("id,nombre,con_bifurcacion,config,folder,emoji").eq("channel_id",st.channelId).order("created_at");
+  let { data, error } = await supa.from("products").select("id,nombre,con_bifurcacion,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at");
+  if(error){ ({ data, error } = await supa.from("products").select("id,nombre,con_bifurcacion,config,folder,emoji").eq("channel_id",st.channelId).order("created_at")); }
   if(error){ ({ data } = await supa.from("products").select("id,nombre,con_bifurcacion,config").eq("channel_id",st.channelId).order("created_at")); }
   st.list=data||[]; renderFolders(); renderCards();
 }
@@ -133,8 +134,8 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-ic">${icon}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
-      <div class="c-sub">${p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única"}</div>
-      <div class="c-foot"><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">📁 ${esc(p.folder)}</span>`:''}</div>`;
+      <div class="c-sub">${p.tipo==="fisico"?"Producto físico · envíos":(p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única")}</div>
+      <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?"📦 Físico":"💾 Digital"}</span><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">📁 ${esc(p.folder)}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -190,8 +191,16 @@ function renderDatos(){
         <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
     </div>
     <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado de la foto del contacto que entró por él).</div>
-    <label>Carpeta</label>
-    <select class="sel" id="pFolder" style="min-width:240px"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select>
+    <div class="row" style="align-items:flex-end">
+      <div><label>Carpeta</label>
+        <select class="sel" id="pFolder" style="width:100%"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+      <div><label>Tipo de producto</label>
+        <select class="sel" id="pTipo" style="width:100%">
+          <option value="digital" ${(st.prod.tipo||"digital")==="digital"?"selected":""}>💾 Digital (entrega por link)</option>
+          <option value="fisico" ${st.prod.tipo==="fisico"?"selected":""}>📦 Físico (envíos Lima / provincia)</option>
+        </select></div>
+    </div>
+    <div id="envioCard"></div>
     <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con bifurcación (versiones Básica/Premium)</label>
     <label>Campos fijos (config JSON: precio, contexto_producto, datos_pago…)</label>
     <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
@@ -221,8 +230,57 @@ function renderDatos(){
   document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); }catch(_){ toast("JSON inválido",true); } };
+  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderEnvio(); };
   $("addVersion").onclick=()=>{ st.versions.push({ nombre:"Nueva versión", price_list:[], drive_link:"", orden:st.versions.length }); renderVersions(); };
+  renderEnvio();
   renderVersions();
+}
+
+// ── Config de envío del producto físico (DEFINICION §6-SEPTIES) ────
+function renderEnvio(){
+  const box=$("envioCard"); if(!box) return;
+  if((st.prod.tipo||"digital")!=="fisico"){ box.innerHTML=""; return; }
+  const cfg=st.prod.config||(st.prod.config={});
+  const e=cfg.envio||(cfg.envio={ adelanto_modo:"fijo", adelanto_valor:20, gratis:true, costo_lima:"", costo_provincia:"", lima_contraentrega:true, agencias:["shalom","olva"], cobro_saldo:"bot" });
+  const ag=(a)=>(e.agencias||[]).includes(a);
+  box.innerHTML=`
+    <div class="card" style="margin-top:16px">
+      <h4>📦 Envío y cobro</h4>
+      <div style="font-size:12px;color:var(--faint)">Cómo se cobra y despacha este producto. El flujo de venta física lee esta configuración.</div>
+      <div class="row" style="margin-top:4px">
+        <div><label>Adelanto (provincia)</label>
+          <select class="sel" id="eModo" style="width:100%">
+            <option value="fijo" ${e.adelanto_modo!=="porcentaje"?"selected":""}>Monto fijo (S/)</option>
+            <option value="porcentaje" ${e.adelanto_modo==="porcentaje"?"selected":""}>% del precio</option>
+          </select></div>
+        <div><label>${e.adelanto_modo==="porcentaje"?"Porcentaje (%)":"Monto (S/)"}</label>
+          <input class="in" id="eValor" type="number" step="0.1" value="${esc(e.adelanto_valor??"")}"/></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="eGratis" ${e.gratis!==false?"checked":""}/> Envío gratis (lo asume el negocio)</label>
+      <div class="row" id="eCostos" style="display:${e.gratis!==false?"none":"flex"}">
+        <div><label>Costo envío Lima (S/)</label><input class="in" id="eCLima" type="number" step="0.1" value="${esc(e.costo_lima??"")}"/></div>
+        <div><label>Costo envío provincia (S/)</label><input class="in" id="eCProv" type="number" step="0.1" value="${esc(e.costo_provincia??"")}"/></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="eCOD" ${e.lima_contraentrega!==false?"checked":""}/> Lima: 100% contraentrega (sin adelanto)</label>
+      <label>Agencias habilitadas (provincia)</label>
+      <div class="row" style="justify-content:flex-start;gap:18px">
+        <label class="chk" style="margin-top:0;flex:none"><input type="checkbox" id="eShalom" ${ag("shalom")?"checked":""}/> Shalom</label>
+        <label class="chk" style="margin-top:0;flex:none"><input type="checkbox" id="eOlva" ${ag("olva")?"checked":""}/> Olva Courier</label>
+      </div>
+      <label>Cobro del saldo (al llegar a la agencia)</label>
+      <select class="sel" id="eCobro" style="min-width:280px">
+        <option value="bot" ${e.cobro_saldo!=="humano"?"selected":""}>🤖 Bot — escribe, valida el pago y suelta la clave</option>
+        <option value="humano" ${e.cobro_saldo==="humano"?"selected":""}>🙋 Humano — el operador cierra a mano</option>
+      </select>
+    </div>`;
+  const upd=()=>{
+    e.adelanto_modo=$("eModo").value; e.adelanto_valor=parseFloat($("eValor").value)||0;
+    e.gratis=$("eGratis").checked; e.costo_lima=parseFloat($("eCLima")?.value)||0; e.costo_provincia=parseFloat($("eCProv")?.value)||0;
+    e.lima_contraentrega=$("eCOD").checked;
+    e.agencias=[["shalom","eShalom"],["olva","eOlva"]].filter(([,id])=>$(id).checked).map(([a])=>a);
+    e.cobro_saldo=$("eCobro").value;
+  };
+  ["eModo","eValor","eGratis","eCLima","eCProv","eCOD","eShalom","eOlva","eCobro"].forEach(id=>{ const n=$(id); if(n) n.onchange=()=>{ upd(); if(id==="eGratis"||id==="eModo") renderEnvio(); }; });
 }
 function renderVersions(){
   const box=$("versions"); box.innerHTML="";
@@ -282,7 +340,8 @@ async function renderFlujos(){
 async function saveProduct(){
   if(!st.prod){ return; }
   const base={ nombre:st.prod.nombre, con_bifurcacion:st.prod.con_bifurcacion, config:st.prod.config||{}, updated_at:new Date().toISOString() };
-  let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id);
+  let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
+  if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
   if(e1 && /folder|emoji|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update(base).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0018 para carpeta/emoji)"); }
   if(e1){ toast(e1.message,true); return; }
   for(let i=0;i<st.versions.length;i++){

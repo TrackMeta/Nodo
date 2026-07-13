@@ -8,6 +8,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent } from "./capi.ts";
 import { sendTelegram } from "./telegram.ts";
+import { sendTemplateToContact } from "./campaigns.ts";
 import { getChannelSecrets } from "./db.ts";
 import { fetchMediaAsDataUri, MetaApiError, sendButtons, sendText } from "./meta.ts";
 
@@ -241,6 +242,26 @@ async function execute(db: SupabaseClient, run: Run) {
         await runEventoFb(db, run, node, ctx);
         break;
       }
+      case "plantilla": {
+        // Plantilla HSM aprobada por Meta — única vía para escribir FUERA de
+        // la ventana de 24h (notificaciones de pedido físico en tránsito).
+        try {
+          await sendTemplateToContact(db, run.channel_id, run.contact_id, {
+            name: node.config?.template_name,
+            language: node.config?.template_lang,
+            params: (node.config?.params ?? []).map((p: string) => resolve(String(p), ctx)),
+          });
+          run.current_node_id =
+            (await nextNode(db, run.flow_id, node.id, "exito")) ??
+            (await nextNode(db, run.flow_id, node.id, "continuar"));
+        } catch (err) {
+          await logEvent(db, run.channel_id, run.contact_id, "error", "Error al enviar plantilla", String((err as any)?.message ?? err));
+          run.current_node_id =
+            (await nextNode(db, run.flow_id, node.id, "fallo")) ??
+            (await nextNode(db, run.flow_id, node.id, "continuar"));
+        }
+        break;
+      }
       case "fin": run.estado = "completado"; run.current_node_id = null; break;
       default: {
         // google_sheets y otros → se implementan más adelante.
@@ -377,7 +398,77 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       }
       case "subscribe_seq": await subscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_inicio", "Secuencia suscrita", a.nombre ?? null); break;
       case "unsubscribe_seq": await unsubscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_cancel", "Secuencia cancelada", a.nombre ?? null); break;
+      case "crear_pedido": await crearPedido(db, run, a, ctx); break;
+      case "actualizar_pedido": await actualizarPedido(db, run, a, ctx); break;
     }
+  }
+}
+
+// ── Pedidos (productos físicos, DEFINICION §6-SEPTIES) ─────────────
+// Estados FINALES de un pedido (no se "reabre" con actualizar_pedido).
+const ORDER_FINAL = ["confirmada", "anulada", "entregado_cobrado", "recogido", "cancelado", "rechazado", "no_recogido"];
+
+function parseMonto(raw: unknown, ctx: any): number | undefined {
+  const s = resolve(String(raw ?? ""), ctx).trim().replace(",", ".");
+  if (!s) return undefined;
+  const n = Number(s.replace(/[^\d.\-]/g, ""));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// Acción crear_pedido: { estado?, monto?, datos?: { zona:"{{zona_entrega}}", … } }
+async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
+  try {
+    const ship: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
+    const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+    const { data: ord, error } = await db.from("orders").insert({
+      channel_id: run.channel_id, contact_id: run.contact_id,
+      product_id: (c as any)?.product_id ?? null,
+      amount: parseMonto(a.monto ?? a.amount, ctx) ?? 0,
+      estado: a.estado || "carrito", shipping: ship,
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    run.vars._order_id = (ord as any).id;
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+  } catch (err) {
+    await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
+  }
+}
+
+// Acción actualizar_pedido: { estado?, monto?, datos? } — actúa sobre el
+// pedido del run (_order_id) o el último pedido NO final del contacto.
+async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
+  try {
+    let orderId = run.vars._order_id as string | undefined;
+    if (!orderId) {
+      const { data: o } = await db.from("orders").select("id")
+        .eq("contact_id", run.contact_id)
+        .not("estado", "in", `(${ORDER_FINAL.map((e) => `"${e}"`).join(",")})`)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      orderId = (o as any)?.id;
+    }
+    if (!orderId) return;
+    run.vars._order_id = orderId;
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (a.estado) {
+      patch.estado = resolve(String(a.estado), ctx);
+      if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
+        patch.confirmed_at = new Date().toISOString();
+      }
+    }
+    const monto = parseMonto(a.monto ?? a.amount, ctx);
+    if (monto !== undefined) patch.amount = monto;
+    if (a.datos && Object.keys(a.datos).length) {
+      const { data: cur } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+      const ship: Record<string, unknown> = { ...((cur as any)?.shipping ?? {}) };
+      for (const [k, v] of Object.entries(a.datos)) ship[k] = resolve(String(v ?? ""), ctx);
+      patch.shipping = ship;
+    }
+    const { error } = await db.from("orders").update(patch).eq("id", orderId);
+    if (error) throw new Error(error.message);
+    if (a.estado) await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido → " + patch.estado);
+  } catch (err) {
+    await logEvent(db, run.channel_id, run.contact_id, "error", "Error al actualizar pedido", String((err as any)?.message ?? err));
   }
 }
 
@@ -527,6 +618,18 @@ async function buildContext(db: SupabaseClient, run: Run) {
     ...run.vars,
   };
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
+  // Último pedido del contacto → variables {{pedido_*}} para los flujos de
+  // notificación de físicos (guía, saldo, clave de recojo…). Best-effort.
+  try {
+    const { data: o } = await db.from("orders")
+      .select("estado, amount, currency, shipping").eq("contact_id", run.contact_id)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (o) {
+      ctx.pedido_estado = (o as any).estado;
+      ctx.pedido_monto = (o as any).amount;
+      for (const [k, v] of Object.entries((o as any).shipping ?? {})) ctx["pedido_" + k] = v;
+    }
+  } catch (_) { /* columna/tabla pendiente */ }
   return ctx;
 }
 function resolve(text: string, ctx: any): string {

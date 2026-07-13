@@ -64,3 +64,7 @@ verify_jwt = true
 # scheduler: tick interno (lo llama el cron). Protegido por x-scheduler-secret.
 [functions.scheduler]
 verify_jwt = false
+
+# order-update: el Kanban de Pedidos avanza estados y dispara flujos pedido_estado.
+[functions.order-update]
+verify_jwt = true

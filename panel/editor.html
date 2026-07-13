@@ -89,9 +89,29 @@
   .drawflow-node.esperar{--nd-color:#8a97a8}
   .drawflow-node.iniciar_flujo{--nd-color:#22c079}
   .drawflow-node.evento_fb{--nd-color:#1877f2}
+  .drawflow-node.plantilla{--nd-color:#0aa984}
   .drawflow-node.fin{--nd-color:#e2564a}
   /* Paleta con color por tipo */
   .pbtn[data-tipo]{border-left:3px solid var(--nd-color,var(--brand))}
+  /* Modal de disparadores del flujo */
+  .tg-overlay{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+  .tg-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:560px;max-height:88vh;overflow:auto}
+  .tg-modal h3{margin:0 0 4px;font-size:16.5px}
+  .tg-sub{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+  .tg-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:11px;margin-bottom:8px;background:var(--surface-2)}
+  .tg-row .tt{flex:1;min-width:0;font-size:13px}
+  .tg-row .tt .k{font-weight:700}
+  .tg-row .tt .d{font-size:11.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tg-row button{border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:8px;height:30px;padding:0 10px;font-size:12px;font-weight:600}
+  .tg-row button.on{color:var(--green);border-color:var(--green)}
+  .tg-row button.del{color:var(--red)}
+  .tg-new{border-top:1px solid var(--border);margin-top:14px;padding-top:14px}
+  .tg-new label{display:block;font-size:11.5px;color:var(--muted);margin:10px 0 5px;font-weight:700}
+  .tg-new input,.tg-new select{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:38px;padding:0 11px;font-size:13px;outline:none;font-family:inherit}
+  .tg-new .chkline{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-top:10px;color:var(--muted)}
+  .tg-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .tg-chips button{border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:20px;padding:5px 11px;font-size:12px;font-weight:600}
+  .tg-chips button.on{background:var(--brand);border-color:var(--brand);color:#fff}
 </style>
 </head>
 <body>
@@ -123,6 +143,7 @@
       <button class="segb" data-v="contenido">✍️ Contenido</button>
     </div>
     <div class="spacer"></div>
+    <button class="btn" id="trigBtn" title="Cuándo arranca este flujo">⚡ Disparadores</button>
     <button class="btn" id="delFlowBtn" style="color:var(--red);border-color:transparent" title="Eliminar flujo">🗑</button>
     <button class="btn" id="saveBtn">Guardar</button>
     <button class="btn primary" id="pubBtn">Publicar</button>
@@ -155,6 +176,7 @@ const NODE_DEFS = {
   esperar:      { icon:"⏱", handles:["continuar"] },
   iniciar_flujo:{ icon:"↗", handles:["continuar"] },
   evento_fb:    { icon:"📘", handles:["exito","fallo"] },
+  plantilla:    { icon:"📋", handles:["exito","fallo"] },
   fin:          { icon:"⬛", handles:[] },
 };
 
@@ -183,6 +205,7 @@ async function boot(){
   $("addFlow").onclick = createFlow;
   $("saveBtn").onclick = save;
   $("pubBtn").onclick = publish;
+  $("trigBtn").onclick = openTriggers;
   $("backBtn").onclick = ()=>{ st.flowId=null; showOverview(); loadFlows(); };
   $("delFlowBtn").onclick = deleteFlow;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
@@ -448,7 +471,8 @@ function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={
 
 const NODE_COLORS = {
   mensaje:"#2b7fff", pregunta:"#f0a92b", condicion:"#9b6cf0", accion:"#18b7be",
-  ia:"#e264a8", esperar:"#8a97a8", iniciar_flujo:"#22c079", evento_fb:"#1877f2", fin:"#e2564a",
+  ia:"#e264a8", esperar:"#8a97a8", iniciar_flujo:"#22c079", evento_fb:"#1877f2",
+  plantilla:"#0aa984", fin:"#e2564a",
 };
 function nodeHtml(tipo, nombre){
   const ic=NODE_DEFS[tipo]?.icon||"●";
@@ -484,6 +508,7 @@ function defaultConfig(tipo){
     case "accion": return { acciones:[] };
     case "ia": return { operacion:"generar_texto", prompt:"", proveedor:"auto", modelo:"" };
     case "evento_fb": return { event_name:"Lead", currency:"PEN", value:"", order_id:"" };
+    case "plantilla": return { template_name:"", template_lang:"es", params:[] };
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_role:"" };
     default: return {};
@@ -531,6 +556,114 @@ function renderHandles(m){
 }
 function updateNodeDom(m){
   const el=document.querySelector(`#node-${m.dfId} .nm`); if(el) el.textContent=m.nombre;
+}
+
+// ── Disparadores del flujo (flow_triggers) ──
+// Cuándo arranca este flujo: palabra clave, flujo de entrada (fallback),
+// estado de pedido (el Kanban lo dispara al mover la tarjeta) o anuncio CTWA.
+const TRIG_LABEL={ entrada:"★ Flujo de entrada", keyword:"🔑 Palabra clave", pedido_estado:"📦 Estado de pedido", referral:"📣 Anuncio (referral)", boton:"🔘 Botón", ia:"✨ Disparador IA", api:"🔌 API" };
+const PEDIDO_ESTADOS=["confirmado","en_reparto","entregado_cobrado","esperando_adelanto","adelanto_validado","por_despachar","despachado","en_agencia","saldo_pagado","recogido","reprogramado","rechazado","no_recogido","cancelado"];
+function trigDesc(t){
+  const c=t.config||{};
+  if(t.tipo==="keyword") return (c.keywords||[]).join(", ")+" · coincidencia: "+(c.match||"contiene")+(t.interrumpe?" · interrumpe":"");
+  if(t.tipo==="pedido_estado") return "al pasar a: "+(c.estados||[]).join(", ")+(t.interrumpe?" · interrumpe la conversación":"");
+  if(t.tipo==="referral") return "Ad IDs: "+(c.ad_ids||[]).join(", ");
+  if(t.tipo==="entrada") return "recibe todo mensaje que no coincida con otro disparador";
+  return JSON.stringify(c);
+}
+async function openTriggers(){
+  if(!st.flowId){ toast("Abre un flujo primero",true); return; }
+  const ov=document.createElement("div"); ov.className="tg-overlay";
+  ov.innerHTML=`<div class="tg-modal">
+    <h3>⚡ Disparadores — ${esc(st.flow?.nombre||"")}</h3>
+    <div class="tg-sub">Definen cuándo arranca este flujo. Un pedido dispara desde el Kanban de Pedidos; una keyword, desde el mensaje del cliente.</div>
+    <div id="tgList"><div style="color:var(--faint);font-size:12.5px">Cargando…</div></div>
+    <div class="tg-new">
+      <label>Añadir disparador</label>
+      <select id="tgTipo">
+        <option value="keyword">🔑 Palabra clave</option>
+        <option value="pedido_estado">📦 Estado de pedido (Kanban)</option>
+        <option value="referral">📣 Anuncio CTWA (Ad ID)</option>
+        <option value="entrada">★ Flujo de entrada (fallback del canal)</option>
+      </select>
+      <div id="tgCfg"></div>
+      <button class="btn primary" id="tgAdd" style="width:100%;margin-top:14px;height:38px">Añadir</button>
+    </div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="tgClose">Cerrar</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  ov.querySelector("#tgClose").onclick=()=>ov.remove();
+  const tipoSel=ov.querySelector("#tgTipo");
+  tipoSel.onchange=()=>renderTgCfg(ov);
+  renderTgCfg(ov);
+  ov.querySelector("#tgAdd").onclick=()=>addTrigger(ov);
+  await loadTriggers(ov);
+}
+async function loadTriggers(ov){
+  const { data, error }=await supa.from("flow_triggers").select("*").eq("flow_id",st.flowId).order("created_at");
+  const box=ov.querySelector("#tgList"); if(!box) return;
+  if(error){ box.innerHTML=`<div style="color:var(--red);font-size:12.5px">${esc(error.message)}</div>`; return; }
+  if(!data||!data.length){ box.innerHTML=`<div style="color:var(--faint);font-size:12.5px;padding:6px 2px">Este flujo no tiene disparadores — solo puede iniciarse desde otro flujo (Iniciar flujo) o manualmente.</div>`; return; }
+  box.innerHTML="";
+  data.forEach(t=>{
+    const row=document.createElement("div"); row.className="tg-row";
+    row.innerHTML=`<div class="tt"><div class="k">${TRIG_LABEL[t.tipo]||t.tipo}</div><div class="d">${esc(trigDesc(t))}</div></div>
+      <button class="${t.activo?'on':''}">${t.activo?"Activo":"Apagado"}</button>
+      <button class="del">✕</button>`;
+    const [tog,del]=row.querySelectorAll("button");
+    tog.onclick=async()=>{ const { error }=await supa.from("flow_triggers").update({ activo:!t.activo }).eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
+    del.onclick=async()=>{ if(!confirm("¿Eliminar este disparador?")) return; const { error }=await supa.from("flow_triggers").delete().eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
+    box.appendChild(row);
+  });
+}
+function renderTgCfg(ov){
+  const tipo=ov.querySelector("#tgTipo").value;
+  const box=ov.querySelector("#tgCfg");
+  if(tipo==="keyword"){
+    box.innerHTML=`
+      <label>Palabras clave (separadas por coma)</label>
+      <input id="tgKw" placeholder="Ej. activa 3, quiero info, precio"/>
+      <label>Coincidencia</label>
+      <select id="tgMatch"><option value="contiene">Contiene</option><option value="exacta">Exacta</option><option value="empieza">Empieza con</option></select>
+      <label class="chkline"><input type="checkbox" id="tgInt"/> Interrumpe una conversación activa</label>`;
+  } else if(tipo==="pedido_estado"){
+    box.innerHTML=`
+      <label>Arranca cuando el pedido pasa a…</label>
+      <div class="tg-chips" id="tgEstados">${PEDIDO_ESTADOS.map(e=>`<button type="button" data-e="${e}">${e.replace(/_/g," ")}</button>`).join("")}</div>
+      <label class="chkline"><input type="checkbox" id="tgInt" checked/> Interrumpe la conversación activa (recomendado para notificar ya)</label>`;
+    box.querySelectorAll("#tgEstados button").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
+  } else if(tipo==="referral"){
+    box.innerHTML=`
+      <label>Ad IDs del anuncio (separados por coma)</label>
+      <input id="tgAds" placeholder="Ej. 120212345678901234"/>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El primer mensaje desde ese anuncio (Click-to-WhatsApp) arranca este flujo, sin depender del texto.</div>`;
+  } else {
+    box.innerHTML=`<div style="font-size:11.5px;color:var(--faint);margin-top:8px">Recibe TODO lo entrante que no coincida con otro disparador. Solo debe haber uno por canal.</div>`;
+  }
+}
+async function addTrigger(ov){
+  const tipo=ov.querySelector("#tgTipo").value;
+  let config={}, interrumpe=false;
+  if(tipo==="keyword"){
+    const kws=(ov.querySelector("#tgKw").value||"").split(",").map(s=>s.trim()).filter(Boolean);
+    if(!kws.length){ toast("Escribe al menos una palabra clave",true); return; }
+    config={ keywords:kws, match:ov.querySelector("#tgMatch").value };
+    interrumpe=ov.querySelector("#tgInt").checked;
+  } else if(tipo==="pedido_estado"){
+    const estados=[...ov.querySelectorAll("#tgEstados button.on")].map(b=>b.dataset.e);
+    if(!estados.length){ toast("Elige al menos un estado",true); return; }
+    config={ estados };
+    interrumpe=ov.querySelector("#tgInt").checked;
+  } else if(tipo==="referral"){
+    const ads=(ov.querySelector("#tgAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
+    if(!ads.length){ toast("Escribe al menos un Ad ID",true); return; }
+    config={ ad_ids:ads };
+  }
+  const { error }=await supa.from("flow_triggers").insert({ flow_id:st.flowId, channel_id:st.channelId, tipo, config, interrumpe, activo:true });
+  if(error){ toast(error.message,true); return; }
+  toast("Disparador añadido ✓");
+  renderTgCfg(ov); loadTriggers(ov);
 }
 
 // ── Crear flujo ──

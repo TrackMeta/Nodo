@@ -31,7 +31,11 @@
   .search input{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:40px;padding:0 12px 0 36px;font-size:13.5px;outline:none;font-family:var(--font)}
   .search input:focus{border-color:var(--brand)}
   .search svg{position:absolute;left:11px;top:11px;width:17px;height:17px;color:var(--faint)}
-  /* Tabla */
+  /* Segmented (vista) */
+  .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;gap:2px}
+  .seg button{border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:700;padding:7px 14px;border-radius:8px}
+  .seg button.on{background:var(--brand);color:#fff}
+  /* Tabla (Compras) */
   .tbl{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
   .trow{display:grid;grid-template-columns:1.6fr 1.5fr .9fr 1fr auto;gap:14px;align-items:center;padding:13px 18px;border-top:1px solid var(--border)}
   .trow.head{color:var(--muted);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;border-top:none;background:var(--surface-2)}
@@ -46,15 +50,55 @@
   .amt{font-weight:750;font-size:14.5px;text-align:right;font-variant-numeric:tabular-nums}
   .amt .bump{display:block;font-size:11px;color:var(--faint);font-weight:600}
   .when{font-size:12.5px;color:var(--muted)}
-  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-block}
-  .badge.confirmada{background:var(--green-bg);color:var(--green)}
-  .badge.pendiente{background:var(--amber-bg);color:var(--amber)}
-  .badge.anulada{background:var(--red-bg);color:var(--red)}
+  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-block;background:var(--surface-2);color:var(--muted)}
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--amber-bg);color:var(--amber)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
   @media(max-width:820px){
     .trow{grid-template-columns:1fr auto;gap:6px}
     .trow.head,.trow .prod,.trow .when{display:none}
     .trow .amt{text-align:left}
   }
+  /* Kanban (Pedidos físicos) */
+  .kb{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(248px,290px);gap:12px;overflow-x:auto;padding-bottom:14px;align-items:start}
+  .kcol{background:var(--surface);border:1px solid var(--border);border-radius:14px;min-height:160px}
+  .kcol .kh{display:flex;align-items:center;gap:7px;padding:12px 14px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:800;letter-spacing:.2px}
+  .kcol .kh .cnt{margin-left:auto;font-size:11px;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:2px 8px;font-weight:700}
+  .kcol .kbody{padding:10px;display:flex;flex-direction:column;gap:10px}
+  .kcard{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .kcard .kc-top{display:flex;align-items:flex-start;gap:8px}
+  .kcard .kc-nm{font-weight:700;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kcard .kc-dots{border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
+  .kcard .kc-dots:hover{background:var(--surface)}
+  .kcard .kc-sub{font-size:12px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .kcard .kc-money{font-size:12.5px;margin-top:8px;color:var(--text)}
+  .kcard .kc-money b{font-variant-numeric:tabular-nums}
+  .kcard .kc-ship{font-size:11.5px;color:var(--faint);margin-top:4px;line-height:1.5;word-break:break-word}
+  .kcard .kc-act{margin-top:10px;display:flex;gap:6px;align-items:center}
+  .kcard .kc-act button.go{flex:1;height:32px;border-radius:9px;border:none;background:var(--brand);color:#fff;font-size:12px;font-weight:700}
+  .kcard .kc-act button.go:hover{background:var(--brand-2)}
+  .kcard .kc-when{font-size:10.5px;color:var(--faint);margin-top:7px;text-align:right}
+  .zona{font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;letter-spacing:.3px}
+  .zona.lima{background:var(--brand-bg);color:var(--brand)}
+  .zona.prov{background:var(--amber-bg);color:var(--amber)}
+  /* Menú contextual + modal */
+  .menu{position:fixed;z-index:60;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.45);padding:6px;min-width:210px}
+  .menu button{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--text);font-size:13px;padding:8px 10px;border-radius:8px}
+  .menu button:hover{background:var(--surface-2)}
+  .menu button.danger{color:var(--red)}
+  .menu .sep{height:1px;background:var(--border);margin:5px 4px}
+  .overlay{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:460px;max-height:90vh;overflow:auto}
+  .modal h3{margin:0 0 4px;font-size:16.5px}
+  .modal .m-sub{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+  .modal label{display:block;font-size:11.5px;color:var(--muted);margin:12px 0 5px;font-weight:700}
+  .modal input,.modal select{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:38px;padding:0 11px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .modal input:focus,.modal select:focus{border-color:var(--brand)}
+  .modal .m-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+  .modal .m-foot button{height:38px;padding:0 16px;border-radius:10px;font-size:13px;font-weight:700}
+  .modal .m-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .modal .m-foot .save{background:var(--brand);border:none;color:#fff}
+  .modal .row2{display:flex;gap:10px}.modal .row2>*{flex:1}
 </style>
 </head>
 <body>
@@ -63,7 +107,13 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Compras / Pedidos</h1>
-        <p class="nodo-lead">Todas las compras y adelantos registrados en este bot — confirmadas por el motor de flujos (OCR de comprobante) o cargadas por un operador desde la Bandeja.</p>
+        <p class="nodo-lead" id="lead">Todas las compras y adelantos registrados en este bot — confirmadas por el motor de flujos (OCR de comprobante) o cargadas por un operador desde la Bandeja.</p>
+      </div>
+      <div class="nodo-actions">
+        <div class="seg" id="seg">
+          <button data-v="compras" class="on">Compras</button>
+          <button data-v="fisicos">Pedidos físicos 📦</button>
+        </div>
       </div>
     </div>
 
@@ -76,19 +126,44 @@
     </div>
 
     <div class="tbl" id="tbl"></div>
+    <div class="kb" id="kb" style="display:none"></div>
   </div>
 </div>
 
 <script type="module">
-import { supa, mountShell } from "./shell.js";
+import { supa, mountShell, toast } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, list:[], estado:"all", q:"" };
+const st={ channelId:null, list:[], estado:"all", q:"", view:"compras" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const ESTADOS=[["all","Todas"],["confirmada","Confirmadas"],["pendiente","Adelantos / Pendientes"],["anulada","Anuladas"]];
+
+// ── Ciclo de vida del pedido físico (DEFINICION §6-SEPTIES) ────────
+const EST_LABEL={
+  carrito:"Carrito", esperando_adelanto:"Esperando adelanto", adelanto_validado:"Adelanto validado",
+  confirmado:"Confirmado", por_despachar:"Por despachar", despachado:"Despachado",
+  en_agencia:"En agencia", saldo_pagado:"Saldo pagado", recogido:"Recogido ✅",
+  en_reparto:"En reparto", entregado_cobrado:"Entregado y cobrado ✅",
+  reprogramado:"Reprogramado", rechazado:"Rechazado", no_recogido:"No recogido", cancelado:"Cancelado",
+  confirmada:"Confirmada", pendiente:"Pendiente", anulada:"Anulada",
+};
+const KB_COLS=[
+  ["🆕","Nuevo / Adelanto",["carrito","esperando_adelanto","confirmado"]],
+  ["📦","Por despachar",["adelanto_validado","por_despachar"]],
+  ["🚚","En camino",["despachado","en_reparto"]],
+  ["🏢","En agencia · cobrar saldo",["en_agencia"]],
+  ["🔑","Para entregar",["saldo_pagado"]],
+  ["✅","Finalizados",["entregado_cobrado","recogido","reprogramado","rechazado","no_recogido","cancelado"]],
+];
+const FIS_STATES=new Set(KB_COLS.flatMap(c=>c[2]));
+const BAD_STATES=new Set(["rechazado","no_recogido","cancelado","anulada"]);
+const OK_STATES=new Set(["entregado_cobrado","recogido","confirmada","saldo_pagado","adelanto_validado"]);
 
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
 function total(o){ let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); return v; }
 function fecha(iso){ if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})+" · "+d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"}); }
+function rel(iso){ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(s<90) return "hace 1 min"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
+function isFisico(o){ return (o.product&&o.product.tipo==="fisico") || FIS_STATES.has(o.estado) || (o.shipping&&Object.keys(o.shipping).length>0); }
+function badgeClass(e){ return BAD_STATES.has(e)?"bad":(OK_STATES.has(e)?"ok":"warn"); }
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -96,18 +171,22 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
   $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
+  $("seg").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{ st.view=b.dataset.v; $("seg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); render(); });
   renderEstados();
   await load();
 }
 
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
-  const sel="id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji),version:version_id(nombre)";
-  let { data, error }=await supa.from("orders").select(sel).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
-  if(error){ // resiliente: sin joins (o tabla 0017 sin aplicar)
-    const r=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
-    if(r.error){ st.list=[]; renderKpis(); $("tbl").innerHTML=`<div class="nodo-empty" style="border:none"><h3>No se pudo cargar</h3><p>Aplica la migración <b>0017_orders.sql</b> en el SQL Editor para habilitar Compras / Pedidos.</p></div>`; return; }
-    data=r.data;
+  const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
+  let { data, error }=await supa.from("orders").select(full).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
+  if(error){ // resiliente: sin columnas 0022
+    const r1=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji),version:version_id(nombre)").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
+    if(r1.error){
+      const r2=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
+      if(r2.error){ st.list=[]; renderKpis(); $("tbl").innerHTML=`<div class="nodo-empty" style="border:none"><h3>No se pudo cargar</h3><p>Aplica la migración <b>0017_orders.sql</b> en el SQL Editor para habilitar Compras / Pedidos.</p></div>`; return; }
+      data=r2.data;
+    } else data=r1.data;
   }
   st.list=data||[]; render();
 }
@@ -118,9 +197,10 @@ function renderEstados(){
 }
 
 function renderKpis(){
-  const conf=st.list.filter(o=>o.estado==="confirmada");
+  const conf=st.list.filter(o=>o.estado==="confirmada"||o.estado==="entregado_cobrado"||o.estado==="recogido");
   const ing=conf.reduce((a,o)=>a+total(o),0);
-  const pend=st.list.filter(o=>o.estado==="pendiente").length;
+  const pend=st.list.filter(o=>o.estado==="pendiente"||o.estado==="esperando_adelanto").length;
+  const activos=st.list.filter(o=>isFisico(o)&&FIS_STATES.has(o.estado)&&!["entregado_cobrado","recogido","rechazado","no_recogido","cancelado"].includes(o.estado)).length;
   const ticket=conf.length?ing/conf.length:0;
   const cur=(st.list[0]&&st.list[0].currency)||"PEN";
   let extraUnits=0, extraIng=0;
@@ -129,7 +209,7 @@ function renderKpis(){
     ["Compras confirmadas",String(conf.length),"pedidos cerrados"],
     ["Ingresos confirmados",money(ing,cur),"base + compras extra"],
     ["Compras extra",String(extraUnits),`${money(extraIng,cur)} en ingresos`],
-    ["Adelantos / pendientes",String(pend),"por confirmar"],
+    ["Pedidos físicos activos",String(activos),"en el tablero"],
     ["Ticket promedio",money(ticket,cur),"por compra confirmada"],
   ];
   $("kpis").innerHTML=K.map(([l,v,s])=>`<div class="kpi"><div class="k-l">${l}</div><div class="k-v">${v}</div><div class="k-s">${s}</div></div>`).join("");
@@ -137,6 +217,18 @@ function renderKpis(){
 
 function render(){
   renderKpis();
+  const compras=st.view==="compras";
+  $("tbl").style.display=compras?"":"none";
+  $("kb").style.display=compras?"none":"";
+  $("estados").style.display=compras?"":"none";
+  $("lead").textContent=compras
+    ? "Todas las compras y adelantos registrados en este bot — confirmadas por el motor de flujos (OCR de comprobante) o cargadas por un operador desde la Bandeja."
+    : "Tablero operativo de pedidos físicos: tú avanzas la tarjeta (despacho, llegada, cobro) y el bot le escribe al cliente en cada paso.";
+  if(compras) renderTabla(); else renderKanban();
+}
+
+// ── Vista Compras (lista) ──────────────────────────────────────────
+function renderTabla(){
   let list=st.list;
   if(st.estado!=="all") list=list.filter(o=>o.estado===st.estado);
   if(st.q) list=list.filter(o=>{ const c=o.contact||{}; return (c.nombre||"").toLowerCase().includes(st.q)||(c.wa_id||"").includes(st.q); });
@@ -153,11 +245,187 @@ function render(){
     return `<div class="trow">
       <div class="cust"><div class="nm">${esc(c.nombre||"Sin nombre")}</div><div class="ph">${c.wa_id?"+"+esc(c.wa_id):"—"}</div></div>
       <div class="prod"><span class="em">${esc(p.emoji||"📦")}</span><div style="min-width:0"><div class="pn">${esc(p.nombre||"—")}</div>${v.nombre?`<div class="vv">${esc(v.nombre)}</div>`:""}</div></div>
-      <div><span class="badge ${esc(o.estado||"confirmada")}">${esc(o.estado||"confirmada")}</span></div>
+      <div><span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado||"—")}</span></div>
       <div class="when">${fecha(o.created_at)}</div>
       <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} compra${bumps>1?"s":""} extra</span>`:""}</div>
     </div>`;
   }).join("");
+}
+
+// ── Vista Kanban (pedidos físicos) ─────────────────────────────────
+function primaryAction(o){
+  const zona=((o.shipping&&o.shipping.zona)||"").toLowerCase();
+  switch(o.estado){
+    case "carrito": return { label:"Confirmar pedido", estado:"confirmado" };
+    case "esperando_adelanto": return { label:"✓ Adelanto recibido", estado:"adelanto_validado" };
+    case "confirmado": return zona==="provincia"
+      ? { label:"→ Por despachar", estado:"por_despachar" }
+      : { label:"🛵 Salió a reparto", estado:"en_reparto" };
+    case "adelanto_validado":
+    case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
+    case "despachado": return { label:"📍 Llegó a agencia", estado:"en_agencia" };
+    case "en_agencia": return { label:"✓ Saldo pagado", estado:"saldo_pagado" };
+    case "saldo_pagado": return { label:"✅ Recogido", estado:"recogido" };
+    case "en_reparto": return { label:"✅ Entregado y cobrado", estado:"entregado_cobrado" };
+    case "reprogramado": return { label:"🛵 Salió a reparto", estado:"en_reparto" };
+    default: return null;
+  }
+}
+
+function renderKanban(){
+  let list=st.list.filter(isFisico);
+  if(st.q) list=list.filter(o=>{ const c=o.contact||{}; return (c.nombre||"").toLowerCase().includes(st.q)||(c.wa_id||"").includes(st.q); });
+  const box=$("kb");
+  if(!list.length){
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div><h3>Aún no hay pedidos físicos</h3><p>Cuando un flujo de producto físico cree un pedido (adelanto validado o contraentrega confirmada), aparecerá en este tablero.</p></div>`;
+    return;
+  }
+  box.innerHTML="";
+  KB_COLS.forEach(([ic,label,estados])=>{
+    const items=list.filter(o=>estados.includes(o.estado));
+    const col=document.createElement("div"); col.className="kcol";
+    col.innerHTML=`<div class="kh"><span>${ic}</span> ${esc(label)} <span class="cnt">${items.length}</span></div><div class="kbody"></div>`;
+    const body=col.querySelector(".kbody");
+    items.forEach(o=>body.appendChild(kcard(o)));
+    box.appendChild(col);
+  });
+}
+
+function kcard(o){
+  const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
+  const zona=(s.zona||"").toLowerCase();
+  const el=document.createElement("div"); el.className="kcard";
+  const shipBits=[];
+  if(s.agencia) shipBits.push(`${esc(cap(s.agencia))}${s.sede?" · "+esc(s.sede):""}`);
+  if(s.guia) shipBits.push(`Guía <b>${esc(s.guia)}</b>`);
+  if(s.clave_recojo) shipBits.push(`Clave <b>${esc(s.clave_recojo)}</b>`);
+  if(s.distrito||s.direccion) shipBits.push(esc([s.distrito,s.direccion].filter(Boolean).join(" · ")));
+  const adel=Number(s.adelanto||0), saldo=Number(s.saldo||0);
+  const moneyLine = adel||saldo
+    ? `${adel?`Adelanto <b>${money(adel,o.currency)}</b>`:""}${adel&&saldo?" · ":""}${saldo?`Saldo <b>${money(saldo,o.currency)}</b>`:""}`
+    : `Total <b>${money(total(o),o.currency)}</b>`;
+  const act=primaryAction(o);
+  el.innerHTML=`
+    <div class="kc-top">
+      <div class="kc-nm">${esc(c.nombre||"Sin nombre")}</div>
+      <button class="kc-dots" title="Más acciones">⋮</button>
+    </div>
+    <div class="kc-sub">
+      <span>${esc(p.emoji||"📦")} ${esc(p.nombre||"—")}</span>
+      ${zona?`<span class="zona ${zona==="lima"?"lima":"prov"}">${zona==="lima"?"LIMA":"PROVINCIA"}</span>`:""}
+      <span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado)}</span>
+    </div>
+    <div class="kc-money">${moneyLine}</div>
+    ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
+    <div class="kc-act">${act?`<button class="go">${esc(act.label)}</button>`:""}</div>
+    <div class="kc-when">${rel(o.updated_at||o.created_at)}</div>`;
+  const go=el.querySelector(".go");
+  if(go&&act) go.onclick=()=>{ if(act.modal==="despacho") openDespacho(o); else confirmSet(o,act.estado,act.label); };
+  el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
+  return el;
+}
+function cap(s){ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// ── Acciones (Edge Function order-update) ──────────────────────────
+async function updateOrder(body){
+  const { data, error }=await supa.functions.invoke("order-update",{ body });
+  if(error){ toast(error.message||"No se pudo actualizar el pedido",true); return null; }
+  if(data&&data.error){ toast(data.error,true); return null; }
+  return data;
+}
+async function confirmSet(o,estado,label){
+  const c=o.contact||{};
+  if(!confirm(`${label.replace(/^[^\wÁÉÍÓÚáéíóú✅✓→📍🛵]+\s*/,"")} — ${c.nombre||"cliente"}\n\n¿Confirmar el cambio a "${EST_LABEL[estado]||estado}"?`)) return;
+  const r=await updateOrder({ order_id:o.id, estado });
+  if(r){ toast(r.flow_started?"Estado actualizado ✓ · el bot está notificando al cliente":"Estado actualizado ✓"); await load(); }
+}
+
+function openMenu(ev,o){
+  closeMenu();
+  const m=document.createElement("div"); m.className="menu"; m.id="ctxMenu";
+  const zona=((o.shipping&&o.shipping.zona)||"").toLowerCase();
+  const ops=[];
+  ops.push(["✏️ Editar datos de envío…",()=>openEnvio(o)]);
+  ops.push(["sep"]);
+  const trans=zona==="lima"
+    ? [["confirmado"],["en_reparto"],["entregado_cobrado"],["reprogramado"],["rechazado"]]
+    : [["esperando_adelanto"],["adelanto_validado"],["por_despachar"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
+  trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${EST_LABEL[e]||e}`,()=>confirmSet(o,e,EST_LABEL[e]||e)]); });
+  ops.push(["sep"]);
+  ops.push(["🚫 Cancelar pedido",()=>confirmSet(o,"cancelado","Cancelar pedido"),"danger"]);
+  m.innerHTML=ops.map(([l,_,cls],i)=>l==="sep"?`<div class="sep"></div>`:`<button data-i="${i}" class="${cls||""}">${l}</button>`).join("");
+  m.querySelectorAll("button[data-i]").forEach(b=>b.onclick=()=>{ closeMenu(); ops[Number(b.dataset.i)][1](); });
+  document.body.appendChild(m);
+  const r=m.getBoundingClientRect();
+  m.style.left=Math.min(ev.clientX,window.innerWidth-r.width-10)+"px";
+  m.style.top=Math.min(ev.clientY,window.innerHeight-r.height-10)+"px";
+  setTimeout(()=>document.addEventListener("click",closeMenu,{ once:true }),0);
+}
+function closeMenu(){ const m=$("ctxMenu"); if(m) m.remove(); }
+
+// ── Modales ────────────────────────────────────────────────────────
+function modal(html,onSave){
+  const ov=document.createElement("div"); ov.className="overlay";
+  ov.innerHTML=`<div class="modal">${html}<div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Guardar</button></div></div>`;
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  ov.querySelector(".cancel").onclick=()=>ov.remove();
+  ov.querySelector(".save").onclick=async()=>{ const ok=await onSave(ov); if(ok!==false) ov.remove(); };
+  document.body.appendChild(ov);
+  return ov;
+}
+function openDespacho(o){
+  const s=o.shipping||{};
+  modal(`
+    <h3>Registrar despacho 📦</h3>
+    <div class="m-sub">${esc((o.contact||{}).nombre||"")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
+    <div class="row2">
+      <div><label>Agencia</label>
+        <select id="mAgencia"><option value="shalom" ${s.agencia==="shalom"?"selected":""}>Shalom</option><option value="olva" ${s.agencia==="olva"?"selected":""}>Olva Courier</option><option value="otra" ${s.agencia&&!["shalom","olva"].includes(s.agencia)?"selected":""}>Otra</option></select></div>
+      <div><label>Sede / destino</label><input id="mSede" value="${esc(s.sede||"")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
+    </div>
+    <div class="row2">
+      <div><label>Nº de guía</label><input id="mGuia" value="${esc(s.guia||"")}" placeholder="Ej. 034-123456"/></div>
+      <div><label>Clave de recojo</label><input id="mClave" value="${esc(s.clave_recojo||"")}" placeholder="La entrega el remitente"/></div>
+    </div>`,
+    async(ov)=>{
+      const guia=ov.querySelector("#mGuia").value.trim();
+      if(!guia){ toast("Falta el número de guía",true); return false; }
+      const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{
+        agencia:ov.querySelector("#mAgencia").value, sede:ov.querySelector("#mSede").value.trim(),
+        guia, clave_recojo:ov.querySelector("#mClave").value.trim(),
+      }});
+      if(r){ toast(r.flow_started?"Despacho registrado ✓ · el bot está avisando al cliente":"Despacho registrado ✓"); await load(); }
+      return !!r;
+    });
+}
+function openEnvio(o){
+  const s=o.shipping||{};
+  modal(`
+    <h3>Datos de envío ✏️</h3>
+    <div class="m-sub">${esc((o.contact||{}).nombre||"")}</div>
+    <div class="row2">
+      <div><label>Zona</label><select id="eZona"><option value="">—</option><option value="lima" ${s.zona==="lima"?"selected":""}>Lima</option><option value="provincia" ${s.zona==="provincia"?"selected":""}>Provincia</option></select></div>
+      <div><label>DNI</label><input id="eDni" value="${esc(s.dni||"")}"/></div>
+    </div>
+    <label>Dirección</label><input id="eDir" value="${esc(s.direccion||"")}"/>
+    <div class="row2">
+      <div><label>Distrito / ciudad</label><input id="eDist" value="${esc(s.distrito||"")}"/></div>
+      <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia||"")}"/></div>
+    </div>
+    <div class="row2">
+      <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto||"")}"/></div>
+      <div><label>Saldo (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo||"")}"/></div>
+    </div>`,
+    async(ov)=>{
+      const r=await updateOrder({ order_id:o.id, shipping:{
+        zona:ov.querySelector("#eZona").value, dni:ov.querySelector("#eDni").value.trim(),
+        direccion:ov.querySelector("#eDir").value.trim(), distrito:ov.querySelector("#eDist").value.trim(),
+        referencia:ov.querySelector("#eRef").value.trim(),
+        adelanto:ov.querySelector("#eAdel").value, saldo:ov.querySelector("#eSaldo").value,
+      }});
+      if(r){ toast("Datos de envío guardados ✓"); await load(); }
+      return !!r;
+    });
 }
 boot();
 </script>
