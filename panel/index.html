@@ -49,16 +49,21 @@
   .rail .bottom{margin-top:auto;display:flex;flex-direction:column;gap:8px;align-items:center}
 
   /* Panel de filtros (izquierda) */
-  .filters{width:206px;flex:none;border-right:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px 14px 24px}
-  .filters .ft{font-size:12px;font-weight:700;letter-spacing:.3px;color:var(--text);display:flex;align-items:center;gap:8px;margin-bottom:6px}
-  .filters h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);margin:18px 0 7px;font-weight:700}
-  .fchk{display:flex;align-items:center;gap:9px;font-size:13px;padding:6px 0;cursor:pointer;color:var(--text)}
-  .fchk input{accent-color:var(--brand);width:15px;height:15px}
-  .fsel{width:100%;height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 9px;font-size:13px;outline:none;font-family:inherit}
-  .tagf{display:flex;flex-direction:column;gap:1px;max-height:190px;overflow-y:auto}
-  .tagdot{width:9px;height:9px;border-radius:50%;flex:none}
-  .fclear{margin-top:18px;width:100%;height:34px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:9px;font-size:12.5px;font-weight:600}
-  .fclear:hover{border-color:var(--brand);color:var(--text)}
+  .filters{width:216px;flex:none;border-right:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px 10px 24px}
+  .filters .ft{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--brand);display:flex;align-items:center;gap:8px;margin:2px 6px 12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+  .filters .ft svg{width:15px;height:15px}
+  .filters h4{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin:16px 8px 5px;font-weight:700}
+  .fchk{display:flex;align-items:center;gap:10px;font-size:13px;padding:7px 8px;cursor:pointer;color:var(--text);border-radius:8px;transition:background .12s}
+  .fchk:hover{background:var(--surface-2)}
+  .fchk input{accent-color:var(--brand);width:16px;height:16px;flex:none;cursor:pointer}
+  .fsel{width:100%;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 10px;font-size:13px;outline:none;font-family:inherit;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .fsel:hover{border-color:var(--faint)}
+  .fsel:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+  .tagf{display:flex;flex-direction:column;gap:1px;max-height:210px;overflow-y:auto;margin-top:1px}
+  .tagf .cmuted{font-size:12px;color:var(--faint);padding:4px 8px;display:block}
+  .tagdot{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.12) inset}
+  .fclear{margin:20px 6px 0;width:calc(100% - 12px);height:38px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+  .fclear:hover{border-color:var(--brand-border);color:var(--brand);background:var(--brand-bg)}
 
   /* Lista de conversaciones */
   .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column}
@@ -227,9 +232,6 @@
 <div id="app" class="hidden">
   <aside class="filters" id="filters"></aside>
   <div class="list">
-    <div class="top" style="gap:10px">
-      <span style="font-weight:700;font-size:15px;letter-spacing:-.3px">Bandeja</span>
-    </div>
     <div class="top" style="gap:8px;flex-wrap:wrap">
       <div class="modewrap" id="modeToggle">
         <button class="modebtn" data-mode="humano">👤 Humano</button>
