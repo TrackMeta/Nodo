@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
   // Contacto de prueba del canal.
   const { data: contact } = await db.from("contacts").upsert(
     {
-      channel_id, wa_id: TEST_WA_ID, nombre: "🧪 Prueba (webchat)",
+      channel_id, wa_id: TEST_WA_ID, nombre: "Prueba (webchat)",
       last_input: media?.caption ?? text ?? buttonId ?? (mediaKind ? `[${mediaKind}]` : ""),
       last_input_type: mediaKind ?? (buttonId ? "interactive" : "text"),
       ultimo_mensaje_at: new Date().toISOString(),

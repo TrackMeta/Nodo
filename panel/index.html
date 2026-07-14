@@ -880,7 +880,7 @@ async function clearTestChat() {
   }
   await loadConversations();
   if (out.contact_id) {
-    openChat({ id: out.contact_id, nombre: "🧪 Prueba (webchat)", wa_id: "webchat-test", bot_activo: true });
+    openChat({ id: out.contact_id, nombre: "Prueba (webchat)", wa_id: "webchat-test", bot_activo: true });
     toast(flowId ? "Flujo iniciado ✓ — responde como el cliente" : "Chat reiniciado ✓ — escribe como el cliente");
   } else { toast(out.detalle || out.error || "No se pudo reiniciar", true); }
 }

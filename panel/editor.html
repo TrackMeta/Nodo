@@ -100,8 +100,24 @@
   .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
   .segb{background:transparent;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px}
   .segb.active{background:var(--brand);color:#fff}
+  /* Botón EDITOR IA — acento de la sección IA (violeta/fucsia) */
+  .segb-ia{color:#c084fc}
+  .segb-ia svg{color:#a855f7}
+  .segb-ia.active{background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff}
+  .segb-ia.active svg{color:#fff}
   .contentview{position:absolute;inset:0;background:var(--bg);overflow-y:auto;padding:20px;z-index:6}
+  .ia-intro{max-width:620px;margin:0 auto 16px;border:1px solid rgba(168,85,247,.4);border-radius:14px;padding:16px 18px;
+    background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.16),transparent 60%),var(--surface)}
+  .ia-intro h3{margin:0 0 5px;font-size:16px;font-weight:750;background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ia-intro p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.55}
   .cnode{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0 auto 12px;max-width:620px}
+  .cnode.ia-card{border-color:rgba(168,85,247,.3)}
+  .mprev{margin:6px 0;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--surface)}
+  .mprev img,.mprev video{max-width:170px;max-height:120px;border-radius:6px;display:block}
+  .mrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .mbtn{height:30px;padding:0 11px;font-size:12px;font-weight:600;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);display:inline-flex;align-items:center;gap:5px}
+  .mbtn:hover{border-color:#a855f7;color:#c084fc}
+  .mbtn svg{width:14px;height:14px}
   .cnode .ch{display:flex;align-items:center;gap:8px;margin-bottom:10px}
   .cnode .ci{font-size:14px;font-weight:600}
   .cnode .ctag{margin-left:auto;font-size:10px;color:var(--muted);background:var(--surface-2);padding:2px 9px;border-radius:20px}
@@ -160,6 +176,7 @@
     <span class="badge" id="fprod" style="display:none"></span>
     <div class="seg" id="viewToggle">
       <button class="segb active" data-v="estructura"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> Estructura</button>
+      <button class="segb segb-ia" data-v="editorIA" title="Edita fácil todos los mensajes que envía el bot"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2M12 4v4"/><circle cx="12" cy="4" r="1"/></svg> EDITOR IA</button>
       <button class="segb" data-v="contenido"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Contenido</button>
     </div>
     <div class="spacer"></div>
@@ -278,27 +295,32 @@ function showEditor(){
 function setView(v){
   st.view = v;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.classList.toggle("active", b.dataset.v===v));
-  const content = v==="contenido";
+  const content = v==="contenido" || v==="editorIA";
   $("contentView").style.display = content ? "block" : "none";
   $("palette").style.display = content ? "none" : "";
   $("cfg").style.display = content ? "none" : "block";
   if(content) renderContent();
 }
 
-// La Vista Contenido: formulario autogenerado del esqueleto (solo nodos con cuerpo).
+// Vista Contenido / EDITOR IA: formulario amigable del esqueleto.
+// EDITOR IA = solo los mensajes salientes (mensaje/pregunta), pensado para
+// quien no sabe ubicarse en el lienzo: edita fácil lo que el bot escribe.
 function renderContent(){
   const box=$("contentView");
   if(!st.flowId){ box.innerHTML=`<div class="cempty">Abre un flujo para editar su contenido.</div>`; return; }
+  const ia = st.view==="editorIA";
+  const types = ia ? new Set(["mensaje","pregunta"]) : CONTENT_TYPES;
   const exp=editor.export().drawflow.Home.data;
-  const nodes=Object.values(st.model).filter((m)=>CONTENT_TYPES.has(m.tipo));
+  const nodes=Object.values(st.model).filter((m)=>types.has(m.tipo));
   nodes.sort((a,b)=>((exp[a.dfId]?.pos_y||0)-(exp[b.dfId]?.pos_y||0)));
-  if(!nodes.length){ box.innerHTML=`<div class="cempty">Este flujo aún no tiene nodos de contenido.<br>Añade Mensaje / Pregunta / IA desde la vista Estructura.</div>`; return; }
-  box.innerHTML="";
+  const intro = ia ? `<div class="ia-intro"><h3>EDITOR IA — mensajes del bot</h3><p>Aquí editas de forma sencilla <b>todo lo que el bot envía por chat</b>: textos, preguntas, imágenes, videos y audios. No necesitas moverte por el lienzo — cada tarjeta es un mensaje saliente en el orden en que se manda.</p></div>` : "";
+  if(!nodes.length){ box.innerHTML=intro+`<div class="cempty">${ia?"Este flujo aún no tiene mensajes salientes.<br>Añade un Mensaje o una Pregunta desde la vista Estructura.":"Este flujo aún no tiene nodos de contenido.<br>Añade Mensaje / Pregunta / IA desde la vista Estructura."}</div>`; return; }
+  box.innerHTML=intro;
   let i=1;
-  for(const m of nodes) box.appendChild(contentCard(m, i++));
+  for(const m of nodes) box.appendChild(contentCard(m, i++, ia));
 }
-function contentCard(m, i){
-  const el=document.createElement("div"); el.className="cnode";
+function contentCard(m, i, ia){
+  const el=document.createElement("div"); el.className="cnode"+(ia?" ia-card":"");
   el.innerHTML=`<div class="ch"><span class="ci">${i}.</span><span class="cfg-ic sm" data-tipo="${m.tipo}">${nodeIcon(m.tipo)}</span><input class="in nm" value="${esc(m.nombre)}" style="max-width:240px"/><span class="ctag">${NODE_TYPES[m.tipo]?.label||m.tipo}</span></div>`;
   el.querySelector(".nm").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
   const body=document.createElement("div");
@@ -313,28 +335,73 @@ function mkLabel(t){ const l=document.createElement("label"); l.textContent=t; l
 function mkTextarea(v, oninput, min){ const t=document.createElement("textarea"); t.className="ta"; if(min)t.style.minHeight=min; t.value=v||""; t.oninput=()=>oninput(t.value); return t; }
 function mkInput(v, oninput){ const i=document.createElement("input"); i.className="in"; i.value=v||""; i.oninput=()=>oninput(i.value); return i; }
 
+// ── Multimedia: subir/vista previa (compartido por Mensaje/Pregunta) ──
+function mediaPreviewHtml(bub){
+  const k=bub.media_kind;
+  if(k==="image") return `<img src="${esc(bub.media_url)}" alt=""/>`;
+  if(k==="video") return `<video src="${esc(bub.media_url)}" controls></video>`;
+  if(k==="audio") return `<audio src="${esc(bub.media_url)}" controls style="width:210px;display:block"></audio>`;
+  return `<div style="font-size:12px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"archivo")}</div>`;
+}
+function pickMediaInto(arr, kind, after){
+  const accept={image:"image/*",video:"video/*",audio:"audio/*"}[kind]||"*/*";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return; toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      arr.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
+      toast("Archivo agregado ✓"); after&&after();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
+function mediaAddRow(arr, after, opts={}){
+  const row=document.createElement("div"); row.className="mrow";
+  if(opts.text){ const t=document.createElement("button"); t.className="mbtn"; t.innerHTML=icon("note")+" Texto"; t.onclick=opts.text; row.appendChild(t); }
+  [["image","image","Imagen"],["video","video","Video"],["audio","mic","Audio"]].forEach(([k,ic,l])=>{
+    const bb=document.createElement("button"); bb.className="mbtn"; bb.innerHTML=icon(ic)+" "+l; bb.onclick=()=>pickMediaInto(arr,k,after); row.appendChild(bb);
+  });
+  return row;
+}
+function mediaCard(bub, onRemove){
+  const w=document.createElement("div"); w.className="bubble";
+  const p=document.createElement("div"); p.className="mprev"; p.innerHTML=mediaPreviewHtml(bub); w.appendChild(p);
+  if(bub.media_kind!=="audio"){ const cap=mkInput(bub.caption,(v)=>bub.caption=v); cap.placeholder="Texto/caption (opcional)"; w.appendChild(cap); }
+  const rm=document.createElement("button"); rm.className="mbtn"; rm.style.marginTop="8px"; rm.innerHTML=icon("trash")+" Quitar"; rm.onclick=onRemove; w.appendChild(rm);
+  return w;
+}
+
 function buildMensaje(m, body){
   if(!m.config.bubbles) m.config.bubbles=[{text:""}];
-  m.config.bubbles.forEach((b)=>{
+  const arr=m.config.bubbles;
+  arr.forEach((b,bi)=>{
+    if(b.media_url){ body.appendChild(mediaCard(b, ()=>{ arr.splice(bi,1); if(!arr.length)arr.push({text:""}); renderContent(); })); return; }
     const w=document.createElement("div"); w.className="bubble";
     w.appendChild(mkTextarea(b.text, (v)=>{ b.text=v; updateNodeDom(m); }, "60px"));
     (b.buttons||[]).forEach((btn)=>{
       const r=document.createElement("div"); r.className="btnrow";
       const tag=document.createElement("span"); tag.style.cssText="font-size:11px;color:var(--muted);white-space:nowrap"; tag.innerHTML=icon("dot")+" "+esc(btn.id);
-      r.appendChild(tag);
-      r.appendChild(mkInput(btn.title, (v)=>btn.title=v));
-      w.appendChild(r);
+      r.appendChild(tag); r.appendChild(mkInput(btn.title, (v)=>btn.title=v)); w.appendChild(r);
     });
     if(b.buttons?.length){ const h=document.createElement("div"); h.className="chint"; h.textContent="Los botones (ids/ramas) se editan en Estructura; aquí solo su texto."; w.appendChild(h); }
+    else if(arr.length>1){ const rm=document.createElement("button"); rm.className="mbtn"; rm.style.marginTop="8px"; rm.innerHTML=icon("trash")+" Quitar"; rm.onclick=()=>{ arr.splice(bi,1); if(!arr.length)arr.push({text:""}); renderContent(); }; w.appendChild(rm); }
     body.appendChild(w);
   });
-  const add=document.createElement("button"); add.className="btn"; add.textContent="+ burbuja"; add.style.marginTop="4px";
-  add.onclick=()=>{ m.config.bubbles.push({text:""}); renderContent(); };
-  body.appendChild(add);
+  body.appendChild(mediaAddRow(arr, renderContent, { text:()=>{ arr.push({text:""}); renderContent(); } }));
 }
 function buildPregunta(m, body){
   body.appendChild(mkLabel("Mensaje de la pregunta"));
   body.appendChild(mkTextarea(m.config.text, (v)=>{ m.config.text=v; updateNodeDom(m); }, "60px"));
+  m.config.media=m.config.media||[];
+  const arr=m.config.media;
+  if(arr.length){
+    body.appendChild(mkLabel("Adjuntos (se envían antes de la pregunta)"));
+    arr.forEach((b,bi)=> body.appendChild(mediaCard(b, ()=>{ arr.splice(bi,1); renderContent(); })));
+  }
+  body.appendChild(mediaAddRow(arr, renderContent));
   body.appendChild(mkLabel("Guardar respuesta en (campo)"));
   body.appendChild(mkInput(m.config.guardar_en, (v)=>{ m.config.guardar_en=v; updateNodeDom(m); }));
 }
@@ -744,22 +811,24 @@ function rebuildOutputs(m){
 // ── Mensaje (burbujas + botones que crean ramas) ──
 function buildMensajeCfg(m, body){
   const c=m.config; c.bubbles=c.bubbles||[{text:""}];
-  body.appendChild(mkLabel("Mensajes (burbujas)"));
+  body.appendChild(mkLabel("Mensajes (texto y multimedia)"));
   const bubs=document.createElement("div");
   const paintBubs=()=>{
     bubs.innerHTML="";
     c.bubbles.forEach((b,i)=>{
+      if(b.media_url){ bubs.appendChild(mediaCard(b, ()=>{ c.bubbles.splice(i,1); if(!c.bubbles.length)c.bubbles.push({text:""}); paintBubs(); updateNodeDom(m); })); return; }
       const w=document.createElement("div"); w.className="bubble"; w.style.position="relative";
       w.appendChild(mkTextarea(b.text,(v)=>{ b.text=v; updateNodeDom(m); },"56px"));
-      if(c.bubbles.length>1){ const x=document.createElement("button"); x.className="xbtn"; x.innerHTML=XSVG; x.style.cssText="position:absolute;top:6px;right:6px;width:24px;height:24px"; x.onclick=()=>{ c.bubbles.splice(i,1); paintBubs(); updateNodeDom(m); }; w.appendChild(x); }
+      if(c.bubbles.length>1){ const x=document.createElement("button"); x.className="xbtn"; x.innerHTML=XSVG; x.style.cssText="position:absolute;top:6px;right:6px;width:24px;height:24px"; x.onclick=()=>{ c.bubbles.splice(i,1); if(!c.bubbles.length)c.bubbles.push({text:""}); paintBubs(); updateNodeDom(m); }; w.appendChild(x); }
       bubs.appendChild(w);
     });
+    bubs.appendChild(mediaAddRow(c.bubbles, ()=>{ paintBubs(); updateNodeDom(m); }, { text:()=>{ c.bubbles.push({text:""}); paintBubs(); updateNodeDom(m); } }));
   };
   paintBubs(); body.appendChild(bubs);
-  const addB=document.createElement("button"); addB.className="fbtn"; addB.innerHTML=PLUS+" burbuja";
-  addB.onclick=()=>{ c.bubbles.push({text:""}); paintBubs(); updateNodeDom(m); };
-  body.appendChild(addB);
-  const last=c.bubbles[c.bubbles.length-1]; last.buttons=last.buttons||[];
+  // Los botones se anclan a la última burbuja de TEXTO (los media no llevan botones).
+  let last=null; for(let i=c.bubbles.length-1;i>=0;i--){ if(!c.bubbles[i].media_url){ last=c.bubbles[i]; break; } }
+  if(!last){ last={text:""}; c.bubbles.push(last); paintBubs(); }
+  last.buttons=last.buttons||[];
   body.appendChild(mkLabel("Botones de respuesta (cada uno crea una rama)"));
   const box=document.createElement("div");
   const paint=()=>{
@@ -1022,7 +1091,7 @@ function buildSheetsForm(m){
     <label style="margin-top:12px">¿Qué hace?</label>
     <select class="sel" id="gsAccion" style="width:100%">
       <option value="append" ${!isUpd?"selected":""}>➕ Agregar una fila nueva (registrar venta)</option>
-      <option value="update" ${isUpd?"selected":""}>✏️ Actualizar una fila (ej. compra extra en la misma fila)</option>
+      <option value="update" ${isUpd?"selected":""}>Actualizar una fila (ej. venta extra en la misma fila)</option>
     </select>
     <label style="margin-top:12px">Pestaña de la hoja (opcional)</label>
     <input class="in" id="gsHoja" value="${esc(c.hoja||'')}" placeholder="Ventas"/>

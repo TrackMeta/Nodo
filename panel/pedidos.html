@@ -207,8 +207,8 @@ function renderKpis(){
   conf.forEach(o=>(o.order_bumps||[]).forEach(b=>{ extraUnits++; extraIng+=Number(b.precio||0); }));
   const K=[
     ["Compras confirmadas",String(conf.length),"pedidos cerrados"],
-    ["Ingresos confirmados",money(ing,cur),"base + compras extra"],
-    ["Compras extra",String(extraUnits),`${money(extraIng,cur)} en ingresos`],
+    ["Ingresos confirmados",money(ing,cur),"base + ventas extra"],
+    ["Ventas extra",String(extraUnits),`${money(extraIng,cur)} en ingresos`],
     ["Pedidos físicos activos",String(activos),"en el tablero"],
     ["Ticket promedio",money(ticket,cur),"por compra confirmada"],
   ];
@@ -247,7 +247,7 @@ function renderTabla(){
       <div class="prod"><span class="em">${p.emoji?esc(p.emoji):icon("box")}</span><div style="min-width:0"><div class="pn">${esc(p.nombre||"—")}</div>${v.nombre?`<div class="vv">${esc(v.nombre)}</div>`:""}</div></div>
       <div><span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado||"—")}</span></div>
       <div class="when">${fecha(o.created_at)}</div>
-      <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} compra${bumps>1?"s":""} extra</span>`:""}</div>
+      <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} venta${bumps>1?"s":""} extra</span>`:""}</div>
     </div>`;
   }).join("");
 }

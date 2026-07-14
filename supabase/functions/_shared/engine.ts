@@ -372,6 +372,8 @@ async function execute(db: SupabaseClient, run: Run) {
         break;
       }
       case "pregunta": {
+        // Adjuntos multimedia (imagen/video/audio) que se envían ANTES de la pregunta.
+        for (const b of (node.config?.media ?? [])) await emit(db, run, b, ctx);
         await emit(db, run, { text: resolve(node.config?.text ?? "", ctx) }, ctx);
         run.vars._await = { type: "input", node_id: node.id, guardar_en: node.config?.guardar_en };
         run.estado = "esperando";

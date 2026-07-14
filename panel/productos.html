@@ -226,8 +226,8 @@ function renderDatos(){
     <div id="envioCard"></div>
     <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con bifurcación (versiones Básica/Premium)</label>
     <div class="card" style="margin-top:16px">
-      <h4>🧠 Conocimiento del producto (para la IA)</h4>
-      <div style="font-size:12px;color:var(--faint)">Los nodos ✨ IA lo reciben automáticamente al conversar sobre este producto, junto con el "Conocimiento del negocio" de Ajustes → General.</div>
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:#a855f7;display:inline-flex">${icon("sparkles")}</span> Conocimiento del producto (para la IA)</h4>
+      <div style="font-size:12px;color:var(--faint)">Los nodos <span style="color:#a855f7;display:inline-flex;vertical-align:-.15em">${icon("sparkles")}</span> IA lo reciben automáticamente al conversar sobre este producto, junto con el "Conocimiento del negocio" de la sección IA.</div>
       <label>Descripción / contexto del producto</label>
       <textarea class="in" id="pContexto" rows="5" style="height:auto;min-height:100px;padding:10px 12px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Qué es, qué incluye, para quién es, beneficios, precio y versiones, cómo se entrega…">${esc((st.prod.config||{}).contexto_producto||"")}</textarea>
       <label>FAQ / objeciones frecuentes</label>
@@ -303,8 +303,8 @@ function renderEnvio(){
       </div>
       <label>Cobro del saldo (al llegar a la agencia)</label>
       <select class="sel" id="eCobro" style="min-width:280px">
-        <option value="bot" ${e.cobro_saldo!=="humano"?"selected":""}>🤖 Bot — escribe, valida el pago y suelta la clave</option>
-        <option value="humano" ${e.cobro_saldo==="humano"?"selected":""}>🙋 Humano — el operador cierra a mano</option>
+        <option value="bot" ${e.cobro_saldo!=="humano"?"selected":""}>Bot — escribe, valida el pago y suelta la clave</option>
+        <option value="humano" ${e.cobro_saldo==="humano"?"selected":""}>Humano — el operador cierra a mano</option>
       </select>
     </div>`;
   const upd=()=>{

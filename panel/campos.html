@@ -60,10 +60,6 @@
         <button class="btn primary" id="saveBtn">Guardar</button>
       </div>
     </div>
-    <div class="tabs">
-      <button class="tab active" data-t="dinamico" id="tabVar"></button>
-      <button class="tab" data-t="fijo" id="tabFijo"></button>
-    </div>
     <p class="lead" id="lead"></p>
     <div class="nodo-folders" id="folders" style="margin:14px 0 4px"></div>
     <div id="warn"></div>
@@ -90,19 +86,17 @@ const LEADS={
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   $("plusIc").innerHTML=PLUS;
-  $("tabVar").innerHTML=IC_VAR+"<span>Campos variables</span>";
-  $("tabFijo").innerHTML=IC_BOT+"<span>Campos del Bot</span>";
   const shell=await mountShell({ active:"campos" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
-  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   $("addBtn").onclick=addField; $("saveBtn").onclick=save;
   await load();
 }
 async function load(){
   st.deleted=[];
   const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
-  st.fields=data||[]; render();
+  // Los "Campos del Bot" (fijos) se editan ahora en la sección IA.
+  st.fields=(data||[]).filter(f=>(f.modo||"dinamico")!=="fijo"); render();
 }
 function addField(){ const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null; st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"", folder }); render(); }
 function allFolders(){ const s=new Set(st.localFolders); st.fields.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }

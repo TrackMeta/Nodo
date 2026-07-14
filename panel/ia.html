@@ -92,6 +92,7 @@
     </div>
     <div class="tabs">
       <button class="tab active" data-t="conocimiento" id="tabCon"></button>
+      <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
     </div>
@@ -161,6 +162,7 @@ const IC={
   spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2 12 2l2.1 2.2L17 5l-1 3 1 3-2.9.8L12 14l-2.1-2.2L7 11l1-3-1-3z"/><path d="M18 16l.7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7z"/></svg>',
   book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
   sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
+  bot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="12" x="3" y="8" rx="2"/><path d="M12 2v6M9 14h.01M15 14h.01M8 8V6M16 8V6"/></svg>',
 };
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
 const PROVIDERS = [
@@ -174,14 +176,16 @@ const PERFILES=[
   ["ocr","Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
   ["extraccion","Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
 ];
-const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{} };
+const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, campos:{ fields:[], deleted:[], loaded:false } };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function slug(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40); }
 
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
   $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
+  $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles por tarea</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
@@ -202,8 +206,65 @@ async function loadCfg(){
 function render(){
   const b=$("body");
   if(st.tab==="conocimiento") renderConocimiento(b);
+  else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else renderProveedores(b);
+}
+
+// ── Campos del Bot (variables globales fijas que la IA usa) ─────────
+async function renderCampos(b){
+  b.innerHTML=`
+    <h2>Campos del Bot</h2>
+    <p class="sub">Variables globales con un <b>valor fijo</b> para este bot (nombre del negocio, datos de pago, horarios…). La IA y los flujos las usan con <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--ia)">{{clave}}</code>.</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.bot}</span><span class="nm">Variables fijas del bot</span>
+        <button class="btn" id="camAdd" style="margin-left:auto">+ Nuevo campo</button></div>
+      <div id="camList" style="margin-top:6px"><div class="desc">Cargando…</div></div>
+      <div class="acts"><button class="btn ia" id="camSave">Guardar campos</button></div>
+    </div>`;
+  $("camAdd").onclick=()=>{ st.campos.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:"fijo", valor:"", descripcion:"" }); paintCampos(); };
+  $("camSave").onclick=saveCampos;
+  if(!st.campos.loaded){
+    const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
+    st.campos.fields=(data||[]).filter(f=>(f.modo||"dinamico")==="fijo"); st.campos.deleted=[]; st.campos.loaded=true;
+  }
+  paintCampos();
+}
+function paintCampos(){
+  const box=$("camList"); if(!box) return;
+  if(!st.campos.fields.length){ box.innerHTML=`<div class="desc" style="padding:14px 0">Aún no hay campos del bot. Crea el primero con “Nuevo campo”.</div>`; return; }
+  box.innerHTML="";
+  st.campos.fields.forEach(f=>{
+    const el=document.createElement("div");
+    el.style.cssText="border-top:1px solid var(--border);padding:14px 0 2px;margin-top:6px";
+    el.innerHTML=`
+      <div class="row">
+        <div class="f"><label style="margin-top:0">Nombre</label><input class="in cNom" value="${esc(f.nombre)}" placeholder="Ej. Datos de pago"/></div>
+        <div class="f"><label style="margin-top:0">Clave (variable)</label><input class="in cKey" value="${esc(f.key)}" placeholder="clave" ${f._new?"":"disabled"}/>
+          <div style="font-size:11px;color:var(--faint);margin-top:3px">se usa como <b style="color:var(--ia)">{{${esc(f.key||'clave')}}}</b></div></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="f" style="flex:2"><label style="margin-top:0">Valor</label><input class="in cVal" value="${esc(f.valor||'')}" placeholder="Ej. Yape 999 999 999 (Percy Flores)"/></div>
+        <div class="f"><label style="margin-top:0">Descripción (opcional)</label><input class="in cDesc" value="${esc(f.descripcion||'')}" placeholder="Para qué sirve"/></div>
+        <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
+      </div>`;
+    const nom=el.querySelector(".cNom"), key=el.querySelector(".cKey"), hint=el.querySelector("b");
+    nom.oninput=(e)=>{ f.nombre=e.target.value; if(f._new && !f._keyEdited){ f.key=slug(e.target.value); key.value=f.key; hint.textContent=`{{${f.key||'clave'}}}`; } };
+    key.oninput=(e)=>{ f._keyEdited=true; f.key=slug(e.target.value); e.target.value=f.key; hint.textContent=`{{${f.key||'clave'}}}`; };
+    el.querySelector(".cVal").oninput=(e)=>f.valor=e.target.value;
+    el.querySelector(".cDesc").oninput=(e)=>f.descripcion=e.target.value;
+    el.querySelector("button.danger").onclick=()=>{ if(f.id) st.campos.deleted.push(f.id); st.campos.fields=st.campos.fields.filter(x=>x!==f); paintCampos(); };
+    box.appendChild(el);
+  });
+}
+async function saveCampos(e){
+  const btn=e.target; for(const f of st.campos.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  if(st.campos.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.campos.deleted); if(error){ btn.disabled=false; btn.textContent=old; toast(error.message,true); return; } st.campos.deleted=[]; }
+  const rows=st.campos.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo||"text", modo:"fijo", valor:f.valor||null, descripcion:f.descripcion||null }; if(f.id) r.id=f.id; return r; });
+  if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows);
+    if(error){ btn.disabled=false; btn.textContent=old; toast(/valor|descripcion|column/.test(error.message)?"Falta aplicar la migración 0013 (valor/descripcion)":error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
+  btn.disabled=false; btn.textContent=old; st.campos.loaded=false; toast("Campos guardados ✓"); renderCampos($("body"));
 }
 
 // ── Conocimiento del negocio ────────────────────────────────────────
