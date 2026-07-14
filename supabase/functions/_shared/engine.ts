@@ -292,7 +292,10 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return false;
   }
   if (aw.type === "input" && event.type === "message") {
-    if (aw.guardar_en) await setField(db, run.channel_id, run.contact_id, aw.guardar_en, event.text);
+    if (aw.guardar_en) {
+      await setField(db, run.channel_id, run.contact_id, aw.guardar_en, event.text);
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo capturado", `${aw.guardar_en}: ${event.text ?? ""}`.slice(0, 140));
+    }
     run.vars[aw.guardar_en] = event.text;
     run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
     delete run.vars._await;
@@ -638,15 +641,19 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         const v = resolve(String(a.valor ?? ""), ctx);
         run.vars[a.key] = v; // disponible ya en este run (Condiciones posteriores)
         await setField(db, run.channel_id, run.contact_id, a.key, v);
-        await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo actualizado", a.key);
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo actualizado", `${a.key}: ${v}`.slice(0, 140));
         break;
       }
-      case "clear_field": delete run.vars[a.key]; await setField(db, run.channel_id, run.contact_id, a.key, null); break;
+      case "clear_field":
+        delete run.vars[a.key]; await setField(db, run.channel_id, run.contact_id, a.key, null);
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo borrado", a.key);
+        break;
       case "append_field": {
         const prev = ctx[a.key] ? String(ctx[a.key]) + "\n" : "";
         const v = prev + resolve(String(a.valor ?? ""), ctx);
         run.vars[a.key] = v;
         await setField(db, run.channel_id, run.contact_id, a.key, v);
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo actualizado", `${a.key}: ${v}`.slice(0, 140));
         break;
       }
       case "stage":      await db.from("contacts").update({ stage: a.valor }).eq("id", run.contact_id); await logEvent(db, run.channel_id, run.contact_id, "nota", "Etapa: " + a.valor); break;
@@ -854,6 +861,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (cfg.guardar_en) {
       run.vars[cfg.guardar_en] = result;
       await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo capturado (IA)", `${cfg.guardar_en}: ${result ?? ""}`.slice(0, 140));
     }
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");

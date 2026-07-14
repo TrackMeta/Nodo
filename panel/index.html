@@ -136,9 +136,11 @@
   .qritem .qp{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qempty{padding:24px;text-align:center;color:var(--faint);font-size:12.5px}
   .qempty a{color:var(--brand)}
-  .emojipop{left:56px;width:290px;padding:8px;display:flex;flex-wrap:wrap;gap:2px}
-  .emojipop button{width:34px;height:34px;border:none;background:transparent;font-size:20px;border-radius:8px;cursor:pointer}
-  .emojipop button:hover{background:var(--surface-2)}
+  .emojipop{left:56px;width:322px;max-height:340px;overflow-y:auto;padding:6px 8px}
+  .emcat{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:9px 4px 4px;position:sticky;top:0;background:var(--surface);z-index:1}
+  .emgrid{display:flex;flex-wrap:wrap;gap:1px}
+  .emgrid button{width:32px;height:32px;border:none;background:transparent;font-size:19px;border-radius:8px;cursor:pointer;line-height:1}
+  .emgrid button:hover{background:var(--surface-2)}
   .msg img,.msg video{max-width:230px;border-radius:10px;display:block}
   .msg audio{max-width:230px}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
@@ -191,15 +193,12 @@
   .actsep{height:1px;background:var(--border);margin:5px 4px}
 
   /* Timeline (vista Actividad dentro del chat) */
-  .tlview{flex:1;overflow-y:auto;padding:22px 24px}
-  .tlitem{display:flex;gap:13px;padding-bottom:16px;position:relative}
-  .tlitem::before{content:"";position:absolute;left:16px;top:34px;bottom:-2px;width:2px;background:var(--border)}
-  .tlitem:last-child::before{display:none}
-  .tldot{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--surface-2);border:1px solid var(--border);z-index:1}
-  .tlbody{flex:1;min-width:0;padding-top:3px}
-  .tltitle{font-size:13.5px;font-weight:600}
-  .tldet{font-size:12.5px;color:var(--muted);margin-top:2px;white-space:pre-wrap;word-break:break-word}
-  .tltime{font-size:11px;color:var(--faint);margin-top:3px}
+  /* Actividad intercalada en el chat (línea de sistema entre burbujas) */
+  .actline{align-self:center;max-width:88%;display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--muted);margin:1px 0}
+  .actline .ai{font-size:13px;line-height:1}
+  .actline .at{font-weight:600;color:var(--text)}
+  .actline .ad{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  .actline .atm{color:var(--faint);font-size:10.5px;margin-left:2px}
 
   /* Panel derecho: secciones ricas */
   .cpanel .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border)}
@@ -272,7 +271,6 @@
         <div class="actmenu hidden" id="actionsMenu"></div>
       </div>
       <div class="thread" id="thread"></div>
-      <div class="tlview hidden" id="timeline"></div>
       <div class="testbar hidden" id="testBar">
         <span class="lb">Escribir como:</span>
         <div class="seg2">
@@ -453,12 +451,24 @@ function renderQrList(q){
     insertAtCursor(applyVars(r.cuerpo)); $("qrPop").classList.add("hidden");
   });
 }
-const EMOJI_SET=["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😉","🙂","🙌","👏","👍","👎","🙏","💪","🔥","✨","⭐","🎉","❤️","💚","💙","💛","🧡","💜","✅","❌","⚠️","💰","💵","📦","🎁","📌","📞","📲","🕒","🚀","👀","🤝","🫶","😅","😢","😡","🤔"];
+const EMOJI_CATS=[
+  { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },
+  { n:"Gestos", e:"👋🤚🖐✋🖖👌🤌🤏✌️🤞🤟🤘🤙👈👉👆🖕👇☝️👍👎✊👊🤛🤜👏🙌👐🤲🤝🙏✍️💅🤳💪🦾🦵🦿🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄" },
+  { n:"Personas", e:"👶🧒👦👧🧑👨👩🧓👴👵👮🕵️💂👷🤴👸👳👲🧕🤵👰🤰🤱👼🎅🤶🦸🦹🧙🧚🧛🧜🧝🧞🧟🙅🙆💁🙋🧏🙇🤦🤷🚶🧍🧎🏃💃🕺🧖🧗🧘" },
+  { n:"Corazones y símbolos de ánimo", e:"❤️🧡💛💚💙💜🤎🖤🤍💔❣️💕💞💓💗💖💘💝💟💋💯💢💥💫💦💨💬💭💤" },
+  { n:"Animales y naturaleza", e:"🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐽🐸🐵🙈🙉🙊🐒🐔🐧🐦🐤🐣🐥🦆🦅🦉🦇🐺🐗🐴🦄🐝🐛🦋🐌🐞🐜🕷️🦂🐢🐍🦎🦖🦕🐙🦑🦐🦀🐡🐠🐟🐬🐳🐋🦈🐊🐅🐆🦓🦍🐘🦏🐪🐫🦒🐃🐂🐄🐎🐖🐏🐑🦙🐐🦌🐕🐈🐓🦃🦚🦜🐇🐁🐀🐿️🐾🐉🌵🎄🌲🌳🌴🌱🌿☘️🍀🎍🎋🍃🍂🍁🍄🌾💐🌷🌹🥀🌺🌸🌼🌻🌞🌝🌛🌜🌚🌕🌙🌎🌍🌏⭐🌟✨⚡☄️🔥🌪️🌈☀️⛅☁️🌧️⛈️🌨️❄️☃️⛄💧💦☔" },
+  { n:"Comida y bebida", e:"🍏🍎🍐🍊🍋🍌🍉🍇🍓🫐🍈🍒🍑🥭🍍🥥🥝🍅🍆🥑🥦🥬🥒🌶️🫑🌽🥕🧄🧅🥔🍠🥐🥯🍞🥖🥨🧀🥚🍳🧈🥞🧇🥓🥩🍗🍖🌭🍔🍟🍕🥪🌮🌯🥗🥘🍝🍜🍲🍛🍣🍱🥟🍤🍙🍚🍘🍥🍢🍡🍧🍨🍦🥧🧁🍰🎂🍮🍭🍬🍫🍿🍩🍪🌰🥜🍯🥛🍼☕🍵🧃🥤🧋🍶🍺🍻🥂🍷🥃🍸🍹🍾" },
+  { n:"Actividades", e:"⚽🏀🏈⚾🥎🎾🏐🏉🥏🎱🪀🏓🏸🏒🏑🥍🏏⛳🪁🏹🎣🥊🥋🎽⛸️🥌🎿⛷️🏂🏋️🏄🏊🚣🧗🚴🏆🥇🥈🥉🏅🎖️🎗️🎫🎪🤹🎭🎨🎬🎤🎧🎼🎹🥁🎷🎺🎸🎻🎲♟️🎯🎳🎮🎰🧩" },
+  { n:"Viajes y lugares", e:"🚗🚕🚙🚌🚎🏎️🚓🚑🚒🚐🛻🚚🚛🚜🛴🚲🛵🏍️🛺🚨🚔🚍🚘🚖🚡🚠🚟🚃🚋🚞🚝🚄🚅🚈🚂🚆🚇🚊🚉✈️🛫🛬💺🚀🛸🚁🛶⛵🚤🛥️🛳️⛴️🚢⚓⛽🚧🚦🚥🗺️🗿🗽🗼🏰🏯🏟️🎡🎢🎠⛲🏖️🏝️🏜️🌋⛰️🏔️🗻🏕️⛺🏠🏡🏢🏬🏣🏥🏦🏨🏪🏫💒🏛️⛪🕌🕍🛕⛩️" },
+  { n:"Objetos", e:"⌚📱📲💻⌨️🖥️🖨️🖱️💽💾💿📀🎥📷📸📹📼🔍🔎💡🔦🕯️📔📕📖📗📘📙📚📓📒📃📜📄📰🗞️📑🔖🏷️💰💴💵💶💷💸💳🧾💎⚖️🧰🔧🔨⚒️🛠️⛏️🔩⚙️🧱⛓️🧲🔫💣🔪🗡️⚔️🛡️🚬⚰️⚱️🏺🔮📿🧿💈⚗️🔭🔬🕳️💊💉🩸🧬🦠🧫🧪🌡️🧹🧺🧻🚽🚿🛁🧼🪒🧽🧴🔑🗝️🚪🛋️🛏️🧸🖼️🛍️🛒🎁🎈🎏🎀🎊🎉🎐🧧✉️📩📨📧💌📦📪📫📬📭📮📝✏️✒️🖊️🖋️🖌️🖍️📐📏🧮📌📍✂️" },
+  { n:"Símbolos", e:"✅❌⭕❗❓❕❔‼️⁉️💯🔅🔆⚠️🚸🔱⚜️🔰♻️✳️❇️✴️🆚📴📳㊙️㊗️🅰️🅱️🆎🅾️🆘⛔🚫🚭🔞📵💢♨️🚷🚱♿🅿️🚹🚺🚼🚻🚮📶🔣ℹ️🔤🔡🔠🆖🆗🆙🆒🆕🆓0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣🔟▶️⏸️⏯️⏹️⏺️⏭️⏮️⏩⏪🔼🔽➡️⬅️⬆️⬇️↗️↘️↙️↖️↕️↔️↩️↪️🔀🔁🔂🔄➕➖➗✖️♾️💲💱™️©️®️🔚🔙🔛🔝🔜🔴🟠🟡🟢🔵🟣⚫⚪🟤🟥🟧🟨🟩🟦🟪⬛⬜🟫🔶🔷🔸🔹🔺🔻💠🔘🔳🔲♈♉♊♋♌♍♎♏♐♑♒♓⛎♥️♦️♣️♠️🃏🀄🎴" },
+];
+function splitEmojis(str){ try{ return [...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(str)].map(s=>s.segment); }catch(_){ return Array.from(str); } }
 function toggleEmojiPop(){
   const pop=$("emojiPop"); $("qrPop").classList.add("hidden");
   if(!pop.classList.contains("hidden")){ pop.classList.add("hidden"); return; }
-  pop.innerHTML=EMOJI_SET.map(e=>`<button type="button">${e}</button>`).join("");
-  pop.querySelectorAll("button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent));
+  pop.innerHTML=EMOJI_CATS.map(c=>`<div class="emcat">${c.n}</div><div class="emgrid">${splitEmojis(c.e).map(e=>`<button type="button">${e}</button>`).join("")}</div>`).join("");
+  pop.querySelectorAll(".emgrid button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent));
   pop.classList.remove("hidden");
 }
 // ── Enviar flujo a este contacto ──
@@ -549,13 +559,14 @@ async function openChat(c) {
   loadContactPanel(c);
 }
 
-// ── Toggle Chat / Actividad (timeline) ──
+// ── Chat / Actividad ──
+// "Chat" = solo mensajes. "Actividad" = intercala en el MISMO hilo los eventos
+// del motor (nodos, campos capturados, etiquetas, flujos, errores) en su
+// posición cronológica junto a los mensajes.
 function setChatView(v){
   state.chatView = v;
-  $("thread").classList.toggle("hidden", v!=="chat");
-  $("timeline").classList.toggle("hidden", v!=="timeline");
   document.querySelectorAll("#viewToggle .htb").forEach(b=> b.classList.toggle("active", b.dataset.v===v));
-  if(v==="timeline") renderTimeline();
+  loadThread();
 }
 document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(state.contactId) setChatView(b.dataset.v); });
 
@@ -601,7 +612,6 @@ async function loadContactPanel(c){
     events: evRes.error ? [] : (evRes.data||[]),
   };
   renderContactPanel();
-  if(state.chatView==="timeline") renderTimeline();
 }
 function renderContactPanel(){
   const { contact, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
@@ -683,17 +693,6 @@ async function logEvent(contactId, tipo, titulo, detalle){
 }
 const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
 function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts)); }catch(_){ return ""; } }
-function renderTimeline(){
-  const box=$("timeline"); if(!panelData||!panelData.contact){ box.innerHTML=""; return; }
-  const items=[];
-  (panelData.events||[]).forEach(e=> items.push({ t:e.created_at, tipo:e.tipo, titulo:e.titulo, det:e.detalle }));
-  (panelData.runs||[]).forEach(r=> items.push({ t:r.created_at, tipo:"flujo_inicio", titulo:"Flujo iniciado", det:r.flow?.nombre }));
-  (panelData.subs||[]).forEach(s=> items.push({ t:s.suscrito_at, tipo:"secuencia_inicio", titulo:"Secuencia suscrita", det:s.sequence?.nombre }));
-  if(panelData.contact.stage==="comprado") items.push({ t:panelData.contact.primera_interaccion, tipo:"compra", titulo:"Marcado como comprado", det:"" });
-  items.sort((a,b)=> new Date(b.t||0)-new Date(a.t||0));
-  if(!items.length){ box.innerHTML=`<div class="empty" style="height:100%;text-align:center"><div style="font-size:28px">🧭</div><div>Sin actividad registrada aún</div><div style="font-size:12px;color:var(--faint);max-width:280px">El motor irá registrando aquí cada acción sobre el contacto (etiquetas, flujos, compras, intervenciones…).</div></div>`; return; }
-  box.innerHTML=items.map(it=>`<div class="tlitem"><div class="tldot">${TL_ICON[it.tipo]||"•"}</div><div class="tlbody"><div class="tltitle">${esc(it.titulo)}</div>${it.det?`<div class="tldet">${esc(it.det)}</div>`:""}<div class="tltime">${it.t?fmtFull(it.t):""}</div></div></div>`).join("");
-}
 
 // ── Menú de acciones del contacto ──
 function renderActionsMenu(){
@@ -759,10 +758,24 @@ document.querySelectorAll("#modeToggle .modebtn").forEach(b=> b.onclick = () => 
 });
 
 async function loadThread() {
-  const { data } = await supa.from("messages").select("*").eq("contact_id", state.contactId).order("ts").limit(200);
+  const [{ data:msgs }, evRes] = await Promise.all([
+    supa.from("messages").select("*").eq("contact_id", state.contactId).order("ts").limit(300),
+    state.chatView==="timeline"
+      ? supa.from("contact_events").select("*").eq("contact_id", state.contactId).order("created_at").limit(300)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const items = [
+    ...(msgs||[]).map(m=>({ kind:"msg", ts:m.ts, data:m })),
+    ...((evRes.data||[]).map(e=>({ kind:"ev", ts:e.created_at, data:e }))),
+  ].sort((a,b)=> new Date(a.ts)-new Date(b.ts));
   const t = $("thread"); t.innerHTML = "";
-  (data||[]).forEach(renderMsg);
+  items.forEach(it=> it.kind==="msg" ? renderMsg(it.data) : renderEvent(it.data));
   t.scrollTop = t.scrollHeight;
+}
+function renderEvent(e){
+  const t=$("thread"); const el=document.createElement("div"); el.className="actline";
+  el.innerHTML=`<span class="ai">${TL_ICON[e.tipo]||"•"}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
+  t.appendChild(el);
 }
 function renderMsg(m) {
   const t = $("thread");
@@ -930,7 +943,7 @@ async function sendAttachment(file){
 // Los eventos de tiempo real pueden llegar en ráfaga (un flujo que envía varios
 // mensajes seguidos). Agrupamos las recargas de la lista para no re-consultar y
 // re-renderizar toda la bandeja en cada evento (evita picos de CPU con tráfico).
-let convReloadTimer = null;
+let convReloadTimer = null, threadReloadTimer = null;
 function loadConversationsSoon() {
   clearTimeout(convReloadTimer);
   convReloadTimer = setTimeout(() => loadConversations(), 400);
@@ -940,7 +953,12 @@ function subscribeRealtime() {
   state.rt = supa.channel("nodo-inbox")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
       const m = p.new;
-      if (m.contact_id === state.contactId) renderMsg(m);
+      if (m.contact_id === state.contactId) {
+        // Con Actividad ON, recarga el hilo para intercalar los eventos que el
+        // motor acaba de registrar; con OFF basta con pintar el mensaje.
+        if (state.chatView === "timeline") { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 350); }
+        else renderMsg(m);
+      }
       loadConversationsSoon();
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
