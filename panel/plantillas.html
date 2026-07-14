@@ -24,9 +24,20 @@
   .chip{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
   .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
   .cat{font-size:10px;padding:2px 9px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
-  .tprev{background:#0b141a;border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:12.5px;color:var(--muted);line-height:1.55;
-    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:56px}
-  .tprev .v{color:var(--brand);font-weight:600}
+  /* Fondo de chat de WhatsApp (patrón sutil tipo doodle) + burbuja saliente */
+  .wa-chat{background-color:#0b141a;
+    background-image:radial-gradient(rgba(255,255,255,.035) 1px,transparent 1px),radial-gradient(rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:20px 20px,20px 20px;background-position:0 0,10px 10px;
+    border:1px solid var(--border);border-radius:12px;padding:14px 12px;position:relative;overflow:hidden}
+  .wa-out{margin-left:auto;max-width:82%;width:fit-content;background:#005c4b;color:#e9edef;border-radius:9px;border-top-right-radius:2px;
+    padding:6px 9px 5px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word;box-shadow:0 1px 1px rgba(0,0,0,.25);position:relative}
+  .wa-out::after{content:"";position:absolute;top:0;right:-7px;border:7px solid transparent;border-top-color:#005c4b;border-right:0}
+  .wa-out .v{background:rgba(255,255,255,.2);border-radius:4px;padding:0 4px;font-weight:600;color:#d9fdd3}
+  .wa-out .wa-time{display:block;text-align:right;font-size:10px;color:rgba(233,237,239,.55);margin-top:2px}
+  .wa-out .wa-time svg{width:15px;height:11px;vertical-align:-1px;margin-left:2px;color:#53bdeb}
+  /* Preview en la tarjeta (truncado) */
+  .tprev{max-height:112px;overflow:hidden}
+  .tprev .wa-out{font-size:12px}
   .tcard .c-meta{margin-top:12px;font-size:11.5px;color:var(--faint);display:flex;gap:10px;align-items:center}
   /* Detalle */
   label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
@@ -87,6 +98,9 @@ function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<"
 const CATS=["MARKETING","UTILITY","AUTHENTICATION"];
 const CATLABEL={MARKETING:"Marketing",UTILITY:"Utilidad",AUTHENTICATION:"Autenticación"};
 const ESTADOS=[["aprobada","Aprobada"],["pendiente","Pendiente"],["rechazada","Rechazada"]];
+// Doble check azul de WhatsApp (mensaje leído) para la vista previa.
+const WACHECK='<svg viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l3 3 6-7"/><path d="M6 9l3-3"/><path d="M9 6l4-5"/></svg>';
+function waHighlight(body){ return esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>'); }
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -136,11 +150,10 @@ function renderCards(){
   box.innerHTML="";
   list.forEach(t=>{
     const estado=t.estado_meta||"aprobada";
-    const prev=esc(t.body_preview||"(sin cuerpo)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>');
     const el=document.createElement("div"); el.className="nodo-card tcard";
     el.innerHTML=`
       <div class="c-top"><span class="c-tt">${esc(t.name)}</span><span class="chip ${estado}">${estado}</span></div>
-      <div class="tprev">${prev}</div>
+      <div class="wa-chat tprev"><div class="wa-out">${waHighlight(t.body_preview||"(sin cuerpo)")}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
       <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}</div>`;
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
   });
@@ -174,8 +187,8 @@ function renderDetail(){
       </div>
       <label>Texto del cuerpo (con {{1}}, {{2}}…)</label>
       <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu {{2}} sigue disponible.">${esc(t.body_preview)}</textarea>
-      <label>Vista previa</label>
-      <div class="preview"><div class="bubble" id="prev"></div></div>
+      <label>Vista previa (como se ve en WhatsApp)</label>
+      <div class="wa-chat"><div class="wa-out"><span id="prev"></span><span class="wa-time">12:30 ${WACHECK}</span></div></div>
       <label>Variables — una por línea, en orden</label>
       <textarea class="ta" id="f_params" placeholder="{{nombre}}&#10;{{producto}}">${esc((t.params||[]).join("\n"))}</textarea>
       <div class="hint">La 1ª línea llena {{1}}, la 2ª {{2}}, etc. Usa variables del contacto (p. ej. {{nombre}}) o texto fijo.</div>
@@ -189,7 +202,7 @@ function renderDetail(){
   $("saveBtn").onclick=saveTpl; $("delBtn").onclick=deleteTpl;
 }
 function renderPreview(body){
-  $("prev").innerHTML=esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>');
+  $("prev").innerHTML=waHighlight(body);
 }
 async function saveTpl(){
   if(!st.tpl) return;

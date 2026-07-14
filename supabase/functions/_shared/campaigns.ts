@@ -28,18 +28,25 @@ export async function processCampaigns(db: SupabaseClient) {
 async function expandCampaign(db: SupabaseClient, c: any) {
   const ids = await matchSegment(db, c.channel_id, c.segmento ?? {});
   if (ids.length) {
-    const rows = ids.map((id) => ({ campaign_id: c.id, contact_id: id }));
+    const rows = ids.map((id) => ({ campaign_id: c.id, contact_id: id, estado: "pendiente" }));
     await db.from("campaign_sends").upsert(rows, { onConflict: "campaign_id,contact_id", ignoreDuplicates: true });
   }
   await db.from("campaigns").update({ estado: "enviando", total: ids.length }).eq("id", c.id);
 }
 
 // Resuelve el segmento { stage:[], tags:[], modo } a ids de contacto.
+// Excluye el contacto de prueba (webchat-test) y los bloqueados de los masivos.
 async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Promise<string[]> {
-  let q = db.from("contacts").select("id").eq("channel_id", channelId);
   const stages: string[] = seg.stage ?? seg.stages ?? [];
-  if (stages.length) q = q.in("stage", stages);
-  const { data } = await q.limit(5000);
+  const base = () => {
+    let q = db.from("contacts").select("id").eq("channel_id", channelId).neq("wa_id", "webchat-test");
+    if (stages.length) q = q.in("stage", stages);
+    return q;
+  };
+  // Intenta filtrar bloqueados; si la columna no existe (0021 sin aplicar), reintenta sin ese filtro.
+  let res = await base().neq("bloqueado", true).limit(5000);
+  if (res.error) res = await base().limit(5000);
+  const { data } = res;
   let ids = (data ?? []).map((r: any) => r.id);
 
   const tags: string[] = seg.tags ?? [];
@@ -72,7 +79,12 @@ async function sendBatch(db: SupabaseClient, c: any) {
   if (!pend?.length) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
 
   let ok = 0, fail = 0;
+  let first = true;
   for (const s of pend) {
+    // Retraso aleatorio entre envíos reales (anti-baneo). No aplica al 1º ni
+    // cuando el canal no puede enviar (prueba sin WhatsApp conectado).
+    if (!first && canSend) await new Promise((r) => setTimeout(r, 120 + Math.random() * 260));
+    first = false;
     try {
       const ctx = await contactCtx(db, s.contact_id);
       const bodyParams = ((tpl as any).params ?? []).map((p: string) => resolveP(String(p), ctx));
