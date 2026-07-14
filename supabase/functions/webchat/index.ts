@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       ultimo_mensaje_cliente_at: new Date().toISOString(),
     },
     { onConflict: "channel_id,wa_id" },
-  ).select("id").single();
+  ).select("id,bot_activo").single();
   const contactId = contact!.id;
 
   // Ventana siempre abierta para el webchat de pruebas.
@@ -83,6 +83,12 @@ Deno.serve(async (req) => {
     type: mediaKind ?? (buttonId ? "interactive" : "text"),
     content, status: "delivered",
   });
+
+  // Si el bot está en pausa (operador tomó la conversación), NO responder:
+  // guarda el mensaje entrante pero no corre el motor. Igual que el webhook.
+  if (contact!.bot_activo === false) {
+    return json({ ok: true, contact_id: contactId, paused: true });
+  }
 
   // Correr el motor.
   try {

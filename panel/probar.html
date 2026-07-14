@@ -11,89 +11,221 @@
   :root{
     --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
     --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
-    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f; --brand-border:#254774;
     --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .wrap{max-width:760px;margin:0 auto;width:100%;height:100%;display:flex;flex-direction:column;padding:22px 20px}
-  .head h1{font-size:24px;font-weight:700;letter-spacing:-.4px;margin:0 0 4px}
-  .lead{color:var(--muted);font-size:13.5px;margin:0 0 16px;line-height:1.5}
-  .bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-  .sel{flex:1;min-width:180px;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none}
-  .btn{height:40px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600}
-  .btn:hover{border-color:var(--brand)} .btn.primary{background:var(--brand);border:none;color:#fff}
-  .card{flex:1;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
-  .thread{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:8px}
-  .msg{max-width:74%;padding:8px 12px;border-radius:14px;font-size:13.5px;white-space:pre-wrap;word-wrap:break-word}
+  .nodo-page{height:100%}
+
+  #app{height:100%;display:flex;min-height:0}
+  /* Columna principal (chat) */
+  .chat{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+  .topbar{display:flex;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .topbar .ttl{font-size:15px;font-weight:700;margin-right:auto;letter-spacing:-.2px}
+  .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:38px;padding:0 10px;font-size:13px;outline:none;min-width:190px}
+  .sel:focus{border-color:var(--brand)}
+  .testbtn{background:var(--brand-bg);color:var(--brand);border:1px solid var(--border);border-radius:10px;height:38px;padding:0 14px;font-size:13px;font-weight:600;white-space:nowrap}
+  .testbtn:hover{border-color:var(--brand)}
+
+  .chat .hd{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+  .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px}
+  .chat .hd .nm{font-weight:600}
+  .chat .hd .ph{font-size:12px;color:var(--muted)}
+  .testtag{font-size:11px;background:var(--amber-bg);color:var(--amber);padding:2px 8px;border-radius:20px;margin-left:8px}
+  .pill{font-size:11px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto}
+  .pill.on{background:var(--green-bg);color:var(--green)}
+  .pill.off{background:var(--amber-bg);color:var(--amber)}
+  .hdtoggle{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;margin-left:8px}
+  .htb{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:7px}
+  .htb.active{background:var(--brand);color:#fff}
+  .hdmenu{width:34px;height:34px;border:none;background:transparent;color:var(--muted);font-size:20px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .hdmenu:hover{background:var(--surface-2);color:var(--text)}
+  .actmenu{position:absolute;top:118px;right:12px;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);padding:6px;min-width:230px}
+  .actmenu.hidden{display:none}
+  .actitem{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;border:none;background:transparent;color:var(--text);font-size:13px;border-radius:8px;text-align:left;cursor:pointer;font-family:inherit}
+  .actitem:hover{background:var(--surface-2)}
+  .actitem.danger{color:var(--red)}
+  .actsep{height:1px;background:var(--border);margin:5px 4px}
+
+  .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
+  .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
+  .msg .meta{font-size:10px;color:var(--faint);margin-top:3px}
   .in-m{align-self:flex-start;background:var(--surface-2);border-top-left-radius:4px}
   .out-m{align-self:flex-end;background:var(--brand-bg);border-top-right-radius:4px}
-  .meta{font-size:10px;color:var(--faint);margin-top:3px}
+  .out-m .meta{text-align:right;color:#6f92c8}
   .msg img,.msg video{max-width:230px;border-radius:10px;display:block} .msg audio{max-width:230px}
+  .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
+  .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
   .btns{align-self:flex-start;display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}
   .btnchip{font-size:12px;padding:6px 14px;border:1px solid var(--brand);border-radius:20px;color:var(--brand);background:transparent}
   .btnchip:hover{background:var(--brand-bg)}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px;text-align:center;padding:20px}
-  .testbar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--border)}
-  .lb{font-size:12px;color:var(--muted)}
+
+  /* Barra Cliente/Bot */
+  .testbar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-top:1px solid var(--border);background:var(--surface)}
+  .testbar .lb{font-size:12px;color:var(--muted)}
   .seg2{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
   .segbtn{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px}
   .segbtn.active{background:var(--brand);color:#fff}
-  .composer{padding:12px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
-  .composer input{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
-  .composer input:focus{border-color:var(--brand)}
+
+  /* Compositor */
+  .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;position:relative}
+  .composer input#msgInput{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
+  .composer input#msgInput:focus{border-color:var(--brand)}
   .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;display:flex;align-items:center;justify-content:center}
-  .send svg{width:19px;height:19px} .attach{width:40px;height:42px;border:none;background:transparent;color:var(--muted);border-radius:10px}
-  .attach:hover{color:var(--brand);background:var(--surface-2)} .attach svg{width:20px;height:20px}
+  .send svg{width:19px;height:19px} .send:disabled{opacity:.4}
+  .ctool{width:38px;height:42px;flex:none;border:none;background:transparent;color:var(--muted);font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:10px}
+  .ctool:hover{color:var(--brand);background:var(--surface-2)} .ctool svg{width:20px;height:20px}
+  .pop{position:absolute;bottom:60px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 44px rgba(0,0,0,.45);z-index:40;overflow:hidden}
+  .pop.hidden{display:none}
+  .qrpop{left:16px;width:330px;max-height:360px;display:flex;flex-direction:column}
+  .qrpop .qs{padding:10px;border-bottom:1px solid var(--border)}
+  .qrpop .qs input{width:100%;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 12px;outline:none;font-family:inherit;font-size:13px}
+  .qrpop .qlist{overflow-y:auto;padding:6px}
+  .qrfold{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:8px 8px 4px}
+  .qritem{padding:9px 10px;border-radius:9px;cursor:pointer}
+  .qritem:hover{background:var(--surface-2)}
+  .qritem .qt{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+  .qritem .qt .atajo{font-size:10.5px;font-family:monospace;background:var(--brand-bg);color:var(--brand);padding:1px 6px;border-radius:5px;font-weight:700}
+  .qritem .qp{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qempty{padding:24px;text-align:center;color:var(--faint);font-size:12.5px} .qempty a{color:var(--brand)}
+  .emojipop{left:56px;width:290px;padding:8px;display:flex;flex-wrap:wrap;gap:2px}
+  .emojipop button{width:34px;height:34px;border:none;background:transparent;font-size:20px;border-radius:8px;cursor:pointer}
+  .emojipop button:hover{background:var(--surface-2)}
+
+  /* Timeline */
+  .tlview{flex:1;overflow-y:auto;padding:22px 24px}
+  .tlitem{display:flex;gap:13px;padding-bottom:16px;position:relative}
+  .tlitem::before{content:"";position:absolute;left:16px;top:34px;bottom:-2px;width:2px;background:var(--border)}
+  .tlitem:last-child::before{display:none}
+  .tldot{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--surface-2);border:1px solid var(--border);z-index:1}
+  .tlbody{flex:1;min-width:0;padding-top:3px}
+  .tltitle{font-size:13.5px;font-weight:600}
+  .tldet{font-size:12.5px;color:var(--muted);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+  .tltime{font-size:11px;color:var(--faint);margin-top:3px}
+
+  /* Panel de debug (derecha) */
+  .cpanel{width:290px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:16px 16px 28px}
+  .cpanel.hidden{display:none}
+  .cpanel h4{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:20px 0 8px}
+  .cpanel .chd{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .cpanel .bigav{width:60px;height:60px;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}
+  .cpanel .cnm{font-weight:600;font-size:15px}
+  .cpanel .cph{font-size:12px;color:var(--muted)}
+  .tagchip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:3px 8px 3px 11px;font-size:12px;margin:0 5px 5px 0}
+  .tagchip button{background:none;border:none;color:var(--faint);font-size:14px;line-height:1;padding:0;cursor:pointer} .tagchip button:hover{color:var(--red)}
+  .cfield{margin-bottom:9px}
+  .cfield label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+  .cinput,.cselect{width:100%;height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 9px;font-size:13px;outline:none;font-family:inherit}
+  .cinput:focus,.cselect:focus{border-color:var(--brand)}
+  .cmuted{font-size:12px;color:var(--faint)}
+  .cempty{font-size:12px;color:var(--faint);padding:6px 0}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border)}
+  .kv .k{color:var(--muted);flex:none} .kv .v{color:var(--text);text-align:right;word-break:break-word;min-width:0}
+  .media-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .media-grid a{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--surface-2);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--muted);font-size:20px;text-decoration:none}
+  .media-grid img,.media-grid video{width:100%;height:100%;object-fit:cover}
+  .runrow{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .runrow .rdot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none} .runrow .rdot.wait{background:var(--amber)}
+  .runrow .rt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .runrow .rs{font-size:10.5px;color:var(--faint)}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red-bg);color:var(--red);border:1px solid var(--red);padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
+  .toast.show{opacity:1}
+  @media(max-width:920px){ .cpanel{display:none} }
 </style>
 </head>
 <body>
 <div class="nodo-page">
-  <div class="wrap">
-    <div class="head">
-      <h1>Probar flujos</h1>
-      <p class="lead">Simula una conversación de WhatsApp para probar tus flujos antes de publicarlos. Escribe como el <b>cliente</b> para dispararlos, o como el <b>bot</b> para ensayar respuestas. Nada de esto llega a un número real.</p>
-    </div>
-    <div class="bar">
-      <select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select>
-      <button class="btn primary" id="startBtn">Iniciar / Reiniciar prueba</button>
-    </div>
-    <div class="card">
-      <div class="empty" id="empty">
-        <div style="font-size:30px">🧪</div>
-        <div>Pulsa “Iniciar / Reiniciar prueba” para empezar</div>
+  <div id="app">
+    <div class="chat">
+      <div class="topbar">
+        <span class="ttl">🧪 Probar flujos</span>
+        <select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select>
+        <button class="testbtn" id="startBtn">🔄 Iniciar / Reiniciar</button>
       </div>
+
+      <div id="chatEmpty" class="empty">
+        <div style="font-size:30px">🧪</div>
+        <div>Pulsa “Iniciar / Reiniciar” para empezar una prueba</div>
+        <div style="font-size:12px;color:var(--faint);max-width:340px">Escribe como el cliente para disparar tus flujos, o como el bot para ensayar. Nada llega a un número real.</div>
+      </div>
+
       <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+        <div class="hd">
+          <div class="av" id="chAv">🧪</div>
+          <div style="min-width:0">
+            <div class="nm" id="chName">Prueba (webchat)<span class="testtag">modo prueba</span></div>
+            <div class="ph" id="chPhone">Escribes como el cliente</div>
+          </div>
+          <span class="pill on" id="chBot" title="Clic para pausar/activar el bot">● Bot activo</span>
+          <div class="hdtoggle" id="viewToggle">
+            <button class="htb active" data-v="chat">Chat</button>
+            <button class="htb" data-v="timeline">Actividad</button>
+          </div>
+          <button class="hdmenu" id="actionsBtn" title="Acciones">⋮</button>
+          <div class="actmenu hidden" id="actionsMenu"></div>
+        </div>
         <div class="thread" id="thread"></div>
-        <div class="testbar">
+        <div class="tlview hidden" id="timeline"></div>
+        <div class="testbar" id="testBar">
           <span class="lb">Escribir como:</span>
           <div class="seg2">
             <button class="segbtn active" data-as="cliente">🧑 Cliente</button>
             <button class="segbtn" data-as="bot">🤖 Bot</button>
           </div>
-          <span class="lb" id="hint">— dispara el flujo automáticamente</span>
+          <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
         </div>
         <div class="composer">
-          <button class="attach" id="attachBtn" title="Adjuntar">
+          <button class="ctool" id="qrBtn" title="Respuestas rápidas">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+          </button>
+          <button class="ctool" id="emojiBtn" title="Emojis">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          </button>
+          <button class="ctool" id="attachBtn" title="Adjuntar imagen, audio, video o archivo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <button class="ctool" id="flowBtn" title="Forzar un flujo en este contacto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
           </button>
           <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
           <input id="msgInput" placeholder="Escribe como el cliente…" autocomplete="off" />
-          <button class="send" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+          <button class="send" id="sendBtn" title="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+          <div class="pop qrpop hidden" id="qrPop"></div>
+          <div class="pop emojipop hidden" id="emojiPop"></div>
+          <div class="pop qrpop hidden" id="flowPop" style="left:96px;width:300px"></div>
         </div>
       </div>
     </div>
+
+    <aside class="cpanel hidden" id="cpanel"></aside>
   </div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script type="module">
 import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
-const st={ channelId:null, contactId:null, as:"cliente", rt:null };
+const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
+const EMOJI_SET=["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😉","🙂","🙌","👏","👍","👎","🙏","💪","🔥","✨","⭐","🎉","❤️","💚","💙","💛","🧡","💜","✅","❌","⚠️","💰","💵","📦","🎁","📌","📞","📲","🕒","🚀","👀","🤝","🫶","😅","😢","😡","🤔"];
+const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
+const st={ channelId:null, contactId:null, contactName:"Prueba (webchat)", chatView:"chat", testAs:"cliente", isTest:true, inboxFlows:[], quickReplies:[], rt:null };
+let panelData={};
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
+function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
+function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(ts)); }catch(_){ return "—"; } }
+function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts)); }catch(_){ return ""; } }
+function mediaThumb(m){ const u=esc(m.content.media_url);
+  if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" loading="lazy"/></a>`;
+  if(m.type==="video") return `<a href="${u}" target="_blank"><video src="${u}"></video></a>`;
+  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">🎵</a>`;
+  return `<a href="${u}" target="_blank" title="Archivo">📎</a>`; }
+
 const FN=(n)=>`${SUPABASE_URL}/functions/v1/${n}`;
 async function callFn(name, body){
   const { data:{ session } }=await supa.auth.getSession();
@@ -104,27 +236,50 @@ async function callFn(name, body){
 async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"probar" });
-  shell.onLeave?.(()=>{ if(st.rt) supa.removeChannel(st.rt); }); // limpia realtime al salir (SPA)
+  shell.onLeave?.(()=>{ if(st.rt) supa.removeChannel(st.rt); });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); loadFlows(); loadExisting(); });
+  shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); reloadAll(); });
   $("startBtn").onclick=startTest;
   $("sendBtn").onclick=sendMsg;
   $("msgInput").addEventListener("keydown",e=>{ if(e.key==="Enter") sendMsg(); });
-  $("attachBtn").onclick=()=>$("fileInput").click();
+  $("attachBtn").onclick=()=>{ if(st.contactId) $("fileInput").click(); };
   $("fileInput").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) sendAttachment(f); };
-  document.querySelectorAll(".segbtn").forEach(b=> b.onclick=()=>{ st.as=b.dataset.as; document.querySelectorAll(".segbtn").forEach(x=>x.classList.toggle("active",x===b)); $("msgInput").placeholder=st.as==="bot"?"Escribe como el BOT…":"Escribe como el cliente…"; $("hint").textContent=st.as==="bot"?"— se muestra como respuesta del bot":"— dispara el flujo automáticamente"; });
-  await loadFlows();
-  await loadExisting();
+  document.querySelectorAll(".segbtn").forEach(b=> b.onclick=()=>{ st.testAs=b.dataset.as; updateComposerMode(); });
+  $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleQrPop(); });
+  $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleEmojiPop(); });
+  $("flowBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleFlowPop(); });
+  $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) $("actionsMenu").classList.toggle("hidden"); });
+  $("chBot").onclick=()=>{ if(st.contactId) toggleBot(); };
+  document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(st.contactId) setChatView(b.dataset.v); });
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } if(!e.target.closest("#actionsBtn")&&!e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); });
+  await reloadAll();
   subscribe();
 }
-function reset(){ $("chatView").classList.add("hidden"); $("empty").classList.remove("hidden"); }
+function reset(){ $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); }
+async function reloadAll(){ await Promise.all([loadFlows(), loadQuickReplies(), loadInboxFlows()]); await loadExisting(); }
+
 async function loadFlows(){
   const { data }=await supa.from("flows").select("id,nombre,estado,kind").eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
   $("flowSel").innerHTML=`<option value="">Auto (por disparador)</option>`+(data||[]).map(f=>`<option value="${f.id}">${esc(f.nombre)}${f.estado!=="activo"?" (borrador)":""}</option>`).join("");
 }
+async function loadInboxFlows(){
+  const { data }=await supa.from("flows").select("id,nombre,estado,kind").eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
+  st.inboxFlows=(data||[]).filter(f=>f.estado==="activo");
+}
+async function loadQuickReplies(){
+  const { data,error }=await supa.from("quick_replies").select("*").eq("channel_id",st.channelId).order("orden");
+  st.quickReplies=error?[]:(data||[]);
+}
 async function loadExisting(){
   const { data:c }=await supa.from("contacts").select("id").eq("channel_id",st.channelId).eq("wa_id","webchat-test").maybeSingle();
-  if(c){ st.contactId=c.id; $("empty").classList.add("hidden"); $("chatView").classList.remove("hidden"); await loadThread(); }
+  if(c){ await openTest(c.id); }
+}
+async function openTest(contactId){
+  st.contactId=contactId;
+  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  setChatView("chat");
+  await loadThread();
+  await loadContactPanel({ id:contactId, wa_id:"webchat-test", nombre:st.contactName });
 }
 async function startTest(){
   const flowId=$("flowSel").value;
@@ -133,10 +288,14 @@ async function startTest(){
   if(!out.contact_id){ toast(out.detalle||out.error||"No se pudo iniciar",true); return; }
   st.contactId=out.contact_id;
   if(flowId){ const r=await callFn("webchat",{ channel_id:st.channelId, flow_id:flowId }); const o=await r.json().catch(()=>({})); if(!r.ok) toast(o.detalle||o.error||"No se pudo iniciar el flujo",true); }
-  $("empty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  setChatView("chat");
   await loadThread();
+  await loadContactPanel({ id:st.contactId, wa_id:"webchat-test", nombre:st.contactName });
   toast(flowId?"Flujo iniciado ✓ — responde como el cliente":"Prueba reiniciada ✓");
 }
+
+// ── Hilo ──
 async function loadThread(){
   const { data }=await supa.from("messages").select("*").eq("contact_id",st.contactId).order("ts").limit(200);
   const t=$("thread"); t.innerHTML=""; (data||[]).forEach(renderMsg); t.scrollTop=t.scrollHeight;
@@ -144,8 +303,10 @@ async function loadThread(){
 function renderMsg(m){
   const t=$("thread"); const el=document.createElement("div");
   el.className="msg "+(m.direction==="in"?"in-m":"out-m"); el.dataset.id=m.id;
+  const mh=mediaHtml(m);
   const txt=m.content?.text||m.content?.caption||m.content?.title||`[${m.type}]`;
-  el.innerHTML=`${mediaHtml(m)||esc(txt)}<div class="meta">${fmtTime.format(new Date(m.ts))}</div>`;
+  const tr=m.content?.transcription?`<div class="transcript" title="Transcripción automática">🎙️ ${esc(m.content.transcription)}</div>`:"";
+  el.innerHTML=`${mh||esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
   t.appendChild(el);
   if(m.direction==="out" && m.content?.buttons?.length){
     const bd=document.createElement("div"); bd.className="btns";
@@ -154,16 +315,20 @@ function renderMsg(m){
   }
   t.scrollTop=t.scrollHeight;
 }
-function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; const u=esc(url); const cap=m.content?.caption?`<div style="margin-top:5px">${esc(m.content.caption)}</div>`:"";
+function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"⚠ falló",pending:"…"}[s]||s; }
+function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; const u=esc(url);
+  const cap=m.content?.caption?`<div style="margin-top:5px">${esc(m.content.caption)}</div>`:"";
   if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}"/></a>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
-  return `<a href="${u}" target="_blank" style="color:inherit">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`; }
+  return `<a class="file" href="${u}" target="_blank">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`; }
+
+// ── Enviar ──
 async function sendMsg(){
   const inp=$("msgInput"); const text=inp.value.trim(); if(!text||!st.contactId) return;
   $("sendBtn").disabled=true;
   try{
-    if(st.as==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error) toast(error.message,true); else inp.value=""; }
+    if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error) toast(error.message,true); else inp.value=""; }
     else { await callFn("webchat",{ channel_id:st.channelId, text }); inp.value=""; }
   }catch{ toast("Error de red",true); }
   $("sendBtn").disabled=false;
@@ -178,14 +343,191 @@ async function sendAttachment(file){
     const up=await (await callFn("media-upload",{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataUrl })).json();
     if(!up.url){ toast(up.detalle||up.error||"No se pudo subir",true); return; }
     const media={ kind:up.kind, url:up.url, mime:file.type, filename:file.name };
-    if(st.as==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:"", mime:media.mime, filename:media.filename }, status:"sent" }); }
+    if(st.testAs==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:"", mime:media.mime, filename:media.filename }, status:"sent" }); }
     else await callFn("webchat",{ channel_id:st.channelId, media });
   }catch{ toast("Error al adjuntar",true); }
   finally{ $("attachBtn").disabled=false; }
 }
+
+// ── Compositor: respuestas rápidas / emojis / forzar flujo ──
+function insertAtCursor(text){ const inp=$("msgInput"); const s=inp.selectionStart??inp.value.length, e=inp.selectionEnd??inp.value.length; inp.value=inp.value.slice(0,s)+text+inp.value.slice(e); const pos=s+text.length; inp.focus(); try{ inp.setSelectionRange(pos,pos); }catch(_){}}
+function applyVars(text){ return (text||"").replace(/\{\{\s*nombre\s*\}\}/gi, st.contactName||""); }
+function toggleQrPop(){
+  const pop=$("qrPop"); const willOpen=pop.classList.contains("hidden"); $("emojiPop").classList.add("hidden"); $("flowPop").classList.add("hidden");
+  if(!willOpen){ pop.classList.add("hidden"); return; }
+  pop.innerHTML=`<div class="qs"><input id="qrSearch" placeholder="Buscar respuesta…" autocomplete="off"/></div><div class="qlist" id="qrList"></div>`;
+  renderQrList(""); $("qrSearch").oninput=(e)=>renderQrList(e.target.value); pop.classList.remove("hidden"); $("qrSearch").focus();
+}
+function renderQrList(q){
+  const box=$("qrList"); if(!box) return;
+  const list=st.quickReplies.filter(r=> !q || (r.titulo+" "+(r.atajo||"")+" "+r.cuerpo).toLowerCase().includes(q.toLowerCase()));
+  if(!st.quickReplies.length){ box.innerHTML=`<div class="qempty">Aún no hay respuestas rápidas.<br><a href="respuestas.html">Crear en “Respuestas rápidas” →</a></div>`; return; }
+  if(!list.length){ box.innerHTML=`<div class="qempty">Sin coincidencias.</div>`; return; }
+  const folders={}; list.forEach(r=>{ const f=r.folder||"__none"; (folders[f]=folders[f]||[]).push(r); });
+  let body="";
+  Object.keys(folders).sort((a,b)=>a==="__none"?1:(b==="__none"?-1:a.localeCompare(b))).forEach(f=>{
+    body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;
+    folders[f].forEach(r=>{ body+=`<div class="qritem" data-id="${r.id}"><div class="qt">${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`; });
+  });
+  box.innerHTML=body;
+  box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ const r=st.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return; insertAtCursor(applyVars(r.cuerpo)); $("qrPop").classList.add("hidden"); });
+}
+function toggleEmojiPop(){
+  const pop=$("emojiPop"); $("qrPop").classList.add("hidden"); $("flowPop").classList.add("hidden");
+  if(!pop.classList.contains("hidden")){ pop.classList.add("hidden"); return; }
+  pop.innerHTML=EMOJI_SET.map(e=>`<button type="button">${e}</button>`).join("");
+  pop.querySelectorAll("button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent)); pop.classList.remove("hidden");
+}
+function toggleFlowPop(){
+  const pop=$("flowPop"); const willOpen=pop.classList.contains("hidden"); $("qrPop").classList.add("hidden"); $("emojiPop").classList.add("hidden");
+  if(!willOpen){ pop.classList.add("hidden"); return; }
+  if(!st.inboxFlows.length){ pop.innerHTML=`<div class="qempty">No hay flujos activos.<br><a href="editor.html">Publica un flujo →</a></div>`; }
+  else { pop.innerHTML=`<div class="qrfold">Forzar un flujo</div>`+st.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">🕸️ ${esc(f.nombre)}</div></div>`).join(""); }
+  pop.classList.remove("hidden");
+  pop.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ pop.classList.add("hidden"); startFlowForContact(it.dataset.id); });
+}
+async function startFlowForContact(flowId){
+  const f=st.inboxFlows.find(x=>x.id===flowId); if(!f||!st.contactId) return;
+  try{
+    const res=await callFn("flow-start",{ channel_id:st.channelId, contact_id:st.contactId, flow_id:flowId });
+    const out=await res.json().catch(()=>({}));
+    if(!res.ok){ toast(out.detalle||out.error||"No se pudo iniciar el flujo",true); return; }
+    setBotPill(true); if(panelData.contact) panelData.contact.bot_activo=true;
+    toast("Flujo forzado ✓"); loadThread(); refreshPanel();
+  }catch{ toast("Error de red",true); }
+}
+
+// ── Chat/Actividad ──
+function setChatView(v){
+  st.chatView=v;
+  $("thread").classList.toggle("hidden", v!=="chat");
+  $("timeline").classList.toggle("hidden", v!=="timeline");
+  document.querySelectorAll("#viewToggle .htb").forEach(b=> b.classList.toggle("active", b.dataset.v===v));
+  if(v==="timeline") renderTimeline();
+}
+function updateComposerMode(){
+  const asBot=st.testAs==="bot";
+  $("msgInput").placeholder=asBot?"Escribe como el BOT…":"Escribe como el cliente…";
+  $("testHint").textContent=asBot?"— se muestra como respuesta del bot":"— dispara el flujo automáticamente";
+  document.querySelectorAll(".segbtn").forEach(b=> b.classList.toggle("active", b.dataset.as===st.testAs));
+}
+
+// ── Panel de debug (contacto) ──
+function refreshPanel(){ if(st.contactId) loadContactPanel({ id:st.contactId, wa_id:"webchat-test", nombre:st.contactName }); }
+async function loadContactPanel(c){
+  const p=$("cpanel"); p.classList.remove("hidden");
+  const [ctRes,tagsRes,ctagsRes,fieldsRes,valsRes,msgRes,runsRes,subsRes,evRes]=await Promise.all([
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle(),
+    supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("contact_tags").select("tag_id").eq("contact_id",c.id),
+    supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("contact_field_values").select("field_id,value").eq("contact_id",c.id),
+    supa.from("messages").select("id,type,content,ts,direction").eq("contact_id",c.id).order("ts",{ascending:false}).limit(120),
+    supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id",c.id).order("created_at",{ascending:false}),
+    supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id",c.id).order("suscrito_at",{ascending:false}),
+    supa.from("contact_events").select("*").eq("contact_id",c.id).order("created_at",{ascending:false}).limit(100),
+  ]);
+  if(st.contactId!==c.id) return;
+  panelData={ contact:ctRes.data||c, allTags:tagsRes.data||[], assigned:new Set((ctagsRes.data||[]).map(r=>r.tag_id)), fields:fieldsRes.data||[], vals:Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id,v.value])), media:(msgRes.data||[]).filter(m=>m.content&&m.content.media_url), runs:runsRes.error?[]:(runsRes.data||[]), subs:subsRes.error?[]:(subsRes.data||[]), events:evRes.error?[]:(evRes.data||[]) };
+  setBotPill(panelData.contact.bot_activo!==false);
+  renderContactPanel();
+  if(st.chatView==="timeline") renderTimeline();
+}
+function renderContactPanel(){
+  const { contact,allTags,assigned,fields,vals,media,runs,subs,events }=panelData;
+  const p=$("cpanel");
+  const avail=allTags.filter(t=>!assigned.has(t.id));
+  const runsA=runs.filter(r=>["activo","esperando"].includes(r.estado));
+  const subsA=subs.filter(s=>s.estado==="activa");
+  const nodos=events.filter(e=>e.tipo==="nodo");
+  const errs=events.filter(e=>e.tipo==="error");
+  p.innerHTML=`
+    <div class="chd">
+      <div class="bigav">🧪</div>
+      <div class="cnm">${esc(contact.nombre||"Prueba")}</div>
+      <div class="cph">Contacto de prueba (Web Chat)</div>
+    </div>
+    <h4>Etapa del embudo</h4>
+    <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
+    <h4>Etiquetas</h4>
+    <div id="pTags">${[...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}22;color:${c};border-color:${c}55">${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar" style="color:${c}">×</button></span>`; }).join("")||'<span class="cmuted">Sin etiquetas</span>'}</div>
+    ${avail.length?`<select class="cselect" id="pAddTag" style="margin-top:7px"><option value="">+ añadir etiqueta…</option>${avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("")}</select>`:'<div class="cmuted" style="margin-top:7px">Crea etiquetas en la sección Etiquetas</div>'}
+    <h4>Campos capturados</h4>
+    <div id="pFields">${fields.length?fields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join(""):'<span class="cmuted">Este canal no tiene campos aún</span>'}</div>
+    <h4>Medios enviados</h4>
+    ${media.length?`<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>`:'<div class="cempty">Sin archivos</div>'}
+    <h4>Flujos en ejecución</h4>
+    ${runsA.length?runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc(r.estado)}</span></div>`).join(""):'<div class="cempty">Ningún flujo activo</div>'}
+    <h4>Secuencias suscritas</h4>
+    ${subsA.length?subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join(""):'<div class="cempty">Sin secuencias activas</div>'}
+    <h4>Nodos ejecutados</h4>
+    ${nodos.length?nodos.slice(0,20).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join(""):'<div class="cempty">El motor registrará aquí los nodos</div>'}
+    <h4>Registro de errores</h4>
+    ${errs.length?errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join(""):'<div class="cempty">Sin errores</div>'}`;
+  const sSel=$("pStage"); if(sSel) sSel.onchange=async(e)=>{ await supa.from("contacts").update({ stage:e.target.value }).eq("id",contact.id); contact.stage=e.target.value; logEvent(contact.id,"nota","Etapa cambiada a "+e.target.value); toast("Etapa actualizada ✓"); };
+  p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{ await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag); const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre); assigned.delete(b.dataset.tag); renderContactPanel(); });
+  const add=$("pAddTag"); if(add) add.onchange=async()=>{ if(!add.value) return; await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:add.value },{ onConflict:"contact_id,tag_id" }); const t=allTags.find(x=>x.id===add.value); logEvent(contact.id,"etiqueta_add","Etiqueta añadida",t?.nombre); assigned.add(add.value); renderContactPanel(); };
+  p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{ await supa.from("contact_field_values").upsert({ contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },{ onConflict:"contact_id,field_id" }); vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓"); });
+}
+async function logEvent(contactId,tipo,titulo,detalle){ try{ await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){} }
+function renderTimeline(){
+  const box=$("timeline"); if(!panelData||!panelData.contact){ box.innerHTML=""; return; }
+  const items=[];
+  (panelData.events||[]).forEach(e=> items.push({ t:e.created_at, tipo:e.tipo, titulo:e.titulo, det:e.detalle }));
+  (panelData.runs||[]).forEach(r=> items.push({ t:r.created_at, tipo:"flujo_inicio", titulo:"Flujo iniciado", det:r.flow?.nombre }));
+  (panelData.subs||[]).forEach(s=> items.push({ t:s.suscrito_at, tipo:"secuencia_inicio", titulo:"Secuencia suscrita", det:s.sequence?.nombre }));
+  items.sort((a,b)=> new Date(b.t||0)-new Date(a.t||0));
+  if(!items.length){ box.innerHTML=`<div class="empty" style="height:100%"><div style="font-size:28px">🧭</div><div>Sin actividad aún</div><div style="font-size:12px;color:var(--faint);max-width:280px">El motor irá registrando cada nodo, etiqueta, flujo y error de la prueba.</div></div>`; return; }
+  box.innerHTML=items.map(it=>`<div class="tlitem"><div class="tldot">${TL_ICON[it.tipo]||"•"}</div><div class="tlbody"><div class="tltitle">${esc(it.titulo)}</div>${it.det?`<div class="tldet">${esc(it.det)}</div>`:""}<div class="tltime">${it.t?fmtFull(it.t):""}</div></div></div>`).join("");
+}
+
+// ── Acciones ──
+function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
+async function toggleBot(){
+  const on=panelData.contact ? panelData.contact.bot_activo!==false : true;
+  await supa.from("contacts").update({ bot_activo:!on }).eq("id",st.contactId);
+  if(panelData.contact) panelData.contact.bot_activo=!on;
+  setBotPill(!on); logEvent(st.contactId, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
+  toast(on?"Bot pausado ✓":"Bot reactivado ✓");
+}
+function renderActionsMenu(){
+  const on=panelData.contact ? panelData.contact.bot_activo!==false : true;
+  const m=$("actionsMenu");
+  m.innerHTML=`
+    <button class="actitem" data-a="togglebot">${on?"⏸️ Pausar bot":"▶️ Reactivar bot"}</button>
+    <button class="actitem" data-a="follow">🔖 Marcar como seguimiento</button>
+    <button class="actitem" data-a="reset">🔄 Reiniciar prueba</button>
+    <div class="actsep"></div>
+    <button class="actitem" data-a="export">⬇️ Exportar mensajes</button>
+    <button class="actitem danger" data-a="clearinfo">🧹 Borrar campos capturados</button>`;
+  m.querySelectorAll(".actitem").forEach(b=> b.onclick=()=>{ m.classList.add("hidden"); actionHandler(b.dataset.a); });
+}
+async function actionHandler(a){
+  const cid=st.contactId; if(!cid) return;
+  if(a==="togglebot") return toggleBot();
+  if(a==="follow"){ await supa.from("conversations").update({ requiere_humano:true }).eq("contact_id",cid); logEvent(cid,"nota","Marcado para seguimiento"); toast("Marcado para seguimiento ✓"); return; }
+  if(a==="reset") return startTest();
+  if(a==="export") return exportMessages();
+  if(a==="clearinfo"){ if(!confirm("¿Borrar los campos capturados de esta prueba?")) return; await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Campos borrados"); toast("Campos borrados ✓"); refreshPanel(); return; }
+}
+async function exportMessages(){
+  const { data }=await supa.from("messages").select("direction,type,content,ts").eq("contact_id",st.contactId).order("ts");
+  const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Bot"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
+  const blob=new Blob([`Prueba de flujo\n\n`+lines.join("\n")],{type:"text/plain;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="prueba_flujo.txt"; a.click(); URL.revokeObjectURL(a.href);
+  toast("Mensajes exportados ✓");
+}
+$("actionsBtn").addEventListener("click",()=>renderActionsMenu());
+
+// ── Realtime ──
+let panelTimer=null;
 function subscribe(){
   if(st.rt) supa.removeChannel(st.rt);
-  st.rt=supa.channel("nodo-probar").on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages" },(p)=>{ if(p.new.contact_id===st.contactId) renderMsg(p.new); }).subscribe();
+  st.rt=supa.channel("nodo-probar").on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages" },(p)=>{
+    if(p.new.contact_id!==st.contactId) return;
+    if(st.chatView==="chat") renderMsg(p.new);
+    clearTimeout(panelTimer); panelTimer=setTimeout(refreshPanel,600);
+  }).subscribe();
 }
 boot();
 </script>
