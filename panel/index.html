@@ -89,7 +89,7 @@
   .idot.human{background:var(--brand-bg);color:var(--brand)}
   .idot.bought{background:rgba(240,169,43,.16);color:#f0a92b}
   .modewrap{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px;flex:1}
-  .modebtn{flex:1;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
+  .modebtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
   .modebtn.active{background:var(--brand);color:#fff}
   .modebtn.active[data-mode="bot"]{background:var(--green)}
   .conv .body{min-width:0;flex:1}
@@ -193,9 +193,16 @@
   .actsep{height:1px;background:var(--border);margin:5px 4px}
 
   /* Timeline (vista Actividad dentro del chat) */
+  .ico{width:16px;height:16px;flex:none}
+  .emptyIc .ico{width:34px;height:34px}
+  .modebtn .ico{width:15px;height:15px;vertical-align:-2px}
+  .actitem .ico{width:16px;height:16px;color:var(--muted)}
+  .qt .ico{width:14px;height:14px;vertical-align:-2px}
+  .idot .ico{width:11px;height:11px}
   /* Actividad intercalada en el chat (línea de sistema entre burbujas) */
   .actline{align-self:center;max-width:88%;display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--muted);margin:1px 0}
-  .actline .ai{font-size:13px;line-height:1}
+  .actline .ai{display:inline-flex;align-items:center;color:var(--muted)}
+  .actline .ai .ico{width:13px;height:13px}
   .actline .at{font-weight:600;color:var(--text)}
   .actline .ad{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
   .actline .atm{color:var(--faint);font-size:10.5px;margin-left:2px}
@@ -237,8 +244,8 @@
   <div class="list">
     <div class="top" style="gap:8px;flex-wrap:wrap">
       <div class="modewrap" id="modeToggle">
-        <button class="modebtn" data-mode="humano">👤 Humano</button>
-        <button class="modebtn active" data-mode="bot">🤖 Bot</button>
+        <button class="modebtn" data-mode="humano">Humano</button>
+        <button class="modebtn active" data-mode="bot">Bot</button>
       </div>
     </div>
     <!-- El Web Chat de prueba se movió a la sección "Probar Flujos" -->
@@ -251,7 +258,7 @@
 
   <div class="chat">
     <div id="chatEmpty" class="empty">
-      <div style="font-size:30px">💬</div>
+      <div class="emptyIc" style="color:var(--faint)"></div>
       <div>Elige una conversación</div>
     </div>
     <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
@@ -274,8 +281,8 @@
       <div class="testbar hidden" id="testBar">
         <span class="lb">Escribir como:</span>
         <div class="seg2">
-          <button class="segbtn active" data-as="cliente">🧑 Cliente</button>
-          <button class="segbtn" data-as="bot">🤖 Bot</button>
+          <button class="segbtn active" data-as="cliente">Cliente</button>
+          <button class="segbtn" data-as="bot">Bot</button>
         </div>
         <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
       </div>
@@ -310,7 +317,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
@@ -336,6 +343,7 @@ async function boot() {
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
   const shell = await mountShell({ active: "inbox" });
   state.channelId = shell.channelId;
+  document.querySelector("#chatEmpty .emptyIc").innerHTML = icon("message");
   // Al entrar a la Bandeja el sidebar se colapsa; al salir (SPA) se limpia todo.
   shell.onLeave?.(() => {
     if (state.rt) { supa.removeChannel(state.rt); state.rt = null; }
@@ -477,7 +485,7 @@ function toggleFlowPop(){
   $("qrPop").classList.add("hidden"); $("emojiPop").classList.add("hidden");
   if(!willOpen){ pop.classList.add("hidden"); return; }
   if(!state.inboxFlows.length){ pop.innerHTML=`<div class="qempty">No hay flujos activos.<br><a href="editor.html">Publica un flujo →</a></div>`; }
-  else { pop.innerHTML=`<div class="qrfold">Iniciar un flujo</div>`+state.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">🕸️ ${esc(f.nombre)}</div></div>`).join(""); }
+  else { pop.innerHTML=`<div class="qrfold">Iniciar un flujo</div>`+state.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">${icon("flujos")} ${esc(f.nombre)}</div></div>`).join(""); }
   pop.classList.remove("hidden");
   pop.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ pop.classList.add("hidden"); startFlowForContact(it.dataset.id); });
 }
@@ -512,7 +520,7 @@ function renderConversations(){
   // contador en las pestañas (sobre el total del canal, sin el filtro de modo)
   const byFilter = state.convs.filter(applyFilters);
   const nBot = byFilter.filter(isBot).length, nHum = byFilter.length - nBot;
-  const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').textContent=`🤖 Bot (${nBot})`; mt.querySelector('[data-mode="humano"]').textContent=`👤 Humano (${nHum})`; }
+  const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+` Bot (${nBot})`; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+` Humano (${nHum})`; }
   updateFilterCounts();
   const anyFilter = state.filters.sinResponder||state.filters.compro||state.filters.producto||state.filters.tags.size;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano")}</div>`; return; }
@@ -523,8 +531,8 @@ function renderConversations(){
     const el = document.createElement("div");
     el.className = "conv" + (state.contactId === c.id ? " active" : "") + (bought ? " bought" : "");
     const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
-      + (cv.requiere_humano?'<span class="idot paused">⏳ Seguimiento</span>':'')
-      + (bought?'<span class="idot bought">★ Compró</span>':'');
+      + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
+      + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'');
     const pEmoji = c.product && c.product.emoji ? `<span class="av-emoji">${esc(c.product.emoji)}</span>` : "";
     el.innerHTML = `
       <div class="avwrap"><div class="av">${initials(c.nombre, c.wa_id)}</div>${pEmoji}</div>
@@ -623,7 +631,7 @@ function renderContactPanel(){
   const subsA = subs.filter(s=>s.estado==="activa");
   const nodos = events.filter(e=>e.tipo==="nodo");
   const errs  = events.filter(e=>e.tipo==="error");
-  const botTxt = contact.bot_activo!==false ? "🟢 Bot activo" : "⏸️ Bot en pausa";
+  const botTxt = contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>';
   const datosRows = isTest ? "" : `
     <h4>Datos</h4>
     <div class="kv"><span class="k">Teléfono</span><span class="v">+${esc(contact.wa_id)}</span></div>
@@ -695,23 +703,23 @@ function renderContactPanel(){
 async function logEvent(contactId, tipo, titulo, detalle){
   try{ await supa.from("contact_events").insert({ channel_id:state.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){}
 }
-const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
+const ACT_ICON={ etiqueta_add:"etiquetas", etiqueta_del:"etiquetas", campo:"edit", flujo_inicio:"flujos", flujo_fin:"flag", secuencia_inicio:"secuencias", secuencia_cancel:"stop", compra:"dollar", humano:"user", bot_pausa:"pause", bot_reactiva:"play", nodo:"node", error:"alert", nota:"note" };
 function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts)); }catch(_){ return ""; } }
 
 // ── Menú de acciones del contacto ──
 function renderActionsMenu(){
   const m=$("actionsMenu");
   m.innerHTML=`
-    <button class="actitem" data-a="tag">🏷️ Agregar etiqueta</button>
-    <button class="actitem" data-a="rebot">▶️ Reactivar bot</button>
-    <button class="actitem" data-a="follow">🔖 Marcar como seguimiento</button>
-    <button class="actitem" data-a="unread">✉️ Marcar como no leído</button>
-    <button class="actitem" data-a="archive">🗄️ Archivar</button>
-    <button class="actitem" data-a="export">⬇️ Exportar mensajes</button>
+    <button class="actitem" data-a="tag">${icon("etiquetas")} Agregar etiqueta</button>
+    <button class="actitem" data-a="rebot">${icon("play")} Reactivar bot</button>
+    <button class="actitem" data-a="follow">${icon("bookmark")} Marcar como seguimiento</button>
+    <button class="actitem" data-a="unread">${icon("mail")} Marcar como no leído</button>
+    <button class="actitem" data-a="archive">${icon("archive")} Archivar</button>
+    <button class="actitem" data-a="export">${icon("download")} Exportar mensajes</button>
     <div class="actsep"></div>
-    <button class="actitem danger" data-a="block">🚫 Bloquear contacto</button>
-    <button class="actitem danger" data-a="clearinfo">🧹 Borrar información</button>
-    <button class="actitem danger" data-a="delchat">🗑️ Eliminar chat</button>`;
+    <button class="actitem danger" data-a="block">${icon("ban")} Bloquear contacto</button>
+    <button class="actitem danger" data-a="clearinfo">${icon("eraser")} Borrar información</button>
+    <button class="actitem danger" data-a="delchat">${icon("trash")} Eliminar chat</button>`;
   m.querySelectorAll(".actitem").forEach(b=> b.onclick=()=>{ m.classList.add("hidden"); actionHandler(b.dataset.a); });
 }
 function backToList(){ state.contactId=null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); }
@@ -778,7 +786,7 @@ async function loadThread() {
 }
 function renderEvent(e){
   const t=$("thread"); const el=document.createElement("div"); el.className="actline";
-  el.innerHTML=`<span class="ai">${TL_ICON[e.tipo]||"•"}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
+  el.innerHTML=`<span class="ai">${icon(ACT_ICON[e.tipo]||"node")}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
   t.appendChild(el);
 }
 function renderMsg(m) {

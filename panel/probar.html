@@ -19,6 +19,12 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .hidden{display:none!important}
+  .ico{width:16px;height:16px;flex:none}
+  .emptyIc .ico{width:34px;height:34px}
+  .ttl .ico{width:17px;height:17px;vertical-align:-3px;margin-right:2px}
+  .av .ico,.bigav .ico{width:22px;height:22px}
+  .segbtn .ico{width:14px;height:14px}
+  .actline .ai .ico{width:13px;height:13px}
   .nodo-page{height:100%}
 
   #app{height:100%;display:flex;min-height:0}
@@ -28,7 +34,7 @@
   .topbar .ttl{font-size:15px;font-weight:700;margin-right:auto;letter-spacing:-.2px}
   .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:38px;padding:0 10px;font-size:13px;outline:none;min-width:190px}
   .sel:focus{border-color:var(--brand)}
-  .testbtn{background:var(--brand-bg);color:var(--brand);border:1px solid var(--border);border-radius:10px;height:38px;padding:0 14px;font-size:13px;font-weight:600;white-space:nowrap}
+  .testbtn{display:inline-flex;align-items:center;gap:7px;background:var(--brand-bg);color:var(--brand);border:1px solid var(--border);border-radius:10px;height:38px;padding:0 14px;font-size:13px;font-weight:600;white-space:nowrap}
   .testbtn:hover{border-color:var(--brand)}
 
   .chat .hd{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
@@ -61,7 +67,7 @@
   .testbar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-top:1px solid var(--border);background:var(--surface)}
   .testbar .lb{font-size:12px;color:var(--muted)}
   .seg2{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
-  .segbtn{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px}
+  .segbtn{display:inline-flex;align-items:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px}
   .segbtn.active{background:var(--brand);color:#fff}
 
   /* Compositor */
@@ -93,7 +99,7 @@
 
   /* Actividad intercalada en el chat (línea de sistema entre burbujas) */
   .actline{align-self:center;max-width:88%;display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--muted);margin:1px 0}
-  .actline .ai{font-size:13px;line-height:1}
+  .actline .ai{display:inline-flex;align-items:center;color:var(--muted)}
   .actline .at{font-weight:600;color:var(--text)}
   .actline .ad{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
   .actline .atm{color:var(--faint);font-size:10.5px;margin-left:2px}
@@ -133,34 +139,34 @@
   <div id="app">
     <div class="chat">
       <div class="topbar">
-        <span class="ttl">🧪 Probar flujos</span>
+        <span class="ttl" id="pageTtl">Probar flujos</span>
         <select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select>
-        <button class="testbtn" id="startBtn">🔄 Iniciar / Reiniciar</button>
+        <button class="testbtn" id="startBtn">Iniciar / Reiniciar</button>
       </div>
 
       <div id="chatEmpty" class="empty">
-        <div style="font-size:30px">🧪</div>
+        <div class="emptyIc" style="color:var(--faint)"></div>
         <div>Pulsa “Iniciar / Reiniciar” para empezar una prueba</div>
         <div style="font-size:12px;color:var(--faint);max-width:340px">Escribe como el cliente para disparar tus flujos, o como el bot para ensayar. Nada llega a un número real.</div>
       </div>
 
       <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
         <div class="hd">
-          <div class="av" id="chAv">🧪</div>
+          <div class="av" id="chAv"></div>
           <div style="min-width:0">
             <div class="nm" id="chName">Prueba (webchat)<span class="testtag">modo prueba</span></div>
             <div class="ph" id="chPhone">Escribes como el cliente</div>
           </div>
           <span class="pill on" id="chBot" title="Pausar / activar el bot">● Bot activo</span>
-          <button class="hbtn" id="actToggle" title="Ver / ocultar la actividad del motor">🕑 Actividad</button>
-          <button class="hbtn" id="exportBtn" title="Exportar mensajes">⬇️ Exportar</button>
+          <button class="hbtn" id="actToggle" title="Ver / ocultar la actividad del motor">Actividad</button>
+          <button class="hbtn" id="exportBtn" title="Exportar mensajes">Exportar</button>
         </div>
         <div class="thread" id="thread"></div>
         <div class="testbar" id="testBar">
           <span class="lb">Escribir como:</span>
           <div class="seg2">
-            <button class="segbtn active" data-as="cliente">🧑 Cliente</button>
-            <button class="segbtn" data-as="bot">🤖 Bot</button>
+            <button class="segbtn active" data-as="cliente">Cliente</button>
+            <button class="segbtn" data-as="bot">Bot</button>
           </div>
           <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
         </div>
@@ -193,7 +199,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
 const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
@@ -210,7 +216,7 @@ const EMOJI_CATS=[
   { n:"Símbolos", e:"✅❌⭕❗❓❕❔‼️⁉️💯🔅🔆⚠️🚸🔱⚜️🔰♻️✳️❇️✴️🆚📴📳㊙️㊗️🅰️🅱️🆎🅾️🆘⛔🚫🚭🔞📵💢♨️🚷🚱♿🅿️🚹🚺🚼🚻🚮📶🔣ℹ️🔤🔡🔠🆖🆗🆙🆒🆕🆓0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣🔟▶️⏸️⏯️⏹️⏺️⏭️⏮️⏩⏪🔼🔽➡️⬅️⬆️⬇️↗️↘️↙️↖️↕️↔️↩️↪️🔀🔁🔂🔄➕➖➗✖️♾️💲💱™️©️®️🔚🔙🔛🔝🔜🔴🟠🟡🟢🔵🟣⚫⚪🟤🟥🟧🟨🟩🟦🟪⬛⬜🟫🔶🔷🔸🔹🔺🔻💠🔘🔳🔲♈♉♊♋♌♍♎♏♐♑♒♓⛎♥️♦️♣️♠️🃏🀄🎴" },
 ];
 function splitEmojis(str){ try{ return [...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(str)].map(s=>s.segment); }catch(_){ return Array.from(str); } }
-const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
+const ACT_ICON={ etiqueta_add:"etiquetas", etiqueta_del:"etiquetas", campo:"edit", flujo_inicio:"flujos", flujo_fin:"flag", secuencia_inicio:"secuencias", secuencia_cancel:"stop", compra:"dollar", humano:"user", bot_pausa:"pause", bot_reactiva:"play", nodo:"node", error:"alert", nota:"note" };
 const st={ channelId:null, contactId:null, contactName:"Prueba (webchat)", showActivity:false, testAs:"cliente", isTest:true, inboxFlows:[], quickReplies:[], rt:null };
 let panelData={};
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -236,6 +242,15 @@ async function boot(){
   const shell=await mountShell({ active:"probar" });
   shell.onLeave?.(()=>{ if(st.rt) supa.removeChannel(st.rt); });
   st.channelId=shell.channelId;
+  // Iconos del sistema (reemplazan emojis de interfaz).
+  $("pageTtl").innerHTML=icon("probar")+" Probar flujos";
+  $("startBtn").innerHTML=icon("refresh")+" Iniciar / Reiniciar";
+  $("actToggle").innerHTML=icon("activity")+" Actividad";
+  $("exportBtn").innerHTML=icon("download")+" Exportar";
+  $("chAv").innerHTML=icon("probar");
+  document.querySelector(".emptyIc").innerHTML=icon("probar");
+  document.querySelector('.segbtn[data-as="cliente"]').innerHTML=icon("user")+" Cliente";
+  document.querySelector('.segbtn[data-as="bot"]').innerHTML=icon("robot")+" Bot";
   shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); reloadAll(); });
   $("startBtn").onclick=startTest;
   $("sendBtn").onclick=sendMsg;
@@ -310,7 +325,7 @@ async function loadThread(){
 }
 function renderEvent(e){
   const t=$("thread"); const el=document.createElement("div"); el.className="actline";
-  el.innerHTML=`<span class="ai">${TL_ICON[e.tipo]||"•"}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
+  el.innerHTML=`<span class="ai">${icon(ACT_ICON[e.tipo]||"node")}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
   t.appendChild(el);
 }
 function toggleActivity(){
@@ -401,7 +416,7 @@ function toggleFlowPop(){
   const pop=$("flowPop"); const willOpen=pop.classList.contains("hidden"); $("qrPop").classList.add("hidden"); $("emojiPop").classList.add("hidden");
   if(!willOpen){ pop.classList.add("hidden"); return; }
   if(!st.inboxFlows.length){ pop.innerHTML=`<div class="qempty">No hay flujos activos.<br><a href="editor.html">Publica un flujo →</a></div>`; }
-  else { pop.innerHTML=`<div class="qrfold">Forzar un flujo</div>`+st.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">🕸️ ${esc(f.nombre)}</div></div>`).join(""); }
+  else { pop.innerHTML=`<div class="qrfold">Forzar un flujo</div>`+st.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">${icon("flujos")} ${esc(f.nombre)}</div></div>`).join(""); }
   pop.classList.remove("hidden");
   pop.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ pop.classList.add("hidden"); startFlowForContact(it.dataset.id); });
 }
@@ -453,14 +468,14 @@ function renderContactPanel(){
   const errs=events.filter(e=>e.tipo==="error");
   p.innerHTML=`
     <div class="chd">
-      <div class="bigav">🧪</div>
+      <div class="bigav">${icon("probar")}</div>
       <div class="cnm">${esc(contact.nombre||"Prueba")}</div>
       <div class="cph">Contacto de prueba (Web Chat)</div>
     </div>
     <h4>Datos del cliente</h4>
     <div class="kv"><span class="k">Usuario</span><span class="v">${esc(contact.nombre||"—")}</span></div>
     <div class="kv"><span class="k">Teléfono</span><span class="v">Web Chat · sin número</span></div>
-    <div class="kv"><span class="k">Estado del bot</span><span class="v">${contact.bot_activo!==false?"🟢 Activo":"⏸️ En pausa"}</span></div>
+    <div class="kv"><span class="k">Estado del bot</span><span class="v">${contact.bot_activo!==false?'<span style="color:var(--green)">● Activo</span>':'<span style="color:var(--amber)">● En pausa</span>'}</span></div>
     <div class="kv"><span class="k">Producto</span><span class="v">${contact.product?`${contact.product.emoji?contact.product.emoji+" ":""}${esc(contact.product.nombre||"")}`:"—"}</span></div>
     <div class="kv"><span class="k">Origen</span><span class="v">${esc(contact.source||"Directo")}</span></div>
     <div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id||"—")}</span></div>
