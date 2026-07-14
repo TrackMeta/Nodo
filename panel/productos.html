@@ -201,43 +201,100 @@ function renderDetail(){
   if(st.tab==="datos") renderDatos(); else if(st.tab==="flujos") renderFlujos(); else renderActivacion();
 }
 
+// FAQ del producto: editor de pares P/R que compila a config.faq (texto que
+// lee el motor). Se conserva config.faq_items para poder re-editarlo.
+function parseFaq(txt){
+  if(!txt||!txt.trim()) return [];
+  const items=[]; const re=/P(?:regunta)?\s*:?\s*([\s\S]*?)\s*R(?:espuesta)?\s*:?\s*([\s\S]*?)(?=(?:\n\s*P(?:regunta)?\s*:)|$)/gi;
+  let m; while((m=re.exec(txt))){ const q=(m[1]||"").trim(), a=(m[2]||"").trim(); if(q||a) items.push({q,a}); }
+  if(!items.length) items.push({q:"", a:txt.trim()});
+  return items;
+}
+function compileFaq(items){ return (items||[]).filter(x=>x&&(x.q||x.a)).map(x=>`P: ${(x.q||"").trim()}\nR: ${(x.a||"").trim()}`).join("\n\n"); }
 function renderDatos(){
   const b=$("tabBody");
   const folders=allFolders();
+  const c=st.prod.config=st.prod.config||{};
+  if(!Array.isArray(c.faq_items)) c.faq_items=parseFaq(c.faq);
   b.innerHTML=`
-    <div class="row" style="align-items:flex-start">
-      <div style="flex:none"><label style="margin-top:0">Emoji</label>
-        <button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("plus")}</button>
-        <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:4px"></div>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
+      <div class="row" style="align-items:flex-start;margin-top:10px">
+        <div style="flex:0 0 auto"><label style="margin-top:0">Emoji</label>
+          <div><button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("plus")}</button></div>
+          <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:4px"></div>
+        </div>
+        <div style="flex:1;min-width:180px"><label style="margin-top:0">Nombre del producto</label>
+          <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
       </div>
-      <div style="flex:1;min-width:180px"><label style="margin-top:0">Nombre del producto</label>
-        <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
-    </div>
-    <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado de la foto del contacto que entró por él).</div>
-    <div class="row" style="align-items:flex-end">
-      <div><label>Carpeta</label>
-        <select class="sel" id="pFolder" style="width:100%"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
-      <div><label>Tipo de producto</label>
-        <select class="sel" id="pTipo" style="width:100%">
-          <option value="digital" ${(st.prod.tipo||"digital")==="digital"?"selected":""}>Digital (entrega por link)</option>
-          <option value="fisico" ${st.prod.tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
-        </select></div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado del contacto que entró por él).</div>
+      <div class="row" style="margin-top:12px">
+        <div><label style="margin-top:0">Carpeta</label>
+          <select class="sel" id="pFolder" style="width:100%"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+        <div><label style="margin-top:0">Tipo de producto</label>
+          <select class="sel" id="pTipo" style="width:100%">
+            <option value="digital" ${(st.prod.tipo||"digital")==="digital"?"selected":""}>Digital (entrega por link)</option>
+            <option value="fisico" ${st.prod.tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
+          </select></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con versiones (Básica / Premium)</label>
     </div>
     <div id="envioCard"></div>
-    <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con bifurcación (versiones Básica/Premium)</label>
-    <div class="card" style="margin-top:16px">
-      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:#a855f7;display:inline-flex">${icon("sparkles")}</span> Conocimiento del producto (para la IA)</h4>
-      <div style="font-size:12px;color:var(--faint)">Los nodos <span style="color:#a855f7;display:inline-flex;vertical-align:-.15em">${icon("sparkles")}</span> IA lo reciben automáticamente al conversar sobre este producto, junto con el "Conocimiento del negocio" de la sección IA.</div>
-      <label>Descripción / contexto del producto</label>
-      <textarea class="in" id="pContexto" rows="5" style="height:auto;min-height:100px;padding:10px 12px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Qué es, qué incluye, para quién es, beneficios, precio y versiones, cómo se entrega…">${esc((st.prod.config||{}).contexto_producto||"")}</textarea>
-      <label>FAQ / objeciones frecuentes</label>
-      <textarea class="in" id="pFaq" rows="5" style="height:auto;min-height:100px;padding:10px 12px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="P: ¿Cómo lo recibo? R: …&#10;P: ¿Tiene garantía? R: …&#10;Objeción: 'está caro' → responder con el valor y la escalera de precios.">${esc((st.prod.config||{}).faq||"")}</textarea>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px">${icon("dollar")} Precio y entrega</h4>
+      <div class="row" style="margin-top:10px">
+        <div><label style="margin-top:0">Precio</label><input class="in" id="pPrecio" value="${esc(c.precio??"")}" placeholder="Ej. 120"/></div>
+        <div><label style="margin-top:0">Moneda</label><input class="in" id="pMoneda" value="${esc(c.moneda||"PEN")}" placeholder="PEN"/></div>
+      </div>
+      <label>Link de entrega (digital, opcional)</label>
+      <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
+      <div style="font-size:11px;color:var(--faint);margin-top:7px">Disponibles en tus flujos como <b style="color:#a855f7">{{precio}}</b>, <b style="color:#a855f7">{{link_entrega}}</b>. Los datos de pago son globales (sección IA → Validador de comprobantes).</div>
     </div>
-    <label>Campos fijos (config JSON: precio, datos_pago, links…)</label>
-    <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
-    <label style="margin-top:22px">Versiones</label>
-    <div id="versions"></div>
-    <button class="btn" id="addVersion" style="margin-top:10px">+ versión</button>`;
+    <div class="card" style="border-color:rgba(168,85,247,.32)">
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:#a855f7;display:inline-flex;vertical-align:-.15em">${icon("sparkles")}</span> Conocimiento del producto (para la IA)</h4>
+      <div style="font-size:12px;color:var(--faint)">La IA lo recibe automáticamente al conversar sobre este producto, junto con el Conocimiento del negocio de la sección IA.</div>
+      <label>Descripción / contexto del producto</label>
+      <textarea class="in" id="pContexto" rows="5" style="min-height:100px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Qué es, qué incluye, para quién es, beneficios, cómo se entrega…">${esc(c.contexto_producto||"")}</textarea>
+      <label>Emojis del producto (opcional)</label>
+      <input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="Ej. 👟🔥⚡ — la IA los podrá usar al hablar de este producto"/>
+      <label>Preguntas frecuentes / objeciones</label>
+      <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">La duda y su respuesta ideal. La IA responderá con estas.</div>
+      <div id="faqList"></div>
+      <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
+    </div>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px">${icon("productos")} Versiones</h4>
+      <div id="versions" style="margin-top:8px"></div>
+      <button class="btn" id="addVersion" style="margin-top:10px">+ versión</button>
+    </div>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
+      <label style="margin-top:6px">Campos fijos (precio, datos_pago, links…)</label>
+      <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
+    </details>`;
+  const syncCfg=()=>{ const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
+  const setC=(k,v)=>{ if(v==null||v==="") delete c[k]; else c[k]=v; syncCfg(); };
+  $("pPrecio").onchange=(e)=>setC("precio", e.target.value.trim());
+  $("pMoneda").onchange=(e)=>setC("moneda", e.target.value.trim());
+  $("pLink").onchange=(e)=>setC("link_entrega", e.target.value.trim());
+  $("pEmojis").oninput=(e)=>setC("emojis", e.target.value.trim());
+  // FAQ items
+  const paintFaq=()=>{
+    const box=$("faqList"); box.innerHTML="";
+    if(!c.faq_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin preguntas todavía.</div>`; }
+    c.faq_items.forEach((qa,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+      el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/><button class="btn danger fdel" style="flex:0 0 auto;width:40px;padding:0">${icon("trash")}</button></div>
+        <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
+      const sync=()=>{ c.faq=compileFaq(c.faq_items); syncCfg(); };
+      el.querySelector(".fq").oninput=(e)=>{ qa.q=e.target.value; sync(); };
+      el.querySelector(".fa").oninput=(e)=>{ qa.a=e.target.value; sync(); };
+      el.querySelector(".fdel").onclick=()=>{ c.faq_items.splice(i,1); c.faq=compileFaq(c.faq_items); syncCfg(); paintFaq(); };
+      box.appendChild(el);
+    });
+  };
+  paintFaq();
+  $("faqAdd").onclick=()=>{ c.faq_items.push({q:"",a:""}); paintFaq(); };
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
   const pop=$("emojiPop"), ebtn=$("emojiBtn");
@@ -260,10 +317,8 @@ function renderDatos(){
   any.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); pop.style.display="none"; } };
   document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
-  $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); $("pContexto").value=st.prod.config.contexto_producto||""; $("pFaq").value=st.prod.config.faq||""; }catch(_){ toast("JSON inválido",true); } };
-  const syncCfg=()=>{ const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
-  $("pContexto").onchange=(e)=>{ (st.prod.config=st.prod.config||{}).contexto_producto=e.target.value.trim()||undefined; if(!e.target.value.trim()) delete st.prod.config.contexto_producto; syncCfg(); };
-  $("pFaq").onchange=(e)=>{ (st.prod.config=st.prod.config||{}).faq=e.target.value.trim()||undefined; if(!e.target.value.trim()) delete st.prod.config.faq; syncCfg(); };
+  $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderDatos(); }catch(_){ toast("JSON inválido",true); } };
+  $("pContexto").onchange=(e)=>setC("contexto_producto", e.target.value.trim());
   $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderEnvio(); };
   $("addVersion").onclick=()=>{ st.versions.push({ nombre:"Nueva versión", price_list:[], drive_link:"", orden:st.versions.length }); renderVersions(); };
   renderEnvio();

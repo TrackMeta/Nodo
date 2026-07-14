@@ -193,7 +193,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
 /* ═══════════════════════════════════════════════════════════════════
    Cascarón: sidebar fijo a la izquierda (§7)
    ═══════════════════════════════════════════════════════════════════ */
-body.nodo-shelled{display:flex}
+/* Alto fijo al viewport: el scroll vive dentro de cada panel (.nodo-page/.wrap),
+   nunca en el body. Evita que aparezca/desaparezca la barra de scroll del
+   documento entre páginas y desplace el sidebar. */
+body.nodo-shelled{display:flex;height:100vh;overflow:hidden}
 
 .nodo-nav{
   width:248px;flex:none;height:100vh;position:sticky;top:0;z-index:30;
@@ -433,7 +436,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 /* ═══════════════════════════════════════════════════════════════════
    Capa de diseño compartida — primitivas nodo- (§9–§12)
    ═══════════════════════════════════════════════════════════════════ */
-.nodo-page{flex:1;min-width:0;height:100vh;overflow-y:auto}
+.nodo-page{flex:1;min-width:0;height:100vh;overflow-y:auto;scrollbar-gutter:stable}
 .nodo-wrap{max-width:var(--nodo-max,1280px);margin:0 auto;width:100%;padding:32px 32px 64px}
 @media(min-width:1440px){.nodo-wrap{padding:32px 40px 64px}}
 @media(max-width:720px){.nodo-wrap{padding:24px 16px 48px}}
