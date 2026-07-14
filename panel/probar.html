@@ -91,16 +91,12 @@
   .emgrid button{width:32px;height:32px;border:none;background:transparent;font-size:19px;border-radius:8px;cursor:pointer;line-height:1}
   .emgrid button:hover{background:var(--surface-2)}
 
-  /* Timeline */
-  .tlview{flex:1;overflow-y:auto;padding:22px 24px}
-  .tlitem{display:flex;gap:13px;padding-bottom:16px;position:relative}
-  .tlitem::before{content:"";position:absolute;left:16px;top:34px;bottom:-2px;width:2px;background:var(--border)}
-  .tlitem:last-child::before{display:none}
-  .tldot{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--surface-2);border:1px solid var(--border);z-index:1}
-  .tlbody{flex:1;min-width:0;padding-top:3px}
-  .tltitle{font-size:13.5px;font-weight:600}
-  .tldet{font-size:12.5px;color:var(--muted);margin-top:2px;white-space:pre-wrap;word-break:break-word}
-  .tltime{font-size:11px;color:var(--faint);margin-top:3px}
+  /* Actividad intercalada en el chat (línea de sistema entre burbujas) */
+  .actline{align-self:center;max-width:88%;display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--muted);margin:1px 0}
+  .actline .ai{font-size:13px;line-height:1}
+  .actline .at{font-weight:600;color:var(--text)}
+  .actline .ad{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  .actline .atm{color:var(--faint);font-size:10.5px;margin-left:2px}
 
   /* Panel de debug (derecha) */
   .cpanel{width:290px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:16px 16px 28px}
@@ -160,7 +156,6 @@
           <button class="hbtn" id="exportBtn" title="Exportar mensajes">⬇️ Exportar</button>
         </div>
         <div class="thread" id="thread"></div>
-        <div class="tlview hidden" id="timeline"></div>
         <div class="testbar" id="testBar">
           <span class="lb">Escribir como:</span>
           <div class="seg2">
@@ -216,7 +211,7 @@ const EMOJI_CATS=[
 ];
 function splitEmojis(str){ try{ return [...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(str)].map(s=>s.segment); }catch(_){ return Array.from(str); } }
 const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
-const st={ channelId:null, contactId:null, contactName:"Prueba (webchat)", chatView:"chat", testAs:"cliente", isTest:true, inboxFlows:[], quickReplies:[], rt:null };
+const st={ channelId:null, contactId:null, contactName:"Prueba (webchat)", showActivity:false, testAs:"cliente", isTest:true, inboxFlows:[], quickReplies:[], rt:null };
 let panelData={};
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -252,7 +247,7 @@ async function boot(){
   $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleEmojiPop(); });
   $("flowBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleFlowPop(); });
   $("chBot").onclick=()=>{ if(st.contactId) toggleBot(); };
-  $("actToggle").onclick=()=>{ if(st.contactId) setChatView(st.chatView==="chat"?"timeline":"chat"); };
+  $("actToggle").onclick=()=>{ if(st.contactId) toggleActivity(); };
   $("exportBtn").onclick=()=>{ if(st.contactId) exportMessages(); };
   document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } });
   await reloadAll();
@@ -280,7 +275,6 @@ async function loadExisting(){
 async function openTest(contactId){
   st.contactId=contactId;
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
-  setChatView("chat");
   await loadThread();
   await loadContactPanel({ id:contactId, wa_id:"webchat-test", nombre:st.contactName });
 }
@@ -292,16 +286,37 @@ async function startTest(){
   st.contactId=out.contact_id;
   if(flowId){ const r=await callFn("webchat",{ channel_id:st.channelId, flow_id:flowId }); const o=await r.json().catch(()=>({})); if(!r.ok) toast(o.detalle||o.error||"No se pudo iniciar el flujo",true); }
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
-  setChatView("chat");
   await loadThread();
   await loadContactPanel({ id:st.contactId, wa_id:"webchat-test", nombre:st.contactName });
   toast(flowId?"Flujo iniciado ✓ — responde como el cliente":"Prueba reiniciada ✓");
 }
 
 // ── Hilo ──
+// Con "Actividad" encendido, intercala en el chat los eventos del motor
+// (nodos ejecutados, etiquetas, flujos, errores…) en su posición cronológica
+// junto a los mensajes. Apagado, muestra solo los mensajes.
 async function loadThread(){
-  const { data }=await supa.from("messages").select("*").eq("contact_id",st.contactId).order("ts").limit(200);
-  const t=$("thread"); t.innerHTML=""; (data||[]).forEach(renderMsg); t.scrollTop=t.scrollHeight;
+  const [{ data:msgs }, evRes]=await Promise.all([
+    supa.from("messages").select("*").eq("contact_id",st.contactId).order("ts").limit(300),
+    st.showActivity ? supa.from("contact_events").select("*").eq("contact_id",st.contactId).order("created_at").limit(300) : Promise.resolve({ data:[] }),
+  ]);
+  const items=[
+    ...(msgs||[]).map(m=>({ kind:"msg", ts:m.ts, data:m })),
+    ...((evRes.data||[]).map(e=>({ kind:"ev", ts:e.created_at, data:e }))),
+  ].sort((a,b)=> new Date(a.ts)-new Date(b.ts));
+  const t=$("thread"); t.innerHTML="";
+  items.forEach(it=> it.kind==="msg" ? renderMsg(it.data) : renderEvent(it.data));
+  t.scrollTop=t.scrollHeight;
+}
+function renderEvent(e){
+  const t=$("thread"); const el=document.createElement("div"); el.className="actline";
+  el.innerHTML=`<span class="ai">${TL_ICON[e.tipo]||"•"}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
+  t.appendChild(el);
+}
+function toggleActivity(){
+  st.showActivity=!st.showActivity;
+  $("actToggle").classList.toggle("active", st.showActivity);
+  loadThread();
 }
 function renderMsg(m){
   const t=$("thread"); const el=document.createElement("div");
@@ -401,14 +416,6 @@ async function startFlowForContact(flowId){
   }catch{ toast("Error de red",true); }
 }
 
-// ── Chat/Actividad ──
-function setChatView(v){
-  st.chatView=v;
-  $("thread").classList.toggle("hidden", v!=="chat");
-  $("timeline").classList.toggle("hidden", v!=="timeline");
-  $("actToggle").classList.toggle("active", v==="timeline");
-  if(v==="timeline") renderTimeline();
-}
 function updateComposerMode(){
   const asBot=st.testAs==="bot";
   $("msgInput").placeholder=asBot?"Escribe como el BOT…":"Escribe como el cliente…";
@@ -435,7 +442,6 @@ async function loadContactPanel(c){
   panelData={ contact:ctRes.data||c, allTags:tagsRes.data||[], assigned:new Set((ctagsRes.data||[]).map(r=>r.tag_id)), fields:fieldsRes.data||[], vals:Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id,v.value])), media:(msgRes.data||[]).filter(m=>m.content&&m.content.media_url), runs:runsRes.error?[]:(runsRes.data||[]), subs:subsRes.error?[]:(subsRes.data||[]), events:evRes.error?[]:(evRes.data||[]) };
   setBotPill(panelData.contact.bot_activo!==false);
   renderContactPanel();
-  if(st.chatView==="timeline") renderTimeline();
 }
 function renderContactPanel(){
   const { contact,allTags,assigned,fields,vals,media,runs,subs,events }=panelData;
@@ -480,17 +486,6 @@ function renderContactPanel(){
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{ await supa.from("contact_field_values").upsert({ contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },{ onConflict:"contact_id,field_id" }); vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓"); });
 }
 async function logEvent(contactId,tipo,titulo,detalle){ try{ await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){} }
-function renderTimeline(){
-  const box=$("timeline"); if(!panelData||!panelData.contact){ box.innerHTML=""; return; }
-  const items=[];
-  (panelData.events||[]).forEach(e=> items.push({ t:e.created_at, tipo:e.tipo, titulo:e.titulo, det:e.detalle }));
-  (panelData.runs||[]).forEach(r=> items.push({ t:r.created_at, tipo:"flujo_inicio", titulo:"Flujo iniciado", det:r.flow?.nombre }));
-  (panelData.subs||[]).forEach(s=> items.push({ t:s.suscrito_at, tipo:"secuencia_inicio", titulo:"Secuencia suscrita", det:s.sequence?.nombre }));
-  items.sort((a,b)=> new Date(b.t||0)-new Date(a.t||0));
-  if(!items.length){ box.innerHTML=`<div class="empty" style="height:100%"><div style="font-size:28px">🧭</div><div>Sin actividad aún</div><div style="font-size:12px;color:var(--faint);max-width:280px">El motor irá registrando cada nodo, etiqueta, flujo y error de la prueba.</div></div>`; return; }
-  box.innerHTML=items.map(it=>`<div class="tlitem"><div class="tldot">${TL_ICON[it.tipo]||"•"}</div><div class="tlbody"><div class="tltitle">${esc(it.titulo)}</div>${it.det?`<div class="tldet">${esc(it.det)}</div>`:""}<div class="tltime">${it.t?fmtFull(it.t):""}</div></div></div>`).join("");
-}
-
 // ── Acciones ──
 function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
 async function toggleBot(){
@@ -509,12 +504,15 @@ async function exportMessages(){
 }
 
 // ── Realtime ──
-let panelTimer=null;
+let panelTimer=null, threadTimer=null;
 function subscribe(){
   if(st.rt) supa.removeChannel(st.rt);
   st.rt=supa.channel("nodo-probar").on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages" },(p)=>{
     if(p.new.contact_id!==st.contactId) return;
-    if(st.chatView==="chat") renderMsg(p.new);
+    // Con actividad ON hay que recargar el hilo (para intercalar los eventos
+    // que el motor acaba de registrar); con OFF basta con pintar el mensaje.
+    if(st.showActivity){ clearTimeout(threadTimer); threadTimer=setTimeout(loadThread,350); }
+    else renderMsg(p.new);
     clearTimeout(panelTimer); panelTimer=setTimeout(refreshPanel,600);
   }).subscribe();
 }
