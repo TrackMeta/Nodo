@@ -179,6 +179,9 @@ const NODE_DEFS = {
   plantilla:    { icon:"📋", handles:["exito","fallo"] },
   google_sheets:{ icon:"📊", handles:["exito","fallo"] },
   fin:          { icon:"⬛", handles:[] },
+  // rotador: mensajes iniciales con rotación de copy. Se edita desde la ficha
+  // del producto (pestaña Activación), no desde la paleta → hidden.
+  rotador:      { icon:"🎲", handles:["continuar"], hidden:true },
 };
 
 const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all", localFolders:new Set() };
@@ -197,6 +200,7 @@ async function boot(){
   editor.on("nodeUnselected", ()=> { st.selected=null; renderCfg(); });
   // Palette
   for(const t of Object.keys(NODE_DEFS)){
+    if(NODE_DEFS[t].hidden) continue;
     const b=document.createElement("button"); b.className="pbtn"; b.dataset.tipo=t;
     b.style.setProperty("--nd-color", NODE_COLORS[t]||"var(--brand)");
     b.textContent=NODE_DEFS[t].icon+" "+t;

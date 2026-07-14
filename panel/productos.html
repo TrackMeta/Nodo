@@ -34,8 +34,14 @@
   .flowrow{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--border)}
   .badge{font-size:10px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
-  .linkbtn{font-size:12.5px;padding:6px 12px;border:1px solid var(--border);border-radius:9px;color:var(--text);text-decoration:none;font-weight:600}
+  .linkbtn{font-size:12.5px;padding:6px 12px;border:1px solid var(--border);border-radius:9px;color:var(--text);text-decoration:none;font-weight:600;display:inline-flex;align-items:center}
   .empty{color:var(--faint);text-align:center;padding:40px}
+  .sw{position:relative;width:38px;height:22px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);flex:none;cursor:pointer;transition:.15s}
+  .sw.on{background:var(--green,#22c079);border-color:var(--green,#22c079)}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
+  .sw.on::after{transform:translateX(16px)}
+  .iconbtn{width:30px;height:30px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .iconbtn:hover{color:var(--text);border-color:var(--brand)}
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
   .btn.primary{background:var(--brand);border:none;color:#fff} .btn.primary:hover{background:var(--brand-2)}
 </style>
@@ -349,58 +355,243 @@ async function renderFlujos(){
   };
 }
 
-// Pestaña Activación: palabras clave que arrancan los flujos de ESTE producto.
-// Escribe en flow_triggers (misma fuente de verdad que la sección global).
+// ═══ Pestaña Activación: COMPOSITOR de mensajes iniciales ═══════════
+// "Cómo empieza el chat": disparadores (palabras clave + ad_id) + mensajes
+// iniciales con ROTACIÓN de copy (variantes con pesos) + "y después".
+// Por debajo = un flujo "Bienvenida" con UN nodo `rotador` (self-contained).
+function newVariant(idx){
+  return { id:crypto.randomUUID(), nombre:"Variante "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] };
+}
 async function renderActivacion(){
   const b=$("tabBody");
-  b.innerHTML=`<div class="card">
-      <h4>🔑 Palabras clave que activan este producto</h4>
-      <div style="font-size:12px;color:var(--faint);margin:6px 0 14px">Cuando un cliente escribe una de estas frases (desde el anuncio), se activa el flujo. También aparecen en la sección <a href="palabras-clave.html" style="color:var(--brand)">Palabras clave</a>, donde configuras el IA Router para cuando el cliente escribe a su manera.</div>
-      <div id="actbox"><div class="empty">Cargando…</div></div>
-    </div>`;
-  const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id).order("created_at");
-  const ab=$("actbox");
-  if(!flows||!flows.length){ ab.innerHTML=`<div class="empty" style="padding:20px">Este producto no tiene flujos todavía. Ve a la pestaña <b>Flujos</b> y clona un esqueleto primero.</div>`; return; }
-  const ids=flows.map(f=>f.id);
-  const { data:trg } = await supa.from("flow_triggers").select("id,flow_id,config,activo").in("flow_id",ids).eq("tipo","keyword");
-  ab.innerHTML="";
-  flows.forEach(f=>{
-    const t=(trg||[]).find(x=>x.flow_id===f.id);
-    const kws=t?(t.config?.keywords||[]).join(", "):"";
-    const match=(t?.config?.match)||"contiene";
-    const el=document.createElement("div"); el.className="flowrow"; el.style.cssText="flex-direction:column;align-items:stretch;gap:9px";
-    el.innerHTML=`
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="font-weight:700;font-size:13.5px;flex:1">${esc(f.nombre)} <span style="color:var(--faint);font-weight:500">· ${esc(f.role||"flujo")}</span></div>
-        <span class="badge ${f.estado==='activo'?'on':''}">${f.estado}</span>
-      </div>
-      <div class="row" style="margin:0">
-        <input class="in actkw" style="flex:1;min-width:200px" placeholder="quiero info, precio, cuánto cuesta" value="${esc(kws)}"/>
-        <select class="sel actmatch" style="flex:0 0 130px">
+  b.innerHTML=`<div id="actroot"><div class="empty">Cargando…</div></div>`;
+  const root=$("actroot");
+  const { data:flow } = await supa.from("flows").select("id,nombre,estado,role")
+    .eq("product_id",st.prod.id).eq("role","mensajes_iniciales").eq("kind","flow").maybeSingle();
+  st.act={ flow:flow||null, node:null, kw:null, ad:null, others:[] };
+  if(!flow){
+    root.innerHTML=`<div class="card">
+      <h4>🚀 Mensajes iniciales</h4>
+      <div style="font-size:13px;color:var(--muted);margin:8px 0 14px;line-height:1.55">Los mensajes con los que arranca el chat cuando el cliente escribe tu palabra clave (o llega desde tu anuncio). Podés crear <b>varias versiones que el bot rota</b> para variar el copy y reducir el riesgo de baneo.</div>
+      <button class="btn primary" id="createWelcome">Crear mensajes iniciales</button></div>`;
+    $("createWelcome").onclick=createWelcome;
+    return;
+  }
+  const { data:nodes } = await supa.from("flow_nodes").select("id,tipo,config,es_inicial").eq("flow_id",flow.id);
+  let node=(nodes||[]).find(n=>n.tipo==="rotador")||(nodes||[]).find(n=>n.es_inicial);
+  if(!node){
+    const { data:nn } = await supa.from("flow_nodes").insert({ flow_id:flow.id, tipo:"rotador", nombre:"Mensajes iniciales", es_inicial:true, config:{activo:true,variantes:[newVariant(0)],despues:{modo:"nada"}}, pos_x:80, pos_y:80 }).select("id,tipo,config,es_inicial").single();
+    node=nn;
+  }
+  const { data:trigs } = await supa.from("flow_triggers").select("id,tipo,config,activo").eq("flow_id",flow.id);
+  const { data:others } = await supa.from("flows").select("id,nombre,estado,role").eq("product_id",st.prod.id).eq("kind","flow").neq("id",flow.id).order("created_at");
+  node.config=node.config||{};
+  if(!Array.isArray(node.config.variantes)) node.config.variantes=[];
+  if(!node.config.variantes.length) node.config.variantes.push(newVariant(0));
+  if(node.config.activo===undefined) node.config.activo=true;
+  node.config.despues=node.config.despues||{modo:"nada"};
+  st.act={ flow, node, kw:(trigs||[]).find(t=>t.tipo==="keyword")||null, ad:(trigs||[]).find(t=>t.tipo==="referral")||null, others:others||[] };
+  renderComposer();
+}
+async function createWelcome(){
+  const { data:flow, error } = await supa.from("flows").insert({
+    channel_id:st.channelId, product_id:st.prod.id, kind:"flow", role:"mensajes_iniciales",
+    nombre:"Mensajes iniciales · "+st.prod.nombre, estado:"activo"
+  }).select("id").single();
+  if(error){ toast(error.message,true); return; }
+  await supa.from("flow_nodes").insert({ flow_id:flow.id, tipo:"rotador", nombre:"Mensajes iniciales", es_inicial:true, config:{activo:true,variantes:[newVariant(0)],despues:{modo:"nada"}}, pos_x:80, pos_y:80 });
+  toast("Mensajes iniciales creados ✓"); renderActivacion();
+}
+
+// Lee los valores editables del DOM a memoria (antes de re-render o guardar).
+function harvest(){
+  const cfg=st.act.node.config;
+  document.querySelectorAll("#actroot [data-vi]").forEach(vc=>{
+    const vi=+vc.dataset.vi; const v=cfg.variantes[vi]; if(!v) return;
+    const nm=vc.querySelector(".vname"); if(nm) v.nombre=nm.value;
+    const pw=vc.querySelector(".vpeso"); if(pw) v.peso=Math.max(0,Number(pw.value)||0);
+    vc.querySelectorAll("[data-bi]").forEach(bc=>{
+      const bi=+bc.dataset.bi; const bub=v.bubbles[bi]; if(!bub) return;
+      const tx=bc.querySelector(".btext"); if(tx) bub.text=tx.value;
+      const cp=bc.querySelector(".bcap"); if(cp) bub.caption=cp.value;
+    });
+  });
+  const des=st.act.node.config.despues;
+  const dm=$("actDespues"); if(dm) des.modo=dm.value;
+  const df=$("actFlow"); if(df) des.flow_id=df.value||null;
+}
+
+function renderComposer(){
+  const root=$("actroot"); const cfg=st.act.node.config;
+  const kws=st.act.kw?(st.act.kw.config?.keywords||[]).join(", "):"";
+  const match=st.act.kw?.config?.match||"contiene";
+  const ads=st.act.ad?(st.act.ad.config?.ad_ids||[]).join(", "):"";
+  const des=cfg.despues||{modo:"nada"};
+  const activeVars=cfg.variantes.filter(v=>v.activo!==false);
+  const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
+  root.innerHTML=`
+    <div class="card">
+      <h4>⚡ Disparadores — cómo se activa</h4>
+      <div style="font-size:12px;color:var(--faint);margin:4px 0 12px">Palabras clave (cada anuncio puede traer la suya) y, opcional, los <b>ID de anuncio</b> de Meta que activan este producto sin depender del texto.</div>
+      <label style="font-size:11.5px;color:var(--muted);font-weight:600">Palabras / frases clave</label>
+      <div class="row" style="margin:6px 0 0">
+        <input class="in" id="actKw" style="flex:1;min-width:200px" placeholder="quiero info, precio, cuánto cuesta" value="${esc(kws)}"/>
+        <select class="sel" id="actMatch" style="flex:0 0 130px">
           <option value="contiene"${match==="contiene"?" selected":""}>Contiene</option>
           <option value="empieza"${match==="empieza"?" selected":""}>Empieza</option>
           <option value="exacta"${match==="exacta"?" selected":""}>Exacta</option>
         </select>
+      </div>
+      <label style="font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-top:12px">ID de anuncio (ad_id) — opcional</label>
+      <input class="in" id="actAds" style="margin-top:6px" placeholder="120210000..., 120210111... (separados por coma)" value="${esc(ads)}"/>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1"><h4 style="margin:0">🎲 Mensajes iniciales</h4>
+          <div style="font-size:12px;color:var(--faint);margin-top:3px">Varias versiones que el bot rota por peso. Cada versión puede tener uno o varios mensajes.</div></div>
+        <div style="text-align:right"><div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px">Rotación</div>
+          <div class="sw ${cfg.activo!==false?'on':''}" id="rotSw" title="Activar/desactivar rotación"></div></div>
+      </div>
+      ${cfg.activo===false?`<div style="font-size:11.5px;color:var(--amber);margin-top:10px">Rotación apagada: se envía siempre la primera versión activa.</div>`:``}
+      <div id="varList" style="margin-top:14px;display:flex;flex-direction:column;gap:14px"></div>
+      <button class="btn" id="addVar" style="margin-top:14px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar versión</button>
+    </div>
+
+    <div class="card">
+      <h4>➡️ Y después de los mensajes iniciales</h4>
+      <div class="row" style="margin-top:8px">
+        <select class="sel" id="actDespues" style="flex:0 0 220px">
+          <option value="nada"${des.modo==="nada"?" selected":""}>Nada (solo los mensajes)</option>
+          <option value="flujo"${des.modo==="flujo"?" selected":""}>Continuar a un flujo</option>
+        </select>
+        <select class="sel" id="actFlow" style="flex:1;min-width:180px;${des.modo==="flujo"?"":"display:none"}">
+          <option value="">— Elegí el flujo (venta / IA) —</option>
+          ${st.act.others.filter(f=>f.estado==="activo").map(f=>`<option value="${f.id}"${des.flow_id===f.id?" selected":""}>${esc(f.nombre)}</option>`).join("")}
+        </select>
+      </div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:8px">Para "responda la IA", elegí un flujo cuyo primer nodo sea de IA. Los flujos se clonan en la pestaña <b>Flujos</b>.</div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
+      <button class="btn primary" id="saveWelcome">Guardar mensajes iniciales</button>
+      <a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">Abrir en editor visual 🕸</a>
+    </div>`;
+
+  // Rotación toggle
+  $("rotSw").onclick=()=>{ harvest(); cfg.activo=cfg.activo===false?true:false; renderComposer(); };
+  $("addVar").onclick=()=>{ harvest(); cfg.variantes.push(newVariant(cfg.variantes.length)); renderComposer(); };
+  $("actDespues").onchange=(e)=>{ harvest(); cfg.despues.modo=e.target.value; renderComposer(); };
+  $("saveWelcome").onclick=saveWelcome;
+
+  // Variantes
+  const vl=$("varList");
+  cfg.variantes.forEach((v,vi)=>{
+    const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoTotal*100):0;
+    const card=document.createElement("div"); card.dataset.vi=vi;
+    card.style.cssText="border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--surface-2,rgba(255,255,255,.02))";
+    card.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <input class="in vname" style="flex:1;font-weight:700;height:34px" value="${esc(v.nombre||('Variante '+String.fromCharCode(65+vi)))}"/>
+        <div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;color:var(--muted)">Peso</span>
+          <input class="in vpeso" type="number" min="0" step="1" style="width:58px;height:34px;text-align:center" value="${Number(v.peso??1)}"/>
+          <span style="font-size:11px;color:var(--brand);font-weight:700;min-width:34px">${v.activo!==false?share+'%':'—'}</span></div>
+        <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
+        <button class="iconbtn vdelVar" title="Eliminar versión">🗑</button>
+      </div>
+      <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
+        <button class="btn addb" data-k="text" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Texto</button>
+        <button class="btn addb" data-k="image" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Imagen</button>
+        <button class="btn addb" data-k="video" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Video</button>
+        <button class="btn addb" data-k="audio" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Audio</button>
       </div>`;
-    const save=async()=>{
-      const kwArr=el.querySelector(".actkw").value.split(",").map(s=>s.trim()).filter(Boolean);
-      const m=el.querySelector(".actmatch").value;
-      if(t){
-        if(!kwArr.length){ await supa.from("flow_triggers").delete().eq("id",t.id); toast("Palabras clave quitadas ✓"); renderActivacion(); return; }
-        const { error }=await supa.from("flow_triggers").update({ config:{keywords:kwArr,match:m} }).eq("id",t.id);
-        if(error){ toast(error.message,true); return; }
-        t.config={keywords:kwArr,match:m}; toast("Guardado ✓");
-      } else {
-        if(!kwArr.length) return;
-        const { error }=await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:f.id, tipo:"keyword", config:{keywords:kwArr,match:m}, activo:true });
-        if(error){ toast(error.message,true); return; }
-        toast("Palabra clave agregada ✓"); renderActivacion();
-      }
-    };
-    el.querySelector(".actkw").onchange=save;
-    el.querySelector(".actmatch").onchange=save;
-    ab.appendChild(el);
+    // Toggle / peso / delete variante
+    card.querySelector("[data-vact]").onclick=()=>{ harvest(); v.activo=v.activo===false?true:false; renderComposer(); };
+    card.querySelector(".vdelVar").onclick=()=>{ if(cfg.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!confirm("¿Eliminar esta versión?"))return; harvest(); cfg.variantes.splice(vi,1); renderComposer(); };
+    card.querySelector(".vpeso").oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); };
+    // Burbujas
+    const bb=card.querySelector(".bubbles");
+    (v.bubbles||[]).forEach((bub,bi)=> bb.appendChild(renderBubble(v,vi,bub,bi)));
+    card.querySelectorAll(".addb").forEach(btn=> btn.onclick=()=>{
+      harvest(); const k=btn.dataset.k;
+      if(k==="text"){ v.bubbles.push({text:""}); renderComposer(); }
+      else pickMedia(vi,k);
+    });
+    vl.appendChild(card);
   });
+}
+
+function renderBubble(v,vi,bub,bi){
+  const el=document.createElement("div"); el.dataset.bi=bi;
+  el.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
+  const isMedia=!!bub.media_url;
+  const kind=bub.media_kind||"text";
+  const icon={text:"📝",image:"🖼️",video:"🎥",audio:"🎙️",document:"📄"}[kind]||"📝";
+  let preview="";
+  if(kind==="image") preview=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
+  else if(kind==="video") preview=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
+  else if(kind==="audio") preview=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
+  else if(kind==="document") preview=`<div style="font-size:12px;margin-bottom:7px">📄 ${esc(bub.filename||"documento")}</div>`;
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:${isMedia?'8px':'6px'}">
+      <span style="font-size:14px">${icon}</span>
+      <span style="font-size:11px;color:var(--muted);font-weight:600;flex:1">${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
+      <button class="iconbtn bup" title="Subir">▲</button>
+      <button class="iconbtn bdown" title="Bajar">▼</button>
+      <button class="iconbtn bdel" title="Quitar">🗑</button>
+    </div>
+    ${preview}
+    ${kind==="text"
+      ? `<textarea class="in btext" rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>`
+      : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+  el.querySelector(".bdel").onclick=()=>{ harvest(); v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderComposer(); };
+  el.querySelector(".bup").onclick=()=>{ if(bi===0)return; harvest(); [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderComposer(); };
+  el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; harvest(); [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderComposer(); };
+  return el;
+}
+
+function pickMedia(vi,kind){
+  const accept={image:"image/*",video:"video/*",audio:"audio/*"}[kind]||"*/*";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      st.act.node.config.variantes[vi].bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
+      toast("Archivo agregado ✓"); renderComposer();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
+
+async function saveWelcome(){
+  harvest();
+  const cfg=st.act.node.config;
+  // Limpia burbujas de texto vacías; descarta variantes sin burbujas.
+  cfg.variantes.forEach(v=>{ v.bubbles=(v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim())); });
+  cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
+  if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
+  if(cfg.despues.modo==="flujo" && !cfg.despues.flow_id){ toast("Elegí a qué flujo continuar",true); return; }
+  const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
+  if(eN){ toast(eN.message,true); return; }
+  // Disparadores
+  const kwArr=($("actKw").value||"").split(",").map(s=>s.trim()).filter(Boolean);
+  const match=$("actMatch").value;
+  await saveTrigger("keyword", "kw", kwArr.length?{keywords:kwArr,match}:null);
+  const adArr=($("actAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
+  await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
+  toast("Guardado ✓"); renderActivacion();
+}
+async function saveTrigger(tipo, key, config){
+  const existing=st.act[key];
+  if(config){
+    if(existing){ await supa.from("flow_triggers").update({config}).eq("id",existing.id); }
+    else { await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:st.act.flow.id, tipo, config, activo:true }); }
+  } else if(existing){ await supa.from("flow_triggers").delete().eq("id",existing.id); }
 }
 
 async function saveProduct(){

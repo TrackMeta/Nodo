@@ -11,7 +11,7 @@ import { sendTelegram } from "./telegram.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets } from "./db.ts";
-import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendText } from "./meta.ts";
+import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -337,6 +337,37 @@ async function execute(db: SupabaseClient, run: Run) {
         run.current_node_id = await nextNode(db, run.flow_id, node.id, "continuar");
         break;
       }
+      case "rotador": {
+        // Mensajes iniciales con ROTACIÓN de copy (evita baneos por repetir el
+        // mismo saludo a todos). Cada variante = lista de burbujas (texto/media).
+        // Elige una variante activa por PESO; si el rotador está apagado, usa
+        // siempre la primera variante activa. Luego continúa al flujo de venta/IA.
+        const all = (node.config?.variantes ?? []) as any[];
+        const active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
+        if (active.length) {
+          const rotOn = node.config?.activo !== false && active.length > 1;
+          const chosen = rotOn ? pickWeighted(active) : active[0];
+          for (const b of (chosen.bubbles ?? [])) await emit(db, run, b, ctx);
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial", chosen.nombre ?? "");
+        }
+        // "Y después": continuar a otro flujo (venta o IA) o terminar. Se guarda
+        // dentro del rotador, así el flujo Bienvenida es un solo nodo.
+        const des = node.config?.despues ?? {};
+        if (des.modo === "flujo" && des.flow_id) {
+          const { data: tf } = await db.from("flows")
+            .select("id, nombre, product_id, estado").eq("id", des.flow_id).eq("channel_id", run.channel_id).maybeSingle();
+          if (tf && (tf as any).estado === "activo") {
+            run.flow_id = (tf as any).id;
+            const init = await initialNode(db, run.flow_id);
+            run.current_node_id = init?.id ?? null;
+            await logEvent(db, run.channel_id, run.contact_id, "flujo_inicio", "Flujo iniciado", (tf as any).nombre ?? null);
+            await markProduct(db, run.contact_id, (tf as any).product_id);
+            break;
+          }
+        }
+        run.current_node_id = await nextNode(db, run.flow_id, node.id, "continuar");
+        break;
+      }
       case "pregunta": {
         await emit(db, run, { text: resolve(node.config?.text ?? "", ctx) }, ctx);
         run.vars._await = { type: "input", node_id: node.id, guardar_en: node.config?.guardar_en };
@@ -438,6 +469,35 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
 async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   await ensureDelivery(db, run);
   const text = resolve(bubble.text ?? "", ctx);
+  const d = run._delivery;
+
+  // ── Burbuja de MEDIA (imagen/video/audio/documento) ──
+  // media_url = URL pública (subida por media-upload). En WhatsApp se envía
+  // por Graph; en webchat basta con insertar (el panel la renderiza).
+  const mediaUrl = bubble.media_url ? resolve(String(bubble.media_url), ctx) : "";
+  const mediaKind = bubble.media_kind as ("image" | "video" | "audio" | "document" | undefined);
+  if (mediaUrl && mediaKind) {
+    const caption = resolve(bubble.caption ?? bubble.text ?? "", ctx);
+    let wamid = ""; let status = "sent"; let error: any = null;
+    if (d?.mode === "whatsapp" && d.token && ctx.wa_id) {
+      try {
+        wamid = await sendMedia(d.phoneNumberId, d.token, ctx.wa_id, mediaKind, mediaUrl, caption || undefined, bubble.filename);
+      } catch (e) {
+        status = "failed";
+        error = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
+        console.error("[emit] fallo envío media:", error);
+      }
+    }
+    await db.from("messages").insert({
+      channel_id: run.channel_id, contact_id: run.contact_id,
+      direction: "out", type: mediaKind,
+      content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "" },
+      status, wamid: wamid || null, error,
+    });
+    return;
+  }
+
+  // ── Burbuja de TEXTO / BOTONES ──
   const isInteractive = !!bubble.buttons?.length;
   const content: any = {};
   if (text) content.text = text;
@@ -445,7 +505,6 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   if (isInteractive) content.buttons = bubble.buttons;
 
   let wamid = ""; let status = "sent"; let error: any = null;
-  const d = run._delivery;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (text || isInteractive)) {
     try {
       wamid = isInteractive
@@ -1088,4 +1147,15 @@ async function removeTag(db: SupabaseClient, channelId: string, contactId: strin
 }
 function normalize(s: string): string {
   return (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+}
+
+// Elige una variante al azar PONDERADA por su peso (default 1). Si todos los
+// pesos son 0, cae a una selección uniforme.
+function pickWeighted<T extends { peso?: number }>(items: T[]): T {
+  const weights = items.map((v) => Math.max(0, Number(v.peso ?? 1)));
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (total <= 0) return items[Math.floor(Math.random() * items.length)];
+  let r = Math.random() * total;
+  for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r < 0) return items[i]; }
+  return items[items.length - 1];
 }
