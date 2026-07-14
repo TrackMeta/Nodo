@@ -86,12 +86,12 @@
   <label>Coincidencia</label>
   <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera (une los filtros)</option><option value="todas">Todas (intersección)</option></select>
   <label>Programar envío (opcional)</label><input class="in" id="m_prog" type="datetime-local"/>
-  <div class="warnbox">⚠ Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo con listas con consentimiento.</div>
+  <div class="warnbox" id="warnBox">Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo con listas con consentimiento.</div>
   <div class="mfoot"><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar</button></div>
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set() };
@@ -150,7 +150,7 @@ function renderGrid(){
       ${c.estado!=="borrador"?`<div class="bars"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div>
         <div class="meta">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
       <div class="cacts">
-        ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">🚀 Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
+        ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">${icon("play")} Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
         ${(c.estado==="programada"||c.estado==="enviando")?`<button class="btn danger" data-a="cancel">Cancelar</button>`:""}
         <button class="btn danger" data-a="del" style="margin-left:auto">Eliminar</button>
       </div>`;
@@ -165,7 +165,7 @@ async function action(a, c){
   if(a==="activate"){
     if(!c.template_id){ toast("La campaña necesita una plantilla",true); return openModal(c); }
     await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id);
-    toast("Campaña activada 🚀 — el envío empieza pronto"); return load();
+    toast("Campaña activada — el envío empieza pronto"); return load();
   }
 }
 function openModal(c){

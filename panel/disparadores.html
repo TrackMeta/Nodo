@@ -94,7 +94,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, triggers:[], flows:[] };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}

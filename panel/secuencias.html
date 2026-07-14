@@ -92,7 +92,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], folder:"__all", localFolders:new Set() };
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
@@ -127,9 +127,9 @@ function countIn(v){ if(v==="__all") return st.seqs.length; if(v==="__none") ret
 function renderFolders(){
   const isReal=st.folder!=="__all"&&st.folder!=="__none";
   const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent" title="Eliminar carpeta">🗑 Eliminar carpeta</button>`:"");
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent" title="Eliminar carpeta">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
   $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
@@ -176,7 +176,7 @@ function renderCards(){
       <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="nodo-pill ${on?'on':'off'}">${on?'Activa':'Pausada'}</span></div>
       <div class="c-sub">${n} paso${n===1?'':'s'} · reenganche por silencio</div>
       ${miniTimeline(s.pasos)}
-      <div class="c-foot">${s.folder?`<span>📁 ${esc(s.folder)}</span>`:'<span>Sin carpeta</span>'}</div>`;
+      <div class="c-foot">${s.folder?`<span>${icon("folder")} ${esc(s.folder)}</span>`:'<span>Sin carpeta</span>'}</div>`;
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
   box.appendChild(add);

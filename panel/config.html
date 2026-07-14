@@ -81,7 +81,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, getEffects, setEffects } from "./shell.js";
+import { supa, mountShell, toast, icon, getEffects, setEffects } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 const IC={
   tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
@@ -203,7 +203,7 @@ function renderGeneral(b){
     </div>
     <div class="card">
       <div class="chd"><span class="ico">${IC.spark}</span><span class="nm">Conocimiento del negocio</span></div>
-      <div class="desc">Contexto que el bot conoce <b>en todas las conversaciones de este bot</b>: quiénes somos, tono de venta, políticas de envío y cambios, horarios de despacho, preguntas frecuentes generales. Se inyecta automáticamente a los nodos ✨ IA. Lo específico de cada producto (descripción, FAQ del producto) se escribe en su ficha de <b>Productos</b>.</div>
+      <div class="desc">Contexto que el bot conoce <b>en todas las conversaciones de este bot</b>: quiénes somos, tono de venta, políticas de envío y cambios, horarios de despacho, preguntas frecuentes generales. Se inyecta automáticamente a los nodos ${icon("sparkles")} IA. Lo específico de cada producto (descripción, FAQ del producto) se escribe en su ficha de <b>Productos</b>.</div>
       <textarea class="in" id="g_negocio" rows="9" style="height:auto;min-height:170px;padding:11px 12px;line-height:1.55;font-family:var(--font);resize:vertical" placeholder="Ej.: Somos Digital Prime, vendemos guías y programas por WhatsApp. Tono: cercano y directo, tuteo, emojis con moderación…&#10;Envíos: Lima contraentrega (24h), provincia por Shalom/Olva con adelanto.&#10;Pagos: Yape/Plin al 999 999 999 (Percy Flores).&#10;Nunca prometemos resultados médicos. Si piden hablar con una persona, transferir.">${esc(c.negocio||"")}</textarea>
     </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
@@ -268,11 +268,11 @@ function renderGsheets(b){
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
       <img src="${LOGO.sheets}" alt="" style="width:38px;height:38px;border-radius:10px"/>
       <div><h2 style="margin:0">Google Sheets</h2>
-        <p class="sub" style="margin:2px 0 0">Registra ventas y datos en tu hoja desde los flujos (nodo 📊). Elige cómo conectarla.</p></div>
+        <p class="sub" style="margin:2px 0 0">Registra ventas y datos en tu hoja desde los flujos (nodo ${icon("sheet")} Google Sheets). Elige cómo conectarla.</p></div>
     </div>
     <div class="tabs" style="margin-bottom:16px">
-      <button class="tab ${method==='oauth'?'active':''}" data-gm="oauth">🔗 Acceder con Google</button>
-      <button class="tab ${method==='apps_script'?'active':''}" data-gm="apps_script">📝 Apps Script</button>
+      <button class="tab ${method==='oauth'?'active':''}" data-gm="oauth">${icon("link")} Acceder con Google</button>
+      <button class="tab ${method==='apps_script'?'active':''}" data-gm="apps_script">${icon("note")} Apps Script</button>
     </div>
     <div id="gsBody"></div>`;
   b.querySelectorAll("[data-gm]").forEach(btn=> btn.onclick=()=>{ st.gsMethod=btn.dataset.gm; renderGsheets(b); });
@@ -302,7 +302,7 @@ function renderGsOauth(box, g){
         </div>`
       :`
         <div class="desc" style="margin-top:12px">Inicia sesión con la cuenta de Google dueña de tu hoja y dale permiso. Nodo escribirá las filas por ti. La primera vez Google puede mostrar “app no verificada” → <b>Avanzado → Continuar</b> (es tu propia app, es seguro).</div>
-        <div class="acts"><button class="btn primary" id="gsoConnect">🔗 Conectar con Google</button></div>`}
+        <div class="acts"><button class="btn primary" id="gsoConnect">${icon("link")} Conectar con Google</button></div>`}
       <div class="desc" id="gsoOut" style="margin-top:12px"></div>
     </div>`;
   const conn=$("gsoConnect");
@@ -343,7 +343,7 @@ function renderGsScript(box, g){
       <div class="steps" style="margin-top:14px">
         <div class="step"><div class="num"></div><div class="st-b">
           <div class="st-t">Abre el editor de scripts de tu hoja</div>
-          <div class="st-d">En tu Google Sheet: <b>Extensiones → Apps Script</b>. Borra lo que haya, pega este código y 💾 guarda.</div>
+          <div class="st-d">En tu Google Sheet: <b>Extensiones → Apps Script</b>. Borra lo que haya, pega este código y guarda.</div>
           <textarea class="in" id="gs_code" readonly style="margin-top:8px;height:150px;font-family:monospace;font-size:11.5px;white-space:pre;resize:vertical"></textarea>
           <button class="btn" id="copyScript" style="margin-top:8px">Copiar código</button>
         </div></div>
@@ -418,7 +418,7 @@ function renderBranding(b){
       </div>
       <label>Logo del bot</label>
       <div class="acts" style="margin-top:0">
-        <button class="btn" id="uploadBtn">⬆ Subir desde la PC</button>
+        <button class="btn" id="uploadBtn">${icon("upload")} Subir desde la PC</button>
         <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
         <span class="desc" style="margin:0">o pega una URL abajo</span>
       </div>
@@ -459,7 +459,7 @@ async function saveBrand(btn){
 
 // ── Inteligencia Artificial ─────────────────────────────────────────
 function renderIA(box){
-  box.innerHTML=`<h2>Inteligencia Artificial</h2><p class="sub">Cada bot usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ✨ IA de tus flujos.</p><div id="cards"></div>`;
+  box.innerHTML=`<h2>Inteligencia Artificial</h2><p class="sub">Cada bot usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ${icon("sparkles")} IA de tus flujos.</p><div id="cards"></div>`;
   const cont=$("cards");
   PROVIDERS.forEach(p=>{
     const cfg=st.cfg[p.id], isDef=st.iaProvider===p.id;
@@ -492,9 +492,9 @@ function renderIA(box){
 // Cambias el modelo de una TAREA en un solo lugar; los nodos IA usan el
 // perfil de su operación salvo que el nodo especifique otro.
 const PERFILES=[
-  ["ventas","🗣 Conversación / ventas","Nodos IA que responden dudas y venden (generar texto)."],
-  ["ocr","🧾 Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
-  ["extraccion","🔍 Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
+  ["ventas","Conversación / ventas","Nodos IA que responden dudas y venden (generar texto)."],
+  ["ocr","Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
+  ["extraccion","Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
 ];
 function renderPerfiles(cont){
   const perf=(st.channel&&st.channel.ia_perfiles)||{};

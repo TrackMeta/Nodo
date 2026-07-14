@@ -66,7 +66,8 @@
   .kwrow.warn{border-color:var(--amber)}
   .kwrow .head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .kwrow .dest{font-size:13.5px;font-weight:700;flex:1;display:flex;align-items:center;gap:7px;min-width:0}
-  .kwrow .dest .em{font-size:15px}
+  .kwrow .dest .em{font-size:15px;display:inline-flex;align-items:center;color:var(--muted)}
+  .kwrow .dest .em .ico{width:15px;height:15px}
   .kwrow .dest .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--surface-2);color:var(--muted);border:1px solid var(--border);flex:none}
   .pill.est-activo{color:var(--green);border-color:#1f5a3a} .pill.est-borrador{color:var(--amber);border-color:#5a4a1f}
@@ -180,7 +181,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{} };
 
@@ -267,7 +268,7 @@ function renderKeywords(){
     const estClass=f?("est-"+f.estado):"";
     el.innerHTML=`
       <div class="head">
-        <div class="dest">${f?`<span class="em">${f.product_id&&st.products[f.product_id]?.emoji?st.products[f.product_id].emoji:"🧩"}</span><span class="nm">${esc(flowLabel(f))}</span>`:'<span class="nm" style="color:var(--red)">Flujo eliminado</span>'}</div>
+        <div class="dest">${f?`<span class="em">${f.product_id&&st.products[f.product_id]?.emoji?st.products[f.product_id].emoji:icon("flujos")}</span><span class="nm">${esc(flowLabel(f))}</span>`:'<span class="nm" style="color:var(--red)">Flujo eliminado</span>'}</div>
         ${f?`<span class="pill ${estClass}">${f.estado}</span>`:""}
         <div class="sw${t.activo?" on":""}" data-act title="Activar/desactivar"></div>
         <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>

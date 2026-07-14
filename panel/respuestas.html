@@ -65,7 +65,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -92,9 +92,9 @@ function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") ret
 function renderFolders(){
   const isReal=st.folder!=="__all"&&st.folder!=="__none";
   const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
   $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
@@ -121,7 +121,7 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-top"><span class="c-tt">${esc(q.titulo)}</span>${q.atajo?`<span class="atajo">${esc(q.atajo)}</span>`:''}</div>
       <div class="qbody">${esc(q.cuerpo||"(vacío)")}</div>
-      ${q.folder?`<div style="margin-top:10px;font-size:11.5px;color:var(--faint)">📁 ${esc(q.folder)}</div>`:''}`;
+      ${q.folder?`<div style="margin-top:10px;font-size:11.5px;color:var(--faint)">${icon("folder")} ${esc(q.folder)}</div>`:''}`;
     el.onclick=()=>openQR(q.id); box.appendChild(el);
   });
 }

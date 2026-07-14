@@ -61,7 +61,7 @@
       <div class="avatarrow">
         <div class="avatar" id="avatar">?</div>
         <div>
-          <button class="btn" id="uploadBtn">⬆ Subir foto</button>
+          <button class="btn" id="uploadBtn">Subir foto</button>
           <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/webp" hidden/>
           <div class="cs" style="margin:8px 0 0">PNG o JPG, se recorta a un cuadrado.</div>
         </div>
@@ -89,7 +89,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, refreshUserChip } from "./shell.js";
+import { supa, mountShell, toast, icon, refreshUserChip } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ uid:null, email:null, me:{}, pendingAvatar:null };
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"long",year:"numeric" });
@@ -108,6 +108,7 @@ async function boot(){
   $("vSince").textContent=fmt.format(new Date(me?.created_at||authSince));
   $("pNombre").value=me?.nombre||"";
   paintAvatar(me?.avatar_url);
+  $("uploadBtn").innerHTML=icon("upload")+" Subir foto";
   $("uploadBtn").onclick=()=>$("avatarFile").click();
   $("avatarFile").onchange=(e)=>handleAvatar(e.target.files[0]);
   $("saveProfile").onclick=saveProfile;

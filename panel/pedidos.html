@@ -112,7 +112,7 @@
       <div class="nodo-actions">
         <div class="seg" id="seg">
           <button data-v="compras" class="on">Compras</button>
-          <button data-v="fisicos">Pedidos físicos 📦</button>
+          <button data-v="fisicos">Pedidos físicos</button>
         </div>
       </div>
     </div>
@@ -131,7 +131,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], estado:"all", q:"", view:"compras" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -141,18 +141,18 @@ const ESTADOS=[["all","Todas"],["confirmada","Confirmadas"],["pendiente","Adelan
 const EST_LABEL={
   carrito:"Carrito", esperando_adelanto:"Esperando adelanto", adelanto_validado:"Adelanto validado",
   confirmado:"Confirmado", por_despachar:"Por despachar", despachado:"Despachado",
-  en_agencia:"En agencia", saldo_pagado:"Saldo pagado", recogido:"Recogido ✅",
-  en_reparto:"En reparto", entregado_cobrado:"Entregado y cobrado ✅",
+  en_agencia:"En agencia", saldo_pagado:"Saldo pagado", recogido:"Recogido",
+  en_reparto:"En reparto", entregado_cobrado:"Entregado y cobrado",
   reprogramado:"Reprogramado", rechazado:"Rechazado", no_recogido:"No recogido", cancelado:"Cancelado",
   confirmada:"Confirmada", pendiente:"Pendiente", anulada:"Anulada",
 };
 const KB_COLS=[
-  ["🆕","Nuevo / Adelanto",["carrito","esperando_adelanto","confirmado"]],
-  ["📦","Por despachar",["adelanto_validado","por_despachar"]],
-  ["🚚","En camino",["despachado","en_reparto"]],
-  ["🏢","En agencia · cobrar saldo",["en_agencia"]],
-  ["🔑","Para entregar",["saldo_pagado"]],
-  ["✅","Finalizados",["entregado_cobrado","recogido","reprogramado","rechazado","no_recogido","cancelado"]],
+  ["star","Nuevo / Adelanto",["carrito","esperando_adelanto","confirmado"]],
+  ["box","Por despachar",["adelanto_validado","por_despachar"]],
+  ["truck","En camino",["despachado","en_reparto"]],
+  ["building","En agencia · cobrar saldo",["en_agencia"]],
+  ["key","Para entregar",["saldo_pagado"]],
+  ["flag","Finalizados",["entregado_cobrado","recogido","reprogramado","rechazado","no_recogido","cancelado"]],
 ];
 const FIS_STATES=new Set(KB_COLS.flatMap(c=>c[2]));
 const BAD_STATES=new Set(["rechazado","no_recogido","cancelado","anulada"]);
@@ -244,7 +244,7 @@ function renderTabla(){
     const bumps=(o.order_bumps||[]).length;
     return `<div class="trow">
       <div class="cust"><div class="nm">${esc(c.nombre||"Sin nombre")}</div><div class="ph">${c.wa_id?"+"+esc(c.wa_id):"—"}</div></div>
-      <div class="prod"><span class="em">${esc(p.emoji||"📦")}</span><div style="min-width:0"><div class="pn">${esc(p.nombre||"—")}</div>${v.nombre?`<div class="vv">${esc(v.nombre)}</div>`:""}</div></div>
+      <div class="prod"><span class="em">${p.emoji?esc(p.emoji):icon("box")}</span><div style="min-width:0"><div class="pn">${esc(p.nombre||"—")}</div>${v.nombre?`<div class="vv">${esc(v.nombre)}</div>`:""}</div></div>
       <div><span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado||"—")}</span></div>
       <div class="when">${fecha(o.created_at)}</div>
       <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} compra${bumps>1?"s":""} extra</span>`:""}</div>
@@ -257,17 +257,17 @@ function primaryAction(o){
   const zona=((o.shipping&&o.shipping.zona)||"").toLowerCase();
   switch(o.estado){
     case "carrito": return { label:"Confirmar pedido", estado:"confirmado" };
-    case "esperando_adelanto": return { label:"✓ Adelanto recibido", estado:"adelanto_validado" };
+    case "esperando_adelanto": return { label:"Adelanto recibido", estado:"adelanto_validado" };
     case "confirmado": return zona==="provincia"
-      ? { label:"→ Por despachar", estado:"por_despachar" }
-      : { label:"🛵 Salió a reparto", estado:"en_reparto" };
+      ? { label:"Por despachar", estado:"por_despachar" }
+      : { label:"Salió a reparto", estado:"en_reparto" };
     case "adelanto_validado":
     case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
-    case "despachado": return { label:"📍 Llegó a agencia", estado:"en_agencia" };
-    case "en_agencia": return { label:"✓ Saldo pagado", estado:"saldo_pagado" };
-    case "saldo_pagado": return { label:"✅ Recogido", estado:"recogido" };
-    case "en_reparto": return { label:"✅ Entregado y cobrado", estado:"entregado_cobrado" };
-    case "reprogramado": return { label:"🛵 Salió a reparto", estado:"en_reparto" };
+    case "despachado": return { label:"Llegó a agencia", estado:"en_agencia" };
+    case "en_agencia": return { label:"Saldo pagado", estado:"saldo_pagado" };
+    case "saldo_pagado": return { label:"Recogido", estado:"recogido" };
+    case "en_reparto": return { label:"Entregado y cobrado", estado:"entregado_cobrado" };
+    case "reprogramado": return { label:"Salió a reparto", estado:"en_reparto" };
     default: return null;
   }
 }
@@ -284,7 +284,7 @@ function renderKanban(){
   KB_COLS.forEach(([ic,label,estados])=>{
     const items=list.filter(o=>estados.includes(o.estado));
     const col=document.createElement("div"); col.className="kcol";
-    col.innerHTML=`<div class="kh"><span>${ic}</span> ${esc(label)} <span class="cnt">${items.length}</span></div><div class="kbody"></div>`;
+    col.innerHTML=`<div class="kh"><span>${icon(ic)}</span> ${esc(label)} <span class="cnt">${items.length}</span></div><div class="kbody"></div>`;
     const body=col.querySelector(".kbody");
     items.forEach(o=>body.appendChild(kcard(o)));
     box.appendChild(col);
@@ -311,7 +311,7 @@ function kcard(o){
       <button class="kc-dots" title="Más acciones">⋮</button>
     </div>
     <div class="kc-sub">
-      <span>${esc(p.emoji||"📦")} ${esc(p.nombre||"—")}</span>
+      <span>${p.emoji?esc(p.emoji):icon("box")} ${esc(p.nombre||"—")}</span>
       ${zona?`<span class="zona ${zona==="lima"?"lima":"prov"}">${zona==="lima"?"LIMA":"PROVINCIA"}</span>`:""}
       <span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado)}</span>
     </div>
@@ -345,14 +345,14 @@ function openMenu(ev,o){
   const m=document.createElement("div"); m.className="menu"; m.id="ctxMenu";
   const zona=((o.shipping&&o.shipping.zona)||"").toLowerCase();
   const ops=[];
-  ops.push(["✏️ Editar datos de envío…",()=>openEnvio(o)]);
+  ops.push([`${icon("edit")} Editar datos de envío…`,()=>openEnvio(o)]);
   ops.push(["sep"]);
   const trans=zona==="lima"
     ? [["confirmado"],["en_reparto"],["entregado_cobrado"],["reprogramado"],["rechazado"]]
     : [["esperando_adelanto"],["adelanto_validado"],["por_despachar"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
   trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${EST_LABEL[e]||e}`,()=>confirmSet(o,e,EST_LABEL[e]||e)]); });
   ops.push(["sep"]);
-  ops.push(["🚫 Cancelar pedido",()=>confirmSet(o,"cancelado","Cancelar pedido"),"danger"]);
+  ops.push([`${icon("ban")} Cancelar pedido`,()=>confirmSet(o,"cancelado","Cancelar pedido"),"danger"]);
   m.innerHTML=ops.map(([l,_,cls],i)=>l==="sep"?`<div class="sep"></div>`:`<button data-i="${i}" class="${cls||""}">${l}</button>`).join("");
   m.querySelectorAll("button[data-i]").forEach(b=>b.onclick=()=>{ closeMenu(); ops[Number(b.dataset.i)][1](); });
   document.body.appendChild(m);
@@ -376,7 +376,7 @@ function modal(html,onSave){
 function openDespacho(o){
   const s=o.shipping||{};
   modal(`
-    <h3>Registrar despacho 📦</h3>
+    <h3>${icon("box")} Registrar despacho</h3>
     <div class="m-sub">${esc((o.contact||{}).nombre||"")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
     <div class="row2">
       <div><label>Agencia</label>
@@ -401,7 +401,7 @@ function openDespacho(o){
 function openEnvio(o){
   const s=o.shipping||{};
   modal(`
-    <h3>Datos de envío ✏️</h3>
+    <h3>${icon("edit")} Datos de envío</h3>
     <div class="m-sub">${esc((o.contact||{}).nombre||"")}</div>
     <div class="row2">
       <div><label>Zona</label><select id="eZona"><option value="">—</option><option value="lima" ${s.zona==="lima"?"selected":""}>Lima</option><option value="provincia" ${s.zona==="provincia"?"selected":""}>Provincia</option></select></div>
