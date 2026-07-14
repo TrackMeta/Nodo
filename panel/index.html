@@ -587,7 +587,7 @@ function mediaThumb(m){ const u=esc(m.content.media_url);
 async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
   p.innerHTML = `<div class="cmuted" style="padding:20px 0;text-align:center">Cargando…</div>`;
-  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,source,primera_interaccion,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
+  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
   const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
@@ -623,15 +623,19 @@ function renderContactPanel(){
   const subsA = subs.filter(s=>s.estado==="activa");
   const nodos = events.filter(e=>e.tipo==="nodo");
   const errs  = events.filter(e=>e.tipo==="error");
+  const botTxt = contact.bot_activo!==false ? "🟢 Bot activo" : "⏸️ Bot en pausa";
   const datosRows = isTest ? "" : `
     <h4>Datos</h4>
-    <div class="kv"><span class="k">ID de contacto</span><span class="v">${esc(contact.wa_id)}</span></div>
     <div class="kv"><span class="k">Teléfono</span><span class="v">+${esc(contact.wa_id)}</span></div>
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
-    <div class="kv"><span class="k">Contacto desde</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
+    <div class="kv"><span class="k">Estado del bot</span><span class="v">${botTxt}</span></div>
+    <div class="kv"><span class="k">Etapa</span><span class="v">${esc(contact.stage||"nuevo")}</span></div>
     <div class="kv"><span class="k">Origen</span><span class="v">${esc(contact.source||"Directo")}</span></div>
-    ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?emoji+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}`;
+    <div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${contact.ad_id?esc(contact.ad_id):"—"}</span></div>
+    ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?emoji+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}
+    <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
+    <div class="kv"><span class="k">Último mensaje</span><span class="v" title="${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):''}">${contact.ultimo_mensaje_cliente_at?rel(contact.ultimo_mensaje_cliente_at):"—"}</span></div>`;
   p.innerHTML = `
     <div class="chd">
       <div style="position:relative">

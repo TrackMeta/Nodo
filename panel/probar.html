@@ -428,7 +428,7 @@ function refreshPanel(){ if(st.contactId) loadContactPanel({ id:st.contactId, wa
 async function loadContactPanel(c){
   const p=$("cpanel"); p.classList.remove("hidden");
   const [ctRes,tagsRes,ctagsRes,fieldsRes,valsRes,msgRes,runsRes,subsRes,evRes]=await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at,primera_interaccion,ad_id,ctwa_clid").eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle() : r),
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at,primera_interaccion,ad_id,ctwa_clid,ultimo_mensaje_cliente_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji)").eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id",c.id),
     supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id",st.channelId).order("nombre"),
@@ -460,9 +460,13 @@ function renderContactPanel(){
     <h4>Datos del cliente</h4>
     <div class="kv"><span class="k">Usuario</span><span class="v">${esc(contact.nombre||"—")}</span></div>
     <div class="kv"><span class="k">Teléfono</span><span class="v">Web Chat · sin número</span></div>
+    <div class="kv"><span class="k">Estado del bot</span><span class="v">${contact.bot_activo!==false?"🟢 Activo":"⏸️ En pausa"}</span></div>
+    <div class="kv"><span class="k">Producto</span><span class="v">${contact.product?`${contact.product.emoji?contact.product.emoji+" ":""}${esc(contact.product.nombre||"")}`:"—"}</span></div>
+    <div class="kv"><span class="k">Origen</span><span class="v">${esc(contact.source||"Directo")}</span></div>
+    <div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id||"—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${fmtTime.format(new Date())}</span></div>
     <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtFull(contact.primera_interaccion||contact.created_at)||"—"}</span></div>
-    <div class="kv"><span class="k">Ad ID</span><span class="v">${esc(contact.ad_id||"—")}</span></div>
+    <div class="kv"><span class="k">Último mensaje</span><span class="v">${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):"—"}</span></div>
     <h4>Etapa del embudo</h4>
     <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
