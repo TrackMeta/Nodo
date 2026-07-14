@@ -15,7 +15,18 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface)}
+  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface);position:relative}
+  /* Botón EDITOR IA — centrado arriba del editor, con el acento de la sección IA */
+  .editoria-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;
+    height:34px;padding:0 18px;border-radius:999px;border:1px solid rgba(168,85,247,.5);
+    background:linear-gradient(90deg,rgba(168,85,247,.16),rgba(236,72,153,.12));color:#c084fc;
+    font-size:12.5px;font-weight:750;letter-spacing:.02em;display:inline-flex;align-items:center;gap:7px;
+    box-shadow:0 2px 12px rgba(168,85,247,.18);transition:filter .12s,background .12s}
+  .editoria-btn svg{color:#a855f7}
+  .editoria-btn:hover{filter:brightness(1.12)}
+  .editoria-btn.active{background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;border-color:transparent}
+  .editoria-btn.active svg{color:#fff}
+  @media(max-width:1100px){.editoria-btn span,.editoria-btn{font-size:11.5px}.editoria-btn{padding:0 12px}}
   .top a{color:var(--muted);text-decoration:none;font-size:20px}
   .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
   .fname{font-weight:600}
@@ -176,9 +187,9 @@
     <span class="badge" id="fprod" style="display:none"></span>
     <div class="seg" id="viewToggle">
       <button class="segb active" data-v="estructura"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> Estructura</button>
-      <button class="segb segb-ia" data-v="editorIA" title="Edita fácil todos los mensajes que envía el bot"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2M12 4v4"/><circle cx="12" cy="4" r="1"/></svg> EDITOR IA</button>
       <button class="segb" data-v="contenido"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Contenido</button>
     </div>
+    <button class="editoria-btn" id="editorIaBtn" title="Edita fácil todos los mensajes que envía el bot"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2M12 4v4"/><circle cx="12" cy="4" r="1"/></svg> EDITOR IA</button>
     <div class="spacer"></div>
     <button class="btn" id="trigBtn" title="Cuándo arranca este flujo"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> Disparadores</button>
     <button class="btn" id="delFlowBtn" style="color:var(--red);border-color:transparent" title="Eliminar flujo"><svg width="1.15em" height="1.15em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.2em"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
@@ -261,6 +272,7 @@ async function boot(){
   $("backBtn").onclick = ()=>{ st.flowId=null; showOverview(); loadFlows(); };
   $("delFlowBtn").onclick = deleteFlow;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
+  $("editorIaBtn").onclick=()=>setView(st.view==="editorIA"?"estructura":"editorIA");
 }
 
 // ── Paleta de nodos (comprimible con botón) ──
@@ -295,6 +307,7 @@ function showEditor(){
 function setView(v){
   st.view = v;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.classList.toggle("active", b.dataset.v===v));
+  const iaBtn=$("editorIaBtn"); if(iaBtn) iaBtn.classList.toggle("active", v==="editorIA");
   const content = v==="contenido" || v==="editorIA";
   $("contentView").style.display = content ? "block" : "none";
   $("palette").style.display = content ? "none" : "";

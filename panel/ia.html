@@ -71,6 +71,22 @@
   .btn.ia{background:linear-gradient(90deg,var(--ia),var(--ia-2));border:none;color:#fff}
   .btn.ia:hover{filter:brightness(1.07)}
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
+  /* Validador de comprobantes */
+  .ia-hero2{border:1px solid var(--ia-border);border-radius:14px;padding:14px 16px;margin:0 0 18px;
+    background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.14),transparent 60%),var(--surface)}
+  .ia-badge2{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.02em;color:var(--ia);background:var(--ia-bg);border:1px solid var(--ia-border);border-radius:999px;padding:4px 11px;margin-bottom:9px}
+  .ia-badge2 svg{width:14px;height:14px}
+  .ia-hero2 p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
+  .ocrgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+  @media(max-width:640px){.ocrgrid{grid-template-columns:1fr}}
+  .ocrchk{display:flex;align-items:flex-start;gap:9px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer}
+  .ocrchk input{margin-top:2px;accent-color:var(--ia);width:16px;height:16px;flex:none}
+  .ocrchk span{display:flex;flex-direction:column;gap:2px}
+  .ocrchk b{font-size:13px;font-weight:650} .ocrchk small{font-size:11.5px;color:var(--muted);line-height:1.4}
+  .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--ia-bg);border-color:var(--ia-border)} .sw.on::after{left:20px;background:var(--ia)}
   /* Selector de modelo (abre el picker nativo) */
   .modelpick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface-2);
     border:1px solid var(--border);border-radius:11px;padding:11px 14px;color:var(--text);cursor:pointer;transition:border-color .12s}
@@ -94,6 +110,7 @@
       <button class="tab active" data-t="conocimiento" id="tabCon"></button>
       <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
+      <button class="tab" data-t="validador" id="tabVal"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
     </div>
     <div id="body"></div>
@@ -163,6 +180,7 @@ const IC={
   book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
   sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
   bot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="12" x="3" y="8" rx="2"/><path d="M12 2v6M9 14h.01M15 14h.01M8 8V6M16 8V6"/></svg>',
+  shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
 };
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
 const PROVIDERS = [
@@ -171,14 +189,23 @@ const PROVIDERS = [
   { id:"openai", nm:"ChatGPT (OpenAI)", logo:LOGO.chatgpt, desc:"Modelos GPT de OpenAI.",
     keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
 ];
+// Las 3 tareas corresponden 1:1 a las 3 operaciones del nodo IA del motor
+// (generar_texto / analizar_imagen / extraer). Son las necesarias y suficientes.
 const PERFILES=[
-  ["ventas","Conversación / ventas","Nodos IA que responden dudas y venden (generar texto)."],
-  ["ocr","Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
-  ["extraccion","Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
+  ["ventas","Conversación y ventas","La IA que asesora, responde dudas y cierra ventas por chat (operación “generar texto”). Es la que más se usa."],
+  ["ocr","Validar comprobantes (OCR)","La IA que lee las capturas de pago (Yape, Plin, transferencias) y valida el pago (operación “analizar imagen”). Se apoya en la pestaña Validador de comprobantes."],
+  ["extraccion","Extraer datos","La IA que saca datos ordenados de un texto: nombre, dirección, distrito, etc. (operación “extraer”). También la usa el Router de intención de Palabras clave."],
 ];
-const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, campos:{ fields:[], deleted:[], loaded:false } };
+const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, form:{}, ocr:null, campos:{ fields:[], deleted:[], loaded:false } };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function slug(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40); }
+const CAMPO_SUGERIDOS=[
+  ["nombre_negocio","Nombre del negocio"],["datos_pago","Datos de pago (Yape/Plin)"],
+  ["whatsapp_contacto","WhatsApp de contacto"],["horario_atencion","Horario de atención"],
+  ["direccion","Dirección / local"],["web","Página web"],["instagram","Instagram"],
+  ["tiempo_entrega","Tiempo de entrega"],["cuenta_bancaria","Cuenta bancaria (CCI)"],
+  ["politica_devolucion","Política de devolución"],
+];
 
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
@@ -187,6 +214,7 @@ async function boot(){
   $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
   $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles por tarea</span>";
+  $("tabVal").innerHTML=IC.shield+"<span>Validador de comprobantes</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
@@ -196,9 +224,10 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle();
+    .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider").eq("id",st.channelId).maybeSingle()); }
-  st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
+  st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {}; st.perfMod={};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
   st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
   render();
@@ -208,6 +237,7 @@ function render(){
   if(st.tab==="conocimiento") renderConocimiento(b);
   else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
+  else if(st.tab==="validador") renderValidador(b);
   else renderProveedores(b);
 }
 
@@ -219,9 +249,17 @@ async function renderCampos(b){
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.bot}</span><span class="nm">Variables fijas del bot</span>
         <button class="btn" id="camAdd" style="margin-left:auto">+ Nuevo campo</button></div>
+      <div class="desc" style="margin-top:0">Sugeridos (clic para agregar la información que la IA suele necesitar):</div>
+      <div id="camSug" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px"></div>
       <div id="camList" style="margin-top:6px"><div class="desc">Cargando…</div></div>
       <div class="acts"><button class="btn ia" id="camSave">Guardar campos</button></div>
     </div>`;
+  $("camSug").innerHTML=CAMPO_SUGERIDOS.map(([k,n])=>`<button class="btn camsug" data-k="${k}" data-n="${esc(n)}" style="height:30px;padding:0 11px;font-size:12px;border:1px solid var(--border)">+ ${esc(n)}</button>`).join("");
+  $("camSug").querySelectorAll(".camsug").forEach(btn=> btn.onclick=()=>{
+    const k=btn.dataset.k;
+    if(st.campos.fields.some(f=>f.key===k)){ toast("Ese campo ya existe",true); return; }
+    st.campos.fields.push({ _new:true, nombre:btn.dataset.n, key:k, tipo:"text", modo:"fijo", valor:"", descripcion:"" }); paintCampos();
+  });
   $("camAdd").onclick=()=>{ st.campos.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:"fijo", valor:"", descripcion:"" }); paintCampos(); };
   $("camSave").onclick=saveCampos;
   if(!st.campos.loaded){
@@ -267,25 +305,88 @@ async function saveCampos(e){
   btn.disabled=false; btn.textContent=old; st.campos.loaded=false; toast("Campos guardados ✓"); renderCampos($("body"));
 }
 
-// ── Conocimiento del negocio ────────────────────────────────────────
+// ── Conocimiento del negocio — FORMULARIO estructurado ──────────────
+// El usuario llena un formulario ordenado; al guardar se compila a un texto
+// bien estructurado (Markdown) en channels.negocio (lo que lee el motor) y se
+// conserva el formulario en channels.negocio_form para poder re-editarlo.
+const NEG_FIELDS=[
+  ["nombre","Nombre del negocio","input","Ej. Digital Prime",""],
+  ["rubro","¿Qué vendes? (productos o servicios)","ta","Ej. Cursos y guías digitales de fitness; también asesorías 1 a 1…",""],
+  ["publico","¿A quién le vendes? (cliente ideal)","ta","Ej. Personas de 25-45 en Perú que quieren bajar de peso sin gimnasio",""],
+  ["propuesta","Propuesta de valor / diferencial","ta","¿Por qué te compran a ti y no a la competencia?",""],
+  ["tono","Tono y estilo del bot","ta","Ej. Cercano y directo, tuteo, pocos emojis, respuestas cortas",""],
+  ["horario","Horario de atención","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)",""],
+  ["transferir","¿Cuándo pasar a una persona? (humano)","ta","Ej. Reclamos, facturación, o si el bot no está seguro de algo",""],
+  ["pagos","¿Cómo se paga?","ta","Ej. Yape/Plin al 999 999 999 (Percy Flores); contraentrega en Lima. Los datos exactos ponlos también en Campos del Bot.",""],
+  ["entrega","Envíos y entrega","ta","Ej. Digital: enlace de Drive al confirmar el pago. Físico: Lima 24h contraentrega, provincia por Shalom/Olva con adelanto.",""],
+  ["politicas","Políticas (cambios, devoluciones, garantía)","ta","Ej. Cambios dentro de 7 días con boleta; sin devolución de digitales.",""],
+  ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta.",""],
+];
+function compileNegocio(form){
+  const L=[]; const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
+  if(form.nombre&&form.nombre.trim()) L.push(`# ${form.nombre.trim()}`);
+  add("Qué vendemos",form.rubro); add("Cliente ideal",form.publico); add("Propuesta de valor",form.propuesta);
+  add("Tono y estilo del bot",form.tono); add("Horario de atención",form.horario);
+  add("Cuándo transferir a una persona",form.transferir); add("Cómo se paga",form.pagos);
+  add("Envíos y entrega",form.entrega); add("Políticas",form.politicas); add("Nunca hacer / no prometer",form.no_hacer);
+  const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
+  if(faq.length) L.push("## Preguntas frecuentes\n"+faq.map(x=>`- P: ${(x.q||"").trim()}\n  R: ${(x.a||"").trim()}`).join("\n"));
+  if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
+  return L.join("\n\n");
+}
 function renderConocimiento(b){
   const c=st.channel||{};
+  let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
+  if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
+  if(!Array.isArray(form.faq)) form.faq=[];
+  st.form=form;
+  const field=([k,label,type,ph])=>`
+    <label style="margin-top:14px">${label}</label>
+    ${type==="ta"
+      ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
+      : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
-    <p class="sub">Lo que tu bot sabe en <b>todas</b> las conversaciones. Se inyecta automáticamente a los nodos ${icon("sparkles")} IA de tus flujos.</p>
+    <p class="sub">Completa este formulario del negocio: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. Lo específico de cada producto (descripción, FAQ) va en su ficha de <b>Productos</b>.</p>
     <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Contexto general del bot</span></div>
-      <div class="desc">Quiénes somos, tono de venta, políticas de envío y cambios, horarios de despacho, preguntas frecuentes generales. Lo específico de cada producto (descripción, FAQ del producto) se escribe en su ficha de <b>Productos</b>.</div>
-      <textarea class="in" id="g_negocio" rows="10" style="min-height:190px;line-height:1.55;resize:vertical" placeholder="Ej.: Somos Digital Prime, vendemos guías y programas por WhatsApp. Tono: cercano y directo, tuteo, emojis con moderación…&#10;Envíos: Lima contraentrega (24h), provincia por Shalom/Olva con adelanto.&#10;Pagos: Yape/Plin al 999 999 999 (Percy Flores).&#10;Nunca prometemos resultados médicos. Si piden hablar con una persona, transferir.">${esc(c.negocio||"")}</textarea>
-      <div class="acts"><button class="btn ia" id="saveNegocio">Guardar conocimiento</button></div>
+      <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
+      ${NEG_FIELDS.map(field).join("")}
+      <label style="margin-top:18px">Preguntas frecuentes del negocio (FAQ)</label>
+      <div class="desc" style="margin-top:0">Las dudas que más te hacen y su respuesta ideal. La IA responderá con estas.</div>
+      <div id="faqList" style="margin-top:8px"></div>
+      <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
+      <label style="margin-top:18px">Información adicional (texto libre)</label>
+      <textarea class="in" id="nf_extra" rows="3" style="min-height:60px;line-height:1.5;resize:vertical" placeholder="Cualquier otra cosa que la IA deba saber y no encaje arriba.">${esc(form.extra||"")}</textarea>
+      <div class="acts"><button class="btn ia" id="saveNegocio">Guardar conocimiento</button>
+        <button class="btn" id="previewNeg" style="border:1px solid var(--border)">Ver cómo lo lee la IA</button></div>
     </div>`;
+  const paintFaq=()=>{
+    const box=$("faqList"); box.innerHTML="";
+    if(!form.faq.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Sin preguntas todavía.</div>`; }
+    form.faq.forEach((qa,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+      el.innerHTML=`<div class="row"><div class="f" style="flex:1"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/></div>
+        <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button></div>
+        <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
+      el.querySelector(".fq").oninput=(e)=>qa.q=e.target.value;
+      el.querySelector(".fa").oninput=(e)=>qa.a=e.target.value;
+      el.querySelector("button.danger").onclick=()=>{ form.faq.splice(i,1); paintFaq(); };
+      box.appendChild(el);
+    });
+  };
+  paintFaq();
+  $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
+  const harvest=()=>{ NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; }); form.extra=$("nf_extra").value; };
+  $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("saveNegocio").onclick=async(e)=>{
+    harvest();
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const negocio=$("g_negocio").value.trim()||null;
-    const { error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId);
+    const negocio=compileNegocio(form).trim()||null;
+    let { error }=await supa.from("channels").update({ negocio, negocio_form:form }).eq("id",st.channelId);
+    if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
-    st.channel.negocio=negocio; toast("Conocimiento guardado ✓");
+    st.channel.negocio=negocio; st.channel.negocio_form=form; toast("Conocimiento guardado ✓");
   };
 }
 
@@ -337,6 +438,117 @@ function renderPerfiles(b){
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
     st.channel.ia_perfiles=ia_perfiles; toast("Perfiles guardados ✓");
+  };
+}
+
+// ── Validador de comprobantes (OCR) ────────────────────────────────
+function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titular:true, verificar_monto:true, tolerancia_monto:0, verificar_fecha:true, fecha_max_horas:48, operacion_unica:true, rechazar_editados:true, exigencia:"media" }, instrucciones:"" }; }
+const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
+function ocrPreview(o){
+  if(o.activo===false) return "";
+  const r=o.reglas||{}; const L=[];
+  L.push("Eres un validador experto de comprobantes de pago de Perú (Yape, Plin, transferencias BCP/BBVA/Interbank…). Analiza la captura con máximo detalle y criterio anti-fraude.");
+  const mets=(o.metodos||[]).filter(m=>m.app||m.titular||m.numero);
+  if(mets.length) L.push("## Métodos de pago VÁLIDOS\n"+mets.map(m=>"- "+[m.app&&`App/Banco: ${m.app}`,m.titular&&`Titular: ${m.titular}`,m.numero&&`Número/cuenta: ${m.numero}`,m.notas&&`(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
+  const rls=[];
+  if(mets.length&&r.verificar_titular!==false) rls.push("El destinatario debe coincidir con un método válido, si no → INVÁLIDO.");
+  if(r.verificar_monto) rls.push("Extrae el monto y verifica que cubra lo acordado.");
+  if(r.verificar_fecha) rls.push(`La fecha debe ser reciente (máx ${Number(r.fecha_max_horas??48)} h).`);
+  if(r.operacion_unica) rls.push("Extrae el número de operación (clave anti-reuso).");
+  if(r.rechazar_editados) rls.push("Detecta montajes/ediciones; ante duda → INVÁLIDO.");
+  rls.push("Exigencia: "+(r.exigencia||"media")+".");
+  L.push("## Reglas\n"+rls.map(x=>"- "+x).join("\n"));
+  if(o.instrucciones&&o.instrucciones.trim()) L.push("## Instrucciones del negocio\n"+o.instrucciones.trim());
+  L.push('Responde en JSON: {"valido":bool,"monto":number,"operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"..."}.');
+  return L.join("\n\n");
+}
+function renderValidador(b){
+  st.ocr = (st.channel.ocr_config && typeof st.channel.ocr_config==="object")
+    ? { ...defaultOcr(), ...st.channel.ocr_config, reglas:{ ...defaultOcr().reglas, ...(st.channel.ocr_config.reglas||{}) } }
+    : defaultOcr();
+  if(!Array.isArray(st.ocr.metodos)) st.ocr.metodos=[];
+  const o=st.ocr, r=o.reglas;
+  const chk=(key,label,desc)=>`<label class="ocrchk"><input type="checkbox" data-r="${key}" ${r[key]?"checked":""}/> <span><b>${label}</b><small>${desc}</small></span></label>`;
+  b.innerHTML=`
+    <h2>Validador de comprobantes</h2>
+    <p class="sub">Dale a la IA el criterio de tu negocio para <b>reconocer y validar pagos</b> (Yape, Plin, transferencias). Se inyecta solo a los nodos ${icon("sparkles")} IA de tipo <b>“analizar imagen”</b> (OCR) — no repites nada en cada flujo.</p>
+    <div class="ia-hero2">
+      <span class="ia-badge2">${IC.shield}<span>Cómo funciona</span></span>
+      <p>Cuando llega una captura de pago, la IA la lee y verifica que el <b>destinatario</b> sea uno de tus métodos válidos, que el <b>monto</b>, la <b>fecha</b> y el <b>nº de operación</b> tengan sentido, y detecta <b>montajes/ediciones</b>. Devuelve una conclusión (válido/ inválido + motivo) que tus flujos usan para aprobar o rechazar automáticamente.</p>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.shield}</span><span class="nm">Validador inteligente</span>
+        <div class="sw ${o.activo!==false?'on':''}" id="ocrSw" title="Activar/desactivar" style="margin-left:auto"></div></div>
+      <div class="desc">Con esto activo, cada OCR valida con las reglas de abajo. Apágalo para que la IA solo lea lo que le pidas en el prompt del nodo.</div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("dollar")}</span><span class="nm">Métodos de pago aceptados</span></div>
+      <div class="desc">A qué cuentas/números debe llegar el pago. Si el comprobante va a otro destinatario, la IA lo marca inválido.</div>
+      <div id="ocrMet" style="margin-top:8px"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${OCR_PRESETS.map(v=>`<button class="btn ocrpre" data-app="${v}" style="height:32px;padding:0 12px;font-size:12px;border:1px solid var(--border)">+ ${v}</button>`).join("")}</div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("alert")}</span><span class="nm">Reglas de validación</span></div>
+      <div class="ocrgrid">
+        ${chk("verificar_titular","Verificar destinatario","El titular/número debe coincidir con un método válido.")}
+        ${chk("verificar_monto","Verificar monto","Extrae el monto y comprueba que cubra lo acordado.")}
+        ${chk("verificar_fecha","Verificar fecha","El comprobante debe ser reciente.")}
+        ${chk("operacion_unica","Número de operación","Extrae la constancia/operación (anti-reuso).")}
+        ${chk("rechazar_editados","Detectar montajes","Sospecha de capturas editadas o alteradas.")}
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="f"><label style="margin-top:0">Antigüedad máx. (horas)</label><input class="in" id="ocrHoras" type="number" min="1" max="720" value="${Number(r.fecha_max_horas??48)}" style="max-width:150px"/></div>
+        <div class="f"><label style="margin-top:0">Nivel de exigencia</label>
+          <select class="in" id="ocrExig" style="max-width:260px">
+            <option value="baja" ${r.exigencia==="baja"?"selected":""}>Baja — aprueba si lo esencial coincide</option>
+            <option value="media" ${(!r.exigencia||r.exigencia==="media")?"selected":""}>Media — equilibrio (recomendado)</option>
+            <option value="alta" ${r.exigencia==="alta"?"selected":""}>Alta — rechaza ante cualquier duda</option>
+          </select></div>
+      </div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Instrucciones extra para la IA</span></div>
+      <textarea class="in" id="ocrInstr" rows="4" style="min-height:80px;line-height:1.5;resize:vertical" placeholder="Ej.: Aceptamos solo pagos en soles. Si el nombre está parcialmente tapado pero el número coincide, apruébalo. Rechaza capturas de 'pago programado' aún no ejecutado.">${esc(o.instrucciones||"")}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn ia" id="ocrSave">Guardar validador</button>
+      <button class="btn" id="ocrPrev" style="border:1px solid var(--border)">Ver instrucciones que recibe la IA</button>
+    </div>`;
+  $("ocrSw").onclick=()=>{ o.activo=!(o.activo!==false); $("ocrSw").classList.toggle("on",o.activo); };
+  b.querySelectorAll("[data-r]").forEach(cb=> cb.onchange=()=>{ r[cb.dataset.r]=cb.checked; });
+  $("ocrHoras").oninput=(e)=>r.fecha_max_horas=Math.max(1,Number(e.target.value)||48);
+  $("ocrExig").onchange=(e)=>r.exigencia=e.target.value;
+  $("ocrInstr").oninput=(e)=>o.instrucciones=e.target.value;
+  const paintMet=()=>{
+    const box=$("ocrMet"); box.innerHTML="";
+    if(!o.metodos.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Agrega al menos un método de pago (usa los botones de abajo).</div>`; }
+    o.metodos.forEach((m,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+      el.innerHTML=`<div class="row">
+        <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Yape"/></div>
+        <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Percy Flores"/></div>
+        <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="999 999 999"/></div>
+        <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
+      </div>
+      <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo soles, no aceptar de terceros" style="margin-top:8px"/>`;
+      el.querySelector(".mApp").oninput=(e)=>m.app=e.target.value;
+      el.querySelector(".mTit").oninput=(e)=>m.titular=e.target.value;
+      el.querySelector(".mNum").oninput=(e)=>m.numero=e.target.value;
+      el.querySelector(".mNot").oninput=(e)=>m.notas=e.target.value;
+      el.querySelector("button.danger").onclick=()=>{ o.metodos.splice(i,1); paintMet(); };
+      box.appendChild(el);
+    });
+  };
+  paintMet();
+  b.querySelectorAll(".ocrpre").forEach(btn=> btn.onclick=()=>{ o.metodos.push({ app:btn.dataset.app, titular:"", numero:"", notas:"" }); paintMet(); });
+  $("ocrPrev").onclick=()=>{ const md=ocrPreview(o)||"(el validador está desactivado)"; askText({title:"Instrucciones del validador",message:"Esto es lo que la IA recibe al analizar un comprobante.",label:"Contexto",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
+  $("ocrSave").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    o.metodos=o.metodos.filter(m=>m.app||m.titular||m.numero);
+    const { error }=await supa.from("channels").update({ ocr_config:o }).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/ocr_config|column/.test(error.message)?"Falta aplicar la migración 0026":error.message,true); return; }
+    st.channel.ocr_config=o; toast("Validador guardado ✓");
   };
 }
 

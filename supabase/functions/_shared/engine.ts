@@ -884,20 +884,56 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
 }
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
-// Conocimiento del canal (negocio + perfiles de IA por rol), cacheado por run.
-async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any }> {
+// Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
+async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any }> {
   let info = (run as any)._chIa;
   if (!info) {
-    info = { negocio: null, perfiles: {} };
+    info = { negocio: null, perfiles: {}, ocr: null };
     try {
       const { data: ch } = await db.from("channels")
-        .select("negocio, ia_perfiles").eq("id", run.channel_id).maybeSingle();
+        .select("negocio, ia_perfiles, ocr_config").eq("id", run.channel_id).maybeSingle();
       info.negocio = (ch as any)?.negocio ?? null;
       info.perfiles = (ch as any)?.ia_perfiles ?? {};
-    } catch (_) { /* migración 0023 pendiente */ }
+      info.ocr = (ch as any)?.ocr_config ?? null;
+    } catch (_) {
+      // Reintento sin ocr_config por si la migración 0026 no está aplicada.
+      try {
+        const { data: ch } = await db.from("channels").select("negocio, ia_perfiles").eq("id", run.channel_id).maybeSingle();
+        info.negocio = (ch as any)?.negocio ?? null;
+        info.perfiles = (ch as any)?.ia_perfiles ?? {};
+      } catch (_2) { /* migración 0023 pendiente */ }
+    }
     (run as any)._chIa = info;
   }
   return info;
+}
+
+// Construye el contexto de sistema para validar comprobantes de pago a partir
+// del "Validador de comprobantes" del canal (Sección IA). Hace que el nodo IA
+// de OCR reconozca pagos con criterio de negocio (destinatario correcto, monto,
+// fecha, anti-fraude) sin tener que repetirlo en cada flujo.
+function buildOcrSystem(ocr: any): string | null {
+  if (!ocr || ocr.activo === false) return null;
+  const metodos = Array.isArray(ocr.metodos) ? ocr.metodos.filter((m: any) => m && (m.app || m.titular || m.numero)) : [];
+  const r = ocr.reglas ?? {};
+  const p: string[] = [];
+  p.push("Eres un validador experto de comprobantes de pago de Perú (Yape, Plin, y transferencias de BCP, BBVA, Interbank, Scotiabank, etc.). Analiza la captura con el máximo detalle y criterio anti-fraude.");
+  if (metodos.length) {
+    p.push("## Métodos de pago VÁLIDOS de este negocio\nEl pago solo es válido si va dirigido a uno de estos destinatarios:\n" +
+      metodos.map((m: any) => "- " + [m.app && `App/Banco: ${m.app}`, m.titular && `Titular esperado: ${m.titular}`, m.numero && `Número/cuenta: ${m.numero}`, m.notas && `(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
+  }
+  const reglas: string[] = [];
+  if (metodos.length && r.verificar_titular !== false) reglas.push("El destinatario/titular del comprobante DEBE coincidir con uno de los métodos válidos. Si no coincide, es INVÁLIDO.");
+  if (r.verificar_monto) reglas.push("Extrae el monto pagado y verifica que cubra el monto acordado con el cliente" + (r.tolerancia_monto ? ` (tolerancia ±${r.tolerancia_monto}).` : "."));
+  if (r.verificar_fecha) reglas.push(`La fecha/hora del comprobante debe ser reciente (no más de ${Number(r.fecha_max_horas ?? 48)} horas). Si es antigua, márcalo como sospechoso.`);
+  if (r.operacion_unica) reglas.push("Extrae el número de operación/constancia. Es la clave anti-reuso: si falta o es ilegible, desconfía.");
+  if (r.rechazar_editados) reglas.push("Detecta señales de edición/montaje (tipografías inconsistentes, recortes, píxeles alterados, datos que no cuadran). Ante duda razonable, INVÁLIDO.");
+  const nivel = r.exigencia === "alta" ? "ALTA (rechaza ante cualquier duda)" : r.exigencia === "baja" ? "BAJA (aprueba si lo esencial coincide)" : "MEDIA (equilibrio entre seguridad y fluidez)";
+  reglas.push(`Nivel de exigencia: ${nivel}.`);
+  p.push("## Reglas de validación\n" + reglas.map((x) => "- " + x).join("\n"));
+  if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
+  p.push('Devuelve tu conclusión en JSON: {"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no"}. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
+  return p.join("\n\n");
 }
 // Perfil por defecto según la operación del nodo (§6-OCTIES).
 const PERFIL_POR_OP: Record<string, string> = {
@@ -920,6 +956,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
     if (system) parts.push(system);
     if (parts.length) system = parts.join("\n\n");
+  }
+  // OCR: inyecta el "Validador de comprobantes" del canal (métodos válidos +
+  // reglas anti-fraude) para que la IA reconozca pagos con criterio de negocio.
+  if (op === "analizar_imagen" && cfg.usar_validador !== false) {
+    const vt = buildOcrSystem(info.ocr);
+    if (vt) system = system ? (vt + "\n\n" + system) : vt;
   }
 
   try {

@@ -348,7 +348,11 @@ export function installCanvas(editor){
   // En captura + stopPropagation para ganarle al handler propio de Drawflow.
   editor.container.addEventListener("wheel",(e)=>{
     e.preventDefault(); e.stopPropagation();
-    const factor=e.deltaY<0 ? 1.12 : 1/1.12;
+    // Zoom exponencial proporcional al desplazamiento de la rueda/trackpad:
+    // suave y preciso (mantiene fijo el punto exacto bajo el cursor). Se acota
+    // el delta por evento para que un "flick" fuerte no salte de golpe.
+    const dy=Math.max(-60,Math.min(60,e.deltaY));
+    const factor=Math.exp(-dy*0.0022);
     zoomAt(editor, (editor.zoom||1)*factor, e.clientX, e.clientY);
   }, { passive:false, capture:true });
 
