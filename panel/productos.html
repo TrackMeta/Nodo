@@ -34,7 +34,13 @@
   .flowrow{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--border)}
   .badge{font-size:10px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
-  .linkbtn{font-size:12.5px;padding:6px 12px;border:1px solid var(--border);border-radius:9px;color:var(--text);text-decoration:none;font-weight:600;display:inline-flex;align-items:center}
+  .linkbtn{font-size:12.5px;padding:6px 12px;border:1px solid var(--border);border-radius:9px;color:var(--text);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:5px}
+  .ico{width:16px;height:16px;flex:none}
+  .linkbtn .ico{width:14px;height:14px}
+  #emojiBtn .ico{width:20px;height:20px}
+  .nodo-pill .ico{width:12px;height:12px;vertical-align:-1px;margin-right:3px}
+  .nodo-folder .ico{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+  h4 .ico{width:15px;height:15px;vertical-align:-2px;margin-right:5px}
   .empty{color:var(--faint);text-align:center;padding:40px}
   .sw{position:relative;width:38px;height:22px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);flex:none;cursor:pointer;transition:.15s}
   .sw.on{background:var(--green,#22c079);border-color:var(--green,#22c079)}
@@ -78,11 +84,21 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", localFolders:new Set() };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-const EMOJIS=["📕","💪","🏋️","🥊","🎯","🧠","💰","📈","🚀","🔥","⚡","🎓","🍳","🌱","❤️","✨","📱","🎸","🎨","🐶","⚽","🧘","💊","🛠️","📷"];
+// Emojis para IDENTIFICAR el producto (se muestran sobre el avatar en la
+// Bandeja). El emoji del producto se conserva; el picker ofrece TODOS.
+const EMOJI_CATS=[
+  { n:"Populares", e:"📕💪🏋️🥊🎯🧠💰📈🚀🔥⚡🎓🍳🌱❤️✨📱🎸🎨🐶⚽🧘💊🛠️📷👟👕👗👠👜🧴🎁📦" },
+  { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😋😎🥸🤩🥳😏🤔🤗🤭🥺😴🤤🤠🤑🤖😺" },
+  { n:"Animales y naturaleza", e:"🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐸🐵🐔🐧🐦🦆🦅🦉🐺🐗🐴🦄🐝🦋🐢🐍🐙🦐🦀🐠🐬🐳🦈🐊🐅🦓🦍🐘🐪🦒🐕🐈🌵🌲🌴🌱🌿☘️🍀🎋🍁🍄🌾💐🌷🌹🌺🌸🌼🌻🌞⭐🌟✨⚡🔥🌈☀️❄️💧" },
+  { n:"Comida y bebida", e:"🍏🍎🍐🍊🍋🍌🍉🍇🍓🫐🍈🍒🍑🥭🍍🥥🥝🍅🥑🥦🥬🥒🌶️🌽🥕🧄🧅🥔🍠🥐🍞🥨🧀🥚🍳🥞🧇🥓🥩🍗🍖🌭🍔🍟🍕🥪🌮🌯🥗🍝🍜🍲🍣🍱🍙🍚🍤🍢🍡🍧🍨🍦🥧🧁🍰🎂🍮🍭🍬🍫🍿🍩🍪🍯🥛☕🍵🧃🥤🧋🍶🍺🍻🥂🍷🥃🍸🍹" },
+  { n:"Actividades y objetos", e:"⚽🏀🏈⚾🎾🏐🏉🎱🏓🏸🏒🏑⛳🏹🎣🥊🥋🎽⛸️🎿🏂🏋️🏄🏊🚴🏆🥇🥈🥉🏅🎖️🎫🎪🤹🎭🎨🎬🎤🎧🎼🎹🥁🎷🎺🎸🎻🎲🎯🎳🎮🕹️🧩♟️📱💻⌨️🖥️🖨️📷📸📹🎥📞☎️📺📻🎙️⏰🔋🔌💡🔦🕯️💸💵💴💶💷💰💳💎⚖️🧰🔧🔨🛠️⚙️🧲🔫💣🔪🗡️🛡️🚬🔮📿🧿⚗️🔭🔬💊💉🩸🩺🌡️🧹🧺🧻🚽🚿🛁🧼🪒🧽🧴🔑🗝️🚪🛋️🛏️🧸🖼️🛍️🛒🎁🎈🎀🎊🎉✉️📩📦📝✏️📏📐✂️📌📍" },
+  { n:"Viajes y símbolos", e:"🚗🚕🚙🚌🚎🏎️🚓🚑🚒🚚🚛🚜🛴🚲🛵🏍️🚨✈️🚀🛸🚁⛵🚤🚢⚓⛽🚦🗺️🗿🗽🏰🏯🎡🎢🎠⛲🏖️🏝️🏜️🌋⛰️🏔️🏕️🏠🏡🏢🏬🏥🏦🏨🏪🏫⛪🕌✅❌⭕❗❓💯🔴🟠🟡🟢🔵🟣⚫⚪🟤🔶🔷🔸🔹⭐❤️🧡💛💚💙💜🖤🤍💔♻️⚜️🔱" },
+];
+function splitEmojis(str){ try{ return [...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(str)].map(s=>s.segment); }catch(_){ return Array.from(str); } }
 
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
@@ -110,9 +126,9 @@ function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") ret
 function renderFolders(){
   const isReal=st.folder!=="__all"&&st.folder!=="__none";
   const tabs=[["__all","Todos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":icon("folder")}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
   $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
@@ -141,7 +157,7 @@ function renderCards(){
       <div class="c-ic">${icon}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${p.tipo==="fisico"?"Producto físico · envíos":(p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única")}</div>
-      <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?"📦 Físico":"💾 Digital"}</span><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">📁 ${esc(p.folder)}</span>`:''}</div>`;
+      <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -191,8 +207,8 @@ function renderDatos(){
   b.innerHTML=`
     <div class="row" style="align-items:flex-start">
       <div style="flex:none"><label style="margin-top:0">Emoji</label>
-        <button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji||"➕"}</button>
-        <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);max-width:280px;flex-wrap:wrap;gap:2px;margin-top:4px"></div>
+        <button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("plus")}</button>
+        <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:4px"></div>
       </div>
       <div style="flex:1;min-width:180px"><label style="margin-top:0">Nombre del producto</label>
         <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
@@ -203,8 +219,8 @@ function renderDatos(){
         <select class="sel" id="pFolder" style="width:100%"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
       <div><label>Tipo de producto</label>
         <select class="sel" id="pTipo" style="width:100%">
-          <option value="digital" ${(st.prod.tipo||"digital")==="digital"?"selected":""}>💾 Digital (entrega por link)</option>
-          <option value="fisico" ${st.prod.tipo==="fisico"?"selected":""}>📦 Físico (envíos Lima / provincia)</option>
+          <option value="digital" ${(st.prod.tipo||"digital")==="digital"?"selected":""}>Digital (entrega por link)</option>
+          <option value="fisico" ${st.prod.tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
         </select></div>
     </div>
     <div id="envioCard"></div>
@@ -229,15 +245,15 @@ function renderDatos(){
   pop.innerHTML=`
     <input id="emojiAny" placeholder="Escribe o pega cualquier emoji…" maxlength="8"
       style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:16px;outline:none;margin-bottom:6px"/>
-    <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Tip: <b>Win + .</b> (o <b>Ctrl+Cmd+Espacio</b> en Mac) abre el teclado de emojis.</div>
-    <div style="display:flex;flex-wrap:wrap;gap:2px">
-      ${EMOJIS.map(e=>`<button type="button" data-e="${e}" style="width:34px;height:34px;font-size:20px;padding:0;border:none;background:transparent;cursor:pointer;border-radius:8px">${e}</button>`).join("")}
-      <button type="button" data-e="" title="Sin emoji" style="width:34px;height:34px;padding:0;border:none;background:transparent;color:var(--muted);cursor:pointer;border-radius:8px">✕</button>
-    </div>`;
+    <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Tip: <b>Win + .</b> (o <b>Ctrl+Cmd+Espacio</b> en Mac) abre el teclado de emojis.</div>
+    <div style="max-height:230px;overflow-y:auto;margin:0 -2px">
+      ${EMOJI_CATS.map(c=>`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:8px 4px 3px">${c.n}</div><div style="display:flex;flex-wrap:wrap;gap:1px">${splitEmojis(c.e).map(e=>`<button type="button" data-e="${e}" style="width:32px;height:32px;font-size:19px;padding:0;border:none;background:transparent;cursor:pointer;border-radius:8px;line-height:1">${e}</button>`).join("")}</div>`).join("")}
+    </div>
+    <button type="button" data-e="" title="Sin emoji" style="margin-top:6px;width:100%;height:30px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:8px;font-size:12px">Sin emoji</button>`;
   pop.style.display="none";
   ebtn.onclick=(ev)=>{ ev.stopPropagation(); pop.style.display=pop.style.display==="none"?"flex":"none"; if(pop.style.display==="flex"){ const inp=$("emojiAny"); if(inp){ inp.value=st.prod.emoji||""; inp.focus(); } } };
   pop.onclick=(ev)=>ev.stopPropagation();
-  const setEmoji=(v)=>{ st.prod.emoji=(v&&v.trim())||null; ebtn.textContent=st.prod.emoji||"➕"; };
+  const setEmoji=(v)=>{ st.prod.emoji=(v&&v.trim())||null; ebtn.innerHTML=st.prod.emoji?esc(st.prod.emoji):icon("plus"); };
   pop.querySelectorAll("button[data-e]").forEach(b=> b.onclick=()=>{ setEmoji(b.dataset.e); pop.style.display="none"; });
   const any=$("emojiAny");
   any.oninput=(e)=>setEmoji(e.target.value);
@@ -263,7 +279,7 @@ function renderEnvio(){
   const ag=(a)=>(e.agencias||[]).includes(a);
   box.innerHTML=`
     <div class="card" style="margin-top:16px">
-      <h4>📦 Envío y cobro</h4>
+      <h4>${icon("truck")}Envío y cobro</h4>
       <div style="font-size:12px;color:var(--faint)">Cómo se cobra y despacha este producto. El flujo de venta física lee esta configuración.</div>
       <div class="row" style="margin-top:4px">
         <div><label>Adelanto (provincia)</label>
@@ -329,7 +345,7 @@ async function renderFlujos(){
         <input class="in" id="skRole" placeholder="rol (bienvenida, pago…)"/>
         <button class="btn primary" id="skAdd" style="flex:0 0 auto">Clonar</button>
       </div>
-      <div style="font-size:12px;color:var(--faint);margin-top:8px">Los esqueletos se crean en el editor (🕸). El clon queda ligado a este producto.</div>
+      <div style="font-size:12px;color:var(--faint);margin-top:8px">Los esqueletos se crean en el editor de Flujos. El clon queda ligado a este producto.</div>
     </div>`;
   const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id).order("created_at");
   const fb=$("flowbox"); fb.innerHTML="";
@@ -338,7 +354,7 @@ async function renderFlujos(){
     const el=document.createElement("div"); el.className="flowrow";
     el.innerHTML=`<div style="flex:1"><div style="font-weight:700;font-size:14px">${esc(f.nombre)}</div><div style="font-size:12px;color:var(--faint)">${esc(f.role||"flujo")}</div></div>
       <span class="badge ${f.estado==='activo'?'on':''}">${f.estado}</span>
-      <a class="linkbtn" href="editor.html?flow=${f.id}">Editar 🕸</a>`;
+      <a class="linkbtn" href="editor.html?flow=${f.id}">${icon("edit")}Editar</a>`;
     fb.appendChild(el);
   });
   const { data:sks } = await supa.from("flows").select("id,nombre").eq("channel_id",st.channelId).eq("kind","skeleton").order("nombre");
@@ -371,7 +387,7 @@ async function renderActivacion(){
   st.act={ flow:flow||null, node:null, kw:null, ad:null, others:[] };
   if(!flow){
     root.innerHTML=`<div class="card">
-      <h4>🚀 Mensajes iniciales</h4>
+      <h4>${icon("message")}Mensajes iniciales</h4>
       <div style="font-size:13px;color:var(--muted);margin:8px 0 14px;line-height:1.55">Los mensajes con los que arranca el chat cuando el cliente escribe tu palabra clave (o llega desde tu anuncio). Podés crear <b>varias versiones que el bot rota</b> para variar el copy y reducir el riesgo de baneo.</div>
       <button class="btn primary" id="createWelcome">Crear mensajes iniciales</button></div>`;
     $("createWelcome").onclick=createWelcome;
@@ -431,7 +447,7 @@ function renderComposer(){
   const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
   root.innerHTML=`
     <div class="card">
-      <h4>⚡ Disparadores — cómo se activa</h4>
+      <h4>${icon("activity")}Disparadores — cómo se activa</h4>
       <div style="font-size:12px;color:var(--faint);margin:4px 0 12px">Palabras clave (cada anuncio puede traer la suya) y, opcional, los <b>ID de anuncio</b> de Meta que activan este producto sin depender del texto.</div>
       <label style="font-size:11.5px;color:var(--muted);font-weight:600">Palabras / frases clave</label>
       <div class="row" style="margin:6px 0 0">
@@ -448,7 +464,7 @@ function renderComposer(){
 
     <div class="card">
       <div style="display:flex;align-items:center;gap:10px">
-        <div style="flex:1"><h4 style="margin:0">🎲 Mensajes iniciales</h4>
+        <div style="flex:1"><h4 style="margin:0">${icon("message")}Mensajes iniciales</h4>
           <div style="font-size:12px;color:var(--faint);margin-top:3px">Varias versiones que el bot rota por peso. Cada versión puede tener uno o varios mensajes.</div></div>
         <div style="text-align:right"><div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px">Rotación</div>
           <div class="sw ${cfg.activo!==false?'on':''}" id="rotSw" title="Activar/desactivar rotación"></div></div>
@@ -459,7 +475,7 @@ function renderComposer(){
     </div>
 
     <div class="card">
-      <h4>➡️ Y después de los mensajes iniciales</h4>
+      <h4>${icon("secuencias")}Y después de los mensajes iniciales</h4>
       <div class="row" style="margin-top:8px">
         <select class="sel" id="actDespues" style="flex:0 0 220px">
           <option value="nada"${des.modo==="nada"?" selected":""}>Nada (solo los mensajes)</option>
@@ -475,7 +491,7 @@ function renderComposer(){
 
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
       <button class="btn primary" id="saveWelcome">Guardar mensajes iniciales</button>
-      <a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">Abrir en editor visual 🕸</a>
+      <a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">${icon("flujos")}Abrir en editor visual</a>
     </div>`;
 
   // Rotación toggle
@@ -497,7 +513,7 @@ function renderComposer(){
           <input class="in vpeso" type="number" min="0" step="1" style="width:58px;height:34px;text-align:center" value="${Number(v.peso??1)}"/>
           <span style="font-size:11px;color:var(--brand);font-weight:700;min-width:34px">${v.activo!==false?share+'%':'—'}</span></div>
         <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
-        <button class="iconbtn vdelVar" title="Eliminar versión">🗑</button>
+        <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
       </div>
       <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
@@ -527,19 +543,19 @@ function renderBubble(v,vi,bub,bi){
   el.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
   const isMedia=!!bub.media_url;
   const kind=bub.media_kind||"text";
-  const icon={text:"📝",image:"🖼️",video:"🎥",audio:"🎙️",document:"📄"}[kind]||"📝";
+  const tIco={text:"note",image:"image",video:"video",audio:"mic",document:"file"}[kind]||"note";
   let preview="";
   if(kind==="image") preview=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
   else if(kind==="video") preview=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
   else if(kind==="audio") preview=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
-  else if(kind==="document") preview=`<div style="font-size:12px;margin-bottom:7px">📄 ${esc(bub.filename||"documento")}</div>`;
+  else if(kind==="document") preview=`<div style="font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"documento")}</div>`;
   el.innerHTML=`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:${isMedia?'8px':'6px'}">
-      <span style="font-size:14px">${icon}</span>
+      <span style="display:inline-flex;color:var(--muted)">${icon(tIco)}</span>
       <span style="font-size:11px;color:var(--muted);font-weight:600;flex:1">${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
       <button class="iconbtn bup" title="Subir">▲</button>
       <button class="iconbtn bdown" title="Bajar">▼</button>
-      <button class="iconbtn bdel" title="Quitar">🗑</button>
+      <button class="iconbtn bdel" title="Quitar">${icon("trash")}</button>
     </div>
     ${preview}
     ${kind==="text"
