@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Palabras clave</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column}
+  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:860px;margin:0 auto;width:100%}
+  h1{font-size:26px;margin:0 0 4px;font-weight:700;letter-spacing:-.4px}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 20px;line-height:1.5}
+  a.link{color:var(--brand);text-decoration:none} a.link:hover{text-decoration:underline}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:20px}
+  .panel h3{margin:0 0 4px;font-size:15px;font-weight:700}
+  .panel .sub{color:var(--muted);font-size:12px;margin:0 0 16px;line-height:1.5}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 7px;font-weight:600}
+  .in,select.in,textarea.in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none;font-family:inherit}
+  .in,select.in{height:40px}
+  textarea.in{padding:10px 12px;min-height:66px;resize:vertical;line-height:1.5}
+  .in:focus,select.in:focus,textarea.in:focus{border-color:var(--brand)}
+  .btn{height:40px;padding:0 18px;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+  .btn:hover{background:var(--brand-2)}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .btn.ghost:hover{border-color:var(--brand);background:transparent}
+  .btn svg{width:16px;height:16px}
+  .row{display:flex;gap:14px;flex-wrap:wrap} .row>*{flex:1;min-width:150px}
+
+  /* Tabs */
+  .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border)}
+  .tab{background:none;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:10px 16px;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.on{color:var(--text);border-bottom-color:var(--brand)}
+  .tabpane{display:none} .tabpane.on{display:block}
+
+  /* Simulador */
+  .sim{background:linear-gradient(180deg,var(--brand-bg),var(--surface));border:1px solid var(--brand);border-radius:16px;padding:18px 20px;margin-bottom:22px}
+  .sim h3{margin:0 0 2px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .sim .sub{color:var(--muted);font-size:12px;margin:0 0 14px}
+  .simrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .simrow .f{flex:1;min-width:220px}
+  .simres{margin-top:14px;display:none}
+  .simres.on{display:block}
+  .badge{display:inline-flex;align-items:center;gap:6px;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700}
+  .badge.keyword{background:#12331f;color:var(--green)} .badge.referral{background:#132a3f;color:#4aa8ff}
+  .badge.ia{background:#2a1f3f;color:#b389ff} .badge.fallback{background:#3a2e12;color:var(--amber)}
+  .badge.entrada{background:#1b222c;color:var(--muted)} .badge.none{background:var(--red-bg);color:var(--red)}
+  .resline{margin-top:10px;font-size:13px;color:var(--text)} .resline b{font-weight:700}
+  .resmeta{margin-top:5px;font-size:12px;color:var(--muted)}
+
+  /* Lista de palabras clave */
+  .kw{display:flex;flex-direction:column;gap:12px}
+  .kwrow{border:1px solid var(--border);border-radius:13px;background:var(--surface);padding:14px 16px}
+  .kwrow.warn{border-color:var(--amber)}
+  .kwrow .head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .kwrow .dest{font-size:13.5px;font-weight:700;flex:1;display:flex;align-items:center;gap:7px;min-width:0}
+  .kwrow .dest .em{font-size:15px}
+  .kwrow .dest .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--surface-2);color:var(--muted);border:1px solid var(--border);flex:none}
+  .pill.est-activo{color:var(--green);border-color:#1f5a3a} .pill.est-borrador{color:var(--amber);border-color:#5a4a1f}
+  .kwrow .body{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .kwrow .body .kf{flex:1;min-width:220px}
+  .kwrow .body .mf{width:150px;flex:none}
+  .sw{position:relative;width:38px;height:22px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);flex:none;transition:.15s;cursor:pointer}
+  .sw.on{background:var(--green);border-color:var(--green)}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
+  .sw.on::after{transform:translateX(16px)}
+  .iconbtn{width:34px;height:34px;flex:none;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center}
+  .iconbtn:hover{color:var(--red);border-color:var(--red)}
+  .iconbtn svg{width:15px;height:15px}
+  .warnmsg{margin-top:9px;font-size:11.5px;color:var(--amber);display:flex;align-items:center;gap:6px}
+  .warnmsg svg{width:14px;height:14px;flex:none}
+  .empty{text-align:center;color:var(--faint);padding:38px;border:1px dashed var(--border);border-radius:12px}
+  .hint{font-size:11px;color:var(--faint);margin-top:6px}
+
+  /* Router */
+  .rgrid{display:flex;flex-direction:column;gap:16px}
+  .switchline{display:flex;align-items:center;gap:12px}
+  .switchline .txt{flex:1} .switchline .txt .t{font-size:13.5px;font-weight:600} .switchline .txt .d{font-size:12px;color:var(--muted);margin-top:2px}
+  input[type=range]{width:100%;accent-color:var(--brand)}
+  .umbralval{font-weight:700;color:var(--brand)}
+  .intent{border:1px solid var(--border);border-radius:12px;padding:13px 15px;margin-bottom:12px;background:var(--surface)}
+  .intent .ih{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:7px;margin-bottom:9px}
+  .disabled{opacity:.5;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="wrap">
+    <h1>Palabras clave</h1>
+    <p class="lead">Cómo empieza cada chat. Cuando un cliente escribe la frase de tu anuncio (ej. <i>“Hola, quiero más información del producto”</i>) se activa el flujo del producto correcto. Y si escribe a su manera, el <b>IA Router</b> detecta la intención y lo guía igual.</p>
+
+    <!-- SIMULADOR -->
+    <div class="sim">
+      <h3><span id="simIc"></span> Simulador</h3>
+      <p class="sub">Escribe un mensaje de prueba y mira qué flujo se activaría y por qué. No envía nada ni toca contactos.</p>
+      <div class="simrow">
+        <div class="f"><label>Mensaje del cliente</label><input class="in" id="simText" placeholder="Ej. cuánto cuestan las zapatillas?"/></div>
+        <button class="btn" id="simBtn">Probar</button>
+      </div>
+      <div class="simres" id="simRes"></div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab on" data-tab="kw">Palabras clave</button>
+      <button class="tab" data-tab="router">IA Router</button>
+    </div>
+
+    <!-- TAB: PALABRAS CLAVE -->
+    <div class="tabpane on" id="pane-kw">
+      <div class="panel">
+        <h3>Nueva palabra clave</h3>
+        <p class="sub">Elige el flujo que se activa y las frases que lo disparan (separadas por comas). Se guardan en el flujo, así que también las verás en la ficha del producto.</p>
+        <div class="row">
+          <div style="flex:1.2"><label>Flujo a activar</label><select class="in" id="nFlow"></select></div>
+          <div style="flex:none;width:160px"><label>Coincidencia</label>
+            <select class="in" id="nMatch">
+              <option value="contiene">Contiene la frase</option>
+              <option value="empieza">Empieza con</option>
+              <option value="exacta">Exacta</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:12px"><label>Palabras / frases clave</label>
+          <input class="in" id="nKws" placeholder="quiero info, más información, precio, cuánto cuesta"/>
+          <div class="hint">Se normalizan (sin distinguir mayúsculas ni tildes). “Contiene” es lo más flexible para anuncios.</div>
+        </div>
+        <div style="margin-top:14px"><button class="btn" id="addBtn"><span id="plusIc"></span> Agregar</button></div>
+      </div>
+
+      <div class="kw" id="kwList"></div>
+    </div>
+
+    <!-- TAB: IA ROUTER -->
+    <div class="tabpane" id="pane-router">
+      <div class="panel">
+        <h3>IA Router — ruteo por intención</h3>
+        <p class="sub">Segundo nivel: cuando ninguna palabra clave coincide, la IA lee el mensaje y elige el producto que mejor calza. Requiere una API key de IA configurada en <a class="link" href="config.html">Ajustes → IA</a>.</p>
+        <div class="rgrid">
+          <div class="switchline">
+            <div class="txt"><div class="t">Activar IA Router</div><div class="d">Si está apagado, solo rutean las palabras clave y el anuncio.</div></div>
+            <div class="sw" id="rActivo"></div>
+          </div>
+          <div id="rBody">
+            <div style="margin-bottom:16px">
+              <label>Confianza mínima para rutear: <span class="umbralval" id="rUmbralVal">60%</span></label>
+              <input type="range" id="rUmbral" min="30" max="95" step="5" value="60"/>
+              <div class="hint">Más alto = más estricto (menos errores, pero cae más seguido al flujo de respaldo).</div>
+            </div>
+            <div style="margin-bottom:4px">
+              <label>Flujo de respaldo (cuando la IA no está segura)</label>
+              <select class="in" id="rFallback"></select>
+              <div class="hint">Ideal: un flujo tipo “menú” que pregunta “¿de qué producto querés info?”. Si no eliges ninguno, el bot no responde ante mensajes ambiguos.</div>
+            </div>
+          </div>
+          <div><button class="btn" id="saveRouter">Guardar IA Router</button></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Cuándo activar cada producto</h3>
+        <p class="sub">La IA usa esta descripción para decidir. Si la dejas vacía, usa la Descripción/FAQ de la ficha del producto.</p>
+        <div id="intentList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{} };
+
+const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+const WARN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+const FLASK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"/><path d="M14 9.3V2"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.58 16.5h12.85"/></svg>';
+
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function norm(s){return (s??"").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();}
+function flowLabel(f){ const p=f.product_id?st.products[f.product_id]:null; const em=p?.emoji?p.emoji+" ":""; return em+(p?.nombre?p.nombre+" · ":"")+f.nombre; }
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  $("simIc").innerHTML=FLASK; $("plusIc").innerHTML=PLUS;
+  const shell=await mountShell({ active:"palabras" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; loadAll(); });
+  // Tabs
+  document.querySelectorAll(".tab").forEach(t=> t.onclick=()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+    document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("on",p.id==="pane-"+t.dataset.tab));
+  });
+  $("simBtn").onclick=simulate;
+  $("simText").addEventListener("keydown",e=>{ if(e.key==="Enter") simulate(); });
+  $("addBtn").onclick=addKeyword;
+  $("rActivo").onclick=()=>{ st.router.activo=!st.router.activo; renderRouter(); };
+  $("rUmbral").oninput=e=>{ $("rUmbralVal").textContent=e.target.value+"%"; };
+  $("saveRouter").onclick=saveRouter;
+  await loadAll();
+}
+
+async function loadAll(){
+  // Flujos (copias reales, no esqueletos) + productos
+  const { data:flows }=await supa.from("flows")
+    .select("id,nombre,estado,product_id,products(nombre,emoji)")
+    .eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
+  st.flows=flows||[];
+  st.products={};
+  for(const f of st.flows){ if(f.product_id&&f.products) st.products[f.product_id]=f.products; }
+  // Triggers keyword del canal
+  const { data:trg }=await supa.from("flow_triggers")
+    .select("id,flow_id,tipo,config,activo")
+    .eq("channel_id",st.channelId).eq("tipo","keyword").order("id");
+  st.triggers=trg||[];
+  // Config del router + intenciones por producto
+  const { data:ch }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
+  st.router=ch?.ia_router||{};
+  const { data:prods }=await supa.from("products").select("id,nombre,emoji,config").eq("channel_id",st.channelId).order("nombre");
+  st.prodList=prods||[];
+  st.intents={}; for(const p of st.prodList) st.intents[p.id]=p.config?.intencion||"";
+  renderFlowSelects(); renderKeywords(); renderRouter(); renderIntents();
+}
+
+function renderFlowSelects(){
+  const opts=st.flows.map(f=>`<option value="${f.id}">${esc(flowLabel(f))}${f.estado!=="activo"?" (borrador)":""}</option>`).join("");
+  $("nFlow").innerHTML=opts||`<option value="">— No hay flujos —</option>`;
+  const act=st.flows.filter(f=>f.estado==="activo");
+  $("rFallback").innerHTML=`<option value="">— Ninguno (no responder) —</option>`+
+    act.map(f=>`<option value="${f.id}"${st.router.fallback_flow_id===f.id?" selected":""}>${esc(flowLabel(f))}</option>`).join("");
+}
+
+// ── Colisiones: una misma palabra normalizada en 2+ triggers ──
+function collisions(){
+  const map={};
+  for(const t of st.triggers){
+    for(const k of (t.config?.keywords||[])){ const n=norm(k); if(!n) continue; (map[n]=map[n]||[]).push(t.id); }
+  }
+  const conf={};
+  for(const [w,ids] of Object.entries(map)){ if(ids.length>1) for(const id of ids){ (conf[id]=conf[id]||[]).push(w); } }
+  return conf;
+}
+
+function renderKeywords(){
+  const box=$("kwList"); const conf=collisions();
+  if(!st.triggers.length){ box.innerHTML=`<div class="empty">Aún no hay palabras clave. Crea la primera arriba, o hazlo desde la ficha de un producto.</div>`; return; }
+  box.innerHTML="";
+  for(const t of st.triggers){
+    const f=st.flows.find(x=>x.id===t.flow_id);
+    const kws=(t.config?.keywords||[]).join(", ");
+    const match=t.config?.match||"contiene";
+    const warned=conf[t.id];
+    const el=document.createElement("div"); el.className="kwrow"+(warned?" warn":"");
+    const estClass=f?("est-"+f.estado):"";
+    el.innerHTML=`
+      <div class="head">
+        <div class="dest">${f?`<span class="em">${f.product_id&&st.products[f.product_id]?.emoji?st.products[f.product_id].emoji:"🧩"}</span><span class="nm">${esc(flowLabel(f))}</span>`:'<span class="nm" style="color:var(--red)">Flujo eliminado</span>'}</div>
+        ${f?`<span class="pill ${estClass}">${f.estado}</span>`:""}
+        <div class="sw${t.activo?" on":""}" data-act title="Activar/desactivar"></div>
+        <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>
+      </div>
+      <div class="body">
+        <div class="kf"><label>Palabras / frases</label><input class="in kws" value="${esc(kws)}"/></div>
+        <div class="mf"><label>Coincidencia</label>
+          <select class="in mm">
+            <option value="contiene"${match==="contiene"?" selected":""}>Contiene</option>
+            <option value="empieza"${match==="empieza"?" selected":""}>Empieza con</option>
+            <option value="exacta"${match==="exacta"?" selected":""}>Exacta</option>
+          </select>
+        </div>
+      </div>
+      ${warned?`<div class="warnmsg">${WARN} Colisión: <b style="margin:0 4px">${esc([...new Set(warned)].join(", "))}</b> también dispara otro flujo. Ganará cualquiera al azar.</div>`:""}`;
+    el.querySelector(".kws").onchange=e=>updateTrigger(t,{ keywords:splitKws(e.target.value) });
+    el.querySelector(".mm").onchange=e=>updateTrigger(t,{ match:e.target.value });
+    el.querySelector("[data-act]").onclick=()=>toggleTrigger(t);
+    el.querySelector("[data-del]").onclick=()=>removeTrigger(t);
+    box.appendChild(el);
+  }
+}
+function splitKws(raw){ return (raw||"").split(",").map(s=>s.trim()).filter(Boolean); }
+
+async function addKeyword(){
+  const flowId=$("nFlow").value; const kws=splitKws($("nKws").value); const match=$("nMatch").value;
+  if(!flowId){ toast("Elige un flujo",true); return; }
+  if(!kws.length){ toast("Escribe al menos una palabra clave",true); return; }
+  const { error }=await supa.from("flow_triggers").insert({
+    channel_id:st.channelId, flow_id:flowId, tipo:"keyword", config:{ keywords:kws, match }, activo:true
+  });
+  if(error){ toast(error.message,true); return; }
+  $("nKws").value=""; toast("Palabra clave agregada ✓"); await loadAll();
+}
+async function updateTrigger(t, patch){
+  const config={ ...(t.config||{}), ...patch };
+  const { error }=await supa.from("flow_triggers").update({ config }).eq("id",t.id);
+  if(error){ toast(error.message,true); return; }
+  t.config=config; renderKeywords();
+}
+async function toggleTrigger(t){
+  const { error }=await supa.from("flow_triggers").update({ activo:!t.activo }).eq("id",t.id);
+  if(error){ toast(error.message,true); return; }
+  t.activo=!t.activo; renderKeywords();
+}
+async function removeTrigger(t){
+  if(!confirm("¿Eliminar esta palabra clave?")) return;
+  const { error }=await supa.from("flow_triggers").delete().eq("id",t.id);
+  if(error){ toast(error.message,true); return; }
+  toast("Eliminada ✓"); await loadAll();
+}
+
+// ── IA Router ──
+function renderRouter(){
+  $("rActivo").classList.toggle("on",!!st.router.activo);
+  $("rBody").classList.toggle("disabled",!st.router.activo);
+  const um=Math.round((Number(st.router.umbral)||0.6)*100);
+  $("rUmbral").value=um; $("rUmbralVal").textContent=um+"%";
+}
+async function saveRouter(){
+  const router={
+    activo:!!st.router.activo,
+    umbral:Number($("rUmbral").value)/100,
+    fallback_flow_id:$("rFallback").value||null,
+    perfil:st.router.perfil||"extraccion",
+  };
+  const { error }=await supa.from("channels").update({ ia_router:router }).eq("id",st.channelId);
+  if(error){ toast(error.message,true); return; }
+  st.router=router; toast("IA Router guardado ✓");
+}
+
+function renderIntents(){
+  const box=$("intentList");
+  if(!st.prodList?.length){ box.innerHTML=`<div class="empty">No hay productos en este bot.</div>`; return; }
+  box.innerHTML="";
+  for(const p of st.prodList){
+    const el=document.createElement("div"); el.className="intent";
+    const fallbackHint=p.config?.contexto_producto?`Actualmente usa la descripción de la ficha.`:"";
+    el.innerHTML=`
+      <div class="ih">${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</div>
+      <textarea class="in intent-t" placeholder="Ej. El cliente pregunta por zapatillas, zapatos deportivos, talla, running… ${fallbackHint}">${esc(st.intents[p.id]||"")}</textarea>`;
+    const ta=el.querySelector(".intent-t");
+    ta.onchange=()=>saveIntent(p,ta.value.trim());
+    box.appendChild(el);
+  }
+}
+async function saveIntent(p, val){
+  const config={ ...(p.config||{}), intencion:val };
+  const { error }=await supa.from("products").update({ config }).eq("id",p.id);
+  if(error){ toast(error.message,true); return; }
+  p.config=config; st.intents[p.id]=val; toast("Guardado ✓");
+}
+
+// ── Simulador ──
+async function simulate(){
+  const text=$("simText").value.trim();
+  if(!text){ toast("Escribe un mensaje",true); return; }
+  const res=$("simRes"); res.className="simres on"; res.innerHTML="Probando…";
+  const { data, error }=await supa.functions.invoke("route-test",{ body:{ channel_id:st.channelId, text } });
+  if(error){ res.innerHTML=`<span style="color:var(--red)">Error: ${esc(error.message||"no se pudo probar")}</span>`; return; }
+  const flowName=data.flow ? esc(data.flow.nombre||"flujo") : null;
+  const conf=data.confidence!=null?` · ${Math.round(data.confidence*100)}% confianza`:"";
+  res.innerHTML=`
+    <span class="badge ${data.tier}">${esc(data.tier_label)}</span>
+    <div class="resline">${flowName?`Se activaría <b>${flowName}</b>`:`<b>No se activaría ningún flujo</b> con este mensaje.`}</div>
+    ${data.reason?`<div class="resmeta">${esc(data.reason)}${conf}</div>`:(conf?`<div class="resmeta">${conf.replace(" · ","")}</div>`:"")}`;
+}
+
+boot();
+</script>
+</body>
+</html>

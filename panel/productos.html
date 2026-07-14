@@ -172,10 +172,11 @@ function renderDetail(){
     <div class="tabs">
       <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
       <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
+      <button class="tab ${st.tab==='activacion'?'active':''}" data-t="activacion">Activación</button>
     </div>
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
-  if(st.tab==="datos") renderDatos(); else renderFlujos();
+  if(st.tab==="datos") renderDatos(); else if(st.tab==="flujos") renderFlujos(); else renderActivacion();
 }
 
 function renderDatos(){
@@ -346,6 +347,60 @@ async function renderFlujos(){
     if(error){ toast(error.message,true); return; }
     toast("Flujo clonado ✓"); renderFlujos();
   };
+}
+
+// Pestaña Activación: palabras clave que arrancan los flujos de ESTE producto.
+// Escribe en flow_triggers (misma fuente de verdad que la sección global).
+async function renderActivacion(){
+  const b=$("tabBody");
+  b.innerHTML=`<div class="card">
+      <h4>🔑 Palabras clave que activan este producto</h4>
+      <div style="font-size:12px;color:var(--faint);margin:6px 0 14px">Cuando un cliente escribe una de estas frases (desde el anuncio), se activa el flujo. También aparecen en la sección <a href="palabras-clave.html" style="color:var(--brand)">Palabras clave</a>, donde configuras el IA Router para cuando el cliente escribe a su manera.</div>
+      <div id="actbox"><div class="empty">Cargando…</div></div>
+    </div>`;
+  const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id).order("created_at");
+  const ab=$("actbox");
+  if(!flows||!flows.length){ ab.innerHTML=`<div class="empty" style="padding:20px">Este producto no tiene flujos todavía. Ve a la pestaña <b>Flujos</b> y clona un esqueleto primero.</div>`; return; }
+  const ids=flows.map(f=>f.id);
+  const { data:trg } = await supa.from("flow_triggers").select("id,flow_id,config,activo").in("flow_id",ids).eq("tipo","keyword");
+  ab.innerHTML="";
+  flows.forEach(f=>{
+    const t=(trg||[]).find(x=>x.flow_id===f.id);
+    const kws=t?(t.config?.keywords||[]).join(", "):"";
+    const match=(t?.config?.match)||"contiene";
+    const el=document.createElement("div"); el.className="flowrow"; el.style.cssText="flex-direction:column;align-items:stretch;gap:9px";
+    el.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-weight:700;font-size:13.5px;flex:1">${esc(f.nombre)} <span style="color:var(--faint);font-weight:500">· ${esc(f.role||"flujo")}</span></div>
+        <span class="badge ${f.estado==='activo'?'on':''}">${f.estado}</span>
+      </div>
+      <div class="row" style="margin:0">
+        <input class="in actkw" style="flex:1;min-width:200px" placeholder="quiero info, precio, cuánto cuesta" value="${esc(kws)}"/>
+        <select class="sel actmatch" style="flex:0 0 130px">
+          <option value="contiene"${match==="contiene"?" selected":""}>Contiene</option>
+          <option value="empieza"${match==="empieza"?" selected":""}>Empieza</option>
+          <option value="exacta"${match==="exacta"?" selected":""}>Exacta</option>
+        </select>
+      </div>`;
+    const save=async()=>{
+      const kwArr=el.querySelector(".actkw").value.split(",").map(s=>s.trim()).filter(Boolean);
+      const m=el.querySelector(".actmatch").value;
+      if(t){
+        if(!kwArr.length){ await supa.from("flow_triggers").delete().eq("id",t.id); toast("Palabras clave quitadas ✓"); renderActivacion(); return; }
+        const { error }=await supa.from("flow_triggers").update({ config:{keywords:kwArr,match:m} }).eq("id",t.id);
+        if(error){ toast(error.message,true); return; }
+        t.config={keywords:kwArr,match:m}; toast("Guardado ✓");
+      } else {
+        if(!kwArr.length) return;
+        const { error }=await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:f.id, tipo:"keyword", config:{keywords:kwArr,match:m}, activo:true });
+        if(error){ toast(error.message,true); return; }
+        toast("Palabra clave agregada ✓"); renderActivacion();
+      }
+    };
+    el.querySelector(".actkw").onchange=save;
+    el.querySelector(".actmatch").onchange=save;
+    ab.appendChild(el);
+  });
 }
 
 async function saveProduct(){

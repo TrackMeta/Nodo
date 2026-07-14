@@ -64,8 +64,13 @@ export async function runEngine(
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
     if (event.type !== "message") return;
-    const flow = await matchTrigger(db, channelId, event.text, event.adId);
-    if (!flow) return; // ningún flujo maneja este mensaje
+    const decision = await routeDecision(db, channelId, event.text, event.adId);
+    const flow = decision.flow;
+    if (!flow) return; // ningún flujo maneja este mensaje (ni por IA)
+    // Registrar en la Timeline si el ruteo lo decidió la IA (transparencia).
+    if (decision.tier === "ia" || decision.tier === "fallback") {
+      await logEvent(db, channelId, contactId, "nota", "🧭 Ruteo por IA", decision.reason ?? "").catch(() => {});
+    }
     run = await startRun(db, channelId, contactId, flow);
     if (!run) {
       // Perdió la carrera del lock (dos webhooks casi simultáneos): otro run
@@ -109,37 +114,145 @@ async function saveRun(db: SupabaseClient, run: Run) {
   }).eq("id", run.id);
 }
 
-// ── Triggers ───────────────────────────────────────────────────────
-async function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?: string) {
-  const norm = normalize(text);
-  const { data: triggers } = await db.from("flow_triggers")
-    .select("flow_id, tipo, config, flows!inner(id, estado, es_entrada)")
-    .eq("channel_id", channelId).eq("activo", true);
+// ── Ruteo de inicio de chat ────────────────────────────────────────
+// Decide qué flujo arranca un mensaje entrante, en cascada de 3 niveles:
+//   1) referral (ad_id del anuncio)  2) keyword (frase clave, determinista)
+//   3) IA Router (intención) → si ninguno, flujo de respaldo o nada.
+export type RouteTier = "referral" | "keyword" | "entrada" | "ia" | "fallback" | "none";
+export interface RouteResult {
+  tier: RouteTier;
+  flow: { id: string; nombre?: string } | null;
+  confidence?: number;
+  reason?: string;
+}
 
-  let entrada: any = null;
-  let kwHit: any = null;
-  for (const t of triggers ?? []) {
-    const flow = (t as any).flows;
-    if (!flow || flow.estado !== "activo") continue;
-    if (t.tipo === "entrada") { entrada = flow; continue; }
-    // Referral CTWA: el anuncio identifica el producto sin depender del texto.
-    // Gana sobre keyword (solo viene en el primer mensaje desde el anuncio).
-    if (t.tipo === "referral" && adId) {
-      const ads: string[] = (t.config?.ad_ids ?? []).map(String);
-      if (ads.includes(String(adId))) return flow;
+// Niveles 1-2: determinista (referral + keyword + flujo de entrada).
+function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
+  return (async () => {
+    const norm = normalize(text);
+    const { data: triggers } = await db.from("flow_triggers")
+      .select("flow_id, tipo, config, flows!inner(id, nombre, estado, es_entrada)")
+      .eq("channel_id", channelId).eq("activo", true);
+
+    let entrada: any = null;
+    let kwHit: any = null;
+    for (const t of triggers ?? []) {
+      const flow = (t as any).flows;
+      if (!flow || flow.estado !== "activo") continue;
+      if (t.tipo === "entrada") { entrada = flow; continue; }
+      // Referral CTWA: el anuncio identifica el producto sin depender del texto.
+      // Gana sobre keyword (solo viene en el primer mensaje desde el anuncio).
+      if (t.tipo === "referral" && adId) {
+        const ads: string[] = (t.config?.ad_ids ?? []).map(String);
+        if (ads.includes(String(adId))) return { tier: "referral", flow };
+      }
+      if (t.tipo === "keyword") {
+        const kws: string[] = (t.config?.keywords ?? []).map(normalize);
+        const mode = t.config?.match ?? "contiene";
+        const hit = kws.some((k) =>
+          k && (mode === "exacta" ? norm === k
+            : mode === "empieza" ? norm.startsWith(k)
+            : norm.includes(k))
+        );
+        if (hit && !kwHit) kwHit = flow; // keyword gana sobre entrada
+      }
     }
-    if (t.tipo === "keyword") {
-      const kws: string[] = (t.config?.keywords ?? []).map(normalize);
-      const mode = t.config?.match ?? "contiene";
-      const hit = kws.some((k) =>
-        mode === "exacta" ? norm === k
-          : mode === "empieza" ? norm.startsWith(k)
-          : norm.includes(k)
-      );
-      if (hit && !kwHit) kwHit = flow; // keyword gana sobre entrada
+    if (kwHit) return { tier: "keyword", flow: kwHit };
+    if (entrada) return { tier: "entrada", flow: entrada };
+    return { tier: "none", flow: null };
+  })();
+}
+
+// Nivel 3: IA Router. Cuando ningún trigger determinista matchea, la IA lee
+// el mensaje del cliente + la lista de productos activos (su Descripción/FAQ)
+// y elige el que mejor calza. Solo rutea si supera el umbral de confianza; si
+// no, cae al flujo de respaldo (menú) o a null. Requiere key de IA en el canal
+// y ia_router.activo. Degrada en silencio ante cualquier error (nunca rompe).
+async function aiRoute(db: SupabaseClient, channelId: string, text: string): Promise<RouteResult | null> {
+  const clean = (text ?? "").trim();
+  if (clean.length < 2) return null;
+  try {
+    const { data: ch } = await db.from("channels")
+      .select("ia_router, ia_perfiles").eq("id", channelId).maybeSingle();
+    const cfg = (ch as any)?.ia_router ?? {};
+    if (!cfg.activo) return null;
+    const umbral = Number.isFinite(Number(cfg.umbral)) ? Number(cfg.umbral) : 0.6;
+
+    // Candidatos: flujos ACTIVOS con trigger keyword/entrada (los "puntos de
+    // entrada" del canal), con su descripción de intención (producto o flujo).
+    const { data: trg } = await db.from("flow_triggers")
+      .select("tipo, flows!inner(id, nombre, estado, product_id, descripcion)")
+      .eq("channel_id", channelId).eq("activo", true).in("tipo", ["keyword", "entrada"]);
+    const flows = new Map<string, any>();
+    for (const t of trg ?? []) {
+      const f = (t as any).flows;
+      if (f && f.estado === "activo" && !flows.has(f.id)) flows.set(f.id, f);
     }
+    if (flows.size === 0) return null;
+
+    const prodIds = [...new Set([...flows.values()].map((f) => f.product_id).filter(Boolean))];
+    const prods = new Map<string, any>();
+    if (prodIds.length) {
+      const { data: ps } = await db.from("products").select("id, nombre, config").in("id", prodIds);
+      for (const p of ps ?? []) prods.set((p as any).id, p);
+    }
+    const cands = [...flows.values()].map((f) => {
+      const p = f.product_id ? prods.get(f.product_id) : null;
+      const c = (p as any)?.config ?? {};
+      const intent = c.intencion || c.contexto_producto || c.faq || f.descripcion || "";
+      return { flow_id: f.id, label: (p as any)?.nombre || f.nombre || "Flujo", intent: String(intent).slice(0, 500) };
+    });
+
+    // Resolver proveedor + key (perfil del router, o el default del canal).
+    const perfiles = (ch as any)?.ia_perfiles ?? {};
+    const perfil = perfiles?.[cfg.perfil || "extraccion"] ?? null;
+    const wantProvider = perfil?.proveedor && perfil.proveedor !== "auto" ? perfil.proveedor : null;
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: wantProvider });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) return null; // sin IA configurada → no rutea (silencioso)
+    const model = (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
+
+    const lista = cands.map((c, i) => `[${i + 1}] ${c.label}: ${c.intent || "(sin descripción)"}`).join("\n");
+    const system = "Eres un clasificador de intención para un chatbot de ventas. Debes decidir a qué producto se refiere el mensaje de un cliente. Responde ÚNICAMENTE con un objeto JSON, sin texto adicional ni explicaciones.";
+    const prompt = `Mensaje del cliente:\n"${clean}"\n\nProductos disponibles:\n${lista}\n\n` +
+      `Elige el número del producto que el cliente quiere. Si el mensaje no calza claramente con ninguno (saludo genérico, spam, off-topic), usa 0.\n` +
+      `Responde exactamente: {"idx": <número entre 0 y ${cands.length}>, "confianza": <0.0 a 1.0>}`;
+
+    const raw = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model, system, content: prompt, maxTokens: 120 });
+    const m = /\{[\s\S]*\}/.exec(raw);
+    if (!m) return null;
+    let parsed: any;
+    try { parsed = JSON.parse(m[0]); } catch { return null; }
+    const idx = Number(parsed?.idx);
+    const conf = Number(parsed?.confianza);
+
+    if (Number.isInteger(idx) && idx >= 1 && idx <= cands.length && Number.isFinite(conf) && conf >= umbral) {
+      const c = cands[idx - 1];
+      return { tier: "ia", flow: { id: c.flow_id, nombre: c.label }, confidence: conf, reason: `IA eligió "${c.label}" (${Math.round(conf * 100)}%)` };
+    }
+    // Sin confianza suficiente → flujo de respaldo (menú) si está configurado.
+    if (cfg.fallback_flow_id) {
+      const { data: fb } = await db.from("flows")
+        .select("id, nombre, estado").eq("id", cfg.fallback_flow_id).eq("channel_id", channelId).maybeSingle();
+      if (fb && (fb as any).estado === "activo") {
+        return { tier: "fallback", flow: { id: (fb as any).id, nombre: (fb as any).nombre }, confidence: Number.isFinite(conf) ? conf : undefined, reason: "IA sin confianza suficiente → flujo de respaldo" };
+      }
+    }
+    return { tier: "none", flow: null, confidence: Number.isFinite(conf) ? conf : undefined, reason: "IA sin confianza suficiente" };
+  } catch (e) {
+    console.error("[aiRoute]", (e as any)?.message ?? e);
+    return null; // decorativo: si la IA falla, el ruteo simplemente no arranca
   }
-  return kwHit ?? entrada; // prioridad: referral > keyword > flujo de entrada
+}
+
+// Cascada completa (niveles 1-3). La usan runEngine (para arrancar) y la
+// Edge Function route-test (simulador del panel, sin ejecutar nada).
+export async function routeDecision(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
+  const det = await matchTrigger(db, channelId, text, adId);
+  if (det.flow) return det;
+  const ia = await aiRoute(db, channelId, text);
+  if (ia) return ia;
+  return { tier: "none", flow: null };
 }
 
 async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any): Promise<Run | null> {

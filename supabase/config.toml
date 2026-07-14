@@ -80,3 +80,7 @@ verify_jwt = true
 # gsheets-callback: Google redirige aquí tras el consentimiento (PÚBLICA).
 [functions.gsheets-callback]
 verify_jwt = false
+
+# route-test: simulador de Palabras Clave (qué flujo se activa y por qué).
+[functions.route-test]
+verify_jwt = true
