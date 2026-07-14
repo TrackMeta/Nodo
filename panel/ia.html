@@ -71,6 +71,14 @@
   .btn.ia{background:linear-gradient(90deg,var(--ia),var(--ia-2));border:none;color:#fff}
   .btn.ia:hover{filter:brightness(1.07)}
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
+  /* Selector de modelo (abre el picker nativo) */
+  .modelpick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:11px;padding:11px 14px;color:var(--text);cursor:pointer;transition:border-color .12s}
+  .modelpick:hover{border-color:var(--ia)}
+  .modelpick .mp-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .modelpick .mp-tx b{font-size:14px;font-weight:650}
+  .modelpick .mp-tx small{font-size:11.5px;color:var(--faint);font-family:monospace}
+  .modelpick svg{width:18px;height:18px;color:var(--muted);flex:none}
 </style>
 </head>
 <body>
@@ -92,8 +100,62 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText } from "./shell.js";
 const $ = (id) => document.getElementById(id);
+// ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
+// Claude: IDs vigentes de la Messages API (el backend no manda temperature
+// ni budget_tokens, así que todos responden). OpenAI: solo modelos de Chat
+// Completions compatibles con max_tokens (los o1/o3 usan otro parámetro y se
+// omiten para no romper). El botón "Probar" verifica la conexión real.
+const MODELS = {
+  anthropic: [
+    { id:"claude-opus-4-8",   nm:"Claude Opus 4.8",   tag:"El más capaz · recomendado" },
+    { id:"claude-sonnet-5",   nm:"Claude Sonnet 5",   tag:"Equilibrio calidad/costo" },
+    { id:"claude-haiku-4-5",  nm:"Claude Haiku 4.5",  tag:"El más rápido y económico" },
+    { id:"claude-opus-4-7",   nm:"Claude Opus 4.7",   tag:"Generación anterior de Opus" },
+    { id:"claude-opus-4-6",   nm:"Claude Opus 4.6",   tag:"" },
+    { id:"claude-sonnet-4-6", nm:"Claude Sonnet 4.6", tag:"" },
+    { id:"claude-fable-5",    nm:"Claude Fable 5",    tag:"El más potente (premium)" },
+  ],
+  openai: [
+    { id:"gpt-4o",       nm:"GPT-4o",       tag:"Multimodal · recomendado" },
+    { id:"gpt-4o-mini",  nm:"GPT-4o mini",  tag:"Rápido y económico" },
+    { id:"gpt-4.1",      nm:"GPT-4.1",      tag:"" },
+    { id:"gpt-4.1-mini", nm:"GPT-4.1 mini", tag:"" },
+    { id:"gpt-4-turbo",  nm:"GPT-4 Turbo",  tag:"" },
+  ],
+};
+const PROV_LABEL = { anthropic:"Claude", openai:"ChatGPT" };
+function modelName(provider, id){
+  if(!id) return "";
+  const m=(MODELS[provider]||[]).find(x=>x.id===id); if(m) return m.nm;
+  for(const p of Object.keys(MODELS)){ const h=MODELS[p].find(x=>x.id===id); if(h) return h.nm; }
+  return id; // ID personalizado escrito a mano
+}
+// Selector nativo de modelo (por proveedor). Devuelve el ID elegido o null si cancela.
+async function pickModel(provider, current){
+  const opts=(MODELS[provider]||[]).map(m=>({ value:m.id, label:m.nm, desc:m.id+(m.tag?" · "+m.tag:""), icon:"sparkles" }));
+  opts.push({ value:"__custom__", label:"Otro modelo…", desc:"Escribir un ID exacto del proveedor", icon:"edit" });
+  const chosen=await askChoice({ title:"Elegir modelo de IA", message:"Se guarda el ID exacto tal como lo publica el proveedor.", options:opts, value:current });
+  if(!chosen) return null;
+  if(chosen==="__custom__"){
+    const custom=current&&!(MODELS[provider]||[]).some(m=>m.id===current)?current:"";
+    const v=await askText({ title:"ID del modelo", message:"Respeta mayúsculas, minúsculas y guiones.", label:"Identificador del modelo", placeholder:(MODELS[provider]||[])[0]?.id||"", value:custom, confirmText:"Usar modelo" });
+    return v||null;
+  }
+  return chosen;
+}
+// Selector de modelo para un perfil (permite "por defecto" y ambos proveedores).
+async function pickPerfilModel(current){
+  const opts=[{ value:"__default__", label:"Por defecto del proveedor", desc:"Usa el modelo configurado del proveedor", icon:"sliders" }];
+  for(const p of Object.keys(MODELS)) for(const m of MODELS[p]) opts.push({ value:m.id, label:m.nm, desc:PROV_LABEL[p]+" · "+m.id, icon:"sparkles" });
+  opts.push({ value:"__custom__", label:"Otro modelo…", desc:"Escribir un ID manualmente", icon:"edit" });
+  const chosen=await askChoice({ title:"Modelo para esta tarea", options:opts, value:current||"__default__" });
+  if(chosen==null) return undefined; // cancelado → sin cambios
+  if(chosen==="__default__") return "";
+  if(chosen==="__custom__"){ const v=await askText({ title:"ID del modelo", label:"Identificador exacto", value:current||"", confirmText:"Usar modelo" }); return v==null?undefined:(v||""); }
+  return chosen;
+}
 const IC={
   robot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>',
   spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2 12 2l2.1 2.2L17 5l-1 3 1 3-2.9.8L12 14l-2.1-2.2L7 11l1-3-1-3z"/><path d="M18 16l.7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7z"/></svg>',
@@ -112,7 +174,7 @@ const PERFILES=[
   ["ocr","Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
   ["extraccion","Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
 ];
-const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{} };
+const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{} };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 async function boot(){
@@ -169,14 +231,15 @@ function renderConocimiento(b){
 // ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────
 function renderPerfiles(b){
   const perf=(st.channel&&st.channel.ia_perfiles)||{};
-  const allModels=[...new Set(PROVIDERS.flatMap(p=>p.models))];
+  // Sincroniza el estado local de modelos con lo guardado la 1ª vez.
+  PERFILES.forEach(([k])=>{ if(st.perfMod[k]===undefined) st.perfMod[k]=(perf[k]||{}).modelo||""; });
   b.innerHTML=`
     <h2>Perfiles por tarea</h2>
     <p class="sub">Qué proveedor y modelo usa cada <b>tipo de trabajo</b>. Cambiarlo aquí actualiza todos los flujos de una vez; un nodo IA puede seguir forzando su propio modelo si lo necesitas.</p>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Modelo por tipo de tarea</span></div>
       ${PERFILES.map(([k,nm,d])=>{
-        const v=perf[k]||{};
+        const v=perf[k]||{}; const mod=st.perfMod[k]||"";
         return `<div style="border-top:1px solid var(--border);padding:14px 0 2px;margin-top:12px">
           <div style="font-weight:700;font-size:13.5px">${nm}</div>
           <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">${d}</div>
@@ -188,18 +251,25 @@ function renderPerfiles(b){
                 <option value="openai" ${v.proveedor==="openai"?"selected":""}>ChatGPT (OpenAI)</option>
               </select></div>
             <div class="f"><label style="margin-top:0">Modelo</label>
-              <input class="in" id="pf_mod_${k}" list="pf_dl" value="${esc(v.modelo||"")}" placeholder="(el del proveedor)"/></div>
+              <button class="modelpick" data-pm="${k}">
+                <span class="mp-tx"><b>${mod?esc(modelName("",mod)):"Por defecto del proveedor"}</b>${mod?`<small>${esc(mod)}</small>`:""}</span>
+                ${icon("chevron")}
+              </button></div>
           </div>
         </div>`;
       }).join("")}
-      <datalist id="pf_dl">${allModels.map(m=>`<option value="${m}">`).join("")}</datalist>
       <div class="acts"><button class="btn ia" id="savePerfiles">Guardar perfiles</button></div>
     </div>`;
+  b.querySelectorAll("[data-pm]").forEach(btn=> btn.onclick=async()=>{
+    const k=btn.dataset.pm;
+    const res=await pickPerfilModel(st.perfMod[k]||"");
+    if(res!==undefined){ st.perfMod[k]=res; renderPerfiles(b); }
+  });
   $("savePerfiles").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     const ia_perfiles={};
     PERFILES.forEach(([k])=>{
-      const prov=$("pf_prov_"+k).value, mod=$("pf_mod_"+k).value.trim();
+      const prov=$("pf_prov_"+k).value, mod=(st.perfMod[k]||"").trim();
       if(prov||mod) ia_perfiles[k]={ ...(prov?{proveedor:prov}:{}), ...(mod?{modelo:mod}:{}) };
     });
     const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
@@ -218,8 +288,9 @@ function renderProveedores(box){
   const cont=$("cards");
   PROVIDERS.forEach(p=>{
     const cfg=st.cfg[p.id], isDef=st.iaProvider===p.id;
+    const def=(MODELS[p.id]||[])[0]?.id||"";
+    const curModel=st.pick[p.id] ?? cfg?.model ?? def;
     const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
-    const dl=p.models.map(m=>`<option value="${m}">`).join("");
     card.innerHTML=`
       <div class="chd"><span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${p.logo}" alt=""/></span>
         <span class="nm">${esc(p.nm)}</span>
@@ -229,8 +300,10 @@ function renderProveedores(box){
       <label>API key ${cfg?'<span style="color:var(--faint)">(vacía para conservar la actual)</span>':''}</label>
       <input class="in" type="password" id="key_${p.id}" autocomplete="off" placeholder="${cfg?'•••••••• guardada':p.keyHint}"/>
       <label>Modelo por defecto</label>
-      <input class="in" id="model_${p.id}" list="dl_${p.id}" value="${esc(cfg?.model||p.models[0])}" placeholder="${esc(p.models[0])}"/>
-      <datalist id="dl_${p.id}">${dl}</datalist>
+      <button class="modelpick" data-mp="${p.id}">
+        <span class="mp-tx"><b>${esc(modelName(p.id,curModel))}</b><small>${esc(curModel)}</small></span>
+        ${icon("chevron")}
+      </button>
       <div class="acts">
         <button class="btn primary" data-a="save" data-p="${p.id}">Guardar</button>
         <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
@@ -240,6 +313,12 @@ function renderProveedores(box){
     cont.appendChild(card);
   });
   cont.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
+  cont.querySelectorAll("[data-mp]").forEach(b=> b.onclick=async()=>{
+    const p=b.dataset.mp; const def=(MODELS[p]||[])[0]?.id||"";
+    const cur=st.pick[p] ?? st.cfg[p]?.model ?? def;
+    const chosen=await pickModel(p,cur);
+    if(chosen){ st.pick[p]=chosen; renderProveedores(box); }
+  });
 }
 async function call(body){
   const { data, error } = await supa.functions.invoke("ai-config", { body });
@@ -248,7 +327,8 @@ async function call(body){
 }
 async function onAction(action, provider, btn){
   const key=$("key_"+provider)?.value?.trim()||null;
-  const model=$("model_"+provider)?.value?.trim()||null;
+  const def=(MODELS[provider]||[])[0]?.id||null;
+  const model=st.pick[provider] ?? st.cfg[provider]?.model ?? def;
   btn.disabled=true; const old=btn.textContent;
   try{
     if(action==="save"){
