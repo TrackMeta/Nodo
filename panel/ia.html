@@ -325,7 +325,7 @@ const NEG_FIELDS=[
   ["propuesta","Propuesta de valor / diferencial","ta","¿Por qué te compran a ti y no a la competencia?",""],
   ["horario","Horario de atención","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)",""],
   ["transferir","¿Cuándo pasar a una persona? (humano)","ta","Ej. Reclamos, facturación, o si el bot no está seguro de algo",""],
-  ["pagos","¿Cómo se paga?","ta","Ej. Yape/Plin al 900 000 000 (Juan Pérez); transferencia bancaria (CCI); contraentrega en Lima. Los datos exactos ponlos también en Campos del Bot.",""],
+  ["pagos","¿Cómo se paga? (general)","ta","Ej. contraentrega en Lima; adelanto para provincia. Los métodos exactos (Yape/Plin/cuentas) se ponen en la pestaña Validador de comprobantes y se sincronizan solos.",""],
   ["entrega","Envíos y entrega","ta","Ej. Digital: enlace de Drive al confirmar el pago. Físico: Lima 24h contraentrega, provincia por Shalom/Olva con adelanto.",""],
   ["politicas","Políticas (cambios, devoluciones, garantía)","ta","Ej. Cambios dentro de 7 días con boleta; sin devolución de digitales.",""],
   ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta.",""],
@@ -510,7 +510,14 @@ function pickImg(arr, after){
   };
   inp.click();
 }
-function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titular:true, verificar_monto:true, tolerancia_monto:0, verificar_fecha:true, fecha_max_horas:48, operacion_unica:true, rechazar_editados:true, exigencia:"media" }, instrucciones:"" }; }
+function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titular:true, verificar_monto:true, tolerancia_monto:0, verificar_fecha:true, fecha_max_horas:48, operacion_unica:true, rechazar_editados:true, exigencia:"media" }, instrucciones:"", gen_datos:true, datos_pago:"" }; }
+// Arma el {{datos_pago}} (mensaje de cobro) a partir de los métodos válidos.
+function genDatosPago(mets){
+  return (mets||[]).filter(m=>m&&(m.app||m.numero||m.titular)).map(m=>{
+    const head=m.app?m.app+": ":""; const tail=[m.numero, m.titular?`(${m.titular})`:""].filter(Boolean).join(" ");
+    return (head+tail).trim();
+  }).filter(Boolean).join("\n");
+}
 const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
 function ocrPreview(o){
   if(o.activo===false) return "";
@@ -560,6 +567,12 @@ function renderValidador(b){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${OCR_PRESETS.map(v=>`<button class="btn ocrpre" data-app="${v}" style="height:32px;padding:0 12px;font-size:12px;border:1px solid var(--border)">+ ${v}</button>`).join("")}</div>
     </div>
     <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("message")}</span><span class="nm">Mensaje de cobro (lo que el bot le pide al cliente)</span>
+        <div class="sw ${o.gen_datos!==false?'on':''}" id="dpSw" title="Generar automáticamente" style="margin-left:auto"></div></div>
+      <div class="desc">Se arma <b>solo con tus métodos de arriba</b> y queda disponible como <b style="color:var(--ia)">{{datos_pago}}</b> para usar en flujos y mensajes. Así lo llenas una sola vez. Apaga el switch si prefieres escribirlo tú.</div>
+      <div id="dpBody" style="margin-top:8px"></div>
+    </div>
+    <div class="card ia">
       <div class="chd"><span class="ico iaic">${icon("alert")}</span><span class="nm">Reglas de validación</span></div>
       <div class="ocrgrid">
         ${chk("verificar_titular","Verificar destinatario","El titular/número debe coincidir con un método válido.")}
@@ -597,6 +610,13 @@ function renderValidador(b){
   $("ocrHoras").oninput=(e)=>r.fecha_max_horas=Math.max(1,Number(e.target.value)||48);
   $("ocrExig").onchange=(e)=>r.exigencia=e.target.value;
   $("ocrInstr").oninput=(e)=>o.instrucciones=e.target.value;
+  const paintDp=()=>{
+    const box=$("dpBody"); if(!box) return; const gen=o.gen_datos!==false;
+    box.innerHTML = gen
+      ? `<div style="white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:13px;color:var(--text);min-height:44px">${esc(genDatosPago(o.metodos)||"(agrega tus métodos de pago arriba)")}</div>`
+      : `<textarea class="in" id="dpManual" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="Ej. Yápeame al 900 000 000 a nombre de Juan Pérez">${esc(o.datos_pago||"")}</textarea>`;
+    const tm=$("dpManual"); if(tm) tm.oninput=(e)=>o.datos_pago=e.target.value;
+  };
   const paintMet=()=>{
     const box=$("ocrMet"); box.innerHTML="";
     if(!o.metodos.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Agrega al menos un método de pago (usa los botones de abajo).</div>`; }
@@ -609,16 +629,17 @@ function renderValidador(b){
         <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
       </div>
       <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo soles, no aceptar de terceros" style="margin-top:8px"/>`;
-      el.querySelector(".mApp").oninput=(e)=>m.app=e.target.value;
-      el.querySelector(".mTit").oninput=(e)=>m.titular=e.target.value;
-      el.querySelector(".mNum").oninput=(e)=>m.numero=e.target.value;
+      el.querySelector(".mApp").oninput=(e)=>{ m.app=e.target.value; paintDp(); };
+      el.querySelector(".mTit").oninput=(e)=>{ m.titular=e.target.value; paintDp(); };
+      el.querySelector(".mNum").oninput=(e)=>{ m.numero=e.target.value; paintDp(); };
       el.querySelector(".mNot").oninput=(e)=>m.notas=e.target.value;
-      el.querySelector("button.danger").onclick=()=>{ o.metodos.splice(i,1); paintMet(); };
+      el.querySelector("button.danger").onclick=()=>{ o.metodos.splice(i,1); paintMet(); paintDp(); };
       box.appendChild(el);
     });
   };
-  paintMet();
-  b.querySelectorAll(".ocrpre").forEach(btn=> btn.onclick=()=>{ o.metodos.push({ app:btn.dataset.app, titular:"", numero:"", notas:"" }); paintMet(); });
+  paintMet(); paintDp();
+  $("dpSw").onclick=()=>{ o.gen_datos=!(o.gen_datos!==false); $("dpSw").classList.toggle("on",o.gen_datos!==false); paintDp(); };
+  b.querySelectorAll(".ocrpre").forEach(btn=> btn.onclick=()=>{ o.metodos.push({ app:btn.dataset.app, titular:"", numero:"", notas:"" }); paintMet(); paintDp(); });
   const paintEj=()=>{
     const box=$("ocrEj"); box.innerHTML="";
     if(!o.ejemplos.length){ box.innerHTML=`<div class="desc" style="padding:2px 0">Sin imágenes de referencia.</div>`; }
@@ -637,9 +658,21 @@ function renderValidador(b){
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     o.metodos=o.metodos.filter(m=>m.app||m.titular||m.numero);
     const { error }=await supa.from("channels").update({ ocr_config:o }).eq("id",st.channelId);
-    btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/ocr_config|column/.test(error.message)?"Falta aplicar la migración 0026":error.message,true); return; }
-    st.channel.ocr_config=o; toast("Validador guardado ✓");
+    if(error){ btn.disabled=false; btn.textContent=old; toast(/ocr_config|column/.test(error.message)?"Falta aplicar la migración 0026":error.message,true); return; }
+    st.channel.ocr_config=o;
+    // Fuente única: sincroniza el campo del bot {{datos_pago}} (para el mensaje de cobro).
+    const datos = (o.gen_datos!==false) ? genDatosPago(o.metodos) : (o.datos_pago||"").trim();
+    let extra="";
+    if(datos){
+      try{
+        await supa.from("custom_fields").upsert(
+          { channel_id:st.channelId, key:"datos_pago", nombre:"Datos de pago", tipo:"text", modo:"fijo", valor:datos, descripcion:"Generado desde el Validador de comprobantes" },
+          { onConflict:"channel_id,key" });
+        st.campos.loaded=false; // la pestaña Campos recargará el valor nuevo
+        extra=" · {{datos_pago}} actualizado";
+      }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
+    }
+    btn.disabled=false; btn.textContent=old; toast("Validador guardado ✓"+extra);
   };
 }
 

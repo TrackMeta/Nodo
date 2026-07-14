@@ -959,6 +959,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
     const parts: string[] = [];
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
+    // Formas de pago (fuente única = Validador de comprobantes): la IA sabe
+    // responder "¿cómo pago?" sin repetir los datos en el Conocimiento.
+    const pm = (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
+      .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
+    if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
     if (system) parts.push(system);
