@@ -15,83 +15,126 @@
     --green:#22c079; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
-  *{box-sizing:border-box} html,body{height:100%;margin:0}
-  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  *{box-sizing:border-box}
   button{font-family:inherit;cursor:pointer}
-  .app{height:100%;display:flex;flex-direction:column}
-  .top{height:52px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--surface)}
-  .wrap{flex:1;overflow-y:auto;padding:26px 24px;max-width:820px;margin:0 auto;width:100%}
-  h1{font-size:26px;margin:0 0 4px;font-weight:700;letter-spacing:-.4px}
-  .lead{color:var(--muted);font-size:13px;margin:0 0 22px;line-height:1.5}
-
-  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px}
-  .panel h3{margin:0 0 14px;font-size:14px;font-weight:700}
   label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 7px;font-weight:600}
   .in{width:100%;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none;font-family:inherit}
   .in:focus{border-color:var(--brand)}
-  .createrow{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap}
-  .createrow .fname{flex:1;min-width:180px}
   .btn{height:40px;padding:0 18px;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
   .btn:hover{background:var(--brand-2)}
   .btn svg{width:16px;height:16px}
+  .btn.ghost{background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+  .btn.ghost:hover{background:var(--surface);border-color:var(--brand)}
 
-  .palette{display:flex;gap:8px;flex-wrap:wrap}
-  .sw{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;position:relative;transition:transform .1s}
+  /* Panel crear */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:24px}
+  .panel h3{margin:0 0 4px;font-size:15px;font-weight:700}
+  .panel .h-sub{margin:0 0 16px;font-size:12.5px;color:var(--muted)}
+  .createrow{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+  .createrow .fname{flex:1;min-width:200px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;border:1px solid transparent}
+  .chip .dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
+
+  /* Paleta */
+  .palette{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .sw{width:28px;height:28px;border-radius:9px;border:2px solid transparent;cursor:pointer;position:relative;transition:transform .1s}
   .sw:hover{transform:scale(1.12)}
-  .sw.on{border-color:var(--text);box-shadow:0 0 0 2px var(--surface),0 0 0 4px currentColor}
-  .sw.on::after{content:"✓";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .sw.on{box-shadow:0 0 0 2px var(--surface),0 0 0 4px currentColor}
+  .sw.on::after{content:"";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:no-repeat center/13px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+  /* Botón de color personalizado */
+  .sw.custom{display:flex;align-items:center;justify-content:center;background:
+    conic-gradient(from 0deg,#f43f5e,#f0a92b,#22c079,#0ea5e9,#8b5cf6,#ec4899,#f43f5e);color:#fff}
+  .sw.custom svg{width:15px;height:15px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+  .customwrap{position:relative;display:inline-flex}
+  .customwrap input[type=color]{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:none;padding:0}
+  .hexbox{display:flex;align-items:center;gap:8px;margin-top:14px}
+  .hexbox .in{max-width:150px;font-family:monospace;text-transform:uppercase}
 
-  .prev{margin-top:14px;font-size:12px;color:var(--muted)}
-  .chip{display:inline-flex;align-items:center;gap:7px;border-radius:20px;padding:5px 13px;font-size:12.5px;font-weight:700}
-  .chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+  /* Grid de etiquetas */
+  .head2{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 14px}
+  .head2 h3{margin:0;font-size:15px;font-weight:700}
+  .head2 .cnt{font-size:12px;color:var(--faint);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+  .tcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;position:relative;
+    display:flex;flex-direction:column;gap:12px;transition:border-color .12s,box-shadow .12s}
+  .tcard:hover{border-color:var(--tc,var(--border))}
+  .tcard .tc-top{display:flex;align-items:center;gap:10px}
+  .tcard .swatch{width:30px;height:30px;border-radius:9px;flex:none;cursor:pointer;border:2px solid rgba(255,255,255,.15);position:relative}
+  .tcard .swatch:hover::after{content:"Cambiar";position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:2px 7px;font-size:10px;color:var(--muted);white-space:nowrap;z-index:5}
+  .tcard .name{flex:1;min-width:0;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13.5px;font-weight:600;outline:none}
+  .tcard .name:focus{border-color:var(--brand)}
+  .tcard .preview{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .tcard .iconbtn{width:32px;height:32px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--faint);display:flex;align-items:center;justify-content:center}
+  .tcard .iconbtn:hover{color:var(--red);border-color:var(--red);background:var(--red-bg)}
+  .tcard .iconbtn svg{width:15px;height:15px}
+  .empty{text-align:center;color:var(--faint);padding:44px;border:1px dashed var(--border);border-radius:14px}
 
-  .tags{display:flex;flex-direction:column;gap:10px}
-  .trow{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-  .trow .name{flex:none;width:190px;height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13px;font-weight:600;outline:none}
-  .trow .name:focus{border-color:var(--brand)}
-  .trow .palette{flex:1}
-  .trow .sw{width:22px;height:22px}
-  .iconbtn{width:36px;height:36px;flex:none;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center}
-  .iconbtn:hover{color:var(--red);border-color:var(--red)}
-  .iconbtn svg{width:16px;height:16px}
-  .empty{text-align:center;color:var(--faint);padding:40px;border:1px dashed var(--border);border-radius:12px}
+  /* Popover de color */
+  .cpop{position:fixed;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:0 16px 48px rgba(0,0,0,.45);padding:14px;width:262px}
+  .cpop .palette{gap:8px}
+  .cpop .sw{width:26px;height:26px}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="wrap">
-    <h1>Etiquetas</h1>
-    <p class="lead">Segmenta contactos y úsalas en flujos (añadir/quitar etiqueta) y campañas. Elige un color haciendo clic en la paleta.</p>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:960px">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Etiquetas</h1>
+        <p class="nodo-lead">Segmenta contactos y úsalas en flujos (añadir/quitar etiqueta) y campañas. Elige uno de los colores o crea el tuyo propio.</p>
+      </div>
+    </div>
 
     <div class="panel">
       <h3>Nueva etiqueta</h3>
+      <p class="h-sub">Ponle un nombre y un color. Respeta las mayúsculas y minúsculas que escribas.</p>
       <div class="createrow">
-        <div class="fname"><label>Nombre</label><input class="in" id="nName" placeholder="Ej. Cliente"/></div>
-        <div><label>Color</label><div class="palette" id="nPalette"></div></div>
-        <button class="btn" id="createBtn"><span id="plusIc"></span> Crear</button>
+        <div class="fname"><label>Nombre</label><input class="in" id="nName" placeholder="Ej. Cliente VIP"/></div>
+        <div><label>Vista previa</label><span class="chip" id="nPrev"><span class="dot"></span>Cliente VIP</span></div>
+        <button class="btn" id="createBtn"><span id="plusIc"></span> Crear etiqueta</button>
       </div>
-      <div class="prev">Vista previa: <span class="chip" id="nPrev"><span class="dot"></span>Cliente</span></div>
+      <label style="margin-top:18px">Color</label>
+      <div class="palette" id="nPalette"></div>
+      <div class="hexbox">
+        <span style="font-size:12px;color:var(--muted)">o código exacto:</span>
+        <input class="in" id="nHex" maxlength="7" placeholder="#A855F7"/>
+      </div>
     </div>
 
-    <div class="tags" id="list"></div>
+    <div class="head2"><h3>Tus etiquetas</h3><span class="cnt" id="tagCount"></span></div>
+    <div class="grid" id="list"></div>
   </div>
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, tags:[], newColor:null };
-// Paleta visual (hex). El primer color es el por defecto.
-const PALETTE=["#2b7fff","#22c079","#f0a92b","#e2564a","#9b6cf0","#18b7be","#e264a8","#ff7a45","#0ea5e9","#84cc16","#f43f5e","#8a97a8"];
+// Paleta ampliada: 8 familias × 4 tonos. El primero es el por defecto.
+const PALETTE=[
+  "#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#14b8a6",
+  "#06b6d4","#0ea5e9","#3b82f6","#6366f1","#8b5cf6","#a855f7","#d946ef","#ec4899",
+  "#f43f5e","#fb7185","#fca5a5","#fdba74","#fde047","#bef264","#86efac","#5eead4",
+  "#67e8f9","#93c5fd","#c4b5fd","#f0abfc","#64748b","#94a3b8","#e2564a","#8a97a8"
+];
 // Compatibilidad con colores viejos guardados por nombre.
-const NAMED={ blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8" };
+const NAMED={ blue:"#3b82f6",green:"#22c55e",amber:"#f59e0b",red:"#ef4444",purple:"#a855f7",teal:"#14b8a6",pink:"#ec4899",gray:"#8a97a8" };
 function hex(c){ if(!c) return PALETTE[0]; if(c[0]==="#") return c; return NAMED[c]||PALETTE[0]; }
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function normHex(v){ v=(v||"").trim(); if(/^#?[0-9a-fA-F]{6}$/.test(v)) return (v[0]==="#"?v:"#"+v).toUpperCase(); if(/^#?[0-9a-fA-F]{3}$/.test(v)){ v=v.replace("#",""); return ("#"+v[0]+v[0]+v[1]+v[1]+v[2]+v[2]).toUpperCase(); } return null; }
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+const PIPETTE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 0 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
 
-function paletteHtml(selected){
-  return PALETTE.map(c=>`<span class="sw${c===selected?" on":""}" data-c="${c}" style="background:${c};color:${c}"></span>`).join("");
+// Paleta reutilizable: swatches + botón de color personalizado (color input).
+function paletteHtml(selected,{withCustom=true}={}){
+  const custom = withCustom && selected && !PALETTE.includes(selected);
+  const sws = PALETTE.map(c=>`<span class="sw${c.toLowerCase()===(selected||"").toLowerCase()?" on":""}" data-c="${c}" style="background:${c};color:${c}"></span>`).join("");
+  const cust = withCustom?`<span class="customwrap"><span class="sw custom${custom?" on":""}" style="${custom?`background:${selected};color:${selected}`:""}" title="Color personalizado">${custom?"":PIPETTE}</span><input type="color" value="${custom?selected:(selected||PALETTE[0])}" data-custom/></span>`:"";
+  return sws+cust;
 }
 
 async function boot(){
@@ -103,17 +146,21 @@ async function boot(){
   st.newColor=PALETTE[0];
   renderNewPalette();
   $("nName").oninput=updatePreview;
+  $("nHex").oninput=(e)=>{ const h=normHex(e.target.value); if(h){ st.newColor=h; renderNewPalette(); } };
   $("createBtn").onclick=create;
   await load();
 }
 function renderNewPalette(){
-  $("nPalette").innerHTML=paletteHtml(st.newColor);
-  $("nPalette").querySelectorAll(".sw").forEach(s=> s.onclick=()=>{ st.newColor=s.dataset.c; renderNewPalette(); updatePreview(); });
+  const box=$("nPalette");
+  box.innerHTML=paletteHtml(st.newColor);
+  box.querySelectorAll(".sw:not(.custom)").forEach(s=> s.onclick=()=>{ st.newColor=s.dataset.c; $("nHex").value=""; renderNewPalette(); });
+  const ci=box.querySelector("input[data-custom]");
+  if(ci){ ci.oninput=()=>{ st.newColor=ci.value.toUpperCase(); $("nHex").value=st.newColor; renderNewPalette(); }; }
   updatePreview();
 }
 function updatePreview(){
-  const name=$("nName").value.trim()||"Etiqueta"; const c=st.newColor;
-  const p=$("nPrev"); p.style.background=c+"22"; p.style.color=c; p.style.border="1px solid "+c+"55";
+  const name=$("nName").value.trim()||"Cliente VIP"; const c=st.newColor;
+  const p=$("nPrev"); p.style.background=c+"22"; p.style.color=c; p.style.borderColor=c+"55";
   p.innerHTML=`<span class="dot"></span>${esc(name)}`;
 }
 async function load(){
@@ -122,33 +169,58 @@ async function load(){
 }
 function render(){
   const box=$("list");
-  if(!st.tags.length){ box.innerHTML=`<div class="empty">Aún no hay etiquetas. Crea la primera arriba.</div>`; return; }
+  $("tagCount").textContent=st.tags.length?`${st.tags.length} etiqueta${st.tags.length===1?"":"s"}`:"";
+  if(!st.tags.length){ box.innerHTML=`<div class="empty" style="grid-column:1/-1">Aún no hay etiquetas. Crea la primera arriba.</div>`; return; }
   box.innerHTML="";
   st.tags.forEach(t=>{
     const c=hex(t.color);
-    const el=document.createElement("div"); el.className="trow";
+    const el=document.createElement("div"); el.className="tcard"; el.style.setProperty("--tc",c+"88");
     el.innerHTML=`
-      <span class="chip" style="background:${c}22;color:${c};border:1px solid ${c}55"><span class="dot"></span></span>
-      <input class="name" value="${esc(t.nombre)}"/>
-      <div class="palette">${paletteHtml(c)}</div>
-      <button class="iconbtn" title="Eliminar">${TRASH}</button>`;
+      <div class="tc-top">
+        <span class="swatch" style="background:${c}" title="Cambiar color"></span>
+        <input class="name" value="${esc(t.nombre)}"/>
+        <button class="iconbtn" title="Eliminar">${TRASH}</button>
+      </div>
+      <div class="preview"><span class="chip" style="background:${c}22;color:${c};border-color:${c}55"><span class="dot"></span>${esc(t.nombre)}</span></div>`;
     const chip=el.querySelector(".chip");
-    el.querySelector(".name").onchange=(e)=>update(t,{ nombre:e.target.value.trim() });
-    el.querySelectorAll(".sw").forEach(s=> s.onclick=()=>{
-      el.querySelectorAll(".sw").forEach(x=>x.classList.remove("on")); s.classList.add("on");
-      const col=s.dataset.c; chip.style.background=col+"22"; chip.style.color=col; chip.style.border="1px solid "+col+"55";
+    const nameInp=el.querySelector(".name");
+    nameInp.onchange=(e)=>{ const v=e.target.value.trim(); if(v){ update(t,{ nombre:v }); chip.innerHTML=`<span class="dot"></span>${esc(v)}`; } };
+    el.querySelector(".swatch").onclick=(e)=>openColorPopover(e.currentTarget, hex(t.color), (col)=>{
+      el.querySelector(".swatch").style.background=col; el.style.setProperty("--tc",col+"88");
+      chip.style.background=col+"22"; chip.style.color=col; chip.style.borderColor=col+"55";
       update(t,{ color:col });
     });
     el.querySelector(".iconbtn").onclick=()=>remove(t);
     box.appendChild(el);
   });
 }
+// Popover de color (paleta + personalizado) anclado al swatch.
+let openPop=null;
+function closePop(){ if(openPop){ openPop.remove(); openPop=null; document.removeEventListener("mousedown",outside,true); } }
+function outside(e){ if(openPop && !openPop.contains(e.target)) closePop(); }
+function openColorPopover(anchor, current, onPick){
+  closePop();
+  const pop=document.createElement("div"); pop.className="cpop";
+  pop.innerHTML=`<label style="margin-bottom:10px">Elige un color</label><div class="palette" id="popPal">${paletteHtml(current)}</div>
+    <div class="hexbox"><span style="font-size:12px;color:var(--muted)">Código:</span><input class="in" id="popHex" maxlength="7" placeholder="#RRGGBB" value="${esc(current)}"/></div>`;
+  document.body.appendChild(pop); openPop=pop;
+  const r=anchor.getBoundingClientRect();
+  let top=r.bottom+8, left=r.left;
+  if(left+262>innerWidth-10) left=innerWidth-272;
+  if(top+230>innerHeight-10) top=r.top-238;
+  pop.style.top=Math.max(10,top)+"px"; pop.style.left=Math.max(10,left)+"px";
+  const pick=(c)=>{ onPick(c); closePop(); };
+  pop.querySelectorAll(".sw:not(.custom)").forEach(s=> s.onclick=()=>pick(s.dataset.c));
+  const ci=pop.querySelector("input[data-custom]"); if(ci) ci.oninput=()=>pick(ci.value.toUpperCase());
+  pop.querySelector("#popHex").onchange=(e)=>{ const h=normHex(e.target.value); if(h) pick(h); else toast("Código de color inválido (usa #RRGGBB)",true); };
+  setTimeout(()=>document.addEventListener("mousedown",outside,true),0);
+}
 async function create(){
   const nombre=$("nName").value.trim();
-  if(!nombre){ toast("Escribe un nombre",true); return; }
+  if(!nombre){ toast("Escribe un nombre",true); $("nName").focus(); return; }
   const { error }=await supa.from("tags").insert({ channel_id:st.channelId, nombre, color:st.newColor });
   if(error){ toast(error.message.includes("duplicate")?"Ya existe una etiqueta con ese nombre":error.message,true); return; }
-  $("nName").value=""; st.newColor=PALETTE[0]; renderNewPalette();
+  $("nName").value=""; $("nHex").value=""; st.newColor=PALETTE[0]; renderNewPalette();
   toast("Etiqueta creada ✓"); await load();
 }
 async function update(t, patch){
@@ -158,7 +230,7 @@ async function update(t, patch){
   Object.assign(t,patch);
 }
 async function remove(t){
-  if(!confirm(`¿Eliminar la etiqueta "${t.nombre}"?`)) return;
+  if(!await confirmDialog({title:"Eliminar etiqueta",message:`¿Eliminar la etiqueta "${t.nombre}"?`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("tags").delete().eq("id",t.id);
   if(error){ toast(error.message,true); return; }
   toast("Eliminada ✓"); await load();

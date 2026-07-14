@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · IA</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    /* Acento IA (violeta/fucsia robot) */
+    --ia:#a855f7; --ia-2:#ec4899; --ia-bg:rgba(168,85,247,.12); --ia-border:rgba(168,85,247,.4);
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  /* Hero distintivo de la sección IA */
+  .ia-hero{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:18px;
+    padding:22px 24px;margin:6px 0 26px;background:
+      radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.18),transparent 55%),
+      radial-gradient(120% 140% at 100% 100%,rgba(236,72,153,.14),transparent 55%),
+      var(--surface)}
+  .ia-hero .ia-badge{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;
+    letter-spacing:.02em;text-transform:uppercase;color:var(--ia);background:var(--ia-bg);
+    border:1px solid var(--ia-border);border-radius:999px;padding:5px 12px;margin-bottom:12px}
+  .ia-hero .ia-badge svg{width:15px;height:15px}
+  .ia-hero h1{margin:0 0 6px;font-size:27px;font-weight:800;letter-spacing:-.5px;
+    background:linear-gradient(90deg,var(--ia),var(--ia-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ia-hero p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55;max-width:680px}
+  .ia-hero .glow{position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;
+    background:radial-gradient(circle,rgba(168,85,247,.35),transparent 70%);filter:blur(20px);pointer-events:none}
+
+  .tabs{display:flex;gap:4px;margin:0 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:11px 12px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--ia);border-bottom-color:var(--ia)}
+  .tab svg{width:17px;height:17px}
+  .tab img{width:18px;height:18px;border-radius:5px;object-fit:cover}
+
+  h2{font-size:18px;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:640px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  .card.on{border-color:var(--green)}
+  .card.ia{border-color:var(--ia-border);background:linear-gradient(180deg,var(--ia-bg),transparent 40%),var(--surface)}
+  .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+  .chd .ico.iaic{background:var(--ia-bg);color:var(--ia)}
+  .chd .ico svg{width:22px;height:22px}
+  .chd .ico img{width:100%;height:100%;object-fit:cover}
+  .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  .badge{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
+  .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
+  .badge.def{background:var(--ia-bg);color:var(--ia);border-color:transparent}
+  .desc{color:var(--muted);font-size:12.5px;margin:12px 0 4px;line-height:1.55}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .in:focus{border-color:var(--ia)}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .row>.f{flex:1;min-width:170px}
+  .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .btn.ia{background:linear-gradient(90deg,var(--ia),var(--ia-2));border:none;color:#fff}
+  .btn.ia:hover{filter:brightness(1.07)}
+  .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:820px">
+    <div class="ia-hero">
+      <span class="glow"></span>
+      <span class="ia-badge" id="iaBadge"></span>
+      <h1>Inteligencia Artificial</h1>
+      <p>El cerebro de tu bot. Aquí configuras todo lo que la IA sabe y cómo piensa: el <b>conocimiento del negocio</b> que usa en cada conversación, qué <b>modelo</b> resuelve cada tarea y las <b>cuentas de IA</b> conectadas a este bot.</p>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-t="conocimiento" id="tabCon"></button>
+      <button class="tab" data-t="perfiles" id="tabPerf"></button>
+      <button class="tab" data-t="proveedores" id="tabProv"></button>
+    </div>
+    <div id="body"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
+const $ = (id) => document.getElementById(id);
+const IC={
+  robot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2 12 2l2.1 2.2L17 5l-1 3 1 3-2.9.8L12 14l-2.1-2.2L7 11l1-3-1-3z"/><path d="M18 16l.7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7z"/></svg>',
+  book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
+};
+const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
+const PROVIDERS = [
+  { id:"anthropic", nm:"Claude (Anthropic)", logo:LOGO.claude, desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
+    keyHint:"sk-ant-...", models:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"] },
+  { id:"openai", nm:"ChatGPT (OpenAI)", logo:LOGO.chatgpt, desc:"Modelos GPT de OpenAI.",
+    keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
+];
+const PERFILES=[
+  ["ventas","Conversación / ventas","Nodos IA que responden dudas y venden (generar texto)."],
+  ["ocr","Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
+  ["extraccion","Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
+];
+const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{} };
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function boot(){
+  const { data:{ session } } = await supa.auth.getSession();
+  if(!session){ location.href="index.html"; return; }
+  $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
+  $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
+  $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles por tarea</span>";
+  $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  const shell=await mountShell({ active:"ia" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; loadCfg(); });
+  if(st.channelId) await loadCfg();
+}
+async function loadCfg(){
+  let { data:ch, error:chErr } = await supa.from("channels")
+    .select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider").eq("id",st.channelId).maybeSingle()); }
+  st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
+  const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
+  st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
+  render();
+}
+function render(){
+  const b=$("body");
+  if(st.tab==="conocimiento") renderConocimiento(b);
+  else if(st.tab==="perfiles") renderPerfiles(b);
+  else renderProveedores(b);
+}
+
+// ── Conocimiento del negocio ────────────────────────────────────────
+function renderConocimiento(b){
+  const c=st.channel||{};
+  b.innerHTML=`
+    <h2>Conocimiento del negocio</h2>
+    <p class="sub">Lo que tu bot sabe en <b>todas</b> las conversaciones. Se inyecta automáticamente a los nodos ${icon("sparkles")} IA de tus flujos.</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Contexto general del bot</span></div>
+      <div class="desc">Quiénes somos, tono de venta, políticas de envío y cambios, horarios de despacho, preguntas frecuentes generales. Lo específico de cada producto (descripción, FAQ del producto) se escribe en su ficha de <b>Productos</b>.</div>
+      <textarea class="in" id="g_negocio" rows="10" style="min-height:190px;line-height:1.55;resize:vertical" placeholder="Ej.: Somos Digital Prime, vendemos guías y programas por WhatsApp. Tono: cercano y directo, tuteo, emojis con moderación…&#10;Envíos: Lima contraentrega (24h), provincia por Shalom/Olva con adelanto.&#10;Pagos: Yape/Plin al 999 999 999 (Percy Flores).&#10;Nunca prometemos resultados médicos. Si piden hablar con una persona, transferir.">${esc(c.negocio||"")}</textarea>
+      <div class="acts"><button class="btn ia" id="saveNegocio">Guardar conocimiento</button></div>
+    </div>`;
+  $("saveNegocio").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const negocio=$("g_negocio").value.trim()||null;
+    const { error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
+    st.channel.negocio=negocio; toast("Conocimiento guardado ✓");
+  };
+}
+
+// ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────
+function renderPerfiles(b){
+  const perf=(st.channel&&st.channel.ia_perfiles)||{};
+  const allModels=[...new Set(PROVIDERS.flatMap(p=>p.models))];
+  b.innerHTML=`
+    <h2>Perfiles por tarea</h2>
+    <p class="sub">Qué proveedor y modelo usa cada <b>tipo de trabajo</b>. Cambiarlo aquí actualiza todos los flujos de una vez; un nodo IA puede seguir forzando su propio modelo si lo necesitas.</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Modelo por tipo de tarea</span></div>
+      ${PERFILES.map(([k,nm,d])=>{
+        const v=perf[k]||{};
+        return `<div style="border-top:1px solid var(--border);padding:14px 0 2px;margin-top:12px">
+          <div style="font-weight:700;font-size:13.5px">${nm}</div>
+          <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">${d}</div>
+          <div class="row">
+            <div class="f"><label style="margin-top:0">Proveedor</label>
+              <select class="in" id="pf_prov_${k}">
+                <option value="" ${!v.proveedor?"selected":""}>Por defecto del bot</option>
+                <option value="anthropic" ${v.proveedor==="anthropic"?"selected":""}>Claude (Anthropic)</option>
+                <option value="openai" ${v.proveedor==="openai"?"selected":""}>ChatGPT (OpenAI)</option>
+              </select></div>
+            <div class="f"><label style="margin-top:0">Modelo</label>
+              <input class="in" id="pf_mod_${k}" list="pf_dl" value="${esc(v.modelo||"")}" placeholder="(el del proveedor)"/></div>
+          </div>
+        </div>`;
+      }).join("")}
+      <datalist id="pf_dl">${allModels.map(m=>`<option value="${m}">`).join("")}</datalist>
+      <div class="acts"><button class="btn ia" id="savePerfiles">Guardar perfiles</button></div>
+    </div>`;
+  $("savePerfiles").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const ia_perfiles={};
+    PERFILES.forEach(([k])=>{
+      const prov=$("pf_prov_"+k).value, mod=$("pf_mod_"+k).value.trim();
+      if(prov||mod) ia_perfiles[k]={ ...(prov?{proveedor:prov}:{}), ...(mod?{modelo:mod}:{}) };
+    });
+    const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
+    st.channel.ia_perfiles=ia_perfiles; toast("Perfiles guardados ✓");
+  };
+}
+
+// ── Proveedores (API keys) ──────────────────────────────────────────
+function renderProveedores(box){
+  box.innerHTML=`
+    <h2>Proveedores de IA</h2>
+    <p class="sub">Cada bot usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ${icon("sparkles")} IA de tus flujos.</p>
+    <div id="cards"></div>`;
+  const cont=$("cards");
+  PROVIDERS.forEach(p=>{
+    const cfg=st.cfg[p.id], isDef=st.iaProvider===p.id;
+    const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
+    const dl=p.models.map(m=>`<option value="${m}">`).join("");
+    card.innerHTML=`
+      <div class="chd"><span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${p.logo}" alt=""/></span>
+        <span class="nm">${esc(p.nm)}</span>
+        ${cfg?'<span class="badge on">Configurada</span>':'<span class="badge">Sin configurar</span>'}
+        ${isDef?'<span class="badge def">Por defecto</span>':''}</div>
+      <div class="desc">${esc(p.desc)}</div>
+      <label>API key ${cfg?'<span style="color:var(--faint)">(vacía para conservar la actual)</span>':''}</label>
+      <input class="in" type="password" id="key_${p.id}" autocomplete="off" placeholder="${cfg?'•••••••• guardada':p.keyHint}"/>
+      <label>Modelo por defecto</label>
+      <input class="in" id="model_${p.id}" list="dl_${p.id}" value="${esc(cfg?.model||p.models[0])}" placeholder="${esc(p.models[0])}"/>
+      <datalist id="dl_${p.id}">${dl}</datalist>
+      <div class="acts">
+        <button class="btn primary" data-a="save" data-p="${p.id}">Guardar</button>
+        <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
+        ${!isDef&&cfg?`<button class="btn ghost" data-a="default" data-p="${p.id}">Usar por defecto</button>`:''}
+        ${cfg?`<button class="btn danger" data-a="delete" data-p="${p.id}">Eliminar</button>`:''}
+      </div>`;
+    cont.appendChild(card);
+  });
+  cont.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
+}
+async function call(body){
+  const { data, error } = await supa.functions.invoke("ai-config", { body });
+  if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
+  return data;
+}
+async function onAction(action, provider, btn){
+  const key=$("key_"+provider)?.value?.trim()||null;
+  const model=$("model_"+provider)?.value?.trim()||null;
+  btn.disabled=true; const old=btn.textContent;
+  try{
+    if(action==="save"){
+      if(!key && !st.cfg[provider]){ toast("Pega la API key primero",true); return; }
+      await call({ action:"save", channel_id:st.channelId, provider, api_key:key, model, make_default:!st.iaProvider });
+      toast("Guardado ✓");
+    } else if(action==="test"){
+      btn.textContent="Probando…";
+      const r=await call({ action:"test", channel_id:st.channelId, provider });
+      if(r?.ok) toast("IA responde ✓"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
+    } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto ✓"); }
+    else if(action==="delete"){ if(!await confirmDialog({title:"Eliminar configuración",message:"¿Eliminar la configuración de "+provider+"?",confirmText:"Eliminar",danger:true})) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado ✓"); }
+    await loadCfg();
+  }catch(e){ toast(e.message||"error",true); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+boot();
+</script>
+</body>
+</html>

@@ -84,7 +84,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", localFolders:new Set() };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -130,13 +130,13 @@ function renderFolders(){
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
     +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Cursos",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
 }
 async function deleteFolder(){
   const f=st.folder; if(f==="__all"||f==="__none") return;
   const n=countIn(f);
-  if(!confirm(n?`La carpeta "${f}" tiene ${n} producto(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(!await confirmDialog(n?{title:"Eliminar carpeta",message:`La carpeta "${f}" tiene ${n} producto(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${f}"?`,confirmText:"Eliminar",danger:true})) return;
   if(n){ const { error }=await supa.from("products").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
   st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await loadProducts();
 }
@@ -165,7 +165,7 @@ function renderCards(){
   add.onclick=createProduct; box.appendChild(add);
 }
 async function createProduct(){
-  const nombre=prompt("Nombre del producto:"); if(!nombre) return;
+  const nombre=await askText({title:"Nuevo producto",label:"Nombre del producto",placeholder:"Ej. Zapatillas Runner",confirmText:"Crear"}); if(!nombre) return;
   const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
   let { data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, folder }).select("id").single();
   if(error && /folder|column/.test(error.message)){ ({ data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre }).select("id").single()); }
@@ -180,7 +180,7 @@ async function openProduct(id){
 }
 async function deleteProduct(){
   if(!st.prod) return;
-  if(!confirm(`¿Eliminar el producto "${st.prod.nombre}"? Se eliminarán también sus versiones. Esta acción no se puede deshacer.`)) return;
+  if(!await confirmDialog({title:"Eliminar producto",message:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones. Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   await supa.from("product_versions").delete().eq("product_id",st.prod.id);
   const { error }=await supa.from("products").delete().eq("id",st.prod.id);
   if(error){ toast(error.message,true); return; }
@@ -524,7 +524,7 @@ function renderComposer(){
       </div>`;
     // Toggle / peso / delete variante
     card.querySelector("[data-vact]").onclick=()=>{ harvest(); v.activo=v.activo===false?true:false; renderComposer(); };
-    card.querySelector(".vdelVar").onclick=()=>{ if(cfg.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!confirm("¿Eliminar esta versión?"))return; harvest(); cfg.variantes.splice(vi,1); renderComposer(); };
+    card.querySelector(".vdelVar").onclick=async()=>{ if(cfg.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión del mensaje?",confirmText:"Eliminar",danger:true}))return; harvest(); cfg.variantes.splice(vi,1); renderComposer(); };
     card.querySelector(".vpeso").oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); };
     // Burbujas
     const bb=card.querySelector(".bubbles");

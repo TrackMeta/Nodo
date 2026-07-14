@@ -131,7 +131,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], estado:"all", q:"", view:"compras" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -335,7 +335,7 @@ async function updateOrder(body){
 }
 async function confirmSet(o,estado,label){
   const c=o.contact||{};
-  if(!confirm(`${label.replace(/^[^\wÁÉÍÓÚáéíóú✅✓→📍🛵]+\s*/,"")} — ${c.nombre||"cliente"}\n\n¿Confirmar el cambio a "${EST_LABEL[estado]||estado}"?`)) return;
+  if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú✅✓→📍🛵]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${EST_LABEL[estado]||estado}".`,confirmText:"Confirmar"})) return;
   const r=await updateOrder({ order_id:o.id, estado });
   if(r){ toast(r.flow_started?"Estado actualizado ✓ · el bot está notificando al cliente":"Estado actualizado ✓"); await load(); }
 }

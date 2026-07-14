@@ -115,6 +115,7 @@ const NAV_GROUPS = [
   ]},
   { key:"auto", sec:"Automatización", items:[
     { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
+    { id:"ia",          label:"IA",                   href:"ia.html",         icon:"robot", special:"ia" },
     { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
     { id:"disparadores",label:"Disparadores",         href:"disparadores.html", icon:"disparadores" },
@@ -248,6 +249,98 @@ function openCreateBot() {
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") create(); else if (e.key === "Escape") close(); });
   setTimeout(() => input.focus(), 30);
 }
+// ═══════════════════════════════════════════════════════════════════
+//  Diálogos nativos de la app (reemplazan prompt()/confirm() del
+//  navegador por modales con la identidad de Nodo). Todos devuelven una
+//  Promesa. Respetan mayúsculas/minúsculas del texto que escribe el user.
+// ═══════════════════════════════════════════════════════════════════
+function mountModal(html, { onClose } = {}) {
+  const back = document.createElement("div");
+  back.className = "nodo-modal-back";
+  back.innerHTML = html;
+  document.body.appendChild(back);
+  const close = () => { back.remove(); onClose && onClose(); };
+  back.addEventListener("mousedown", (e) => { if (e.target === back) close(); });
+  return { back, close };
+}
+// Pide un texto (reemplaza prompt). opts: {title, message, label, placeholder,
+// value, confirmText, multiline}. Resuelve con el string (recortado) o null si cancela.
+export function askText(opts = {}) {
+  const o = typeof opts === "string" ? { title: opts } : opts;
+  return new Promise((resolve) => {
+    let settled = false;
+    const field = o.multiline
+      ? `<textarea id="nmInput" rows="4" placeholder="${escAttr(o.placeholder || "")}">${escHtml(o.value || "")}</textarea>`
+      : `<input id="nmInput" type="text" placeholder="${escAttr(o.placeholder || "")}" value="${escAttr(o.value || "")}" autocomplete="off" />`;
+    const { back, close } = mountModal(`
+      <div class="nodo-modal" role="dialog" aria-modal="true">
+        <h3>${escHtml(o.title || "")}</h3>
+        ${o.message ? `<p>${o.message}</p>` : ""}
+        ${o.label ? `<label for="nmInput">${escHtml(o.label)}</label>` : ""}
+        ${field}
+        <div class="nb-acts">
+          <button class="nb-btn" id="nmCancel" type="button">${escHtml(o.cancelText || "Cancelar")}</button>
+          <button class="nb-btn primary" id="nmOk" type="button">${escHtml(o.confirmText || "Aceptar")}</button>
+        </div>
+      </div>`, { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
+    const input = back.querySelector("#nmInput");
+    const done = (v) => { settled = true; resolve(v); back.remove(); };
+    back.querySelector("#nmCancel").onclick = () => close();
+    back.querySelector("#nmOk").onclick = () => { const v = input.value.trim(); if (!v) { input.focus(); return; } done(v); };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !o.multiline) { e.preventDefault(); const v = input.value.trim(); if (v) done(v); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+    setTimeout(() => { input.focus(); if (input.select) input.select(); }, 30);
+  });
+}
+// Confirmación (reemplaza confirm). opts: {title, message, confirmText,
+// cancelText, danger}. Resuelve true/false.
+export function confirmDialog(opts = {}) {
+  const o = typeof opts === "string" ? { message: opts } : opts;
+  return new Promise((resolve) => {
+    let settled = false;
+    const { back, close } = mountModal(`
+      <div class="nodo-modal" role="dialog" aria-modal="true">
+        <h3>${escHtml(o.title || "¿Confirmar?")}</h3>
+        ${o.message ? `<p>${o.message}</p>` : ""}
+        <div class="nb-acts">
+          <button class="nb-btn" id="nmCancel" type="button">${escHtml(o.cancelText || "Cancelar")}</button>
+          <button class="nb-btn ${o.danger ? "danger" : "primary"}" id="nmOk" type="button">${escHtml(o.confirmText || "Confirmar")}</button>
+        </div>
+      </div>`, { onClose: () => { if (!settled) { settled = true; resolve(false); } } });
+    back.querySelector("#nmCancel").onclick = () => close();
+    back.querySelector("#nmOk").onclick = () => { settled = true; resolve(true); back.remove(); };
+    const okBtn = back.querySelector("#nmOk");
+    back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    setTimeout(() => okBtn.focus(), 30);
+  });
+}
+// Selector de opciones (reemplaza selects nativos feos). opts: {title, message,
+// options:[{value,label,desc,icon}], value}. Resuelve el value elegido o null.
+export function askChoice(opts = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const rows = (opts.options || []).map((op) => `
+      <button class="nodo-choice${op.value === opts.value ? " on" : ""}" type="button" data-v="${escAttr(op.value)}">
+        ${op.icon ? `<span class="nc-ic">${icon(op.icon)}</span>` : ""}
+        <span class="nc-tx"><b>${escHtml(op.label)}</b>${op.desc ? `<small>${escHtml(op.desc)}</small>` : ""}</span>
+        <span class="nc-ck">${svg("check")}</span>
+      </button>`).join("");
+    const { back, close } = mountModal(`
+      <div class="nodo-modal" role="dialog" aria-modal="true">
+        <h3>${escHtml(opts.title || "Elige una opción")}</h3>
+        ${opts.message ? `<p>${opts.message}</p>` : ""}
+        <div class="nodo-choices">${rows}</div>
+        <div class="nb-acts"><button class="nb-btn" id="nmCancel" type="button">Cancelar</button></div>
+      </div>`, { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
+    back.querySelectorAll(".nodo-choice").forEach((b) => b.onclick = () => { settled = true; resolve(b.dataset.v); back.remove(); });
+    back.querySelector("#nmCancel").onclick = () => close();
+  });
+}
+function escHtml(s) { return (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function escAttr(s) { return escHtml(s).replace(/"/g, "&quot;"); }
+
 // Favicon dinámico = logo del bot elegido.
 export function setFavicon(href) {
   if (!href) return;
@@ -491,7 +584,7 @@ export async function mountShell({ active } = {}) {
   // scroll; los demás grupos van dentro del área scrolleable.
   const itemHTML = (it) => it.cta
     ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
-    : `<a class="nodo-link${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`;
+    : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`;
   const topGroup = NAV_GROUPS.find((g) => !g.sec);
   const primaryHTML = (topGroup ? topGroup.items : []).map(itemHTML).join("");
   const groupsHTML = NAV_GROUPS.filter((g) => g.sec).map((g) => {

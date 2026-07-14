@@ -183,7 +183,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
 const $ = (id) => document.getElementById(id);
 
@@ -454,13 +454,13 @@ function renderFolders(){
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
     +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderFlowCards(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.filter=n.trim(); renderFolders(); renderFlowCards(); } };
+  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Esqueletos",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.filter=n; renderFolders(); renderFlowCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
 }
 async function deleteFolder(){
   const f=st.filter; if(f==="__all"||f==="__none"||f==="__skeleton") return;
   const n=countIn(f);
-  if(!confirm(n?`La carpeta "${f}" tiene ${n} flujo(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(!await confirmDialog(n?{title:"Eliminar carpeta",message:`La carpeta "${f}" tiene ${n} flujo(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${f}"?`,confirmText:"Eliminar",danger:true})) return;
   if(n){ const { error }=await supa.from("flows").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
   st.localFolders.delete(f); st.filter="__all"; toast("Carpeta eliminada ✓"); await loadFlows();
 }
@@ -1139,7 +1139,7 @@ async function loadTriggers(ov){
       <button class="del">✕</button>`;
     const [tog,del]=row.querySelectorAll("button");
     tog.onclick=async()=>{ const { error }=await supa.from("flow_triggers").update({ activo:!t.activo }).eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
-    del.onclick=async()=>{ if(!confirm("¿Eliminar este disparador?")) return; const { error }=await supa.from("flow_triggers").delete().eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
+    del.onclick=async()=>{ if(!await confirmDialog({title:"Eliminar disparador",message:"¿Eliminar este disparador?",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("flow_triggers").delete().eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
     box.appendChild(row);
   });
 }
@@ -1207,7 +1207,7 @@ async function addTrigger(ov){
 
 // ── Crear flujo ──
 async function createFlow(){
-  const nombre=prompt("Nombre del esqueleto (plantilla base):"); if(!nombre) return;
+  const nombre=await askText({title:"Nuevo flujo",message:"Un esqueleto es una plantilla base reutilizable que luego clonas en tus productos.",label:"Nombre del esqueleto",placeholder:"Ej. Venta con OCR",confirmText:"Crear flujo"}); if(!nombre) return;
   const folder=(st.filter!=="__all"&&st.filter!=="__none"&&st.filter!=="__skeleton")?st.filter:null;
   let { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador", folder }).select("id").single();
   if(error && /folder|column/.test(error.message)){ ({ data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador" }).select("id").single()); }
@@ -1216,7 +1216,7 @@ async function createFlow(){
 }
 async function deleteFlow(){
   if(!st.flowId||!st.flow){ toast("No hay flujo abierto",true); return; }
-  if(!confirm(`¿Eliminar el flujo "${st.flow.nombre}"? Se borrarán sus nodos y conexiones. Esta acción no se puede deshacer.`)) return;
+  if(!await confirmDialog({title:"Eliminar flujo",message:`¿Eliminar "${st.flow.nombre}"? Se borrarán sus nodos y conexiones. Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   await supa.from("flow_edges").delete().eq("flow_id",st.flowId);
   await supa.from("flow_nodes").delete().eq("flow_id",st.flowId);
   const { error }=await supa.from("flows").delete().eq("id",st.flowId);

@@ -181,7 +181,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{} };
 
@@ -315,7 +315,7 @@ async function toggleTrigger(t){
   t.activo=!t.activo; renderKeywords();
 }
 async function removeTrigger(t){
-  if(!confirm("¿Eliminar esta palabra clave?")) return;
+  if(!await confirmDialog({title:"Eliminar palabra clave",message:"¿Eliminar esta palabra clave?",confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("flow_triggers").delete().eq("id",t.id);
   if(error){ toast(error.message,true); return; }
   toast("Eliminada ✓"); await loadAll();

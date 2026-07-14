@@ -72,7 +72,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all", localFolders:new Set() };
 const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"]];
@@ -115,13 +115,13 @@ function renderFolders(){
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
     +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; render(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); render(); } };
+  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Datos de envío",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; render(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
 }
 async function deleteFolder(){
   const f=st.folder; if(f==="__all"||f==="__none") return;
   const affected=st.fields.filter(x=>x.folder===f);
-  if(!confirm(affected.length?`La carpeta "${f}" tiene ${affected.length} campo(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(!await confirmDialog(affected.length?{title:"Eliminar carpeta",message:`La carpeta "${esc(f)}" tiene ${affected.length} campo(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${esc(f)}"?`,confirmText:"Eliminar",danger:true})) return;
   affected.forEach(x=>x.folder=null);
   if(affected.some(x=>x.id)){ const { error }=await supa.from("custom_fields").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error && !/folder|column/.test(error.message)){ toast(error.message,true); } }
   st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); render();

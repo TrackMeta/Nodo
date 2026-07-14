@@ -15,8 +15,7 @@
     --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
-  *{box-sizing:border-box} html,body{height:100%;margin:0}
-  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  *{box-sizing:border-box}
   button{font-family:inherit;cursor:pointer}
   /* Tarjeta de secuencia */
   .qcard .c-top{display:flex;align-items:center;gap:10px;margin-bottom:4px}
@@ -36,10 +35,11 @@
   .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
   .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
   .sw.on{background:var(--green-bg);border-color:transparent} .sw.on::after{left:20px;background:var(--green)}
+  .sw.sm{width:38px;height:22px} .sw.sm::after{width:16px;height:16px} .sw.sm.on::after{left:18px}
   .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 6px}
   .banner{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:12px;padding:13px 16px;font-size:13px;color:var(--muted);line-height:1.55;margin:8px 0 24px}
   .banner b{color:var(--text)}
-  .editwrap{max-width:720px}
+  .editwrap{max-width:760px}
   .tl{position:relative;padding-left:40px}
   .tl::before{content:"";position:absolute;left:15px;top:8px;bottom:30px;width:2px;background:var(--border)}
   .step{position:relative;margin-bottom:16px}
@@ -58,6 +58,24 @@
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{border-color:var(--brand)} .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
+  .iconbtn{width:30px;height:30px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+  .iconbtn:hover{color:var(--text);border-color:var(--brand)} .iconbtn svg{width:15px;height:15px}
+  /* Composer de mensaje (igual que mensajes iniciales) */
+  .msgbox{border:1px solid var(--border);border-radius:12px;background:var(--surface-2);padding:12px 13px;margin-top:4px}
+  .msghd{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .msghd .t{flex:1;font-size:12.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px}
+  .msghd .rot{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);font-weight:600}
+  .variant{border:1px solid var(--border);border-radius:11px;padding:12px;background:var(--surface)}
+  .variant+.variant{margin-top:10px}
+  .vhd{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .vname{flex:1;font-weight:700;height:32px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none}
+  .vpeso{width:54px;height:32px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none}
+  .bubbles{display:flex;flex-direction:column;gap:8px}
+  .bub{border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface-2)}
+  .bub .bhd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .bub .bhd .bt{font-size:11px;color:var(--muted);font-weight:600;flex:1;display:flex;align-items:center;gap:6px}
+  .addb{height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;font-weight:600}
+  .addb:hover{border-color:var(--brand);color:var(--brand)}
 </style>
 </head>
 <body>
@@ -68,7 +86,7 @@
       <div class="nodo-head">
         <div class="grow">
           <h1 class="nodo-title">Secuencias</h1>
-          <p class="nodo-lead">Series de mensajes automáticos (drip) que reenganchan al cliente tras un tiempo de silencio. Si responde, el temporizador se reinicia solo.</p>
+          <p class="nodo-lead">Series de mensajes automáticos (drip) que reenganchan al cliente tras un tiempo de silencio. Si responde, el temporizador se reinicia solo. Cada paso puede enviar multimedia y rotar versiones del copy.</p>
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addSeq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva secuencia</button>
@@ -92,13 +110,15 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], folder:"__all", localFolders:new Set() };
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 function durLabel(sec){ const {val,u}=splitDur(sec); const l={"60":"min","3600":"h","86400":"d"}[u]; return `${val}${l}`; }
+function uid(){ return (crypto.randomUUID?crypto.randomUUID():"v"+Math.random().toString(36).slice(2)); }
+function newVariant(idx){ return { id:uid(), nombre:"Variante "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
 
 async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -131,19 +151,19 @@ function renderFolders(){
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
     +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent" title="Eliminar carpeta">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Remarketing",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
 }
 async function deleteFolder(){
   const f=st.folder; if(f==="__all"||f==="__none") return;
   const n=countIn(f);
-  if(!confirm(n?`La carpeta "${f}" tiene ${n} secuencia(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(!await confirmDialog(n?{title:"Eliminar carpeta",message:`La carpeta "${f}" tiene ${n} secuencia(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${f}"?`,confirmText:"Eliminar",danger:true})) return;
   if(n){ const { error }=await supa.from("sequences").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
   st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await load();
 }
 async function deleteSeq(){
   if(!st.seq) return;
-  if(!confirm(`¿Eliminar la secuencia "${st.seq.nombre}"? Esta acción no se puede deshacer.`)) return;
+  if(!await confirmDialog({title:"Eliminar secuencia",message:`¿Eliminar "${st.seq.nombre}"? Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("sequences").delete().eq("id",st.seq.id);
   if(error){ toast(error.message,true); return; }
   st.seq=null; toast("Secuencia eliminada ✓"); showGrid(); await load();
@@ -164,7 +184,6 @@ function renderCards(){
     return;
   }
   box.innerHTML="";
-  // Tarjeta "Nueva"
   const add=document.createElement("div"); add.className="nodo-card new";
   add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nueva secuencia</div>`;
   add.onclick=createSeq;
@@ -182,7 +201,7 @@ function renderCards(){
   box.appendChild(add);
 }
 async function createSeq(){
-  const nombre=prompt("Nombre de la secuencia (ej. Remarketing pago pendiente):"); if(!nombre) return;
+  const nombre=await askText({title:"Nueva secuencia",label:"Nombre de la secuencia",placeholder:"Ej. Remarketing pago pendiente",confirmText:"Crear"}); if(!nombre) return;
   const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
   const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, pasos:[], folder }).select("id").single();
   if(error){ if(/folder|column/.test(error.message)){ const r=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, pasos:[] }).select("id").single(); if(r.error){toast(r.error.message,true);return;} await load(); return openSeq(r.data.id); } toast(error.message,true); return; }
@@ -215,7 +234,7 @@ function renderDetail(){
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
   const steps=$("steps");
   s.pasos.forEach((p,i)=>steps.appendChild(stepCard(p,i)));
-  $("addStep").onclick=()=>{ s.pasos.push({ umbral_silencio_seg:3600, mensaje:"" }); renderDetail(); };
+  $("addStep").onclick=()=>{ s.pasos.push({ umbral_silencio_seg:3600, variantes:[newVariant(0)], rotacion:false }); renderDetail(); };
 }
 function stepCard(paso,i){
   const wrap=document.createElement("div"); wrap.className="step";
@@ -231,7 +250,7 @@ function stepCard(paso,i){
       </div>
       <label>Acción</label>
       <select class="sel act" style="width:100%">
-        <option value="mensaje" ${mode==="mensaje"?"selected":""}>Enviar un mensaje (dentro de 24h)</option>
+        <option value="mensaje" ${mode==="mensaje"?"selected":""}>Enviar mensaje (texto/multimedia, dentro de 24h)</option>
         <option value="plantilla" ${mode==="plantilla"?"selected":""}>Enviar una plantilla (fuera de 24h)</option>
         <option value="flow" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
       </select>
@@ -245,27 +264,149 @@ function stepCard(paso,i){
   const renderAction=()=>{
     body.innerHTML="";
     if(as.value==="flow"){
-      delete paso.mensaje; delete paso.template_name;
+      delete paso.mensaje; delete paso.template_name; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
       body.innerHTML=`<label>Flujo a iniciar</label><select class="sel fs" style="width:100%"><option value="">— elige —</option>${st.flows.map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}</option>`).join("")}</select>`;
       body.querySelector(".fs").onchange=(e)=>paso.flow_id=e.target.value||undefined;
     } else if(as.value==="plantilla"){
-      delete paso.mensaje; delete paso.flow_id;
+      delete paso.mensaje; delete paso.flow_id; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
       body.innerHTML=`<label>Plantilla</label><select class="sel ts" style="width:100%"><option value="">— elige —</option>${st.templates.map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
         ${st.templates.length?`<label>Variables (una por línea)</label><textarea class="ta pta">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div class="banner" style="margin:8px 0 0">No hay plantillas activas.</div>`}`;
       body.querySelector(".ts").onchange=(e)=>{ paso.template_name=e.target.value||undefined; paso.template_lang=e.target.selectedOptions[0]?.dataset.lang||"es"; };
       const pta=body.querySelector(".pta"); if(pta) pta.oninput=()=>paso.template_params=pta.value.split("\n").map(x=>x.trim()).filter(Boolean);
     } else {
       delete paso.flow_id; delete paso.template_name;
-      body.innerHTML=`<label>Mensaje</label><textarea class="ta ms">${esc(paso.mensaje||"")}</textarea>`;
-      body.querySelector(".ms").oninput=(e)=>paso.mensaje=e.target.value;
+      // Migrar formato viejo {mensaje} → variantes con una burbuja de texto.
+      if(!Array.isArray(paso.variantes)||!paso.variantes.length){
+        const first = paso.mensaje ? [{text:String(paso.mensaje)}] : (Array.isArray(paso.bubbles)&&paso.bubbles.length?paso.bubbles:[{text:""}]);
+        paso.variantes=[{ ...newVariant(0), bubbles:first }];
+      }
+      delete paso.mensaje; delete paso.bubbles;
+      if(paso.rotacion===undefined) paso.rotacion=false;
+      renderMsgComposer(body,paso);
     }
   };
   as.onchange=renderAction; renderAction();
   return wrap;
 }
+
+// ── Composer de mensaje: burbujas multimedia + rotación de versiones ──
+function renderMsgComposer(box,paso){
+  const rot=paso.rotacion===true && paso.variantes.length>0;
+  const activeVars=paso.variantes.filter(v=>v.activo!==false);
+  const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
+  box.innerHTML=`
+    <div class="msgbox">
+      <div class="msghd">
+        <div class="t">${icon("message")} Mensaje del paso</div>
+        <div class="rot"><span>Rotar versiones</span><div class="sw sm ${rot?'on':''}" id="rotSw" title="Enviar una versión distinta cada vez (evita repetir el mismo copy)"></div></div>
+      </div>
+      ${rot?`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">El bot elige una versión por peso cada vez que envía este paso.</div>`
+           :`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">Un mensaje con una o varias burbujas (texto y multimedia). Activa la rotación para variar el copy.</div>`}
+      <div id="varList"></div>
+      ${rot?`<button class="addb" id="addVar" style="margin-top:10px">+ Agregar versión</button>`:``}
+    </div>`;
+  box.querySelector("#rotSw").onclick=()=>{ paso.rotacion=!rot; renderMsgComposer(box,paso); };
+  const av=box.querySelector("#addVar"); if(av) av.onclick=()=>{ paso.variantes.push(newVariant(paso.variantes.length)); renderMsgComposer(box,paso); };
+  const vl=box.querySelector("#varList");
+  // Sin rotación solo se edita/usa la primera versión (las demás quedan guardadas).
+  const list = rot ? paso.variantes : paso.variantes.slice(0,1);
+  list.forEach((v,vi)=>{
+    if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
+    const card=document.createElement("div"); card.className=rot?"variant":"";
+    if(rot){
+      const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoTotal*100):0;
+      card.innerHTML=`
+        <div class="vhd">
+          <input class="vname" value="${esc(v.nombre||('Variante '+String.fromCharCode(65+vi)))}"/>
+          <span style="font-size:11px;color:var(--muted)">Peso</span>
+          <input class="vpeso" type="number" min="0" step="1" value="${Number(v.peso??1)}"/>
+          <span style="font-size:11px;color:var(--brand);font-weight:700;min-width:32px">${v.activo!==false?share+'%':'—'}</span>
+          <div class="sw sm ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
+          <button class="iconbtn vdel" title="Eliminar versión">${icon("trash")}</button>
+        </div>
+        <div class="bubbles"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
+      card.querySelector(".vname").oninput=(e)=>v.nombre=e.target.value;
+      card.querySelector(".vpeso").oninput=(e)=>v.peso=Math.max(0,Number(e.target.value)||0);
+      card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; renderMsgComposer(box,paso); };
+      card.querySelector(".vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); renderMsgComposer(box,paso); };
+    } else {
+      card.innerHTML=`<div class="bubbles"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
+    }
+    const bb=card.querySelector(".bubbles");
+    v.bubbles.forEach((bub,bi)=> bb.appendChild(renderBubble(box,paso,v,bub,bi)));
+    card.querySelectorAll(".addb[data-k]").forEach(btn=> btn.onclick=()=>{
+      const k=btn.dataset.k;
+      if(k==="text"){ v.bubbles.push({text:""}); renderMsgComposer(box,paso); }
+      else pickMedia(box,paso,v,k);
+    });
+    vl.appendChild(card);
+  });
+}
+function addBtns(){
+  return `<button class="addb" data-k="text">+ Texto</button>
+    <button class="addb" data-k="image">+ Imagen</button>
+    <button class="addb" data-k="video">+ Video</button>
+    <button class="addb" data-k="audio">+ Audio</button>`;
+}
+function renderBubble(box,paso,v,bub,bi){
+  const el=document.createElement("div"); el.className="bub";
+  const kind=bub.media_kind||"text";
+  const tIco={text:"note",image:"image",video:"video",audio:"mic",document:"file"}[kind]||"note";
+  let preview="";
+  if(kind==="image") preview=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
+  else if(kind==="video") preview=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
+  else if(kind==="audio") preview=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
+  else if(kind==="document") preview=`<div style="font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"documento")}</div>`;
+  el.innerHTML=`
+    <div class="bhd">
+      <span class="bt">${icon(tIco)} ${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
+      <button class="iconbtn bup" title="Subir">▲</button>
+      <button class="iconbtn bdown" title="Bajar">▼</button>
+      <button class="iconbtn bdel" title="Quitar">${icon("trash")}</button>
+    </div>
+    ${preview}
+    ${kind==="text"
+      ? `<textarea class="ta btext" rows="2" style="min-height:52px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>`
+      : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+  const tx=el.querySelector(".btext"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
+  const cp=el.querySelector(".bcap"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
+  el.querySelector(".bdel").onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderMsgComposer(box,paso); };
+  el.querySelector(".bup").onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderMsgComposer(box,paso); };
+  el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderMsgComposer(box,paso); };
+  return el;
+}
+function pickMedia(box,paso,v,kind){
+  const accept={image:"image/*",video:"video/*",audio:"audio/*"}[kind]||"*/*";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      v.bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
+      toast("Archivo agregado ✓"); renderMsgComposer(box,paso);
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
+// Limpia burbujas/variantes vacías de los pasos de mensaje antes de guardar.
+function cleanSteps(pasos){
+  return (pasos||[]).map(p=>{
+    if(p.flow_id||p.template_name) return p;
+    if(Array.isArray(p.variantes)){
+      p.variantes.forEach(v=>{ v.bubbles=(v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim())); });
+      p.variantes=p.variantes.filter(v=> v.bubbles.length);
+      if(!p.variantes.length) p.variantes=[newVariant(0)];
+    }
+    return p;
+  });
+}
 async function saveSeq(){
   if(!st.seq){ toast("No hay secuencia abierta",true); return; }
-  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null };
+  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:cleanSteps(st.seq.pasos||[]), folder:st.seq.folder||null };
   let { error }=await supa.from("sequences").update(row).eq("id",st.seq.id);
   if(error && /folder|column/.test(error.message)){ delete row.folder; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0016 para carpetas)"); }
   if(error){ toast(error.message,true); return; }

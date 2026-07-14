@@ -267,8 +267,41 @@ body.nodo-shelled{display:flex}
 .nb-btn:hover{background:var(--surface-2)}
 .nb-btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
 .nb-btn.primary:hover{background:var(--brand-2)}
+.nb-btn.danger{background:var(--red,#e2564a);border-color:var(--red,#e2564a);color:#fff}
+.nb-btn.danger:hover{filter:brightness(1.08)}
 .nb-btn:disabled{opacity:.6;cursor:default}
+.nodo-modal textarea{width:100%;background:var(--surface-2);border:1px solid var(--border-strong);
+  border-radius:var(--r-sm,10px);color:var(--text);padding:11px 13px;font:inherit;font-size:14px;line-height:1.5;
+  outline:none;resize:vertical;min-height:96px}
+.nodo-modal textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+.nodo-modal .nodo-modal-x{position:absolute;top:14px;right:14px}
+/* Selector de opciones nativo de la app (askChoice) */
+.nodo-choices{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.nodo-choice{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:12px 14px;
+  color:var(--text);font:inherit;transition:border-color var(--t-fast),background var(--t-fast)}
+.nodo-choice:hover{border-color:var(--brand);background:var(--brand-bg)}
+.nodo-choice.on{border-color:var(--brand);background:var(--brand-bg)}
+.nodo-choice .nc-ic{width:34px;height:34px;flex:none;border-radius:9px;display:grid;place-items:center;
+  background:var(--surface);color:var(--brand)}
+.nodo-choice .nc-ic svg{width:18px;height:18px}
+.nodo-choice .nc-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nodo-choice .nc-tx b{font-size:14px;font-weight:650}
+.nodo-choice .nc-tx small{font-size:12px;color:var(--muted);line-height:1.4}
+.nodo-choice .nc-ck{width:18px;height:18px;flex:none;color:var(--brand);opacity:0;transition:opacity var(--t-fast)}
+.nodo-choice .nc-ck svg{width:18px;height:18px;stroke-width:2.4}
+.nodo-choice.on .nc-ck{opacity:1}
 @keyframes nbFade{from{opacity:0}to{opacity:1}}
+
+/* ── Sección IA: resalte distintivo (violeta/fucsia robot) ─────────── */
+.nodo-link.nodo-link-ia{position:relative}
+.nodo-link.nodo-link-ia svg{color:#a855f7}
+.nodo-link.nodo-link-ia .lbl{background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;
+  background-clip:text;-webkit-text-fill-color:transparent;font-weight:650}
+.nodo-link.nodo-link-ia:hover{background:linear-gradient(90deg,rgba(168,85,247,.14),rgba(236,72,153,.10))}
+.nodo-link.nodo-link-ia.active{background:linear-gradient(90deg,rgba(168,85,247,.20),rgba(236,72,153,.12))}
+.nodo-link.nodo-link-ia.active::before{background:linear-gradient(180deg,#a855f7,#ec4899)!important}
+.nodo-link.nodo-link-ia.active svg{color:#c084fc}
 
 /* Botón-ícono compacto (comprimir en el header, tema en el pie) */
 .nodo-icnbtn{width:32px;height:32px;flex:none;display:grid;place-items:center;border:none;background:transparent;

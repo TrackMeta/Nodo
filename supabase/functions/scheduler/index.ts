@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient } from "../_shared/db.ts";
-import { deliverMessage, runEngine, startFlowRun } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 
 const db = serviceClient();
@@ -121,14 +121,17 @@ async function processSub(s: any, now: number): Promise<boolean> {
     .eq("contact_id", s.contact_id).in("estado", ["activo", "esperando"]).maybeSingle();
   if (active) return false;
 
-  // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje suelto.
+  // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
   if (paso.flow_id) await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
   else if (paso.template_name) {
     await sendTemplateToContact(db, s.channel_id, s.contact_id, {
       name: paso.template_name, language: paso.template_lang, params: paso.template_params,
     });
   }
-  else if (paso.mensaje) await deliverMessage(db, s.channel_id, s.contact_id, String(paso.mensaje));
+  // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
+  else if (paso.mensaje || paso.bubbles?.length || paso.variantes?.length) {
+    await deliverStep(db, s.channel_id, s.contact_id, paso);
+  }
 
   const next = s.paso_actual + 1;
   await db.from("sequence_subscriptions").update({

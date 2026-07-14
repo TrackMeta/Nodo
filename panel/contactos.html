@@ -104,7 +104,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, contacts:[], tags:[] };
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"2-digit",year:"numeric" });
@@ -205,7 +205,7 @@ async function createContact(){
   $("modal").classList.remove("show"); toast("Contacto guardado ✓"); await load();
 }
 async function removeContact(c){
-  if(!confirm(`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación e historial.`)) return;
+  if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación e historial.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("contacts").delete().eq("id",c.id);
   if(error){ toast(error.message,true); return; }
   toast("Contacto eliminado ✓"); await load();

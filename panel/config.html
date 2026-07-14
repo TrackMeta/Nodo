@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Configuración</title>
+<title>Nodo · Ajustes</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -18,8 +18,10 @@
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .tabs{display:flex;gap:2px;margin:24px 0 22px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-  .tab{background:transparent;border:none;color:var(--muted);font-size:14px;font-weight:600;padding:11px 4px;margin-right:22px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:8px}
+  .tabs{display:flex;gap:4px;margin:24px 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:11px 12px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
+  .tab:hover{color:var(--text)}
   .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
   .tab svg{width:17px;height:17px}
   .tab img{width:18px;height:18px;border-radius:5px;object-fit:cover}
@@ -64,14 +66,13 @@
   <div class="nodo-wrap" style="--nodo-max:820px">
     <div class="nodo-head">
       <div class="grow">
-        <h1 class="nodo-title">Configuración</h1>
+        <h1 class="nodo-title">Ajustes</h1>
         <p class="nodo-lead">Marca, comportamiento e integraciones de este bot. Cada canal guarda sus propios ajustes.</p>
       </div>
     </div>
     <div class="tabs">
       <button class="tab active" data-t="marca" id="tabMarca"></button>
       <button class="tab" data-t="general" id="tabGeneral"></button>
-      <button class="tab" data-t="ia" id="tabIa"></button>
       <button class="tab" data-t="pixel" id="tabPixel"></button>
       <button class="tab" data-t="gsheets" id="tabSheets"></button>
       <button class="tab" data-t="apariencia" id="tabApariencia"></button>
@@ -81,7 +82,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, getEffects, setEffects } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, getEffects, setEffects } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 const IC={
   tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
@@ -113,9 +114,8 @@ function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<
 async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
-  $("tabMarca").innerHTML=IC.tag+"<span>Marca del Bot</span>";
+  $("tabMarca").innerHTML=IC.tag+"<span>Marca</span>";
   $("tabGeneral").innerHTML=IC.sliders+"<span>General</span>";
-  $("tabIa").innerHTML=IC.spark+"<span>Inteligencia Artificial</span>";
   $("tabPixel").innerHTML=`<img src="${LOGO.meta}" alt=""/><span>Pixel de Meta</span>`;
   $("tabSheets").innerHTML=`<img src="${LOGO.sheets}" alt=""/><span>Google Sheets</span>`;
   $("tabApariencia").innerHTML=IC.monitor+"<span>Apariencia</span>";
@@ -153,7 +153,6 @@ function render(){
   const b=$("body");
   if(st.tab==="marca") renderBranding(b);
   else if(st.tab==="general") renderGeneral(b);
-  else if(st.tab==="ia") renderIA(b);
   else if(st.tab==="pixel") renderPixel(b);
   else if(st.tab==="apariencia") renderApariencia(b);
   else renderGsheets(b);
@@ -201,24 +200,14 @@ function renderGeneral(b){
       <label>País / zona horaria</label>
       <select class="in" id="g_tz" style="max-width:340px">${TIMEZONES.map(([v,l])=>`<option value="${v}" ${v===tz?"selected":""}>${l}</option>`).join("")}</select>
     </div>
-    <div class="card">
-      <div class="chd"><span class="ico">${IC.spark}</span><span class="nm">Conocimiento del negocio</span></div>
-      <div class="desc">Contexto que el bot conoce <b>en todas las conversaciones de este bot</b>: quiénes somos, tono de venta, políticas de envío y cambios, horarios de despacho, preguntas frecuentes generales. Se inyecta automáticamente a los nodos ${icon("sparkles")} IA. Lo específico de cada producto (descripción, FAQ del producto) se escribe en su ficha de <b>Productos</b>.</div>
-      <textarea class="in" id="g_negocio" rows="9" style="height:auto;min-height:170px;padding:11px 12px;line-height:1.55;font-family:var(--font);resize:vertical" placeholder="Ej.: Somos Digital Prime, vendemos guías y programas por WhatsApp. Tono: cercano y directo, tuteo, emojis con moderación…&#10;Envíos: Lima contraentrega (24h), provincia por Shalom/Olva con adelanto.&#10;Pagos: Yape/Plin al 999 999 999 (Percy Flores).&#10;Nunca prometemos resultados médicos. Si piden hablar con una persona, transferir.">${esc(c.negocio||"")}</textarea>
-    </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const patch={ buffer_default_seg:Math.max(0,parseInt($("g_delay").value||"0",10)), timezone:$("g_tz").value, negocio:$("g_negocio").value.trim()||null };
-    let { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
-    if(error && /negocio|column/.test(error.message)){
-      delete patch.negocio;
-      ({ error }=await supa.from("channels").update(patch).eq("id",st.channelId));
-      if(!error) toast("Guardado sin el conocimiento (aplica la migración 0023)",true);
-    }
+    const patch={ buffer_default_seg:Math.max(0,parseInt($("g_delay").value||"0",10)), timezone:$("g_tz").value };
+    const { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.buffer_default_seg=patch.buffer_default_seg; st.channel.timezone=patch.timezone; st.channel.negocio=patch.negocio??st.channel.negocio; toast("Guardado ✓");
+    st.channel.buffer_default_seg=patch.buffer_default_seg; st.channel.timezone=patch.timezone; toast("Guardado ✓");
   };
 }
 
@@ -327,7 +316,7 @@ function renderGsOauth(box, g){
     finally{ e.target.disabled=false; e.target.textContent=old; }
   };
   const disc=$("gsoDisc");
-  if(disc) disc.onclick=async(e)=>{ if(!confirm("¿Desconectar Google Sheets?")) return; try{ await callFn("gsheets-connect",{ channel_id:st.channelId, disconnect:true }); }catch(_){} await saveGsheets(e.target,{ connected:false }); };
+  if(disc) disc.onclick=async(e)=>{ if(!await confirmDialog({title:"Desconectar Google Sheets",message:"¿Desconectar la cuenta de Google de este bot?",confirmText:"Desconectar",danger:true})) return; try{ await callFn("gsheets-connect",{ channel_id:st.channelId, disconnect:true }); }catch(_){} await saveGsheets(e.target,{ connected:false }); };
 }
 
 // ── Método 2: Apps Script (sin Google Cloud) ────────────────────────
@@ -457,86 +446,6 @@ async function saveBrand(btn){
   st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null;
 }
 
-// ── Inteligencia Artificial ─────────────────────────────────────────
-function renderIA(box){
-  box.innerHTML=`<h2>Inteligencia Artificial</h2><p class="sub">Cada bot usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ${icon("sparkles")} IA de tus flujos.</p><div id="cards"></div>`;
-  const cont=$("cards");
-  PROVIDERS.forEach(p=>{
-    const cfg=st.cfg[p.id], isDef=st.iaProvider===p.id;
-    const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
-    const dl=p.models.map(m=>`<option value="${m}">`).join("");
-    card.innerHTML=`
-      <div class="chd"><span class="ico"><img src="${p.logo}" alt=""/></span>
-        <span class="nm">${esc(p.nm)}</span>
-        ${cfg?'<span class="badge on">Configurada</span>':'<span class="badge">Sin configurar</span>'}
-        ${isDef?'<span class="badge def">Por defecto</span>':''}</div>
-      <div class="desc">${esc(p.desc)}</div>
-      <label>API key ${cfg?'<span style="color:var(--faint)">(vacía para conservar la actual)</span>':''}</label>
-      <input class="in" type="password" id="key_${p.id}" autocomplete="off" placeholder="${cfg?'•••••••• guardada':p.keyHint}"/>
-      <label>Modelo por defecto</label>
-      <input class="in" id="model_${p.id}" list="dl_${p.id}" value="${esc(cfg?.model||p.models[0])}" placeholder="${esc(p.models[0])}"/>
-      <datalist id="dl_${p.id}">${dl}</datalist>
-      <div class="acts">
-        <button class="btn primary" data-a="save" data-p="${p.id}">Guardar</button>
-        <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
-        ${!isDef&&cfg?`<button class="btn ghost" data-a="default" data-p="${p.id}">Usar por defecto</button>`:''}
-        ${cfg?`<button class="btn danger" data-a="delete" data-p="${p.id}">Eliminar</button>`:''}
-      </div>`;
-    cont.appendChild(card);
-  });
-  cont.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
-  renderPerfiles(cont);
-}
-
-// ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────
-// Cambias el modelo de una TAREA en un solo lugar; los nodos IA usan el
-// perfil de su operación salvo que el nodo especifique otro.
-const PERFILES=[
-  ["ventas","Conversación / ventas","Nodos IA que responden dudas y venden (generar texto)."],
-  ["ocr","Validar comprobantes (OCR)","Nodos IA que leen capturas de Yape/Plin (analizar imagen)."],
-  ["extraccion","Extraer datos","Nodos IA que sacan datos estructurados de un texto (extraer)."],
-];
-function renderPerfiles(cont){
-  const perf=(st.channel&&st.channel.ia_perfiles)||{};
-  const allModels=[...new Set(PROVIDERS.flatMap(p=>p.models))];
-  const card=document.createElement("div"); card.className="card";
-  card.innerHTML=`
-    <div class="chd"><span class="ico">${IC.sliders}</span><span class="nm">Perfiles por tarea</span></div>
-    <div class="desc">Qué proveedor y modelo usa cada <b>tipo de trabajo</b>. Cambiarlo aquí actualiza todos los flujos de una vez; un nodo IA puede seguir forzando su propio modelo si lo necesitas.</div>
-    ${PERFILES.map(([k,nm,d])=>{
-      const v=perf[k]||{};
-      return `<div style="border-top:1px solid var(--border);padding:12px 0 2px;margin-top:12px">
-        <div style="font-weight:700;font-size:13.5px">${nm}</div>
-        <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">${d}</div>
-        <div class="row">
-          <div class="f"><label style="margin-top:0">Proveedor</label>
-            <select class="in" id="pf_prov_${k}">
-              <option value="" ${!v.proveedor?"selected":""}>Por defecto del bot</option>
-              <option value="anthropic" ${v.proveedor==="anthropic"?"selected":""}>Claude (Anthropic)</option>
-              <option value="openai" ${v.proveedor==="openai"?"selected":""}>ChatGPT (OpenAI)</option>
-            </select></div>
-          <div class="f"><label style="margin-top:0">Modelo</label>
-            <input class="in" id="pf_mod_${k}" list="pf_dl" value="${esc(v.modelo||"")}" placeholder="(el del proveedor)"/></div>
-        </div>
-      </div>`;
-    }).join("")}
-    <datalist id="pf_dl">${allModels.map(m=>`<option value="${m}">`).join("")}</datalist>
-    <div class="acts"><button class="btn primary" id="savePerfiles">Guardar perfiles</button></div>`;
-  cont.appendChild(card);
-  card.querySelector("#savePerfiles").onclick=async(e)=>{
-    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const ia_perfiles={};
-    PERFILES.forEach(([k])=>{
-      const prov=$("pf_prov_"+k).value, mod=$("pf_mod_"+k).value.trim();
-      if(prov||mod) ia_perfiles[k]={ ...(prov?{proveedor:prov}:{}), ...(mod?{modelo:mod}:{}) };
-    });
-    const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
-    btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
-    st.channel.ia_perfiles=ia_perfiles; toast("Perfiles guardados ✓");
-  };
-}
-
 // ── Pixel de Meta (CAPI) ────────────────────────────────────────────
 function renderPixel(box){
   const c=st.channel||{}, s=st.secrets||{};
@@ -567,30 +476,6 @@ async function callFn(fn, body){
   const { data, error } = await supa.functions.invoke(fn, { body });
   if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
   return data;
-}
-async function call(body){
-  const { data, error } = await supa.functions.invoke("ai-config", { body });
-  if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
-  return data;
-}
-async function onAction(action, provider, btn){
-  const key=$("key_"+provider)?.value?.trim()||null;
-  const model=$("model_"+provider)?.value?.trim()||null;
-  btn.disabled=true; const old=btn.textContent;
-  try{
-    if(action==="save"){
-      if(!key && !st.cfg[provider]){ toast("Pega la API key primero",true); return; }
-      await call({ action:"save", channel_id:st.channelId, provider, api_key:key, model, make_default:!st.iaProvider });
-      toast("Guardado ✓");
-    } else if(action==="test"){
-      btn.textContent="Probando…";
-      const r=await call({ action:"test", channel_id:st.channelId, provider });
-      if(r?.ok) toast("IA responde ✓"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
-    } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto ✓"); }
-    else if(action==="delete"){ if(!confirm("¿Eliminar la configuración de "+provider+"?")) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado ✓"); }
-    await loadCfg();
-  }catch(e){ toast(e.message||"error",true); }
-  finally{ btn.disabled=false; btn.textContent=old; }
 }
 boot();
 </script>

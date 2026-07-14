@@ -65,7 +65,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -96,13 +96,13 @@ function renderFolders(){
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
     +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderCards(); } };
+  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Ventas",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
 }
 async function deleteFolder(){
   const f=st.folder; if(f==="__all"||f==="__none") return;
   const n=countIn(f);
-  if(!confirm(n?`La carpeta "${f}" tiene ${n} respuesta(s). Se moverán a "Sin carpeta". ¿Continuar?`:`¿Eliminar la carpeta vacía "${f}"?`)) return;
+  if(!await confirmDialog(n?{title:"Eliminar carpeta",message:`La carpeta "${f}" tiene ${n} respuesta(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${f}"?`,confirmText:"Eliminar",danger:true})) return;
   if(n){ const { error }=await supa.from("quick_replies").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
   st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await load();
 }
@@ -126,7 +126,7 @@ function renderCards(){
   });
 }
 async function createQR(){
-  const titulo=prompt("Título de la respuesta (ej. Saludo, Precio, Datos de pago):"); if(!titulo) return;
+  const titulo=await askText({title:"Nueva respuesta rápida",label:"Título de la respuesta",placeholder:"Ej. Saludo, Precio, Datos de pago",confirmText:"Crear"}); if(!titulo) return;
   const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
   const { data,error }=await supa.from("quick_replies").insert({ channel_id:st.channelId, titulo:titulo.trim(), cuerpo:"", folder, orden:st.list.length }).select("id").single();
   if(error){ toast(error.message,true); return; }
@@ -158,7 +158,7 @@ async function saveQR(){
 }
 async function deleteQR(){
   if(!st.qr) return;
-  if(!confirm(`¿Eliminar la respuesta "${st.qr.titulo}"?`)) return;
+  if(!await confirmDialog({title:"Eliminar respuesta",message:`¿Eliminar "${st.qr.titulo}"?`,confirmText:"Eliminar",danger:true})) return;
   await supa.from("quick_replies").delete().eq("id",st.qr.id); st.qr=null; toast("Eliminada ✓"); showGrid(); await load();
 }
 boot();

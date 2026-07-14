@@ -317,7 +317,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
@@ -491,7 +491,7 @@ function toggleFlowPop(){
 }
 async function startFlowForContact(flowId){
   const f=state.inboxFlows.find(x=>x.id===flowId); if(!f||!state.contactId) return;
-  if(!confirm(`¿Iniciar el flujo "${f.nombre}" para este contacto? El bot tomará la conversación.`)) return;
+  if(!await confirmDialog({title:"Iniciar flujo",message:`¿Iniciar "${f.nombre}" para este contacto? El bot tomará la conversación.`,confirmText:"Iniciar"})) return;
   try{
     const res=await callFn("flow-start",{ channel_id:state.channelId, contact_id:state.contactId, flow_id:flowId });
     const out=await res.json().catch(()=>({}));
@@ -732,14 +732,14 @@ async function actionHandler(a){
   if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído ✓"); backToList(); loadConversations(); return; }
   if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado ✓"); backToList(); loadConversations(); return; }
   if(a==="export"){ return exportMessages(); }
-  if(a==="block"){ if(!confirm("¿Bloquear este contacto? El bot dejará de responderle y saldrá de la bandeja.")) return;
+  if(a==="block"){ if(!await confirmDialog({title:"Bloquear contacto",message:"El bot dejará de responderle y saldrá de la bandeja.",confirmText:"Bloquear",danger:true})) return;
     let { error }=await supa.from("contacts").update({ bloqueado:true }).eq("id",cid);
     if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
     logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado ✓"); backToList(); loadConversations(); return; }
-  if(a==="clearinfo"){ if(!confirm("¿Borrar todos los campos personalizados de este contacto?")) return;
+  if(a==="clearinfo"){ if(!await confirmDialog({title:"Borrar información",message:"¿Borrar todos los campos personalizados de este contacto?",confirmText:"Borrar",danger:true})) return;
     await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
     loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }
-  if(a==="delchat"){ if(!confirm("¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.")) return;
+  if(a==="delchat"){ if(!await confirmDialog({title:"Eliminar chat",message:"¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
     await supa.from("messages").delete().eq("contact_id",cid); await conv().delete().eq("contact_id",cid);
     toast("Chat eliminado ✓"); backToList(); loadConversations(); return; }
 }
@@ -869,7 +869,7 @@ async function clearTestChat() {
   const msg = flowId
     ? "¿Reiniciar la conversación de prueba y arrancar el flujo elegido?"
     : "¿Borrar la conversación de prueba y empezar de cero? (escribe como el cliente para disparar el flujo)";
-  if (!confirm(msg)) return;
+  if (!await confirmDialog({title:"Reiniciar prueba",message:msg,confirmText:"Reiniciar"})) return;
   const res = await callFn("webchat", { channel_id: state.channelId, reset: true });
   const out = await res.json().catch(() => ({}));
   if (flowId) {

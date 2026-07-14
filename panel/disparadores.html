@@ -94,7 +94,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, triggers:[], flows:[] };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -168,7 +168,7 @@ async function update(t, patch){
   Object.assign(t,patch); toast("Guardado ✓");
 }
 async function remove(t){
-  if(!confirm(`¿Eliminar el disparador "${t.nombre}"?`)) return;
+  if(!await confirmDialog({title:"Eliminar disparador",message:`¿Eliminar "${t.nombre}"?`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("ai_triggers").delete().eq("id",t.id);
   if(error){ toast(error.message,true); return; }
   toast("Eliminado ✓"); await load();

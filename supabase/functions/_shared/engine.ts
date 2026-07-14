@@ -551,9 +551,38 @@ export async function startFlowRun(
 
 // Envía un mensaje suelto (paso de secuencia sin flujo).
 export async function deliverMessage(db: SupabaseClient, channelId: string, contactId: string, text: string) {
-  const run: any = { channel_id: channelId, contact_id: contactId };
-  const { data: c } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
-  await emit(db, run, { text }, { wa_id: (c as any)?.wa_id });
+  await deliverStep(db, channelId, contactId, { mensaje: text });
+}
+
+// Envía un PASO de secuencia con el mismo motor que los "mensajes iniciales":
+// soporta burbujas multimedia (texto/imagen/video/audio) y ROTACIÓN de
+// variantes ponderadas (paso.variantes[].bubbles). Formatos aceptados:
+//   { mensaje }                         → una burbuja de texto (compat viejo)
+//   { bubbles:[...] }                   → una o varias burbujas
+//   { rotacion, variantes:[{peso,activo,bubbles}] } → rota una variante
+export async function deliverStep(db: SupabaseClient, channelId: string, contactId: string, paso: any) {
+  const run: any = { channel_id: channelId, contact_id: contactId, vars: {} };
+  const ctx = await buildContext(db, run);
+
+  // Elegir las burbujas a enviar.
+  let bubbles: any[] = [];
+  const variantes = Array.isArray(paso?.variantes) ? paso.variantes : null;
+  if (variantes && variantes.length) {
+    const active = variantes.filter((v: any) => v.activo !== false && (v.bubbles?.length));
+    if (active.length) {
+      const rotOn = paso.rotacion !== false && active.length > 1;
+      const chosen = rotOn ? pickWeighted(active) : active[0];
+      bubbles = chosen.bubbles ?? [];
+    }
+  } else if (Array.isArray(paso?.bubbles) && paso.bubbles.length) {
+    bubbles = paso.bubbles;
+  } else if (paso?.mensaje) {
+    bubbles = [{ text: String(paso.mensaje) }];
+  }
+
+  for (const b of bubbles) {
+    if (b && (b.media_url || (b.text && String(b.text).trim()))) await emit(db, run, b, ctx);
+  }
 }
 
 // ── STT: descarga el audio entrante y lo transcribe (OpenAI Whisper) ─

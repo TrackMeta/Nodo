@@ -91,7 +91,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set() };
@@ -129,7 +129,7 @@ function renderFolders(){
   $("folders").innerHTML=tabs.map(([v,l])=>`<button class="fchip ${st.folder===v?'on':''}" data-f="${esc(v)}">${esc(l)}</button>`).join("")
     +`<button class="btn" id="newFolder" style="height:32px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva carpeta</button>`;
   $("folders").querySelectorAll(".fchip").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderGrid(); });
-  $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.folder=n.trim(); renderFolders(); renderGrid(); } };
+  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Remarketing",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderGrid(); } };
 }
 function renderGrid(){
   let list=st.camps;
@@ -160,7 +160,7 @@ function renderGrid(){
 }
 async function action(a, c){
   if(a==="edit") return openModal(c);
-  if(a==="del"){ if(!confirm("¿Eliminar campaña?")) return; await supa.from("campaigns").delete().eq("id",c.id); toast("Eliminada ✓"); return load(); }
+  if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; await supa.from("campaigns").delete().eq("id",c.id); toast("Eliminada ✓"); return load(); }
   if(a==="cancel"){ await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); toast("Cancelada"); return load(); }
   if(a==="activate"){
     if(!c.template_id){ toast("La campaña necesita una plantilla",true); return openModal(c); }
