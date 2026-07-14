@@ -40,21 +40,22 @@ import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomC
 
 const HANDLES = {
   mensaje:["continuar"], pregunta:["continuar"], condicion:["ruta:1","si_no_cumple"],
-  accion:["continuar"], ia:["exito","fallo"], esperar:["continuar"], iniciar_flujo:["continuar"],
-  evento_fb:["exito","fallo"], plantilla:["exito","fallo"], google_sheets:["exito","fallo"], fin:[],
+  accion:["continuar"], ia:["exito","fallo"], rotador:["continuar"], esperar:["continuar"], iniciar_flujo:["continuar"],
+  evento_fb:["exito","fallo"], plantilla:["exito","fallo"], google_sheets:["exito","fallo"], nota:[], fin:[],
 };
 
 const editor = new Drawflow(document.getElementById("drawflow"));
 editor.start();
 const api = installCanvas(editor);
 window.editor = editor; window.api = api; // acceso desde consola (dev)
-mountZoomControls(editor, document.querySelector(".wrap"), api);
+mountZoomControls(editor, document.querySelector(".wrap"), { fitView:api.fitView, organize:()=>{ autoLayout(editor); api.fitView(); } });
 
 const models = {};
 function add(tipo, nombre, config, x, y, opts={}){
   const handles = opts.handles || HANDLES[tipo] || ["continuar"];
+  const ins = tipo==="nota" ? 0 : 1;
   const m = { tipo, nombre, config: config||{}, es_inicial: !!opts.inicial, handles };
-  m.dfId = editor.addNode(tipo, 1, handles.length, x, y, tipo, {}, nodeHtml(m));
+  m.dfId = editor.addNode(tipo, ins, handles.length, x, y, tipo, {}, nodeHtml(m));
   models[m.dfId] = m;
   decorateNode(editor, m);
   return m;
@@ -71,8 +72,10 @@ const n7 = add("mensaje","No entendí",{bubbles:[{text:"Perdona, no te entendí 
 const n8 = add("evento_fb","Compra (Purchase)",{event_name:"Purchase", value:"{{valor}}"}, 1480, 60);
 const n9 = add("esperar","Pausa corta",{segundos:4}, 1480, 300);
 const n10 = add("fin","Fin del flujo",{}, 1810, 180);
-const n11 = add("accion","Etiquetar lead",{acciones:[{tipo:"etiqueta"}]}, 60, 540);
+const n11 = add("accion","Etiquetar lead",{acciones:[{tipo:"add_tag",valor:"lead"},{tipo:"set_field",key:"origen",valor:"webchat"}]}, 60, 540);
 const n12 = add("iniciar_flujo","Ir a postventa",{target_role:"postventa"}, 1480, 540);
+const n13 = add("rotador","Saludo rotado",{variantes:[{nombre:"A",peso:2,activo:true},{nombre:"B",peso:1,activo:true}]}, 60, 60);
+add("nota","",{text:"Recuerda: este flujo arranca con la keyword 'zapatillas'. Revisar pesos del dado."}, 800, 560);
 
 const C = (a,b,o=1)=>{ try{ editor.addConnection(a.dfId, b.dfId, "output_"+o, "input_1"); }catch(e){} };
 C(n1,n2); C(n1,n3);            // salidas paralelas desde el mismo puerto
@@ -83,9 +86,9 @@ C(n8,n10); C(n9,n10);
 C(n7,n2);                      // arista HACIA ATRÁS (canal por fuera)
 C(n11,n3); C(n9,n12);
 
-// ── Paleta ──
+// ── Paleta (comprimible) ──
 const pal = document.getElementById("palette");
-pal.innerHTML = `<div class="pl-title">Añadir nodo</div><div class="pl-grid"></div>`;
+pal.innerHTML = `<div class="pl-head"><span class="pl-title">Añadir nodo</span><button class="pl-toggle" id="palToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button></div><div class="pl-grid"></div>`;
 const grid = pal.querySelector(".pl-grid");
 let drop = 0;
 for(const t of Object.keys(HANDLES)){
@@ -95,6 +98,8 @@ for(const t of Object.keys(HANDLES)){
   b.onclick = ()=>{ add(t, NODE_TYPES[t].label, {}, 300+(drop%4)*60, 700+(drop%3)*40); drop++; };
   grid.appendChild(b);
 }
+document.getElementById("palToggle").onclick = (e)=>{ e.stopPropagation(); pal.classList.toggle("collapsed"); };
+document.getElementById("drawflow").addEventListener("mousedown", ()=> pal.classList.add("collapsed"));
 
 api.routeAll();
 api.fitView();
@@ -136,10 +141,22 @@ window.__snapshot = async function(name="snap"){
     const r=L(n.getBoundingClientRect());
     const ncs=getComputedStyle(n);
     const col=(ncs.getPropertyValue('--nd-color')||'#64748B').trim();
+    const sel=n.classList.contains('selected');
+    if(sel){ rr(r.x-4,r.y-4,r.w+8,r.h+8,17); x.fillStyle=col+'26'; x.fill(); }
     rr(r.x,r.y,r.w,r.h,14);
     x.fillStyle=ncs.backgroundColor; x.fill();
-    x.strokeStyle=ncs.borderColor; x.lineWidth=1.2; x.stroke();
-    if(n.classList.contains('selected')){ x.strokeStyle=col; x.lineWidth=2.5; x.stroke(); }
+    x.strokeStyle=sel?col:ncs.borderColor; x.lineWidth=sel?1.8:1.2; x.stroke();
+    // Nota (post-it): estructura distinta
+    if(n.classList.contains('nota')){
+      const hd=n.querySelector('.nd-note-head'), tt=n.querySelector('.nd-note-txt');
+      if(hd){ const hr=L(hd.getBoundingClientRect()); x.fillStyle=col; x.font='800 9.5px Inter,sans-serif'; x.textBaseline='middle'; x.fillText('NOTA', hr.x+18, hr.y+hr.h/2);
+        rr(hr.x,hr.y+2,14,14,4); x.fillStyle=col+'33'; x.fill(); }
+      if(tt){ const tr=L(tt.getBoundingClientRect()); x.fillStyle=cs.color; x.font='12.5px Inter,sans-serif'; x.textBaseline='top';
+        const words=tt.textContent.split(' '); let line='',yy=tr.y,ln=0;
+        for(const w of words){ if(x.measureText(line+' '+w).width>tr.w && line){ x.fillText(line,tr.x,yy,tr.w); yy+=17; line=''; if(++ln>5)break; } line+=(line?' ':'')+w; }
+        if(line&&ln<6) x.fillText(line,tr.x,yy,tr.w); }
+      return;
+    }
     const head=n.querySelector('.nd-head');
     if(head){
       const hr=L(head.getBoundingClientRect());

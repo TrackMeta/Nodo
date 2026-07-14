@@ -640,6 +640,10 @@ export async function mountShell({ active } = {}) {
       paintBrand();
       if (!silent) S.subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
     },
+    // Comprime/expande el sidebar SIN persistir la preferencia del usuario
+    // (lo usa el editor de flujos para dar aire al lienzo y luego restaurar).
+    setCollapsed(v) { if (S.nav) S.nav.classList.toggle("collapsed", !!v); },
+    isCollapsedPref() { return localStorage.getItem("nodo.collapsed") === "1"; },
   };
   window.NodoShell = S.api;
 

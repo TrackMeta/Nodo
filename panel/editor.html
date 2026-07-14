@@ -33,14 +33,60 @@
   .back{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px 0 9px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;font-weight:600}
   .back:hover{color:var(--text);border-color:var(--brand)} .back svg{width:16px;height:16px}
   #drawflow{position:absolute;inset:0}
-  .cfg{width:280px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px}
-  .cfg h3{font-size:14px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
-  .cfg-ic{width:26px;height:26px;border-radius:8px;flex:none;background:var(--nd-color,var(--brand));color:#fff;
+  .cfg{width:308px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:16px;transition:width .2s ease}
+  .cfg.collapsed{width:0;padding:0;border-left:none;overflow:hidden}
+  .cfg h3{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:9px;--nd-color:var(--brand)}
+  .cfg .h3-x{margin-left:auto;width:26px;height:26px;border:none;background:transparent;color:var(--faint);border-radius:8px;display:flex;align-items:center;justify-content:center}
+  .cfg .h3-x:hover{background:var(--surface-2);color:var(--text)}
+  .cfg .h3-x svg{width:15px;height:15px}
+  .cfg-ic{width:28px;height:28px;border-radius:8px;flex:none;background:var(--nd-color,var(--brand));color:#fff;
     display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px color-mix(in srgb,var(--nd-color,var(--brand)) 45%, transparent)}
-  .cfg-ic svg{width:14px;height:14px}
+  .cfg-ic svg{width:15px;height:15px}
   .cfg-ic.sm{width:20px;height:20px;border-radius:6px}
   .cfg-ic.sm svg{width:11px;height:11px}
-  .cfg label{display:block;font-size:11px;color:var(--muted);margin:12px 0 5px}
+  .cfg label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin:14px 0 6px}
+  /* Tarjeta de sección dentro del panel de config */
+  .fcard{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-bottom:10px}
+  .fcard>label:first-child{margin-top:0}
+  .fhint{font-size:11px;color:var(--faint);margin:5px 0 0;line-height:1.45}
+  .frow{display:flex;gap:6px;align-items:center}
+  .frow .in{min-width:0}
+  .fbtn{width:100%;background:var(--surface-2);border:1px dashed var(--border-strong,var(--border));color:var(--muted);border-radius:9px;height:36px;font-weight:600;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px}
+  .fbtn:hover{color:var(--brand);border-color:var(--brand)}
+  .fbtn svg{width:15px;height:15px}
+  .xbtn{flex:none;width:32px;height:32px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--faint);display:flex;align-items:center;justify-content:center}
+  .xbtn:hover{color:var(--red);border-color:var(--red)}
+  .xbtn svg{width:14px;height:14px}
+  /* Selector desplegable de acciones (nodo Acción) */
+  .apick{position:relative}
+  .apick-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:var(--surface);border:1px solid var(--border-strong,var(--border));border-radius:12px;box-shadow:var(--shadow-3,0 16px 48px rgba(0,0,0,.45));padding:6px;max-height:320px;overflow-y:auto}
+  .apick-grp{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);padding:8px 8px 4px}
+  .apick-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;color:var(--text);border-radius:8px;padding:7px 8px;font-size:12.5px;font-weight:500}
+  .apick-item:hover{background:var(--surface-2)}
+  .apick-item .ai-ic{width:24px;height:24px;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--ac,var(--brand)) 18%,transparent);color:var(--ac,var(--brand))}
+  .apick-item .ai-ic svg{width:13px;height:13px}
+  /* Item de acción ya añadida */
+  .acc-item{border:1px solid var(--border);border-radius:11px;margin-bottom:8px;overflow:hidden;background:var(--surface-2)}
+  .acc-head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:color-mix(in srgb,var(--ac,var(--brand)) 12%,transparent);border-bottom:1px solid var(--border)}
+  .acc-head .ah-ic{width:22px;height:22px;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--ac,var(--brand));color:#fff}
+  .acc-head .ah-ic svg{width:12px;height:12px}
+  .acc-head .ah-tt{font-size:12.5px;font-weight:650;flex:1;min-width:0}
+  .acc-head .ah-mv{background:transparent;border:none;color:var(--faint);width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px}
+  .acc-head .ah-mv:hover{color:var(--text);background:var(--surface)}
+  .acc-head .ah-mv svg{width:14px;height:14px}
+  .acc-body{padding:10px}
+  .acc-body:empty{display:none}
+  .acc-body label:first-child{margin-top:0}
+  .seg2{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:2px}
+  .seg2 button{flex:1;background:transparent;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:7px 6px;border-radius:7px}
+  .seg2 button.on{background:var(--brand);color:#fff}
+  /* Colapsable avanzado */
+  .adv{margin-top:14px;border-top:1px solid var(--border);padding-top:6px}
+  .adv>summary{list-style:none;cursor:pointer;font-size:11.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:6px;padding:8px 2px}
+  .adv>summary::-webkit-details-marker{display:none}
+  .adv>summary .chev{width:14px;height:14px;transition:transform .15s}
+  .adv[open]>summary .chev{transform:rotate(90deg)}
+  .adv>summary:hover{color:var(--text)}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;font-family:var(--font)}
   .ta{min-height:120px;font-family:var(--font-mono,monospace);font-size:12px;resize:vertical}
   .in:focus,.ta:focus{border-color:var(--brand)}
@@ -138,7 +184,7 @@
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">
 import { supa, mountShell, toast, icon } from "./shell.js";
-import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls } from "./flow-canvas.js";
+import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
 const $ = (id) => document.getElementById(id);
 
 // Salidas (handles) por defecto de cada tipo de nodo. El aspecto visual
@@ -149,19 +195,18 @@ const NODE_DEFS = {
   condicion:    { handles:["ruta:1","si_no_cumple"] },
   accion:       { handles:["continuar"] },
   ia:           { handles:["exito","fallo"] },
+  rotador:      { handles:["continuar"] },
   esperar:      { handles:["continuar"] },
   iniciar_flujo:{ handles:["continuar"] },
   evento_fb:    { handles:["exito","fallo"] },
   plantilla:    { handles:["exito","fallo"] },
   google_sheets:{ handles:["exito","fallo"] },
+  nota:         { handles:[], inputs:0 },   // anotación libre, sin conexiones
   fin:          { handles:[] },
-  // rotador: mensajes iniciales con rotación de copy. Se edita desde la ficha
-  // del producto (pestaña Activación), no desde la paleta → hidden.
-  rotador:      { handles:["continuar"], hidden:true },
 };
 
 const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all", localFolders:new Set() };
-let editor, canvas;
+let editor, canvas, zoomCtl, shell;
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -172,19 +217,25 @@ async function boot(){
   editor = new Drawflow($("drawflow"));
   editor.start();
   canvas = installCanvas(editor);
-  mountZoomControls(editor, document.querySelector(".canvaswrap"), canvas);
+  zoomCtl = mountZoomControls(editor, document.querySelector(".canvaswrap"), {
+    fitView: canvas.fitView,
+    organize: ()=>{ autoLayout(editor); canvas.fitView(); pushHistory(); },
+    undo, redo,
+  });
   editor.on("nodeSelected", (id)=> selectNode(id));
   editor.on("nodeUnselected", ()=> { st.selected=null; renderCfg(); });
-  // Paleta de nodos (colores/iconos desde flow-canvas.js)
-  $("palette").innerHTML=`<div class="pl-title">Añadir nodo</div><div class="pl-grid"></div>`;
-  const plGrid=$("palette").querySelector(".pl-grid");
-  for(const t of Object.keys(NODE_DEFS)){
-    if(NODE_DEFS[t].hidden) continue;
-    const b=document.createElement("button"); b.className="pbtn"; b.dataset.tipo=t;
-    b.title=NODE_TYPES[t]?.desc||"";
-    b.innerHTML=`<span class="pb-ic">${nodeIcon(t)}</span>${NODE_TYPES[t]?.label||t}`;
-    b.onclick=()=>addNode(t); plGrid.appendChild(b);
-  }
+  // Historial: capturar tras crear/borrar/mover nodos y conexiones.
+  ["nodeCreated","nodeRemoved","connectionCreated","connectionRemoved","nodeMoved"].forEach(ev=>editor.on(ev, ()=>{ if(!histLock) pushHistory(); }));
+  document.addEventListener("keydown",(e)=>{
+    if($("editorMain").style.display==="none") return;
+    const mod=e.ctrlKey||e.metaKey; if(!mod) return;
+    const k=e.key.toLowerCase();
+    if(k==="z" && !e.shiftKey){ e.preventDefault(); undo(); }
+    else if((k==="y")||(k==="z"&&e.shiftKey)){ e.preventDefault(); redo(); }
+  });
+  buildPalette();
+  // Cierra el menú de acciones al hacer clic fuera (un solo listener global).
+  document.addEventListener("click",(e)=>{ document.querySelectorAll(".apick-menu").forEach(mn=>{ if(!mn.parentElement.contains(e.target)) mn.style.display="none"; }); });
   await loadChannels();
   $("addFlow").onclick = createFlow;
   $("saveBtn").onclick = save;
@@ -194,8 +245,34 @@ async function boot(){
   $("delFlowBtn").onclick = deleteFlow;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
 }
-function showOverview(){ $("overview").style.display=""; $("editorTop").style.display="none"; $("editorMain").style.display="none"; }
-function showEditor(){ $("overview").style.display="none"; $("editorTop").style.display="flex"; $("editorMain").style.display="flex"; }
+
+// ── Paleta de nodos (comprimible con botón) ──
+function buildPalette(){
+  const pal=$("palette");
+  pal.innerHTML=`<div class="pl-head">
+      <span class="pl-title">Añadir nodo</span>
+      <button class="pl-toggle" id="palToggle" title="Comprimir / expandir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+    </div><div class="pl-grid"></div>`;
+  const grid=pal.querySelector(".pl-grid");
+  for(const t of Object.keys(NODE_DEFS)){
+    if(NODE_DEFS[t].hidden) continue;
+    const b=document.createElement("button"); b.className="pbtn"; b.dataset.tipo=t;
+    b.title=NODE_TYPES[t]?.desc||"";
+    b.innerHTML=`<span class="pb-ic">${nodeIcon(t)}</span>${NODE_TYPES[t]?.label||t}`;
+    b.onclick=()=>addNode(t); grid.appendChild(b);
+  }
+  $("palToggle").onclick=(e)=>{ e.stopPropagation(); pal.classList.toggle("collapsed"); };
+  // Al hacer clic fuera de la paleta (en el lienzo), se comprime.
+  $("drawflow").addEventListener("mousedown", ()=>{ pal.classList.add("collapsed"); });
+}
+function showOverview(){
+  $("overview").style.display=""; $("editorTop").style.display="none"; $("editorMain").style.display="none";
+  if(shell) shell.setCollapsed(shell.isCollapsedPref()); // restaura preferencia del usuario
+}
+function showEditor(){
+  $("overview").style.display="none"; $("editorTop").style.display="flex"; $("editorMain").style.display="flex";
+  if(shell) shell.setCollapsed(true); // comprime el sidebar para dar aire al lienzo
+}
 
 // ── Toggle Estructura ⇄ Contenido ──
 function setView(v){
@@ -348,7 +425,7 @@ function buildIA(m, body){
 }
 
 async function loadChannels(){
-  const shell=await mountShell({ active:"editor" });
+  shell=await mountShell({ active:"editor" });
   st.channelId = shell.channelId;
   const params=new URLSearchParams(location.search);
   const flowParam = params.get("flow");
@@ -437,6 +514,7 @@ async function openFlow(flowId){
   renderCfg();
   canvas.routeAll();
   canvas.fitView();
+  resetHistory();
   if(st.view==="contenido") renderContent();
 }
 
@@ -459,8 +537,9 @@ function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={
 function addExisting(n){
   const def=NODE_DEFS[n.tipo]||{handles:["continuar"]};
   const handles = handlesFor(n.tipo, n.config, def);
+  const ins = def.inputs===0 ? 0 : 1;
   const m = { uuid:n.id, tipo:n.tipo, nombre:n.nombre, config:n.config||{}, handles, es_inicial:n.es_inicial };
-  m.dfId = editor.addNode(n.tipo, 1, handles.length, n.pos_x||100, n.pos_y||100, n.tipo, {}, nodeHtml(m));
+  m.dfId = editor.addNode(n.tipo, ins, handles.length, n.pos_x||100, n.pos_y||100, n.tipo, {}, nodeHtml(m));
   st.model[n.id]=m;
   st.dfToUuid[m.dfId]=n.id;
   decorateNode(editor, m);
@@ -472,16 +551,57 @@ function addNode(tipo){
   const def=NODE_DEFS[tipo];
   const uuid=crypto.randomUUID();
   const handles=[...def.handles];
+  const ins = def.inputs===0 ? 0 : 1;
   const wrap=$("drawflow"), z=editor.zoom||1;
   const jitter=(Object.keys(st.model).length%5)*26;
   const x=((wrap.clientWidth/2)-(editor.canvas_x||0))/z - 110 + jitter;
   const y=((wrap.clientHeight/2)-(editor.canvas_y||0))/z - 50 + jitter;
-  const m={ uuid, tipo, nombre:NODE_TYPES[tipo]?.label||tipo, config:defaultConfig(tipo), handles, es_inicial:Object.keys(st.model).length===0 };
-  m.dfId=editor.addNode(tipo, 1, handles.length, x, y, tipo, {}, nodeHtml(m));
+  // nota/fin nunca son el paso inicial; el resto sí si es el primero.
+  const canInit = tipo!=="nota" && tipo!=="fin";
+  const m={ uuid, tipo, nombre:NODE_TYPES[tipo]?.label||tipo, config:defaultConfig(tipo), handles, es_inicial:canInit && Object.keys(st.model).length===0 };
+  m.dfId=editor.addNode(tipo, ins, handles.length, x, y, tipo, {}, nodeHtml(m));
   st.model[uuid]=m;
   st.dfToUuid[m.dfId]=uuid;
   decorateNode(editor, m);
+  selectNode(m.dfId);
+  editor.dispatch && editor.dispatch("nodeCreated", m.dfId);
 }
+
+// ── Historial (deshacer / rehacer) ──
+let histStack=[], histIdx=-1, histLock=false;
+function serializeFlow(){
+  const exp=editor.export().drawflow.Home.data;
+  const nodes=[]; for(const uuid in st.model){ const m=st.model[uuid], d=exp[m.dfId];
+    nodes.push({ uuid:m.uuid, tipo:m.tipo, nombre:m.nombre, config:JSON.parse(JSON.stringify(m.config||{})), handles:[...m.handles], es_inicial:!!m.es_inicial, pos_x:d?d.pos_x:0, pos_y:d?d.pos_y:0 }); }
+  const edges=[];
+  for(const dfId in exp){ const node=exp[dfId], m=st.model[st.dfToUuid[dfId]]; if(!m) continue;
+    const outs=node.outputs||{};
+    for(const okey in outs){ const idx=parseInt(okey.split("_")[1],10)-1; const handle=m.handles[idx]||"continuar";
+      for(const conn of outs[okey].connections||[]){ const tgt=st.dfToUuid[conn.node]; if(tgt) edges.push({ s:m.uuid, h:handle, t:tgt }); } } }
+  return { nodes, edges };
+}
+function restoreFlow(snap){
+  histLock=true;
+  if(editor) editor.clear(); st.model={}; st.dfToUuid={}; st.selected=null;
+  for(const n of snap.nodes) addExisting({ id:n.uuid, tipo:n.tipo, nombre:n.nombre, config:n.config, es_inicial:n.es_inicial, pos_x:n.pos_x, pos_y:n.pos_y });
+  for(const e of snap.edges){ const src=st.model[e.s], tgt=st.model[e.t]; if(!src||!tgt) continue;
+    const idx=src.handles.indexOf(e.h); if(idx<0) continue;
+    try{ editor.addConnection(src.dfId, tgt.dfId, "output_"+(idx+1), "input_1"); }catch(_){}
+  }
+  canvas.routeAll(); renderCfg();
+  histLock=false;
+}
+function pushHistory(){
+  if(histLock||!st.flowId) return;
+  const snap=serializeFlow();
+  histStack=histStack.slice(0, histIdx+1);
+  histStack.push(snap); if(histStack.length>60) histStack.shift();
+  histIdx=histStack.length-1; paintHistory();
+}
+function resetHistory(){ histStack=[]; histIdx=-1; pushHistory(); }
+function undo(){ if(histIdx<=0) return; histIdx--; restoreFlow(histStack[histIdx]); paintHistory(); }
+function redo(){ if(histIdx>=histStack.length-1) return; histIdx++; restoreFlow(histStack[histIdx]); paintHistory(); }
+function paintHistory(){ zoomCtl?._setHistory?.(histIdx>0, histIdx<histStack.length-1); }
 
 function defaultConfig(tipo){
   switch(tipo){
@@ -507,7 +627,12 @@ function defaultConfig(tipo){
     //   columnas:[{col:"Compra extra",valor:"{{order_bump}}"}]
     buscar:[] };
     case "esperar": return { segundos:4 };
-    case "iniciar_flujo": return { target_role:"" };
+    case "iniciar_flujo": return { target_flow_id:"", target_role:"" };
+    case "rotador": return { activo:true, variantes:[
+      { nombre:"Variante A", peso:1, activo:true, bubbles:[{ text:"¡Hola! 👋 Gracias por escribirnos." }] },
+      { nombre:"Variante B", peso:1, activo:true, bubbles:[{ text:"¡Hola! 😃 Qué bueno tenerte por aquí." }] },
+    ] };
+    case "nota": return { text:"" };
     default: return {};
   }
 }
@@ -517,36 +642,371 @@ function handlesFor(tipo, config, def){
   return [...(def.handles||["continuar"])];
 }
 
-// ── Panel de configuración ──
+// ── Panel de configuración (formularios amigables por tipo) ──
+const XSVG=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
 function selectNode(dfId){ st.selected=st.dfToUuid[dfId]; renderCfg(); }
+function deselectNode(){
+  document.querySelectorAll(".drawflow-node.selected").forEach(el=>el.classList.remove("selected"));
+  if(editor){ editor.node_selected=null; }
+  st.selected=null; renderCfg();
+}
 function renderCfg(){
   const cfg=$("cfg");
-  if(!st.selected){ cfg.innerHTML=`<div class="empty" style="height:100%"><span style="font-size:26px;display:flex">${icon("flujos")}</span><div>${st.flowId?"Selecciona un nodo":"Elige o crea un flujo"}</div></div>`; return; }
+  // Sin nodo seleccionado → la columna se comprime (pedido de Rodrigo).
+  if(!st.selected){ cfg.classList.add("collapsed"); cfg.innerHTML=""; return; }
+  cfg.classList.remove("collapsed");
   const m=st.model[st.selected];
-  const isSheets = m.tipo==="google_sheets";
   cfg.innerHTML=`
-    <h3><span class="cfg-ic" data-tipo="${m.tipo}">${nodeIcon(m.tipo)}</span> ${NODE_TYPES[m.tipo]?.label||m.tipo}</h3>
-    <label>Nombre del bloque</label>
-    <input class="in" id="cfgNombre" value="${esc(m.nombre)}" />
-    ${isSheets?`<div id="sheetsForm"></div>`:""}
-    <label>${isSheets?"Config avanzada (JSON)":"Contenido (config JSON)"}</label>
-    <textarea class="ta" id="cfgJson" ${isSheets?'style="min-height:90px"':""}>${esc(JSON.stringify(m.config,null,2))}</textarea>
-    <label>Salidas (handles) — deben coincidir con las conexiones</label>
-    <div id="handles"></div>
-    <button class="btn" id="addHandle" style="width:100%;margin-top:4px">+ salida</button>
-    <label class="chk"><input type="checkbox" id="cfgInicial" ${m.es_inicial?"checked":""}/> Paso inicial del flujo</label>
-    <button class="del" id="delNode">Eliminar nodo</button>`;
-  renderHandles(m);
-  if(isSheets) buildSheetsForm(m);
-  $("cfgNombre").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
-  $("cfgJson").onchange=(e)=>{ try{ m.config=JSON.parse(e.target.value); toast("Config OK"); updateNodeDom(m); if(m.tipo==="google_sheets") buildSheetsForm(m); }catch(_){ toast("JSON inválido", true); } };
-  $("cfgInicial").onchange=(e)=>{
-    if(e.target.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; }
-    else m.es_inicial=false;
-    for(const k in st.model) updateNodeDom(st.model[k]);
+    <h3 data-tipo="${m.tipo}"><span class="cfg-ic">${nodeIcon(m.tipo)}</span> ${NODE_TYPES[m.tipo]?.label||m.tipo}
+      <button class="h3-x" id="cfgClose" title="Cerrar">${XSVG}</button></h3>
+    ${m.tipo==="nota"?"":`<label>Nombre del bloque</label><input class="in" id="cfgNombre" value="${esc(m.nombre)}" />`}
+    <div id="cfgForm"></div>`;
+  $("cfgClose").onclick=deselectNode;
+  const nn=$("cfgNombre"); if(nn) nn.oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
+  buildCfgForm(m, $("cfgForm"));
+}
+
+// Enruta al constructor amigable de cada tipo + secciones comunes.
+function buildCfgForm(m, form){
+  form.innerHTML="";
+  const body=document.createElement("div");
+  switch(m.tipo){
+    case "mensaje":       buildMensajeCfg(m, body); break;
+    case "pregunta":      buildPregunta(m, body); break;
+    case "ia":            buildIA(m, body); break;
+    case "evento_fb":     buildEvento(m, body); break;
+    case "condicion":     buildCondicionCfg(m, body); break;
+    case "accion":        buildAccionCfg(m, body); break;
+    case "esperar":       buildEsperarCfg(m, body); break;
+    case "iniciar_flujo": buildIniciarFlujoCfg(m, body); break;
+    case "plantilla":     buildPlantillaCfg(m, body); break;
+    case "rotador":       buildRotadorCfg(m, body); break;
+    case "google_sheets": { const gd=document.createElement("div"); gd.id="sheetsForm"; body.appendChild(gd); buildSheetsForm(m); break; }
+    case "nota":          buildNotaCfg(m, body); break;
+    case "fin":           { const p=document.createElement("p"); p.className="fhint"; p.textContent="Este nodo termina la conversación. No tiene salidas."; body.appendChild(p); break; }
+  }
+  form.appendChild(body);
+  appendCommon(m, form);
+}
+
+// Secciones comunes: paso inicial, salidas avanzadas, JSON y eliminar.
+const DERIVED_HANDLES=new Set(["condicion","rotador","mensaje"]); // gestionan sus salidas en el form
+function appendCommon(m, form){
+  if(m.tipo!=="nota" && m.tipo!=="fin"){
+    const lab=document.createElement("label"); lab.className="chk";
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!m.es_inicial;
+    cb.onchange=()=>{ if(cb.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; } else m.es_inicial=false; for(const k in st.model) updateNodeDom(st.model[k]); };
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(" Marcar como paso inicial del flujo"));
+    form.appendChild(lab);
+  }
+  // Avanzado (colapsado): salidas manuales + JSON.
+  const adv=document.createElement("details"); adv.className="adv";
+  adv.innerHTML=`<summary><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Ajustes avanzados</summary>`;
+  const advBody=document.createElement("div");
+  if(m.tipo!=="nota" && m.tipo!=="fin" && !DERIVED_HANDLES.has(m.tipo)){
+    advBody.appendChild(mkLabel("Salidas (deben coincidir con las conexiones)"));
+    const hbox=document.createElement("div"); hbox.id="handles"; advBody.appendChild(hbox);
+    const addh=document.createElement("button"); addh.className="fbtn"; addh.textContent="+ salida";
+    addh.onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); decorateNode(editor, m); canvas.schedule(); pushHistory(); };
+    advBody.appendChild(addh);
+  }
+  advBody.appendChild(mkLabel("Config (JSON)"));
+  const ta=document.createElement("textarea"); ta.className="ta"; ta.id="cfgJson"; ta.value=JSON.stringify(m.config,null,2);
+  ta.onchange=()=>{ try{ m.config=JSON.parse(ta.value); toast("Config OK"); updateNodeDom(m); renderCfg(); }catch(_){ toast("JSON inválido", true); } };
+  advBody.appendChild(ta);
+  adv.appendChild(advBody); form.appendChild(adv);
+  if($("handles")) renderHandles(m);
+  // Eliminar
+  const del=document.createElement("button"); del.className="del"; del.textContent="Eliminar nodo";
+  del.onclick=()=>{ editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId]; deselectNode(); pushHistory(); };
+  form.appendChild(del);
+}
+
+// ── Helpers de formulario ──
+const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+function hint(t){ const p=document.createElement("p"); p.className="fhint"; p.innerHTML=t; return p; }
+function mkNum(v, oninput, opt={}){ const i=document.createElement("input"); i.type="number"; i.className="in"; if(opt.min!=null)i.min=opt.min; if(opt.max!=null)i.max=opt.max; if(opt.step!=null)i.step=opt.step; i.value=v??""; i.oninput=()=>oninput(i.value); return i; }
+function ensureVarsDatalist(){
+  if(document.getElementById("cfgVars")) return;
+  const dl=document.createElement("datalist"); dl.id="cfgVars";
+  dl.innerHTML=GS_VARS.map(v=>`<option value="${v}">`).join("");
+  document.body.appendChild(dl);
+}
+function mkVarInput(v, oninput, ph){ ensureVarsDatalist(); const i=document.createElement("input"); i.className="in"; i.setAttribute("list","cfgVars"); i.value=v||""; if(ph)i.placeholder=ph; i.oninput=()=>oninput(i.value); return i; }
+// Sincroniza los outputs reales del nodo Drawflow con m.handles.
+function rebuildOutputs(m){
+  const el=document.getElementById("node-"+m.dfId); if(!el) return;
+  let cur=el.querySelectorAll(".outputs .output").length;
+  while(cur<m.handles.length){ editor.addNodeOutput(m.dfId); cur++; }
+  while(cur>m.handles.length){ editor.removeNodeOutput(m.dfId,"output_"+cur); cur--; }
+}
+
+// ── Mensaje (burbujas + botones que crean ramas) ──
+function buildMensajeCfg(m, body){
+  const c=m.config; c.bubbles=c.bubbles||[{text:""}];
+  body.appendChild(mkLabel("Mensajes (burbujas)"));
+  const bubs=document.createElement("div");
+  const paintBubs=()=>{
+    bubs.innerHTML="";
+    c.bubbles.forEach((b,i)=>{
+      const w=document.createElement("div"); w.className="bubble"; w.style.position="relative";
+      w.appendChild(mkTextarea(b.text,(v)=>{ b.text=v; updateNodeDom(m); },"56px"));
+      if(c.bubbles.length>1){ const x=document.createElement("button"); x.className="xbtn"; x.innerHTML=XSVG; x.style.cssText="position:absolute;top:6px;right:6px;width:24px;height:24px"; x.onclick=()=>{ c.bubbles.splice(i,1); paintBubs(); updateNodeDom(m); }; w.appendChild(x); }
+      bubs.appendChild(w);
+    });
   };
-  $("addHandle").onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); decorateNode(editor, m); canvas.schedule(); };
-  $("delNode").onclick=()=>{ editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId]; st.selected=null; renderCfg(); };
+  paintBubs(); body.appendChild(bubs);
+  const addB=document.createElement("button"); addB.className="fbtn"; addB.innerHTML=PLUS+" burbuja";
+  addB.onclick=()=>{ c.bubbles.push({text:""}); paintBubs(); updateNodeDom(m); };
+  body.appendChild(addB);
+  const last=c.bubbles[c.bubbles.length-1]; last.buttons=last.buttons||[];
+  body.appendChild(mkLabel("Botones de respuesta (cada uno crea una rama)"));
+  const box=document.createElement("div");
+  const paint=()=>{
+    box.innerHTML="";
+    last.buttons.forEach((btn,i)=>{
+      const row=document.createElement("div"); row.className="frow"; row.style.marginBottom="6px";
+      const t=document.createElement("input"); t.className="in"; t.value=btn.title||""; t.placeholder="Texto del botón";
+      t.oninput=()=>{ btn.title=t.value; updateNodeDom(m); };
+      const x=document.createElement("button"); x.className="xbtn"; x.innerHTML=XSVG;
+      x.onclick=()=>{ last.buttons.splice(i,1); syncMensajeHandles(m); paint(); };
+      row.append(t,x); box.appendChild(row);
+    });
+  };
+  paint(); body.appendChild(box);
+  const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" botón";
+  add.onclick=()=>{ last.buttons.push({ id:"b"+Date.now().toString(36).slice(-4), title:"Opción "+(last.buttons.length+1) }); syncMensajeHandles(m); paint(); };
+  body.appendChild(add);
+}
+function syncMensajeHandles(m){
+  const b=(m.config.bubbles||[]).find(x=>x.buttons?.length);
+  m.handles = b ? b.buttons.map(x=>"boton:"+x.id) : ["continuar"];
+  rebuildOutputs(m); decorateNode(editor,m); updateNodeDom(m); canvas.schedule();
+}
+
+// ── Condición (rutas con reglas) ──
+const COND_OPS=[["tiene_tag","Tiene la etiqueta"],["no_tiene_tag","No tiene la etiqueta"],["campo_igual","Campo es igual a"],["campo_contiene","Campo contiene"],["campo_existe","Campo tiene valor"]];
+function buildCondicionCfg(m, body){
+  const c=m.config; c.rutas=c.rutas||[];
+  body.appendChild(hint("Toma la <b>primera</b> ruta que se cumpla. Si ninguna, sale por «si no cumple»."));
+  const list=document.createElement("div");
+  const paint=()=>{
+    list.innerHTML="";
+    c.rutas.forEach((r,ri)=>{
+      r.condiciones=r.condiciones||[];
+      const card=document.createElement("div"); card.className="fcard";
+      const head=document.createElement("div"); head.className="frow"; head.style.marginBottom="8px";
+      const nm=document.createElement("input"); nm.className="in"; nm.value=r.nombre||("Ruta "+(ri+1)); nm.oninput=()=>{ r.nombre=nm.value; updateNodeDom(m); };
+      const del=document.createElement("button"); del.className="xbtn"; del.innerHTML=XSVG; del.onclick=()=>{ c.rutas.splice(ri,1); syncCondHandles(m); paint(); };
+      head.append(nm,del); card.appendChild(head);
+      // Modo (todas / cualquiera)
+      const seg=document.createElement("div"); seg.className="seg2"; seg.style.marginBottom="8px";
+      [["todas","Todas se cumplen"],["cualquiera","Alguna se cumple"]].forEach(([v,l])=>{
+        const b=document.createElement("button"); b.textContent=l; if((r.match||"todas")===v)b.classList.add("on");
+        b.onclick=()=>{ r.match=v; seg.querySelectorAll("button").forEach(x=>x.classList.remove("on")); b.classList.add("on"); };
+        seg.appendChild(b);
+      });
+      card.appendChild(seg);
+      // Condiciones
+      r.condiciones.forEach((cond,ci)=>{
+        const wrap=document.createElement("div"); wrap.style.marginBottom="8px";
+        wrap.appendChild(mkSelect(COND_OPS, cond.op||"tiene_tag", (v)=>{ cond.op=v; paint(); }));
+        const row=document.createElement("div"); row.className="frow"; row.style.marginTop="6px";
+        if(/campo/.test(cond.op||"tiene_tag")){ const f=document.createElement("input"); f.className="in"; f.placeholder="campo"; f.value=cond.campo||""; f.oninput=()=>cond.campo=f.value; row.appendChild(f); }
+        if(cond.op!=="campo_existe"){ const val=document.createElement("input"); val.className="in"; val.placeholder=(cond.op==="tiene_tag"||cond.op==="no_tiene_tag")?"etiqueta":"valor"; val.value=cond.valor||""; val.oninput=()=>cond.valor=val.value; row.appendChild(val); }
+        const x=document.createElement("button"); x.className="xbtn"; x.innerHTML=XSVG; x.onclick=()=>{ r.condiciones.splice(ci,1); paint(); };
+        row.appendChild(x); wrap.appendChild(row); card.appendChild(wrap);
+      });
+      const addc=document.createElement("button"); addc.className="fbtn"; addc.innerHTML=PLUS+" condición";
+      addc.onclick=()=>{ r.condiciones.push({op:"tiene_tag",valor:""}); paint(); };
+      card.appendChild(addc); list.appendChild(card);
+    });
+  };
+  paint(); body.appendChild(list);
+  const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" ruta";
+  add.onclick=()=>{ c.rutas.push({handle:"ruta:"+(c.rutas.length+1),nombre:"Ruta "+(c.rutas.length+1),match:"todas",condiciones:[]}); syncCondHandles(m); paint(); };
+  body.appendChild(add);
+}
+function syncCondHandles(m){
+  const c=m.config; c.rutas.forEach((r,i)=>{ if(!r.handle) r.handle="ruta:"+(i+1); });
+  m.handles=[...c.rutas.map(r=>r.handle), "si_no_cumple"];
+  rebuildOutputs(m); decorateNode(editor,m); updateNodeDom(m); canvas.schedule();
+}
+
+// ── Esperar ──
+function buildEsperarCfg(m, body){
+  body.appendChild(mkLabel("Pausa antes de continuar (segundos)"));
+  body.appendChild(mkNum(m.config.segundos??4, (v)=>{ m.config.segundos=Number(v)||0; updateNodeDom(m); }, {min:1}));
+  body.appendChild(hint("Útil para dar naturalidad entre mensajes o esperar una acción del cliente."));
+}
+
+// ── Ir a flujo ──
+function buildIniciarFlujoCfg(m, body){
+  body.appendChild(mkLabel("Saltar al flujo…"));
+  const opts=[["","— Elegir flujo —"], ...st.flows.filter(f=>f.id!==st.flowId).map(f=>[f.id, f.nombre])];
+  body.appendChild(mkSelect(opts, m.config.target_flow_id||"", (v)=>{ m.config.target_flow_id=v; const f=st.flows.find(x=>x.id===v); updateNodeDom(m); if(f) m.config.target_role=f.role||""; }));
+  body.appendChild(hint("Al llegar aquí, la conversación continúa en el flujo elegido (empezando por su paso inicial)."));
+}
+
+// ── Plantilla de WhatsApp ──
+function buildPlantillaCfg(m, body){
+  body.appendChild(mkLabel("Nombre de la plantilla (aprobada en Meta)"));
+  body.appendChild(mkInput(m.config.template_name, (v)=>{ m.config.template_name=v; updateNodeDom(m); }));
+  body.appendChild(mkLabel("Idioma"));
+  body.appendChild(mkInput(m.config.template_lang||"es", (v)=>m.config.template_lang=v));
+  body.appendChild(hint("Las plantillas se crean y aprueban en Meta; aquí solo se referencian por su nombre."));
+}
+
+// ── Nota ──
+function buildNotaCfg(m, body){
+  body.appendChild(mkLabel("Texto de la nota"));
+  body.appendChild(mkTextarea(m.config.text, (v)=>{ m.config.text=v; updateNodeDom(m); }, "120px"));
+  body.appendChild(hint("Solo es una anotación en el lienzo. No se envía ni se ejecuta."));
+}
+
+// ── Dado / reparto por peso (rotador de variantes) ──
+function buildRotadorCfg(m, body){
+  const c=m.config; c.variantes=c.variantes||[];
+  const onoff=document.createElement("label"); onoff.className="chk"; onoff.style.margin="0 0 10px";
+  const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=c.activo!==false; cb.onchange=()=>{ c.activo=cb.checked; updateNodeDom(m); };
+  onoff.append(cb, document.createTextNode(" Reparto activo (si se apaga, usa siempre la 1ª)"));
+  body.appendChild(onoff);
+  body.appendChild(hint("Cada mensaje entrante recibe una variante elegida al azar según su <b>peso</b>. Evita baneos por repetir el mismo saludo."));
+  const totalPeso=()=> c.variantes.filter(v=>v.activo!==false).reduce((s,v)=>s+(Number(v.peso)||0),0)||1;
+  const list=document.createElement("div");
+  const paint=()=>{
+    list.innerHTML=""; const tot=totalPeso();
+    c.variantes.forEach((v,i)=>{
+      v.bubbles=v.bubbles||[{text:""}];
+      const card=document.createElement("div"); card.className="fcard";
+      const head=document.createElement("div"); head.className="frow"; head.style.marginBottom="8px";
+      const on=document.createElement("input"); on.type="checkbox"; on.checked=v.activo!==false; on.title="Activa"; on.onchange=()=>{ v.activo=on.checked; paint(); updateNodeDom(m); };
+      const nm=document.createElement("input"); nm.className="in"; nm.value=v.nombre||("Variante "+(i+1)); nm.oninput=()=>{ v.nombre=nm.value; };
+      const del=document.createElement("button"); del.className="xbtn"; del.innerHTML=XSVG; del.onclick=()=>{ c.variantes.splice(i,1); paint(); updateNodeDom(m); };
+      head.append(on,nm,del); card.appendChild(head);
+      card.appendChild(mkTextarea(v.bubbles[0]?.text, (val)=>{ v.bubbles[0]=v.bubbles[0]||{}; v.bubbles[0].text=val; }, "60px"));
+      const pr=document.createElement("div"); pr.className="frow"; pr.style.marginTop="8px";
+      const pl=document.createElement("span"); pl.style.cssText="font-size:11.5px;color:var(--muted);white-space:nowrap"; pl.textContent="Peso";
+      const pw=mkNum(v.peso??1,(val)=>{ v.peso=Number(val)||0; pct.textContent=prob(v); }, {min:0,step:1}); pw.style.maxWidth="80px";
+      const pct=document.createElement("span"); pct.style.cssText="font-size:11.5px;color:var(--faint)"; const prob=(vv)=> vv.activo!==false?`≈ ${Math.round((Number(vv.peso)||0)/tot*100)}%`:"apagada"; pct.textContent=prob(v);
+      pr.append(pl,pw,pct); card.appendChild(pr);
+      list.appendChild(card);
+    });
+  };
+  paint(); body.appendChild(list);
+  const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" variante";
+  add.onclick=()=>{ c.variantes.push({nombre:"Variante "+(c.variantes.length+1),peso:1,activo:true,bubbles:[{text:""}]}); paint(); updateNodeDom(m); };
+  body.appendChild(add);
+}
+
+// ── Acción (varias sub-acciones configurables) ──
+const ACCIONES_DEFS=[
+  { grupo:"Etiquetas y campos", items:[
+    { tipo:"add_tag",    label:"Añadir etiqueta",   icon:"bookmark" },
+    { tipo:"remove_tag", label:"Quitar etiqueta",   icon:"bookmark" },
+    { tipo:"set_field",  label:"Establecer campo",  icon:"campos" },
+    { tipo:"clear_field",label:"Limpiar campo",     icon:"eraser" },
+  ]},
+  { grupo:"Conversación / contacto", items:[
+    { tipo:"nota",           label:"Añadir nota",              icon:"note" },
+    { tipo:"seguimiento_on", label:"Marcar seguimiento",       icon:"flag" },
+    { tipo:"seguimiento_off",label:"Quitar seguimiento",       icon:"flag" },
+    { tipo:"archivar",       label:"Archivar conversación",    icon:"archive" },
+    { tipo:"desarchivar",    label:"Desarchivar",              icon:"archive" },
+    { tipo:"bloquear",       label:"Bloquear contacto",        icon:"ban" },
+    { tipo:"borrar_info",    label:"Borrar información",        icon:"trash" },
+  ]},
+  { grupo:"Bot / atención humana", items:[
+    { tipo:"transfer_human", label:"Transferir a un humano",   icon:"user" },
+    { tipo:"return_bot",     label:"Devolver al bot",          icon:"robot" },
+    { tipo:"notify_admin",   label:"Notificar a administradores", icon:"mail" },
+  ]},
+  { grupo:"Secuencias", items:[
+    { tipo:"subscribe_seq",   label:"Suscribir a una secuencia", icon:"secuencias" },
+    { tipo:"unsubscribe_seq", label:"Dar de baja de secuencia",  icon:"secuencias" },
+  ]},
+  { grupo:"Herramientas", items:[
+    { tipo:"fecha_formato",     label:"Formato fecha y hora",       icon:"clock" },
+    { tipo:"aleatorio",         label:"Generar número/texto aleatorio", icon:"activity" },
+    { tipo:"contar_caracteres", label:"Contador de caracteres",     icon:"campos" },
+  ]},
+];
+const ACCION_META={}; ACCIONES_DEFS.forEach(g=>g.items.forEach(it=>ACCION_META[it.tipo]=it));
+
+function buildAccionCfg(m, body){
+  const c=m.config; c.acciones=c.acciones||[];
+  const list=document.createElement("div"); body.appendChild(list);
+  const paint=()=>{
+    list.innerHTML="";
+    if(!c.acciones.length){ list.appendChild(hint("Aún sin acciones. Añade una o varias; se ejecutan en orden.")); }
+    c.acciones.forEach((a,i)=>list.appendChild(accionItem(m, a, i, paint)));
+  };
+  paint();
+  // Botón + selector de acción
+  const picker=document.createElement("div"); picker.className="apick";
+  const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" añadir acción";
+  const menu=document.createElement("div"); menu.className="apick-menu"; menu.style.display="none";
+  menu.innerHTML=ACCIONES_DEFS.map(g=>`<div class="apick-grp">${g.grupo}</div>`+g.items.map(it=>`<button class="apick-item" data-t="${it.tipo}"><span class="ai-ic">${icon(it.icon)}</span>${it.label}</button>`).join("")).join("");
+  add.onclick=(e)=>{ e.stopPropagation(); menu.style.display=menu.style.display==="none"?"block":"none"; };
+  menu.querySelectorAll(".apick-item").forEach(b=> b.onclick=()=>{ c.acciones.push({tipo:b.dataset.t}); menu.style.display="none"; paint(); updateNodeDom(m); pushHistory(); });
+  picker.append(add, menu); body.appendChild(picker);
+}
+function accionItem(m, a, i, repaint){
+  const meta=ACCION_META[a.tipo]||{label:a.tipo, icon:"node"};
+  const el=document.createElement("div"); el.className="acc-item"; el.style.setProperty("--ac", NODE_TYPES.accion.color);
+  const acc=m.config.acciones;
+  el.innerHTML=`<div class="acc-head">
+      <span class="ah-ic">${icon(meta.icon)}</span>
+      <span class="ah-tt">${esc(meta.label)}</span>
+      <button class="ah-mv" data-mv="up" title="Subir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>
+      <button class="ah-mv" data-mv="down" title="Bajar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+      <button class="ah-mv" data-mv="del" title="Quitar">${XSVG}</button>
+    </div><div class="acc-body"></div>`;
+  const b=el.querySelector(".acc-body"); buildAccionBody(a, b);
+  el.querySelector('[data-mv="up"]').onclick=()=>{ if(i>0){ [acc[i-1],acc[i]]=[acc[i],acc[i-1]]; repaint(); updateNodeDom(m); } };
+  el.querySelector('[data-mv="down"]').onclick=()=>{ if(i<acc.length-1){ [acc[i+1],acc[i]]=[acc[i],acc[i+1]]; repaint(); updateNodeDom(m); } };
+  el.querySelector('[data-mv="del"]').onclick=()=>{ acc.splice(i,1); repaint(); updateNodeDom(m); };
+  return el;
+}
+// Formulario específico de cada tipo de acción.
+function buildAccionBody(a, b){
+  const L=(t)=>b.appendChild(mkLabel(t));
+  const V=(k,ph)=>b.appendChild(mkVarInput(a[k], (v)=>a[k]=v, ph));
+  switch(a.tipo){
+    case "add_tag": case "remove_tag": L("Etiqueta"); V("valor","nombre de la etiqueta"); break;
+    case "set_field": L("Campo"); b.appendChild(mkInput(a.key,(v)=>a.key=v)); L("Valor"); V("valor","texto o {{variable}}"); break;
+    case "clear_field": L("Campo a limpiar"); b.appendChild(mkInput(a.key,(v)=>a.key=v)); break;
+    case "nota": L("Texto de la nota (queda en el Timeline)"); b.appendChild(mkTextarea(a.valor,(v)=>a.valor=v,"56px")); break;
+    case "transfer_human": L("Mensaje al equipo (opcional)"); V("mensaje","{{nombre}} necesita ayuda"); break;
+    case "notify_admin": L("Mensaje para administradores"); V("mensaje","texto o {{variable}}"); L("Foto adjunta (opcional)"); V("foto","{{ultima_imagen}}"); break;
+    case "subscribe_seq": case "unsubscribe_seq": L("Secuencia"); buildSeqSelect(a, b); break;
+    case "fecha_formato": {
+      L("Formato");
+      b.appendChild(mkSelect([["dd/mm/yyyy","31/12/2026"],["dd/mm/yyyy hh:mm","31/12/2026 14:30"],["yyyy-mm-dd","2026-12-31"],["hh:mm","14:30"],["dia_semana","martes"]], a.formato||"dd/mm/yyyy", (v)=>a.formato=v));
+      L("Guardar en (campo)"); b.appendChild(mkInput(a.guardar_en,(v)=>a.guardar_en=v)); break;
+    }
+    case "aleatorio": {
+      L("Tipo");
+      const seg=document.createElement("div"); seg.className="seg2";
+      [["numero","Número"],["texto","Texto"]].forEach(([v,l])=>{ const btn=document.createElement("button"); btn.textContent=l; if((a.modo||"numero")===v)btn.classList.add("on"); btn.onclick=()=>{ a.modo=v; buildAccionBody(a, b); }; seg.appendChild(btn); });
+      b.appendChild(seg);
+      if((a.modo||"numero")==="numero"){ L("Mínimo"); b.appendChild(mkNum(a.min??1,(v)=>a.min=Number(v))); L("Máximo"); b.appendChild(mkNum(a.max??100,(v)=>a.max=Number(v))); }
+      else { L("Longitud"); b.appendChild(mkNum(a.longitud??6,(v)=>a.longitud=Number(v),{min:1})); }
+      L("Guardar en (campo)"); b.appendChild(mkInput(a.guardar_en,(v)=>a.guardar_en=v)); break;
+    }
+    case "contar_caracteres": L("Texto o variable a contar"); V("origen","{{respuesta}}"); L("Guardar en (campo)"); b.appendChild(mkInput(a.guardar_en,(v)=>a.guardar_en=v)); break;
+    // seguimiento_on/off, archivar, desarchivar, bloquear, borrar_info, return_bot: sin parámetros
+  }
+}
+let _seqCache=null;
+async function loadSeqs(){ if(_seqCache) return _seqCache; const { data } = await supa.from("sequences").select("id,nombre").eq("channel_id",st.channelId).order("nombre"); _seqCache=data||[]; return _seqCache; }
+function buildSeqSelect(a, b){
+  const sel=document.createElement("select"); sel.className="in"; sel.innerHTML=`<option value="">— Cargando… —</option>`;
+  sel.onchange=()=>{ a.sequence_id=sel.value; a.nombre=sel.selectedOptions[0]?.textContent; };
+  b.appendChild(sel);
+  loadSeqs().then(seqs=>{
+    sel.innerHTML=`<option value="">— Elegir secuencia —</option>`+seqs.map(s=>`<option value="${s.id}" ${a.sequence_id===s.id?"selected":""}>${esc(s.nombre)}</option>`).join("");
+  });
 }
 // Formulario amigable del nodo Google Sheets (mantiene el JSON en sync).
 const GS_VARS=["{{nombre}}","{{telefono}}","{{producto_nombre}}","{{valor}}","{{ad_id}}","{{origen}}","{{fecha}}","{{fecha_compra}}","{{fecha_hora}}","{{ultima_imagen}}","{{order_bump}}","{{stage}}"];

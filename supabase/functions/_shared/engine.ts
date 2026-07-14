@@ -675,8 +675,78 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "unsubscribe_seq": await unsubscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_cancel", "Secuencia cancelada", a.nombre ?? null); break;
       case "crear_pedido": await crearPedido(db, run, a, ctx); break;
       case "actualizar_pedido": await actualizarPedido(db, run, a, ctx); break;
+      // ── Conversación / contacto ──
+      case "nota":
+        await logEvent(db, run.channel_id, run.contact_id, "nota", resolve(String(a.valor ?? a.texto ?? ""), ctx) || "Nota"); break;
+      case "seguimiento_on":
+        await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", run.contact_id);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Marcado para seguimiento"); break;
+      case "seguimiento_off":
+        await db.from("conversations").update({ requiere_humano: false }).eq("contact_id", run.contact_id);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Seguimiento quitado"); break;
+      case "archivar":
+        await db.from("conversations").update({ archivada: true }).eq("contact_id", run.contact_id);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Conversación archivada"); break;
+      case "desarchivar":
+        await db.from("conversations").update({ archivada: false }).eq("contact_id", run.contact_id);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Conversación desarchivada"); break;
+      case "bloquear":
+        await db.from("contacts").update({ bloqueado: true, bot_activo: false }).eq("id", run.contact_id);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Contacto bloqueado"); break;
+      case "borrar_info":
+        await db.from("contact_field_values").delete().eq("contact_id", run.contact_id);
+        run.vars = {};
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Información del usuario borrada"); break;
+      // ── Bot / atención humana ──
+      case "return_bot":
+        await db.from("contacts").update({ bot_activo: true }).eq("id", run.contact_id);
+        await db.from("conversations").update({ requiere_humano: false }).eq("contact_id", run.contact_id);
+        await logEvent(db, run.channel_id, run.contact_id, "humano", "Devuelto al bot"); break;
+      // ── Herramientas (calculan un valor y lo guardan en un campo) ──
+      case "fecha_formato": {
+        const v = formatFechaAhora(a.formato);
+        if (a.guardar_en) { run.vars[a.guardar_en] = v; await setField(db, run.channel_id, run.contact_id, a.guardar_en, v); await logEvent(db, run.channel_id, run.contact_id, "campo", "Fecha formateada", `${a.guardar_en}: ${v}`); }
+        break;
+      }
+      case "aleatorio": {
+        const v = generarAleatorio(a);
+        if (a.guardar_en) { run.vars[a.guardar_en] = v; await setField(db, run.channel_id, run.contact_id, a.guardar_en, v); await logEvent(db, run.channel_id, run.contact_id, "campo", "Valor aleatorio", `${a.guardar_en}: ${v}`); }
+        break;
+      }
+      case "contar_caracteres": {
+        const src = resolve(String(a.origen ?? a.valor ?? ""), ctx);
+        const v = String([...src].length);
+        if (a.guardar_en) { run.vars[a.guardar_en] = v; await setField(db, run.channel_id, run.contact_id, a.guardar_en, v); await logEvent(db, run.channel_id, run.contact_id, "campo", "Contador de caracteres", `${a.guardar_en}: ${v}`); }
+        break;
+      }
     }
   }
+}
+
+// Fecha/hora de AHORA en la zona del negocio, según el formato elegido.
+function formatFechaAhora(fmt?: string): string {
+  const now = new Date(); const TZ = "America/Lima";
+  const p = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("es-PE", { timeZone: TZ, ...opts }).format(now);
+  switch (fmt) {
+    case "yyyy-mm-dd": { const [d, m, y] = p({ day: "2-digit", month: "2-digit", year: "numeric" }).split("/"); return `${y}-${m}-${d}`; }
+    case "hh:mm": return p({ hour: "2-digit", minute: "2-digit", hour12: false });
+    case "dia_semana": return p({ weekday: "long" });
+    case "dd/mm/yyyy hh:mm": return `${p({ day: "2-digit", month: "2-digit", year: "numeric" })} ${p({ hour: "2-digit", minute: "2-digit", hour12: false })}`;
+    case "dd/mm/yyyy": default: return p({ day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+}
+
+// Genera un número o texto aleatorio. { modo:"numero"|"texto", min,max,longitud }
+function generarAleatorio(a: any): string {
+  if (a.modo === "texto") {
+    const n = Math.max(1, Number(a.longitud ?? 6));
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let s = ""; for (let i = 0; i < n; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+  const min = Math.ceil(Number(a.min ?? 1)), max = Math.floor(Number(a.max ?? 100));
+  const lo = Math.min(min, max), hi = Math.max(min, max);
+  return String(Math.floor(Math.random() * (hi - lo + 1)) + lo);
 }
 
 // ── Pedidos (productos físicos, DEFINICION §6-SEPTIES) ─────────────

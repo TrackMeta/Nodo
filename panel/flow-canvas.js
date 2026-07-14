@@ -14,15 +14,16 @@ export const NODE_TYPES = {
   mensaje:      { label:"Mensaje",       color:"#3B82F6", desc:"Envía texto (con burbujas y botones)" },
   pregunta:     { label:"Pregunta",      color:"#F59E0B", desc:"Pregunta y guarda la respuesta en un campo" },
   condicion:    { label:"Condición",     color:"#A855F7", desc:"Bifurca según reglas (rutas)" },
-  accion:       { label:"Acción",        color:"#F97316", desc:"Etiquetas, campos y otras acciones internas" },
+  accion:       { label:"Acción",        color:"#F97316", desc:"Etiquetas, campos, secuencias y más acciones" },
   ia:           { label:"IA",            color:"#EC4899", desc:"Genera texto, analiza imágenes o extrae datos" },
+  rotador:      { label:"Dado (reparto)",color:"#84CC16", desc:"Reparte por peso entre variantes de mensaje" },
   esperar:      { label:"Esperar",       color:"#94A3B8", desc:"Pausa el flujo unos segundos" },
   iniciar_flujo:{ label:"Ir a flujo",    color:"#06B6D4", desc:"Salta a otro flujo del canal" },
   evento_fb:    { label:"Evento Meta",   color:"#6366F1", desc:"Envía una conversión a Meta (CAPI)" },
   plantilla:    { label:"Plantilla",     color:"#14B8A6", desc:"Envía una plantilla aprobada de WhatsApp" },
   google_sheets:{ label:"Google Sheets", color:"#22C55E", desc:"Agrega o actualiza una fila en tu hoja" },
+  nota:         { label:"Nota",          color:"#EAB308", desc:"Anotación libre en el lienzo (no se ejecuta)" },
   fin:          { label:"Fin",           color:"#EF4444", desc:"Termina la conversación" },
-  rotador:      { label:"Rotador",       color:"#EAB308", desc:"Rota variantes de mensaje inicial" },
 };
 
 // Iconos Lucide (paths) por tipo de nodo.
@@ -38,7 +39,8 @@ const IC = {
   plantilla:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
   google_sheets:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/>',
   fin:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
-  rotador:'<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/>',
+  rotador:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 8h.01"/><path d="M12 12h.01"/><path d="M16 16h.01"/><path d="M16 8h.01"/><path d="M8 16h.01"/>',
+  nota:'<path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9Z"/><path d="M15 3v6h6"/>',
 };
 
 const esc = (s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -49,12 +51,13 @@ export function nodeIcon(tipo){
 
 // Resumen de una línea que se muestra dentro de la tarjeta del nodo.
 const clip = (s,n)=>{ s=String(s||"").replace(/\s+/g," ").trim(); return s.length>n ? s.slice(0,n-1)+"…" : s; };
+const ACCION_LABELS={ add_tag:"Añadir etiqueta", remove_tag:"Quitar etiqueta", set_field:"Establecer campo", clear_field:"Limpiar campo", nota:"Añadir nota", seguimiento_on:"Marcar seguimiento", seguimiento_off:"Quitar seguimiento", archivar:"Archivar", desarchivar:"Desarchivar", bloquear:"Bloquear contacto", borrar_info:"Borrar información", transfer_human:"Transferir a humano", return_bot:"Devolver al bot", notify_admin:"Notificar admins", subscribe_seq:"Suscribir a secuencia", unsubscribe_seq:"Baja de secuencia", fecha_formato:"Formato fecha/hora", aleatorio:"Aleatorio", contar_caracteres:"Contar caracteres" };
 export function summarize(tipo, c={}){
   switch(tipo){
     case "mensaje": { const b=c.bubbles||[]; const t=clip(b[0]?.text,64); const extra=b.length>1?`  (+${b.length-1} burbuja${b.length>2?"s":""})`:""; return (t||"Sin texto aún")+extra; }
     case "pregunta": return (clip(c.text,56)||"Sin pregunta aún")+(c.guardar_en?` → ${c.guardar_en}`:"");
     case "condicion": { const n=(c.rutas||[]).length; return n?`${n} ruta${n>1?"s":""} + si no cumple`:"Sin rutas definidas"; }
-    case "accion": { const n=(c.acciones||[]).length; return n?`${n} acción${n>1?"es":""}`:"Sin acciones aún"; }
+    case "accion": { const a=c.acciones||[]; if(!a.length) return "Sin acciones aún"; if(a.length===1) return ACCION_LABELS[a[0].tipo]||a[0].tipo; return `${a.length} acciones · ${ACCION_LABELS[a[0].tipo]||a[0].tipo}…`; }
     case "ia": { const ops={generar_texto:"Generar texto",analizar_imagen:"Analizar imagen",extraer:"Extraer datos"}; return (ops[c.operacion]||"Generar texto")+(c.guardar_en?` → ${c.guardar_en}`:""); }
     case "esperar": return `Pausa de ${c.segundos??"?"} s`;
     case "iniciar_flujo": return c.target_role?`Salta a: ${c.target_role}`:"Elige el flujo destino";
@@ -62,14 +65,24 @@ export function summarize(tipo, c={}){
     case "plantilla": return c.template_name||"Sin plantilla elegida";
     case "google_sheets": return (c.accion==="update"?"Actualizar fila":"Agregar fila")+(c.hoja?` · ${c.hoja}`:"");
     case "fin": return "Termina la conversación";
-    case "rotador": { const n=(c.variantes||c.mensajes||[]).length; return n?`${n} variantes en rotación`:"Rotación de mensajes"; }
+    case "rotador": { const v=(c.variantes||[]).filter(x=>x.activo!==false); const n=v.length; return n?`Reparte entre ${n} variante${n>1?"s":""} por peso`:"Sin variantes"; }
+    case "nota": return clip(c.text,90)||"Nota vacía";
     default: return "";
   }
 }
+export { ACCION_LABELS };
 
 // Tarjeta del nodo. m: { tipo, nombre, config, es_inicial }
 export function nodeHtml(m){
   const t=NODE_TYPES[m.tipo]||{label:m.tipo};
+  // La Nota es una anotación libre (post-it), sin cabecera ni puertos.
+  if(m.tipo==="nota"){
+    const txt=(m.config?.text||"").trim();
+    return `<div class="nd nd-note">
+      <div class="nd-note-head">${nodeIcon("nota")}<span>Nota</span></div>
+      <div class="nd-note-txt">${txt?esc(txt):'<span class="nd-note-ph">Doble clic o edita en el panel…</span>'}</div>
+    </div>`;
+  }
   const sub=summarize(m.tipo, m.config||{});
   return `<div class="nd">
     <div class="nd-head">
@@ -311,10 +324,33 @@ export function fitView(editor, pad=70){
   editor.dispatch && editor.dispatch("translate",{x:editor.canvas_x,y:editor.canvas_y});
 }
 
+// Zoom centrado en un punto (px de pantalla). Mantiene fijo lo que está
+// bajo el cursor mientras se acerca/aleja.
+function zoomAt(editor, nz, clientX, clientY){
+  nz=Math.min(Math.max(nz, editor.zoom_min||.25), editor.zoom_max||1.6);
+  const r=editor.container.getBoundingClientRect();
+  const px=clientX-r.left, py=clientY-r.top;
+  const wx=(px-(editor.canvas_x||0))/editor.zoom, wy=(py-(editor.canvas_y||0))/editor.zoom;
+  editor.canvas_x=px-wx*nz; editor.canvas_y=py-wy*nz;
+  editor.zoom=nz; editor.zoom_last_value=nz;
+  editor.precanvas.style.transform=`translate(${editor.canvas_x}px, ${editor.canvas_y}px) scale(${nz})`;
+  editor.dispatch&&editor.dispatch("zoom",nz);
+  editor.dispatch&&editor.dispatch("translate",{x:editor.canvas_x,y:editor.canvas_y});
+}
+
 // Instala todo sobre una instancia Drawflow ya iniciada.
 export function installCanvas(editor){
   editor.reroute=false;
   editor.zoom_min=.25; editor.zoom_max=1.6;
+  editor.zoomAt=(nz,cx,cy)=>zoomAt(editor,nz,cx,cy);
+
+  // Zoom con la RUEDA del mouse (sin Ctrl): acerca/aleja hacia el cursor.
+  // En captura + stopPropagation para ganarle al handler propio de Drawflow.
+  editor.container.addEventListener("wheel",(e)=>{
+    e.preventDefault(); e.stopPropagation();
+    const factor=e.deltaY<0 ? 1.12 : 1/1.12;
+    zoomAt(editor, (editor.zoom||1)*factor, e.clientX, e.clientY);
+  }, { passive:false, capture:true });
 
   // Variables --nd-color por tipo (nodos, paleta y chips con data-tipo).
   if(!document.getElementById("flow-node-colors")){
@@ -347,21 +383,78 @@ export function installCanvas(editor){
   return { schedule, routeAll:()=>routeAll(editor), fitView:()=>{ fitView(editor); grid(); } };
 }
 
-// Controles flotantes de zoom (− % + · encuadrar).
+// Auto-organiza los nodos en columnas por profundidad del flujo (layout
+// por capas: raíces a la izquierda, cada salto una columna a la derecha).
+// Las Notas (sin conexiones) se apilan aparte, arriba.
+export function autoLayout(editor){
+  const data=editor.export().drawflow.Home.data;
+  const ids=Object.keys(data); if(!ids.length) return;
+  const size=(id)=>{ const el=document.getElementById("node-"+id); return { w:el?el.offsetWidth:220, h:el?el.offsetHeight:80 }; };
+  const isNota=(id)=> data[id]?.name==="nota" || data[id]?.class==="nota";
+  const flow=ids.filter(id=>!isNota(id)), notas=ids.filter(isNota);
+  const out={}, indeg0={};
+  flow.forEach(id=>{ out[id]=[]; indeg0[id]=0; });
+  flow.forEach(id=>{ const o=data[id].outputs||{}; for(const k in o) for(const c of (o[k].connections||[])) if(out[c.node]!=null) out[id].push(c.node); });
+  flow.forEach(id=> out[id].forEach(t=>{ indeg0[t]++; }));
+  // Detecta y descarta aristas de RETORNO (ciclos) con un DFS que arranca en las
+  // RAÍCES (sin entradas), quedándonos con un DAG; sobre él se hace el layering
+  // por camino más largo (orden topológico de Kahn).
+  const dag={}; flow.forEach(id=>dag[id]=[]);
+  const state={}; // 0 sin ver · 1 en pila · 2 hecho
+  const visit=(id)=>{ state[id]=1;
+    for(const t of out[id]){ if(state[t]===1) continue; /* back edge → ignora */ dag[id].push(t); if(!state[t]) visit(t); }
+    state[id]=2; };
+  flow.filter(id=>indeg0[id]===0).forEach(id=>{ if(!state[id]) visit(id); });
+  flow.forEach(id=>{ if(!state[id]) visit(id); }); // por si hay componentes en ciclo puro
+  const indeg={}; flow.forEach(id=>indeg[id]=0);
+  flow.forEach(id=> dag[id].forEach(t=>{ indeg[t]++; }));
+  const layer={}; flow.forEach(id=>layer[id]=0);
+  const q=flow.filter(id=>indeg[id]===0); const din={}; flow.forEach(id=>din[id]=indeg[id]);
+  while(q.length){ const id=q.shift();
+    for(const t of dag[id]){ if(layer[t]<layer[id]+1) layer[t]=layer[id]+1; if(--din[t]===0) q.push(t); } }
+  const byLayer={};
+  flow.forEach(id=>{ (byLayer[layer[id]] ||= []).push(id); });
+  Object.values(byLayer).forEach(arr=> arr.sort((a,b)=>(data[a].pos_y||0)-(data[b].pos_y||0)));
+  const GX=100, GY=40; let x=80;
+  const move=(id,nx,ny)=>{ const el=document.getElementById("node-"+id); if(el){ el.style.left=nx+"px"; el.style.top=ny+"px"; } data[id].pos_x=nx; data[id].pos_y=ny; const dd=editor.drawflow.drawflow.Home.data[id]; if(dd){ dd.pos_x=nx; dd.pos_y=ny; } editor.updateConnectionNodes("node-"+id); };
+  const layers=Object.keys(byLayer).map(Number).sort((a,b)=>a-b);
+  for(const L of layers){
+    const arr=byLayer[L]; let colW=0; arr.forEach(id=>{ colW=Math.max(colW,size(id).w); });
+    let y=80; for(const id of arr){ move(id,x,y); y+=size(id).h+GY; }
+    x+=colW+GX;
+  }
+  // Notas: columna extra a la derecha.
+  let ny=80; for(const id of notas){ move(id, x, ny); ny+=size(id).h+GY; }
+  editor.dispatch&&editor.dispatch("import");
+}
+
+// Controles flotantes: deshacer/rehacer · zoom (−/%/+) · encuadrar ·
+// auto-organizar. `api` puede traer { fitView, undo, redo, organize }.
 export function mountZoomControls(editor, host, api){
-  const el=document.createElement("div");
-  el.className="flow-zoomctl";
-  el.innerHTML=`
-    <button data-z="out" title="Alejar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
-    <span class="zpct">100%</span>
-    <button data-z="in" title="Acercar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-    <span class="zsep"></span>
-    <button data-z="fit" title="Encuadrar el flujo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>`;
+  const btn=(z,title,path)=>`<button data-z="${z}" title="${title}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${path}</svg></button>`;
+  const el=document.createElement("div"); el.className="flow-zoomctl";
+  el.innerHTML=
+    btn("undo","Deshacer (Ctrl+Z)",'<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>')
+    +btn("redo","Rehacer (Ctrl+Y)",'<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/>')
+    +`<span class="zsep"></span>`
+    +btn("out","Alejar",'<path d="M5 12h14"/>')
+    +`<span class="zpct">100%</span>`
+    +btn("in","Acercar",'<path d="M12 5v14M5 12h14"/>')
+    +`<span class="zsep"></span>`
+    +btn("fit","Encuadrar el flujo",'<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>')
+    +btn("org","Auto-organizar pasos",'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><path d="M10 6.5h4"/><path d="M17.5 10v4"/>');
   const pct=el.querySelector(".zpct");
   const paint=()=>{ pct.textContent=Math.round((editor.zoom||1)*100)+"%"; };
-  el.querySelector('[data-z="in"]').onclick=()=>{ editor.zoom_in(); paint(); };
-  el.querySelector('[data-z="out"]').onclick=()=>{ editor.zoom_out(); paint(); };
+  const midX=()=>editor.container.getBoundingClientRect().left+editor.container.clientWidth/2;
+  const midY=()=>editor.container.getBoundingClientRect().top+editor.container.clientHeight/2;
+  el.querySelector('[data-z="in"]').onclick=()=>{ editor.zoomAt((editor.zoom||1)*1.15, midX(), midY()); paint(); };
+  el.querySelector('[data-z="out"]').onclick=()=>{ editor.zoomAt((editor.zoom||1)/1.15, midX(), midY()); paint(); };
   el.querySelector('[data-z="fit"]').onclick=()=>{ (api?.fitView||(()=>fitView(editor)))(); paint(); };
+  el.querySelector('[data-z="org"]').onclick=()=>{ (api?.organize||(()=>{ autoLayout(editor); (api?.fitView||(()=>fitView(editor)))(); }))(); paint(); };
+  const undoBtn=el.querySelector('[data-z="undo"]'), redoBtn=el.querySelector('[data-z="redo"]');
+  undoBtn.onclick=()=> api?.undo && api.undo();
+  redoBtn.onclick=()=> api?.redo && api.redo();
+  el._setHistory=(canUndo,canRedo)=>{ undoBtn.disabled=!canUndo; redoBtn.disabled=!canRedo; };
   editor.on("zoom",paint);
   host.appendChild(el);
   return el;
