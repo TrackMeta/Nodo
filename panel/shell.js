@@ -222,7 +222,7 @@ function openCreateBot() {
       <h3>Crear nuevo bot</h3>
       <p>Cada bot es un <b>espacio independiente</b> dentro de tu cuenta: su propia bandeja, contactos, flujos, productos, configuración y pixel. El número de WhatsApp y el pixel se conectan después, en <b>Canales</b>.</p>
       <label for="nbName">Nombre del bot</label>
-      <input id="nbName" placeholder="Ej. Digital Prime 2" maxlength="60" autocomplete="off" />
+      <input id="nbName" placeholder="Ej. Mi Negocio 2" maxlength="60" autocomplete="off" />
       <div class="nb-acts">
         <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>
         <button class="nb-btn primary" id="nbCreate" type="button">Crear bot</button>

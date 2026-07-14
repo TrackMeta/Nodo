@@ -140,7 +140,7 @@ function render(){
         <button class="del" title="Eliminar">${TRASH}</button>
       </div>
       ${bot?`<div class="cr" style="margin-top:12px">
-        <div class="f grow"><label>Valor</label><input class="in valor" value="${esc(f.valor||'')}" placeholder="Valor fijo (p. ej. Prime Digital)"/></div>
+        <div class="f grow"><label>Valor</label><input class="in valor" value="${esc(f.valor||'')}" placeholder="Valor fijo (p. ej. Mi Negocio)"/></div>
         <div class="f grow"><label>Descripción (opcional)</label><input class="in descripcion" value="${esc(f.descripcion||'')}" placeholder="Para qué sirve este campo"/></div>
       </div>`:""}`;
     const nombreI=el.querySelector(".nombre"), keyI=el.querySelector(".key");

@@ -24,16 +24,15 @@
   .chip{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
   .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
   .cat{font-size:10px;padding:2px 9px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
-  /* Fondo de chat de WhatsApp (patrón sutil tipo doodle) + burbuja saliente */
-  .wa-chat{background-color:#0b141a;
-    background-image:radial-gradient(rgba(255,255,255,.035) 1px,transparent 1px),radial-gradient(rgba(255,255,255,.025) 1px,transparent 1px);
-    background-size:20px 20px,20px 20px;background-position:0 0,10px 10px;
+  /* Fondo de chat de WhatsApp (tema claro clásico: beige + doodle) + burbuja saliente */
+  .wa-chat{background-color:#e5ddd5;
+    background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'><g fill='none' stroke='rgb(60,74,60)' stroke-opacity='0.06' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M10 14h16a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-9l-4 4v-4a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3z'/><circle cx='64' cy='20' r='7'/><path d='M60 20h8M64 16v8'/><path d='M16 58l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z'/><path d='M52 50h18a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-10l-4 4v-4a3 3 0 0 1-3-3v-7'/></g></svg>");
     border:1px solid var(--border);border-radius:12px;padding:14px 12px;position:relative;overflow:hidden}
-  .wa-out{margin-left:auto;max-width:82%;width:fit-content;background:#005c4b;color:#e9edef;border-radius:9px;border-top-right-radius:2px;
-    padding:6px 9px 5px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word;box-shadow:0 1px 1px rgba(0,0,0,.25);position:relative}
-  .wa-out::after{content:"";position:absolute;top:0;right:-7px;border:7px solid transparent;border-top-color:#005c4b;border-right:0}
-  .wa-out .v{background:rgba(255,255,255,.2);border-radius:4px;padding:0 4px;font-weight:600;color:#d9fdd3}
-  .wa-out .wa-time{display:block;text-align:right;font-size:10px;color:rgba(233,237,239,.55);margin-top:2px}
+  .wa-out{margin-left:auto;max-width:82%;width:fit-content;background:#d9fdd3;color:#111b21;border-radius:9px;border-top-right-radius:2px;
+    padding:6px 9px 5px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word;box-shadow:0 1px .5px rgba(11,20,26,.13);position:relative}
+  .wa-out::after{content:"";position:absolute;top:0;right:-7px;border:7px solid transparent;border-top-color:#d9fdd3;border-right:0}
+  .wa-out .v{background:rgba(0,0,0,.08);border-radius:4px;padding:0 4px;font-weight:600;color:#027e6f}
+  .wa-out .wa-time{display:block;text-align:right;font-size:10px;color:rgba(17,27,33,.45);margin-top:2px}
   .wa-out .wa-time svg{width:15px;height:11px;vertical-align:-1px;margin-left:2px;color:#53bdeb}
   /* Preview en la tarjeta (truncado) */
   .tprev{max-height:112px;overflow:hidden}

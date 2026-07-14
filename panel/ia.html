@@ -201,10 +201,10 @@ function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<
 function slug(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40); }
 const CAMPO_SUGERIDOS=[
   ["nombre_negocio","Nombre del negocio"],["datos_pago","Datos de pago (Yape/Plin)"],
+  ["transferencia_bancaria","Transferencia bancaria (CCI)"],["cuenta_bancaria","Cuenta bancaria (nº)"],
   ["whatsapp_contacto","WhatsApp de contacto"],["horario_atencion","Horario de atención"],
   ["direccion","Dirección / local"],["web","Página web"],["instagram","Instagram"],
-  ["tiempo_entrega","Tiempo de entrega"],["cuenta_bancaria","Cuenta bancaria (CCI)"],
-  ["politica_devolucion","Política de devolución"],
+  ["tiempo_entrega","Tiempo de entrega"],["politica_devolucion","Política de devolución"],
 ];
 
 async function boot(){
@@ -224,7 +224,7 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config").eq("id",st.channelId).maybeSingle();
+    .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider").eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {}; st.perfMod={};
@@ -240,6 +240,7 @@ function render(){
   else if(st.tab==="validador") renderValidador(b);
   else renderProveedores(b);
 }
+function goTab(name){ st.tab=name; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
 
 // ── Campos del Bot (variables globales fijas que la IA usa) ─────────
 async function renderCampos(b){
@@ -282,7 +283,7 @@ function paintCampos(){
           <div style="font-size:11px;color:var(--faint);margin-top:3px">se usa como <b style="color:var(--ia)">{{${esc(f.key||'clave')}}}</b></div></div>
       </div>
       <div class="row" style="margin-top:8px">
-        <div class="f" style="flex:2"><label style="margin-top:0">Valor</label><input class="in cVal" value="${esc(f.valor||'')}" placeholder="Ej. Yape 999 999 999 (Percy Flores)"/></div>
+        <div class="f" style="flex:2"><label style="margin-top:0">Valor</label><input class="in cVal" value="${esc(f.valor||'')}" placeholder="Ej. Yape 900 000 000 (Juan Pérez)"/></div>
         <div class="f"><label style="margin-top:0">Descripción (opcional)</label><input class="in cDesc" value="${esc(f.descripcion||'')}" placeholder="Para qué sirve"/></div>
         <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
       </div>`;
@@ -310,23 +311,35 @@ async function saveCampos(e){
 // bien estructurado (Markdown) en channels.negocio (lo que lee el motor) y se
 // conserva el formulario en channels.negocio_form para poder re-editarlo.
 const NEG_FIELDS=[
-  ["nombre","Nombre del negocio","input","Ej. Digital Prime",""],
+  ["nombre","Nombre del negocio","input","Ej. Mi Negocio",""],
   ["rubro","¿Qué vendes? (productos o servicios)","ta","Ej. Cursos y guías digitales de fitness; también asesorías 1 a 1…",""],
   ["publico","¿A quién le vendes? (cliente ideal)","ta","Ej. Personas de 25-45 en Perú que quieren bajar de peso sin gimnasio",""],
   ["propuesta","Propuesta de valor / diferencial","ta","¿Por qué te compran a ti y no a la competencia?",""],
-  ["tono","Tono y estilo del bot","ta","Ej. Cercano y directo, tuteo, pocos emojis, respuestas cortas",""],
   ["horario","Horario de atención","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)",""],
   ["transferir","¿Cuándo pasar a una persona? (humano)","ta","Ej. Reclamos, facturación, o si el bot no está seguro de algo",""],
-  ["pagos","¿Cómo se paga?","ta","Ej. Yape/Plin al 999 999 999 (Percy Flores); contraentrega en Lima. Los datos exactos ponlos también en Campos del Bot.",""],
+  ["pagos","¿Cómo se paga?","ta","Ej. Yape/Plin al 900 000 000 (Juan Pérez); transferencia bancaria (CCI); contraentrega en Lima. Los datos exactos ponlos también en Campos del Bot.",""],
   ["entrega","Envíos y entrega","ta","Ej. Digital: enlace de Drive al confirmar el pago. Físico: Lima 24h contraentrega, provincia por Shalom/Olva con adelanto.",""],
   ["politicas","Políticas (cambios, devoluciones, garantía)","ta","Ej. Cambios dentro de 7 días con boleta; sin devolución de digitales.",""],
   ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta.",""],
 ];
+const TONOS={ cercano:"Cercano y amigable, con tuteo", formal:"Formal y profesional, trato de usted", directo:"Directo y breve, sin rodeos", divertido:"Divertido y relajado, con buena onda", ventas:"Persuasivo y orientado a cerrar la venta" };
+// Sección "cómo debe comportarse" (persona del bot) al inicio del contexto.
+function compilePersona(form){
+  const p=[];
+  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, asesor(a) de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, preséntate así.`);
+  const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
+  if(t.length) p.push("Tono: "+t.join(". ")+".");
+  p.push(form.negritas?"Puedes usar *negritas* de WhatsApp (un asterisco a cada lado) para resaltar lo importante, con moderación.":"No uses formato de negritas.");
+  const mx=Number(form.emoji_max); const mn=Number(form.emoji_min)||0;
+  if(!isNaN(mx)){ p.push(mx<=0?"No uses emojis.":`Usa emojis con moderación: entre ${mn} y ${mx} por mensaje, solo cuando aporten.`); }
+  return p.length?p.join(" "):"";
+}
 function compileNegocio(form){
   const L=[]; const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
   if(form.nombre&&form.nombre.trim()) L.push(`# ${form.nombre.trim()}`);
+  const persona=compilePersona(form); if(persona) L.push("## Cómo debes comportarte\n"+persona);
   add("Qué vendemos",form.rubro); add("Cliente ideal",form.publico); add("Propuesta de valor",form.propuesta);
-  add("Tono y estilo del bot",form.tono); add("Horario de atención",form.horario);
+  add("Horario de atención",form.horario);
   add("Cuándo transferir a una persona",form.transferir); add("Cómo se paga",form.pagos);
   add("Envíos y entrega",form.entrega); add("Políticas",form.politicas); add("Nunca hacer / no prometer",form.no_hacer);
   const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
@@ -339,6 +352,11 @@ function renderConocimiento(b){
   let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
   if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
   if(!Array.isArray(form.faq)) form.faq=[];
+  if(form.negritas===undefined) form.negritas=true;
+  if(form.emoji_min===undefined) form.emoji_min=0;
+  if(form.emoji_max===undefined) form.emoji_max=2;
+  if(form.tono===undefined) form.tono="cercano";
+  const retraso = c.buffer_default_seg ?? 4;
   st.form=form;
   const field=([k,label,type,ph])=>`
     <label style="margin-top:14px">${label}</label>
@@ -348,6 +366,25 @@ function renderConocimiento(b){
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
     <p class="sub">Completa este formulario del negocio: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. Lo específico de cada producto (descripción, FAQ) va en su ficha de <b>Productos</b>.</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.robot}</span><span class="nm">Personalidad del bot (vendedor IA)</span></div>
+      <label style="margin-top:6px">Nombre de la IA — cómo se llama tu vendedor</label>
+      <input class="in" id="nf_nombre_ia" value="${esc(form.nombre_ia||"")}" placeholder="Ej. Valentina, Carlos, Sofía…"/>
+      <div class="row" style="margin-top:14px">
+        <div class="f"><label style="margin-top:0">Tono de conversación</label>
+          <select class="in" id="pf_tono">${Object.entries(TONOS).map(([k,v])=>`<option value="${k}" ${form.tono===k?"selected":""}>${v}</option>`).join("")}<option value="" ${!form.tono?"selected":""}>Personalizado (usa el detalle)</option></select></div>
+        <div class="f"><label style="margin-top:0">Detalle del tono (opcional)</label><input class="in" id="pf_tono_detalle" value="${esc(form.tono_detalle||"")}" placeholder="Ej. respuestas cortas, sin sonar robótico"/></div>
+      </div>
+      <div class="row" style="margin-top:14px;align-items:flex-start">
+        <div class="f" style="flex:0 0 auto"><label style="margin-top:0">Negritas</label>
+          <div style="display:flex;align-items:center;gap:9px;height:44px"><div class="sw ${form.negritas?'on':''}" id="pf_negritas"></div><span style="font-size:12.5px;color:var(--muted)">Resaltar con *negritas*</span></div></div>
+        <div class="f"><label style="margin-top:0">Emojis por mensaje (mín / máx)</label>
+          <div style="display:flex;align-items:center;gap:8px"><input class="in" id="pf_emin" type="number" min="0" max="10" value="${Number(form.emoji_min)||0}" style="max-width:80px"/><span style="color:var(--muted)">a</span><input class="in" id="pf_emax" type="number" min="0" max="10" value="${Number(form.emoji_max)}" style="max-width:80px"/></div>
+          <div style="font-size:11px;color:var(--faint);margin-top:4px">Máx 0 = sin emojis.</div></div>
+        <div class="f"><label style="margin-top:0">Retraso de respuesta (seg)</label><input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:110px"/>
+          <div style="font-size:11px;color:var(--faint);margin-top:4px">Agrupa mensajes seguidos del cliente.</div></div>
+      </div>
+    </div>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
       ${NEG_FIELDS.map(field).join("")}
@@ -376,17 +413,24 @@ function renderConocimiento(b){
   };
   paintFaq();
   $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
-  const harvest=()=>{ NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; }); form.extra=$("nf_extra").value; };
+  $("pf_negritas").onclick=()=>{ form.negritas=!form.negritas; $("pf_negritas").classList.toggle("on",form.negritas); };
+  const harvest=()=>{
+    NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; });
+    form.nombre_ia=$("nf_nombre_ia").value; form.tono=$("pf_tono").value; form.tono_detalle=$("pf_tono_detalle").value;
+    form.emoji_min=Math.max(0,Number($("pf_emin").value)||0); form.emoji_max=Math.max(0,Number($("pf_emax").value)||0);
+    form.extra=$("nf_extra").value; st.retraso=Math.max(0,parseInt($("pf_retraso").value||"0",10));
+  };
   $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("saveNegocio").onclick=async(e)=>{
     harvest();
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     const negocio=compileNegocio(form).trim()||null;
-    let { error }=await supa.from("channels").update({ negocio, negocio_form:form }).eq("id",st.channelId);
-    if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
+    let { error }=await supa.from("channels").update({ negocio, negocio_form:form, buffer_default_seg:st.retraso }).eq("id",st.channelId);
+    if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio, buffer_default_seg:st.retraso }).eq("id",st.channelId)); }
+    if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
-    st.channel.negocio=negocio; st.channel.negocio_form=form; toast("Conocimiento guardado ✓");
+    st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso; toast("Conocimiento guardado ✓");
   };
 }
 
@@ -405,6 +449,7 @@ function renderPerfiles(b){
         return `<div style="border-top:1px solid var(--border);padding:14px 0 2px;margin-top:12px">
           <div style="font-weight:700;font-size:13.5px">${nm}</div>
           <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">${d}</div>
+          ${k==="ocr"?`<button class="btn ia goval" style="height:32px;margin:0 0 10px">${IC.shield} Configurar Validador de comprobantes →</button>`:""}
           <div class="row">
             <div class="f"><label style="margin-top:0">Proveedor</label>
               <select class="in" id="pf_prov_${k}">
@@ -427,6 +472,7 @@ function renderPerfiles(b){
     const res=await pickPerfilModel(st.perfMod[k]||"");
     if(res!==undefined){ st.perfMod[k]=res; renderPerfiles(b); }
   });
+  const gv=b.querySelector(".goval"); if(gv) gv.onclick=()=>goTab("validador");
   $("savePerfiles").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     const ia_perfiles={};
@@ -442,6 +488,20 @@ function renderPerfiles(b){
 }
 
 // ── Validador de comprobantes (OCR) ────────────────────────────────
+// Sube una imagen (referencia de comprobante) al bucket media y la agrega.
+function pickImg(arr, after){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return; toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir la imagen",true); return; }
+      arr.push({ url:data.url, mime:file.type, filename:file.name }); toast("Imagen agregada ✓"); after&&after();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
 function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titular:true, verificar_monto:true, tolerancia_monto:0, verificar_fecha:true, fecha_max_horas:48, operacion_unica:true, rechazar_editados:true, exigencia:"media" }, instrucciones:"" }; }
 const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
 function ocrPreview(o){
@@ -458,6 +518,9 @@ function ocrPreview(o){
   if(r.rechazar_editados) rls.push("Detecta montajes/ediciones; ante duda → INVÁLIDO.");
   rls.push("Exigencia: "+(r.exigencia||"media")+".");
   L.push("## Reglas\n"+rls.map(x=>"- "+x).join("\n"));
+  L.push("## Consideraciones\n- Pagos interoperables: un Yape puede llegar a Plin y viceversa; las transferencias cruzan bancos. No invalides por app/banco distinto si el dinero llega a una cuenta válida.\n- El destinatario puede salir parcial/enmascarado (PER FLO, P*** F****, iniciales); vale si coincide razonablemente.\n- Un «pago programado/en proceso» no ejecutado NO es válido.");
+  const ej=(o.ejemplos||[]).filter(x=>x&&x.url);
+  if(ej.length) L.push(`## Imágenes de referencia\nTe adjunto ${ej.length} comprobante(s) de ejemplo (válidos). Son SOLO referencia; si el que llega es de otro método/app, ignóralos y valida por las reglas.`);
   if(o.instrucciones&&o.instrucciones.trim()) L.push("## Instrucciones del negocio\n"+o.instrucciones.trim());
   L.push('Responde en JSON: {"valido":bool,"monto":number,"operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"..."}.');
   return L.join("\n\n");
@@ -467,6 +530,7 @@ function renderValidador(b){
     ? { ...defaultOcr(), ...st.channel.ocr_config, reglas:{ ...defaultOcr().reglas, ...(st.channel.ocr_config.reglas||{}) } }
     : defaultOcr();
   if(!Array.isArray(st.ocr.metodos)) st.ocr.metodos=[];
+  if(!Array.isArray(st.ocr.ejemplos)) st.ocr.ejemplos=[];
   const o=st.ocr, r=o.reglas;
   const chk=(key,label,desc)=>`<label class="ocrchk"><input type="checkbox" data-r="${key}" ${r[key]?"checked":""}/> <span><b>${label}</b><small>${desc}</small></span></label>`;
   b.innerHTML=`
@@ -507,6 +571,12 @@ function renderValidador(b){
       </div>
     </div>
     <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("image")}</span><span class="nm">Imágenes de referencia (opcional)</span></div>
+      <div class="desc">Sube capturas de comprobantes válidos como <b>referencia</b> (ej. un Yape tuyo) para que la IA sepa cómo lucen tus pagos. <b>No son el único método</b>: si llega otro (Plin, transferencia…), la IA los ignora y valida por las reglas.</div>
+      <div id="ocrEj" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"></div>
+      <button class="btn" id="ocrEjAdd" style="margin-top:10px;border:1px solid var(--border)">${icon("upload")} Subir imagen de referencia</button>
+    </div>
+    <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Instrucciones extra para la IA</span></div>
       <textarea class="in" id="ocrInstr" rows="4" style="min-height:80px;line-height:1.5;resize:vertical" placeholder="Ej.: Aceptamos solo pagos en soles. Si el nombre está parcialmente tapado pero el número coincide, apruébalo. Rechaza capturas de 'pago programado' aún no ejecutado.">${esc(o.instrucciones||"")}</textarea>
     </div>
@@ -526,8 +596,8 @@ function renderValidador(b){
       const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
       el.innerHTML=`<div class="row">
         <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Yape"/></div>
-        <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Percy Flores"/></div>
-        <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="999 999 999"/></div>
+        <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Juan Pérez"/></div>
+        <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="900 000 000 / CCI"/></div>
         <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
       </div>
       <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo soles, no aceptar de terceros" style="margin-top:8px"/>`;
@@ -541,6 +611,19 @@ function renderValidador(b){
   };
   paintMet();
   b.querySelectorAll(".ocrpre").forEach(btn=> btn.onclick=()=>{ o.metodos.push({ app:btn.dataset.app, titular:"", numero:"", notas:"" }); paintMet(); });
+  const paintEj=()=>{
+    const box=$("ocrEj"); box.innerHTML="";
+    if(!o.ejemplos.length){ box.innerHTML=`<div class="desc" style="padding:2px 0">Sin imágenes de referencia.</div>`; }
+    o.ejemplos.forEach((ej,i)=>{
+      const el=document.createElement("div"); el.style.cssText="position:relative;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface-2)";
+      el.innerHTML=`<img src="${esc(ej.url)}" style="width:104px;height:150px;object-fit:cover;border-radius:6px;display:block"/>
+        <button class="btn danger" style="position:absolute;top:5px;right:5px;width:26px;height:26px;padding:0;border:1px solid var(--border);background:var(--surface)">${icon("trash")}</button>`;
+      el.querySelector("button").onclick=()=>{ o.ejemplos.splice(i,1); paintEj(); };
+      box.appendChild(el);
+    });
+  };
+  paintEj();
+  $("ocrEjAdd").onclick=()=>pickImg(o.ejemplos, paintEj);
   $("ocrPrev").onclick=()=>{ const md=ocrPreview(o)||"(el validador está desactivado)"; askText({title:"Instrucciones del validador",message:"Esto es lo que la IA recibe al analizar un comprobante.",label:"Contexto",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("ocrSave").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";

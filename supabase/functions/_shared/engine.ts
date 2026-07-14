@@ -931,6 +931,13 @@ function buildOcrSystem(ocr: any): string | null {
   const nivel = r.exigencia === "alta" ? "ALTA (rechaza ante cualquier duda)" : r.exigencia === "baja" ? "BAJA (aprueba si lo esencial coincide)" : "MEDIA (equilibrio entre seguridad y fluidez)";
   reglas.push(`Nivel de exigencia: ${nivel}.`);
   p.push("## Reglas de validación\n" + reglas.map((x) => "- " + x).join("\n"));
+  // Consideraciones SIEMPRE presentes (realidad de los pagos en Perú).
+  const cons: string[] = [
+    "Los pagos en Perú son INTEROPERABLES: un Yape puede llegar a un Plin y viceversa, y las transferencias cruzan bancos (BCP, BBVA, Interbank, Scotiabank…). NO invalides un pago solo porque la app/banco de origen sea distinta a la del destinatario; lo que importa es que el dinero llegue a una de las cuentas/números válidos de arriba.",
+    "El nombre del destinatario suele salir PARCIAL o enmascarado (ej. «PER FLO», «P*** F****», «J. PÉREZ N.», solo iniciales o apellidos). Considéralo válido si coincide RAZONABLEMENTE con el titular esperado (mismas iniciales/apellidos/patrón); no exijas el nombre completo exacto.",
+    "Distingue una CONSTANCIA de pago ya realizado de un «pago programado» o «en proceso» aún no ejecutado: estos últimos NO son válidos.",
+  ];
+  p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
   p.push('Devuelve tu conclusión en JSON: {"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no"}. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
   return p.join("\n\n");
@@ -992,7 +999,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (!secrets?.access_token) throw new Error("canal sin access_token para leer el media");
         src = await fetchMediaAsDataUri(src.slice("wa-media:".length), secrets.access_token);
       }
-      content = [imageBlock(src), { type: "text", text: prompt }];
+      const blocks: ContentBlock[] = [];
+      // Imágenes de REFERENCIA del validador (opcional, máx 3): ayudan a la IA a
+      // reconocer cómo lucen los pagos, sin ser el único método aceptado.
+      const refs = (cfg.usar_validador !== false && Array.isArray(info.ocr?.ejemplos))
+        ? info.ocr.ejemplos.filter((e: any) => e?.url).slice(0, 3) : [];
+      if (refs.length) {
+        blocks.push({ type: "text", text: `A continuación ${refs.length} comprobante(s) de REFERENCIA (válidos, solo para que sepas cómo lucen los pagos de este negocio). NO son el único método: si el comprobante del cliente es de otro tipo/app, ignóralos y valida por las reglas.` });
+        for (const e of refs) blocks.push(imageBlock(String(e.url)));
+        blocks.push({ type: "text", text: "— Ahora analiza el SIGUIENTE comprobante enviado por el cliente:" });
+      }
+      blocks.push(imageBlock(src), { type: "text", text: prompt });
+      content = blocks;
     }
 
     const result = await runAI({
