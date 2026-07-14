@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Demo del lienzo de flujos (dev)</title>
+<!-- Página de desarrollo: permite iterar el diseño del editor de flujos
+     sin sesión. Usa los MISMOS flow-canvas.css/js que editor.html. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.css" />
+<link rel="stylesheet" href="shell.css" />
+<link rel="stylesheet" href="flow-canvas.css" />
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;overflow:hidden}
+  .wrap{position:relative;height:100%}
+  #drawflow{position:absolute;inset:0}
+  .demo-top{position:absolute;top:14px;right:14px;z-index:7;display:flex;gap:8px;align-items:center}
+  .demo-chip{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);
+    background:color-mix(in srgb,var(--surface) 90%,transparent);border:1px solid var(--border);
+    border-radius:20px;padding:6px 12px;backdrop-filter:blur(8px)}
+  .demo-btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--border);cursor:pointer;
+    background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:12px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="drawflow"></div>
+  <div class="flow-palette" id="palette"></div>
+  <div class="demo-top">
+    <span class="demo-chip">Demo del lienzo · dev</span>
+    <button class="demo-btn" id="themeBtn">Tema</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
+<script type="module">
+import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls } from "./flow-canvas.js";
+
+const HANDLES = {
+  mensaje:["continuar"], pregunta:["continuar"], condicion:["ruta:1","si_no_cumple"],
+  accion:["continuar"], ia:["exito","fallo"], esperar:["continuar"], iniciar_flujo:["continuar"],
+  evento_fb:["exito","fallo"], plantilla:["exito","fallo"], google_sheets:["exito","fallo"], fin:[],
+};
+
+const editor = new Drawflow(document.getElementById("drawflow"));
+editor.start();
+const api = installCanvas(editor);
+window.editor = editor; window.api = api; // acceso desde consola (dev)
+mountZoomControls(editor, document.querySelector(".wrap"), api);
+
+const models = {};
+function add(tipo, nombre, config, x, y, opts={}){
+  const handles = opts.handles || HANDLES[tipo] || ["continuar"];
+  const m = { tipo, nombre, config: config||{}, es_inicial: !!opts.inicial, handles };
+  m.dfId = editor.addNode(tipo, 1, handles.length, x, y, tipo, {}, nodeHtml(m));
+  models[m.dfId] = m;
+  decorateNode(editor, m);
+  return m;
+}
+
+// ── Flujo de muestra (parecido al demo real de Zapatillas Runner) ──
+const n1 = add("mensaje","Bienvenida",{bubbles:[{text:"¡Hola! 👟 Gracias por escribir a Zapatillas Runner. Te cuento cómo funciona el envío contra entrega."},{text:"¿Qué talla necesitas?"}]}, 60, 240, {inicial:true});
+const n2 = add("pregunta","Pedir talla",{text:"¿Cuál es tu talla? (35 al 44)", guardar_en:"talla"}, 400, 120);
+const n3 = add("ia","Detectar intención",{operacion:"extraer", guardar_en:"intencion"}, 400, 420);
+const n4 = add("condicion","¿Quiere comprar?",{rutas:[{handle:"ruta:1",nombre:"Quiere comprar"},{handle:"ruta:2",nombre:"Pregunta precio"}]}, 760, 240, {handles:["ruta:1","ruta:2","si_no_cumple"]});
+const n5 = add("google_sheets","Registrar venta",{accion:"append", hoja:"Ventas"}, 1130, 60);
+const n6 = add("plantilla","Confirmar pedido",{template_name:"pedido_confirmado"}, 1130, 300);
+const n7 = add("mensaje","No entendí",{bubbles:[{text:"Perdona, no te entendí 🙈 ¿me lo repites?"}]}, 1130, 540);
+const n8 = add("evento_fb","Compra (Purchase)",{event_name:"Purchase", value:"{{valor}}"}, 1480, 60);
+const n9 = add("esperar","Pausa corta",{segundos:4}, 1480, 300);
+const n10 = add("fin","Fin del flujo",{}, 1810, 180);
+const n11 = add("accion","Etiquetar lead",{acciones:[{tipo:"etiqueta"}]}, 60, 540);
+const n12 = add("iniciar_flujo","Ir a postventa",{target_role:"postventa"}, 1480, 540);
+
+const C = (a,b,o=1)=>{ try{ editor.addConnection(a.dfId, b.dfId, "output_"+o, "input_1"); }catch(e){} };
+C(n1,n2); C(n1,n3);            // salidas paralelas desde el mismo puerto
+C(n2,n4); C(n3,n4);            // convergen (prueba de carriles)
+C(n4,n5,1); C(n4,n6,2); C(n4,n7,3);
+C(n5,n8); C(n6,n9);
+C(n8,n10); C(n9,n10);
+C(n7,n2);                      // arista HACIA ATRÁS (canal por fuera)
+C(n11,n3); C(n9,n12);
+
+// ── Paleta ──
+const pal = document.getElementById("palette");
+pal.innerHTML = `<div class="pl-title">Añadir nodo</div><div class="pl-grid"></div>`;
+const grid = pal.querySelector(".pl-grid");
+let drop = 0;
+for(const t of Object.keys(HANDLES)){
+  const b = document.createElement("button");
+  b.className = "pbtn"; b.dataset.tipo = t; b.title = NODE_TYPES[t].desc || "";
+  b.innerHTML = `<span class="pb-ic">${nodeIcon(t)}</span>${NODE_TYPES[t].label}`;
+  b.onclick = ()=>{ add(t, NODE_TYPES[t].label, {}, 300+(drop%4)*60, 700+(drop%3)*40); drop++; };
+  grid.appendChild(b);
+}
+
+api.routeAll();
+api.fitView();
+
+document.getElementById("themeBtn").onclick = ()=>{
+  const cur = document.documentElement.dataset.theme==="dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = cur;
+  try{ localStorage.setItem("nodo.theme", cur); }catch(e){}
+};
+
+// ── Snapshot de desarrollo: dibuja el estado real del canvas en un
+// <canvas> y lo sube a POST /__snapshot (el dev-server lo guarda en
+// tools/snapshots/). Workaround mientras la captura del Browser pane falla.
+window.__snapshot = async function(name="snap"){
+  const cont=document.getElementById('drawflow');
+  const pre=cont.querySelector('.drawflow');
+  const W=cont.clientWidth, H=cont.clientHeight;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const x=cv.getContext('2d');
+  const cs=getComputedStyle(document.body);
+  x.fillStyle=cs.backgroundColor||'#0B1120'; x.fillRect(0,0,W,H);
+  const m=(pre.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([\d.]+)\)/)||[0,0,0,1]);
+  const tx=+m[1], ty=+m[2], z=+m[3];
+  const light=document.documentElement.dataset.theme==='light';
+  x.fillStyle=light?'rgba(15,23,42,.10)':'rgba(241,245,249,.09)';
+  for(let gx=tx%(24*z); gx<W; gx+=24*z) for(let gy=ty%(24*z); gy<H; gy+=24*z){ x.beginPath(); x.arc(gx,gy,1.1,0,7); x.fill(); }
+  x.save(); x.translate(tx,ty); x.scale(z,z);
+  const pr=pre.getBoundingClientRect();
+  const L=(r)=>({x:(r.x-pr.x)/z, y:(r.y-pr.y)/z, w:r.width/z, h:r.height/z});
+  document.querySelectorAll('svg.connection').forEach(svg=>{
+    const main=svg.querySelector('.main-path'); if(!main) return;
+    x.strokeStyle=getComputedStyle(main).stroke; x.lineWidth=2.4; x.lineCap='round';
+    x.stroke(new Path2D(main.getAttribute('d')));
+    const arr=svg.querySelector('.arrow-path');
+    if(arr){ x.fillStyle=getComputedStyle(arr).fill; x.fill(new Path2D(arr.getAttribute('d'))); }
+  });
+  const rr=(x0,y0,w,h,r)=>{ x.beginPath(); x.moveTo(x0+r,y0); x.arcTo(x0+w,y0,x0+w,y0+h,r); x.arcTo(x0+w,y0+h,x0,y0+h,r); x.arcTo(x0,y0+h,x0,y0,r); x.arcTo(x0,y0,x0+w,y0,r); x.closePath(); };
+  document.querySelectorAll('.drawflow-node').forEach(n=>{
+    const r=L(n.getBoundingClientRect());
+    const ncs=getComputedStyle(n);
+    const col=(ncs.getPropertyValue('--nd-color')||'#64748B').trim();
+    rr(r.x,r.y,r.w,r.h,14);
+    x.fillStyle=ncs.backgroundColor; x.fill();
+    x.strokeStyle=ncs.borderColor; x.lineWidth=1.2; x.stroke();
+    if(n.classList.contains('selected')){ x.strokeStyle=col; x.lineWidth=2.5; x.stroke(); }
+    const head=n.querySelector('.nd-head');
+    if(head){
+      const hr=L(head.getBoundingClientRect());
+      x.save(); rr(r.x+1,r.y+1,r.w-2,hr.h,13); x.clip();
+      x.fillStyle=col+'2E'; x.fillRect(r.x,r.y,r.w,hr.h+4); x.restore();
+      const ic=n.querySelector('.nd-ic');
+      if(ic){ const ir=L(ic.getBoundingClientRect());
+        rr(ir.x,ir.y,ir.w,ir.h,7); x.fillStyle=col; x.fill();
+        const svgp=ic.querySelectorAll('svg path,svg circle,svg rect,svg line,svg polyline,svg polygon');
+        x.save(); x.translate(ir.x+ir.w/2-6.5, ir.y+ir.h/2-6.5); x.scale(13/24,13/24);
+        x.strokeStyle='#fff'; x.lineWidth=2.2; x.lineCap='round'; x.lineJoin='round';
+        svgp.forEach(p=>{ try{
+          if(p.tagName==='path') x.stroke(new Path2D(p.getAttribute('d')));
+          else if(p.tagName==='circle'){ x.beginPath(); x.arc(+p.getAttribute('cx'),+p.getAttribute('cy'),+p.getAttribute('r'),0,7); x.stroke(); }
+          else if(p.tagName==='rect'){ x.strokeRect(+p.getAttribute('x'),+p.getAttribute('y'),+p.getAttribute('width'),+p.getAttribute('height')); }
+          else if(p.tagName==='polyline'||p.tagName==='polygon'){ const pts=p.getAttribute('points').trim().split(/[\s,]+/).map(Number); x.beginPath(); x.moveTo(pts[0],pts[1]); for(let i=2;i<pts.length;i+=2) x.lineTo(pts[i],pts[i+1]); if(p.tagName==='polygon')x.closePath(); x.stroke(); }
+          else if(p.tagName==='line'){ x.beginPath(); x.moveTo(+p.getAttribute('x1'),+p.getAttribute('y1')); x.lineTo(+p.getAttribute('x2'),+p.getAttribute('y2')); x.stroke(); }
+        }catch(e){} });
+        x.restore();
+      }
+      const ty2=n.querySelector('.nd-type');
+      if(ty2){ const tr=L(ty2.getBoundingClientRect()); x.fillStyle=getComputedStyle(ty2).color; x.font='800 9.5px Inter,sans-serif'; x.textBaseline='middle'; x.fillText(ty2.textContent.toUpperCase(), tr.x, tr.y+tr.h/2); }
+      const stc=n.querySelector('.nd-start');
+      if(stc){ const sr=L(stc.getBoundingClientRect()); rr(sr.x,sr.y,sr.w,sr.h,10); x.fillStyle='#10B981'; x.fill(); x.fillStyle='#fff'; x.font='800 8.5px Inter,sans-serif'; x.textBaseline='middle'; x.fillText('▶ INICIO', sr.x+5, sr.y+sr.h/2); }
+    }
+    const nm=n.querySelector('.nd-nm');
+    if(nm){ const tr=L(nm.getBoundingClientRect()); x.fillStyle=cs.color; x.font='650 13px Inter,sans-serif'; x.textBaseline='top'; x.fillText(nm.textContent, tr.x, tr.y+1, tr.w); }
+    const sb=n.querySelector('.nd-sub');
+    if(sb){ const tr=L(sb.getBoundingClientRect()); x.fillStyle=light?'#55627A':'#94A3B8'; x.font='11px Inter,sans-serif'; x.textBaseline='top';
+      const words=sb.textContent.split(' '); let line='', yy=tr.y+1, count=0;
+      for(const w of words){ if(x.measureText(line+' '+w).width>tr.w && line){ x.fillText(line,tr.x,yy,tr.w); yy+=15; line=''; if(++count>1) break; } line+=(line?' ':'')+w; }
+      if(line&&count<2) x.fillText(line,tr.x,yy,tr.w);
+    }
+    n.querySelectorAll('.input,.output').forEach(p=>{
+      const prt=L(p.getBoundingClientRect());
+      x.beginPath(); x.arc(prt.x+prt.w/2, prt.y+prt.h/2, prt.w/2, 0, 7);
+      x.fillStyle=getComputedStyle(p).backgroundColor; x.fill();
+      x.lineWidth=3; x.strokeStyle=cs.backgroundColor||'#0B1120'; x.stroke();
+      const lb=p.querySelector('.plabel');
+      if(lb){ const lr=L(lb.getBoundingClientRect());
+        rr(lr.x,lr.y,lr.w,lr.h,9); x.fillStyle=getComputedStyle(lb).backgroundColor; x.fill(); x.strokeStyle=light?'rgba(15,23,42,.15)':'rgba(148,163,184,.2)'; x.lineWidth=1; x.stroke();
+        x.fillStyle=getComputedStyle(lb).color; x.font='700 9px Inter,sans-serif'; x.textBaseline='middle'; x.fillText(lb.textContent.toUpperCase(), lr.x+7, lr.y+lr.h/2); }
+    });
+  });
+  x.restore();
+  const data=cv.toDataURL('image/jpeg',0.85).split(',')[1];
+  const resp=await fetch('/__snapshot?name='+name, { method:'POST', body:data });
+  return resp.text();
+};
+</script>
+</body>
+</html>

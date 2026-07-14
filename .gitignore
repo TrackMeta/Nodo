@@ -28,3 +28,6 @@ desktop.ini
 
 # Originales pesados de iconos (ya reescalados a assets/apps/)
 Recursos Iconos Apps/
+
+# Capturas de desarrollo del lienzo (las genera canvas-demo + dev-server)
+tools/snapshots/

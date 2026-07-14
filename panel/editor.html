@@ -8,14 +8,8 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.css" />
 <link rel="stylesheet" href="shell.css" />
+<link rel="stylesheet" href="flow-canvas.css" />
 <style>
-  :root{
-    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
-    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
-    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
-    --green:#22c079; --amber:#f0a92b; --red:#e2564a; --radius:12px;
-    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
@@ -38,12 +32,14 @@
   .fcard .c-tt{font-size:16px;font-weight:700;letter-spacing:-.2px;line-height:1.25}
   .back{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px 0 9px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;font-weight:600}
   .back:hover{color:var(--text);border-color:var(--brand)} .back svg{width:16px;height:16px}
-  #drawflow{position:absolute;inset:0;background:var(--bg)}
-  .palette{position:absolute;top:12px;left:12px;z-index:5;display:flex;gap:6px;flex-wrap:wrap;max-width:70%}
-  .pbtn{font-size:12px;padding:6px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text)}
-  .pbtn:hover{border-color:var(--brand);color:var(--brand)}
+  #drawflow{position:absolute;inset:0}
   .cfg{width:280px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px}
   .cfg h3{font-size:14px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .cfg-ic{width:26px;height:26px;border-radius:8px;flex:none;background:var(--nd-color,var(--brand));color:#fff;
+    display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px color-mix(in srgb,var(--nd-color,var(--brand)) 45%, transparent)}
+  .cfg-ic svg{width:14px;height:14px}
+  .cfg-ic.sm{width:20px;height:20px;border-radius:6px}
+  .cfg-ic.sm svg{width:11px;height:11px}
   .cfg label{display:block;font-size:11px;color:var(--muted);margin:12px 0 5px}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;font-family:var(--font)}
   .ta{min-height:120px;font-family:var(--font-mono,monospace);font-size:12px;resize:vertical}
@@ -55,11 +51,6 @@
   .chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px}
   .del{margin-top:16px;width:100%;background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;height:38px;font-weight:600}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
-  .nd{display:flex;gap:10px;align-items:center;min-width:150px}
-  .nd .nd-ic{width:30px;height:30px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;
-    background:color-mix(in srgb, var(--nd-color, var(--brand)) 20%, transparent)}
-  .nd .t{font-size:9.5px;color:var(--nd-color,var(--brand));text-transform:uppercase;letter-spacing:.5px;font-weight:700}
-  .nd .nm{font-size:13px;font-weight:600;margin-top:1px}
   .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
   .segb{background:transparent;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px}
   .segb.active{background:var(--brand);color:#fff}
@@ -76,23 +67,6 @@
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
   .toast.show{opacity:1}
   .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
-  .df-node .drawflow-node{background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);
-    padding:10px 12px 10px 10px;box-shadow:0 4px 16px rgba(0,0,0,.28);border-left:4px solid var(--nd-color,var(--brand))}
-  .drawflow .drawflow-node.selected{border-color:var(--nd-color,var(--brand));box-shadow:0 0 0 2px var(--nd-color,var(--brand))}
-  .drawflow-node .input,.drawflow-node .output{background:var(--nd-color,var(--brand));border:2px solid var(--surface)}
-  /* Color por tipo de nodo */
-  .drawflow-node.mensaje{--nd-color:#2b7fff}
-  .drawflow-node.pregunta{--nd-color:#f0a92b}
-  .drawflow-node.condicion{--nd-color:#9b6cf0}
-  .drawflow-node.accion{--nd-color:#18b7be}
-  .drawflow-node.ia{--nd-color:#e264a8}
-  .drawflow-node.esperar{--nd-color:#8a97a8}
-  .drawflow-node.iniciar_flujo{--nd-color:#22c079}
-  .drawflow-node.evento_fb{--nd-color:#1877f2}
-  .drawflow-node.plantilla{--nd-color:#0aa984}
-  .drawflow-node.fin{--nd-color:#e2564a}
-  /* Paleta con color por tipo */
-  .pbtn[data-tipo]{border-left:3px solid var(--nd-color,var(--brand))}
   /* Modal de disparadores del flujo */
   .tg-overlay{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
   .tg-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:560px;max-height:88vh;overflow:auto}
@@ -139,23 +113,23 @@
     <span class="badge" id="fstate">—</span>
     <span class="badge" id="fprod" style="display:none"></span>
     <div class="seg" id="viewToggle">
-      <button class="segb active" data-v="estructura">🕸 Estructura</button>
-      <button class="segb" data-v="contenido">✍️ Contenido</button>
+      <button class="segb active" data-v="estructura"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> Estructura</button>
+      <button class="segb" data-v="contenido"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Contenido</button>
     </div>
     <div class="spacer"></div>
-    <button class="btn" id="trigBtn" title="Cuándo arranca este flujo">⚡ Disparadores</button>
-    <button class="btn" id="delFlowBtn" style="color:var(--red);border-color:transparent" title="Eliminar flujo">🗑</button>
+    <button class="btn" id="trigBtn" title="Cuándo arranca este flujo"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> Disparadores</button>
+    <button class="btn" id="delFlowBtn" style="color:var(--red);border-color:transparent" title="Eliminar flujo"><svg width="1.15em" height="1.15em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.2em"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
     <button class="btn" id="saveBtn">Guardar</button>
     <button class="btn primary" id="pubBtn">Publicar</button>
   </div>
   <div class="main" id="editorMain" style="display:none">
     <div class="canvaswrap">
-      <div class="palette" id="palette"></div>
       <div id="drawflow"></div>
+      <div class="flow-palette" id="palette"></div>
       <div id="contentView" class="contentview" style="display:none"></div>
     </div>
     <div class="cfg" id="cfg">
-      <div class="empty" style="height:100%"><div style="font-size:26px">🕸</div><div>Elige o crea un flujo</div></div>
+      <div class="empty" style="height:100%"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><div>Elige o crea un flujo</div></div>
     </div>
   </div>
 </div>
@@ -163,29 +137,31 @@
 
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
+import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls } from "./flow-canvas.js";
 const $ = (id) => document.getElementById(id);
 
-// Tipos de nodo y sus salidas (handles) por defecto.
+// Salidas (handles) por defecto de cada tipo de nodo. El aspecto visual
+// (color, icono, etiqueta, resumen) vive en flow-canvas.js (NODE_TYPES).
 const NODE_DEFS = {
-  mensaje:      { icon:"💬", handles:["continuar"] },
-  pregunta:     { icon:"❓", handles:["continuar"] },
-  condicion:    { icon:"🔀", handles:["ruta:1","si_no_cumple"] },
-  accion:       { icon:"⚡", handles:["continuar"] },
-  ia:           { icon:"✨", handles:["exito","fallo"] },
-  esperar:      { icon:"⏱", handles:["continuar"] },
-  iniciar_flujo:{ icon:"↗", handles:["continuar"] },
-  evento_fb:    { icon:"📘", handles:["exito","fallo"] },
-  plantilla:    { icon:"📋", handles:["exito","fallo"] },
-  google_sheets:{ icon:"📊", handles:["exito","fallo"] },
-  fin:          { icon:"⬛", handles:[] },
+  mensaje:      { handles:["continuar"] },
+  pregunta:     { handles:["continuar"] },
+  condicion:    { handles:["ruta:1","si_no_cumple"] },
+  accion:       { handles:["continuar"] },
+  ia:           { handles:["exito","fallo"] },
+  esperar:      { handles:["continuar"] },
+  iniciar_flujo:{ handles:["continuar"] },
+  evento_fb:    { handles:["exito","fallo"] },
+  plantilla:    { handles:["exito","fallo"] },
+  google_sheets:{ handles:["exito","fallo"] },
+  fin:          { handles:[] },
   // rotador: mensajes iniciales con rotación de copy. Se edita desde la ficha
   // del producto (pestaña Activación), no desde la paleta → hidden.
-  rotador:      { icon:"🎲", handles:["continuar"], hidden:true },
+  rotador:      { handles:["continuar"], hidden:true },
 };
 
 const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all", localFolders:new Set() };
-let editor;
+let editor, canvas;
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -194,17 +170,20 @@ async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   editor = new Drawflow($("drawflow"));
-  editor.reroute = true;
   editor.start();
+  canvas = installCanvas(editor);
+  mountZoomControls(editor, document.querySelector(".canvaswrap"), canvas);
   editor.on("nodeSelected", (id)=> selectNode(id));
   editor.on("nodeUnselected", ()=> { st.selected=null; renderCfg(); });
-  // Palette
+  // Paleta de nodos (colores/iconos desde flow-canvas.js)
+  $("palette").innerHTML=`<div class="pl-title">Añadir nodo</div><div class="pl-grid"></div>`;
+  const plGrid=$("palette").querySelector(".pl-grid");
   for(const t of Object.keys(NODE_DEFS)){
     if(NODE_DEFS[t].hidden) continue;
     const b=document.createElement("button"); b.className="pbtn"; b.dataset.tipo=t;
-    b.style.setProperty("--nd-color", NODE_COLORS[t]||"var(--brand)");
-    b.textContent=NODE_DEFS[t].icon+" "+t;
-    b.onclick=()=>addNode(t); $("palette").appendChild(b);
+    b.title=NODE_TYPES[t]?.desc||"";
+    b.innerHTML=`<span class="pb-ic">${nodeIcon(t)}</span>${NODE_TYPES[t]?.label||t}`;
+    b.onclick=()=>addNode(t); plGrid.appendChild(b);
   }
   await loadChannels();
   $("addFlow").onclick = createFlow;
@@ -224,7 +203,7 @@ function setView(v){
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.classList.toggle("active", b.dataset.v===v));
   const content = v==="contenido";
   $("contentView").style.display = content ? "block" : "none";
-  $("palette").style.display = content ? "none" : "flex";
+  $("palette").style.display = content ? "none" : "";
   $("cfg").style.display = content ? "none" : "block";
   if(content) renderContent();
 }
@@ -243,7 +222,7 @@ function renderContent(){
 }
 function contentCard(m, i){
   const el=document.createElement("div"); el.className="cnode";
-  el.innerHTML=`<div class="ch"><span class="ci">${i}. ${NODE_DEFS[m.tipo]?.icon||""}</span><input class="in nm" value="${esc(m.nombre)}" style="max-width:240px"/><span class="ctag">${m.tipo}</span></div>`;
+  el.innerHTML=`<div class="ch"><span class="ci">${i}.</span><span class="cfg-ic sm" data-tipo="${m.tipo}">${nodeIcon(m.tipo)}</span><input class="in nm" value="${esc(m.nombre)}" style="max-width:240px"/><span class="ctag">${NODE_TYPES[m.tipo]?.label||m.tipo}</span></div>`;
   el.querySelector(".nm").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
   const body=document.createElement("div");
   if(m.tipo==="mensaje") buildMensaje(m, body);
@@ -261,10 +240,10 @@ function buildMensaje(m, body){
   if(!m.config.bubbles) m.config.bubbles=[{text:""}];
   m.config.bubbles.forEach((b)=>{
     const w=document.createElement("div"); w.className="bubble";
-    w.appendChild(mkTextarea(b.text, (v)=>b.text=v, "60px"));
+    w.appendChild(mkTextarea(b.text, (v)=>{ b.text=v; updateNodeDom(m); }, "60px"));
     (b.buttons||[]).forEach((btn)=>{
       const r=document.createElement("div"); r.className="btnrow";
-      const tag=document.createElement("span"); tag.style.cssText="font-size:11px;color:var(--muted);white-space:nowrap"; tag.textContent="🔘 "+btn.id;
+      const tag=document.createElement("span"); tag.style.cssText="font-size:11px;color:var(--muted);white-space:nowrap"; tag.innerHTML=icon("dot")+" "+esc(btn.id);
       r.appendChild(tag);
       r.appendChild(mkInput(btn.title, (v)=>btn.title=v));
       w.appendChild(r);
@@ -278,9 +257,9 @@ function buildMensaje(m, body){
 }
 function buildPregunta(m, body){
   body.appendChild(mkLabel("Mensaje de la pregunta"));
-  body.appendChild(mkTextarea(m.config.text, (v)=>m.config.text=v, "60px"));
+  body.appendChild(mkTextarea(m.config.text, (v)=>{ m.config.text=v; updateNodeDom(m); }, "60px"));
   body.appendChild(mkLabel("Guardar respuesta en (campo)"));
-  body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
+  body.appendChild(mkInput(m.config.guardar_en, (v)=>{ m.config.guardar_en=v; updateNodeDom(m); }));
 }
 const IA_OPS = [
   ["generar_texto","Generar texto (respuesta al cliente)"],
@@ -318,7 +297,7 @@ const FB_EVENTS = [
 ];
 function buildEvento(m, body){
   body.appendChild(mkLabel("Evento de conversión (Meta)"));
-  body.appendChild(mkSelect(FB_EVENTS, m.config.event_name||"Lead", (v)=>{ m.config.event_name=v; renderContent(); }));
+  body.appendChild(mkSelect(FB_EVENTS, m.config.event_name||"Lead", (v)=>{ m.config.event_name=v; updateNodeDom(m); renderContent(); }));
   const ev = m.config.event_name||"Lead";
 
   if(ev!=="Lead"){
@@ -341,7 +320,7 @@ function buildIA(m, body){
   const prov = m.config.proveedor||"auto";
 
   body.appendChild(mkLabel("Operación"));
-  body.appendChild(mkSelect(IA_OPS, op, (v)=>{ m.config.operacion=v; renderContent(); }));
+  body.appendChild(mkSelect(IA_OPS, op, (v)=>{ m.config.operacion=v; updateNodeDom(m); renderContent(); }));
 
   body.appendChild(mkLabel(op==="analizar_imagen" ? "Prompt (qué extraer de la imagen)" : "Prompt (instrucción para la IA)"));
   body.appendChild(mkTextarea(m.config.prompt, (v)=>m.config.prompt=v, "90px"));
@@ -350,7 +329,7 @@ function buildIA(m, body){
   body.appendChild(mkTextarea(m.config.contexto, (v)=>m.config.contexto=v, "50px"));
 
   body.appendChild(mkLabel("Guardar resultado en (variable/campo, opcional)"));
-  body.appendChild(mkInput(m.config.guardar_en, (v)=>m.config.guardar_en=v));
+  body.appendChild(mkInput(m.config.guardar_en, (v)=>{ m.config.guardar_en=v; updateNodeDom(m); }));
 
   body.appendChild(mkLabel("Proveedor"));
   body.appendChild(mkSelect(IA_PROV, prov, (v)=>{ m.config.proveedor=v; renderContent(); }));
@@ -394,9 +373,9 @@ function countIn(v){ if(v==="__all") return st.flows.length; if(v==="__none") re
 function renderFolders(){
   const isReal=st.filter!=="__all"&&st.filter!=="__none"&&st.filter!=="__skeleton";
   const tabs=[["__all","Todos"],["__skeleton","Esqueletos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${esc(v)}">${(v==="__all"||v==="__none"||v==="__skeleton")?"":"📁 "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${esc(v)}">${(v==="__all"||v==="__none"||v==="__skeleton")?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">🗑 Eliminar carpeta</button>`:"");
+    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
   $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderFlowCards(); });
   $("newFolder").onclick=()=>{ const n=prompt("Nombre de la carpeta:"); if(n&&n.trim()){ st.localFolders.add(n.trim()); st.filter=n.trim(); renderFolders(); renderFlowCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
@@ -421,7 +400,7 @@ function renderFlowCards(){
   box.innerHTML="";
   list.forEach(f=>{
     const isSk=f.kind==="skeleton"; const on=f.estado==="activo";
-    const prod = f.products?.nombre ? `📦 ${esc(f.products.nombre)}` : (isSk?"🧩 Esqueleto reutilizable":"Sin producto");
+    const prod = f.products?.nombre ? `${icon("box")} ${esc(f.products.nombre)}` : (isSk?`${icon("plantillas")} Esqueleto reutilizable`:"Sin producto");
     const el=document.createElement("div"); el.className="nodo-card fcard";
     el.innerHTML=`
       <div class="c-ic" style="${isSk?'background:var(--amber-bg);color:var(--amber)':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
@@ -456,6 +435,8 @@ async function openFlow(flowId){
     try{ editor.addConnection(src.dfId, tgt.dfId, "output_"+(idx+1), "input_1"); }catch(_){}
   }
   renderCfg();
+  canvas.routeAll();
+  canvas.fitView();
   if(st.view==="contenido") renderContent();
 }
 
@@ -464,45 +445,42 @@ async function paintProductChip(flow){
   const fp=$("fprod");
   if(flow.product_id){
     const { data:prod } = await supa.from("products").select("nombre").eq("id",flow.product_id).maybeSingle();
-    fp.innerHTML="📦 "+esc(prod?.nombre||"producto");
+    fp.innerHTML=icon("box")+" "+esc(prod?.nombre||"producto");
     fp.title="Este flujo pertenece al producto "+(prod?.nombre||"");
   } else {
-    fp.textContent = flow.kind==="skeleton" ? "🧩 Esqueleto (plantilla)" : "Sin producto";
+    fp.innerHTML = flow.kind==="skeleton" ? icon("plantillas")+" Esqueleto (plantilla)" : "Sin producto";
     fp.title = flow.kind==="skeleton" ? "Plantilla reutilizable; clónala desde Productos" : "Flujo sin producto asignado";
   }
   fp.style.display="";
 }
 function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={}; st.selected=null; renderCfg(); }
 
-const NODE_COLORS = {
-  mensaje:"#2b7fff", pregunta:"#f0a92b", condicion:"#9b6cf0", accion:"#18b7be",
-  ia:"#e264a8", esperar:"#8a97a8", iniciar_flujo:"#22c079", evento_fb:"#1877f2",
-  plantilla:"#0aa984", google_sheets:"#0f9d58", fin:"#e2564a",
-};
-function nodeHtml(tipo, nombre){
-  const ic=NODE_DEFS[tipo]?.icon||"●";
-  return `<div class="nd"><div class="nd-ic">${ic}</div><div><div class="t">${tipo}</div><div class="nm">${esc(nombre||tipo)}</div></div></div>`;
-}
-
 // Añadir un nodo existente (de la BD) al canvas.
 function addExisting(n){
   const def=NODE_DEFS[n.tipo]||{handles:["continuar"]};
   const handles = handlesFor(n.tipo, n.config, def);
-  const dfId = editor.addNode(n.tipo, 1, handles.length, n.pos_x||100, n.pos_y||100, n.tipo, {}, nodeHtml(n.tipo,n.nombre));
-  st.model[n.id] = { uuid:n.id, tipo:n.tipo, nombre:n.nombre, config:n.config||{}, handles, dfId, es_inicial:n.es_inicial };
-  st.dfToUuid[dfId]=n.id;
+  const m = { uuid:n.id, tipo:n.tipo, nombre:n.nombre, config:n.config||{}, handles, es_inicial:n.es_inicial };
+  m.dfId = editor.addNode(n.tipo, 1, handles.length, n.pos_x||100, n.pos_y||100, n.tipo, {}, nodeHtml(m));
+  st.model[n.id]=m;
+  st.dfToUuid[m.dfId]=n.id;
+  decorateNode(editor, m);
 }
 
-// Añadir un nodo nuevo.
+// Añadir un nodo nuevo (aparece en el centro de la vista actual).
 function addNode(tipo){
   if(!st.flowId){ toast("Abre o crea un flujo primero", true); return; }
   const def=NODE_DEFS[tipo];
   const uuid=crypto.randomUUID();
   const handles=[...def.handles];
-  const cfg=defaultConfig(tipo);
-  const dfId=editor.addNode(tipo, 1, handles.length, 300, 160, tipo, {}, nodeHtml(tipo,tipo));
-  st.model[uuid]={ uuid, tipo, nombre:tipo, config:cfg, handles, dfId, es_inicial:Object.keys(st.model).length===0 };
-  st.dfToUuid[dfId]=uuid;
+  const wrap=$("drawflow"), z=editor.zoom||1;
+  const jitter=(Object.keys(st.model).length%5)*26;
+  const x=((wrap.clientWidth/2)-(editor.canvas_x||0))/z - 110 + jitter;
+  const y=((wrap.clientHeight/2)-(editor.canvas_y||0))/z - 50 + jitter;
+  const m={ uuid, tipo, nombre:NODE_TYPES[tipo]?.label||tipo, config:defaultConfig(tipo), handles, es_inicial:Object.keys(st.model).length===0 };
+  m.dfId=editor.addNode(tipo, 1, handles.length, x, y, tipo, {}, nodeHtml(m));
+  st.model[uuid]=m;
+  st.dfToUuid[m.dfId]=uuid;
+  decorateNode(editor, m);
 }
 
 function defaultConfig(tipo){
@@ -543,11 +521,11 @@ function handlesFor(tipo, config, def){
 function selectNode(dfId){ st.selected=st.dfToUuid[dfId]; renderCfg(); }
 function renderCfg(){
   const cfg=$("cfg");
-  if(!st.selected){ cfg.innerHTML=`<div class="empty" style="height:100%"><div style="font-size:26px">🕸</div><div>${st.flowId?"Selecciona un nodo":"Elige o crea un flujo"}</div></div>`; return; }
+  if(!st.selected){ cfg.innerHTML=`<div class="empty" style="height:100%"><span style="font-size:26px;display:flex">${icon("flujos")}</span><div>${st.flowId?"Selecciona un nodo":"Elige o crea un flujo"}</div></div>`; return; }
   const m=st.model[st.selected];
   const isSheets = m.tipo==="google_sheets";
   cfg.innerHTML=`
-    <h3>${NODE_DEFS[m.tipo]?.icon||""} ${m.tipo}</h3>
+    <h3><span class="cfg-ic" data-tipo="${m.tipo}">${nodeIcon(m.tipo)}</span> ${NODE_TYPES[m.tipo]?.label||m.tipo}</h3>
     <label>Nombre del bloque</label>
     <input class="in" id="cfgNombre" value="${esc(m.nombre)}" />
     ${isSheets?`<div id="sheetsForm"></div>`:""}
@@ -561,9 +539,13 @@ function renderCfg(){
   renderHandles(m);
   if(isSheets) buildSheetsForm(m);
   $("cfgNombre").oninput=(e)=>{ m.nombre=e.target.value; updateNodeDom(m); };
-  $("cfgJson").onchange=(e)=>{ try{ m.config=JSON.parse(e.target.value); toast("Config OK"); if(m.tipo==="google_sheets") buildSheetsForm(m); }catch(_){ toast("JSON inválido", true); } };
-  $("cfgInicial").onchange=(e)=>{ if(e.target.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; } else m.es_inicial=false; };
-  $("addHandle").onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); };
+  $("cfgJson").onchange=(e)=>{ try{ m.config=JSON.parse(e.target.value); toast("Config OK"); updateNodeDom(m); if(m.tipo==="google_sheets") buildSheetsForm(m); }catch(_){ toast("JSON inválido", true); } };
+  $("cfgInicial").onchange=(e)=>{
+    if(e.target.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; }
+    else m.es_inicial=false;
+    for(const k in st.model) updateNodeDom(st.model[k]);
+  };
+  $("addHandle").onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); decorateNode(editor, m); canvas.schedule(); };
   $("delNode").onclick=()=>{ editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId]; st.selected=null; renderCfg(); };
 }
 // Formulario amigable del nodo Google Sheets (mantiene el JSON en sync).
@@ -575,7 +557,7 @@ function buildSheetsForm(m){
   if(!Array.isArray(c.buscar)) c.buscar=[];
   if(c.accion!=="update") c.accion="append";
   const isUpd=c.accion==="update";
-  const sync=()=>{ const t=$("cfgJson"); if(t) t.value=JSON.stringify(m.config,null,2); };
+  const sync=()=>{ const t=$("cfgJson"); if(t) t.value=JSON.stringify(m.config,null,2); updateNodeDom(m); };
   box.innerHTML=`
     <label style="margin-top:12px">¿Qué hace?</label>
     <select class="sel" id="gsAccion" style="width:100%">
@@ -619,19 +601,31 @@ function renderHandles(m){
   m.handles.forEach((h,i)=>{
     const row=document.createElement("div"); row.className="handle-row";
     row.innerHTML=`<input class="in" value="${esc(h)}"/><button class="hbtn">✕</button>`;
-    row.querySelector("input").onchange=(e)=>{ m.handles[i]=e.target.value; };
-    row.querySelector("button").onclick=()=>{ m.handles.splice(i,1); editor.removeNodeOutput(m.dfId,"output_"+(i+1)); renderHandles(m); };
+    row.querySelector("input").onchange=(e)=>{ m.handles[i]=e.target.value; decorateNode(editor, m); };
+    row.querySelector("button").onclick=()=>{ m.handles.splice(i,1); editor.removeNodeOutput(m.dfId,"output_"+(i+1)); renderHandles(m); decorateNode(editor, m); canvas.schedule(); };
     box.appendChild(row);
   });
 }
+// Redibuja la tarjeta del nodo (nombre, resumen, chip de inicio) y
+// re-enruta por si cambió el tamaño.
 function updateNodeDom(m){
-  const el=document.querySelector(`#node-${m.dfId} .nm`); if(el) el.textContent=m.nombre;
+  const el=document.querySelector(`#node-${m.dfId} .drawflow_content_node`);
+  if(el){ el.innerHTML=nodeHtml(m); canvas.schedule(); }
 }
 
 // ── Disparadores del flujo (flow_triggers) ──
 // Cuándo arranca este flujo: palabra clave, flujo de entrada (fallback),
 // estado de pedido (el Kanban lo dispara al mover la tarjeta) o anuncio CTWA.
-const TRIG_LABEL={ entrada:"★ Flujo de entrada", keyword:"🔑 Palabra clave", pedido_estado:"📦 Estado de pedido", pedido_recordatorio:"⏰ Recordatorio de pedido", referral:"📣 Anuncio (referral)", boton:"🔘 Botón", ia:"✨ Disparador IA", api:"🔌 API" };
+const TRIG_LABEL={
+  entrada: icon("star")+" Flujo de entrada",
+  keyword: icon("key")+" Palabra clave",
+  pedido_estado: icon("box")+" Estado de pedido",
+  pedido_recordatorio: icon("clock")+" Recordatorio de pedido",
+  referral: icon("campanas")+" Anuncio (referral)",
+  boton: icon("dot")+" Botón",
+  ia: icon("sparkles")+" Disparador IA",
+  api: icon("link")+" API",
+};
 const PEDIDO_ESTADOS=["confirmado","en_reparto","entregado_cobrado","esperando_adelanto","adelanto_validado","por_despachar","despachado","en_agencia","saldo_pagado","recogido","reprogramado","rechazado","no_recogido","cancelado"];
 function trigDesc(t){
   const c=t.config||{};
@@ -646,7 +640,7 @@ async function openTriggers(){
   if(!st.flowId){ toast("Abre un flujo primero",true); return; }
   const ov=document.createElement("div"); ov.className="tg-overlay";
   ov.innerHTML=`<div class="tg-modal">
-    <h3>⚡ Disparadores — ${esc(st.flow?.nombre||"")}</h3>
+    <h3>${icon("disparadores")} Disparadores — ${esc(st.flow?.nombre||"")}</h3>
     <div class="tg-sub">Definen cuándo arranca este flujo. Un pedido dispara desde el Kanban de Pedidos; una keyword, desde el mensaje del cliente.</div>
     <div id="tgList"><div style="color:var(--faint);font-size:12.5px">Cargando…</div></div>
     <div class="tg-new">
