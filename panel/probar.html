@@ -18,6 +18,7 @@
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
+  .hidden{display:none!important}
   .nodo-page{height:100%}
 
   #app{height:100%;display:flex;min-height:0}
@@ -38,17 +39,9 @@
   .pill{font-size:11px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto}
   .pill.on{background:var(--green-bg);color:var(--green)}
   .pill.off{background:var(--amber-bg);color:var(--amber)}
-  .hdtoggle{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;margin-left:8px}
-  .htb{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:7px}
-  .htb.active{background:var(--brand);color:#fff}
-  .hdmenu{width:34px;height:34px;border:none;background:transparent;color:var(--muted);font-size:20px;border-radius:9px;display:flex;align-items:center;justify-content:center}
-  .hdmenu:hover{background:var(--surface-2);color:var(--text)}
-  .actmenu{position:absolute;top:118px;right:12px;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);padding:6px;min-width:230px}
-  .actmenu.hidden{display:none}
-  .actitem{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;border:none;background:transparent;color:var(--text);font-size:13px;border-radius:8px;text-align:left;cursor:pointer;font-family:inherit}
-  .actitem:hover{background:var(--surface-2)}
-  .actitem.danger{color:var(--red)}
-  .actsep{height:1px;background:var(--border);margin:5px 4px}
+  .hbtn{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font-size:12.5px;font-weight:600;margin-left:8px}
+  .hbtn:hover{color:var(--text);border-color:var(--faint)}
+  .hbtn.active{background:var(--brand);border-color:var(--brand);color:#fff}
 
   .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
   .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
@@ -92,9 +85,11 @@
   .qritem .qt .atajo{font-size:10.5px;font-family:monospace;background:var(--brand-bg);color:var(--brand);padding:1px 6px;border-radius:5px;font-weight:700}
   .qritem .qp{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qempty{padding:24px;text-align:center;color:var(--faint);font-size:12.5px} .qempty a{color:var(--brand)}
-  .emojipop{left:56px;width:290px;padding:8px;display:flex;flex-wrap:wrap;gap:2px}
-  .emojipop button{width:34px;height:34px;border:none;background:transparent;font-size:20px;border-radius:8px;cursor:pointer}
-  .emojipop button:hover{background:var(--surface-2)}
+  .emojipop{left:56px;width:322px;max-height:340px;overflow-y:auto;padding:6px 8px}
+  .emcat{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:9px 4px 4px;position:sticky;top:0;background:var(--surface);z-index:1}
+  .emgrid{display:flex;flex-wrap:wrap;gap:1px}
+  .emgrid button{width:32px;height:32px;border:none;background:transparent;font-size:19px;border-radius:8px;cursor:pointer;line-height:1}
+  .emgrid button:hover{background:var(--surface-2)}
 
   /* Timeline */
   .tlview{flex:1;overflow-y:auto;padding:22px 24px}
@@ -160,13 +155,9 @@
             <div class="nm" id="chName">Prueba (webchat)<span class="testtag">modo prueba</span></div>
             <div class="ph" id="chPhone">Escribes como el cliente</div>
           </div>
-          <span class="pill on" id="chBot" title="Clic para pausar/activar el bot">● Bot activo</span>
-          <div class="hdtoggle" id="viewToggle">
-            <button class="htb active" data-v="chat">Chat</button>
-            <button class="htb" data-v="timeline">Actividad</button>
-          </div>
-          <button class="hdmenu" id="actionsBtn" title="Acciones">⋮</button>
-          <div class="actmenu hidden" id="actionsMenu"></div>
+          <span class="pill on" id="chBot" title="Pausar / activar el bot">● Bot activo</span>
+          <button class="hbtn" id="actToggle" title="Ver / ocultar la actividad del motor">🕑 Actividad</button>
+          <button class="hbtn" id="exportBtn" title="Exportar mensajes">⬇️ Exportar</button>
         </div>
         <div class="thread" id="thread"></div>
         <div class="tlview hidden" id="timeline"></div>
@@ -211,7 +202,19 @@ import { supa, mountShell, toast, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shel
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
 const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
-const EMOJI_SET=["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😉","🙂","🙌","👏","👍","👎","🙏","💪","🔥","✨","⭐","🎉","❤️","💚","💙","💛","🧡","💜","✅","❌","⚠️","💰","💵","📦","🎁","📌","📞","📲","🕒","🚀","👀","🤝","🫶","😅","😢","😡","🤔"];
+const EMOJI_CATS=[
+  { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },
+  { n:"Gestos", e:"👋🤚🖐✋🖖👌🤌🤏✌️🤞🤟🤘🤙👈👉👆🖕👇☝️👍👎✊👊🤛🤜👏🙌👐🤲🤝🙏✍️💅🤳💪🦾🦵🦿🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄" },
+  { n:"Personas", e:"👶🧒👦👧🧑👨👩🧓👴👵👮🕵️💂👷🤴👸👳👲🧕🤵👰🤰🤱👼🎅🤶🦸🦹🧙🧚🧛🧜🧝🧞🧟🙅🙆💁🙋🧏🙇🤦🤷🚶🧍🧎🏃💃🕺🧖🧗🧘" },
+  { n:"Corazones y símbolos de ánimo", e:"❤️🧡💛💚💙💜🤎🖤🤍💔❣️💕💞💓💗💖💘💝💟💋💯💢💥💫💦💨💬💭💤" },
+  { n:"Animales y naturaleza", e:"🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐽🐸🐵🙈🙉🙊🐒🐔🐧🐦🐤🐣🐥🦆🦅🦉🦇🐺🐗🐴🦄🐝🐛🦋🐌🐞🐜🕷️🦂🐢🐍🦎🦖🦕🐙🦑🦐🦀🐡🐠🐟🐬🐳🐋🦈🐊🐅🐆🦓🦍🐘🦏🐪🐫🦒🐃🐂🐄🐎🐖🐏🐑🦙🐐🦌🐕🐈🐓🦃🦚🦜🐇🐁🐀🐿️🐾🐉🌵🎄🌲🌳🌴🌱🌿☘️🍀🎍🎋🍃🍂🍁🍄🌾💐🌷🌹🥀🌺🌸🌼🌻🌞🌝🌛🌜🌚🌕🌙🌎🌍🌏⭐🌟✨⚡☄️🔥🌪️🌈☀️⛅☁️🌧️⛈️🌨️❄️☃️⛄💧💦☔" },
+  { n:"Comida y bebida", e:"🍏🍎🍐🍊🍋🍌🍉🍇🍓🫐🍈🍒🍑🥭🍍🥥🥝🍅🍆🥑🥦🥬🥒🌶️🫑🌽🥕🧄🧅🥔🍠🥐🥯🍞🥖🥨🧀🥚🍳🧈🥞🧇🥓🥩🍗🍖🌭🍔🍟🍕🥪🌮🌯🥗🥘🍝🍜🍲🍛🍣🍱🥟🍤🍙🍚🍘🍥🍢🍡🍧🍨🍦🥧🧁🍰🎂🍮🍭🍬🍫🍿🍩🍪🌰🥜🍯🥛🍼☕🍵🧃🥤🧋🍶🍺🍻🥂🍷🥃🍸🍹🍾" },
+  { n:"Actividades", e:"⚽🏀🏈⚾🥎🎾🏐🏉🥏🎱🪀🏓🏸🏒🏑🥍🏏⛳🪁🏹🎣🥊🥋🎽⛸️🥌🎿⛷️🏂🏋️🏄🏊🚣🧗🚴🏆🥇🥈🥉🏅🎖️🎗️🎫🎪🤹🎭🎨🎬🎤🎧🎼🎹🥁🎷🎺🎸🎻🎲♟️🎯🎳🎮🎰🧩" },
+  { n:"Viajes y lugares", e:"🚗🚕🚙🚌🚎🏎️🚓🚑🚒🚐🛻🚚🚛🚜🛴🚲🛵🏍️🛺🚨🚔🚍🚘🚖🚡🚠🚟🚃🚋🚞🚝🚄🚅🚈🚂🚆🚇🚊🚉✈️🛫🛬💺🚀🛸🚁🛶⛵🚤🛥️🛳️⛴️🚢⚓⛽🚧🚦🚥🗺️🗿🗽🗼🏰🏯🏟️🎡🎢🎠⛲🏖️🏝️🏜️🌋⛰️🏔️🗻🏕️⛺🏠🏡🏢🏬🏣🏥🏦🏨🏪🏫💒🏛️⛪🕌🕍🛕⛩️" },
+  { n:"Objetos", e:"⌚📱📲💻⌨️🖥️🖨️🖱️💽💾💿📀🎥📷📸📹📼🔍🔎💡🔦🕯️📔📕📖📗📘📙📚📓📒📃📜📄📰🗞️📑🔖🏷️💰💴💵💶💷💸💳🧾💎⚖️🧰🔧🔨⚒️🛠️⛏️🔩⚙️🧱⛓️🧲🔫💣🔪🗡️⚔️🛡️🚬⚰️⚱️🏺🔮📿🧿💈⚗️🔭🔬🕳️💊💉🩸🧬🦠🧫🧪🌡️🧹🧺🧻🚽🚿🛁🧼🪒🧽🧴🔑🗝️🚪🛋️🛏️🧸🖼️🛍️🛒🎁🎈🎏🎀🎊🎉🎐🧧✉️📩📨📧💌📦📪📫📬📭📮📝✏️✒️🖊️🖋️🖌️🖍️📐📏🧮📌📍✂️" },
+  { n:"Símbolos", e:"✅❌⭕❗❓❕❔‼️⁉️💯🔅🔆⚠️🚸🔱⚜️🔰♻️✳️❇️✴️🆚📴📳㊙️㊗️🅰️🅱️🆎🅾️🆘⛔🚫🚭🔞📵💢♨️🚷🚱♿🅿️🚹🚺🚼🚻🚮📶🔣ℹ️🔤🔡🔠🆖🆗🆙🆒🆕🆓0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣🔟▶️⏸️⏯️⏹️⏺️⏭️⏮️⏩⏪🔼🔽➡️⬅️⬆️⬇️↗️↘️↙️↖️↕️↔️↩️↪️🔀🔁🔂🔄➕➖➗✖️♾️💲💱™️©️®️🔚🔙🔛🔝🔜🔴🟠🟡🟢🔵🟣⚫⚪🟤🟥🟧🟨🟩🟦🟪⬛⬜🟫🔶🔷🔸🔹🔺🔻💠🔘🔳🔲♈♉♊♋♌♍♎♏♐♑♒♓⛎♥️♦️♣️♠️🃏🀄🎴" },
+];
+function splitEmojis(str){ try{ return [...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(str)].map(s=>s.segment); }catch(_){ return Array.from(str); } }
 const TL_ICON={ etiqueta_add:"🏷️", etiqueta_del:"🏷️", campo:"✏️", flujo_inicio:"🕸️", flujo_fin:"🏁", secuencia_inicio:"🔁", secuencia_cancel:"⏹️", compra:"💰", humano:"👤", bot_pausa:"⏸️", bot_reactiva:"▶️", nodo:"◽", error:"⚠️", nota:"📝" };
 const st={ channelId:null, contactId:null, contactName:"Prueba (webchat)", chatView:"chat", testAs:"cliente", isTest:true, inboxFlows:[], quickReplies:[], rt:null };
 let panelData={};
@@ -248,10 +251,10 @@ async function boot(){
   $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleQrPop(); });
   $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleEmojiPop(); });
   $("flowBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleFlowPop(); });
-  $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) $("actionsMenu").classList.toggle("hidden"); });
   $("chBot").onclick=()=>{ if(st.contactId) toggleBot(); };
-  document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(st.contactId) setChatView(b.dataset.v); });
-  document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } if(!e.target.closest("#actionsBtn")&&!e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); });
+  $("actToggle").onclick=()=>{ if(st.contactId) setChatView(st.chatView==="chat"?"timeline":"chat"); };
+  $("exportBtn").onclick=()=>{ if(st.contactId) exportMessages(); };
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } });
   await reloadAll();
   subscribe();
 }
@@ -375,8 +378,9 @@ function renderQrList(q){
 function toggleEmojiPop(){
   const pop=$("emojiPop"); $("qrPop").classList.add("hidden"); $("flowPop").classList.add("hidden");
   if(!pop.classList.contains("hidden")){ pop.classList.add("hidden"); return; }
-  pop.innerHTML=EMOJI_SET.map(e=>`<button type="button">${e}</button>`).join("");
-  pop.querySelectorAll("button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent)); pop.classList.remove("hidden");
+  pop.innerHTML=EMOJI_CATS.map(c=>`<div class="emcat">${c.n}</div><div class="emgrid">${splitEmojis(c.e).map(e=>`<button type="button">${e}</button>`).join("")}</div>`).join("");
+  pop.querySelectorAll(".emgrid button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent));
+  pop.classList.remove("hidden");
 }
 function toggleFlowPop(){
   const pop=$("flowPop"); const willOpen=pop.classList.contains("hidden"); $("qrPop").classList.add("hidden"); $("emojiPop").classList.add("hidden");
@@ -402,7 +406,7 @@ function setChatView(v){
   st.chatView=v;
   $("thread").classList.toggle("hidden", v!=="chat");
   $("timeline").classList.toggle("hidden", v!=="timeline");
-  document.querySelectorAll("#viewToggle .htb").forEach(b=> b.classList.toggle("active", b.dataset.v===v));
+  $("actToggle").classList.toggle("active", v==="timeline");
   if(v==="timeline") renderTimeline();
 }
 function updateComposerMode(){
@@ -417,7 +421,7 @@ function refreshPanel(){ if(st.contactId) loadContactPanel({ id:st.contactId, wa
 async function loadContactPanel(c){
   const p=$("cpanel"); p.classList.remove("hidden");
   const [ctRes,tagsRes,ctagsRes,fieldsRes,valsRes,msgRes,runsRes,subsRes,evRes]=await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle(),
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at,primera_interaccion,ad_id,ctwa_clid").eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id",c.id),
     supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id",st.channelId).order("nombre"),
@@ -447,6 +451,12 @@ function renderContactPanel(){
       <div class="cnm">${esc(contact.nombre||"Prueba")}</div>
       <div class="cph">Contacto de prueba (Web Chat)</div>
     </div>
+    <h4>Datos del cliente</h4>
+    <div class="kv"><span class="k">Usuario</span><span class="v">${esc(contact.nombre||"—")}</span></div>
+    <div class="kv"><span class="k">Teléfono</span><span class="v">Web Chat · sin número</span></div>
+    <div class="kv"><span class="k">Hora local</span><span class="v">${fmtTime.format(new Date())}</span></div>
+    <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtFull(contact.primera_interaccion||contact.created_at)||"—"}</span></div>
+    <div class="kv"><span class="k">Ad ID</span><span class="v">${esc(contact.ad_id||"—")}</span></div>
     <h4>Etapa del embudo</h4>
     <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
@@ -490,26 +500,6 @@ async function toggleBot(){
   setBotPill(!on); logEvent(st.contactId, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
   toast(on?"Bot pausado ✓":"Bot reactivado ✓");
 }
-function renderActionsMenu(){
-  const on=panelData.contact ? panelData.contact.bot_activo!==false : true;
-  const m=$("actionsMenu");
-  m.innerHTML=`
-    <button class="actitem" data-a="togglebot">${on?"⏸️ Pausar bot":"▶️ Reactivar bot"}</button>
-    <button class="actitem" data-a="follow">🔖 Marcar como seguimiento</button>
-    <button class="actitem" data-a="reset">🔄 Reiniciar prueba</button>
-    <div class="actsep"></div>
-    <button class="actitem" data-a="export">⬇️ Exportar mensajes</button>
-    <button class="actitem danger" data-a="clearinfo">🧹 Borrar campos capturados</button>`;
-  m.querySelectorAll(".actitem").forEach(b=> b.onclick=()=>{ m.classList.add("hidden"); actionHandler(b.dataset.a); });
-}
-async function actionHandler(a){
-  const cid=st.contactId; if(!cid) return;
-  if(a==="togglebot") return toggleBot();
-  if(a==="follow"){ await supa.from("conversations").update({ requiere_humano:true }).eq("contact_id",cid); logEvent(cid,"nota","Marcado para seguimiento"); toast("Marcado para seguimiento ✓"); return; }
-  if(a==="reset") return startTest();
-  if(a==="export") return exportMessages();
-  if(a==="clearinfo"){ if(!confirm("¿Borrar los campos capturados de esta prueba?")) return; await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Campos borrados"); toast("Campos borrados ✓"); refreshPanel(); return; }
-}
 async function exportMessages(){
   const { data }=await supa.from("messages").select("direction,type,content,ts").eq("contact_id",st.contactId).order("ts");
   const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Bot"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
@@ -517,7 +507,6 @@ async function exportMessages(){
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="prueba_flujo.txt"; a.click(); URL.revokeObjectURL(a.href);
   toast("Mensajes exportados ✓");
 }
-$("actionsBtn").addEventListener("click",()=>renderActionsMenu());
 
 // ── Realtime ──
 let panelTimer=null;

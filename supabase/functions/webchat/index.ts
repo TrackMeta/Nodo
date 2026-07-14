@@ -55,10 +55,22 @@ Deno.serve(async (req) => {
     { onConflict: "contact_id" },
   );
 
-  // Reiniciar la prueba: cancela runs y limpia el hilo.
+  // Reiniciar la prueba: BORRÓN Y CUENTA NUEVA. Limpia todo lo del contacto de
+  // prueba (mensajes, runs, secuencias, eventos/timeline, etiquetas, campos) y
+  // resetea sus datos, para empezar como si fuera un cliente nuevo.
   if (reset) {
-    await db.from("flow_runs").update({ estado: "cancelado" }).eq("contact_id", contactId).in("estado", ["activo", "esperando"]);
-    await db.from("messages").delete().eq("contact_id", contactId);
+    await Promise.all([
+      db.from("messages").delete().eq("contact_id", contactId),
+      db.from("flow_runs").delete().eq("contact_id", contactId),
+      db.from("sequence_subscriptions").delete().eq("contact_id", contactId),
+      db.from("contact_events").delete().eq("contact_id", contactId),
+      db.from("contact_tags").delete().eq("contact_id", contactId),
+      db.from("contact_field_values").delete().eq("contact_id", contactId),
+    ]);
+    await db.from("contacts").update({
+      stage: "nuevo", bot_activo: true, product_id: null, ad_id: null,
+      ctwa_clid: null, last_input: null, last_input_type: null,
+    }).eq("id", contactId);
     return json({ ok: true, reset: true, contact_id: contactId });
   }
 
