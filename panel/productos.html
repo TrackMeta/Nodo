@@ -152,9 +152,9 @@ function renderCards(){
   list.forEach(p=>{
     const el=document.createElement("div"); el.className="nodo-card pcard";
     const precio=p.config&&p.config.precio?`S/ ${esc(p.config.precio)}`:"";
-    const icon = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
+    const emIc = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
     el.innerHTML=`
-      <div class="c-ic">${icon}</div>
+      <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${p.tipo==="fisico"?"Producto físico · envíos":(p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única")}</div>
       <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
