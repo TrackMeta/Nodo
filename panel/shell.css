@@ -197,7 +197,11 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
    nunca en el body. Evita que aparezca/desaparezca la barra de scroll del
    documento entre páginas y desplace el sidebar. */
 html{overflow:hidden}
-body.nodo-shelled{display:flex;height:100vh;overflow:hidden}
+/* margin:0 imprescindible: algunas páginas resetean el margen del body en su
+   <style> propio y otras no (secuencias/etiquetas). Como el router SPA
+   intercambia esos <style> al navegar, el sidebar se corría 8px (margen UA)
+   al entrar en las páginas sin reset. Lo fijamos aquí, compartido por todas. */
+body.nodo-shelled{display:flex;height:100vh;overflow:hidden;margin:0}
 /* Todos los contenedores de scroll reservan el hueco de la barra, para que el
    contenido no se corra al cambiar entre páginas cortas y largas. */
 body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
