@@ -115,7 +115,8 @@
       <p>El cerebro de tu bot. Aquí configuras todo lo que la IA sabe y cómo piensa: el <b>conocimiento del negocio</b> que usa en cada conversación, qué <b>modelo</b> resuelve cada tarea y las <b>cuentas de IA</b> conectadas a este bot.</p>
     </div>
     <div class="tabs">
-      <button class="tab active" data-t="conocimiento" id="tabCon"></button>
+      <button class="tab active" data-t="vendedor" id="tabVend"></button>
+      <button class="tab" data-t="conocimiento" id="tabCon"></button>
       <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
@@ -204,7 +205,7 @@ const PERFILES=[
   ["ocr","Validar comprobantes (OCR)","La IA que lee las capturas de pago (Yape, Plin, transferencias) y valida el pago (operación “analizar imagen”). Se apoya en la pestaña Validador de comprobantes."],
   ["extraccion","Extraer datos","La IA que saca datos ordenados de un texto: nombre, dirección, distrito, etc. (operación “extraer”). También la usa el Router de intención de Palabras clave."],
 ];
-const st = { channelId:null, tab:"conocimiento", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, form:{}, ocr:null, campos:{ fields:[], deleted:[], loaded:false } };
+const st = { channelId:null, tab:"vendedor", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, form:{}, ocr:null, campos:{ fields:[], deleted:[], loaded:false } };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function slug(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40); }
 const CAMPO_SUGERIDOS=[
@@ -219,6 +220,7 @@ async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
+  $("tabVend").innerHTML=IC.robot+"<span>Vendedor IA</span>";
   $("tabCon").innerHTML=IC.book+"<span>Conocimiento</span>";
   $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
@@ -242,7 +244,8 @@ async function loadCfg(){
 }
 function render(){
   const b=$("body");
-  if(st.tab==="conocimiento") renderConocimiento(b);
+  if(st.tab==="vendedor") renderVendedor(b);
+  else if(st.tab==="conocimiento") renderConocimiento(b);
   else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
@@ -355,7 +358,10 @@ function compileNegocio(form){
   if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
   return L.join("\n\n");
 }
-function renderConocimiento(b){
+// Semilla común del formulario del negocio, compartida por las pestañas
+// "Vendedor IA" (personalidad + retraso) y "Conocimiento" (identidad/negocio).
+// Ambas guardan el formulario COMPLETO, así que editar una preserva la otra.
+function seedForm(){
   const c=st.channel||{};
   let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
   if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
@@ -364,16 +370,31 @@ function renderConocimiento(b){
   if(form.emoji_min===undefined) form.emoji_min=0;
   if(form.emoji_max===undefined) form.emoji_max=2;
   if(form.tono===undefined) form.tono="cercano";
-  const retraso = c.buffer_default_seg ?? 4;
+  st.retraso = c.buffer_default_seg ?? 4;
   st.form=form;
-  const field=([k,label,type,ph])=>`
-    <label style="margin-top:14px">${label}</label>
-    ${type==="ta"
-      ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
-      : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
+  return form;
+}
+// Guarda el formulario completo + retraso (la única fuente de ambos es st).
+async function saveForm(btn){
+  const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
+  const form=st.form;
+  const negocio=compileNegocio(form).trim()||null;
+  let { error }=await supa.from("channels").update({ negocio, negocio_form:form, buffer_default_seg:st.retraso }).eq("id",st.channelId);
+  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio, buffer_default_seg:st.retraso }).eq("id",st.channelId)); }
+  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
+  btn.disabled=false; btn.textContent=old;
+  if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return false; }
+  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso;
+  return true;
+}
+
+// ── Vendedor IA: personalidad del bot + retraso de respuesta ─────────
+function renderVendedor(b){
+  const form=seedForm();
+  const retraso=st.retraso;
   b.innerHTML=`
-    <h2>Conocimiento del negocio</h2>
-    <p class="sub">Completa este formulario del negocio: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. Lo específico de cada producto (descripción, FAQ) va en su ficha de <b>Productos</b>.</p>
+    <h2>Vendedor IA</h2>
+    <p class="sub">Define <b>quién</b> es tu vendedor y <b>cómo</b> habla: su nombre, tono, uso de negritas y emojis. Aplica a <b>todas</b> las conversaciones.</p>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.robot}</span><span class="nm">Personalidad del bot (vendedor IA)</span></div>
       <label style="margin-top:6px">Nombre de la IA — cómo se llama tu vendedor</label>
@@ -389,10 +410,36 @@ function renderConocimiento(b){
         <div class="f"><label style="margin-top:0">Emojis por mensaje (mín / máx)</label>
           <div style="display:flex;align-items:center;gap:8px"><input class="in" id="pf_emin" type="number" min="0" max="10" value="${Number(form.emoji_min)||0}" style="max-width:80px"/><span style="color:var(--muted)">a</span><input class="in" id="pf_emax" type="number" min="0" max="10" value="${Number(form.emoji_max)}" style="max-width:80px"/></div>
           <div style="font-size:11px;color:var(--faint);margin-top:4px">Máx 0 = sin emojis.</div></div>
-        <div class="f"><label style="margin-top:0">Retraso de respuesta (seg)</label><input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:110px"/>
-          <div style="font-size:11px;color:var(--faint);margin-top:4px">Agrupa mensajes seguidos del cliente.</div></div>
       </div>
     </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Retraso de respuesta del bot</span></div>
+      <div class="desc">Si el cliente envía varios mensajes seguidos, el bot espera este tiempo y los agrupa en una sola respuesta. <b>0</b> = responde de inmediato. Aplica solo a conversaciones individuales.</div>
+      <label>Segundos</label>
+      <input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:140px"/>
+    </div>
+    <div class="acts"><button class="btn ia" id="saveVend">Guardar vendedor</button>
+      <button class="btn" id="previewVend" style="border:1px solid var(--border)">Ver cómo lo lee la IA</button></div>`;
+  $("pf_negritas").onclick=()=>{ form.negritas=!form.negritas; $("pf_negritas").classList.toggle("on",form.negritas); };
+  const harvest=()=>{
+    form.nombre_ia=$("nf_nombre_ia").value; form.tono=$("pf_tono").value; form.tono_detalle=$("pf_tono_detalle").value;
+    form.emoji_min=Math.max(0,Number($("pf_emin").value)||0); form.emoji_max=Math.max(0,Number($("pf_emax").value)||0);
+    st.retraso=Math.max(0,parseInt($("pf_retraso").value||"0",10));
+  };
+  $("previewVend").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
+  $("saveVend").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Vendedor guardado ✓"); };
+}
+
+function renderConocimiento(b){
+  const form=seedForm();
+  const field=([k,label,type,ph])=>`
+    <label style="margin-top:14px">${label}</label>
+    ${type==="ta"
+      ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
+      : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
+  b.innerHTML=`
+    <h2>Conocimiento del negocio</h2>
+    <p class="sub">Completa este formulario del negocio: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en la pestaña <b>Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
       ${NEG_FIELDS.map(field).join("")}
@@ -421,25 +468,12 @@ function renderConocimiento(b){
   };
   paintFaq();
   $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
-  $("pf_negritas").onclick=()=>{ form.negritas=!form.negritas; $("pf_negritas").classList.toggle("on",form.negritas); };
   const harvest=()=>{
     NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; });
-    form.nombre_ia=$("nf_nombre_ia").value; form.tono=$("pf_tono").value; form.tono_detalle=$("pf_tono_detalle").value;
-    form.emoji_min=Math.max(0,Number($("pf_emin").value)||0); form.emoji_max=Math.max(0,Number($("pf_emax").value)||0);
-    form.extra=$("nf_extra").value; st.retraso=Math.max(0,parseInt($("pf_retraso").value||"0",10));
+    form.extra=$("nf_extra").value;
   };
   $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
-  $("saveNegocio").onclick=async(e)=>{
-    harvest();
-    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const negocio=compileNegocio(form).trim()||null;
-    let { error }=await supa.from("channels").update({ negocio, negocio_form:form, buffer_default_seg:st.retraso }).eq("id",st.channelId);
-    if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio, buffer_default_seg:st.retraso }).eq("id",st.channelId)); }
-    if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
-    btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
-    st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso; toast("Conocimiento guardado ✓");
-  };
+  $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado ✓"); };
 }
 
 // ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────

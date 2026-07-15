@@ -196,7 +196,11 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
 /* Alto fijo al viewport: el scroll vive dentro de cada panel (.nodo-page/.wrap),
    nunca en el body. Evita que aparezca/desaparezca la barra de scroll del
    documento entre páginas y desplace el sidebar. */
+html{overflow:hidden}
 body.nodo-shelled{display:flex;height:100vh;overflow:hidden}
+/* Todos los contenedores de scroll reservan el hueco de la barra, para que el
+   contenido no se corra al cambiar entre páginas cortas y largas. */
+body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 
 .nodo-nav{
   width:248px;flex:none;height:100vh;position:sticky;top:0;z-index:30;

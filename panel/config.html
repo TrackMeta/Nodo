@@ -181,19 +181,13 @@ function renderApariencia(b){
   b.querySelectorAll("#fxFps .btn").forEach(x=> x.onclick=()=>{ setEffects({ fps:+x.dataset.f }); renderApariencia(b); });
 }
 
-// ── General: retraso de respuesta + zona horaria ────────────────────
+// ── General: zona horaria ───────────────────────────────────────────
+// El "Retraso de respuesta del bot" se movió a IA › Vendedor IA.
 function renderGeneral(b){
   const c=st.channel||{};
-  const delay = c.buffer_default_seg ?? 4;
   const tz = c.timezone || "America/Lima";
   b.innerHTML=`
-    <h2>Ajustes generales</h2><p class="sub">Comportamiento del bot y zona horaria de este canal.</p>
-    <div class="card">
-      <div class="chd"><span class="ico">${IC.sliders}</span><span class="nm">Retraso de respuesta del bot</span></div>
-      <div class="desc">Si el usuario envía varios mensajes seguidos, el bot espera este tiempo y los agrupa en una sola respuesta. <b>0</b> = responde de inmediato. Aplica solo a conversaciones individuales.</div>
-      <label>Segundos</label>
-      <input class="in" id="g_delay" type="number" min="0" max="60" value="${Number(delay)}" style="max-width:140px"/>
-    </div>
+    <h2>Ajustes generales</h2><p class="sub">Zona horaria de este canal.</p>
     <div class="card">
       <div class="chd"><span class="ico">${IC.target}</span><span class="nm">Zona horaria</span></div>
       <div class="desc">Define cuándo empieza y termina el día para <b>todas las métricas</b>: leads por día, resúmenes, reportes, campañas programadas, automatizaciones y conversiones.</div>
@@ -203,11 +197,11 @@ function renderGeneral(b){
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const patch={ buffer_default_seg:Math.max(0,parseInt($("g_delay").value||"0",10)), timezone:$("g_tz").value };
+    const patch={ timezone:$("g_tz").value };
     const { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.buffer_default_seg=patch.buffer_default_seg; st.channel.timezone=patch.timezone; toast("Guardado ✓");
+    st.channel.timezone=patch.timezone; toast("Guardado ✓");
   };
 }
 

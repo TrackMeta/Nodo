@@ -155,7 +155,15 @@ function renderNewPalette(){
   box.innerHTML=paletteHtml(st.newColor);
   box.querySelectorAll(".sw:not(.custom)").forEach(s=> s.onclick=()=>{ st.newColor=s.dataset.c; $("nHex").value=""; renderNewPalette(); });
   const ci=box.querySelector("input[data-custom]");
-  if(ci){ ci.oninput=()=>{ st.newColor=ci.value.toUpperCase(); $("nHex").value=st.newColor; renderNewPalette(); }; }
+  if(ci){ ci.oninput=()=>{
+    // Actualizamos en vivo SIN reconstruir la paleta: si rehacemos innerHTML
+    // mientras el gotero está abierto, el input se destruye y no se puede usar.
+    st.newColor=ci.value.toUpperCase(); $("nHex").value=st.newColor;
+    const sw=box.querySelector(".sw.custom");
+    if(sw){ sw.classList.add("on"); sw.innerHTML=""; sw.style.background=st.newColor; sw.style.color=st.newColor; }
+    box.querySelectorAll(".sw:not(.custom)").forEach(s=>s.classList.remove("on"));
+    updatePreview();
+  }; }
   updatePreview();
 }
 function updatePreview(){
@@ -209,10 +217,16 @@ function openColorPopover(anchor, current, onPick){
   if(left+262>innerWidth-10) left=innerWidth-272;
   if(top+230>innerHeight-10) top=r.top-238;
   pop.style.top=Math.max(10,top)+"px"; pop.style.left=Math.max(10,left)+"px";
-  const pick=(c)=>{ onPick(c); closePop(); };
-  pop.querySelectorAll(".sw:not(.custom)").forEach(s=> s.onclick=()=>pick(s.dataset.c));
-  const ci=pop.querySelector("input[data-custom]"); if(ci) ci.oninput=()=>pick(ci.value.toUpperCase());
-  pop.querySelector("#popHex").onchange=(e)=>{ const h=normHex(e.target.value); if(h) pick(h); else toast("Código de color inválido (usa #RRGGBB)",true); };
+  // apply = aplica el color en vivo SIN cerrar (para el gotero y el hex);
+  // pickClose = aplica y cierra (swatches y Enter). Antes el gotero cerraba
+  // el popover en el primer evento y no se podía elegir.
+  const apply=(c)=>{ if(c) onPick(c); };
+  const pickClose=(c)=>{ if(c) onPick(c); closePop(); };
+  pop.querySelectorAll(".sw:not(.custom)").forEach(s=> s.onclick=()=>pickClose(s.dataset.c));
+  const ci=pop.querySelector("input[data-custom]"); if(ci) ci.oninput=()=>apply(ci.value.toUpperCase());
+  const hx=pop.querySelector("#popHex");
+  hx.oninput=()=>{ const h=normHex(hx.value); if(h) apply(h); };
+  hx.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const h=normHex(hx.value); if(h) pickClose(h); else toast("Código de color inválido (usa #RRGGBB)",true); } };
   setTimeout(()=>document.addEventListener("mousedown",outside,true),0);
 }
 async function create(){
