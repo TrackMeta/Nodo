@@ -168,20 +168,15 @@ html[data-ia="on"] .nodo-nebula{opacity:1}
 /* En IA, la aurora azul se atenúa para que domine la galaxia violeta. */
 html[data-ia="on"] .nfx-aurora{opacity:.12;transition:opacity .8s ease}
 
-/* ── Modo OSCURO: galaxia espiral inclinada que gira ──
-   El disco usa una IMAGEN de galaxia generada por canvas (miles de estrellas en
-   brazos espirales; shell.js la pinta 1 vez y la pone como background-image).
-   Solo se compone/rota en GPU → real y barata. */
-.gx-disk,.gx-core{position:absolute;left:50%;top:44%;transform-origin:center;pointer-events:none}
-.gx-disk{width:130vw;height:130vw;margin:-65vw 0 0 -65vw;
+/* ── Modo OSCURO: galaxia espiral PEQUEÑA, asomando en la esquina ──
+   El disco usa una IMAGEN de galaxia generada por canvas (shell.js la pinta 1
+   vez como background-image). Solo se compone/rota/inclina en GPU → barata. */
+.gx-disk{position:absolute;pointer-events:none;transform-origin:center;
+  width:40vw;height:40vw;max-width:540px;max-height:540px;right:-8vw;top:-10vw;
   background-size:contain;background-repeat:no-repeat;background-position:center;
-  transform:perspective(1200px) rotateX(64deg) rotate(0deg);
-  animation:gxSpin 140s linear infinite}
-.gx-core{width:22vw;height:22vw;margin:-11vw 0 0 -11vw;border-radius:50%;
-  background:radial-gradient(circle, rgba(255,255,255,.7), rgba(255,224,250,.35) 22%,
-    rgba(214,130,255,.14) 46%, transparent 68%);
-  transform:perspective(1200px) rotateX(64deg)}
-@keyframes gxSpin{to{transform:perspective(1200px) rotateX(64deg) rotate(360deg)}}
+  transform:perspective(1000px) rotateX(60deg) rotate(0deg);
+  animation:gxSpin 120s linear infinite}
+@keyframes gxSpin{to{transform:perspective(1000px) rotateX(60deg) rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.gx-disk{animation:none}}
 
 /* ── Modo CLARO: sin disco espiral; solo recolorea las "manchas" a violeta ── */

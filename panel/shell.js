@@ -604,7 +604,7 @@ function setIaBackdrop(active) {
   if (!document.getElementById("nodo-nebula")) {
     const neb = document.createElement("div");
     neb.id = "nodo-nebula"; neb.className = "nodo-nebula"; neb.setAttribute("aria-hidden", "true");
-    neb.innerHTML = `<div class="gx-disk"></div><div class="gx-core"></div>`;
+    neb.innerHTML = `<div class="gx-disk"></div>`;
     document.body.insertBefore(neb, document.body.firstChild);
   }
   const on = active === "ia";
