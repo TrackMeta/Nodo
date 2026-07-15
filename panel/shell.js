@@ -160,7 +160,12 @@ export function toast(msg, err) {
   ic.style.background = err ? "rgba(226,86,74,.16)" : "rgba(34,192,121,.16)";
   ic.style.color = err ? "var(--red,#e2564a)" : "var(--green,#22c079)";
   ic.style.boxShadow = `0 0 0 1px ${err ? "rgba(226,86,74,.28)" : "rgba(34,192,121,.28)"} inset`;
-  t.querySelector("#nodo-toast-msg").textContent = msg;
+  // El check ya vive en el badge de la izquierda → quitamos cualquier ✓/✔ del
+  // texto para no repetirlo (ej. "Guardado ✓" → "Guardado") y limpiamos espacios
+  // o separadores "·" que queden sueltos.
+  const clean = String(msg == null ? "" : msg)
+    .replace(/[✓✔]/gu, " ").replace(/\s{2,}/g, " ").replace(/^[\s·]+|[\s·]+$/g, "").trim();
+  t.querySelector("#nodo-toast-msg").textContent = clean;
   t.style.opacity = "1"; t.style.transform = "translateY(0) scale(1)";
   clearTimeout(t._h);
   t._h = setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(14px) scale(.94)"; }, 3800);
