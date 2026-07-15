@@ -400,6 +400,9 @@ export function setEffects({ level, fps } = {}) {
 const FX = { built: false, cv: null, cx: null, W: 0, H: 0, DPR: 1, nodes: [], signals: [], sprites: {}, sig: null, COL: [], raf: 0, last: 0, mouse: { x: -1e4, y: -1e4 }, reduce: false, level: "suave", fps: 60 };
 
 function fxColors() {
+  // En la sección IA las estrellas se vuelven violeta/fucsia (galaxia).
+  if (document.documentElement.dataset.ia === "on")
+    return getTheme() !== "light" ? ["168,85,247", "236,72,153", "139,92,246"] : ["168,85,247", "217,70,239", "124,58,237"];
   return getTheme() !== "light" ? ["0,125,253", "56,189,248", "96,165,250"] : ["0,113,230", "14,165,233", "59,130,246"];
 }
 function fxSprite(rgb) {
@@ -464,26 +467,30 @@ function fxDraw() {
   const cx = FX.cx;
   cx.clearRect(0, 0, FX.W, FX.H);
   if (FX.level === "off") return;
-  const maxD = 140 * FX.DPR, mR = 190 * FX.DPR;
+  // Perf: comparar distancias AL CUADRADO (evita Math.hypot en el bucle O(n²));
+  // solo se calcula la raíz cuando el par realmente está dentro del radio.
+  const maxD = 140 * FX.DPR, mR = 190 * FX.DPR, maxD2 = maxD * maxD, mR2 = mR * mR;
   const mx = FX.mouse.x, my = FX.mouse.y, hasM = mx > -9000;
   FX.t = (FX.t || 0) + 1;
+  const lw = FX.DPR;
   // aristas base + refuerzo cerca del cursor
   for (let i = 0; i < FX.nodes.length; i++) for (let j = i + 1; j < FX.nodes.length; j++) {
-    const a = FX.nodes[i], b = FX.nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (d < maxD) {
+    const a = FX.nodes[i], b = FX.nodes[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+    if (d2 < maxD2) {
+      const d = Math.sqrt(d2);
       let al = .12 * (1 - d / maxD);
-      if (hasM) { const md = Math.hypot((a.x + b.x) / 2 - mx, (a.y + b.y) / 2 - my); if (md < mR) al += .4 * (1 - md / mR); }
+      if (hasM) { const cxx = (a.x + b.x) / 2 - mx, cyy = (a.y + b.y) / 2 - my, md2 = cxx * cxx + cyy * cyy; if (md2 < mR2) al += .4 * (1 - Math.sqrt(md2) / mR); }
       cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y);
-      cx.strokeStyle = `rgba(${a.c},${al})`; cx.lineWidth = 1 * FX.DPR; cx.stroke();
+      cx.strokeStyle = `rgba(${a.c},${al})`; cx.lineWidth = lw; cx.stroke();
     }
   }
   // constelación al cursor: une entre sí las estrellas cercanas al puntero
   if (hasM) {
     const near = [];
-    for (const p of FX.nodes) if (Math.hypot(p.x - mx, p.y - my) < mR) near.push(p);
+    for (const p of FX.nodes) { const ddx = p.x - mx, ddy = p.y - my; if (ddx * ddx + ddy * ddy < mR2) near.push(p); }
     for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) {
-      const a = near[i], b = near[j], d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (d < mR) { cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.strokeStyle = `rgba(${a.c},${.18 * (1 - d / mR)})`; cx.lineWidth = 1 * FX.DPR; cx.stroke(); }
+      const a = near[i], b = near[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+      if (d2 < mR2) { const d = Math.sqrt(d2); cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.strokeStyle = `rgba(${a.c},${.18 * (1 - d / mR)})`; cx.lineWidth = lw; cx.stroke(); }
     }
   }
   // estrellas HD: halo + núcleo nítido + parpadeo (brillan cerca del cursor)
@@ -532,6 +539,20 @@ function applyEffects() {
   if (e.level === "off" || !dark) { fxStop(); FX.cx && FX.cx.clearRect(0, 0, FX.W, FX.H); }
   else if (document.visibilityState !== "hidden") { fxStart(); }
 }
+// Nebulosa violeta/fucsia detrás de la sección IA (galaxia). Capa propia y
+// barata (un degradado con blur en el compositor), independiente del canvas de
+// estrellas; funciona en modo oscuro y claro, y aparece/desaparece con fade.
+function setIaBackdrop(active) {
+  if (!document.getElementById("nodo-nebula")) {
+    const neb = document.createElement("div");
+    neb.id = "nodo-nebula"; neb.className = "nodo-nebula"; neb.setAttribute("aria-hidden", "true");
+    document.body.insertBefore(neb, document.body.firstChild);
+  }
+  const on = active === "ia";
+  const was = document.documentElement.dataset.ia === "on";
+  document.documentElement.dataset.ia = on ? "on" : "";
+  if (on !== was && FX.built) fxRetheme(); // recolorea las estrellas al entrar/salir de IA
+}
 function ensureFX() {
   if (FX.built || document.getElementById("nodo-fx")) return;
   const eff = getEffects();
@@ -569,6 +590,7 @@ export async function mountShell({ active } = {}) {
   // condicionar el glass/backdrop-filter (caro) a cuando hay fondo que frostear.
   document.documentElement.setAttribute("data-nfx", getEffects().level);
   ensureFX();           // capa de efectos de fondo (se auto-protege de doble init)
+  setIaBackdrop(active); // galaxia violeta detrás de la sección IA (entra/sale)
 
   // ── Re-entrada SPA: el shell ya está montado → no reconstruir.
   if (S.nav && document.body.contains(S.nav)) {

@@ -126,6 +126,23 @@
 import { supa, mountShell } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const money=(n)=>"S/ "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Anima los números de los KPIs (0 → valor) al cargar. Genérico: separa prefijo
+// ("S/ "), número y sufijo, y re-formatea cada frame conservando los decimales.
+function animateNums(scope){
+  if(!scope||matchMedia("(prefers-reduced-motion:reduce)").matches) return;
+  scope.querySelectorAll(".kpi .v").forEach(el=>{
+    const txt=el.textContent.trim();
+    const m=txt.match(/^([^\d-]*)(-?[\d.,]+)(.*)$/); if(!m) return;
+    const pre=m[1], numStr=m[2], suf=m[3];
+    const target=parseFloat(numStr.replace(/,/g,"")); if(!isFinite(target)) return;
+    const dec=(numStr.split(".")[1]||"").length;
+    const fmt=(v)=>pre+v.toLocaleString("es-PE",{minimumFractionDigits:dec,maximumFractionDigits:dec})+suf;
+    const dur=680, t0=performance.now();
+    const step=(now)=>{ const p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3);
+      el.textContent=fmt(target*e); if(p<1) requestAnimationFrame(step); else el.textContent=txt; };
+    requestAnimationFrame(step);
+  });
+}
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let channelId=null;
 const IC={
@@ -245,6 +262,7 @@ async function load(){
     kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0),
     kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0),
   ].join("");
+  animateNums($("kpis"));
 
   renderFunnel(ev);
   renderSales(orders, r);

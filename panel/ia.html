@@ -869,7 +869,7 @@ function renderProveedores(box){
         ${icon("chevron")}
       </button>
       <div class="acts">
-        <button class="btn primary" data-a="save" data-p="${p.id}">Guardar</button>
+        <button class="btn ia" data-a="save" data-p="${p.id}">Guardar</button>
         <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
         ${!isDef&&cfg?`<button class="btn ghost" data-a="default" data-p="${p.id}">Usar por defecto</button>`:''}
         ${cfg?`<button class="btn danger" data-a="delete" data-p="${p.id}">Eliminar</button>`:''}
