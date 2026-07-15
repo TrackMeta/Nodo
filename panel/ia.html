@@ -120,6 +120,7 @@
       <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
+      <button class="tab" data-t="pedidos" id="tabPed"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
     </div>
     <div id="body"></div>
@@ -190,6 +191,9 @@ const IC={
   sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
   bot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="12" x="3" y="8" rx="2"/><path d="M12 2v6M9 14h.01M15 14h.01M8 8V6M16 8V6"/></svg>',
   shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
 };
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
 const PROVIDERS = [
@@ -225,6 +229,7 @@ async function boot(){
   $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
+  $("tabPed").innerHTML=IC.truck+"<span>Pedidos</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
@@ -234,7 +239,8 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg").eq("id",st.channelId).maybeSingle();
+    .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg,pedidos_config").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider").eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {}; st.perfMod={};
@@ -249,6 +255,7 @@ function render(){
   else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
+  else if(st.tab==="pedidos") renderPedidos(b);
   else renderProveedores(b);
 }
 function goTab(name){ st.tab=name; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
@@ -707,6 +714,100 @@ function renderValidador(b){
       }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
     }
     btn.disabled=false; btn.textContent=old; toast("Validador guardado ✓"+extra);
+  };
+}
+
+// ── Pedidos: agentes de Confirmación y Logística (pedidos físicos) ──
+// Config GLOBAL del canal (mismos mensajes/instrucciones para todos los
+// productos físicos). Se guarda en channels.pedidos_config (jsonb).
+function defaultPedidos(){
+  return {
+    conf:{ msg_cod:"", fecha:false, msg_ag_pago:"", msg_ag:"", instr_cod:"", instr_ag:"" },
+    log:{ modo:"manual", instr_cod:"", instr_ag:"" },
+  };
+}
+function renderPedidos(b){
+  const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
+  const p = { conf:{ ...defaultPedidos().conf, ...(src.conf||{}) }, log:{ ...defaultPedidos().log, ...(src.log||{}) } };
+  st.pedidos = p;
+  const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
+  b.innerHTML=`
+    <h2>Pedidos físicos</h2>
+    <p class="sub">Cómo la IA <b>confirma</b> pedidos y hace <b>seguimiento logístico</b> (envíos y saldos). Aplica a todos los productos físicos; los requisitos por producto se ajustan en cada ficha de Productos.</p>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Personalización de mensajes</span></div>
+      <div class="desc">Mensajes que la IA envía al confirmar pedidos. Puedes usar variables como <b style="color:#a855f7">{{datos_pago}}</b>, <b style="color:#a855f7">{{nombre}}</b>.</div>
+      <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
+        <div class="f">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones contraentrega</div>
+          <label style="margin-top:0">Mensaje al confirmar un pedido (opcional)</label>
+          ${ta(p.conf.msg_cod,"¡Gracias por confiar en nosotros! 🙌\n\n✅ Pedido confirmado\n📦 Entrega: dentro de las 24 h.",5).replace('class="in"','class="in" id="pcMsgCod"')}
+          <label class="chk" style="margin-top:12px;justify-content:space-between;border:1px solid var(--border);border-radius:11px;padding:10px 12px"><span style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;color:var(--muted)">${IC.sliders}</span> <span style="font-weight:600">Enviar fecha de envío al confirmar el pedido</span></span><span class="sw ${p.conf.fecha?'on':''}" id="pcFecha"></span></label>
+        </div>
+        <div class="f">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones por agencia</div>
+          <label style="margin-top:0">Mensaje para presentar los métodos de pago (opcional)</label>
+          ${ta(p.conf.msg_ag_pago,"✅ Cuenta BCP empresa: MI NEGOCIO SAC\nBCP: 000-0000000-0-00\n✅ Yape: 900 000 000",4).replace('class="in"','class="in" id="pcMsgAgPago"')}
+          <label style="margin-top:14px">Mensaje al confirmar el pedido (opcional)</label>
+          ${ta(p.conf.msg_ag,"¡Listo! 🙌\n\n✅ Tu pedido ha sido confirmado\n📦 En las próximas horas será enviado a la agencia.",4).replace('class="in"','class="in" id="pcMsgAg"')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Instrucciones para la IA de confirmaciones</span></div>
+      <div class="desc">Reglas específicas para la IA que confirma pedidos, según el tipo de envío.</div>
+      <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
+        <div class="f"><label style="margin-top:0">Contraentrega</label>
+          ${ta(p.conf.instr_cod,'- "Siempre verificar el distrito antes de confirmar"\n- "Confirmar método de pago antes de cerrar"\n- "Recordar al cliente tener el monto exacto"',6).replace('class="in"','class="in" id="pcInstrCod"')}</div>
+        <div class="f"><label style="margin-top:0">Agencia (Shalom, Olva, etc.)</label>
+          ${ta(p.conf.instr_ag,'- "Verificar datos completos del destinatario"\n- "Si el cliente quiere cambiar producto, derivar a ventas"\n- "Confirmar dirección de la agencia más cercana"',6).replace('class="in"','class="in" id="pcInstrAg"')}</div>
+      </div>
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Agente de logística</span></div>
+      <div class="desc">Cómo el agente IA verifica los pagos de saldos remanentes para entregar la clave de recojo.</div>
+      <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Cómo quieres que tu IA verifique los pagos para entregar la clave de recojo?</label>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <label class="pedopt" style="border:1px solid ${p.log.modo==='manual'?'var(--ia)':'var(--border)'};border-radius:12px;padding:13px 14px;display:flex;gap:11px;cursor:pointer">
+          <input type="radio" name="logModo" value="manual" ${p.log.modo!=='auto'?'checked':''} style="accent-color:var(--ia);margin-top:2px"/>
+          <div><div style="font-weight:700;font-size:13.5px">👁 Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">La IA te notificará cuando reciba un comprobante (WhatsApp o Telegram). Una vez lo apruebes, dará la clave de recojo.</div></div>
+        </label>
+        <label class="pedopt" style="border:1px solid ${p.log.modo==='auto'?'var(--ia)':'var(--border)'};border-radius:12px;padding:13px 14px;display:flex;gap:11px;cursor:pointer">
+          <input type="radio" name="logModo" value="auto" ${p.log.modo==='auto'?'checked':''} style="accent-color:var(--ia);margin-top:2px"/>
+          <div><div style="font-weight:700;font-size:13.5px">⚡ Automático: si el cliente paga el saldo, no me notifiques y dale su clave automáticamente</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">La IA analiza el comprobante. Si el monto coincide, entrega la clave secreta automáticamente.</div></div>
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--muted)">${IC.shield} Los pagos pendientes aparecerán en la sección <b>Aprobación de pagos</b> del menú de Automatización.</div>
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Instrucciones para la IA de logística</span></div>
+      <div class="desc">Reglas específicas para la IA de seguimiento de envíos, según el tipo de envío.</div>
+      <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
+        <div class="f"><label style="margin-top:0">Envío contraentrega</label>
+          ${ta(p.log.instr_cod,'#REGLAS\n\nNo puedes prometer horas exactas de entrega.\n\nNo ofrezcas ni prometas agendar recordatorios ni avisar cuando el motorizado esté cerca.',6).replace('class="in"','class="in" id="plInstrCod"')}</div>
+        <div class="f"><label style="margin-top:0">Envío por agencia</label>
+          ${ta(p.log.instr_ag,'- "Siempre dar el código de seguimiento cuando pregunten"\n- "Si el envío tiene más de 3 días de retraso, escalar"\n- "No prometer fechas exactas de entrega"',6).replace('class="in"','class="in" id="plInstrAg"')}</div>
+      </div>
+    </div>
+
+    <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
+  $("pcFecha").onclick=()=>{ p.conf.fecha=!p.conf.fecha; $("pcFecha").classList.toggle("on",p.conf.fecha); };
+  b.querySelectorAll('input[name="logModo"]').forEach(r=> r.onchange=()=>{ p.log.modo=r.value; renderPedidos(b); });
+  $("pedSave").onclick=async(e)=>{
+    p.conf.msg_cod=$("pcMsgCod").value; p.conf.msg_ag_pago=$("pcMsgAgPago").value; p.conf.msg_ag=$("pcMsgAg").value;
+    p.conf.instr_cod=$("pcInstrCod").value; p.conf.instr_ag=$("pcInstrAg").value;
+    p.log.instr_cod=$("plInstrCod").value; p.log.instr_ag=$("plInstrAg").value;
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
+    st.channel.pedidos_config=p; toast("Pedidos guardado ✓");
   };
 }
 
