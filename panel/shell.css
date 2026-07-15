@@ -324,7 +324,10 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 .nodo-primary{display:flex;flex-direction:column;gap:4px;flex:none;padding-bottom:4px;margin-bottom:2px}
 
 /* Navegación */
-.nodo-links{display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+/* scrollbar-gutter:stable reserva el hueco de la barra SIEMPRE: al agregar
+   ítems la lista desborda y, sin esto, el scrollbar aparecía y "encogía" el
+   ancho del sidebar (parecía que cambiaba el tamaño de la letra). */
+.nodo-links{display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
 /* Scrollbar del sidebar — fino, redondeado e integrado a la superficie.
    Usa tokens temáticos → se adapta a claro/oscuro. Casi invisible en
    reposo; se marca al pasar el cursor por el sidebar y toma el indigo
