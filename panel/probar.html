@@ -290,8 +290,7 @@ async function loadExisting(){
 async function openTest(contactId){
   st.contactId=contactId;
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
-  await loadThread();
-  await loadContactPanel({ id:contactId, wa_id:"webchat-test", nombre:st.contactName });
+  await Promise.all([ loadThread(), loadContactPanel({ id:contactId, wa_id:"webchat-test", nombre:st.contactName }) ]);
 }
 async function startTest(){
   const flowId=$("flowSel").value;

@@ -354,11 +354,8 @@ async function boot() {
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
   shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); });
-  await loadTestFlows();
-  await loadFilters();
-  await loadQuickReplies();
-  await loadInboxFlows();
-  await loadConversations();
+  // Cargas independientes en PARALELO (antes eran 5 en serie → arranque lento).
+  await Promise.all([loadTestFlows(), loadFilters(), loadQuickReplies(), loadInboxFlows(), loadConversations()]);
   subscribeRealtime();
 }
 async function loadInboxFlows(){

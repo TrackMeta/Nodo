@@ -546,6 +546,9 @@ function setIaBackdrop(active) {
   if (!document.getElementById("nodo-nebula")) {
     const neb = document.createElement("div");
     neb.id = "nodo-nebula"; neb.className = "nodo-nebula"; neb.setAttribute("aria-hidden", "true");
+    // Galaxia espiral (modo oscuro): disco inclinado que gira + núcleo brillante.
+    // Todo se compone en GPU (transform); sin blur/blend full-screen (caros).
+    neb.innerHTML = `<div class="gx-disk"></div><div class="gx-core"></div>`;
     document.body.insertBefore(neb, document.body.firstChild);
   }
   const on = active === "ia";

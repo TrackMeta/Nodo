@@ -160,25 +160,44 @@ html[data-nfx="off"] .nfx-canvas{display:none}
    Capa fija propia, barata (un degradado con blur en el compositor). Aparece
    con fade al entrar a IA y se retira al salir. Recolorea las "manchas" del
    fondo al estilo de la sección — funciona en oscuro y claro. */
-/* Sin filter:blur ni mix-blend-mode (caros full-screen): los degradados
-   radiales ya son suaves. Solo una capa estática + deriva por transform (GPU). */
-.nodo-nebula{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:0;
-  transition:opacity .6s ease;will-change:opacity;
+/* Contenedor de la galaxia IA. Fade in/out con data-ia. Todo se compone en GPU
+   (transform); sin blur/blend a pantalla completa (colgaban el render). */
+.nodo-nebula{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;
+  opacity:0;transition:opacity .8s ease;will-change:opacity}
+html[data-ia="on"] .nodo-nebula{opacity:1}
+/* En IA, la aurora azul se atenúa para que domine la galaxia violeta. */
+html[data-ia="on"] .nfx-aurora{opacity:.12;transition:opacity .8s ease}
+
+/* ── Modo OSCURO: galaxia espiral inclinada que gira ── */
+.gx-disk,.gx-core{position:absolute;left:50%;top:46%;border-radius:50%;transform-origin:center;pointer-events:none}
+.gx-disk{width:150vw;height:150vw;margin:-75vw 0 0 -75vw;
+  /* brazos espirales: cuñas cónicas suaves violeta/fucsia/azul; el disco brilla
+     al centro y se apaga hacia el borde (máscara radial). */
   background:
-    radial-gradient(52vw 52vw at 12% 4%, rgba(168,85,247,.34), transparent 60%),
-    radial-gradient(48vw 48vw at 90% 96%, rgba(236,72,153,.26), transparent 60%),
-    radial-gradient(46vw 46vw at 72% 24%, rgba(139,92,246,.24), transparent 62%);
-  animation:nebulaDrift 46s ease-in-out infinite}
+    conic-gradient(from 0deg,
+      rgba(168,85,247,.20), rgba(236,72,153,.05) 14%, rgba(139,92,246,.22) 30%,
+      rgba(96,165,250,.05) 46%, rgba(236,72,153,.20) 62%, rgba(168,85,247,.05) 78%,
+      rgba(139,92,246,.20) 92%, rgba(168,85,247,.20)),
+    radial-gradient(circle, rgba(255,242,255,.42) 0%, rgba(224,140,235,.26) 11%,
+      rgba(150,100,246,.16) 28%, transparent 56%);
+  -webkit-mask:radial-gradient(circle, #000 0%, #000 40%, transparent 60%);
+          mask:radial-gradient(circle, #000 0%, #000 40%, transparent 60%);
+  transform:perspective(1100px) rotateX(63deg) rotate(0deg);
+  animation:gxSpin 120s linear infinite}
+.gx-core{width:30vw;height:30vw;margin:-15vw 0 0 -15vw;
+  background:radial-gradient(circle, rgba(255,255,255,.9), rgba(255,220,250,.55) 16%,
+    rgba(214,130,255,.28) 38%, transparent 66%);
+  transform:perspective(1100px) rotateX(63deg) scale(1)}
+@keyframes gxSpin{to{transform:perspective(1100px) rotateX(63deg) rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.gx-disk{animation:none}}
+
+/* ── Modo CLARO: sin disco espiral; solo recolorea las "manchas" a violeta ── */
+html[data-theme="light"] .gx-disk,html[data-theme="light"] .gx-core{display:none}
 html[data-theme="light"] .nodo-nebula{
   background:
     radial-gradient(52vw 52vw at 12% 4%, rgba(168,85,247,.16), transparent 62%),
     radial-gradient(48vw 48vw at 90% 96%, rgba(236,72,153,.13), transparent 62%),
     radial-gradient(46vw 46vw at 72% 24%, rgba(124,58,237,.12), transparent 64%)}
-html[data-ia="on"] .nodo-nebula{opacity:.95}
-html[data-theme="light"][data-ia="on"] .nodo-nebula{opacity:1}
-/* En IA, la aurora azul se atenúa para que domine la nebulosa violeta. */
-html[data-ia="on"] .nfx-aurora{opacity:.15;transition:opacity .7s ease}
-@keyframes nebulaDrift{0%,100%{transform:scale(1) translate(0,0)}50%{transform:scale(1.14) translate(-3vw,2vh)}}
 @media (prefers-reduced-motion:reduce){.nodo-nebula{animation:none}}
 
 /* ═══ Glass — sidebar + tarjetas translúcidas sobre el fondo animado ═══
