@@ -168,27 +168,20 @@ html[data-ia="on"] .nodo-nebula{opacity:1}
 /* En IA, la aurora azul se atenúa para que domine la galaxia violeta. */
 html[data-ia="on"] .nfx-aurora{opacity:.12;transition:opacity .8s ease}
 
-/* ── Modo OSCURO: galaxia espiral inclinada que gira ── */
-.gx-disk,.gx-core{position:absolute;left:50%;top:46%;border-radius:50%;transform-origin:center;pointer-events:none}
-.gx-disk{width:150vw;height:150vw;margin:-75vw 0 0 -75vw;
-  /* brazos espirales: cuñas cónicas suaves violeta/fucsia/azul; el disco brilla
-     al centro y se apaga hacia el borde (máscara radial). */
-  background:
-    conic-gradient(from 0deg,
-      rgba(168,85,247,.20), rgba(236,72,153,.05) 14%, rgba(139,92,246,.22) 30%,
-      rgba(96,165,250,.05) 46%, rgba(236,72,153,.20) 62%, rgba(168,85,247,.05) 78%,
-      rgba(139,92,246,.20) 92%, rgba(168,85,247,.20)),
-    radial-gradient(circle, rgba(255,242,255,.42) 0%, rgba(224,140,235,.26) 11%,
-      rgba(150,100,246,.16) 28%, transparent 56%);
-  -webkit-mask:radial-gradient(circle, #000 0%, #000 40%, transparent 60%);
-          mask:radial-gradient(circle, #000 0%, #000 40%, transparent 60%);
-  transform:perspective(1100px) rotateX(63deg) rotate(0deg);
-  animation:gxSpin 120s linear infinite}
-.gx-core{width:30vw;height:30vw;margin:-15vw 0 0 -15vw;
-  background:radial-gradient(circle, rgba(255,255,255,.9), rgba(255,220,250,.55) 16%,
-    rgba(214,130,255,.28) 38%, transparent 66%);
-  transform:perspective(1100px) rotateX(63deg) scale(1)}
-@keyframes gxSpin{to{transform:perspective(1100px) rotateX(63deg) rotate(360deg)}}
+/* ── Modo OSCURO: galaxia espiral inclinada que gira ──
+   El disco usa una IMAGEN de galaxia generada por canvas (miles de estrellas en
+   brazos espirales; shell.js la pinta 1 vez y la pone como background-image).
+   Solo se compone/rota en GPU → real y barata. */
+.gx-disk,.gx-core{position:absolute;left:50%;top:44%;transform-origin:center;pointer-events:none}
+.gx-disk{width:130vw;height:130vw;margin:-65vw 0 0 -65vw;
+  background-size:contain;background-repeat:no-repeat;background-position:center;
+  transform:perspective(1200px) rotateX(64deg) rotate(0deg);
+  animation:gxSpin 140s linear infinite}
+.gx-core{width:22vw;height:22vw;margin:-11vw 0 0 -11vw;border-radius:50%;
+  background:radial-gradient(circle, rgba(255,255,255,.7), rgba(255,224,250,.35) 22%,
+    rgba(214,130,255,.14) 46%, transparent 68%);
+  transform:perspective(1200px) rotateX(64deg)}
+@keyframes gxSpin{to{transform:perspective(1200px) rotateX(64deg) rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.gx-disk{animation:none}}
 
 /* ── Modo CLARO: sin disco espiral; solo recolorea las "manchas" a violeta ── */

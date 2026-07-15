@@ -542,18 +542,79 @@ function applyEffects() {
 // Nebulosa violeta/fucsia detrás de la sección IA (galaxia). Capa propia y
 // barata (un degradado con blur en el compositor), independiente del canvas de
 // estrellas; funciona en modo oscuro y claro, y aparece/desaparece con fade.
+// Galaxia espiral REAL generada por canvas (miles de estrellas en brazos
+// espirales logarítmicos + núcleo). Se pinta UNA vez y se usa como imagen que
+// luego solo rota en GPU → realista y barata. Devuelve un data-URL cacheado.
+let _galaxyURL = null;
+function galaxySprite() {
+  if (_galaxyURL) return _galaxyURL;
+  const S = 1400, cx = S / 2, cy = S / 2, maxR = S * 0.46;
+  const cv = document.createElement("canvas"); cv.width = cv.height = S;
+  const g = cv.getContext("2d");
+  // Núcleo: bulbo brillante blanco→rosa→violeta.
+  const core = g.createRadialGradient(cx, cy, 0, cx, cy, S * 0.20);
+  core.addColorStop(0, "rgba(255,252,255,.95)");
+  core.addColorStop(.28, "rgba(255,226,250,.6)");
+  core.addColorStop(.6, "rgba(226,150,255,.22)");
+  core.addColorStop(1, "rgba(170,120,255,0)");
+  g.fillStyle = core; g.fillRect(0, 0, S, S);
+  // Halo difuso del disco (da cuerpo a los brazos).
+  g.globalCompositeOperation = "lighter";
+  for (let k = 0; k < 3; k++) {
+    const hr = maxR * (.5 + k * .22);
+    const h = g.createRadialGradient(cx, cy, hr * .25, cx, cy, hr);
+    h.addColorStop(0, `rgba(${k === 0 ? "236,140,220" : k === 1 ? "150,110,246" : "96,130,255"},.05)`);
+    h.addColorStop(1, "rgba(80,90,200,0)");
+    g.fillStyle = h; g.beginPath(); g.arc(cx, cy, hr, 0, 7); g.fill();
+  }
+  const arms = 2, b = 0.30;
+  // Nubes de los brazos (regiones de gas rosa/violeta/azul siguiendo la espiral):
+  // esto es lo que le da el look de GALAXIA colorida en vez de puntitos sueltos.
+  for (let i = 0; i < 60; i++) {
+    const t = Math.pow(Math.random(), 0.5), r = 40 + t * maxR;
+    const arm = (i % arms) * (Math.PI * 2 / arms);
+    const th = arm + Math.log(r / 22) / b + (Math.random() - .5) * 0.5;
+    const x = cx + r * Math.cos(th), y = cy + r * Math.sin(th), rr = r / maxR;
+    const col = rr < .28 ? "255,120,185" : rr < .55 ? "196,96,244" : rr < .8 ? "128,116,246" : "96,146,255";
+    const rad = (34 + Math.random() * 96) * (.6 + rr);
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(${col},${.09 + Math.random() * .11})`);
+    gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill();
+  }
+  // Estrellas en 2 brazos espirales logarítmicos + dispersión creciente.
+  const N = 4200;
+  for (let i = 0; i < N; i++) {
+    const t = Math.pow(Math.random(), 0.55), r = 30 + t * maxR;
+    const arm = (i % arms) * (Math.PI * 2 / arms);
+    const scatter = (Math.random() - .5) * (0.45 + 1.5 * (r / maxR));
+    const th = arm + Math.log(r / 22) / b + scatter;
+    const x = cx + r * Math.cos(th), y = cy + r * Math.sin(th);
+    const rr = r / maxR;
+    const col = rr < .24 ? "255,232,248" : rr < .5 ? "224,158,255" : rr < .78 ? "150,124,255" : "112,150,255";
+    g.globalAlpha = Math.min(1, (1 - rr) * .55 * Math.random() + .06);
+    const sz = Math.random() < .06 ? (Math.random() * 2.4 + 1.3) : (Math.random() * 1.0 + .35);
+    g.fillStyle = `rgba(${col},1)`; g.beginPath(); g.arc(x, y, sz, 0, 7); g.fill();
+  }
+  g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+  _galaxyURL = cv.toDataURL("image/png");
+  return _galaxyURL;
+}
 function setIaBackdrop(active) {
   if (!document.getElementById("nodo-nebula")) {
     const neb = document.createElement("div");
     neb.id = "nodo-nebula"; neb.className = "nodo-nebula"; neb.setAttribute("aria-hidden", "true");
-    // Galaxia espiral (modo oscuro): disco inclinado que gira + núcleo brillante.
-    // Todo se compone en GPU (transform); sin blur/blend full-screen (caros).
     neb.innerHTML = `<div class="gx-disk"></div><div class="gx-core"></div>`;
     document.body.insertBefore(neb, document.body.firstChild);
   }
   const on = active === "ia";
   const was = document.documentElement.dataset.ia === "on";
   document.documentElement.dataset.ia = on ? "on" : "";
+  // Pinta la galaxia la 1ª vez que se entra a IA en modo oscuro (lazy, 1 sola vez).
+  if (on && getTheme() !== "light") {
+    const disk = document.querySelector(".gx-disk");
+    if (disk && !disk.style.backgroundImage) { try { disk.style.backgroundImage = `url(${galaxySprite()})`; } catch (_) {} }
+  }
   if (on !== was && FX.built) fxRetheme(); // recolorea las estrellas al entrar/salir de IA
 }
 function ensureFX() {
