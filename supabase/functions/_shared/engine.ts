@@ -911,27 +911,75 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
-async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any }> {
+async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {
   let info = (run as any)._chIa;
   if (!info) {
-    info = { negocio: null, perfiles: {}, ocr: null };
+    info = { negocio: null, perfiles: {}, ocr: null, pedidos: null };
     try {
       const { data: ch } = await db.from("channels")
-        .select("negocio, ia_perfiles, ocr_config").eq("id", run.channel_id).maybeSingle();
+        .select("negocio, ia_perfiles, ocr_config, pedidos_config").eq("id", run.channel_id).maybeSingle();
       info.negocio = (ch as any)?.negocio ?? null;
       info.perfiles = (ch as any)?.ia_perfiles ?? {};
       info.ocr = (ch as any)?.ocr_config ?? null;
+      info.pedidos = (ch as any)?.pedidos_config ?? null;
     } catch (_) {
-      // Reintento sin ocr_config por si la migración 0026 no está aplicada.
+      // Reintento sin columnas nuevas por si faltan migraciones (0026/0027).
       try {
-        const { data: ch } = await db.from("channels").select("negocio, ia_perfiles").eq("id", run.channel_id).maybeSingle();
+        const { data: ch } = await db.from("channels").select("negocio, ia_perfiles, ocr_config").eq("id", run.channel_id).maybeSingle();
         info.negocio = (ch as any)?.negocio ?? null;
         info.perfiles = (ch as any)?.ia_perfiles ?? {};
-      } catch (_2) { /* migración 0023 pendiente */ }
+        info.ocr = (ch as any)?.ocr_config ?? null;
+      } catch (_2) {
+        try {
+          const { data: ch } = await db.from("channels").select("negocio, ia_perfiles").eq("id", run.channel_id).maybeSingle();
+          info.negocio = (ch as any)?.negocio ?? null;
+          info.perfiles = (ch as any)?.ia_perfiles ?? {};
+        } catch (_3) { /* migración 0023 pendiente */ }
+      }
     }
     (run as any)._chIa = info;
   }
   return info;
+}
+
+// ── Agentes de pedidos físicos (IA · Pedidos) ──────────────────────
+// Embudo de un contacto según el estado de su último pedido, para (a) gatear
+// la IA por embudo y (b) inyectarle las instrucciones/mensajes correctos.
+function funnelOf(estado: any): "mensajeria" | "confirmaciones" | "logistica" {
+  const e = String(estado ?? "").toLowerCase();
+  if (!e || e === "carrito") return "mensajeria";
+  if (e === "esperando_adelanto" || e === "por_confirmar") return "confirmaciones";
+  const log = ["confirmado", "adelanto_validado", "por_despachar", "despachado", "en_agencia",
+    "saldo_pagado", "recogido", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado",
+    "no_recogido", "cancelado", "por_registrar", "por_enviar", "enviado", "despachar"];
+  if (log.includes(e)) return "logistica";
+  return "mensajeria";
+}
+// ¿El pedido va por agencia (provincia) o contraentrega (Lima)?
+function esAgencia(estado: any): boolean {
+  const cod = ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado"];
+  return !cod.includes(String(estado ?? "").toLowerCase());
+}
+// Instrucciones + mensajes del embudo (config de IA · Pedidos) para el system.
+function buildPedidosSystem(pedidos: any, funnel: string, agencia: boolean): string | null {
+  if (!pedidos) return null;
+  const L: string[] = [];
+  if (funnel === "confirmaciones") {
+    const c = pedidos.conf ?? {};
+    const instr = agencia ? c.instr_ag : c.instr_cod;
+    if (instr && String(instr).trim()) L.push("## Cómo confirmar este pedido\n" + String(instr).trim());
+    if (agencia && c.msg_ag_pago && String(c.msg_ag_pago).trim()) L.push("## Mensaje para presentar los métodos de pago\nCuando el cliente vaya a pagar, envíale este mensaje:\n" + String(c.msg_ag_pago).trim());
+    const msg = agencia ? c.msg_ag : c.msg_cod;
+    if (msg && String(msg).trim()) L.push("## Mensaje al confirmar el pedido\nCuando el pedido quede confirmado, envía:\n" + String(msg).trim());
+    if (!agencia && c.fecha) L.push("Al confirmar, informa también la fecha estimada de envío.");
+  } else if (funnel === "logistica") {
+    const g = pedidos.log ?? {};
+    const instr = agencia ? g.instr_ag : g.instr_cod;
+    if (instr && String(instr).trim()) L.push("## Seguimiento logístico de este pedido\n" + String(instr).trim());
+    if (agencia && g.modo === "auto") L.push("Si el cliente envía el comprobante del saldo y el monto coincide con lo pendiente, entrega la clave de recojo. Si no coincide o hay cualquier duda, NO la entregues y avisa que un asesor revisará.");
+    else if (agencia) L.push("No entregues la clave de recojo por tu cuenta: avisa que un asesor validará el pago del saldo y te la hará llegar.");
+  }
+  return L.length ? L.join("\n\n") : null;
 }
 
 // Construye el contexto de sistema para validar comprobantes de pago a partir
@@ -979,6 +1027,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const maxTokens = cfg.max_tokens ? Number(cfg.max_tokens) : undefined;
   const prompt = resolve(String(cfg.prompt ?? ""), ctx);
   const info = await channelIaInfo(db, run);
+  const funnel = funnelOf(ctx.pedido_estado);
+  const agencia = esAgencia(ctx.pedido_estado);
+
+  // Control de IA por embudo (IA · Pedidos): si el canal ya configuró Pedidos y
+  // el embudo de este contacto está apagado, la IA no responde (lo toma un
+  // humano). Solo aplica a respuestas conversacionales (generar_texto) y solo
+  // cuando existe pedidos_config, para no alterar canales que no usan la función.
+  if (op === "generar_texto" && info.pedidos?.embudos && info.pedidos.embudos[funnel] === false) {
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "IA en pausa (embudo " + funnel + ")",
+      "El embudo está desactivado en IA · Pedidos; responde un humano.").catch(() => {});
+    run.current_node_id =
+      (await nextNode(db, run.flow_id, node.id, "exito")) ??
+      (await nextNode(db, run.flow_id, node.id, "continuar"));
+    return; // sin generar ni enviar
+  }
 
   // Prompt de sistema en 3 niveles (§6-OCTIES): negocio → producto → nodo.
   let system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
@@ -993,6 +1056,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
+    // Agentes de pedidos físicos: instrucciones y mensajes del embudo actual
+    // (confirmaciones/logística) según el estado del pedido y el tipo de envío.
+    const ped = buildPedidosSystem(info.pedidos, funnel, agencia);
+    if (ped) parts.push(ped);
     if (system) parts.push(system);
     if (parts.length) system = parts.join("\n\n");
   }
