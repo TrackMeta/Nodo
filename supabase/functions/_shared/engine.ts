@@ -57,6 +57,16 @@ export async function runEngine(
     }
   }
 
+  // Interceptor de SALDO automático (Agente de Logística · modo auto): si entra
+  // un comprobante y el contacto tiene un pedido "en_agencia" esperando el
+  // saldo, la IA valida el pago y suelta la clave de recojo — o, ante cualquier
+  // duda, lo deriva a "Aprobación de pagos" y avisa por Telegram.
+  if (event.type === "message" && event.mediaRef && (event.msgType === "image" || !event.msgType)) {
+    try {
+      if (await maybeAutoSaldo(db, channelId, contactId, event)) return;
+    } catch (e) { console.error("[autoSaldo]", (e as any)?.message ?? e); }
+  }
+
   let run = await getActiveRun(db, contactId);
 
   if (run) {
@@ -907,6 +917,125 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
   if (!token) { console.warn("[notify_admin] canal sin telegram_bot_token"); return; }
   const prefix = (channel as any)?.nombre ? `[${(channel as any).nombre}] ` : "";
   await sendTelegram(token, chatIds, prefix + text, photoUrl);
+}
+
+// Dispara los flujos suscritos a un estado de pedido (igual que order-update),
+// usado por la validación automática de saldo para soltar la clave de recojo.
+async function triggerPedidoEstado(db: SupabaseClient, channelId: string, contactId: string, estado: string) {
+  const { data: trigs } = await db.from("flow_triggers")
+    .select("flow_id, config, interrumpe, flows!inner(id, estado)")
+    .eq("channel_id", channelId).eq("tipo", "pedido_estado").eq("activo", true);
+  for (const t of trigs ?? []) {
+    const estados: string[] = ((t as any).config?.estados ?? []).map(String);
+    if (!estados.includes(estado)) continue;
+    if ((t as any).flows?.estado !== "activo") continue;
+    try {
+      const ok = await startFlowRun(db, channelId, contactId, (t as any).flow_id, { force: !!(t as any).interrumpe });
+      if (ok) break;
+    } catch (e) { console.error("[triggerPedidoEstado]", (e as any)?.message ?? e); }
+  }
+}
+
+// Esquema de la validación del comprobante de saldo (salida estructurada).
+const SALDO_SCHEMA = {
+  type: "object",
+  properties: {
+    es_pago: { type: "boolean", description: "true si la imagen es un comprobante de pago" },
+    valido: { type: "boolean", description: "true si el pago es legítimo según las reglas del negocio" },
+    monto: { type: ["number", "null"], description: "monto pagado (número), o null si no se lee" },
+    operacion: { type: ["string", "null"], description: "número de operación/constancia, o null" },
+    motivo: { type: "string", description: "explicación breve" },
+  },
+  required: ["es_pago", "valido", "motivo"],
+  additionalProperties: false,
+} as const;
+
+// Validación AUTOMÁTICA del saldo remanente (modo auto del Agente de Logística).
+// Devuelve true si "tomó" el mensaje (no debe seguir el flujo normal).
+async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  // 1) ¿Pedido en agencia esperando el saldo?
+  const { data: order } = await db.from("orders")
+    .select("id, estado, amount, currency, shipping")
+    .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "en_agencia")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!order) return false;
+  const ship = ((order as any).shipping ?? {}) as Record<string, any>;
+
+  // 2) ¿Modo automático activado en IA · Pedidos?
+  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config").eq("id", channelId).maybeSingle();
+  const log = (ch as any)?.pedidos_config?.log ?? {};
+  if (log.modo !== "auto") return false;
+
+  // 3) Sube el comprobante a storage propio → URL pública (IA + Telegram).
+  const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
+  if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
+
+  const saldo = Number(ship.saldo);
+  const clave = ship.clave_recojo;
+  const tol = Math.max(0, Number(log.tolerancia ?? 0));
+  const runlike = { channel_id: channelId, contact_id: contactId } as any;
+
+  // 4) Valida con la IA (visión) usando el Validador del canal + salida JSON.
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) return false; // sin IA → que lo tome un humano por el flujo normal
+  const ocrSys = buildOcrSystem((ch as any)?.ocr_config) ?? "Eres un validador experto de comprobantes de pago de Perú.";
+  const system = ocrSys +
+    "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
+    "`valido` es true solo si el pago es legítimo, va al destinatario correcto y no hay señales de fraude/montaje.";
+
+  let parsed: any = null;
+  try {
+    const raw = await runAI({
+      provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+      system,
+      content: [imageBlock(url), { type: "text", text: `El cliente debe pagar un SALDO de ${Number.isFinite(saldo) ? saldo : "?"} ${(order as any).currency ?? ""}. Analiza si este comprobante corresponde a ese pago.` }],
+      maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
+    });
+    parsed = JSON.parse(raw);
+  } catch (_) { parsed = null; }
+
+  // Si no es un pago (o no se pudo analizar), no interceptamos: sigue el flujo normal.
+  if (!parsed || !parsed.es_pago) return false;
+
+  const monto = Number(parsed.monto);
+  const oper = parsed.operacion ? String(parsed.operacion).trim() : null;
+
+  // 5) Anti-reúso: la misma operación no puede validar dos pedidos.
+  let reuse = false;
+  if (oper) {
+    const { data: dup } = await db.from("orders").select("id")
+      .eq("channel_id", channelId).eq("shipping->>saldo_operacion", oper).limit(1).maybeSingle();
+    reuse = !!dup;
+  }
+  const montoOk = Number.isFinite(monto) && Number.isFinite(saldo) && saldo > 0 && monto >= (saldo - tol);
+  const puedeAuto = !!parsed.valido && montoOk && !reuse && !!clave;
+
+  if (puedeAuto) {
+    // ✅ Todo cuadra → saldo_pagado (guarda la operación) + dispara la entrega de clave.
+    await db.from("orders").update({
+      estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      shipping: { ...ship, saldo_operacion: oper, saldo_validado_auto: true, saldo_comprobante: url },
+    }).eq("id", (order as any).id);
+    await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
+    await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado");
+    await notifyAdmin(db, runlike, `✅ Saldo validado automáticamente y clave de recojo enviada. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
+    return true;
+  }
+
+  // ⚠️ Ante cualquier duda → Aprobación de pagos + aviso por Telegram + panel.
+  const motivo = reuse ? "operación ya usada"
+    : !montoOk ? `monto no coincide (pagó ${Number.isFinite(monto) ? monto : "?"}, saldo ${Number.isFinite(saldo) ? saldo : "?"})`
+    : !clave ? "el pedido no tiene clave de recojo cargada"
+    : (parsed.motivo || "requiere revisión manual");
+  await db.from("orders").update({
+    updated_at: new Date().toISOString(),
+    shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo },
+  }).eq("id", (order as any).id);
+  await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
+  await notifyAdmin(db, runlike, `🕵️ Comprobante de saldo por revisar (${motivo}). Apruébalo en “Aprobación de pagos”.`, url);
+  await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago del saldo y en breve te confirmo. 🙌").catch(() => {});
+  return true;
 }
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─

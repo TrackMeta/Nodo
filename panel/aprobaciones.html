@@ -97,7 +97,8 @@ function render(){
     const esAdel=o.estado==="esperando_adelanto";
     const sym=money(o);
     const monto=esAdel ? (s.adelanto ?? "") : (s.saldo ?? "");
-    const img=st.imgs[o.contact_id];
+    const img=s.saldo_comprobante || st.imgs[o.contact_id];
+    const revisar=s.saldo_revisar; // motivo por el que la IA no validó sola (modo auto)
     const el=document.createElement("div"); el.className="acard";
     el.innerHTML=`
       ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}"/>`:`<div class="thumb none">Sin comprobante recibido</div>`}
@@ -113,6 +114,7 @@ function render(){
           ${p.nombre?`<div><div class="lbl">Producto</div><div style="font-weight:600;padding-top:3px">${esc(p.nombre)}</div></div>`:""}
           ${(!esAdel&&s.clave_recojo)?`<div><div class="lbl">Clave de recojo</div><div style="font-weight:800;padding-top:3px;color:var(--green)">${esc(s.clave_recojo)}</div></div>`:""}
         </div>
+        ${revisar?`<div style="margin-top:9px;font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:9px;padding:8px 11px">🕵️ La IA no validó el pago sola: <b>${esc(revisar)}</b>. Revísalo tú.</div>`:""}
         ${(!esAdel&&!s.clave_recojo)?`<div style="margin-top:9px;font-size:11.5px;color:var(--amber)">⚠ Este pedido aún no tiene clave de recojo cargada (edítala en Pedidos antes de aprobar).</div>`:""}
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
           <button class="btn ok" data-ok="${o.id}">${icon("check")} Aprobar ${esAdel?'adelanto':'saldo y soltar clave'}</button>
