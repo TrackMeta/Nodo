@@ -529,6 +529,32 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   });
 }
 
+// Emite el texto que generó la IA, resolviendo los marcadores [[media:tag]]:
+// por cada marcador envía el archivo correspondiente del catálogo del producto
+// (config.ia_multimedia, expuesto en ctx._ia_multimedia) intercalado con el
+// texto. Los marcadores desconocidos se descartan (no se filtran al usuario).
+async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any) {
+  const re = /\[\[media:([\w-]+)\]\]/g;
+  if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result }, ctx); return; }
+  const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
+  re.lastIndex = 0;
+  let last = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(result)) !== null) {
+    const before = result.slice(last, m.index).trim();
+    if (before) await emit(db, run, { text: before }, ctx);
+    const asset = catalog.find((x) => x && x.tag === m![1]);
+    if (asset && asset.media_url) {
+      await emit(db, run, {
+        media_kind: asset.media_kind, media_url: asset.media_url,
+        mime: asset.mime, filename: asset.filename, caption: "",
+      }, ctx);
+    }
+    last = m.index + m[0].length;
+  }
+  const rest = result.slice(last).trim();
+  if (rest) await emit(db, run, { text: rest }, ctx);
+}
+
 // Arranca un flujo concreto para un contacto (usado por el scheduler para
 // remarketing). No interrumpe una conversación activa.
 export async function startFlowRun(
@@ -1032,7 +1058,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");
-    if (enviar && result) await emit(db, run, { text: result }, ctx);
+    if (enviar && result) await emitIaText(db, run, String(result), ctx);
 
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "exito")) ??
@@ -1189,18 +1215,32 @@ async function buildContext(db: SupabaseClient, run: Run) {
             if (v == null || typeof v === "object") continue;
             pc[k] = v;
           }
+          // Multimedia que la IA puede enviar (se resuelve por [[media:tag]] al
+          // emitir el texto). Se guarda con "_" para no filtrarse a {{...}}.
+          const mm = (p as any).config?.ia_multimedia;
+          if (Array.isArray(mm)) pc._ia_multimedia = mm;
           const env = (p as any).config?.envio;
           if (env && typeof env === "object") {
-            for (const [k, v] of Object.entries(env)) {
-              if (v == null || typeof v === "object") continue;
-              pc["envio_" + k] = v;
+            if (env.agencias && env.agencias.shalom) {
+              // Forma nueva: adelanto por agencia → {{adelanto_shalom}}, {{adelanto_olva}}.
+              for (const agk of ["shalom", "olva"]) {
+                const ag = env.agencias[agk];
+                if (ag) pc["adelanto_" + agk] = ag.adelanto_valor ?? "";
+              }
+              const actk = env.agencia_activa || "shalom";
+              pc.adelanto = env.agencias[actk]?.adelanto_valor ?? "";
+            } else {
+              // Forma vieja (compat): checkboxes + adelanto único.
+              for (const [k, v] of Object.entries(env)) {
+                if (v == null || typeof v === "object") continue;
+                pc["envio_" + k] = v;
+              }
+              const val = Number(env.adelanto_valor ?? 0);
+              const precio = Number((p as any).config?.precio);
+              pc.adelanto = env.adelanto_modo === "porcentaje" && Number.isFinite(precio) && precio > 0
+                ? (precio * val / 100).toFixed(2)
+                : val;
             }
-            // {{adelanto}} listo para usar (modo fijo; % se calcula sobre precio)
-            const val = Number(env.adelanto_valor ?? 0);
-            const precio = Number((p as any).config?.precio);
-            pc.adelanto = env.adelanto_modo === "porcentaje" && Number.isFinite(precio) && precio > 0
-              ? (precio * val / 100).toFixed(2)
-              : val;
           }
         }
         (run as any)._prodCtx = pc;

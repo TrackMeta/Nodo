@@ -211,11 +211,90 @@ function parseFaq(txt){
   return items;
 }
 function compileFaq(items){ return (items||[]).filter(x=>x&&(x.q||x.a)).map(x=>`P: ${(x.q||"").trim()}\nR: ${(x.a||"").trim()}`).join("\n\n"); }
+
+// ── Conocimiento del producto para la IA ────────────────────────────
+// Igual que negocio_form→negocio en ia.html: los campos guiados viven en
+// config.ia y se COMPILAN a config.contexto_producto, que es lo que el motor
+// ya inyecta en el prompt. Así casi todo el rediseño es solo frontend.
+const ESTILOS_VENTA={ consultivo:"Consultivo (entiende antes de ofrecer)", directo:"Directo (va al grano y cierra)", educativo:"Educativo (enseña y genera confianza)", urgencia:"Urgencia / Escasez (motiva a decidir ya)", objeciones:"Basado en objeciones (rebate dudas)" };
+const AGENCIAS=[["shalom","Shalom"],["olva","Olva"]];
+const MODOS_ENVIO=[
+  ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
+  ["gratis","Envío gratis en todos los envíos"],
+  ["gratis_desde","Envío gratis desde un monto mínimo"],
+  ["fijo","Cobro un monto fijo de envío"],
+];
+const CONFIRM_COD=[["referencia","Referencia de envío"],["mapa","Mapa de ubicación enviado por el cliente"],["rango_fecha","Confirmación de rango de entrega y fecha"]];
+const CONFIRM_AG=[["agencia_def","Agencia de envío definida"],["adelanto","Adelanto de pago"],["dni","DNI / Carné de extranjería"]];
+
+function compileConfirmaciones(c,tipo){
+  if(tipo!=="fisico") return "";
+  const cf=(c.envio&&c.envio.confirmaciones)||{};
+  const on=(arr)=>arr.filter(([k])=>cf[k]).map(([,l])=>"- "+l);
+  const cod=on(CONFIRM_COD), ag=on(CONFIRM_AG);
+  if(!cod.length&&!ag.length) return "";
+  const L=["## Requisitos para confirmar el pedido"];
+  if(cod.length) L.push("Para pedidos contraentrega, verifica antes de confirmar:\n"+cod.join("\n"));
+  if(ag.length) L.push("Para pedidos por agencia, verifica antes de confirmar:\n"+ag.join("\n"));
+  return L.join("\n\n");
+}
+function compileProductoIA(c,tipo){
+  const ia=c.ia||{}; const L=[];
+  const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
+  const cv=[];
+  if(ia.estilo_venta&&ESTILOS_VENTA[ia.estilo_venta]) cv.push("Estilo de venta: "+ESTILOS_VENTA[ia.estilo_venta]+".");
+  if(ia.proceso&&ia.proceso.trim()) cv.push("Proceso de venta:\n"+ia.proceso.trim());
+  if(ia.tecnicas&&ia.tecnicas.trim()) cv.push("Técnicas de venta:\n"+ia.tecnicas.trim());
+  if(cv.length) L.push("## Cómo vender este producto\n"+cv.join("\n\n"));
+  add("Resumen del producto",ia.resumen);
+  add("Descripción / detalle",ia.detalle);
+  add("Reglas del producto",ia.reglas_producto);
+  add("Límites (nunca hacer / no prometer)",ia.limites);
+  add("Reglas del precio",ia.reglas_precio);
+  const of=(ia.ofertas||[]).filter(o=>o&&(o.desde||o.precio));
+  if(of.length) L.push("## Ofertas por cantidad\n"+of.map(o=>`- Desde ${(o.desde||"?")} unidad(es): ${(o.precio||"?")}`).join("\n"));
+  add("Precios con descuento",ia.descuentos);
+  add("Formas de pago de este producto (tienen PRIORIDAD sobre las generales)",ia.metodos_pago);
+  const ej=(ia.ejemplos||[]).filter(e=>e&&(e.sit||e.resp));
+  if(ej.length) L.push("## Ejemplos de respuesta\n"+ej.map(e=>`- Si el cliente ${(e.sit||"").trim()} → responde: ${(e.resp||"").trim()}`).join("\n"));
+  if(ia.emojis_prohibidos&&ia.emojis_prohibidos.trim()) L.push("## Emojis prohibidos\nNunca uses estos emojis ni de ese estilo: "+ia.emojis_prohibidos.trim());
+  const mm=(c.ia_multimedia||[]).filter(m=>m&&m.media_url);
+  if(mm.length) L.push("## Archivos que puedes enviar\nCuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n"+mm.map(m=>`- [[media:${m.tag||"archivo"}]] — ${m.descripcion||m.filename||"archivo"}`).join("\n"));
+  const req=compileConfirmaciones(c,tipo); if(req) L.push(req);
+  return L.join("\n\n");
+}
+// Asegura la forma nueva de config.envio (tabs por agencia + confirmaciones),
+// migrando desde la forma vieja (checkboxes) sin perder el adelanto anterior.
+function normalizeEnvio(c){
+  let e=c.envio;
+  const blankAg=(over)=>Object.assign({ modo:"cliente", precio_min:"", precio_max:"", monto_fijo:"", gratis_desde:"", adelanto_valor:"", adelanto_moneda:"PEN", adelanto_cond:false, rangos:[] }, over||{});
+  if(!e || typeof e!=="object") e={};
+  if(!e.agencias || Array.isArray(e.agencias) || !e.agencias.shalom){
+    const oldVal=e.adelanto_valor ?? 20;
+    const oldModo=e.gratis===false?"cliente":"gratis";
+    e={ agencia_activa:"shalom",
+        agencias:{ shalom:blankAg({adelanto_valor:oldVal,modo:oldModo}), olva:blankAg({adelanto_valor:oldVal,modo:oldModo}) },
+        confirmaciones: e.confirmaciones || { referencia:false, mapa:true, rango_fecha:false, agencia_def:true, adelanto:true, dni:true } };
+  }
+  for(const [k] of AGENCIAS){ e.agencias[k]=blankAg(e.agencias[k]); if(!Array.isArray(e.agencias[k].rangos)) e.agencias[k].rangos=[]; }
+  if(!e.agencia_activa) e.agencia_activa="shalom";
+  if(!e.confirmaciones) e.confirmaciones={ referencia:false, mapa:true, rango_fecha:false, agencia_def:true, adelanto:true, dni:true };
+  c.envio=e; return e;
+}
 function renderDatos(){
   const b=$("tabBody");
   const folders=allFolders();
   const c=st.prod.config=st.prod.config||{};
+  const tipo=st.prod.tipo||"digital";
   if(!Array.isArray(c.faq_items)) c.faq_items=parseFaq(c.faq);
+  const ia=c.ia=c.ia||{};
+  // Migra el contexto libre anterior al campo "detalle" del formulario.
+  if(!ia.detalle && c.contexto_producto && !ia._migrado){ ia.detalle=c.contexto_producto; ia._migrado=true; }
+  if(!Array.isArray(ia.ofertas)) ia.ofertas=[];
+  if(!Array.isArray(ia.ejemplos)) ia.ejemplos=[];
+  if(!Array.isArray(c.ia_multimedia)) c.ia_multimedia=[];
+  const P="#a855f7"; // acento IA
+  const taField=(k,label,ph,rows)=>`<label>${label}</label><textarea class="in ia-f" data-k="${k}" rows="${rows||2}" style="min-height:${(rows||2)*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
   b.innerHTML=`
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
@@ -233,34 +312,84 @@ function renderDatos(){
           <select class="sel" id="pFolder" style="width:100%"><option value="">Sin carpeta</option>${folders.map(f=>`<option value="${esc(f)}" ${st.prod.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
         <div><label style="margin-top:0">Tipo de producto</label>
           <select class="sel" id="pTipo" style="width:100%">
-            <option value="digital" ${(st.prod.tipo||"digital")==="digital"?"selected":""}>Digital (entrega por link)</option>
-            <option value="fisico" ${st.prod.tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
+            <option value="digital" ${tipo==="digital"?"selected":""}>Digital (entrega por link)</option>
+            <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
           </select></div>
       </div>
       <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con versiones (Básica / Premium)</label>
     </div>
-    <div id="envioCard"></div>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("dollar")} Precio y entrega</h4>
       <div class="row" style="margin-top:10px">
-        <div><label style="margin-top:0">Precio</label><input class="in" id="pPrecio" value="${esc(c.precio??"")}" placeholder="Ej. 120"/></div>
+        <div><label style="margin-top:0">Precio base</label><input class="in" id="pPrecio" value="${esc(c.precio??"")}" placeholder="Ej. 120"/></div>
         <div><label style="margin-top:0">Moneda</label><input class="in" id="pMoneda" value="${esc(c.moneda||"PEN")}" placeholder="PEN"/></div>
       </div>
-      <label>Link de entrega (digital, opcional)</label>
+      ${tipo==="digital"?`
+      <label>Link de entrega (digital)</label>
       <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:7px">Disponibles en tus flujos como <b style="color:#a855f7">{{precio}}</b>, <b style="color:#a855f7">{{link_entrega}}</b>. Los datos de pago son globales (sección IA → Validador de comprobantes).</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:7px">Disponible en tus flujos como <b style="color:${P}">{{link_entrega}}</b>.</div>`:`
+      <div style="font-size:11px;color:var(--faint);margin-top:10px">Producto físico: la entrega y el cobro se configuran abajo en <b>Envío y cobro</b>. Los datos de pago generales están en la sección IA → Validador de comprobantes.</div>`}
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">El precio está disponible como <b style="color:${P}">{{precio}}</b>.</div>
     </div>
+    <div id="envioCard"></div>
     <div class="card" style="border-color:rgba(168,85,247,.32)">
-      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:#a855f7;display:inline-flex;vertical-align:-.15em">${icon("sparkles")}</span> Conocimiento del producto (para la IA)</h4>
-      <div style="font-size:12px;color:var(--faint)">La IA lo recibe automáticamente al conversar sobre este producto, junto con el Conocimiento del negocio de la sección IA.</div>
-      <label>Descripción / contexto del producto</label>
-      <textarea class="in" id="pContexto" rows="5" style="min-height:100px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Qué es, qué incluye, para quién es, beneficios, cómo se entrega…">${esc(c.contexto_producto||"")}</textarea>
-      <label>Emojis del producto (opcional)</label>
-      <input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="Ej. 👟🔥⚡ — la IA los podrá usar al hablar de este producto"/>
-      <label>Preguntas frecuentes / objeciones</label>
-      <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">La duda y su respuesta ideal. La IA responderá con estas.</div>
-      <div id="faqList"></div>
-      <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:${P};display:inline-flex;vertical-align:-.15em">${icon("sparkles")}</span> Conocimiento del producto (para la IA)</h4>
+      <div style="font-size:12px;color:var(--faint)">Llena este formulario del producto: la IA lo usa al conversar sobre él, junto con el Conocimiento del negocio de la sección IA. Todo es opcional — cuanto más, mejor vende.</div>
+
+      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Cómo vender este producto</div>
+        <label>Estilo de venta</label>
+        <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
+          <option value="" ${!ia.estilo_venta?"selected":""}>— Sin definir —</option>
+          ${Object.entries(ESTILOS_VENTA).map(([k,v])=>`<option value="${k}" ${ia.estilo_venta===k?"selected":""}>${esc(v)}</option>`).join("")}
+        </select>
+        <div style="font-size:11px;color:var(--faint);margin-top:4px">Distinto al <b>tono</b> (sección IA): esto es la estrategia de venta.</div>
+        ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
+        ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Qué es el producto</div>
+        ${taField("resumen","Información resumida (pitch corto)","En 1-2 frases: qué es y por qué conviene.",2)}
+        ${taField("detalle","Descripción / detalle","Qué es, qué incluye, para quién es, beneficios, cómo se entrega…",4)}
+        ${taField("reglas_producto","Reglas del producto","Ej. stock, tallas, colores, garantía, tiempos…",2)}
+        ${taField("limites","Límites (nunca hacer / no prometer)","Ej. no prometer entregas en 24h, no dar descuentos mayores a X…",2)}
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Precio y promociones</div>
+        ${taField("reglas_precio","Reglas del precio","Cuándo y cómo se cobra, qué incluye, negociación permitida…",2)}
+        <label>Ofertas por cantidad</label>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Distintos precios según cuántas unidades lleve.</div>
+        <div id="ofList"></div>
+        <button class="btn" id="ofAdd" style="margin-top:6px;height:34px">+ Agregar oferta</button>
+        ${taField("descuentos","Precios con descuento","Cuándo aplicar un descuento para incentivar (ej. si deja en visto, si duda…) y cuánto.",2)}
+        ${taField("metodos_pago","Métodos de pago del producto (opcional)","Si lo llenas, TIENE PRIORIDAD sobre los datos de pago generales de la sección IA.",2)}
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Ayudas para responder</div>
+        <label>Preguntas frecuentes / objeciones</label>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:6px">La duda y su respuesta ideal. La IA responderá con estas.</div>
+        <div id="faqList"></div>
+        <button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar pregunta</button>
+        <label>Ejemplos de respuesta</label>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Situación del cliente → cómo responder. Le dan estilo y criterio a la IA.</div>
+        <div id="ejList"></div>
+        <button class="btn" id="ejAdd" style="margin-top:6px;height:34px">+ Agregar ejemplo</button>
+        <div class="row" style="margin-top:14px;align-items:flex-start">
+          <div><label style="margin-top:0">Emojis permitidos</label><input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡"/></div>
+          <div><label style="margin-top:0">Emojis prohibidos</label><input class="in ia-f" data-k="emojis_prohibidos" value="${esc(ia.emojis_prohibidos||"")}" placeholder="💀🤡 o 'ninguno serio'"/></div>
+        </div>
+        <label>Multimedia que la IA puede enviar</label>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Sube imágenes, videos o archivos y explica <b>cuándo</b> usarlos. La IA los enviará sola cuando la conversación lo pida (vía <b style="color:${P}">[[media:tag]]</b>).</div>
+        <div id="mmList"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn mmAdd" data-k="image" style="height:34px">+ Imagen</button>
+          <button class="btn mmAdd" data-k="video" style="height:34px">+ Video</button>
+          <button class="btn mmAdd" data-k="document" style="height:34px">+ Archivo</button>
+        </div>
+      </div>
     </div>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("productos")} Versiones</h4>
@@ -269,22 +398,85 @@ function renderDatos(){
     </div>
     <details style="margin-bottom:12px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
-      <label style="margin-top:6px">Campos fijos (precio, datos_pago, links…)</label>
+      <label style="margin-top:6px">Config del producto (se genera desde el formulario)</label>
       <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
     </details>`;
-  const syncCfg=()=>{ const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
+  const syncCfg=()=>{ c.contexto_producto=compileProductoIA(c, st.prod.tipo||"digital")||undefined; const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
   const setC=(k,v)=>{ if(v==null||v==="") delete c[k]; else c[k]=v; syncCfg(); };
   $("pPrecio").onchange=(e)=>setC("precio", e.target.value.trim());
   $("pMoneda").onchange=(e)=>setC("moneda", e.target.value.trim());
-  $("pLink").onchange=(e)=>setC("link_entrega", e.target.value.trim());
+  const lk=$("pLink"); if(lk) lk.onchange=(e)=>setC("link_entrega", e.target.value.trim());
   $("pEmojis").oninput=(e)=>setC("emojis", e.target.value.trim());
+  // Campos del formulario IA (textareas + selects con data-k) → config.ia
+  b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; syncCfg(); }; });
+  // Ofertas por cantidad
+  const paintOf=()=>{
+    const box=$("ofList"); box.innerHTML="";
+    if(!ia.ofertas.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin ofertas.</div>`; }
+    ia.ofertas.forEach((o,i)=>{
+      const el=document.createElement("div"); el.className="row"; el.style.cssText="margin-bottom:7px;align-items:center";
+      el.innerHTML=`<div style="flex:0 0 auto;font-size:12px;color:var(--muted)">Desde</div>
+        <input class="in ofn" type="number" min="1" style="flex:0 0 90px" value="${esc(o.desde??"")}" placeholder="uds"/>
+        <div style="flex:0 0 auto;font-size:12px;color:var(--muted)">→ precio</div>
+        <input class="in ofp" style="flex:1" value="${esc(o.precio??"")}" placeholder="Ej. 100 c/u o 350 el pack"/>
+        <button class="iconbtn ofd" style="flex:0 0 auto">${icon("trash")}</button>`;
+      el.querySelector(".ofn").oninput=(e)=>{ o.desde=e.target.value; syncCfg(); };
+      el.querySelector(".ofp").oninput=(e)=>{ o.precio=e.target.value; syncCfg(); };
+      el.querySelector(".ofd").onclick=()=>{ ia.ofertas.splice(i,1); syncCfg(); paintOf(); };
+      box.appendChild(el);
+    });
+  };
+  paintOf();
+  $("ofAdd").onclick=()=>{ ia.ofertas.push({desde:"",precio:""}); paintOf(); };
+  // Ejemplos de respuesta
+  const paintEj=()=>{
+    const box=$("ejList"); box.innerHTML="";
+    if(!ia.ejemplos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin ejemplos.</div>`; }
+    ia.ejemplos.forEach((ej,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+      el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in ejs" value="${esc(ej.sit||"")}" placeholder="Situación (ej. dice que está caro)"/><button class="iconbtn ejd" style="flex:0 0 auto">${icon("trash")}</button></div>
+        <textarea class="in ejr" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Cómo responder">${esc(ej.resp||"")}</textarea>`;
+      el.querySelector(".ejs").oninput=(e)=>{ ej.sit=e.target.value; syncCfg(); };
+      el.querySelector(".ejr").oninput=(e)=>{ ej.resp=e.target.value; syncCfg(); };
+      el.querySelector(".ejd").onclick=()=>{ ia.ejemplos.splice(i,1); syncCfg(); paintEj(); };
+      box.appendChild(el);
+    });
+  };
+  paintEj();
+  $("ejAdd").onclick=()=>{ ia.ejemplos.push({sit:"",resp:""}); paintEj(); };
+  // Multimedia que la IA puede enviar
+  const paintMM=()=>{
+    const box=$("mmList"); box.innerHTML="";
+    if(!c.ia_multimedia.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin archivos.</div>`; }
+    c.ia_multimedia.forEach((m,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start";
+      let prev="";
+      if(m.media_kind==="image") prev=`<img src="${esc(m.media_url)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"/>`;
+      else if(m.media_kind==="video") prev=`<video src="${esc(m.media_url)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"></video>`;
+      else prev=`<div style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">${icon("file")}</div>`;
+      el.innerHTML=`${prev}
+        <div style="flex:1;min-width:0">
+          <div class="row" style="align-items:center"><div style="flex:0 0 auto;font-size:12px;color:var(--muted)">tag</div>
+            <input class="in mmt" style="flex:1" value="${esc(m.tag||"")}" placeholder="ej. catalogo, tallas, demo"/>
+            <button class="iconbtn mmd" style="flex:0 0 auto">${icon("trash")}</button></div>
+          <textarea class="in mmdesc" rows="2" style="margin-top:8px;min-height:46px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="¿Cuándo debe enviarlo la IA? (ej. cuando pidan ver el catálogo)">${esc(m.descripcion||"")}</textarea>
+          <div style="font-size:10.5px;color:var(--faint);margin-top:4px">${esc(m.filename||"")}</div>
+        </div>`;
+      el.querySelector(".mmt").oninput=(e)=>{ m.tag=e.target.value.replace(/[^\w-]/g,"").toLowerCase(); syncCfg(); };
+      el.querySelector(".mmdesc").oninput=(e)=>{ m.descripcion=e.target.value; syncCfg(); };
+      el.querySelector(".mmd").onclick=()=>{ c.ia_multimedia.splice(i,1); syncCfg(); paintMM(); };
+      box.appendChild(el);
+    });
+  };
+  paintMM();
+  b.querySelectorAll(".mmAdd").forEach(btn=> btn.onclick=()=>pickProdMedia(btn.dataset.k, paintMM, syncCfg));
   // FAQ items
   const paintFaq=()=>{
     const box=$("faqList"); box.innerHTML="";
     if(!c.faq_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin preguntas todavía.</div>`; }
     c.faq_items.forEach((qa,i)=>{
       const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
-      el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/><button class="btn danger fdel" style="flex:0 0 auto;width:40px;padding:0">${icon("trash")}</button></div>
+      el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/><button class="iconbtn fdel" style="flex:0 0 auto">${icon("trash")}</button></div>
         <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
       const sync=()=>{ c.faq=compileFaq(c.faq_items); syncCfg(); };
       el.querySelector(".fq").oninput=(e)=>{ qa.q=e.target.value; sync(); };
@@ -318,58 +510,147 @@ function renderDatos(){
   document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderDatos(); }catch(_){ toast("JSON inválido",true); } };
-  $("pContexto").onchange=(e)=>setC("contexto_producto", e.target.value.trim());
-  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderEnvio(); };
+  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderDatos(); }; // re-render: cambia link/envío
   $("addVersion").onclick=()=>{ st.versions.push({ nombre:"Nueva versión", price_list:[], drive_link:"", orden:st.versions.length }); renderVersions(); };
   renderEnvio();
   renderVersions();
+}
+
+// Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
+// enviará sola). Reusa la Edge Function media-upload igual que pickMedia.
+function pickProdMedia(kind, onDone, syncCfg){
+  const accept={image:"image/*",video:"video/*",document:"*/*"}[kind]||"*/*";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      const arr=st.prod.config.ia_multimedia=st.prod.config.ia_multimedia||[];
+      const base=(file.name||"archivo").replace(/\.[^.]+$/,"").replace(/[^\w-]/g,"").toLowerCase().slice(0,16)||"archivo";
+      let tag=base, n=2; while(arr.some(x=>x.tag===tag)) tag=base+n++;
+      arr.push({ tag, media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, descripcion:"" });
+      if(syncCfg) syncCfg();
+      toast("Archivo agregado ✓"); if(onDone) onDone();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
 }
 
 // ── Config de envío del producto físico (DEFINICION §6-SEPTIES) ────
 function renderEnvio(){
   const box=$("envioCard"); if(!box) return;
   if((st.prod.tipo||"digital")!=="fisico"){ box.innerHTML=""; return; }
-  const cfg=st.prod.config||(st.prod.config={});
-  const e=cfg.envio||(cfg.envio={ adelanto_modo:"fijo", adelanto_valor:20, gratis:true, costo_lima:"", costo_provincia:"", lima_contraentrega:true, agencias:["shalom","olva"], cobro_saldo:"bot" });
-  const ag=(a)=>(e.agencias||[]).includes(a);
+  const c=st.prod.config||(st.prod.config={});
+  const e=normalizeEnvio(c);
+  const syncCfg=()=>{ c.contexto_producto=compileProductoIA(c,"fisico")||undefined; const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
+  const act=e.agencia_activa; const a=e.agencias[act];
+  const cf=e.confirmaciones;
+  const moneySym=(m)=>m==="USD"?"$":"S/";
   box.innerHTML=`
     <div class="card" style="margin-top:16px">
-      <h4>${icon("truck")}Envío y cobro</h4>
-      <div style="font-size:12px;color:var(--faint)">Cómo se cobra y despacha este producto. El flujo de venta física lee esta configuración.</div>
-      <div class="row" style="margin-top:4px">
-        <div><label>Adelanto (provincia)</label>
-          <select class="sel" id="eModo" style="width:100%">
-            <option value="fijo" ${e.adelanto_modo!=="porcentaje"?"selected":""}>Monto fijo (S/)</option>
-            <option value="porcentaje" ${e.adelanto_modo==="porcentaje"?"selected":""}>% del precio</option>
-          </select></div>
-        <div><label>${e.adelanto_modo==="porcentaje"?"Porcentaje (%)":"Monto (S/)"}</label>
-          <input class="in" id="eValor" type="number" step="0.1" value="${esc(e.adelanto_valor??"")}"/></div>
+      <h4>${icon("truck")}Precios de envío</h4>
+      <div style="font-size:12px;color:var(--faint)">Configura el envío y el cobro para Lima y provincias. Elige la agencia y su modalidad.</div>
+      <div style="display:flex;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:4px;margin-top:14px" id="agTabs">
+        ${AGENCIAS.map(([k,l])=>`<button class="agtab" data-a="${k}" style="flex:1;height:38px;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;background:${act===k?'var(--surface)':'transparent'};color:${act===k?'var(--text)':'var(--muted)'};box-shadow:${act===k?'0 1px 4px rgba(0,0,0,.25)':'none'}">${l}</button>`).join("")}
       </div>
-      <label class="chk"><input type="checkbox" id="eGratis" ${e.gratis!==false?"checked":""}/> Envío gratis (lo asume el negocio)</label>
-      <div class="row" id="eCostos" style="display:${e.gratis!==false?"none":"flex"}">
-        <div><label>Costo envío Lima (S/)</label><input class="in" id="eCLima" type="number" step="0.1" value="${esc(e.costo_lima??"")}"/></div>
-        <div><label>Costo envío provincia (S/)</label><input class="in" id="eCProv" type="number" step="0.1" value="${esc(e.costo_provincia??"")}"/></div>
+
+      <div style="margin-top:16px;display:flex;flex-direction:column;gap:11px" id="agBody">
+        ${MODOS_ENVIO.map(([k,l])=>`
+          <label class="radio" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
+            <input type="radio" name="eModo" value="${k}" ${a.modo===k?"checked":""} style="accent-color:var(--green);width:17px;height:17px"/> ${l}
+          </label>`).join("")}
       </div>
-      <label class="chk"><input type="checkbox" id="eCOD" ${e.lima_contraentrega!==false?"checked":""}/> Lima: 100% contraentrega (sin adelanto)</label>
-      <label>Agencias habilitadas (provincia)</label>
-      <div class="row" style="justify-content:flex-start;gap:18px">
-        <label class="chk" style="margin-top:0;flex:none"><input type="checkbox" id="eShalom" ${ag("shalom")?"checked":""}/> Shalom</label>
-        <label class="chk" style="margin-top:0;flex:none"><input type="checkbox" id="eOlva" ${ag("olva")?"checked":""}/> Olva Courier</label>
+
+      ${a.modo==="cliente"?`
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px">Precio aproximado del envío (para informar al cliente)</div>
+        <div class="row" style="align-items:center;gap:10px">
+          <span style="flex:0 0 auto;color:var(--muted);font-size:13px">Entre ${moneySym(a.adelanto_moneda)}</span>
+          <input class="in" id="ePmin" type="number" step="0.1" style="flex:0 0 110px" value="${esc(a.precio_min??"")}" placeholder="10"/>
+          <span style="flex:0 0 auto;color:var(--muted);font-size:13px">a ${moneySym(a.adelanto_moneda)}</span>
+          <input class="in" id="ePmax" type="number" step="0.1" style="flex:0 0 110px" value="${esc(a.precio_max??"")}" placeholder="20"/>
+          <span style="flex:0 0 auto;color:var(--muted);font-size:13px">soles</span>
+        </div>
+      </div>`:""}
+      ${a.modo==="gratis_desde"?`
+      <div class="row" style="margin-top:14px;align-items:center;gap:10px">
+        <span style="flex:0 0 auto;color:var(--muted);font-size:13px">Envío gratis desde</span>
+        <input class="in" id="eDesde" type="number" step="0.1" style="flex:0 0 130px" value="${esc(a.gratis_desde??"")}" placeholder="Ej. 150"/>
+        <span style="flex:0 0 auto;color:var(--muted);font-size:13px">de pedido</span>
+      </div>`:""}
+      ${a.modo==="fijo"?`
+      <div class="row" style="margin-top:14px;align-items:center;gap:10px">
+        <span style="flex:0 0 auto;color:var(--muted);font-size:13px">Cobro fijo de envío</span>
+        <input class="in" id="eFijo" type="number" step="0.1" style="flex:0 0 130px" value="${esc(a.monto_fijo??"")}" placeholder="Ej. 15"/>
+      </div>`:""}
+
+      <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">
+        <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span>
+          <div style="font-weight:700;font-size:14px">¿Cuánto cobras de adelanto para envíos por ${AGENCIAS.find(([k])=>k===act)[1]}?</div></div>
+        <div class="row" style="margin-top:10px;align-items:center;gap:8px">
+          <input class="in" id="eAdel" type="number" step="0.1" style="flex:0 0 150px" value="${esc(a.adelanto_valor??"")}" placeholder="20"/>
+          <select class="sel" id="eMon" style="flex:0 0 90px"><option value="PEN" ${a.adelanto_moneda!=="USD"?"selected":""}>S/</option><option value="USD" ${a.adelanto_moneda==="USD"?"selected":""}>$</option></select>
+          <span style="flex:1;color:var(--faint);font-size:11.5px">Variable: <b style="color:#a855f7">{{adelanto_${act}}}</b></span>
+        </div>
+        <label class="chk" style="margin-top:14px"><span class="sw ${a.adelanto_cond?'on':''}" id="eCond"></span> <span style="font-weight:600">Adelanto condicional</span></label>
+        ${a.adelanto_cond?`
+        <div style="font-size:11.5px;color:var(--faint);margin:4px 0 8px">Distintos montos de adelanto según el valor del pedido.</div>
+        <div id="rangos"></div>
+        <button class="btn" id="rAdd" style="margin-top:6px;height:34px">+ Agregar rango</button>`:""}
       </div>
-      <label>Cobro del saldo (al llegar a la agencia)</label>
-      <select class="sel" id="eCobro" style="min-width:280px">
-        <option value="bot" ${e.cobro_saldo!=="humano"?"selected":""}>Bot — escribe, valida el pago y suelta la clave</option>
-        <option value="humano" ${e.cobro_saldo==="humano"?"selected":""}>Humano — el operador cierra a mano</option>
-      </select>
+    </div>
+
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px">${icon("check")} ¿Qué necesitas para que un pedido se confirme?</h4>
+      <div style="font-size:12px;color:var(--faint)">Requisitos que la IA verifica antes de confirmar un pedido de este producto.</div>
+      <div class="row" style="align-items:flex-start;gap:22px;margin-top:12px">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:12.5px;color:var(--muted);margin-bottom:8px">Confirmaciones contraentrega</div>
+          ${CONFIRM_COD.map(([k,l])=>`<label class="chk" style="margin-top:0;margin-bottom:10px;justify-content:space-between"><span style="font-weight:600">${l}</span><span class="sw cf ${cf[k]?'on':''}" data-cf="${k}"></span></label>`).join("")}
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:12.5px;color:var(--muted);margin-bottom:8px">Confirmaciones por agencia</div>
+          ${CONFIRM_AG.map(([k,l])=>`<label class="chk" style="margin-top:0;margin-bottom:10px;justify-content:space-between"><span style="font-weight:600">${l}</span><span class="sw cf ${cf[k]?'on':''}" data-cf="${k}"></span></label>`).join("")}
+        </div>
+      </div>
     </div>`;
-  const upd=()=>{
-    e.adelanto_modo=$("eModo").value; e.adelanto_valor=parseFloat($("eValor").value)||0;
-    e.gratis=$("eGratis").checked; e.costo_lima=parseFloat($("eCLima")?.value)||0; e.costo_provincia=parseFloat($("eCProv")?.value)||0;
-    e.lima_contraentrega=$("eCOD").checked;
-    e.agencias=[["shalom","eShalom"],["olva","eOlva"]].filter(([,id])=>$(id).checked).map(([a])=>a);
-    e.cobro_saldo=$("eCobro").value;
+  // Tabs de agencia
+  box.querySelectorAll(".agtab").forEach(t=> t.onclick=()=>{ e.agencia_activa=t.dataset.a; renderEnvio(); });
+  // Modalidad (radios)
+  box.querySelectorAll('input[name="eModo"]').forEach(r=> r.onchange=()=>{ a.modo=r.value; syncCfg(); renderEnvio(); });
+  const bind=(id,fn)=>{ const n=$(id); if(n) n.oninput=()=>{ fn(n.value); syncCfg(); }; };
+  bind("ePmin",v=>a.precio_min=v); bind("ePmax",v=>a.precio_max=v);
+  bind("eDesde",v=>a.gratis_desde=v); bind("eFijo",v=>a.monto_fijo=v);
+  bind("eAdel",v=>a.adelanto_valor=v);
+  const mon=$("eMon"); if(mon) mon.onchange=()=>{ a.adelanto_moneda=mon.value; syncCfg(); renderEnvio(); };
+  const cond=$("eCond"); if(cond) cond.onclick=()=>{ a.adelanto_cond=!a.adelanto_cond; if(a.adelanto_cond&&!a.rangos.length){ a.rangos.push({desde:"0",hasta:"100",valor:"",moneda:a.adelanto_moneda},{desde:"100",hasta:"",valor:"0",moneda:a.adelanto_moneda}); } syncCfg(); renderEnvio(); };
+  // Rangos de adelanto condicional
+  const paintR=()=>{
+    const rb=$("rangos"); if(!rb) return; rb.innerHTML="";
+    a.rangos.forEach((r,i)=>{
+      const last=i===a.rangos.length-1;
+      const el=document.createElement("div"); el.className="row"; el.style.cssText="align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap";
+      el.innerHTML=`<span style="flex:0 0 auto;color:var(--muted);font-size:12px">Si pedido desde ${moneySym(a.adelanto_moneda)}</span>
+        <input class="in rd" type="number" style="flex:0 0 90px" value="${esc(r.desde??"")}"/>
+        <span style="flex:0 0 auto;color:var(--muted);font-size:12px">${last?"en adelante":"hasta "+moneySym(a.adelanto_moneda)}</span>
+        ${last?"":`<input class="in rh" type="number" style="flex:0 0 90px" value="${esc(r.hasta??"")}"/>`}
+        <span style="flex:0 0 auto;color:var(--muted);font-size:12px">→ Adelanto:</span>
+        <input class="in rv" type="number" style="flex:0 0 100px" value="${esc(r.valor??"")}"/>
+        <button class="iconbtn rdel" style="flex:0 0 auto;color:var(--red)">${icon("trash")}</button>`;
+      el.querySelector(".rd").oninput=(ev)=>{ r.desde=ev.target.value; syncCfg(); };
+      const rh=el.querySelector(".rh"); if(rh) rh.oninput=(ev)=>{ r.hasta=ev.target.value; syncCfg(); };
+      el.querySelector(".rv").oninput=(ev)=>{ r.valor=ev.target.value; syncCfg(); };
+      el.querySelector(".rdel").onclick=()=>{ a.rangos.splice(i,1); syncCfg(); paintR(); };
+      rb.appendChild(el);
+    });
   };
-  ["eModo","eValor","eGratis","eCLima","eCProv","eCOD","eShalom","eOlva","eCobro"].forEach(id=>{ const n=$(id); if(n) n.onchange=()=>{ upd(); if(id==="eGratis"||id==="eModo") renderEnvio(); }; });
+  paintR();
+  const rAdd=$("rAdd"); if(rAdd) rAdd.onclick=()=>{ a.rangos.push({desde:"",hasta:"",valor:"",moneda:a.adelanto_moneda}); paintR(); };
+  // Confirmaciones (toggles)
+  box.querySelectorAll(".sw.cf").forEach(sw=> sw.onclick=()=>{ const k=sw.dataset.cf; cf[k]=!cf[k]; sw.classList.toggle("on",cf[k]); syncCfg(); });
 }
 function renderVersions(){
   const box=$("versions"); box.innerHTML="";
@@ -667,6 +948,9 @@ async function saveTrigger(tipo, key, config){
 
 async function saveProduct(){
   if(!st.prod){ return; }
+  // Recompila el conocimiento del producto a config.contexto_producto (lo que
+  // el motor inyecta) por si se guarda sin haber tocado el formulario.
+  if(st.prod.config){ const cx=compileProductoIA(st.prod.config, st.prod.tipo||"digital"); if(cx) st.prod.config.contexto_producto=cx; else delete st.prod.config.contexto_producto; }
   const base={ nombre:st.prod.nombre, con_bifurcacion:st.prod.con_bifurcacion, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
