@@ -168,15 +168,22 @@ html[data-ia="on"] .nodo-nebula{opacity:1}
 /* En IA, la aurora azul se atenúa para que domine la galaxia violeta. */
 html[data-ia="on"] .nfx-aurora{opacity:.12;transition:opacity .8s ease}
 
-/* ── Modo OSCURO: galaxia espiral PEQUEÑA, asomando en la esquina ──
+/* Con el fondo apagado (Off) no hay efectos → tampoco galaxia/nebulosa. */
+html[data-nfx="off"] .nodo-nebula{display:none}
+
+/* ── Modo OSCURO: galaxia espiral pequeña, flotando arriba a la derecha ──
    El disco usa una IMAGEN de galaxia generada por canvas (shell.js la pinta 1
-   vez como background-image). Solo se compone/rota/inclina en GPU → barata. */
+   vez como background-image). Una máscara radial difumina el borde para que se
+   funda en el espacio (no se vea "recortada"). Solo rota/inclina en GPU. */
 .gx-disk{position:absolute;pointer-events:none;transform-origin:center;
-  width:40vw;height:40vw;max-width:540px;max-height:540px;right:-8vw;top:-10vw;
+  width:34vw;height:34vw;max-width:460px;max-height:460px;right:4vw;top:6vh;
   background-size:contain;background-repeat:no-repeat;background-position:center;
-  transform:perspective(1000px) rotateX(60deg) rotate(0deg);
-  animation:gxSpin 120s linear infinite}
-@keyframes gxSpin{to{transform:perspective(1000px) rotateX(60deg) rotate(360deg)}}
+  -webkit-mask:radial-gradient(circle at 50% 50%, #000 48%, transparent 74%);
+          mask:radial-gradient(circle at 50% 50%, #000 48%, transparent 74%);
+  filter:drop-shadow(0 0 34px rgba(158,100,246,.32));
+  transform:perspective(1000px) rotateX(58deg) rotate(0deg);
+  animation:gxSpin 130s linear infinite}
+@keyframes gxSpin{to{transform:perspective(1000px) rotateX(58deg) rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.gx-disk{animation:none}}
 
 /* ── Modo CLARO: sin disco espiral; solo recolorea las "manchas" a violeta ── */
