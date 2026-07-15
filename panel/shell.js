@@ -67,7 +67,7 @@ const P = {
   eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
   archive:'<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
   ban:'<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
-  trash:'<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>',
+  trash:'<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
   x:'<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
   sparkles:'<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>',
   robot:'<rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/>',
@@ -145,19 +145,25 @@ function toggleGroup(key, closed) {
 }
 
 // ── toast global (DS §12: esquina inferior derecha, nivel 2) ────────
+const TOAST_OK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const TOAST_ERR = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 export function toast(msg, err) {
   let t = document.getElementById("nodo-toast");
   if (!t) {
     t = document.createElement("div"); t.id = "nodo-toast";
-    t.style.cssText = "position:fixed;bottom:24px;right:24px;display:flex;align-items:center;gap:9px;padding:10px 16px;border-radius:12px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;border:1px solid var(--border-strong,#334);background:var(--surface,#151E32);color:var(--text,#F1F5F9);box-shadow:var(--shadow-2,0 8px 24px rgba(0,0,0,.35));max-width:min(420px,calc(100vw - 48px))";
-    t.innerHTML = '<span id="nodo-toast-dot" style="width:8px;height:8px;border-radius:50%;flex:none"></span><span id="nodo-toast-msg"></span>';
+    t.style.cssText = "position:fixed;bottom:24px;right:24px;display:flex;align-items:center;gap:11px;padding:12px 17px 12px 12px;border-radius:14px;font-size:13.5px;font-weight:600;letter-spacing:-.1px;opacity:0;transform:translateY(14px) scale(.94);transition:opacity .22s ease,transform .34s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:99999;border:1px solid var(--glass-brd,rgba(255,255,255,.08));background:var(--surface,#151E32);color:var(--text,#F1F5F9);box-shadow:0 14px 38px rgba(0,0,0,.34),0 2px 8px rgba(0,0,0,.2);max-width:min(440px,calc(100vw - 48px))";
+    t.innerHTML = '<span id="nodo-toast-ic" style="width:27px;height:27px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center"></span><span id="nodo-toast-msg" style="line-height:1.35"></span>';
     document.body.appendChild(t);
   }
+  const ic = t.querySelector("#nodo-toast-ic");
+  ic.innerHTML = err ? TOAST_ERR : TOAST_OK;
+  ic.style.background = err ? "rgba(226,86,74,.16)" : "rgba(34,192,121,.16)";
+  ic.style.color = err ? "var(--red,#e2564a)" : "var(--green,#22c079)";
+  ic.style.boxShadow = `0 0 0 1px ${err ? "rgba(226,86,74,.28)" : "rgba(34,192,121,.28)"} inset`;
   t.querySelector("#nodo-toast-msg").textContent = msg;
-  t.querySelector("#nodo-toast-dot").style.background = err ? "var(--red,#EF4444)" : "var(--green,#10B981)";
-  t.style.opacity = "1"; t.style.transform = "translateY(0)";
+  t.style.opacity = "1"; t.style.transform = "translateY(0) scale(1)";
   clearTimeout(t._h);
-  t._h = setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(8px)"; }, 4000);
+  t._h = setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(14px) scale(.94)"; }, 3800);
 }
 
 // ── tema ────────────────────────────────────────────────────────────
