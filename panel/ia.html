@@ -722,18 +722,36 @@ function renderValidador(b){
 // productos físicos). Se guarda en channels.pedidos_config (jsonb).
 function defaultPedidos(){
   return {
+    embudos:{ mensajeria:true, confirmaciones:false, logistica:false },
     conf:{ msg_cod:"", fecha:false, msg_ag_pago:"", msg_ag:"", instr_cod:"", instr_ag:"" },
     log:{ modo:"manual", instr_cod:"", instr_ag:"" },
   };
 }
+const EMBUDOS=[
+  ["mensajeria","IA de Mensajería","Respuestas automáticas para leads en el embudo de ventas (mensajes entrantes)","bot"],
+  ["confirmaciones","IA de Confirmaciones","Respuestas automáticas para pedidos entrantes por confirmar","check"],
+  ["logistica","IA de Logística","Respuestas automáticas para el embudo de logística (por registrar, por enviar, enviado)","truck"],
+];
 function renderPedidos(b){
   const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
-  const p = { conf:{ ...defaultPedidos().conf, ...(src.conf||{}) }, log:{ ...defaultPedidos().log, ...(src.log||{}) } };
+  const p = { embudos:{ ...defaultPedidos().embudos, ...(src.embudos||{}) }, conf:{ ...defaultPedidos().conf, ...(src.conf||{}) }, log:{ ...defaultPedidos().log, ...(src.log||{}) } };
   st.pedidos = p;
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
   b.innerHTML=`
     <h2>Pedidos físicos</h2>
     <p class="sub">Cómo la IA <b>confirma</b> pedidos y hace <b>seguimiento logístico</b> (envíos y saldos). Aplica a todos los productos físicos; los requisitos por producto se ajustan en cada ficha de Productos.</p>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.robot}</span><span class="nm">Control de IA por embudo</span></div>
+      <div class="desc">Activa o desactiva la IA de forma independiente para cada embudo. El switch general de <b>Chats</b> desactiva todas las IAs.</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        ${EMBUDOS.map(([k,t,d,ic])=>`<div class="emrow" data-em="${k}" style="display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:12px;padding:13px 14px;cursor:pointer">
+          <span style="display:inline-flex;color:var(--muted);flex:none">${IC[ic]}</span>
+          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${t}</div><div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45">${d}</div></div>
+          <span class="sw ${p.embudos[k]?'on':''}" data-emsw="${k}" style="flex:none"></span>
+        </div>`).join("")}
+      </div>
+    </div>
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Personalización de mensajes</span></div>
@@ -743,7 +761,7 @@ function renderPedidos(b){
           <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones contraentrega</div>
           <label style="margin-top:0">Mensaje al confirmar un pedido (opcional)</label>
           ${ta(p.conf.msg_cod,"¡Gracias por confiar en nosotros! 🙌\n\n✅ Pedido confirmado\n📦 Entrega: dentro de las 24 h.",5).replace('class="in"','class="in" id="pcMsgCod"')}
-          <label class="chk" style="margin-top:12px;justify-content:space-between;border:1px solid var(--border);border-radius:11px;padding:10px 12px"><span style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;color:var(--muted)">${IC.sliders}</span> <span style="font-weight:600">Enviar fecha de envío al confirmar el pedido</span></span><span class="sw ${p.conf.fecha?'on':''}" id="pcFecha"></span></label>
+          <div id="pcFechaRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer"><span style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;color:var(--muted)">${IC.sliders}</span><span style="font-weight:600;font-size:13px">Enviar fecha de envío al confirmar el pedido</span></span><span class="sw ${p.conf.fecha?'on':''}" id="pcFecha" style="flex:none"></span></div>
         </div>
         <div class="f">
           <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones por agencia</div>
@@ -797,7 +815,8 @@ function renderPedidos(b){
     </div>
 
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
-  $("pcFecha").onclick=()=>{ p.conf.fecha=!p.conf.fecha; $("pcFecha").classList.toggle("on",p.conf.fecha); };
+  b.querySelectorAll(".emrow").forEach(row=> row.onclick=()=>{ const k=row.dataset.em; p.embudos[k]=!p.embudos[k]; row.querySelector('[data-emsw]').classList.toggle("on",p.embudos[k]); });
+  $("pcFechaRow").onclick=()=>{ p.conf.fecha=!p.conf.fecha; $("pcFecha").classList.toggle("on",p.conf.fecha); };
   b.querySelectorAll('input[name="logModo"]').forEach(r=> r.onchange=()=>{ p.log.modo=r.value; renderPedidos(b); });
   $("pedSave").onclick=async(e)=>{
     p.conf.msg_cod=$("pcMsgCod").value; p.conf.msg_ag_pago=$("pcMsgAgPago").value; p.conf.msg_ag=$("pcMsgAg").value;

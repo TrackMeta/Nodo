@@ -451,13 +451,36 @@ function renderQrList(q){
   let body="";
   Object.keys(folders).sort((a,b)=>a==="__none"?1:(b==="__none"?-1:a.localeCompare(b))).forEach(f=>{
     body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;
-    folders[f].forEach(r=>{ body+=`<div class="qritem" data-id="${r.id}"><div class="qt">${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`; });
+    folders[f].forEach(r=>{
+      const col=r.color&&/^#/.test(r.color)?r.color:null;
+      const nM=Array.isArray(r.media)?r.media.length:0;
+      body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">📎 ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
+    });
   });
   box.innerHTML=body;
-  box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{
+  box.querySelectorAll(".qritem").forEach(it=> it.onclick=async()=>{
     const r=state.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return;
-    insertAtCursor(applyVars(r.cuerpo)); $("qrPop").classList.add("hidden");
+    $("qrPop").classList.add("hidden");
+    if(r.cuerpo) insertAtCursor(applyVars(r.cuerpo));
+    const media=Array.isArray(r.media)?r.media:[];
+    if(media.length){ toast("Enviando multimedia…"); for(const m of media){ await sendStoredMedia(m); } }
   });
+}
+// Envía una media ya subida (guardada en una respuesta rápida) reusando el
+// mismo camino que sendAttachment (whatsapp-send / webchat / insert de prueba).
+async function sendStoredMedia(m){
+  if(!state.contactId||!m||!m.media_url) return;
+  const media={ kind:m.media_kind, url:m.media_url, mime:m.mime||"", filename:m.filename||"" };
+  try{
+    if(state.isTest){
+      if(state.testAs==="bot"){
+        await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:m.caption||"", mime:media.mime, filename:media.filename }, status:"sent" });
+      } else { await callFn("webchat", { channel_id:state.channelId, media }); }
+    } else {
+      const r=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, media });
+      const o=await r.json().catch(()=>({})); if(!r.ok) toast(o.detalle?.message||o.detalle||o.error||"Error al enviar media",true); else setBotPill(false);
+    }
+  }catch{ toast("Error al enviar multimedia",true); }
 }
 const EMOJI_CATS=[
   { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },

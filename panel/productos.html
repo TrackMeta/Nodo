@@ -218,6 +218,16 @@ function compileFaq(items){ return (items||[]).filter(x=>x&&(x.q||x.a)).map(x=>`
 // ya inyecta en el prompt. Así casi todo el rediseño es solo frontend.
 const ESTILOS_VENTA={ consultivo:"Consultivo (entiende antes de ofrecer)", directo:"Directo (va al grano y cierra)", educativo:"Educativo (enseña y genera confianza)", urgencia:"Urgencia / Escasez (motiva a decidir ya)", objeciones:"Basado en objeciones (rebate dudas)" };
 const AGENCIAS=[["shalom","Shalom"],["olva","Olva"]];
+// Monedas frecuentes en LatAm/US/Europa (código ISO + símbolo + país).
+const CURRENCIES=[
+  ["PEN","S/","Perú — Sol"],["USD","$","EE. UU. — Dólar"],["MXN","$","México — Peso"],
+  ["COP","$","Colombia — Peso"],["ARS","$","Argentina — Peso"],["CLP","$","Chile — Peso"],
+  ["BOB","Bs","Bolivia — Boliviano"],["EUR","€","Europa — Euro"],["BRL","R$","Brasil — Real"],
+  ["UYU","$U","Uruguay — Peso"],["PYG","₲","Paraguay — Guaraní"],["VES","Bs","Venezuela — Bolívar"],
+  ["GTQ","Q","Guatemala — Quetzal"],["CRC","₡","Costa Rica — Colón"],["DOP","RD$","Rep. Dominicana — Peso"],
+  ["HNL","L","Honduras — Lempira"],["NIO","C$","Nicaragua — Córdoba"],["PAB","B/.","Panamá — Balboa"],
+  ["GBP","£","Reino Unido — Libra"],["CAD","$","Canadá — Dólar"],
+];
 const MODOS_ENVIO=[
   ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
   ["gratis","Envío gratis en todos los envíos"],
@@ -318,11 +328,12 @@ function renderDatos(){
       </div>
       <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con versiones (Básica / Premium)</label>
     </div>
-    <div class="card">
-      <h4 style="display:flex;align-items:center;gap:7px">${icon("dollar")} Precio y entrega</h4>
+    <div class="card" style="border-color:rgba(34,192,121,.4);box-shadow:0 0 0 1px rgba(34,192,121,.12) inset">
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio y entrega</h4>
       <div class="row" style="margin-top:10px">
         <div><label style="margin-top:0">Precio base</label><input class="in" id="pPrecio" value="${esc(c.precio??"")}" placeholder="Ej. 120"/></div>
-        <div><label style="margin-top:0">Moneda</label><input class="in" id="pMoneda" value="${esc(c.moneda||"PEN")}" placeholder="PEN"/></div>
+        <div><label style="margin-top:0">Moneda</label>
+          <select class="sel" id="pMoneda" style="width:100%">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${(c.moneda||"PEN")===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select></div>
       </div>
       ${tipo==="digital"?`
       <label>Link de entrega (digital)</label>

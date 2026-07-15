@@ -69,6 +69,28 @@ import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.j
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+// Paleta para identificar cada respuesta con un color (como Etiquetas).
+const PALETTE=["#2b7fff","#22c079","#f0a92b","#e2564a","#a855f7","#18b7be","#e264a8","#8a97a8","#ef4444","#f97316","#84cc16","#06b6d4"];
+function qrColor(c){ return c && /^#/.test(c) ? c : "#2b7fff"; }
+// Sube un archivo y lo agrega a st.qr.media (multimedia que se envía con la
+// respuesta). Reusa la Edge Function media-upload.
+function pickQrMedia(kind, onDone){
+  const accept={image:"image/*",video:"video/*",audio:"audio/*",document:"*/*"}[kind]||"*/*";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      st.qr.media=st.qr.media||[];
+      st.qr.media.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
+      toast("Archivo agregado ✓"); if(onDone) onDone();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -118,10 +140,12 @@ function renderCards(){
   box.innerHTML="";
   list.forEach(q=>{
     const el=document.createElement("div"); el.className="nodo-card qcard";
+    if(q.color){ el.style.borderLeft=`4px solid ${qrColor(q.color)}`; }
+    const nMedia=Array.isArray(q.media)?q.media.length:0;
     el.innerHTML=`
-      <div class="c-top"><span class="c-tt">${esc(q.titulo)}</span>${q.atajo?`<span class="atajo">${esc(q.atajo)}</span>`:''}</div>
+      <div class="c-top">${q.color?`<span style="width:11px;height:11px;border-radius:50%;background:${qrColor(q.color)};flex:none"></span>`:''}<span class="c-tt">${esc(q.titulo)}</span>${q.atajo?`<span class="atajo">${esc(q.atajo)}</span>`:''}</div>
       <div class="qbody">${esc(q.cuerpo||"(vacío)")}</div>
-      ${q.folder?`<div style="margin-top:10px;font-size:11.5px;color:var(--faint)">${icon("folder")} ${esc(q.folder)}</div>`:''}`;
+      <div style="margin-top:10px;display:flex;gap:12px;font-size:11.5px;color:var(--faint)">${q.folder?`<span>${icon("folder")} ${esc(q.folder)}</span>`:''}${nMedia?`<span>${icon("image")} ${nMedia}</span>`:''}</div>`;
     el.onclick=()=>openQR(q.id); box.appendChild(el);
   });
 }
@@ -143,16 +167,59 @@ function renderDetail(){
         <div class="f"><label>Atajo (opcional)</label><input class="in" id="q_atajo" value="${esc(q.atajo||'')}" placeholder="/precio"/></div>
         <div class="f"><label>Carpeta</label><select class="sel" id="q_folder"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${q.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
       </div>
+      <label>Color identificador</label>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" id="q_palette"></div>
+      <div class="hint">Para reconocer la respuesta de un vistazo al buscarla en la Bandeja y en Probar flujos.</div>
       <label>Mensaje</label>
       <textarea class="ta" id="q_cuerpo" placeholder="Escribe el mensaje que se enviará al cliente…">${esc(q.cuerpo)}</textarea>
       <div class="hint">Puedes usar variables del contacto, p. ej. <b>{{nombre}}</b>. Se reemplazan al enviar.</div>
+      <label>Multimedia (opcional)</label>
+      <div class="hint" style="margin-top:0;margin-bottom:8px">Imágenes, videos o archivos que se envían junto con el mensaje.</div>
+      <div id="q_media"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn qmAdd" data-k="image" style="height:34px">+ Imagen</button>
+        <button class="btn qmAdd" data-k="video" style="height:34px">+ Video</button>
+        <button class="btn qmAdd" data-k="audio" style="height:34px">+ Audio</button>
+        <button class="btn qmAdd" data-k="document" style="height:34px">+ Archivo</button>
+      </div>
     </div>`;
+  // Paleta de color
+  const cur=q.color||null;
+  const pal=$("q_palette");
+  pal.innerHTML=PALETTE.map(c=>`<span class="qsw" data-c="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${cur===c?'var(--text)':'transparent'};box-shadow:0 0 0 1px var(--border)"></span>`).join("")
+    +`<label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer"><span style="width:26px;height:26px;border-radius:50%;background:${cur&&!PALETTE.includes(cur)?cur:'var(--surface-2)'};border:2px solid ${cur&&!PALETTE.includes(cur)?'var(--text)':'var(--border)'};display:inline-flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px">🎨</span><input type="color" id="q_colorCustom" value="${qrColor(cur)}" style="width:0;height:0;opacity:0;position:absolute"/></label>`
+    +`<button class="btn qClearC" style="height:30px;padding:0 10px;font-size:12px">Sin color</button>`;
+  // Preserva ediciones del formulario al re-renderizar por cambio de color.
+  const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value; st.qr.folder=$("q_folder").value||null; st.qr.cuerpo=$("q_cuerpo").value; };
+  const setColor=(c)=>{ harvest(); q.color=c||null; renderDetail(); };
+  pal.querySelectorAll(".qsw").forEach(s=> s.onclick=()=>setColor(s.dataset.c));
+  $("q_colorCustom").oninput=(e)=>{ q.color=e.target.value; };
+  $("q_colorCustom").onchange=(e)=>setColor(e.target.value);
+  pal.querySelector(".qClearC").onclick=()=>setColor(null);
+  // Multimedia
+  const paintMedia=()=>{
+    const box=$("q_media"); box.innerHTML="";
+    if(!(st.qr.media||[]).length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin archivos.</div>`; return; }
+    st.qr.media.forEach((m,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:10px;margin-bottom:8px;display:flex;gap:11px;align-items:center";
+      let prev="";
+      if(m.media_kind==="image") prev=`<img src="${esc(m.media_url)}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none"/>`;
+      else if(m.media_kind==="video") prev=`<video src="${esc(m.media_url)}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none"></video>`;
+      else prev=`<div style="width:52px;height:52px;border-radius:8px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">${icon("file")}</div>`;
+      el.innerHTML=`${prev}<div style="flex:1;min-width:0;font-size:12.5px">${esc(m.filename||m.media_kind)}</div><button class="btn danger qmDel" style="flex:0 0 auto;width:38px;padding:0">${icon("trash")}</button>`;
+      el.querySelector(".qmDel").onclick=()=>{ st.qr.media.splice(i,1); paintMedia(); };
+      box.appendChild(el);
+    });
+  };
+  paintMedia();
+  document.querySelectorAll(".qmAdd").forEach(btn=> btn.onclick=()=>pickQrMedia(btn.dataset.k, paintMedia));
 }
 async function saveQR(){
   if(!st.qr) return;
-  const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:$("q_folder").value||null, cuerpo:$("q_cuerpo").value };
+  const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:$("q_folder").value||null, cuerpo:$("q_cuerpo").value, color:st.qr.color||null, media:(st.qr.media&&st.qr.media.length)?st.qr.media:null };
   if(!patch.titulo){ toast("El título no puede estar vacío",true); return; }
-  const { error }=await supa.from("quick_replies").update(patch).eq("id",st.qr.id);
+  let { error }=await supa.from("quick_replies").update(patch).eq("id",st.qr.id);
+  if(error && /color|media|column/.test(error.message)){ const { color, media, ...base }=patch; ({ error }=await supa.from("quick_replies").update(base).eq("id",st.qr.id)); if(!error) toast("Guardado (aplica la migración 0028 para color/multimedia)"); }
   if(error){ toast(error.message,true); return; }
   toast("Guardado ✓"); await load(); await openQR(st.qr.id);
 }

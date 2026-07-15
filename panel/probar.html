@@ -400,7 +400,11 @@ function renderQrList(q){
   let body="";
   Object.keys(folders).sort((a,b)=>a==="__none"?1:(b==="__none"?-1:a.localeCompare(b))).forEach(f=>{
     body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;
-    folders[f].forEach(r=>{ body+=`<div class="qritem" data-id="${r.id}"><div class="qt">${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`; });
+    folders[f].forEach(r=>{
+      const col=r.color&&/^#/.test(r.color)?r.color:null;
+      const nM=Array.isArray(r.media)?r.media.length:0;
+      body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">📎 ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
+    });
   });
   box.innerHTML=body;
   box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ const r=st.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return; insertAtCursor(applyVars(r.cuerpo)); $("qrPop").classList.add("hidden"); });

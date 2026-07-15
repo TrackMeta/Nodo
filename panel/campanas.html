@@ -77,23 +77,32 @@
 </div>
 
 <div class="modal" id="modal"><div class="mbox">
-  <h3 id="mTitle">Nueva campaña</h3><p class="ms">Se envía con una plantilla aprobada a los contactos del segmento.</p>
-  <label>Nombre</label><input class="in" id="m_nombre" placeholder="Promo de octubre"/>
-  <label>Carpeta</label><select class="sel" id="m_folder"></select>
+  <h3 id="mTitle">Nueva campaña</h3><p class="ms">Envía un mensaje masivo con una <b>plantilla de WhatsApp aprobada</b> a un grupo de contactos. Ideal para promos, recordatorios o novedades.</p>
+  <label>Nombre de la campaña</label><input class="in" id="m_nombre" placeholder="Ej. Promo de octubre"/>
+  <label>Carpeta <span style="color:var(--faint);font-weight:400">(para organizar tus campañas)</span></label><select class="sel" id="m_folder"></select>
   <label>Plantilla a enviar</label><select class="sel" id="m_tpl"></select>
-  <label>Segmento — etiquetas</label><div class="tagpick" id="m_tags"></div>
-  <label>Segmento — etapas del embudo</label><div class="stagepick" id="m_stages"></div>
-  <label>Coincidencia</label>
-  <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera (une los filtros)</option><option value="todas">Todas (intersección)</option></select>
-  <label>Programar envío (opcional)</label><input class="in" id="m_prog" type="datetime-local"/>
-  <div class="warnbox" id="warnBox">Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo con listas con consentimiento.</div>
-  <div class="mfoot"><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar</button></div>
+  <div style="font-size:11.5px;color:var(--faint);margin-top:5px">Solo aparecen tus plantillas aprobadas por Meta. Se gestionan en la sección <b>Plantillas</b>.</div>
+
+  <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:16px">
+    <div style="font-weight:700;font-size:13px">¿A quién se le envía? <span style="color:var(--faint);font-weight:400">(segmento)</span></div>
+    <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Deja todo vacío para enviar a <b>todos</b> los contactos del canal.</div>
+    <label>Con estas etiquetas</label><div class="tagpick" id="m_tags"></div>
+    <label>En estas etapas del embudo</label><div class="stagepick" id="m_stages"></div>
+    <label>Cómo combinar los filtros</label>
+    <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera — contactos que cumplan al menos un filtro</option><option value="todas">Todas — contactos que cumplan todos los filtros</option></select>
+  </div>
+
+  <label style="margin-top:16px">Programar envío <span style="color:var(--faint);font-weight:400">(opcional — vacío = al guardar)</span></label><input class="in" id="m_prog" type="datetime-local"/>
+  <div class="warnbox" id="warnBox">Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo solo con listas que dieron su consentimiento.</div>
+  <div class="mfoot"><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar campaña</button></div>
 </div></div>
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
+// Etapas reales del ciclo de vida del contacto (contacts.stage). Se quitaron
+// los placeholders p1–p4 que no correspondían a ninguna etapa del negocio.
+const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["comprado","Comprado"],["perdido","Perdido"]];
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set() };
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -180,7 +189,7 @@ function openModal(c){
   const seg=c?.segmento||{};
   st.pickTags=new Set(seg.tags||[]); st.pickStages=new Set(seg.stage||[]);
   $("m_tags").innerHTML=st.tags.length?st.tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}" style="${st.pickTags.has(t.nombre)?`background:${h}22;color:${h}`:''}">${esc(t.nombre)}</span>`;}).join(""):'<span style="color:var(--faint);font-size:12px">Sin etiquetas (crea en Etiquetas)</span>';
-  $("m_stages").innerHTML=STAGES.map(s=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}" style="${st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${s}</span>`).join("");
+  $("m_stages").innerHTML=STAGES.map(([s,l])=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}" style="${st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
   $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const n=el.dataset.t; if(st.pickTags.has(n))st.pickTags.delete(n); else st.pickTags.add(n); const t=st.tags.find(x=>x.nombre===n),h=tagHex(t?.color); el.classList.toggle("on"); el.style.cssText=st.pickTags.has(n)?`background:${h}22;color:${h}`:''; });
   $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.s; if(st.pickStages.has(s))st.pickStages.delete(s); else st.pickStages.add(s); el.classList.toggle("on"); el.style.cssText=st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
   $("m_modo").value=seg.modo||"cualquiera";
