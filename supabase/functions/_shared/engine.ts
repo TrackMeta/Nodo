@@ -65,6 +65,13 @@ export async function runEngine(
     await aplicarOptOut(db, channelId, contactId);
   }
 
+  // ¿Pidió hablar con una persona? Se corta acá: el bot no sigue contestando
+  // encima de alguien que ya pidió un humano.
+  if (event.type === "message" && pideHumano(event.text)) {
+    await pasarAHumano(db, channelId, contactId, "Lo pidió explícitamente: “" + String(event.text ?? "").slice(0, 120) + "”");
+    return;
+  }
+
   // Interceptor de SALDO automático (Agente de Logística · modo auto): si entra
   // un comprobante y el contacto tiene un pedido "en_agencia" esperando el
   // saldo, la IA valida el pago y suelta la clave de recojo — o, ante cualquier
@@ -120,6 +127,54 @@ export async function runEngine(
     }
   }
   await execute(db, run);
+}
+
+// ── Pasar la conversación a un humano ──────────────────────────────
+// Dos disparadores distintos, porque son dos cosas distintas:
+//   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
+//     con una persona, no puede quedar sujeto a que un modelo lo interprete.
+//   · Es realmente NECESARIO → eso sí es criterio, y lo decide la IA escribiendo
+//     el marcador [[humano]] (mismo patrón que [[media:tag]], ya probado).
+// A propósito NO entran acá cosas como "¿eres un bot?": eso es curiosidad y la
+// IA la responde. Escalar de más es tan malo como no escalar.
+const PIDE_HUMANO = [
+  "quiero hablar con una persona", "hablar con una persona", "con una persona real",
+  "quiero hablar con un humano", "hablar con un humano", "atencion humana",
+  "quiero hablar con un asesor", "hablar con un asesor",
+  "quiero hablar con alguien", "hablar con alguien",
+  "quiero un asesor", "un operador", "un agente humano", "hay alguien real",
+  "me pueden llamar", "quiero que me llamen",
+  // Formas de USTED: acá mucha gente trata de usted, y "páseme" no calza con
+  // "pásame". Sin esto, el cliente formal se queda sin humano.
+  "pasame con alguien", "paseme con alguien",
+  "pasame con un asesor", "paseme con un asesor",
+  "pasame con una persona", "paseme con una persona",
+  "comuniqueme con alguien", "comunicame con alguien", "me comunica con alguien",
+];
+function pideHumano(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 90) return false;
+  return PIDE_HUMANO.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    if (t === n) return true;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
+
+// Pausa el bot, marca la conversación y avisa. `motivo` explica POR QUÉ, para
+// que quien la tome sepa a qué entra sin leer todo el hilo.
+async function pasarAHumano(db: SupabaseClient, channelId: string, contactId: string, motivo: string) {
+  try {
+    await db.from("contacts").update({ bot_activo: false }).eq("id", contactId);
+    await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", contactId);
+    await logEvent(db, channelId, contactId, "humano", "Transferido a un humano", motivo);
+    const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+    const quien = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
+    await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as any,
+      `🙋 <b>${quien} necesita a una persona</b>\n${motivo}\nEl bot quedó en pausa en esa conversación.`);
+  } catch (e) { console.error("[pasarAHumano]", (e as any)?.message ?? e); }
 }
 
 // ── Opt-out del remarketing ────────────────────────────────────────
@@ -624,6 +679,15 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
 // (config.ia_multimedia, expuesto en ctx._ia_multimedia) intercalado con el
 // texto. Los marcadores desconocidos se descartan (no se filtran al usuario).
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any) {
+  // [[humano]] — la IA pide ayuda cuando juzga que no puede resolverlo sola.
+  // Se saca del texto SIEMPRE (aunque el traspaso falle) para que el marcador
+  // nunca se le filtre al cliente. El mensaje que la IA escribió sí se manda:
+  // avisa que lo pasa con una persona, y después el bot queda en pausa.
+  if (/\[\[\s*humano\s*\]\]/i.test(result)) {
+    result = result.replace(/\[\[\s*humano\s*\]\]/gi, "").trim();
+    await pasarAHumano(db, run.channel_id, run.contact_id,
+      "La IA pidió ayuda: no pudo resolverlo sola.").catch(() => {});
+  }
   const re = /\[\[media:([\w-]+)\]\]/g;
   if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result }, ctx); return; }
   const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
@@ -2048,6 +2112,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // (confirmaciones/logística) según el estado del pedido y el tipo de envío.
     const ped = buildPedidosSystem(info.pedidos, funnel, agencia);
     if (ped) parts.push(ped);
+    // Pedir ayuda. Se le dice con precisión cuándo, porque escalar de más
+    // molesta al operador tanto como no escalar molesta al cliente.
+    parts.push(
+      "## Cuando necesites a una persona\n" +
+      "Si de verdad no puedes resolverlo tú, escribe el marcador `[[humano]]` en tu respuesta " +
+      "(el cliente NO lo ve) y dile con naturalidad que lo pasas con alguien del equipo.\n" +
+      "Úsalo SOLO si: el cliente está molesto o reclamando, hay un problema con un pedido ya hecho, " +
+      "te pide algo que no puedes decidir (un descuento fuera de lo permitido, cambiar o cancelar un pedido), " +
+      "o te preguntó dos veces lo mismo y no lograste ayudarlo.\n" +
+      "NO lo uses por: preguntas normales del producto, precios, formas de pago, tiempos de entrega, " +
+      "ni porque te pregunten si eres un bot — eso respóndelo tú.",
+    );
     if (system) parts.push(system);
     if (parts.length) system = parts.join("\n\n");
   }
