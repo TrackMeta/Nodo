@@ -194,6 +194,7 @@ const IC={
   truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
   doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
 };
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
 const PROVIDERS = [
@@ -722,6 +723,9 @@ function renderValidador(b){
 function defaultPedidos(){
   return {
     embudos:{ mensajeria:true, confirmaciones:false, logistica:false },
+    // El pedido de provincia nace sin pagar (así se puede perseguir al que no
+    // paga y medir la tasa de abandono); esto evita que se acumulen.
+    adelanto:{ nudge:{ activo:false, horas:12, mensaje:"" }, vencimiento:{ activo:false, horas:48 } },
     conf:{ msg_cod:"", fecha:false, msg_ag_pago:"", msg_ag:"", instr_cod:"", instr_ag:"" },
     log:{ modo:"manual", tolerancia:1, instr_cod:"", instr_ag:"" },
   };
@@ -733,7 +737,16 @@ const EMBUDOS=[
 ];
 function renderPedidos(b){
   const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
-  const p = { embudos:{ ...defaultPedidos().embudos, ...(src.embudos||{}) }, conf:{ ...defaultPedidos().conf, ...(src.conf||{}) }, log:{ ...defaultPedidos().log, ...(src.log||{}) } };
+  const D = defaultPedidos();
+  const p = {
+    embudos:{ ...D.embudos, ...(src.embudos||{}) },
+    conf:{ ...D.conf, ...(src.conf||{}) },
+    log:{ ...D.log, ...(src.log||{}) },
+    adelanto:{
+      nudge:{ ...D.adelanto.nudge, ...((src.adelanto||{}).nudge||{}) },
+      vencimiento:{ ...D.adelanto.vencimiento, ...((src.adelanto||{}).vencimiento||{}) },
+    },
+  };
   st.pedidos = p;
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
   b.innerHTML=`
@@ -784,6 +797,36 @@ function renderPedidos(b){
     </div>
 
     <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.clock}</span><span class="nm">Adelantos de provincia</span></div>
+      <div class="desc">El pedido de provincia se crea apenas el cliente te da sus datos, <b>antes de pagar</b>.
+      Esto mantiene limpia sola la columna “Esperando adelanto”: primero se le recuerda, y si igual no paga, el pedido vence.
+      Si apagás las dos, el tablero se comporta como antes y lo manejás a mano (el botón <b>Cancelar pedido</b> del menú ⋮ siempre está).</div>
+
+      <div id="pnRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span style="font-weight:600;font-size:13px">Recordarle si no paga</span>
+        <span class="sw ${p.adelanto.nudge.activo?'on':''}" id="pnSw" style="flex:none"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Recordar a las</label>
+        <input class="in" id="pnHoras" type="number" min="1" step="1" value="${Number(p.adelanto.nudge.horas ?? 12)}" style="width:90px"/>
+        <span style="font-size:12.5px;color:var(--muted)">horas de creado el pedido</span>
+      </div>
+      <label style="margin-top:12px">Mensaje del recordatorio</label>
+      ${ta(p.adelanto.nudge.mensaje,"¡Hola {{nombre}}! 👋 Tu pedido de {{producto_nombre}} sigue reservado.\n\nPara despacharlo solo falta el adelanto de S/ {{adelanto}}. ¿Te ayudo con algo?",4).replace('class="in"','class="in" id="pnMsg"')}
+
+      <div id="pvRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Vencer el pedido si no paga</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Pasa a “Cancelado” y sale de las columnas activas. No se borra: sigue contando para tus métricas.</div></span>
+        <span class="sw ${p.adelanto.vencimiento.activo?'on':''}" id="pvSw" style="flex:none"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Vencer a las</label>
+        <input class="in" id="pvHoras" type="number" min="1" step="1" value="${Number(p.adelanto.vencimiento.horas ?? 48)}" style="width:90px"/>
+        <span style="font-size:12.5px;color:var(--muted)">horas de creado el pedido</span>
+      </div>
+    </div>
+
+    <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Agente de logística</span></div>
       <div class="desc">Cómo el agente IA verifica los pagos de saldos remanentes para entregar la clave de recojo.</div>
       <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Cómo quieres que tu IA verifique los pagos para entregar la clave de recojo?</label>
@@ -819,6 +862,8 @@ function renderPedidos(b){
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
   b.querySelectorAll(".emrow").forEach(row=> row.onclick=()=>{ const k=row.dataset.em; p.embudos[k]=!p.embudos[k]; row.querySelector('[data-emsw]').classList.toggle("on",p.embudos[k]); });
   $("pcFechaRow").onclick=()=>{ p.conf.fecha=!p.conf.fecha; $("pcFecha").classList.toggle("on",p.conf.fecha); };
+  $("pnRow").onclick=()=>{ p.adelanto.nudge.activo=!p.adelanto.nudge.activo; $("pnSw").classList.toggle("on",p.adelanto.nudge.activo); };
+  $("pvRow").onclick=()=>{ p.adelanto.vencimiento.activo=!p.adelanto.vencimiento.activo; $("pvSw").classList.toggle("on",p.adelanto.vencimiento.activo); };
   // Modo de logística: click en la opción (sin re-render, así la selección
   // siempre "prende") — actualiza el estado y el resaltado de ambas tarjetas.
   b.querySelectorAll(".logopt").forEach(opt=> opt.onclick=()=>{
@@ -835,6 +880,14 @@ function renderPedidos(b){
     p.conf.instr_cod=$("pcInstrCod").value; p.conf.instr_ag=$("pcInstrAg").value;
     p.log.instr_cod=$("plInstrCod").value; p.log.instr_ag=$("plInstrAg").value;
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
+    p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
+    p.adelanto.nudge.mensaje=$("pnMsg").value.trim();
+    p.adelanto.vencimiento.horas=Math.max(1,parseInt($("pvHoras").value,10)||48);
+    // El nudge sin mensaje no hace nada: mejor avisar que guardarlo mudo.
+    if(p.adelanto.nudge.activo && !p.adelanto.nudge.mensaje){ toast("El recordatorio necesita un mensaje",true); return; }
+    if(p.adelanto.vencimiento.activo && p.adelanto.nudge.activo && p.adelanto.vencimiento.horas<=p.adelanto.nudge.horas){
+      toast("El vencimiento tiene que ser DESPUÉS del recordatorio",true); return;
+    }
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;

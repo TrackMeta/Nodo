@@ -57,8 +57,80 @@ Deno.serve(async (req) => {
   try { nudged = await processOrderReminders(now); }
   catch (e) { console.error("[scheduler] pedidos:", (e as any)?.message ?? e); }
 
-  return json({ ok: true, woke, fired, nudged });
+  // ── 5) Adelantos: recordar y vencer ───────────────────────────────
+  let recordados = 0, vencidos = 0;
+  try { ({ recordados, vencidos } = await processAdelantos(now)); }
+  catch (e) { console.error("[scheduler] adelantos:", (e as any)?.message ?? e); }
+
+  return json({ ok: true, woke, fired, nudged, recordados, vencidos });
 });
+
+// Un pedido de provincia se crea apenas el cliente da sus datos (todavía sin
+// pagar), así que la columna "Esperando adelanto" se llenaría de gente que
+// nunca pagó. Esto la mantiene limpia sola: primero se le recuerda, y si igual
+// no paga, el pedido vence. Las dos cosas son activables y configurables — si
+// están apagadas, el Kanban se comporta como antes y lo maneja el operador.
+//   pedidos_config.adelanto = {
+//     nudge:      { activo, horas, mensaje },
+//     vencimiento:{ activo, horas }
+//   }
+async function processAdelantos(now: number): Promise<{ recordados: number; vencidos: number }> {
+  let recordados = 0, vencidos = 0;
+  const { data: chans } = await db.from("channels").select("id, pedidos_config").limit(50);
+  for (const ch of chans ?? []) {
+    const cfg = (ch as any)?.pedidos_config?.adelanto;
+    if (!cfg) continue;
+    const chId = (ch as any).id;
+
+    // Vencer primero: si ya pasó el plazo, no tiene sentido recordarle.
+    const venc = cfg.vencimiento ?? {};
+    if (venc.activo && Number(venc.horas) > 0) {
+      const cutoff = new Date(now - Number(venc.horas) * 3600 * 1000).toISOString();
+      const { data: viejos } = await db.from("orders")
+        .select("id, contact_id")
+        .eq("channel_id", chId).eq("estado", "esperando_adelanto")
+        .lte("created_at", cutoff).limit(50);
+      for (const o of viejos ?? []) {
+        await db.from("orders").update({ estado: "cancelado", updated_at: new Date().toISOString() }).eq("id", (o as any).id);
+        await db.from("contact_events").insert({
+          channel_id: chId, contact_id: (o as any).contact_id, tipo: "nota",
+          titulo: "Pedido vencido", detalle: `Sin adelanto tras ${venc.horas} h`,
+        }).then(() => {}, () => {}); // best-effort
+        vencidos++;
+      }
+    }
+
+    // Recordar: una sola vez por pedido (se marca en shipping).
+    const nudge = cfg.nudge ?? {};
+    if (nudge.activo && Number(nudge.horas) > 0 && String(nudge.mensaje ?? "").trim()) {
+      const cutoff = new Date(now - Number(nudge.horas) * 3600 * 1000).toISOString();
+      const { data: pend } = await db.from("orders")
+        .select("id, contact_id, shipping")
+        .eq("channel_id", chId).eq("estado", "esperando_adelanto")
+        .lte("created_at", cutoff).limit(50);
+      for (const o of pend ?? []) {
+        const ship = (o as any).shipping ?? {};
+        if (ship._nudge_adelanto) continue; // ya se le recordó
+        // Respeta al que pidió que no le escriban (mismo criterio que el
+        // remarketing: un "no me escriban" vale para todo).
+        const { data: c } = await db.from("contacts")
+          .select("no_remarketing, bot_activo").eq("id", (o as any).contact_id).maybeSingle();
+        if ((c as any)?.no_remarketing === true) continue;
+        if ((c as any)?.bot_activo === false) continue; // lo tomó un humano
+        if (!await enHorario(chId)) continue;
+        try {
+          await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje });
+          await db.from("orders").update({
+            shipping: { ...ship, _nudge_adelanto: new Date().toISOString() },
+            updated_at: new Date().toISOString(),
+          }).eq("id", (o as any).id);
+          recordados++;
+        } catch (e) { console.error("[scheduler] nudge adelanto:", (e as any)?.message ?? e); }
+      }
+    }
+  }
+  return { recordados, vencidos };
+}
 
 async function processOrderReminders(now: number): Promise<number> {
   const { data: trigs } = await db.from("flow_triggers")

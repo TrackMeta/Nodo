@@ -126,6 +126,8 @@
     </div>
 
     <div class="tbl" id="tbl"></div>
+    <!-- Fuera del grid .kb: ahí adentro se volvería una columna más. -->
+    <div id="kbzona" style="display:none;gap:8px;margin-bottom:14px"></div>
     <div class="kb" id="kb" style="display:none"></div>
   </div>
 </div>
@@ -133,7 +135,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, list:[], estado:"all", q:"", view:"compras" };
+const st={ channelId:null, list:[], estado:"all", q:"", view:"compras", kbZona:"lima" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const ESTADOS=[["all","Todas"],["confirmada","Confirmadas"],["pendiente","Adelantos / Pendientes"],["anulada","Anuladas"]];
 
@@ -146,15 +148,38 @@ const EST_LABEL={
   reprogramado:"Reprogramado", rechazado:"Rechazado", no_recogido:"No recogido", cancelado:"Cancelado",
   confirmada:"Confirmada", pendiente:"Pendiente", anulada:"Anulada",
 };
-const KB_COLS=[
-  ["star","Nuevo / Adelanto",["carrito","esperando_adelanto","confirmado"]],
-  ["box","Por despachar",["adelanto_validado","por_despachar"]],
-  ["truck","En camino",["despachado","en_reparto"]],
-  ["building","En agencia · cobrar saldo",["en_agencia"]],
-  ["key","Para entregar",["saldo_pagado"]],
-  ["flag","Finalizados",["entregado_cobrado","recogido","reprogramado","rechazado","no_recogido","cancelado"]],
+// Un tablero por OPERACIÓN, no uno solo mezclando las dos.
+// Lima es cosa de horas (motorizado, contraentrega); provincia es cosa de días
+// (adelanto, agencia, guía, saldo, clave). En el tablero único, para un pedido
+// de Lima 3 de 6 columnas no significaban nada, y "En camino" juntaba un
+// paquete viajando a Shalom con un motorizado saliendo a repartir — dos cosas
+// distintas fingiendo ser una.
+const KB_LIMA=[
+  ["star","Por confirmar",["carrito"]],
+  ["box","Por despachar",["confirmado"]],
+  ["truck","En reparto",["en_reparto","reprogramado"]],
+  ["flag","Finalizados",["entregado_cobrado","rechazado","cancelado"]],
 ];
+const KB_PROV=[
+  ["clock","Esperando adelanto",["carrito","esperando_adelanto"]],
+  ["box","Por despachar",["adelanto_validado","por_despachar"]],
+  ["truck","En camino",["despachado"]],
+  ["building","En agencia · cobrar saldo",["en_agencia"]],
+  ["key","Clave lista",["saldo_pagado"]],
+  ["flag","Finalizados",["recogido","no_recogido","cancelado"]],
+];
+const KB_COLS=[...KB_LIMA, ...KB_PROV]; // solo para derivar FIS_STATES
 const FIS_STATES=new Set(KB_COLS.flatMap(c=>c[2]));
+
+// De qué tablero es un pedido. Manda la zona REAL (shipping.zona, que escribe
+// resolver_zona); los pedidos viejos que no la tienen se deducen del estado,
+// con el mismo criterio que usa el motor en esAgencia.
+function zonaDe(o){
+  const z=String((o.shipping||{}).zona||"").toLowerCase();
+  if(z==="lima"||z==="provincia") return z;
+  const cod=["confirmado","en_reparto","entregado_cobrado","reprogramado","rechazado"];
+  return cod.includes(String(o.estado||"").toLowerCase()) ? "lima" : "provincia";
+}
 const BAD_STATES=new Set(["rechazado","no_recogido","cancelado","anulada"]);
 const OK_STATES=new Set(["entregado_cobrado","recogido","confirmada","saldo_pagado","adelanto_validado"]);
 
@@ -221,9 +246,10 @@ function render(){
   $("tbl").style.display=compras?"":"none";
   $("kb").style.display=compras?"none":"";
   $("estados").style.display=compras?"":"none";
+  $("kbzona").style.display=compras?"none":"flex";
   $("lead").textContent=compras
     ? "Todas las compras y adelantos registrados en este bot — confirmadas por el motor de flujos (OCR de comprobante) o cargadas por un operador desde la Bandeja."
-    : "Tablero operativo de pedidos físicos: tú avanzas la tarjeta (despacho, llegada, cobro) y el bot le escribe al cliente en cada paso.";
+    : "Tablero operativo de pedidos físicos: Lima y Provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso.";
   if(compras) renderTabla(); else renderKanban();
 }
 
@@ -276,13 +302,44 @@ function renderKanban(){
   let list=st.list.filter(isFisico);
   if(st.q) list=list.filter(o=>{ const c=o.contact||{}; return (c.nombre||"").toLowerCase().includes(st.q)||(c.wa_id||"").includes(st.q); });
   const box=$("kb");
-  if(!list.length){
-    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div><h3>Aún no hay pedidos físicos</h3><p>Cuando un flujo de producto físico cree un pedido (adelanto validado o contraentrega confirmada), aparecerá en este tablero.</p></div>`;
+
+  // Cuenta lo que hay en cada tablero (sin contar los finalizados: lo que
+  // importa es el trabajo PENDIENTE). El contador es lo que evita que se te
+  // escape algo por estar mirando el otro tablero.
+  const FIN=new Set(["entregado_cobrado","recogido","rechazado","no_recogido","cancelado"]);
+  const activos=(z)=>list.filter(o=>zonaDe(o)===z && !FIN.has(o.estado)).length;
+  const nLima=activos("lima"), nProv=activos("provincia");
+  const tab=(z,ic,lb,n)=>`<button class="kz ${st.kbZona===z?'on':''}" data-z="${z}"
+    style="display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:10px;cursor:pointer;
+    border:1.5px solid ${st.kbZona===z?'var(--brand)':'var(--border)'};
+    background:${st.kbZona===z?'var(--brand)':'transparent'};color:${st.kbZona===z?'#fff':'var(--muted)'};
+    font-weight:700;font-size:13px">${icon(ic)} ${lb}
+    <span style="min-width:20px;height:20px;padding:0 5px;border-radius:999px;display:inline-flex;align-items:center;
+      justify-content:center;font-size:11px;font-weight:800;
+      background:${st.kbZona===z?'rgba(255,255,255,.25)':'var(--surface-2)'};
+      color:${st.kbZona===z?'#fff':'var(--muted)'}">${n}</span></button>`;
+
+  const cols = st.kbZona==="lima" ? KB_LIMA : KB_PROV;
+  const zList = list.filter(o=>zonaDe(o)===st.kbZona);
+
+  const zbar=$("kbzona");
+  zbar.style.display="flex";
+  zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv);
+  zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; renderKanban(); });
+
+  box.innerHTML="";
+  if(!zList.length){
+    const d=document.createElement("div");
+    d.className="nodo-empty"; d.style.cssText="grid-column:1/-1;border:none";
+    d.innerHTML=`<h3>Sin pedidos ${st.kbZona==="lima"?"de Lima":"de provincia"}</h3>
+      <p>${st.kbZona==="lima"
+        ? "Cuando un flujo cree un pedido con entrega en Lima (contraentrega), aparece acá."
+        : "Cuando un flujo cree un pedido para enviar por agencia, aparece acá."}</p>`;
+    box.appendChild(d);
     return;
   }
-  box.innerHTML="";
-  KB_COLS.forEach(([ic,label,estados])=>{
-    const items=list.filter(o=>estados.includes(o.estado));
+  cols.forEach(([ic,label,estados])=>{
+    const items=zList.filter(o=>estados.includes(o.estado));
     const col=document.createElement("div"); col.className="kcol";
     col.innerHTML=`<div class="kh"><span>${icon(ic)}</span> ${esc(label)} <span class="cnt">${items.length}</span></div><div class="kbody"></div>`;
     const body=col.querySelector(".kbody");
