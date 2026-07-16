@@ -116,11 +116,16 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function loadProducts(){
-  let { data, error } = await supa.from("products").select("id,nombre,con_bifurcacion,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at");
-  if(error){ ({ data, error } = await supa.from("products").select("id,nombre,con_bifurcacion,config,folder,emoji").eq("channel_id",st.channelId).order("created_at")); }
-  if(error){ ({ data } = await supa.from("products").select("id,nombre,con_bifurcacion,config").eq("channel_id",st.channelId).order("created_at")); }
+  // Las opciones de compra son la verdad: si un producto tiene más de una, ES
+  // multi-opción. Ya no hace falta un checkbox aparte que lo declare.
+  const full="id,nombre,config,folder,emoji,tipo,product_versions(id,precio,activo)";
+  let { data, error } = await supa.from("products").select(full).eq("channel_id",st.channelId).order("created_at");
+  if(error){ ({ data, error } = await supa.from("products").select("id,nombre,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at")); }
+  if(error){ ({ data } = await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).order("created_at")); }
   st.list=data||[]; renderFolders(); renderCards();
 }
+// Opciones activas de un producto (para las tarjetas del grid).
+function opcionesDe(p){ return (p.product_versions||[]).filter(v=>v.activo!==false); }
 function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
 function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(p=>!p.folder).length; return st.list.filter(p=>p.folder===v).length; }
 function renderFolders(){
@@ -151,13 +156,20 @@ function renderCards(){
   box.innerHTML="";
   list.forEach(p=>{
     const el=document.createElement("div"); el.className="nodo-card pcard";
-    const precio=p.config&&p.config.precio?`S/ ${esc(p.config.precio)}`:"";
+    // El precio y el nº de opciones salen de las Opciones de compra reales.
+    const ops=opcionesDe(p);
+    const precios=ops.map(o=>o.precio).filter(x=>x!=null&&x!=="");
+    const precio = precios.length>1
+      ? `S/ ${Math.min(...precios.map(Number))} – ${Math.max(...precios.map(Number))}`
+      : precios.length===1 ? `S/ ${esc(precios[0])}`
+      : (p.config&&p.config.precio?`S/ ${esc(p.config.precio)}`:"");
+    const multi=ops.length>1;
     const emIc = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
     el.innerHTML=`
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
-      <div class="c-sub">${p.tipo==="fisico"?"Producto físico · envíos":(p.con_bifurcacion?"Con versiones (Básica / Premium)":"Versión única")}</div>
-      <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${p.con_bifurcacion?'Multi-versión':'Simple'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
+      <div class="c-sub">${p.tipo==="fisico"?"Producto físico · envíos":"Producto digital"}</div>
+      <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -170,12 +182,18 @@ async function createProduct(){
   let { data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, folder }).select("id").single();
   if(error && /folder|column/.test(error.message)){ ({ data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre }).select("id").single()); }
   if(error){ toast(error.message,true); return; }
+  // Todo producto nace con al menos UNA opción de compra: así el modelo no
+  // tiene casos especiales (la migración 0029 hizo lo mismo con los viejos) y
+  // un producto simple no obliga a configurar nada extra.
+  await supa.from("product_versions")
+    .insert({ product_id:data.id, nombre:"Única", orden:0, activo:true, cantidad:1, entrega:[] })
+    .then(r=>{ if(r.error) console.warn("[productos] sin opción inicial:", r.error.message); });
   await loadProducts(); openProduct(data.id);
 }
 async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
-  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="datos";
+  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="receta";
   renderDetail(); showDetail();
 }
 async function deleteProduct(){
@@ -192,6 +210,7 @@ function renderDetail(){
   d.innerHTML=`
     <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(st.prod.nombre)}</h1>
     <div class="tabs">
+      <button class="tab ${st.tab==='receta'?'active':''}" data-t="receta">Receta</button>
       <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
       <button class="tab ${st.tab==='opciones'?'active':''}" data-t="opciones">Opciones de compra</button>
       <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
@@ -199,7 +218,8 @@ function renderDetail(){
     </div>
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
-  if(st.tab==="datos") renderDatos();
+  if(st.tab==="receta") renderReceta();
+  else if(st.tab==="datos") renderDatos();
   else if(st.tab==="opciones") renderOpciones();
   else if(st.tab==="flujos") renderFlujos();
   else renderActivacion();
@@ -265,8 +285,9 @@ function compileProductoIA(c,tipo){
   add("Reglas del producto",ia.reglas_producto);
   add("Límites (nunca hacer / no prometer)",ia.limites);
   add("Reglas del precio",ia.reglas_precio);
-  const of=(ia.ofertas||[]).filter(o=>o&&(o.desde||o.precio));
-  if(of.length) L.push("## Ofertas por cantidad\n"+of.map(o=>`- Desde ${(o.desde||"?")} unidad(es): ${(o.precio||"?")}`).join("\n"));
+  // Las ofertas por cantidad ya NO se compilan acá: son Opciones de compra
+  // reales (migración 0029) y el motor le inyecta a la IA el catálogo con sus
+  // precios de verdad. Tenerlas en dos lados se contradecía.
   add("Precios con descuento",ia.descuentos);
   add("Formas de pago de este producto (tienen PRIORIDAD sobre las generales)",ia.metodos_pago);
   const ej=(ia.ejemplos||[]).filter(e=>e&&(e.sit||e.resp));
@@ -304,7 +325,6 @@ function renderDatos(){
   const ia=c.ia=c.ia||{};
   // Migra el contexto libre anterior al campo "detalle" del formulario.
   if(!ia.detalle && c.contexto_producto && !ia._migrado){ ia.detalle=c.contexto_producto; ia._migrado=true; }
-  if(!Array.isArray(ia.ofertas)) ia.ofertas=[];
   if(!Array.isArray(ia.ejemplos)) ia.ejemplos=[];
   if(!Array.isArray(c.ia_multimedia)) c.ia_multimedia=[];
   const P="#a855f7"; // acento IA
@@ -330,7 +350,6 @@ function renderDatos(){
             <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
           </select></div>
       </div>
-      <label class="chk"><input type="checkbox" id="pBif" ${st.prod.con_bifurcacion?"checked":""}/> Con versiones (Básica / Premium)</label>
     </div>
     <div class="card" style="border-color:rgba(34,192,121,.4);box-shadow:0 0 0 1px rgba(34,192,121,.12) inset">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio y entrega</h4>
@@ -505,7 +524,6 @@ function renderDatos(){
   any.oninput=(e)=>setEmoji(e.target.value);
   any.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); pop.style.display="none"; } };
   document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
-  $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderDatos(); }catch(_){ toast("JSON inválido",true); } };
   $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderDatos(); }; // re-render: cambia link/envío
   renderEnvio();
@@ -647,6 +665,227 @@ function renderEnvio(){
   // Confirmaciones (toggles)
   box.querySelectorAll(".sw.cf").forEach(sw=> sw.onclick=()=>{ const k=sw.dataset.cf; cf[k]=!cf[k]; sw.classList.toggle("on",cf[k]); syncCfg(); });
 }
+// ═══════════════════════════════════════════════════════════════════
+// LA RECETA — las 9 etapas de una venta, en orden, con su estado.
+// Es lo que hace que configurar un producto sea "llenar un formulario" en vez
+// de "dibujar un flujo": desde acá se ve qué falta y se GENERA el flujo de
+// venta solo. El editor visual sigue existiendo para quien quiera meter mano
+// (sigue siendo el corazón de la app) — esto solo evita empezar de cero.
+// ═══════════════════════════════════════════════════════════════════
+async function renderReceta(){
+  const b=$("tabBody");
+  b.innerHTML=`<div class="empty">Cargando…</div>`;
+  const fisico=(st.prod.tipo||"digital")==="fisico";
+
+  // Estado real de cada etapa (se lee de la base, no se asume).
+  const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id);
+  const fIni=(flows||[]).find(f=>f.role==="mensajes_iniciales");
+  const fVenta=(flows||[]).find(f=>f.role==="venta");
+  let trigs=[];
+  if(fIni){ const { data:t } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=t||[]; }
+  const { data:ch } = await supa.from("channels").select("negocio,ocr_config").eq("id",st.channelId).maybeSingle();
+  st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{} };
+
+  const ops=st.versions.filter(v=>v.activo!==false);
+  const conPrecio=ops.filter(v=>v.precio!=null&&v.precio!=="");
+  const conEntrega=ops.filter(v=>Array.isArray(v.entrega)&&v.entrega.length);
+  const metodos=(ch?.ocr_config?.metodos||[]).filter(m=>m&&(m.app||m.numero||m.titular));
+
+  const et=(n,titulo,desc,estado,accion)=>`
+    <div class="card" style="display:flex;gap:13px;align-items:flex-start">
+      <div style="flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+        font-size:12px;font-weight:800;background:${estado.ok?'rgba(34,192,121,.14)':estado.warn?'rgba(240,169,43,.14)':'var(--surface-2)'};
+        color:${estado.ok?'#22c079':estado.warn?'#f0a92b':'var(--faint)'}">${n}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13.5px">${titulo}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5">${desc}</div>
+        <div style="font-size:12px;margin-top:5px;color:${estado.ok?'#22c079':estado.warn?'#f0a92b':'var(--faint)'}">${estado.msg}</div>
+      </div>
+      ${accion?`<div style="flex:none">${accion}</div>`:""}
+    </div>`;
+  const go=(t,l)=>`<button class="btn" data-go="${t}" style="height:32px">${l}</button>`;
+
+  b.innerHTML=`
+    <div class="card" style="border-color:var(--brand-border)">
+      <h4 style="margin-top:0">Cómo se vende este producto</h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">
+        Las etapas de una venta, en orden. Llená lo que falte y generá el flujo:
+        el sistema lo arma solo y podés seguir editándolo en el editor visual.
+      </div>
+    </div>
+    ${et(1,"Activación","La palabra clave del anuncio (y la IA que entiende variaciones) que arranca el chat.",
+      trigs.length?{ok:1,msg:`${trigs.length} disparador(es) configurado(s)`}:{warn:1,msg:"Sin palabras clave: nadie puede iniciar el chat"},
+      go("activacion","Configurar"))}
+    ${et(2,"Secuencia inicial","Los mensajes con los que arranca el bot (texto, imagen, video, PDF).",
+      fIni?{ok:1,msg:"Mensajes iniciales creados"}:{warn:1,msg:"Sin mensajes iniciales"},
+      go("activacion","Configurar"))}
+    ${et(3,"IA de ventas","Lo que la IA sabe del producto para venderlo y responder dudas.",
+      (st.prod.config?.contexto_producto)?{ok:1,msg:"Conocimiento cargado"}:{warn:1,msg:"Sin conocimiento del producto: la IA no sabrá venderlo"},
+      go("datos","Configurar"))}
+    ${et(4,"Opciones de compra","Versiones, packs y ofertas por cantidad: cada una con su precio.",
+      conPrecio.length?{ok:1,msg:`${ops.length} opción(es), ${conPrecio.length} con precio`}:{err:1,msg:"Ninguna opción tiene precio: no se puede validar un pago"},
+      go("opciones","Configurar"))}
+    ${et(5,"Cobro y validación","Los métodos de pago válidos y las reglas anti-fraude del validador.",
+      metodos.length?{ok:1,msg:`${metodos.length} método(s) de pago válidos`}:{warn:1,msg:"Sin métodos de pago en el Validador (sección IA)"},
+      `<a class="btn" href="./ia.html" style="height:32px;display:inline-flex;align-items:center">Ir a IA</a>`)}
+    ${et(6,"Entrega",fisico?"En físico la entrega es el envío (se configura en Datos).":"Los links/archivos que recibe el cliente al pagar, por opción.",
+      fisico?{ok:1,msg:"Producto físico: se despacha, no se entrega por chat"}
+        :(conEntrega.length===conPrecio.length&&conPrecio.length?{ok:1,msg:"Todas las opciones tienen entrega"}
+          :{err:1,msg:`${conPrecio.length-conEntrega.length} opción(es) con precio pero SIN entrega`}),
+      go("opciones","Configurar"))}
+    ${et(7,"Ventas extra","Ofrecer un producto adicional antes o después de entregar.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
+    ${et(8,"Post-venta","Aviso por Telegram y registro en Google Sheets.",{warn:1,msg:"Fase 6 — todavía no construido"},"")}
+    ${et(9,"Remarketing","Recuperar al que no compró, con descuentos.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
+
+    <div class="card" style="margin-top:18px;border-color:var(--brand-border)">
+      <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("node")} Flujo de venta</h4>
+      <div id="saludBox"></div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
+        ${fisico
+          ? `El flujo de <b>producto físico</b> necesita las reglas de zona (Lima/Provincia), que llegan en la <b>Fase 4</b>.
+             Por ahora armalo desde la pestaña <b>Flujos</b> clonando un esqueleto.`
+          : `Genera el flujo completo: la <b>IA vende y responde</b>, detecta el comprobante <b>en cualquier momento</b>,
+             lo <b>valida contra el precio exacto</b> de la opción elegida y <b>entrega solo</b>. Si el pago no cuadra,
+             lo pide de nuevo y la IA sigue atendiendo dudas.`}
+      </div>
+      ${fisico?"":`<button class="btn primary" id="genFlow">${st.receta.fVenta?"Regenerar flujo de venta":"Generar flujo de venta"}</button>`}
+      ${st.receta.fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(st.receta.fVenta.nombre)}" (${st.receta.fVenta.estado}). Regenerar lo reescribe por completo.</div>`:""}
+    </div>`;
+
+  b.querySelectorAll("[data-go]").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.go; renderDetail(); });
+  renderSalud();
+  const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
+}
+
+// Salud del producto: lo que impediría vender bien. Se avisa ACÁ, antes de
+// publicar — no con un cliente a medio comprar.
+function renderSalud(){
+  const box=$("saludBox"); if(!box) return;
+  const fisico=(st.prod.tipo||"digital")==="fisico";
+  const ops=st.versions.filter(v=>v.activo!==false);
+  const conPrecio=ops.filter(v=>v.precio!=null&&v.precio!=="");
+  const errs=[], warns=[];
+  if(!ops.length) errs.push("El producto no tiene ninguna opción de compra activa.");
+  if(!conPrecio.length) errs.push("Ninguna opción tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
+  if(!fisico){
+    const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.length));
+    if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${v.nombre||"—"}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
+  }
+  const metodos=(st.receta?.ch?.ocr_config?.metodos||[]).filter(m=>m&&(m.app||m.numero||m.titular));
+  if(!metodos.length) warns.push("El Validador de comprobantes no tiene métodos de pago: la IA no podrá verificar a quién le pagaron.");
+  if(!st.receta?.trigs?.length) warns.push("Sin palabras clave: nadie puede iniciar el chat de este producto.");
+  if(!st.receta?.fIni) warns.push("Sin mensajes iniciales.");
+  if(!st.prod.config?.contexto_producto) warns.push("Sin conocimiento del producto: la IA no sabrá qué vender.");
+  const line=(t,c,ic)=>`<div style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.55;margin-bottom:5px">
+    <span style="color:${c};display:inline-flex;flex:none">${icon(ic)}</span><div>${t}</div></div>`;
+  box.innerHTML = (errs.length||warns.length)
+    ? `<div style="border:1px solid ${errs.length?"var(--red)":"#f0a92b"};background:${errs.length?"rgba(239,68,68,.06)":"rgba(240,169,43,.07)"};border-radius:11px;padding:12px">
+        <div style="font-weight:700;font-size:12.5px;margin-bottom:7px">${errs.length?"Esto impide vender":"Revisá esto antes de publicar"}</div>
+        ${errs.map(e=>line(e,"var(--red)","alert")).join("")}${warns.map(w=>line(w,"#f0a92b","alert")).join("")}
+      </div>`
+    : `<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:#22c079">
+        <span style="display:inline-flex">${icon("check")}</span> Todo listo para vender.</div>`;
+}
+
+// Genera el flujo de venta DIGITAL desde la receta. Forma del flujo (IA-first,
+// que es como Rodrigo vende de verdad — los esqueletos viejos eran guiones
+// rígidos con botones):
+//
+//   [IA vende] → [espera] → ¿mandó imagen?
+//                             ├─ sí → [OCR valida] → ¿pago OK?
+//                             │                       ├─ sí → [entregar] → [fin]
+//                             │                       └─ no → [pedir de nuevo] → [espera]
+//                             └─ no → [IA vende]  (bucle: sigue conversando)
+//
+// El bucle hace que la IA atienda dudas indefinidamente y que el comprobante se
+// detecte en cualquier momento (requisitos 3 y 4).
+async function generarFlujoVenta(){
+  const ops=st.versions.filter(v=>v.activo!==false && v.precio!=null && v.precio!=="");
+  if(!ops.length){ toast("Primero cargá al menos una opción con precio",true); return; }
+  const ya=st.receta.fVenta;
+  if(!await confirmDialog({
+    title: ya?"Regenerar flujo de venta":"Generar flujo de venta",
+    message: ya?`Esto REESCRIBE por completo "${esc(ya.nombre)}". Si lo editaste a mano en el editor visual, esos cambios se pierden.`
+               :"Se creará el flujo de venta con la IA como vendedora. Después podés editarlo en el editor visual.",
+    confirmText: ya?"Regenerar":"Generar", danger: !!ya })) return;
+
+  toast("Generando…");
+  try{
+    let flowId=ya?.id;
+    if(flowId){
+      await supa.from("flow_edges").delete().eq("flow_id",flowId);
+      await supa.from("flow_nodes").delete().eq("flow_id",flowId);
+      await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}`, estado:"borrador" }).eq("id",flowId);
+    }else{
+      const { data,error } = await supa.from("flows").insert({
+        channel_id:st.channelId, product_id:st.prod.id, nombre:`Venta · ${st.prod.nombre}`,
+        role:"venta", kind:"flow", estado:"borrador",
+        descripcion:`Venta de ${st.prod.nombre} con IA. Generado desde la receta.`,
+      }).select("id").single();
+      if(error){ toast(error.message,true); return; }
+      flowId=data.id;
+    }
+
+    const N=async(tipo,nombre,config,es_inicial,x,y)=>{
+      const { data,error } = await supa.from("flow_nodes")
+        .insert({ flow_id:flowId, tipo, nombre, config, es_inicial:!!es_inicial, pos_x:x, pos_y:y })
+        .select("id").single();
+      if(error) throw new Error(error.message);
+      return data.id;
+    };
+    const E=async(from,handle,to)=>{
+      const { error }=await supa.from("flow_edges")
+        .insert({ flow_id:flowId, source_node:from, source_handle:handle, target_node:to });
+      if(error) throw new Error(error.message);
+    };
+
+    const nVender=await N("ia","La IA vende",{
+      operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:true,
+      prompt:"Continúa la conversación con el cliente de forma natural. Responde sus dudas, explica el valor del producto, "+
+             "maneja sus objeciones y guíalo a la compra. Cuando decida comprar, dile el precio de la opción que eligió y "+
+             "pásale los datos de pago ({{datos_pago}}). No inventes precios ni promesas.",
+    },true,80,220);
+    const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },false,380,220);
+    const nEsImg=await N("condicion","¿Mandó comprobante?",{
+      rutas:[{ nombre:"Es imagen", handle:"ruta:es_imagen", match:"todas",
+               condiciones:[{ op:"campo_igual", campo:"last_input_type", valor:"image" }] }],
+    },false,660,220);
+    const nOcr=await N("ia","Validar el pago",{
+      operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false, guardar_en:"pago_resultado",
+      prompt:"Analiza la imagen adjunta con las reglas del validador. Si el pago es VÁLIDO y por el monto correcto, "+
+             "responde exactamente PAGO_OK. Si no, responde PAGO_NO y en una frase el motivo.",
+    },false,960,120);
+    const nPagoOk=await N("condicion","¿Pago válido?",{
+      rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
+               condiciones:[{ op:"campo_contiene", campo:"pago_resultado", valor:"PAGO_OK" }] }],
+    },false,1240,120);
+    const nEntregar=await N("accion","Entregar + registrar",{
+      acciones:[
+        { tipo:"add_tag", valor:"Compra" },
+        { tipo:"entregar", mensaje:"¡Pago confirmado! 🎉 Acá tienes tu acceso:" },
+        { tipo:"notify_admin", mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nFecha: {{fecha_hora}}", foto:"{{ultima_imagen}}" },
+      ],
+    },false,1520,120);
+    const nFin=await N("fin","Fin",{},false,1800,120);
+    const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
+      bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
+    },false,960,340);
+
+    await E(nVender,"exito",nEsperar);
+    await E(nEsperar,"continuar",nEsImg);
+    await E(nEsImg,"ruta:es_imagen",nOcr);
+    await E(nEsImg,"si_no_cumple",nVender);      // bucle: sigue conversando
+    await E(nOcr,"exito",nPagoOk);
+    await E(nPagoOk,"ruta:pago_ok",nEntregar);
+    await E(nPagoOk,"si_no_cumple",nRe);
+    await E(nEntregar,"continuar",nFin);
+    await E(nRe,"continuar",nEsperar);           // vuelve a escuchar
+
+    toast("Flujo de venta generado ✓");
+    st.tab="receta"; renderDetail();
+  }catch(e){ toast("Error al generar: "+(e.message||e),true); }
+}
+
 // ── Opciones de compra ─────────────────────────────────────────────
 // UN solo concepto que unifica lo que antes eran tres cosas sueltas:
 // "versiones" (Básico/Premium), "packs" y "ofertas por cantidad". Para el
@@ -1090,7 +1329,7 @@ async function saveProduct(){
   // Recompila el conocimiento del producto a config.contexto_producto (lo que
   // el motor inyecta) por si se guarda sin haber tocado el formulario.
   if(st.prod.config){ const cx=compileProductoIA(st.prod.config, st.prod.tipo||"digital"); if(cx) st.prod.config.contexto_producto=cx; else delete st.prod.config.contexto_producto; }
-  const base={ nombre:st.prod.nombre, con_bifurcacion:st.prod.con_bifurcacion, config:st.prod.config||{}, updated_at:new Date().toISOString() };
+  const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
   if(e1 && /folder|emoji|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update(base).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0018 para carpeta/emoji)"); }
