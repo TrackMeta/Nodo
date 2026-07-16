@@ -1448,6 +1448,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   const esLima = !!z && z.cubro !== false;
   const set = async (k: string, v: string) => {
     run.vars[k] = v;
+    ctx[k] = v; // el mismo turno ya lo ve (la IA redacta con el veredicto puesto)
     await setField(db, run.channel_id, run.contact_id, k, v);
   };
   await set("zona_entrega", esLima ? "lima" : "provincia");
@@ -1691,6 +1692,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     await detectarOpcion(db, run, ctx, String(ctx.last_input)).catch(() => null);
   }
 
+  // Físico: ¿mencionó a dónde lo quiere? Resuelve la zona contra la lista del
+  // negocio y deja el veredicto (cubrimos / llega hoy / va por agencia) listo
+  // para inyectárselo a la IA. La IA NO decide nada de esto: solo lo comunica.
+  if (op === "generar_texto" && ctx.last_input && cfg.detectar_zona) {
+    await resolverZonaAccion(db, run, {}, ctx).catch(() => null);
+  }
+
   // Operación "clasificar": mete la última respuesta del cliente en una de las
   // opciones que define el nodo (ej. acepta / rechaza / duda) y la guarda en un
   // campo para que un nodo Condición ramifique. Es lo que permite el "corte
@@ -1748,6 +1756,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Solo cuando decida, confirma cuál y su precio.`;
         parts.push("## Opciones de compra disponibles\n" + lista + estado);
       }
+    }
+    // Entrega física: el veredicto YA está calculado por el motor contra la
+    // configuración del negocio. Se le da a la IA masticado y con la orden
+    // explícita de no contradecirlo — sabe qué decir, no qué decidir. (La IA no
+    // sabe qué hora es ni qué zonas cubrimos; el código sí.)
+    if (ctx.zona_entrega) {
+      const L: string[] = [];
+      if (ctx.zona_entrega === "lima") {
+        L.push(`El cliente es de **${ctx.zona_nombre || "Lima"}** → entrega en Lima, CONTRAENTREGA (paga al recibir).`);
+        L.push(ctx.entrega_hoy === "si"
+          ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo."
+          : `NO alcanza para hoy${ctx.entrega_motivo ? ` (${ctx.entrega_motivo})` : ""}: ofrécele el día siguiente con amabilidad. ` +
+            `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
+      } else {
+        L.push("El cliente NO es de nuestra zona de reparto → el envío va **por agencia a provincia**.");
+        L.push("Mencionamos **Shalom** como nuestra agencia; solo ofrece otra si el cliente la pide.");
+        L.push("Para despachar necesitas: su **DNI**, nombre y apellido, la **ciudad y sede** de la agencia, y el **adelanto**.");
+      }
+      L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
+      parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
     }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
