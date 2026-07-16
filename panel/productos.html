@@ -927,21 +927,30 @@ function renderSalud(){
 // nuevo por cada mensaje.
 async function generarFlujoFisico(flowId, N, E){
   const cfg=st.prod.config||{};
+  // OJO con las claves:
+  //  · `nombre` NO se puede usar: ctx.nombre ya trae el nombre de WhatsApp del
+  //    contacto, así que el extractor creería que ya lo tiene y nunca lo
+  //    pediría. A la agencia le llegaría el apodo de WhatsApp y no entregan.
+  //  · `sede` tiene que decir EXPLÍCITAMENTE que no es la ciudad: si no, agarra
+  //    "soy de Trujillo" como sede y, por la regla de no pisar lo capturado,
+  //    después ignora la sede de verdad.
   const campos=[
-    { clave:"nombre", label:"Nombre y apellido", requerido:true },
+    { clave:"nombre_completo", label:"Nombre y apellido del que recibe", requerido:true },
     { clave:"direccion", label:"Dirección exacta", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
     { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
-    { clave:"sede", label:"Ciudad y sede de la agencia", detalle:"a qué sede de Shalom lo recoge", requerido:true, solo_si_zona:"provincia" },
+    { clave:"sede", label:"Sede de la agencia", detalle:"la oficina EXACTA donde lo va a recoger (ej. «Av. España»), NO la ciudad", requerido:true, solo_si_zona:"provincia" },
   ];
+  // Igual que en el digital: se ESCUCHA primero. A este flujo se llega después
+  // de los mensajes iniciales; arrancar vendiendo sería hablar encima del saludo.
   const nVender=await N("ia","La IA vende y toma datos",{
     operacion:"generar_texto", enviar:true, usar_conocimiento:true,
     detectar_opcion:true, detectar_zona:true, campos,
     prompt:"Continúa la conversación de forma natural: responde dudas, explica el valor y guía a la compra. "+
            "Pregúntale a dónde se lo enviamos para saber cómo despacharlo. Pide los datos que falten de a uno, "+
            "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.",
-  },true,80,240);
-  const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },false,380,240);
+  },false,80,240);
+  const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },true,380,240);
   const nFin=await N("fin","Fin",{},false,2080,240);
 
   // OJO: acá NO hay rama de "validar el comprobante del adelanto". Eso lo toma
@@ -966,10 +975,10 @@ async function generarFlujoFisico(flowId, N, E){
     acciones:[
       { tipo:"crear_pedido", estado:"confirmado", monto:"{{precio}}",
         datos:{ zona:"lima", zona_nombre:"{{zona_nombre}}", direccion:"{{direccion}}", referencia:"{{referencia}}",
-                cliente:"{{nombre}}", opcion:"{{opcion}}", saldo:"{{precio}}", entrega_hoy:"{{entrega_hoy}}" } },
+                cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{precio}}", entrega_hoy:"{{entrega_hoy}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
       { tipo:"add_tag", valor:"Compra" },
-      { tipo:"notify_admin", mensaje:"🛵 PEDIDO LIMA (contraentrega)\nCliente: {{nombre}} (+{{telefono}})\nZona: {{zona_nombre}} · ¿hoy?: {{entrega_hoy}}\nDirección: {{direccion}}\nRef: {{referencia}}\nOpción: {{opcion}} — cobrar S/ {{precio}}" },
+      { tipo:"notify_admin", mensaje:"🛵 PEDIDO LIMA (contraentrega)\nCliente: {{nombre_completo}} (+{{telefono}})\nZona: {{zona_nombre}} · ¿hoy?: {{entrega_hoy}}\nDirección: {{direccion}}\nRef: {{referencia}}\nOpción: {{opcion}} — cobrar S/ {{precio}}" },
     ],
   },false,1240,440);
   const nConfLima=await N("mensaje","Confirmación Lima",{
@@ -988,28 +997,32 @@ async function generarFlujoFisico(flowId, N, E){
   const nCrearProv=await N("accion","Crear pedido Provincia",{
     acciones:[
       { tipo:"crear_pedido", estado:"esperando_adelanto", monto:"{{precio}}",
-        datos:{ zona:"provincia", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre}}",
+        datos:{ zona:"provincia", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
                 opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{precio}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
-      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre}} (+{{telefono}})\nDNI: {{dni}}\nSede: {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
+      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nSede: {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
     ],
   },false,1240,640);
   const nPedirAdel=await N("mensaje","Pedir el adelanto",{
     bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *S/ {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque." }],
   },false,1520,640);
 
-  await E(nVender,"exito",nEsperar);
-  // Sin rama de imagen: el comprobante del adelanto lo intercepta el motor
-  // antes de llegar acá. Lo que sigue es la conversación de venta.
-  await E(nEsperar,"continuar",nEsLima);
+  // ORDEN CRÍTICO: se escucha → la IA extrae → RECIÉN AHÍ se evalúa si están
+  // los datos. Si las condiciones fueran antes del nodo de IA, evaluarían el
+  // contexto de ANTES de extraer y el pedido se crearía siempre un mensaje
+  // tarde (el cliente da el último dato y no pasa nada hasta que escriba otra
+  // vez). No se ve leyendo el código: aparece corriendo la conversación.
+  // Sin rama de imagen: el comprobante del adelanto lo intercepta el motor.
+  await E(nEsperar,"continuar",nVender);
+  await E(nVender,"exito",nEsLima);
   await E(nEsLima,"ruta:lima",nLimaOk);
   await E(nEsLima,"si_no_cumple",nProvOk);
   await E(nLimaOk,"ruta:crear",nCrearLima);
-  await E(nLimaOk,"si_no_cumple",nVender);      // le faltan datos → sigue conversando
+  await E(nLimaOk,"si_no_cumple",nEsperar);     // faltan datos → la IA ya los pidió
   await E(nCrearLima,"continuar",nConfLima);
   await E(nConfLima,"continuar",nFin);
   await E(nProvOk,"ruta:crear",nCrearProv);
-  await E(nProvOk,"si_no_cumple",nVender);      // faltan datos o zona desconocida
+  await E(nProvOk,"si_no_cumple",nEsperar);     // faltan datos o zona desconocida
   await E(nCrearProv,"continuar",nPedirAdel);
   await E(nPedirAdel,"continuar",nEsperar);     // ahora espera el comprobante
 }
@@ -1063,13 +1076,17 @@ async function generarFlujoVenta(){
       return;
     }
 
+    // El nodo inicial es ESCUCHAR, no vender: a este flujo se llega después de
+    // los mensajes iniciales, así que si arrancara vendiendo el bot hablaría
+    // encima de su propio saludo (y hasta se respondería sus preguntas). Nadie
+    // entra acá por palabra clave: se entra desde el rotador.
     const nVender=await N("ia","La IA vende",{
       operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:true,
       prompt:"Continúa la conversación con el cliente de forma natural. Responde sus dudas, explica el valor del producto, "+
              "maneja sus objeciones y guíalo a la compra. Cuando decida comprar, dile el precio de la opción que eligió y "+
              "pásale los datos de pago ({{datos_pago}}). No inventes precios ni promesas.",
-    },true,80,220);
-    const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },false,380,220);
+    },false,80,220);
+    const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },true,380,220);
     const nEsImg=await N("condicion","¿Mandó comprobante?",{
       rutas:[{ nombre:"Es imagen", handle:"ruta:es_imagen", match:"todas",
                condiciones:[{ op:"campo_igual", campo:"last_input_type", valor:"image" }] }],
@@ -1086,7 +1103,7 @@ async function generarFlujoVenta(){
     const nRegistrar=await N("accion","Registrar la venta",{
       acciones:[
         { tipo:"add_tag", valor:"Compra" },
-        { tipo:"notify_admin", mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nFecha: {{fecha_hora}}", foto:"{{ultima_imagen}}" },
+        { tipo:"notify_admin", mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre_completo}} (+{{telefono}})\nMonto: S/ {{precio}}\nFecha: {{fecha_hora}}", foto:"{{ultima_imagen}}" },
       ],
     },false,1520,120);
     const nEntregar=await N("accion","Entregar el producto",{
@@ -1156,7 +1173,7 @@ async function generarFlujoVenta(){
         const nDarX=await N("accion",`Entregar extra ${i+1}`,{
           acciones:[
             { tipo:"entregar", version_id:x.version_id, mensaje:"¡Listo! 🎉 Acá va tu extra:" },
-            { tipo:"notify_admin", mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre}} (+{{telefono}})\nFecha: {{fecha_hora}}`, foto:"{{ultima_imagen}}" },
+            { tipo:"notify_admin", mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre_completo}} (+{{telefono}})\nFecha: {{fecha_hora}}`, foto:"{{ultima_imagen}}" },
           ],
         },false,1500,y-90);
         const nReX=await N("mensaje",`Reintentar pago (extra ${i+1})`,{

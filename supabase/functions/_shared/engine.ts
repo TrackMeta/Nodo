@@ -1962,6 +1962,32 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
   return p.join("\n\n");
 }
+// El hilo del chat, como lo vería una persona. Es lo que convierte al nodo IA
+// en una vendedora que conversa y no en un contestador que saluda de nuevo cada
+// vez. Cacheado por run: en un mismo turno se puede llamar más de una vez.
+async function historial(db: SupabaseClient, run: Run, max = 12): Promise<string> {
+  const cache = (run as any)._hist;
+  if (cache !== undefined) return cache;
+  let out = "";
+  try {
+    const { data } = await db.from("messages")
+      .select("direction, type, content, ts").eq("contact_id", run.contact_id)
+      .order("ts", { ascending: false }).limit(max);
+    const filas = (data ?? []).reverse()
+      .map((m: any) => {
+        const quien = m.direction === "in" ? "Cliente" : "Tú";
+        const txt = m.content?.text ?? m.content?.caption ?? "";
+        if (txt) return `${quien}: ${txt}`;
+        // Un "[imagen]" es información: el cliente mandó algo aunque no sea texto.
+        return m.type && m.type !== "text" ? `${quien}: [${m.type}]` : null;
+      })
+      .filter(Boolean);
+    out = filas.join("\n");
+  } catch (e) { console.error("[historial]", (e as any)?.message ?? e); }
+  (run as any)._hist = out;
+  return out;
+}
+
 // Perfil por defecto según la operación del nodo (§6-OCTIES).
 const PERFIL_POR_OP: Record<string, string> = {
   generar_texto: "ventas", analizar_imagen: "ocr", extraer: "extraccion",
@@ -2158,6 +2184,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const model = cfg.modelo || (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
 
     let content: string | ContentBlock[] = prompt;
+    // Sin esto la IA está CIEGA: recibía un prompt fijo ("continúa la
+    // conversación") sin la conversación ni el mensaje del cliente, así que
+    // respondía un saludo genérico cada vez, ignorando lo que le preguntaban.
+    // No se ve leyendo el código — solo corriendo un chat de verdad.
+    if (op === "generar_texto" && cfg.usar_historial !== false) {
+      const hist = await historial(db, run, Number(cfg.historial_max ?? 12));
+      if (hist) content = `${prompt}\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO al último mensaje del cliente. No repitas el saludo si ya saludaste.`;
+    }
     if (op === "analizar_imagen") {
       // La imagen viene de una variable de config, o del último input del contacto.
       const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image);
