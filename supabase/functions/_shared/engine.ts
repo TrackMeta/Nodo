@@ -2279,6 +2279,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
       await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo capturado (IA)", `${cfg.guardar_en}: ${result ?? ""}`.slice(0, 140));
     }
+    // El OCR YA LEE el banco, la operación y el monto — pero se perdían: el
+    // nodo solo guardaba el texto crudo ("PAGO_OK"). Si el comprobante trae un
+    // JSON, se rescatan a campos propios para que el aviso y Google Sheets
+    // puedan decir CON QUÉ pagó, que es justo lo que Rodrigo quiere registrar.
+    if (op === "analizar_imagen") {
+      try {
+        const m = /\{[\s\S]*\}/.exec(String(result ?? ""));
+        if (m) {
+          const p = JSON.parse(m[0]);
+          const guarda = async (k: string, v: any) => {
+            const s = String(v ?? "").trim();
+            if (!s) return;
+            run.vars[k] = s;
+            ctx[k] = s;
+            await setField(db, run.channel_id, run.contact_id, k, s);
+          };
+          await guarda("pago_metodo", p.banco ?? p.app);
+          await guarda("pago_operacion", p.operacion);
+          await guarda("pago_monto", p.monto);
+          await guarda("pago_titular", p.titular);
+        }
+      } catch (_) { /* no trajo JSON: el flujo sigue igual con el texto crudo */ }
+    }
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");
     if (enviar && result) await emitIaText(db, run, String(result), ctx);
@@ -2301,6 +2324,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 // recibe { hoja, fila } y agrega la fila. Nodo solo hace POST a esa URL.
 async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const cfg = node.config ?? {};
+  // `una_vez`: una venta = UNA fila. Sin esto, un reintento del motor o un
+  // comprobante reenviado duplican la fila y los ingresos quedan inflados en la
+  // hoja — un error que se descubre tarde y ensucia meses de números.
+  if (cfg.una_vez) {
+    const clave = resolve(String(cfg.una_vez), ctx);
+    if (clave && await yaSeHizo(db, run, clave)) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "📊 Fila omitida (ya se registró)", clave).catch(() => {});
+      run.current_node_id =
+        (await nextNode(db, run.flow_id, node.id, "exito")) ??
+        (await nextNode(db, run.flow_id, node.id, "continuar"));
+      return;
+    }
+  }
   try {
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", run.channel_id).maybeSingle();
     const g = (ch as any)?.gsheets ?? {};

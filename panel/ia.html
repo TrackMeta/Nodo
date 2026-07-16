@@ -770,7 +770,10 @@ function renderPedidos(b){
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Personalización de mensajes</span></div>
-      <div class="desc">Mensajes que la IA envía al confirmar pedidos. Puedes usar variables como <b style="color:#a855f7">{{datos_pago}}</b>, <b style="color:#a855f7">{{nombre}}</b>.</div>
+      <div class="desc">Mensajes que la IA envía al confirmar pedidos. Puedes usar variables como <b style="color:#a855f7">{{datos_pago}}</b>, <b style="color:#a855f7">{{nombre}}</b>.
+      <br><br><b>Ojo con la columna de contraentrega:</b> solo se usa si un pedido de <b>Lima</b> queda esperando un pago.
+      El flujo que arma la <b>Receta</b> confirma Lima directo (se paga al recibir), así que con esa configuración
+      la IA solo usa la columna de <b>agencia</b>. La de contraentrega queda para flujos que armes a mano.</div>
       <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
         <div class="f">
           <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones contraentrega</div>

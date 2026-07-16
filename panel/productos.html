@@ -784,7 +784,7 @@ async function renderReceta(){
   const fVenta=(flows||[]).find(f=>f.role==="venta");
   let trigs=[];
   if(fIni){ const { data:t } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=t||[]; }
-  const { data:ch } = await supa.from("channels").select("negocio,ocr_config").eq("id",st.channelId).maybeSingle();
+  const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets").eq("id",st.channelId).maybeSingle();
   st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{} };
 
   const ops=st.versions.filter(v=>v.activo!==false);
@@ -839,7 +839,11 @@ async function renderReceta(){
         ? {ok:1,msg:`${st.prod.config.extras.length} extra(s) · se ofrecen ${((st.prod.config.extras_momento||"antes")==="antes")?"antes":"después"} de entregar`}
         : {warn:1,msg:"Sin ventas extra (opcional)"},
       go("extras","Configurar"))}
-    ${et(8,"Post-venta","Aviso por Telegram y registro en Google Sheets.",{warn:1,msg:"Fase 6 — todavía no construido"},"")}
+    ${et(8,"Post-venta","Aviso por Telegram y registro en Google Sheets — el flujo generado ya los incluye.",
+      st.receta.ch?.gsheets?.connected
+        ? {ok:1,msg:"Telegram + Google Sheets · una venta = una fila (no se duplica)"}
+        : {warn:1,msg:"Telegram sí; Google Sheets sin conectar (la venta se entrega igual)"},
+      `<a class="btn" href="./config.html" style="height:32px;display:inline-flex;align-items:center">Conectar hoja</a>`)}
     ${et(9,"Remarketing","Recuperar al que no compró, con descuentos.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
 
     <div class="card" style="margin-top:18px;border-color:var(--brand-border)">
@@ -1093,10 +1097,16 @@ async function generarFlujoVenta(){
       rutas:[{ nombre:"Es imagen", handle:"ruta:es_imagen", match:"todas",
                condiciones:[{ op:"campo_igual", campo:"last_input_type", valor:"image" }] }],
     },false,660,220);
+    // Pide el token (que es lo que mira la Condición, porque las condiciones son
+    // por texto) Y el JSON de lo que leyó — el motor lo rescata a
+    // {{pago_metodo}}, {{pago_operacion}}… Sin el JSON, ni el aviso ni Sheets
+    // podrían decir CON QUÉ pagó.
     const nOcr=await N("ia","Validar el pago",{
       operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false, guardar_en:"pago_resultado",
       prompt:"Analiza la imagen adjunta con las reglas del validador. Si el pago es VÁLIDO y por el monto correcto, "+
-             "responde exactamente PAGO_OK. Si no, responde PAGO_NO y en una frase el motivo.",
+             "responde exactamente PAGO_OK. Si no, responde PAGO_NO y en una frase el motivo.\n"+
+             "En la línea siguiente agrega SIEMPRE un JSON con lo que leíste del comprobante: "+
+             '{"banco":"Yape o el banco","operacion":"nº de operación","monto":0,"titular":"a quién le pagó"}',
     },false,960,120);
     const nPagoOk=await N("condicion","¿Pago válido?",{
       rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
@@ -1113,9 +1123,29 @@ async function generarFlujoVenta(){
           mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nOrigen: {{origen}}\nFecha: {{fecha_hora}}" },
       ],
     },false,1520,120);
+    // Registro en Google Sheets. Si no configuraste la hoja, el nodo falla —
+    // por eso sus DOS salidas (éxito y fallo) van a Entregar: una hoja mal
+    // configurada NO puede dejar sin producto a alguien que ya pagó.
+    const nSheet=await N("google_sheets","Registrar en Google Sheets",{
+      accion:"append", hoja:"Ventas", una_vez:"sheet_{{opcion_id}}",
+      columnas:[
+        { col:"Fecha",           valor:"{{fecha_hora}}" },
+        { col:"Cliente",         valor:"{{nombre}}" },
+        { col:"Teléfono",        valor:"{{telefono}}" },
+        { col:"Producto",        valor:"{{producto_nombre}}" },
+        { col:"Plan",            valor:"{{opcion}}" },
+        { col:"Precio",          valor:"{{precio}}" },
+        { col:"Método de pago",  valor:"{{pago_metodo}}" },
+        { col:"Nº operación",    valor:"{{pago_operacion}}" },
+        { col:"Estado",          valor:"Pagado" },
+        { col:"Vendedor",        valor:"IA" },
+        { col:"Canal de origen", valor:"{{origen}}" },
+        { col:"Anuncio",         valor:"{{ad_id}}" },
+      ],
+    },false,1660,120);
     const nEntregar=await N("accion","Entregar el producto",{
       acciones:[{ tipo:"entregar", mensaje:"¡Pago confirmado! 🎉 Acá tienes tu acceso:" }],
-    },false,1800,120);
+    },false,1940,120);
     const nFin=await N("fin","Fin",{},false,2080,120);
     const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
       bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
@@ -1129,6 +1159,10 @@ async function generarFlujoVenta(){
     await E(nPagoOk,"ruta:pago_ok",nRegistrar);
     await E(nPagoOk,"si_no_cumple",nRe);
     await E(nRe,"continuar",nEsperar);           // vuelve a escuchar
+    // Registrar → Sheets → (pase lo que pase) seguir. Las DOS salidas del nodo
+    // de Sheets van al mismo lado: sin hoja configurada el nodo falla, y eso no
+    // puede dejar sin producto a quien ya pagó.
+    await E(nRegistrar,"continuar",nSheet);
     // OJO: las aristas de salida de nEntregar y nRegistrar se crean abajo según
     // haya extras y en qué momento. Dos aristas con el MISMO handle desde el
     // mismo nodo harían que nextNode elija una al azar.
@@ -1148,7 +1182,8 @@ async function generarFlujoVenta(){
     if(extras.length && !st.extraCat) await cargarCatalogoExtras();
 
     if(!extras.length){
-      await E(nRegistrar,"continuar",nEntregar);
+      await E(nSheet,"exito",nEntregar);
+      await E(nSheet,"fallo",nEntregar);   // la hoja no bloquea la entrega
       await E(nEntregar,"continuar",nFin);
     }else{
       // Dónde cae la cadena cuando termina (rechazo, timeout o extras agotados).
@@ -1227,12 +1262,16 @@ async function generarFlujoVenta(){
       for(let i=0;i<entregas.length;i++){
         await E(entregas[i],"continuar", i+1<ofrecs.length ? ofrecs[i+1] : salida);
       }
-      // Entrada a la cadena según el momento elegido.
+      // Entrada a la cadena según el momento elegido. Se engancha DESDE Sheets,
+      // no desde Registrar: Registrar ya sale hacia Sheets, y dos aristas con
+      // el mismo handle harían que nextNode elija una al azar.
       if(antes){
-        await E(nRegistrar,"continuar",ofrecs[0]);
+        await E(nSheet,"exito",ofrecs[0]);
+        await E(nSheet,"fallo",ofrecs[0]);       // la hoja no bloquea la venta
         await E(nEntregar,"continuar",nFin);     // la salida de la cadena
       }else{
-        await E(nRegistrar,"continuar",nEntregar);
+        await E(nSheet,"exito",nEntregar);
+        await E(nSheet,"fallo",nEntregar);
         await E(nEntregar,"continuar",ofrecs[0]); // entregó y ahora ofrece
       }
     }
