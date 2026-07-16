@@ -57,6 +57,14 @@ export async function runEngine(
     }
   }
 
+  // Opt-out: si el cliente pide que no le escriban más, se le apaga el
+  // remarketing en el acto. Se evalúa ANTES de cualquier otra cosa y no
+  // interrumpe el flujo (puede seguir comprando si quiere; lo que se apaga son
+  // las secuencias de recuperación, no la atención).
+  if (event.type === "message" && esOptOut(event.text)) {
+    await aplicarOptOut(db, channelId, contactId);
+  }
+
   // Interceptor de SALDO automático (Agente de Logística · modo auto): si entra
   // un comprobante y el contacto tiene un pedido "en_agencia" esperando el
   // saldo, la IA valida el pago y suelta la clave de recojo — o, ante cualquier
@@ -106,6 +114,49 @@ export async function runEngine(
     }
   }
   await execute(db, run);
+}
+
+// ── Opt-out del remarketing ────────────────────────────────────────
+// Si alguien dice claramente que no quiere que le escriban, hay que
+// RESPETARLO. Esto es a propósito determinista (una lista de frases, no la IA):
+// para algo así no se puede depender de que un modelo "interprete bien" — el
+// costo de equivocarse es seguir spameando a quien te pidió que pares.
+const OPT_OUT = [
+  "no me interesa", "no me interesan", "ya no me interesa", "no gracias", "no, gracias",
+  "no escriban", "no me escriban", "no escribas", "no me escribas", "dejen de escribir",
+  "no molesten", "no me molesten", "no me contacten", "dejame en paz", "déjame en paz",
+  "eliminar mi numero", "eliminen mi numero", "borrenme", "bórrenme", "no quiero nada",
+  "ya no quiero", "basta", "stop", "unsubscribe", "baja",
+];
+// Reusa normalize() (el helper que ya tiene el motor: minúsculas + sin tildes)
+// y además saca la puntuación, para que "¡No, gracias!" == "no gracias".
+const limpiaOpt = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+
+function esOptOut(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 80) return false; // un texto largo rara vez es un "no" seco
+  return OPT_OUT.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    if (t === n) return true;
+    // Límites de palabra, NO includes(): "voy a trabajar" contiene "baja" y
+    // "bastante" contiene "basta" — con includes marcaríamos opt-out a alguien
+    // que solo dijo que iba a trabajar.
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
+
+// Marca el opt-out y CANCELA las secuencias activas del contacto.
+async function aplicarOptOut(db: SupabaseClient, channelId: string, contactId: string) {
+  try {
+    await db.from("contacts").update({ no_remarketing: true }).eq("id", contactId);
+    await db.from("sequence_subscriptions")
+      .update({ estado: "cancelada", updated_at: new Date().toISOString() })
+      .eq("contact_id", contactId).eq("estado", "activa");
+    await logEvent(db, channelId, contactId, "nota", "🚫 Pidió no recibir más mensajes",
+      "Remarketing apagado para este contacto");
+  } catch (_) { /* columna pendiente (0031) */ }
 }
 
 // ── Estado del run ─────────────────────────────────────────────────
@@ -290,9 +341,20 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
   run.estado = "activo";
 
   if (event.type === "resume") {
-    // Despertar tras Esperar: avanzar por 'continuar' desde el nodo actual.
-    run.current_node_id = await nextNode(db, run.flow_id, run.current_node_id!, "continuar");
+    // Nos despertó el reloj. Hay dos casos distintos:
+    //   · Esperar (sin _await): simplemente seguir por 'continuar'.
+    //   · Pregunta con timeout_seg (_await presente): el cliente NO contestó
+    //     a tiempo → seguir por la rama 'timeout' (o 'continuar' si no existe).
+    if (aw?.node_id) {
+      run.current_node_id =
+        (await nextNode(db, run.flow_id, aw.node_id, "timeout")) ??
+        (await nextNode(db, run.flow_id, aw.node_id, "continuar"));
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "⏱ Sin respuesta a tiempo").catch(() => {});
+    } else {
+      run.current_node_id = await nextNode(db, run.flow_id, run.current_node_id!, "continuar");
+    }
     delete run.vars._await;
+    run.wake_at = null;
     return true;
   }
   if (!aw) {
@@ -309,6 +371,7 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     run.vars[aw.guardar_en] = event.text;
     run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
     delete run.vars._await;
+    run.wake_at = null; // contestó a tiempo → cancelar el timeout pendiente
     return true;
   }
   if (aw.type === "button" && event.type === "button") {
@@ -316,6 +379,7 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     const next = await nextNode(db, run.flow_id, aw.node_id, handle);
     run.current_node_id = next;
     delete run.vars._await;
+    run.wake_at = null;
     return true;
   }
   // Tipo inesperado (ej. escribió texto donde esperábamos botón) → buffer.
@@ -391,6 +455,12 @@ async function execute(db: SupabaseClient, run: Run) {
         if (pregTxt.trim()) await emit(db, run, { text: pregTxt }, ctx);
         run.vars._await = { type: "input", node_id: node.id, guardar_en: node.config?.guardar_en };
         run.estado = "esperando";
+        // timeout_seg: si el cliente NO contesta en ese tiempo, el scheduler
+        // despierta el run y sigue por la rama "timeout". Es lo que evita
+        // dejar a alguien colgado esperando una respuesta que no va a llegar
+        // (ej.: pagó y no contesta la venta extra → se le entrega igual).
+        const tSeg = Number(node.config?.timeout_seg ?? 0);
+        run.wake_at = tSeg > 0 ? new Date(Date.now() + tSeg * 1000).toISOString() : null;
         await saveRun(db, run); return;
       }
       case "condicion": {

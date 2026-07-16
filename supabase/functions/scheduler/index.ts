@@ -94,6 +94,41 @@ async function processOrderReminders(now: number): Promise<number> {
   return n;
 }
 
+// ¿El contacto ya compró? Mira la etapa y, por si acaso, un pedido confirmado
+// (la etapa se puede mover a mano; la venta real no miente).
+async function yaCompro(contactId: string, stage: string | null): Promise<boolean> {
+  if (String(stage ?? "").toLowerCase() === "comprado") return true;
+  try {
+    const { data } = await db.from("orders").select("id")
+      .eq("contact_id", contactId)
+      .in("estado", ["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"])
+      .limit(1).maybeSingle();
+    return !!data;
+  } catch (_) { return false; }
+}
+
+// Horario permitido del remarketing (hora local del negocio). Sin configurar,
+// se manda a cualquier hora (lo de antes). Cacheado por tick.
+const horarioCache = new Map<string, any>();
+async function enHorario(channelId: string): Promise<boolean> {
+  try {
+    let cfg = horarioCache.get(channelId);
+    if (cfg === undefined) {
+      const { data } = await db.from("channels").select("remarketing, timezone").eq("id", channelId).maybeSingle();
+      cfg = data ?? null;
+      horarioCache.set(channelId, cfg);
+    }
+    const r = cfg?.remarketing;
+    if (!r || r.activo === false || !r.desde || !r.hasta) return true; // sin restricción
+    const tz = cfg?.timezone || "America/Lima";
+    const hhmm = new Intl.DateTimeFormat("es-PE", {
+      timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(new Date());
+    // Comparación lexicográfica de "HH:MM" (funciona con ceros a la izquierda).
+    return hhmm >= String(r.desde) && hhmm <= String(r.hasta);
+  } catch (_) { return true; } // ante la duda, no bloquear el remarketing
+}
+
 async function processSub(s: any, now: number): Promise<boolean> {
   const { data: seq } = await db.from("sequences").select("pasos, activo").eq("id", s.sequence_id).maybeSingle();
   const pasos = Array.isArray((seq as any)?.pasos) ? (seq as any).pasos : [];
@@ -105,9 +140,27 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const paso = pasos[s.paso_actual];
 
   const { data: c } = await db.from("contacts")
-    .select("ultimo_mensaje_cliente_at, bot_activo").eq("id", s.contact_id).maybeSingle();
+    .select("ultimo_mensaje_cliente_at, bot_activo, stage, no_remarketing").eq("id", s.contact_id).maybeSingle();
   if (!c) return false;
   if ((c as any).bot_activo === false) return false; // humano tomó la conversación
+
+  // ── Salvaguardas (requisitos 2 y 16) ──
+  // 1) Pidió que no le escriban → se cancela, no se reintenta nunca más.
+  if ((c as any).no_remarketing === true) {
+    await db.from("sequence_subscriptions")
+      .update({ estado: "cancelada", updated_at: new Date().toISOString() }).eq("id", s.id);
+    return false;
+  }
+  // 2) Ya compró → sale del remarketing. Mandarle "última oportunidad" a alguien
+  //    que acaba de pagar es vergonzoso y quema la marca.
+  if (await yaCompro(s.contact_id, (c as any).stage)) {
+    await db.from("sequence_subscriptions")
+      .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
+    return false;
+  }
+  // 3) Fuera del horario permitido → esperar al próximo tick (no se pierde el
+  //    paso, solo se posterga hasta una hora decente).
+  if (!await enHorario(s.channel_id)) return false;
 
   // Silencio consciente de la conversación: se mide desde el último mensaje
   // del cliente (si responde, el temporizador se reinicia solo).
