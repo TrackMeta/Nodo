@@ -15,7 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { answerCallback, editButtons } from "../_shared/telegram.ts";
+import { answerCallback, editButtons, sendTelegram } from "../_shared/telegram.ts";
 
 const db = serviceClient();
 
@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
   if (!channelId) return json({ error: "falta_canal" }, 400);
 
   const { data: ch } = await db.from("channels")
-    .select("telegram_chat_ids, telegram_webhook_secret").eq("id", channelId).maybeSingle();
+    .select("telegram_chat_ids, telegram_webhook_secret, telegram_pair").eq("id", channelId).maybeSingle();
   if (!ch) return json({ error: "canal_desconocido" }, 404);
 
   // 1) ¿Viene de Telegram?
@@ -45,12 +45,37 @@ Deno.serve(async (req) => {
 
   const update = await req.json().catch(() => null);
   const cb = update?.callback_query;
-  // Telegram reintenta si no le contestamos 200: siempre devolvemos ok.
-  if (!cb) return json({ ok: true });
+  const msg = update?.message;
 
   const secrets = await getChannelSecrets(db, channelId);
   const token = secrets?.telegram_bot_token;
   if (!token) return json({ ok: true });
+
+  // ── Vinculación por código ────────────────────────────────────────
+  // Es la ÚNICA forma de sumarse como admin desde Telegram. No alcanza con
+  // escribirle al bot: hay que mandar el código que muestra el panel, que dura
+  // pocos minutos. Si no, cualquiera que encuentre el bot podría aprobar pagos.
+  if (msg && !cb) {
+    const texto = String(msg.text ?? "").trim();
+    const pair = (ch as any).telegram_pair;
+    const quienEs = String(msg.from?.id ?? msg.chat?.id ?? "");
+    const vigente = pair?.codigo && pair?.vence && new Date(pair.vence).getTime() > Date.now();
+    if (vigente && texto.replace(/\D/g, "") === String(pair.codigo) && quienEs) {
+      const ids = ((ch as any).telegram_chat_ids ?? []).map(String);
+      if (!ids.includes(quienEs)) ids.push(quienEs);
+      await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null }).eq("id", channelId);
+      await sendTelegram(token, [quienEs],
+        "✅ <b>Listo, quedaste vinculado.</b>\nDesde acá vas a poder aprobar los pagos con un toque.");
+    } else if (texto === "/start") {
+      await sendTelegram(token, [String(msg.chat?.id ?? "")],
+        "👋 Soy el bot de tu Nodo.\nPara vincularte, andá a <b>Canales → Telegram</b> en el panel, tocá " +
+        "<b>Detectar mi chat ID</b> y mandame el código que te muestre.");
+    }
+    return json({ ok: true });
+  }
+
+  // Telegram reintenta si no le contestamos 200: siempre devolvemos ok.
+  if (!cb) return json({ ok: true });
 
   // 2) ¿Quién tocó el botón es admin de ESTE canal?
   const permitidos = ((ch as any).telegram_chat_ids ?? []).map(String);

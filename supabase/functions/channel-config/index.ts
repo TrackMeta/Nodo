@@ -62,6 +62,21 @@ Deno.serve(async (req) => {
       return json({ ok: true, url });
     }
 
+    // Genera el código para vincular un Telegram. Corto (se tipea en el
+    // celular) y efímero (5 min): es la llave para volverse admin, así que no
+    // puede quedar dando vueltas. El webhook lo valida cuando llega el mensaje.
+    if (action === "telegram_pair_start") {
+      const { data: c } = await db.from("channels").select("telegram_webhook_secret").eq("id", channel_id).maybeSingle();
+      if (!(c as any)?.telegram_webhook_secret) {
+        return json({ error: "sin_webhook", detalle: "Activá primero el Copiloto: sin eso el bot no puede recibir tu código." }, 400);
+      }
+      const codigo = String(Math.floor(100000 + Math.random() * 900000));
+      const vence = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const { error } = await db.from("channels").update({ telegram_pair: { codigo, vence } }).eq("id", channel_id);
+      if (error) return json({ error: "guardar_codigo", detalle: error.message }, 400);
+      return json({ ok: true, codigo, vence });
+    }
+
     if (action === "save") {
       // ── Campos planos del canal ─────────────────────────────────
       const upd: Record<string, unknown> = {};

@@ -124,23 +124,32 @@ function renderTG(){
         <div><div class="nm">Telegram</div><div class="sub2">Avisos y Copiloto en el celular</div></div>
         <span class="st ${s.telegram_bot_token?'on':''}">${s.telegram_bot_token?'Conectado':'Sin conectar'}</span></div>
       <div class="desc">Bot que te avisa y por el que podés <b>aprobar pagos desde el celular</b>. Crea el bot con @BotFather.</div>
+      <div style="font-weight:700;font-size:13px;margin-top:14px">1 · El bot</div>
       <label>Bot token ${badge(s.telegram_bot_token)}</label>
       <input class="in" type="password" id="t_token" autocomplete="off" placeholder="${ph(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
-      <label>Chat IDs (admins, separados por coma)</label>
-      <input class="in" id="t_chats" value="${esc(chats)}" placeholder="12345678, 87654321"/>
-      <div class="desc" style="margin-top:6px;font-size:11.5px">Solo estos chats pueden aprobar desde Telegram. Si el tuyo no está acá, los botones no te van a funcionar.</div>
-      <div class="acts"><button class="btn primary" id="saveTG">Guardar Telegram</button></div>
+      <div class="acts"><button class="btn primary" id="saveTG">Guardar token</button></div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:220px">
-          <div style="font-weight:700;font-size:13px">Copiloto en Telegram ${copiloto?'<span class="st on" style="margin-left:6px">Activo</span>':''}</div>
+          <div style="font-weight:700;font-size:13px">2 · Copiloto en Telegram ${copiloto?'<span class="st on" style="margin-left:6px">Activo</span>':''}</div>
           <div class="desc" style="margin:4px 0 0">Agrega botones a los avisos para que apruebes el adelanto o sueltes la clave sin abrir el panel.
-          ${copiloto?'':'Cargá el bot token y tu chat id primero.'}</div>
+          ${copiloto?'':'Necesita el bot token de arriba.'}</div>
         </div>
         <button class="btn" id="tgHook" ${s.telegram_bot_token?'':'disabled'}>${copiloto?'Reconectar':'Activar Copiloto'}</button>
-      </div>`;
-  $("saveTG").onclick=(e)=>save(e.target,{ telegram_bot_token:$("t_token").value||undefined, telegram_chat_ids:$("t_chats").value });
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+      <div style="font-weight:700;font-size:13px">3 · Quién puede aprobar</div>
+      <div class="desc" style="margin:4px 0 10px">Solo estos chats pueden aprobar pagos desde Telegram. Si el tuyo no está acá, los botones no te van a funcionar.</div>
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+        <input class="in" id="t_chats" value="${esc(chats)}" placeholder="Sin nadie vinculado todavía" style="flex:1;min-width:200px"/>
+        <button class="btn" id="tgPair" ${copiloto?'':'disabled'}>${icon("sparkles")} Detectar mi chat ID</button>
+      </div>
+      <div id="pairBox"></div>
+      <div class="acts"><button class="btn" id="saveChats">Guardar chats</button></div>`;
+  $("saveTG").onclick=(e)=>save(e.target,{ telegram_bot_token:$("t_token").value||undefined });
+  $("saveChats").onclick=(e)=>save(e.target,{ telegram_chat_ids:$("t_chats").value });
   const hk=$("tgHook");
   if(hk) hk.onclick=async(e)=>{
     const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Conectando…";
@@ -148,6 +157,45 @@ function renderTG(){
       toast("Copiloto de Telegram activo ✓"); await load(); }
     catch(err){ toast(err.message||"No se pudo conectar",true); b.disabled=false; b.textContent=old; }
   };
+  const pr=$("tgPair");
+  if(pr) pr.onclick=()=>vincularTelegram();
+}
+
+// Vinculación por código: el panel muestra un código, vos se lo mandás al bot
+// y el bot te reconoce. Se hace así y no "guardando al primero que escriba"
+// porque eso convertiría en admin a cualquier desconocido que encuentre el bot.
+async function vincularTelegram(){
+  const box=$("pairBox");
+  box.innerHTML=`<div style="font-size:12.5px;color:var(--muted);padding:10px 0">Generando código…</div>`;
+  let r;
+  try{ r=await callFn("channel-config",{ action:"telegram_pair_start", channel_id:st.channelId }); }
+  catch(e){ box.innerHTML=""; toast(e.message||"No se pudo generar el código",true); return; }
+
+  const fin=new Date(r.vence).getTime();
+  box.innerHTML=`
+    <div style="border:1.5px solid var(--brand);background:var(--brand-bg,rgba(43,127,255,.08));border-radius:12px;padding:14px;margin-top:10px">
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Abrí tu bot en Telegram y <b>mandale este código</b>:</div>
+      <div style="font-size:30px;font-weight:800;letter-spacing:5px;margin:10px 0;font-variant-numeric:tabular-nums">${esc(r.codigo)}</div>
+      <div style="font-size:12px;color:var(--faint)" id="pairTime"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Apenas lo mandes, tu chat queda vinculado solo — no tenés que copiar nada.</div>
+    </div>`;
+
+  // Espera a que el webhook lo vincule. Se corta solo al vencer el código.
+  clearInterval(st.pairTimer);
+  st.pairTimer=setInterval(async()=>{
+    const queda=Math.max(0,Math.round((fin-Date.now())/1000));
+    const t=$("pairTime");
+    if(t) t.textContent=queda?`El código vence en ${Math.floor(queda/60)}:${String(queda%60).padStart(2,"0")}`:"El código venció — tocá Detectar de nuevo.";
+    if(!queda){ clearInterval(st.pairTimer); return; }
+    const { data } = await supa.from("channels").select("telegram_chat_ids,telegram_pair").eq("id",st.channelId).maybeSingle();
+    if(data && !data.telegram_pair){ // el webhook lo consumió → quedó vinculado
+      clearInterval(st.pairTimer);
+      toast("Telegram vinculado ✓");
+      await load();
+    }
+  },2000);
+  // Si te vas de la página, no dejar el temporizador colgado.
+  if(st.leaveHooked!==true){ st.leaveHooked=true; window.addEventListener("beforeunload",()=>clearInterval(st.pairTimer)); }
 }
 async function save(btn, fields){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";

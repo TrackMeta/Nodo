@@ -1,0 +1,12 @@
+-- Nodo · 0034 — Vincular tu Telegram con un código (Fase 5/6)
+--
+-- Para que el Copiloto funcione hace falta el chat id del admin, y copiarlo a
+-- mano (con @userinfobot) es incómodo y fácil de equivocar.
+--
+-- Pero NO se puede resolver guardando el chat del primero que le escriba al
+-- bot: cualquiera que encuentre el bot se volvería admin y podría aprobar
+-- pagos. Por eso va con código de vinculación, como enlazar un dispositivo:
+-- el panel genera un código corto y efímero, y solo el que lo manda al bot
+-- queda vinculado.
+--   { codigo: "482193", vence: "2026-07-16T18:40:00Z" }
+alter table channels add column if not exists telegram_pair jsonb;
