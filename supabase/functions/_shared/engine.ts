@@ -843,8 +843,34 @@ async function evalCond(db: SupabaseClient, run: Run, c: any, ctx: any): Promise
 }
 
 // ── Acciones ───────────────────────────────────────────────────────
+// Requisito 6 — idempotencia: una venta = UNA fila en Sheets y UN aviso, aunque
+// el motor reintente, el cliente reenvíe el comprobante o el webhook re-entregue.
+// Se marca en el contacto (persiste entre runs, a diferencia de run.vars).
+// Sin esto, un reintento duplica ingresos en las estadísticas — un error que se
+// descubre tarde y ensucia los números de meses.
+async function yaSeHizo(db: SupabaseClient, run: Run, clave: string): Promise<boolean> {
+  const k = "_once_" + clave;
+  try {
+    const { data } = await db.from("contact_field_values")
+      .select("value, custom_fields!inner(key)")
+      .eq("contact_id", run.contact_id).eq("custom_fields.key", k).maybeSingle();
+    if (data) return true;
+  } catch (_) { return false; } // ante la duda, NO bloquear el aviso
+  await setField(db, run.channel_id, run.contact_id, k, new Date().toISOString());
+  return false;
+}
+
 async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: any) {
   for (const a of acciones) {
+    // `una_vez`: la acción corre una sola vez por contacto y clave. Se resuelve
+    // acá y no en cada acción para que sirva a todas (avisos, Sheets, etiquetas).
+    if (a.una_vez) {
+      const clave = resolve(String(a.una_vez), ctx);
+      if (clave && await yaSeHizo(db, run, clave)) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Acción omitida (ya se hizo)", clave).catch(() => {});
+        continue;
+      }
+    }
     switch (a.tipo) {
       case "add_tag":    await addTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_add", "Etiqueta añadida", a.valor); break;
       case "remove_tag": await removeTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_del", "Etiqueta quitada", a.valor); break;
@@ -1610,16 +1636,32 @@ function entregaHoy(cfg: any, zona: Zona): { hoy: boolean; motivo: string } {
 //   {{entrega_hoy}}   si | no
 //   {{entrega_motivo}} por qué no llega hoy (para que la IA lo explique bien)
 async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any) {
+  // La zona NO se re-evalúa una vez que se sabe. Se corre en cada mensaje, así
+  // que después de "soy de Trujillo" el cliente dice "la sede de Av. España" y
+  // el detector tomaba esa CALLE como su ciudad: Trujillo se perdía y el pedido
+  // salía con la agencia mal. Si de verdad se equivocó de zona, lo corrige un
+  // humano desde el Copiloto — es mucho más raro que mencionar una calle.
+  if (!a?.forzar && String(ctx.zona_entrega ?? "").trim()) return;
+
   const texto = a?.texto ? resolve(String(a.texto), ctx) : String(ctx.last_input ?? "");
   const cfg = await loadEntregas(db, run);
   const zonas: Zona[] = cfg?.entregas?.zonas ?? [];
   if (!zonas.length) return; // sin configuración → no tocar nada
 
   let z = matchZona(zonas, texto);
+  let lugar: string | null = z ? z.nombre : null;
   if (!z) {
-    const lugar = await extraerLugar(db, run.channel_id, texto);
-    if (lugar) z = matchZona(zonas, lugar);
+    const ext = await extraerLugar(db, run.channel_id, texto);
+    if (ext) {
+      lugar = ext;
+      z = matchZona(zonas, ext);
+      if (z) lugar = z.nombre;
+    }
   }
+  // Si no mencionó NINGÚN lugar, no se toca nada. Antes cualquier mensaje sin
+  // lugar ("hola") lo marcaba como provincia, y la IA le hablaba de agencias a
+  // alguien que todavía no había dicho de dónde era.
+  if (!lugar) return;
 
   // Lo que no está en la lista (o está pero destildado) → Provincia. Por eso
   // desactivar una zona SÍ tiene efecto real: deja de ser Lima.
@@ -1631,6 +1673,10 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   };
   await set("zona_entrega", esLima ? "lima" : "provincia");
   await set("zona_nombre", z?.nombre ?? "");
+  // La CIUDAD, que hasta acá se detectaba y se tiraba: zona_nombre solo se
+  // llena si calzó con una zona de Lima, así que en provincia quedaba vacía.
+  // Sin ella "Av. España" no significa nada — ¿la de Trujillo o la de Lima?
+  await set("ciudad", lugar);
   if (esLima) {
     const { hoy, motivo } = entregaHoy(cfg, z!);
     await set("entrega_hoy", hoy ? "si" : "no");
@@ -2109,9 +2155,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           : `NO alcanza para hoy${ctx.entrega_motivo ? ` (${ctx.entrega_motivo})` : ""}: ofrécele el día siguiente con amabilidad. ` +
             `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
       } else {
-        L.push("El cliente NO es de nuestra zona de reparto → el envío va **por agencia a provincia**.");
+        L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);
         L.push("Mencionamos **Shalom** como nuestra agencia; solo ofrece otra si el cliente la pide.");
-        L.push("Para despachar necesitas: su **DNI**, nombre y apellido, la **ciudad y sede** de la agencia, y el **adelanto**.");
+        // Pedir la sede nombrando la ciudad: "Av. España" a secas no sirve para
+        // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
+        // si le preguntas por SU ciudad.
+        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, el **adelanto**, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
+          `Pregúntale la sede nombrando su ciudad, no en abstracto.`);
       }
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));

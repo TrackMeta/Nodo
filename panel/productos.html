@@ -997,10 +997,12 @@ async function generarFlujoFisico(flowId, N, E){
   const nCrearProv=await N("accion","Crear pedido Provincia",{
     acciones:[
       { tipo:"crear_pedido", estado:"esperando_adelanto", monto:"{{precio}}",
-        datos:{ zona:"provincia", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
+        // La ciudad va SEPARADA de la sede: "Av. España" sola no alcanza para
+        // despachar (¿la de Trujillo o la de Lima?).
+        datos:{ zona:"provincia", ciudad:"{{ciudad}}", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
                 opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{precio}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
-      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nSede: {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
+      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nAgencia: Shalom {{ciudad}} · {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
     ],
   },false,1240,640);
   const nPedirAdel=await N("mensaje","Pedir el adelanto",{
@@ -1100,10 +1102,15 @@ async function generarFlujoVenta(){
       rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
                condiciones:[{ op:"campo_contiene", campo:"pago_resultado", valor:"PAGO_OK" }] }],
     },false,1240,120);
+    // En digital el nombre es el de WhatsApp ({{nombre}}): no hay extractor ni
+    // agencia de por medio, así que no existe {{nombre_completo}}.
+    // `una_vez`: si el cliente reenvía el comprobante o el motor reintenta, la
+    // venta NO se cuenta ni se avisa dos veces (requisito 6).
     const nRegistrar=await N("accion","Registrar la venta",{
       acciones:[
         { tipo:"add_tag", valor:"Compra" },
-        { tipo:"notify_admin", mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre_completo}} (+{{telefono}})\nMonto: S/ {{precio}}\nFecha: {{fecha_hora}}", foto:"{{ultima_imagen}}" },
+        { tipo:"notify_admin", una_vez:"venta_{{opcion_id}}", foto:"{{ultima_imagen}}",
+          mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nOrigen: {{origen}}\nFecha: {{fecha_hora}}" },
       ],
     },false,1520,120);
     const nEntregar=await N("accion","Entregar el producto",{

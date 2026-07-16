@@ -176,9 +176,12 @@ function card(o,et){
   // Datos copiables: después de aprobar los vas a tipear en el sistema de la
   // agencia, y un error de tipeo ahí significa que no le entregan el paquete.
   const datos=[];
-  if(c.nombre) datos.push(["Nombre",c.nombre]);
+  // El nombre del PEDIDO (el que va a la agencia), no el de WhatsApp: si no
+  // coinciden con el DNI, no le entregan el paquete.
+  if(s.cliente||c.nombre) datos.push(["Nombre",s.cliente||c.nombre]);
   if(s.dni) datos.push(["DNI",s.dni]);
-  if(s.sede) datos.push(["Sede",s.sede]);
+  // Ciudad + sede juntas: "Av. España" sola no dice a qué agencia va.
+  if(s.sede) datos.push(["Agencia", (s.ciudad?`Shalom ${s.ciudad} · `:"")+s.sede]);
   if(s.direccion) datos.push(["Dirección",s.direccion]);
   if(s.referencia) datos.push(["Referencia",s.referencia]);
   if(s.opcion) datos.push(["Pedido",s.opcion]);

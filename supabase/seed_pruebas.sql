@@ -102,7 +102,7 @@ begin
   insert into flow_nodes (flow_id,tipo,nombre,config,es_inicial,pos_x,pos_y) values
     (fD,'accion','Registrar la venta', jsonb_build_object('acciones',jsonb_build_array(
       jsonb_build_object('tipo','add_tag','valor','Compra'),
-      jsonb_build_object('tipo','notify_admin','foto','{{ultima_imagen}}','mensaje',
+      jsonb_build_object('tipo','notify_admin','una_vez','venta_{{opcion_id}}','foto','{{ultima_imagen}}','mensaje',
         E'💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}}\nMonto: S/ {{precio}}\nFecha: {{fecha_hora}}'))),
       false,1520,120) returning id into n6;
   insert into flow_nodes (flow_id,tipo,nombre,config,es_inicial,pos_x,pos_y) values
@@ -229,7 +229,7 @@ begin
   insert into flow_nodes (flow_id,tipo,nombre,config,es_inicial,pos_x,pos_y) values
     (fF,'accion','Crear pedido Provincia', jsonb_build_object('acciones',jsonb_build_array(
       jsonb_build_object('tipo','crear_pedido','estado','esperando_adelanto','monto','{{precio}}','datos',
-        jsonb_build_object('zona','provincia','sede','{{sede}}','dni','{{dni}}','cliente','{{nombre_completo}}',
+        jsonb_build_object('zona','provincia','ciudad','{{ciudad}}','sede','{{sede}}','dni','{{dni}}','cliente','{{nombre_completo}}',
           'opcion','{{opcion}}','adelanto','{{adelanto}}','saldo','{{precio}}')),
       jsonb_build_object('tipo','set_field','key','pedido_creado','valor','si'),
       jsonb_build_object('tipo','notify_admin','mensaje',
