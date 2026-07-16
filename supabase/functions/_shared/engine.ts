@@ -1485,6 +1485,10 @@ type CampoDato = {
   detalle?: string;
   requerido?: boolean;
   validar?: "dni";
+  // Un dato puede hacer falta solo en un camino: el DNI lo pide la agencia
+  // (provincia), pero para un envío en Lima con contraentrega no sirve de nada
+  // y pedirlo sería fricción gratis.
+  solo_si_zona?: "lima" | "provincia";
 };
 
 // Validaciones DURAS, por código. Contar dígitos es exactamente lo que un LLM
@@ -1515,7 +1519,10 @@ function datoDudoso(clave: string, valor: string): string | null {
 }
 
 async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): Promise<void> {
-  const campos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
+  const todos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
+  // Los datos que aplican dependen del camino: mientras no sepamos la zona, se
+  // piden solo los comunes (no vamos a pedirle el DNI a alguien de Lima).
+  const campos = todos.filter((c) => !c.solo_si_zona || c.solo_si_zona === ctx.zona_entrega);
   const texto = String(ctx.last_input ?? "");
   if (!campos.length || !texto) return;
 

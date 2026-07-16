@@ -847,13 +847,16 @@ async function renderReceta(){
       <div id="saludBox"></div>
       <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
         ${fisico
-          ? `El flujo de <b>producto físico</b> necesita las reglas de zona (Lima/Provincia), que llegan en la <b>Fase 4</b>.
-             Por ahora armalo desde la pestaña <b>Flujos</b> clonando un esqueleto.`
+          ? `Genera el flujo completo: la <b>IA vende</b>, detecta a dónde va el pedido <b>sin botones</b> (contra tus zonas
+             de Ajustes → Entregas Lima) y <b>toma los datos conversando</b>, sin interrogatorio. En <b>Lima</b> crea el
+             pedido apenas tiene los datos; en <b>provincia</b> lo crea, pide el adelanto y lo valida.
+             <b>Ahí termina el flujo</b>: despachar, mandar la guía, cobrar el saldo y soltar la clave los operás vos
+             desde Pedidos.`
           : `Genera el flujo completo: la <b>IA vende y responde</b>, detecta el comprobante <b>en cualquier momento</b>,
              lo <b>valida contra el precio exacto</b> de la opción elegida y <b>entrega solo</b>. Si el pago no cuadra,
              lo pide de nuevo y la IA sigue atendiendo dudas.`}
       </div>
-      ${fisico?"":`<button class="btn primary" id="genFlow">${st.receta.fVenta?"Regenerar flujo de venta":"Generar flujo de venta"}</button>`}
+      <button class="btn primary" id="genFlow">${st.receta.fVenta?"Regenerar flujo de venta":"Generar flujo de venta"}</button>
       ${st.receta.fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(st.receta.fVenta.nombre)}" (${st.receta.fVenta.estado}). Regenerar lo reescribe por completo.</div>`:""}
     </div>`;
 
@@ -904,6 +907,142 @@ function renderSalud(){
 //
 // El bucle hace que la IA atienda dudas indefinidamente y que el comprobante se
 // detecte en cualquier momento (requisitos 3 y 4).
+// Genera el flujo de venta de un producto FÍSICO. A diferencia del digital
+// (paga → entrega → fin), este termina cuando se CREA EL PEDIDO: despachar,
+// mandar la guía, cobrar el saldo y soltar la clave no los hace el flujo, los
+// hace Rodrigo con el Copiloto y el Kanban ("no todo puede ser automatizado").
+//
+//   [IA vende] ← sabe la zona y pesca datos mientras conversa
+//        ↓
+//   [escucha] → ¿mandó comprobante?
+//     ├─ sí → [valida el adelanto] → ok → [pedido: adelanto validado] → fin
+//     │                            └→ [pide de nuevo] → escucha
+//     └─ no → ¿de dónde es?
+//              ├─ Lima      → ¿datos completos? → [crea pedido CONFIRMADO] → fin
+//              └─ Provincia → ¿datos completos? → [crea pedido ESPERANDO ADELANTO]
+//                                                  → [le pide el adelanto] → escucha
+//
+// Las guardas de "¿ya tiene pedido?" usan campo_igual contra "" porque el motor
+// no tiene un operador "campo no existe"; sin ellas el bucle crearía un pedido
+// nuevo por cada mensaje.
+async function generarFlujoFisico(flowId, N, E){
+  const cfg=st.prod.config||{};
+  const campos=[
+    { clave:"nombre", label:"Nombre y apellido", requerido:true },
+    { clave:"direccion", label:"Dirección exacta", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
+    { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
+    { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
+    { clave:"sede", label:"Ciudad y sede de la agencia", detalle:"a qué sede de Shalom lo recoge", requerido:true, solo_si_zona:"provincia" },
+  ];
+  const nVender=await N("ia","La IA vende y toma datos",{
+    operacion:"generar_texto", enviar:true, usar_conocimiento:true,
+    detectar_opcion:true, detectar_zona:true, campos,
+    prompt:"Continúa la conversación de forma natural: responde dudas, explica el valor y guía a la compra. "+
+           "Pregúntale a dónde se lo enviamos para saber cómo despacharlo. Pide los datos que falten de a uno, "+
+           "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.",
+  },true,80,240);
+  const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },false,380,240);
+  const nEsImg=await N("condicion","¿Mandó comprobante?",{
+    rutas:[{ nombre:"Es imagen", handle:"ruta:es_imagen", match:"todas",
+             condiciones:[{ op:"campo_igual", campo:"last_input_type", valor:"image" }] }],
+  },false,660,240);
+
+  // ── Rama del adelanto (provincia) ──
+  const nOcr=await N("ia","Validar el adelanto",{
+    operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false,
+    guardar_en:"pago_resultado", monto_esperado:"{{adelanto}}",
+    prompt:"Analiza la imagen con las reglas del validador. Si el pago del adelanto es VÁLIDO y por el monto correcto, "+
+           "responde exactamente PAGO_OK. Si no, responde PAGO_NO y el motivo en una frase.",
+  },false,960,80);
+  const nPagoOk=await N("condicion","¿Adelanto válido?",{
+    rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
+             condiciones:[{ op:"campo_contiene", campo:"pago_resultado", valor:"PAGO_OK" }] }],
+  },false,1240,80);
+  const nAdelOk=await N("accion","Adelanto validado",{
+    acciones:[
+      { tipo:"actualizar_pedido", estado:"adelanto_validado" },
+      { tipo:"add_tag", valor:"Compra" },
+      { tipo:"notify_admin", mensaje:"💰 ADELANTO PAGADO · {{producto_nombre}}\nCliente: {{nombre}} (+{{telefono}})\nDNI: {{dni}}\nSede: {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nAdelanto: S/ {{adelanto}}", foto:"{{ultima_imagen}}" },
+    ],
+  },false,1520,80);
+  const nGracias=await N("mensaje","Confirmación del adelanto",{
+    bubbles:[{ text:"¡Adelanto confirmado! 🙌\n\nYa estamos preparando tu pedido. Te enviamos la guía apenas lo despachemos por la agencia." }],
+  },false,1800,80);
+  const nFin=await N("fin","Fin",{},false,2080,240);
+  const nRe=await N("mensaje","Reintentar el comprobante",{
+    bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
+  },false,960,-40);
+
+  // ── Rama Lima (contraentrega: no hay pago por adelantado) ──
+  const nEsLima=await N("condicion","¿Es de Lima?",{
+    rutas:[{ nombre:"Lima", handle:"ruta:lima", match:"todas",
+             condiciones:[{ op:"campo_igual", campo:"zona_entrega", valor:"lima" }] }],
+  },false,660,440);
+  const nLimaOk=await N("condicion","¿Datos listos? (Lima)",{
+    rutas:[{ nombre:"Crear", handle:"ruta:crear", match:"todas",
+             condiciones:[
+               { op:"campo_igual", campo:"datos_completos", valor:"si" },
+               { op:"campo_igual", campo:"pedido_creado", valor:"" }, // aún sin pedido
+             ] }],
+  },false,960,440);
+  const nCrearLima=await N("accion","Crear pedido Lima",{
+    acciones:[
+      { tipo:"crear_pedido", estado:"confirmado", monto:"{{precio}}",
+        datos:{ zona:"lima", zona_nombre:"{{zona_nombre}}", direccion:"{{direccion}}", referencia:"{{referencia}}",
+                cliente:"{{nombre}}", opcion:"{{opcion}}", saldo:"{{precio}}", entrega_hoy:"{{entrega_hoy}}" } },
+      { tipo:"set_field", key:"pedido_creado", valor:"si" },
+      { tipo:"add_tag", valor:"Compra" },
+      { tipo:"notify_admin", mensaje:"🛵 PEDIDO LIMA (contraentrega)\nCliente: {{nombre}} (+{{telefono}})\nZona: {{zona_nombre}} · ¿hoy?: {{entrega_hoy}}\nDirección: {{direccion}}\nRef: {{referencia}}\nOpción: {{opcion}} — cobrar S/ {{precio}}" },
+    ],
+  },false,1240,440);
+  const nConfLima=await N("mensaje","Confirmación Lima",{
+    bubbles:[{ text:"¡Listo, {{nombre}}! ✅ Tu pedido quedó confirmado.\n\n🛵 Pagas al recibirlo. Te avisamos cuando salga el motorizado." }],
+  },false,1520,440);
+
+  // ── Rama Provincia (crea el pedido y recién ahí pide el adelanto) ──
+  const nProvOk=await N("condicion","¿Datos listos? (Provincia)",{
+    rutas:[{ nombre:"Crear", handle:"ruta:crear", match:"todas",
+             condiciones:[
+               { op:"campo_igual", campo:"datos_completos", valor:"si" },
+               { op:"campo_igual", campo:"zona_entrega", valor:"provincia" },
+               { op:"campo_igual", campo:"pedido_creado", valor:"" },
+             ] }],
+  },false,960,640);
+  const nCrearProv=await N("accion","Crear pedido Provincia",{
+    acciones:[
+      { tipo:"crear_pedido", estado:"esperando_adelanto", monto:"{{precio}}",
+        datos:{ zona:"provincia", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre}}",
+                opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{precio}}" } },
+      { tipo:"set_field", key:"pedido_creado", valor:"si" },
+      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre}} (+{{telefono}})\nDNI: {{dni}}\nSede: {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
+    ],
+  },false,1240,640);
+  const nPedirAdel=await N("mensaje","Pedir el adelanto",{
+    bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *S/ {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque." }],
+  },false,1520,640);
+
+  await E(nVender,"exito",nEsperar);
+  await E(nEsperar,"continuar",nEsImg);
+  await E(nEsImg,"ruta:es_imagen",nOcr);
+  await E(nEsImg,"si_no_cumple",nEsLima);
+  await E(nOcr,"exito",nPagoOk);
+  await E(nPagoOk,"ruta:pago_ok",nAdelOk);
+  await E(nPagoOk,"si_no_cumple",nRe);
+  await E(nRe,"continuar",nEsperar);
+  await E(nAdelOk,"continuar",nGracias);
+  await E(nGracias,"continuar",nFin);
+  await E(nEsLima,"ruta:lima",nLimaOk);
+  await E(nEsLima,"si_no_cumple",nProvOk);
+  await E(nLimaOk,"ruta:crear",nCrearLima);
+  await E(nLimaOk,"si_no_cumple",nVender);      // le faltan datos → sigue conversando
+  await E(nCrearLima,"continuar",nConfLima);
+  await E(nConfLima,"continuar",nFin);
+  await E(nProvOk,"ruta:crear",nCrearProv);
+  await E(nProvOk,"si_no_cumple",nVender);      // faltan datos o zona desconocida
+  await E(nCrearProv,"continuar",nPedirAdel);
+  await E(nPedirAdel,"continuar",nEsperar);     // ahora espera el comprobante
+}
+
 async function generarFlujoVenta(){
   const ops=st.versions.filter(v=>v.activo!==false && v.precio!=null && v.precio!=="");
   if(!ops.length){ toast("Primero cargá al menos una opción con precio",true); return; }
@@ -943,6 +1082,15 @@ async function generarFlujoVenta(){
         .insert({ flow_id:flowId, source_node:from, source_handle:handle, target_node:to });
       if(error) throw new Error(error.message);
     };
+
+    // El físico tiene otra forma: no entrega nada por chat, termina al crear el
+    // pedido. Lo demás (despacho, guía, saldo, clave) lo opera un humano.
+    if((st.prod.tipo||"digital")==="fisico"){
+      await generarFlujoFisico(flowId, N, E);
+      toast("Flujo de venta generado ✓");
+      st.tab="receta"; renderDetail();
+      return;
+    }
 
     const nVender=await N("ia","La IA vende",{
       operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:true,
