@@ -46,6 +46,17 @@
   .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
   .btn.primary{background:var(--brand);border:none;color:#fff}
+  /* Entregas Lima: esta página no tenía switches ni checkboxes propios.
+     Prefijo ent- a propósito: una clase genérica como .sw o .chk puede chocar
+     con las del cascarón o las de otra página (ya nos pasó con .lbl). */
+  .ent-sw{width:38px;height:21px;border-radius:999px;background:var(--border-strong,var(--border));
+    position:relative;flex:none;transition:background .18s;cursor:pointer}
+  .ent-sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;
+    background:#fff;transition:transform .18s}
+  .ent-sw.on{background:var(--brand)}
+  .ent-sw.on::after{transform:translateX(17px)}
+  .ent-chk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;color:var(--muted)}
+  .ent-chk input{accent-color:var(--brand);cursor:pointer;margin:0}
   .btn.primary:hover{background:var(--brand-2)}
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
   /* Google Sheets — pasos guiados */
@@ -73,6 +84,7 @@
     <div class="tabs">
       <button class="tab active" data-t="marca" id="tabMarca"></button>
       <button class="tab" data-t="general" id="tabGeneral"></button>
+      <button class="tab" data-t="entregas" id="tabEntregas"></button>
       <button class="tab" data-t="pixel" id="tabPixel"></button>
       <button class="tab" data-t="gsheets" id="tabSheets"></button>
       <button class="tab" data-t="apariencia" id="tabApariencia"></button>
@@ -116,6 +128,7 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   $("tabMarca").innerHTML=IC.tag+"<span>Marca</span>";
   $("tabGeneral").innerHTML=IC.sliders+"<span>General</span>";
+  $("tabEntregas").innerHTML=icon("truck")+"<span>Entregas Lima</span>";
   $("tabPixel").innerHTML=`<img src="${LOGO.meta}" alt=""/><span>Pixel de Meta</span>`;
   $("tabSheets").innerHTML=`<img src="${LOGO.sheets}" alt=""/><span>Google Sheets</span>`;
   $("tabApariencia").innerHTML=IC.monitor+"<span>Apariencia</span>";
@@ -138,7 +151,8 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle();
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
@@ -153,9 +167,165 @@ function render(){
   const b=$("body");
   if(st.tab==="marca") renderBranding(b);
   else if(st.tab==="general") renderGeneral(b);
+  else if(st.tab==="entregas") renderEntregas(b);
   else if(st.tab==="pixel") renderPixel(b);
   else if(st.tab==="apariencia") renderApariencia(b);
   else renderGsheets(b);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ENTREGAS LIMA — la lista REAL de entrega del negocio y sus reglas.
+// Todo lo que se toca acá lo obedece el CÓDIGO, no la IA: la IA solo interpreta
+// qué lugar dijo el cliente; si cubrimos, si llega hoy y si ya pasó la hora de
+// corte lo decide el motor contra esto. O sea: destildar una zona la saca de
+// Lima de verdad, no "le sugiere" a la IA que no la ofrezca.
+// Lo que no está en la lista → Provincia (agencia), automático.
+// ═══════════════════════════════════════════════════════════════════
+const GRUPOS=[["centro","Lima Centro"],["moderna","Lima Moderna"],["norte","Lima Norte"],
+              ["sur","Lima Sur"],["este","Lima Este"],["callao","Callao"]];
+const DIAS=[["lun","L"],["mar","M"],["mie","M"],["jue","J"],["vie","V"],["sab","S"]];
+
+function renderEntregas(b){
+  const e=st.channel.entregas;
+  if(!e || !Array.isArray(e.zonas)){
+    b.innerHTML=`<div class="card"><h3>Entregas Lima</h3>
+      <p class="sub">Este bot todavía no tiene zonas de entrega cargadas (falta aplicar la migración 0032).</p></div>`;
+    return;
+  }
+  st.ent=JSON.parse(JSON.stringify(e)); // se edita una copia; se guarda al confirmar
+  const E=st.ent;
+  E.dias=E.dias||{}; E.horario=E.horario||{};
+  if(!Array.isArray(E.feriados_fechas)) E.feriados_fechas=[];
+
+  const sw=(on,id)=>`<span class="ent-sw ${on?'on':''}" data-sw="${id}"></span>`;
+  const row=(txt,sub,on,id)=>`<div class="erow" data-row="${id}" style="display:flex;align-items:center;justify-content:space-between;
+    gap:10px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer;margin-top:8px">
+    <span><span style="font-weight:600;font-size:13px">${txt}</span>
+    ${sub?`<div style="font-size:11.5px;color:var(--faint);margin-top:2px">${sub}</div>`:""}</span>${sw(on,id)}</div>`;
+
+  b.innerHTML=`
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Reglas de entrega</h3>
+      <p class="sub">Lo que configures acá es una <b>regla</b>: el sistema la calcula y la IA solo la comunica.
+      Ella ni siquiera sabe qué hora es — de eso se encarga el motor.</p>
+      ${row("Envío gratis","Se le dice al cliente que el envío no cuesta.",E.envio_gratis!==false,"envio_gratis")}
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Hora de corte para entrega el mismo día</label>
+        <input class="in" id="entCorte" type="time" value="${esc(E.corte||"11:00")}" style="width:120px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">
+          Si el cliente pide para hoy después de esta hora, se le ofrece mañana.</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700;margin-right:4px">Días de reparto</label>
+        ${DIAS.map(([k,l])=>`<button class="dbtn ${E.dias[k]!==false?'on':''}" data-dia="${k}"
+          style="width:34px;height:34px;border-radius:9px;border:1.5px solid ${E.dias[k]!==false?'var(--brand)':'var(--border)'};
+          background:${E.dias[k]!==false?'var(--brand)':'transparent'};color:${E.dias[k]!==false?'#fff':'var(--muted)'};
+          font-weight:700;font-size:12px;cursor:pointer">${l}</button>`).join("")}
+      </div>
+      ${row("Entrego domingos","",E.domingos===true,"domingos")}
+      ${row("Entrego feriados","Si está apagado, las fechas de abajo no tienen reparto.",E.feriados===true,"feriados")}
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Horario de entrega</label>
+        <input class="in" id="entDesde" type="time" value="${esc(E.horario.desde||"09:00")}" style="width:120px"/>
+        <span style="font-size:12.5px;color:var(--muted)">a</span>
+        <input class="in" id="entHasta" type="time" value="${esc(E.horario.hasta||"19:00")}" style="width:120px"/>
+      </div>
+      <label style="margin-top:16px">Feriados</label>
+      <div id="ferList" style="margin-top:4px"></div>
+      <button class="btn" id="ferAdd" style="height:32px;margin-top:8px">+ Feriado</button>
+    </div>
+
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("pin")} Zonas de entrega</h3>
+      <p class="sub"><b>Cubro</b> = es Lima (contraentrega). <b>Mismo día</b> = puede llegar hoy si pide antes de la hora de corte.
+      Todo lo que <b>no</b> esté acá (o esté destildado) va por <b>agencia a provincia</b>, automático.</p>
+      <div id="zonas"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn primary" id="entSave">Guardar cambios</button></div>`;
+
+  // Toggles de reglas (click en toda la fila).
+  b.querySelectorAll(".erow").forEach(r=> r.onclick=()=>{
+    const k=r.dataset.row;
+    E[k] = k==="envio_gratis" ? !(E[k]!==false) : !(E[k]===true);
+    r.querySelector("[data-sw]").classList.toggle("on", k==="envio_gratis" ? E[k]!==false : E[k]===true);
+  });
+  b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{
+    const k=x.dataset.dia; E.dias[k]=!(E.dias[k]!==false); renderEntregas(b);
+  });
+  $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
+  $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
+  $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };
+  $("ferAdd").onclick=()=>{ E.feriados_fechas.push(""); paintFeriados(); };
+  $("entSave").onclick=guardarEntregas;
+  paintFeriados();
+  paintZonas();
+}
+
+function paintFeriados(){
+  const E=st.ent, box=$("ferList"); if(!box) return;
+  box.innerHTML="";
+  if(!E.feriados_fechas.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin feriados cargados.</div>`; return; }
+  E.feriados_fechas.forEach((f,i)=>{
+    const r=document.createElement("div"); r.style.cssText="display:flex;gap:7px;align-items:center;margin-bottom:6px";
+    r.innerHTML=`<input class="in fd" type="date" value="${esc(f||"")}" style="width:170px"/>
+      <button class="btn fdel" style="height:32px">${icon("trash")}</button>`;
+    r.querySelector(".fd").onchange=(ev)=>{ E.feriados_fechas[i]=ev.target.value; };
+    r.querySelector(".fdel").onclick=()=>{ E.feriados_fechas.splice(i,1); paintFeriados(); };
+    box.appendChild(r);
+  });
+}
+
+function paintZonas(){
+  const E=st.ent, box=$("zonas"); if(!box) return;
+  box.innerHTML="";
+  GRUPOS.forEach(([g,label])=>{
+    const zs=E.zonas.filter(z=>z.grupo===g);
+    if(!zs.length) return;
+    const nCub=zs.filter(z=>z.cubro!==false).length, nMd=zs.filter(z=>z.mismo_dia===true).length;
+    const sec=document.createElement("div");
+    sec.style.cssText="border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px";
+    sec.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:700;font-size:13.5px">${label}
+          <span style="color:var(--faint);font-weight:400;font-size:12px">· ${nCub}/${zs.length} cubiertas · ${nMd} con mismo día</span></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn ga" data-g="${g}" data-k="cubro" data-v="1" style="height:28px;font-size:11.5px">Cubrir todas</button>
+          <button class="btn ga" data-g="${g}" data-k="cubro" data-v="0" style="height:28px;font-size:11.5px">Ninguna</button>
+          <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="1" style="height:28px;font-size:11.5px">Mismo día: todas</button>
+          <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="0" style="height:28px;font-size:11.5px">Mismo día: ninguna</button>
+        </div>
+      </div>
+      <div class="zgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-top:10px"></div>`;
+    const grid=sec.querySelector(".zgrid");
+    zs.forEach(z=>{
+      const el=document.createElement("div");
+      el.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:9px;padding:7px 9px";
+      el.innerHTML=`<div style="min-width:0;flex:1">
+          <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.nombre)}</div>
+          ${(z.alias&&z.alias.length)?`<div style="font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.alias.join(", "))}</div>`:""}
+        </div>
+        <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zc" ${z.cubro!==false?"checked":""}/> Cubro</label>
+        <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zm" ${z.mismo_dia===true?"checked":""}/> Mismo día</label>`;
+      el.querySelector(".zc").onchange=(ev)=>{ z.cubro=ev.target.checked; paintZonas(); };
+      el.querySelector(".zm").onchange=(ev)=>{ z.mismo_dia=ev.target.checked; paintZonas(); };
+      grid.appendChild(el);
+    });
+    box.appendChild(sec);
+  });
+  box.querySelectorAll(".ga").forEach(bt=> bt.onclick=()=>{
+    const { g,k,v } = bt.dataset;
+    E.zonas.forEach(z=>{ if(z.grupo===g) z[k] = v==="1"; });
+    paintZonas();
+  });
+}
+
+async function guardarEntregas(){
+  const E=st.ent;
+  E.feriados_fechas=(E.feriados_fechas||[]).filter(Boolean);
+  const { error }=await supa.from("channels").update({ entregas:E }).eq("id",st.channelId);
+  if(error){ toast(/entregas|column/.test(error.message)?"Falta aplicar la migración 0032":error.message,true); return; }
+  st.channel.entregas=JSON.parse(JSON.stringify(E));
+  toast("Entregas guardadas ✓");
 }
 
 // ── Apariencia: efectos visuales del panel (preferencia local) ──────
