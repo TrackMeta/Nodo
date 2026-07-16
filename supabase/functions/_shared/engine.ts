@@ -742,6 +742,7 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "unsubscribe_seq": await unsubscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_cancel", "Secuencia cancelada", a.nombre ?? null); break;
       case "crear_pedido": await crearPedido(db, run, a, ctx); break;
       case "actualizar_pedido": await actualizarPedido(db, run, a, ctx); break;
+      case "entregar": await entregarOpcion(db, run, a, ctx); break;
       // ── Conversación / contacto ──
       case "nota":
         await logEvent(db, run.channel_id, run.contact_id, "nota", resolve(String(a.valor ?? a.texto ?? ""), ctx) || "Nota"); break;
@@ -825,6 +826,39 @@ function parseMonto(raw: unknown, ctx: any): number | undefined {
   if (!s) return undefined;
   const n = Number(s.replace(/[^\d.\-]/g, ""));
   return Number.isFinite(n) ? n : undefined;
+}
+
+// Acción entregar: { mensaje? } — envía lo que la opción COMPRADA incluye (uno
+// o varios links y/o archivos). Reemplaza al {{link_entrega}} suelto: cada
+// opción entrega lo suyo (el Básico y el Premium no entregan lo mismo).
+// Es idempotente por diseño: se puede volver a llamar si el cliente dice "no me
+// llegó el link" — reenvía lo mismo sin cobrar de nuevo.
+async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
+  const opcion = (ctx as any)._opcion as Opcion | null;
+  const items = (Array.isArray(opcion?.entrega) ? opcion!.entrega : []).filter((it: any) => it && it.url);
+
+  if (a?.mensaje) await emit(db, run, { text: resolve(String(a.mensaje), ctx) }, ctx);
+
+  if (!items.length) {
+    // Compat: productos viejos con un único link suelto en config.
+    if (ctx.link_entrega) await emit(db, run, { text: String(ctx.link_entrega) }, ctx);
+    else await logEvent(db, run.channel_id, run.contact_id, "error", "Nada que entregar",
+      `La opción "${opcion?.nombre ?? "—"}" no tiene entrega configurada`);
+    return;
+  }
+
+  for (const it of items) {
+    if (it.tipo === "archivo") {
+      await emit(db, run, {
+        media_url: it.url, media_kind: it.media_kind || "document",
+        filename: it.filename ?? undefined, caption: it.nombre ?? "",
+      }, ctx);
+    } else {
+      await emit(db, run, { text: `${it.nombre ? it.nombre + ": " : ""}${it.url}` }, ctx);
+    }
+  }
+  await logEvent(db, run.channel_id, run.contact_id, "nota", "Producto entregado",
+    `${opcion?.nombre ?? ""} · ${items.length} ${items.length === 1 ? "elemento" : "elementos"}`);
 }
 
 // Acción crear_pedido: { estado?, monto?, datos?: { zona:"{{zona_entrega}}", … } }
@@ -979,7 +1013,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false; // sin IA → que lo tome un humano por el flujo normal
-  const ocrSys = buildOcrSystem((ch as any)?.ocr_config) ?? "Eres un validador experto de comprobantes de pago de Perú.";
+  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, Number.isFinite(saldo) ? saldo : null, (order as any).currency)
+    ?? "Eres un validador experto de comprobantes de pago de Perú.";
   const system = ocrSys +
     "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
     "`valido` es true solo si el pago es legítimo, va al destinatario correcto y no hay señales de fraude/montaje.";
@@ -1111,11 +1146,223 @@ function buildPedidosSystem(pedidos: any, funnel: string, agencia: boolean): str
   return L.length ? L.join("\n\n") : null;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// OPCIONES DE COMPRA
+// Una opción = algo comprable: nombre, precio y qué entrega. Unifica lo que
+// antes eran tres conceptos distintos ("versiones" Básico/Premium, "packs" y
+// "ofertas por cantidad"): para el sistema los tres tienen la misma forma, así
+// que se configuran, se detectan, se cobran y se entregan igual. Viven en
+// product_versions (ver migración 0029). Todo producto tiene al menos una.
+// ═══════════════════════════════════════════════════════════════════
+type Opcion = {
+  id: string;
+  nombre: string;
+  precio: number | null;
+  entrega: any[];
+  descripcion: string | null;
+  cantidad: number;
+};
+
+async function loadOpciones(db: SupabaseClient, run: Run, productId: string): Promise<Opcion[]> {
+  const cache = (run as any)._opciones;
+  if (cache && cache._pid === productId) return cache.list;
+  let list: Opcion[] = [];
+  try {
+    const { data } = await db.from("product_versions")
+      .select("id, nombre, precio, entrega, descripcion, cantidad")
+      .eq("product_id", productId).eq("activo", true).order("orden");
+    list = (data ?? []) as Opcion[];
+  } catch (_) { /* columnas pendientes (0029) → sin opciones */ }
+  (run as any)._opciones = { _pid: productId, list };
+  return list;
+}
+
+// La opción elegida es un valor VIVO: se sobrescribe cada vez que el cliente
+// cambia de opinión, y solo el PAGO la vuelve definitiva. Si el producto tiene
+// una sola opción no hay nada que elegir (caso simple: no molesta al usuario).
+async function opcionElegida(db: SupabaseClient, run: Run, ctx: any): Promise<Opcion | null> {
+  const prodId = ctx._product_id;
+  if (!prodId) return null;
+  const list = await loadOpciones(db, run, prodId);
+  if (!list.length) return null;
+  const id = ctx.opcion_id ?? run.vars?.opcion_id;
+  if (id) {
+    const hit = list.find((o) => o.id === id);
+    if (hit) return hit;
+  }
+  return list.length === 1 ? list[0] : null;
+}
+
+// Oferta de remarketing vigente para ESTE contacto. Clave del diseño: la oferta
+// NOMBRA la opción ({opcion_id, precio, vence}), no es "un número más bajo" —
+// así, aunque un descuento haga que dos opciones cuesten lo mismo, el monto
+// pagado nunca es ambiguo (se resuelve por la oferta que recibió el cliente).
+// OJO: buildContext corre DENTRO del bucle de nodos (hasta MAX_STEPS por
+// mensaje), así que esto se cachea por run — si no, serían decenas de consultas
+// extra por cada mensaje. Mismo patrón que _prodCtx / _botFields.
+async function ofertaActiva(db: SupabaseClient, run: Run): Promise<any | null> {
+  const cache = (run as any)._oferta;
+  if (cache !== undefined) return cache;
+  let out: any = null;
+  try {
+    const { data: c } = await db.from("contacts")
+      .select("oferta_activa").eq("id", run.contact_id).maybeSingle();
+    const o = (c as any)?.oferta_activa;
+    if (o && o.opcion_id && o.precio != null &&
+        !(o.vence && new Date(o.vence).getTime() < Date.now())) { // no caducada
+      out = o;
+    }
+  } catch (_) { /* columna pendiente (0030) */ }
+  (run as any)._oferta = out;
+  return out;
+}
+
+// Precio que ESTE cliente debe pagar AHORA = opción elegida + oferta activa.
+// No es un precio de lista global: es un valor vivo por contacto. Es lo que
+// valida el OCR, así que nunca se adivina.
+async function precioEsperado(
+  db: SupabaseClient, run: Run, ctx: any,
+): Promise<{ monto: number | null; opcion: Opcion | null; oferta: any | null }> {
+  const opcion = await opcionElegida(db, run, ctx);
+  const oferta = await ofertaActiva(db, run);
+  if (oferta && opcion && oferta.opcion_id === opcion.id && Number.isFinite(Number(oferta.precio))) {
+    return { monto: Number(oferta.precio), opcion, oferta };
+  }
+  if (opcion?.precio != null && Number.isFinite(Number(opcion.precio))) {
+    return { monto: Number(opcion.precio), opcion, oferta };
+  }
+  const legacy = Number(ctx.precio); // productos viejos: precio suelto en config
+  return { monto: Number.isFinite(legacy) ? legacy : null, opcion, oferta };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CLASIFICADOR DE TEXTO LIBRE (pieza reusable)
+// El cliente rara vez toca los botones: escribe a su manera ("el completo",
+// "el de 149", "mándalo a Huaycán"). Esta función lee lo que escribió y decide
+// a cuál de TUS candidatos se refiere. Se reusa para: opción de compra, zona de
+// entrega, y cualquier elección futura.
+//
+// Reglas del diseño:
+//   · preguntar ≠ elegir  → si solo pide info, no fija nada (intencion).
+//   · nada se bloquea hasta el pago → el valor siempre se puede sobrescribir.
+//   · confianza baja → quien llama debe CONFIRMAR con una pregunta, jamás
+//     adivinar cuando hay dinero de por medio.
+//   · el botón sigue sirviendo como atajo, pero nunca es una dependencia.
+// ═══════════════════════════════════════════════════════════════════
+type Clasificacion = {
+  intencion: "preguntando" | "comparando" | "eligiendo" | "cambiando" | "ninguna";
+  clave: string | null;
+  confianza: number;
+};
+
+async function classify(
+  db: SupabaseClient, channelId: string,
+  opts: {
+    texto: string;
+    candidatos: { clave: string; label: string; detalle?: string | null }[];
+    que: string;      // qué se está eligiendo, en español ("la opción de compra")
+    perfil?: string;  // perfil de IA a usar (default: extraccion)
+  },
+): Promise<Clasificacion | null> {
+  const clean = (opts.texto ?? "").trim();
+  if (clean.length < 2 || !opts.candidatos.length) return null;
+  try {
+    const { data: ch } = await db.from("channels").select("ia_perfiles").eq("id", channelId).maybeSingle();
+    const perfiles = (ch as any)?.ia_perfiles ?? {};
+    const perfil = perfiles?.[opts.perfil || "extraccion"] ?? null;
+    const wantProvider = perfil?.proveedor && perfil.proveedor !== "auto" ? perfil.proveedor : null;
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: wantProvider });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) return null; // sin IA → degrada en silencio (no rompe el flujo)
+    const model = (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
+
+    const lista = opts.candidatos
+      .map((c, i) => `[${i + 1}] ${c.label}${c.detalle ? `: ${String(c.detalle).slice(0, 200)}` : ""}`)
+      .join("\n");
+    const system =
+      "Eres un clasificador para un chatbot de ventas peruano. Distingues con precisión cuándo un cliente " +
+      "ESTÁ ELIGIENDO algo y cuándo solo ESTÁ PREGUNTANDO o COMPARANDO. Responde ÚNICAMENTE con un objeto " +
+      "JSON, sin texto adicional.";
+    const prompt =
+      `Mensaje del cliente:\n"${clean}"\n\nOpciones de ${opts.que}:\n${lista}\n\n` +
+      `Determina:\n` +
+      `- "intencion": "eligiendo" si decide/confirma una; "cambiando" si ya había elegido y ahora quiere otra; ` +
+      `"preguntando" si solo pide información; "comparando" si contrasta varias o negocia; "ninguna" si no viene al caso.\n` +
+      `- "idx": el número de la opción a la que se refiere, o 0 si ninguna/no está eligiendo.\n` +
+      `- "confianza": 0.0 a 1.0.\n\n` +
+      `IMPORTANTE: preguntar por una opción NO es elegirla. Si el cliente solo pide detalles o compara, ` +
+      `usa "preguntando"/"comparando" con idx 0.\n` +
+      `Responde exactamente: {"intencion":"...","idx":<0-${opts.candidatos.length}>,"confianza":<0.0-1.0>}`;
+
+    const raw = await runAI({
+      provider: ai.provider as Provider, apiKey: ai.api_key, model, system, content: prompt, maxTokens: 120,
+    });
+    const m = /\{[\s\S]*\}/.exec(raw);
+    if (!m) return null;
+    const parsed = JSON.parse(m[0]);
+    const idx = Number(parsed?.idx);
+    const conf = Number(parsed?.confianza);
+    const intencion = String(parsed?.intencion ?? "ninguna") as Clasificacion["intencion"];
+    const eligiendo = intencion === "eligiendo" || intencion === "cambiando";
+    // Solo devolvemos una clave si REALMENTE está eligiendo. Preguntar no fija nada.
+    const clave = eligiendo && Number.isInteger(idx) && idx >= 1 && idx <= opts.candidatos.length
+      ? opts.candidatos[idx - 1].clave
+      : null;
+    return { intencion, clave, confianza: Number.isFinite(conf) ? conf : 0 };
+  } catch (e) {
+    console.error("[classify]", (e as any)?.message ?? e);
+    return null; // nunca rompe la conversación
+  }
+}
+
+// Detecta qué opción de compra quiere el cliente y la fija SI hay confianza.
+// Devuelve la clasificación para que quien llama decida si confirmar.
+async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: string): Promise<Clasificacion | null> {
+  const prodId = ctx._product_id;
+  if (!prodId) return null;
+  const list = await loadOpciones(db, run, prodId);
+  if (list.length < 2) return null; // una sola opción → nada que elegir
+  const cls = await classify(db, run.channel_id, {
+    texto,
+    que: "compra disponibles",
+    candidatos: list.map((o) => ({
+      clave: o.id,
+      label: `${o.nombre}${o.precio != null ? ` (S/ ${o.precio})` : ""}`,
+      detalle: o.descripcion,
+    })),
+  });
+  if (!cls) return null;
+  // Solo fijamos con confianza suficiente. Si duda, quien llama debe CONFIRMAR
+  // con una pregunta: nunca adivinamos cuando hay dinero de por medio.
+  if (cls.clave && cls.confianza >= 0.7) {
+    const op = list.find((o) => o.id === cls.clave);
+    run.vars.opcion_id = cls.clave;
+    ctx.opcion_id = cls.clave;
+    await setField(db, run.channel_id, run.contact_id, "opcion_id", cls.clave);
+    if (op) await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op.nombre);
+    // Refresca el contexto en el MISMO turno: si el cliente cambió de opinión,
+    // {{precio}} ya vale lo nuevo cuando la IA redacte su respuesta.
+    const { monto } = await precioEsperado(db, run, ctx);
+    if (op) {
+      ctx.opcion = op.nombre;
+      ctx.cantidad = op.cantidad ?? 1;
+      (ctx as any)._opcion = op;
+    }
+    if (monto != null) { ctx.precio = monto; ctx.precio_esperado = monto; }
+    await logEvent(db, run.channel_id, run.contact_id, "campo",
+      cls.intencion === "cambiando" ? "Cambió de opción" : "Opción elegida",
+      `${op?.nombre ?? cls.clave} (${Math.round(cls.confianza * 100)}%)`);
+  }
+  return cls;
+}
+
 // Construye el contexto de sistema para validar comprobantes de pago a partir
 // del "Validador de comprobantes" del canal (Sección IA). Hace que el nodo IA
 // de OCR reconozca pagos con criterio de negocio (destinatario correcto, monto,
 // fecha, anti-fraude) sin tener que repetirlo en cada flujo.
-function buildOcrSystem(ocr: any): string | null {
+// `montoEsperado` es el precio VIVO de este cliente (opción + oferta): sin él la
+// IA no puede saber si el pago "corresponde al producto elegido".
+function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null): string | null {
   if (!ocr || ocr.activo === false) return null;
   const metodos = Array.isArray(ocr.metodos) ? ocr.metodos.filter((m: any) => m && (m.app || m.titular || m.numero)) : [];
   const r = ocr.reglas ?? {};
@@ -1127,7 +1374,22 @@ function buildOcrSystem(ocr: any): string | null {
   }
   const reglas: string[] = [];
   if (metodos.length && r.verificar_titular !== false) reglas.push("El destinatario/titular del comprobante DEBE coincidir con uno de los métodos válidos. Si no coincide, es INVÁLIDO.");
-  if (r.verificar_monto) reglas.push("Extrae el monto pagado y verifica que cubra el monto acordado con el cliente" + (r.tolerancia_monto ? ` (tolerancia ±${r.tolerancia_monto}).` : "."));
+  if (r.verificar_monto) {
+    // El monto esperado es el precio VIVO de este cliente (opción de compra +
+    // oferta activa). Con él la IA puede decidir si el pago corresponde a lo
+    // que el cliente eligió; sin él solo puede mirar el comprobante a ciegas.
+    const tol = Number(r.tolerancia_monto ?? 0);
+    if (montoEsperado != null && Number.isFinite(montoEsperado)) {
+      const min = Math.max(0, montoEsperado - (Number.isFinite(tol) ? tol : 0));
+      reglas.push(
+        `El cliente debe pagar EXACTAMENTE ${montoEsperado}${moneda ? " " + moneda : ""}. ` +
+        `Es válido si el monto pagado es ${min} o más (pagar de más SIEMPRE se acepta). ` +
+        `Si pagó MENOS, es INVÁLIDO: informa cuánto falta, no lo apruebes.`,
+      );
+    } else {
+      reglas.push("Extrae el monto pagado y verifica que cubra el monto acordado con el cliente" + (tol ? ` (tolerancia ±${tol}).` : "."));
+    }
+  }
   if (r.verificar_fecha) reglas.push(`La fecha/hora del comprobante debe ser reciente (no más de ${Number(r.fecha_max_horas ?? 48)} horas). Si es antigua, márcalo como sospechoso.`);
   if (r.operacion_unica) reglas.push("Extrae el número de operación/constancia. Es la clave anti-reuso: si falta o es ilegible, desconfía.");
   if (r.rechazar_editados) reglas.push("Detecta señales de edición/montaje (tipografías inconsistentes, recortes, píxeles alterados, datos que no cuadran). Ante duda razonable, INVÁLIDO.");
@@ -1139,10 +1401,16 @@ function buildOcrSystem(ocr: any): string | null {
     "Los pagos en Perú son INTEROPERABLES: un Yape puede llegar a un Plin y viceversa, y las transferencias cruzan bancos (BCP, BBVA, Interbank, Scotiabank…). NO invalides un pago solo porque la app/banco de origen sea distinta a la del destinatario; lo que importa es que el dinero llegue a una de las cuentas/números válidos de arriba.",
     "El nombre del destinatario suele salir PARCIAL o enmascarado (ej. «PER FLO», «P*** F****», «J. PÉREZ N.», solo iniciales o apellidos). Considéralo válido si coincide RAZONABLEMENTE con el titular esperado (mismas iniciales/apellidos/patrón); no exijas el nombre completo exacto.",
     "Distingue una CONSTANCIA de pago ya realizado de un «pago programado» o «en proceso» aún no ejecutado: estos últimos NO son válidos.",
+    // Muchos clientes NO pagan desde la app: van a un agente o al banco. Esos
+    // comprobantes son igual de válidos y hay que saber leerlos.
+    "El comprobante NO siempre es una captura de pantalla de una app. Puede ser una BOLETA o CONSTANCIA física fotografiada (transferencia hecha en un agente, en ventanilla del banco, o desde la web del banco), un voucher impreso o un PDF. Todos son VÁLIDOS: juzga por su CONTENIDO (destinatario, monto, fecha, nº de operación), nunca por el formato ni por que sea una foto de un papel.",
+    // Ilegible ≠ inválido: no acusar de fraude a quien mandó una foto movida.
+    "Si la imagen está borrosa, cortada, con reflejos o no se lee bien, NO la declares inválida ni acuses fraude: marca legible=false y pide amablemente una foto más clara. Un comprobante ilegible es distinto de un comprobante falso.",
+    "Ante un pago legítimo con algún detalle menor (una fecha difícil de leer, un nombre parcial), inclínate por ACEPTAR si lo esencial coincide. Rechazar un pago verdadero es peor que revisar uno dudoso.",
   ];
   p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
-  p.push('Devuelve tu conclusión en JSON: {"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no"}. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
+  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
   return p.join("\n\n");
 }
 // Perfil por defecto según la operación del nodo (§6-OCTIES).
@@ -1172,6 +1440,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     return; // sin generar ni enviar
   }
 
+  // ¿El cliente está ELIGIENDO una opción de compra? Lee su texto libre (no
+  // dependemos de que toque un botón). Preguntar no es elegir: si solo compara,
+  // esto no fija nada. Refresca {{precio}} en el acto si eligió o cambió.
+  if (op === "generar_texto" && ctx.last_input && cfg.detectar_opcion !== false) {
+    await detectarOpcion(db, run, ctx, String(ctx.last_input)).catch(() => null);
+  }
+
   // Prompt de sistema en 3 niveles (§6-OCTIES): negocio → producto → nodo.
   let system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
@@ -1183,6 +1458,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
     if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
+    // Opciones de compra: la IA tiene que conocerlas para venderlas y para que
+    // el cliente pueda elegir ESCRIBIENDO. Le decimos explícitamente que no dé
+    // por elegida ninguna hasta que el cliente decida (preguntar ≠ elegir).
+    if (ctx._product_id) {
+      const ops = await loadOpciones(db, run, ctx._product_id);
+      if (ops.length > 1) {
+        const lista = ops.map((o) =>
+          `- ${o.nombre}${o.precio != null ? `: S/ ${o.precio}` : ""}${o.descripcion ? ` — ${o.descripcion}` : ""}`
+        ).join("\n");
+        const estado = ctx.opcion
+          ? `\n\nAhora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (S/ ${ctx.precio})` : ""}. ` +
+            `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
+          : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
+            `Solo cuando decida, confirma cuál y su precio.`;
+        parts.push("## Opciones de compra disponibles\n" + lista + estado);
+      }
+    }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
     // Agentes de pedidos físicos: instrucciones y mensajes del embudo actual
@@ -1195,7 +1487,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // OCR: inyecta el "Validador de comprobantes" del canal (métodos válidos +
   // reglas anti-fraude) para que la IA reconozca pagos con criterio de negocio.
   if (op === "analizar_imagen" && cfg.usar_validador !== false) {
-    const vt = buildOcrSystem(info.ocr);
+    // El monto esperado sale del contexto (opción elegida + oferta activa): así
+    // la IA valida contra lo que ESTE cliente debe pagar, y puede decir si el
+    // comprobante "corresponde al producto elegido".
+    const esperado = Number(ctx.precio_esperado);
+    const vt = buildOcrSystem(info.ocr, Number.isFinite(esperado) ? esperado : null, ctx.moneda ?? null);
     if (vt) system = system ? (vt + "\n\n" + system) : vt;
   }
 
@@ -1400,6 +1696,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // {{adelanto}}, {{envio_*}}…). Cacheado por run (no cambian a mitad).
   try {
     const prodId = (c as any)?.product_id;
+    ctx._product_id = prodId ?? null; // "_" = interno, no se filtra a {{...}}
     if (prodId) {
       let pc = (run as any)._prodCtx;
       if (!pc || pc._id !== prodId) {
@@ -1447,6 +1744,30 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // 3) Variables del run en curso, y 4) Campos del contacto (lo más específico).
   Object.assign(ctx, run.vars);
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
+
+  // 5) Opción de compra elegida (unifica versión/pack/cantidad). Su precio PISA
+  // al precio suelto del producto: {{precio}} siempre refleja lo que ESTE
+  // cliente debe pagar ahora (opción + oferta activa). Va después de los campos
+  // porque `opcion_id` es un campo del contacto (persiste entre conversaciones).
+  try {
+    const { monto, opcion, oferta } = await precioEsperado(db, run, ctx);
+    if (opcion) {
+      ctx.opcion = opcion.nombre;
+      ctx.cantidad = opcion.cantidad ?? 1;
+      (ctx as any)._opcion = opcion; // interno: lo usa la acción `entregar`
+      // Compat: los flujos viejos escriben {{link_entrega}} a mano → que apunte
+      // al primer link de la opción. La entrega completa la manda `entregar`.
+      const primer = (Array.isArray(opcion.entrega) ? opcion.entrega : [])
+        .find((it: any) => it?.url && it.tipo !== "archivo");
+      if (primer) ctx.link_entrega = primer.url;
+    }
+    if (monto != null) {
+      ctx.precio = monto;
+      ctx.precio_esperado = monto;
+    }
+    if (oferta) ctx._oferta = oferta;
+  } catch (_) { /* migración 0029 pendiente → sigue el precio de config */ }
+
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
   // notificación de físicos (guía, saldo, clave de recojo…). Best-effort.
   try {

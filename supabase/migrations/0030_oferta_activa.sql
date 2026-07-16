@@ -1,0 +1,17 @@
+-- Nodo · 0030 — Oferta activa por contacto (Fase 1 del rediseño de ventas)
+--
+-- Cuando el remarketing le baja el precio a un cliente, el descuento NO puede
+-- ser "un número más bajo" suelto: si el Premium con descuento termina costando
+-- lo mismo que el Básico, el monto pagado se vuelve ambiguo y el sistema no
+-- sabría qué entregar.
+--
+-- Por eso la oferta NOMBRA la opción y se pega al contacto:
+--   {opcion_id: uuid, precio: number, vence: timestamptz, origen: text}
+--
+-- Así, al llegar el pago: "¿este monto coincide con una oferta activa de ESTE
+-- cliente?" → resuelve la opción sin ambigüedad. El precio esperado deja de ser
+-- un precio de lista global y pasa a ser un valor vivo por cliente.
+--
+-- La escritura de ofertas la hace el remarketing (Fase 3); acá solo se crea el
+-- lugar donde viven, para que el motor ya sepa leerlas.
+alter table contacts add column if not exists oferta_activa jsonb;

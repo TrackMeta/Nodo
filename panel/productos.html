@@ -175,7 +175,7 @@ async function createProduct(){
 async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
-  st.prod=p; st.versions=vs||[]; st.tab="datos";
+  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="datos";
   renderDetail(); showDetail();
 }
 async function deleteProduct(){
@@ -193,12 +193,16 @@ function renderDetail(){
     <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(st.prod.nombre)}</h1>
     <div class="tabs">
       <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
+      <button class="tab ${st.tab==='opciones'?'active':''}" data-t="opciones">Opciones de compra</button>
       <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
       <button class="tab ${st.tab==='activacion'?'active':''}" data-t="activacion">Activación</button>
     </div>
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
-  if(st.tab==="datos") renderDatos(); else if(st.tab==="flujos") renderFlujos(); else renderActivacion();
+  if(st.tab==="datos") renderDatos();
+  else if(st.tab==="opciones") renderOpciones();
+  else if(st.tab==="flujos") renderFlujos();
+  else renderActivacion();
 }
 
 // FAQ del producto: editor de pares P/R que compila a config.faq (texto que
@@ -370,10 +374,12 @@ function renderDatos(){
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Precio y promociones</div>
         ${taField("reglas_precio","Reglas del precio","Cuándo y cómo se cobra, qué incluye, negociación permitida…",2)}
-        <label>Ofertas por cantidad</label>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Distintos precios según cuántas unidades lleve.</div>
-        <div id="ofList"></div>
-        <button class="btn" id="ofAdd" style="margin-top:6px;height:34px">+ Agregar oferta</button>
+        <div style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin:10px 0;font-size:12px;color:var(--muted);line-height:1.55">
+          <span style="display:inline-flex;flex:none;color:var(--muted)">${icon("productos")}</span>
+          <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>versiones</b> ahora se configuran juntos
+          en la pestaña <b>Opciones de compra</b> — ahí cada uno tiene su precio real, y es contra ese precio
+          que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Opciones de compra →</a></div>
+        </div>
         ${taField("descuentos","Precios con descuento","Cuándo aplicar un descuento para incentivar (ej. si deja en visto, si duda…) y cuánto.",2)}
         ${taField("metodos_pago","Métodos de pago del producto (opcional)","Si lo llenas, TIENE PRIORIDAD sobre los datos de pago generales de la sección IA.",2)}
       </div>
@@ -402,11 +408,6 @@ function renderDatos(){
         </div>
       </div>
     </div>
-    <div class="card">
-      <h4 style="display:flex;align-items:center;gap:7px">${icon("productos")} Versiones</h4>
-      <div id="versions" style="margin-top:8px"></div>
-      <button class="btn" id="addVersion" style="margin-top:10px">+ versión</button>
-    </div>
     <details style="margin-bottom:12px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
       <label style="margin-top:6px">Config del producto (se genera desde el formulario)</label>
@@ -420,25 +421,10 @@ function renderDatos(){
   $("pEmojis").oninput=(e)=>setC("emojis", e.target.value.trim());
   // Campos del formulario IA (textareas + selects con data-k) → config.ia
   b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; syncCfg(); }; });
-  // Ofertas por cantidad
-  const paintOf=()=>{
-    const box=$("ofList"); box.innerHTML="";
-    if(!ia.ofertas.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin ofertas.</div>`; }
-    ia.ofertas.forEach((o,i)=>{
-      const el=document.createElement("div"); el.className="row"; el.style.cssText="margin-bottom:7px;align-items:center";
-      el.innerHTML=`<div style="flex:0 0 auto;font-size:12px;color:var(--muted)">Desde</div>
-        <input class="in ofn" type="number" min="1" style="flex:0 0 90px" value="${esc(o.desde??"")}" placeholder="uds"/>
-        <div style="flex:0 0 auto;font-size:12px;color:var(--muted)">→ precio</div>
-        <input class="in ofp" style="flex:1" value="${esc(o.precio??"")}" placeholder="Ej. 100 c/u o 350 el pack"/>
-        <button class="iconbtn ofd" style="flex:0 0 auto">${icon("trash")}</button>`;
-      el.querySelector(".ofn").oninput=(e)=>{ o.desde=e.target.value; syncCfg(); };
-      el.querySelector(".ofp").oninput=(e)=>{ o.precio=e.target.value; syncCfg(); };
-      el.querySelector(".ofd").onclick=()=>{ ia.ofertas.splice(i,1); syncCfg(); paintOf(); };
-      box.appendChild(el);
-    });
-  };
-  paintOf();
-  $("ofAdd").onclick=()=>{ ia.ofertas.push({desde:"",precio:""}); paintOf(); };
+  // Las ofertas por cantidad se unificaron en "Opciones de compra" (cada una
+  // con su precio real, que es contra el que se valida el pago).
+  const goOp=$("goOpciones");
+  if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   // Ejemplos de respuesta
   const paintEj=()=>{
     const box=$("ejList"); box.innerHTML="";
@@ -522,9 +508,7 @@ function renderDatos(){
   $("pBif").onchange=(e)=>st.prod.con_bifurcacion=e.target.checked;
   $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderDatos(); }catch(_){ toast("JSON inválido",true); } };
   $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderDatos(); }; // re-render: cambia link/envío
-  $("addVersion").onclick=()=>{ st.versions.push({ nombre:"Nueva versión", price_list:[], drive_link:"", orden:st.versions.length }); renderVersions(); };
   renderEnvio();
-  renderVersions();
 }
 
 // Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
@@ -663,22 +647,166 @@ function renderEnvio(){
   // Confirmaciones (toggles)
   box.querySelectorAll(".sw.cf").forEach(sw=> sw.onclick=()=>{ const k=sw.dataset.cf; cf[k]=!cf[k]; sw.classList.toggle("on",cf[k]); syncCfg(); });
 }
-function renderVersions(){
-  const box=$("versions"); box.innerHTML="";
+// ── Opciones de compra ─────────────────────────────────────────────
+// UN solo concepto que unifica lo que antes eran tres cosas sueltas:
+// "versiones" (Básico/Premium), "packs" y "ofertas por cantidad". Para el
+// sistema las tres tienen la misma forma: algo comprable, con nombre, precio y
+// algo que entrega. Es lo que la IA detecta del texto libre del cliente y lo
+// que el validador de pagos usa como MONTO ESPERADO. Ver migración 0029.
+function renderOpciones(){
+  const b=$("tabBody");
+  const fisico=(st.prod.tipo||"digital")==="fisico";
+  const cfg=st.prod.config=st.prod.config||{};
+  if(!Array.isArray(cfg.atributos)) cfg.atributos=[];
+  b.innerHTML=`
+    <div class="card" style="border-color:var(--brand-border)">
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("productos")} Opciones de compra</h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">
+        Todo lo que el cliente puede comprar de este producto. Las <b>versiones</b> (Básico/Premium),
+        los <b>packs</b> y las <b>ofertas por cantidad</b> son lo mismo: una opción con su precio y lo que entrega.
+        La IA detecta cuál eligió aunque lo escriba a su manera, y el validador de pagos usa ese precio
+        como <b>monto esperado</b>.
+      </div>
+    </div>
+    <div id="opList"></div>
+    <div id="opWarn"></div>
+    <button class="btn" id="opAdd">+ Opción de compra</button>
+    <div class="card" style="margin-top:18px">
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Atributos</h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">
+        Detalles que la IA debe capturar pero que <b>no cambian el precio</b> (talla, color…).
+        Si algo cambia el precio o lo que se entrega, no es un atributo: es una opción de compra.
+      </div>
+      <div id="atList"></div>
+      <button class="btn" id="atAdd" style="margin-top:8px">+ Atributo</button>
+    </div>`;
+  paintOpciones(fisico);
+  paintAtributos();
+  $("opAdd").onclick=()=>{
+    st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length });
+    paintOpciones(fisico);
+  };
+  $("atAdd").onclick=()=>{ cfg.atributos.push({ nombre:"", obligatorio:true }); paintAtributos(); };
+}
+
+function paintOpciones(fisico){
+  const box=$("opList"); box.innerHTML="";
+  if(!st.versions.length){
+    box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin opciones todavía. Agregá al menos una (si el producto es simple, alcanza con una llamada "Única").</div>`;
+  }
   st.versions.forEach((v,i)=>{
     const el=document.createElement("div"); el.className="card";
     el.innerHTML=`
-      <div class="row">
-        <div><label style="margin-top:0">Nombre</label><input class="in vn" value="${esc(v.nombre)}"/></div>
-        <div><label style="margin-top:0">Precios (escalera, separados por coma)</label><input class="in vp" value="${esc((v.price_list||[]).join(', '))}"/></div>
+      <div class="row" style="align-items:flex-end;gap:10px">
+        <div style="flex:1.4"><label style="margin-top:0">Nombre</label>
+          <input class="in on" value="${esc(v.nombre||"")}" placeholder="Ej. Premium · 2 pares · Pack familiar"/></div>
+        <div style="flex:0 0 110px"><label style="margin-top:0">Precio</label>
+          <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}"/></div>
+        ${fisico?`<div style="flex:0 0 95px"><label style="margin-top:0">Unidades</label>
+          <input class="in oc" type="number" min="1" value="${esc(v.cantidad??1)}"/></div>`:""}
+        <label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>
+        <button class="iconbtn odel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
       </div>
-      <label>Link de entrega (Drive)</label>
-      <div class="row"><input class="in vl" value="${esc(v.drive_link||'')}"/><button class="btn vdel" style="flex:0 0 auto">✕</button></div>`;
-    el.querySelector(".vn").oninput=(e)=>v.nombre=e.target.value;
-    el.querySelector(".vp").oninput=(e)=>v.price_list=e.target.value.split(",").map(x=>parseFloat(x.trim())).filter(x=>!isNaN(x));
-    el.querySelector(".vl").oninput=(e)=>v.drive_link=e.target.value;
-    el.querySelector(".vdel").onclick=()=>{ if(v.id) v._delete=true; st.versions.splice(i,1); renderVersions(); };
+      <label>Descripción <span style="color:var(--faint);font-weight:400">(para que la IA sepa venderla y reconocerla)</span></label>
+      <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="Ej. Incluye los planos y el pack de herramientas"/>
+      <label style="margin-top:12px">Qué entrega <span style="color:var(--faint);font-weight:400">(uno o varios links y/o archivos)</span></label>
+      <div class="oe" style="margin-top:5px"></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn oel" style="height:32px">${icon("link")} Link</button>
+        <button class="btn oef" style="height:32px">${icon("file")} Archivo</button>
+      </div>`;
+    el.querySelector(".on").oninput=(e)=>{ v.nombre=e.target.value; };
+    el.querySelector(".op").oninput=(e)=>{ v.precio=e.target.value; warnColision(); };
+    const oc=el.querySelector(".oc"); if(oc) oc.oninput=(e)=>{ v.cantidad=parseInt(e.target.value,10)||1; };
+    el.querySelector(".oa").onchange=(e)=>{ v.activo=e.target.checked; warnColision(); };
+    el.querySelector(".odesc").oninput=(e)=>{ v.descripcion=e.target.value; };
+    el.querySelector(".odel").onclick=async()=>{
+      if(!await confirmDialog({title:"Eliminar opción",message:`¿Eliminar "${esc(v.nombre||"esta opción")}"? Los pedidos ya hechos con ella no se tocan.`,confirmText:"Eliminar",danger:true})) return;
+      if(v.id) st.delVersions.push(v.id);
+      st.versions.splice(i,1); paintOpciones(fisico);
+    };
+    el.querySelector(".oel").onclick=async()=>{
+      const url=await askText({title:"Link de entrega",label:"Pegá el link (Drive, curso, acceso…)",placeholder:"https://…"});
+      if(!url) return;
+      const nombre=await askText({title:"Nombre del link",label:"¿Cómo se llama? (opcional)",placeholder:"Ej. Curso completo"});
+      v.entrega=Array.isArray(v.entrega)?v.entrega:[];
+      v.entrega.push({ tipo:"link", url, nombre:nombre||"" });
+      paintEntrega(el,v,fisico);
+    };
+    el.querySelector(".oef").onclick=()=>pickEntregaFile(v,()=>paintEntrega(el,v,fisico));
+    paintEntrega(el,v,fisico);
     box.appendChild(el);
+  });
+  warnColision();
+}
+
+function paintEntrega(el,v,fisico){
+  const box=el.querySelector(".oe"); box.innerHTML="";
+  const items=v.entrega=Array.isArray(v.entrega)?v.entrega:[];
+  if(!items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin entrega configurada.</div>`; return; }
+  items.forEach((it,j)=>{
+    const r=document.createElement("div"); r.className="row"; r.style.cssText="align-items:center;margin-bottom:6px;gap:7px";
+    r.innerHTML=`<span style="flex:0 0 auto;color:var(--muted);display:inline-flex">${icon(it.tipo==="archivo"?"file":"link")}</span>
+      <input class="in en" style="flex:0 0 170px" value="${esc(it.nombre||"")}" placeholder="Nombre"/>
+      <input class="in eu" style="flex:1" value="${esc(it.url||"")}" ${it.tipo==="archivo"?"readonly":""}/>
+      <button class="iconbtn edel" style="flex:0 0 auto">${icon("trash")}</button>`;
+    r.querySelector(".en").oninput=(e)=>{ it.nombre=e.target.value; };
+    r.querySelector(".eu").oninput=(e)=>{ it.url=e.target.value; };
+    r.querySelector(".edel").onclick=()=>{ items.splice(j,1); paintEntrega(el,v,fisico); };
+    box.appendChild(r);
+  });
+}
+
+// Sube un archivo de entrega (PDF, zip…) y lo agrega a la opción.
+function pickEntregaFile(v,onDone){
+  const inp=document.createElement("input"); inp.type="file";
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      v.entrega=Array.isArray(v.entrega)?v.entrega:[];
+      v.entrega.push({ tipo:"archivo", url:data.url, nombre:(file.name||"").replace(/\.[^.]+$/,""), filename:file.name, media_kind:data.kind||"document" });
+      toast("Archivo agregado ✓"); if(onDone) onDone();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
+
+// Si dos opciones ACTIVAS cuestan lo mismo, el monto pagado no alcanza para
+// saber cuál eligió el cliente y la IA tendrá que confirmarlo por texto. Se
+// avisa acá, al configurar — no en producción con una venta a medias.
+function warnColision(){
+  const box=$("opWarn"); if(!box) return;
+  const act=st.versions.filter(v=>v.activo!==false && v.precio!=="" && v.precio!=null && !isNaN(Number(v.precio)));
+  const seen={}, dup=[];
+  act.forEach(v=>{ const k=String(Number(v.precio)); if(seen[k] && !dup.includes(k)) dup.push(k); seen[k]=true; });
+  box.innerHTML = dup.length ? `
+    <div class="card" style="border-color:#f0a92b;background:rgba(240,169,43,.07)">
+      <div style="display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.6">
+        <span style="color:#f0a92b;display:inline-flex;flex:none">${icon("alert")}</span>
+        <div>Hay opciones activas con el <b>mismo precio</b> (${dup.map(d=>"S/ "+d).join(", ")}).
+        El monto que pague no alcanzará para saber cuál eligió, así que la IA tendrá que
+        <b>confirmárselo por texto</b> antes de entregar. Si preferís que el pago lo resuelva solo,
+        dales precios distintos.</div>
+      </div>
+    </div>` : "";
+}
+
+function paintAtributos(){
+  const cfg=st.prod.config; const box=$("atList"); box.innerHTML="";
+  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin atributos.</div>`; }
+  cfg.atributos.forEach((a,i)=>{
+    const r=document.createElement("div"); r.className="row"; r.style.cssText="align-items:center;margin-bottom:7px;gap:7px";
+    r.innerHTML=`<input class="in an" style="flex:1" value="${esc(a.nombre||"")}" placeholder="Ej. Talla, Color"/>
+      <label class="chk" style="flex:0 0 auto"><input type="checkbox" class="ao" ${a.obligatorio!==false?"checked":""}/> Obligatorio</label>
+      <button class="iconbtn adel" style="flex:0 0 auto">${icon("trash")}</button>`;
+    r.querySelector(".an").oninput=(e)=>{ a.nombre=e.target.value; };
+    r.querySelector(".ao").onchange=(e)=>{ a.obligatorio=e.target.checked; };
+    r.querySelector(".adel").onclick=()=>{ cfg.atributos.splice(i,1); paintAtributos(); };
+    box.appendChild(r);
   });
 }
 
@@ -967,12 +1095,36 @@ async function saveProduct(){
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
   if(e1 && /folder|emoji|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update(base).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0018 para carpeta/emoji)"); }
   if(e1){ toast(e1.message,true); return; }
+  // ── Opciones de compra (migración 0029) ──
+  // Primero las eliminadas: antes se marcaba v._delete pero nunca se borraban
+  // de la base, así que "eliminar" no eliminaba nada al recargar.
+  for(const id of (st.delVersions||[])){
+    const { error } = await supa.from("product_versions").delete().eq("id",id);
+    if(error){ toast(error.message,true); return; }
+  }
+  st.delVersions=[];
   for(let i=0;i<st.versions.length;i++){
     const v=st.versions[i]; v.orden=i; v.product_id=st.prod.id;
-    const row={ product_id:st.prod.id, nombre:v.nombre, price_list:v.price_list||[], drive_link:v.drive_link||null, orden:i };
+    const row={
+      product_id:st.prod.id, nombre:v.nombre||"Única", orden:i,
+      precio:(v.precio===""||v.precio==null)?null:Number(v.precio),
+      cantidad:Number(v.cantidad)||1,
+      descripcion:v.descripcion||null,
+      entrega:Array.isArray(v.entrega)?v.entrega:[],
+      activo:v.activo!==false,
+      price_list:v.price_list||[], drive_link:v.drive_link||null, // legado
+    };
     if(v.id) row.id=v.id;
-    const { error } = await supa.from("product_versions").upsert(row);
+    let { data, error } = await supa.from("product_versions").upsert(row).select("id").single();
+    if(error && /precio|entrega|descripcion|activo|cantidad|column/.test(error.message)){
+      // Resiliente: si 0029 no está aplicada, guarda al menos lo viejo.
+      const legacy={ product_id:st.prod.id, nombre:v.nombre||"Única", price_list:v.price_list||[], drive_link:v.drive_link||null, orden:i };
+      if(v.id) legacy.id=v.id;
+      ({ data, error } = await supa.from("product_versions").upsert(legacy).select("id").single());
+      if(!error) toast("Guardado (aplica 0029 para las opciones de compra)");
+    }
     if(error){ toast(error.message,true); return; }
+    if(!v.id && data) v.id=data.id;
   }
   toast("Guardado ✓"); loadProducts();
 }
