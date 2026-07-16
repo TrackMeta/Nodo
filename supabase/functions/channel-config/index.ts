@@ -6,7 +6,8 @@
 //   Acciones: status | save
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets } from "../_shared/db.ts";
+import { setWebhook } from "../_shared/telegram.ts";
 
 const db = serviceClient();
 // Campos planos del canal editables desde el panel.
@@ -42,6 +43,23 @@ Deno.serve(async (req) => {
         access_token: !!(s as any).access_token, app_secret: !!(s as any).app_secret,
         capi_token: !!(s as any).capi_token, telegram_bot_token: !!(s as any).telegram_bot_token,
       } });
+    }
+
+    // Conecta el Copiloto de Telegram: registra el webhook del bot de ESTE
+    // canal. El secreto se genera acá (server-side) y viaja de vuelta en cada
+    // update dentro de un header — es lo que prueba que el request viene de
+    // Telegram y no de cualquiera que adivine la URL.
+    if (action === "telegram_connect") {
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.telegram_bot_token;
+      if (!token) return json({ error: "sin_token", detalle: "Cargá primero el bot token del canal." }, 400);
+      const secret = crypto.randomUUID().replace(/-/g, "");
+      const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/telegram-webhook?ch=${channel_id}`;
+      const r = await setWebhook(token, url, secret);
+      if (!r.ok) return json({ error: "telegram", detalle: r.error }, 400);
+      const { error } = await db.from("channels").update({ telegram_webhook_secret: secret }).eq("id", channel_id);
+      if (error) return json({ error: "guardar_secreto", detalle: error.message }, 400);
+      return json({ ok: true, url });
     }
 
     if (action === "save") {

@@ -84,3 +84,9 @@ verify_jwt = false
 # route-test: simulador de Palabras Clave (qué flujo se activa y por qué).
 [functions.route-test]
 verify_jwt = true
+
+# telegram-webhook: el Copiloto en el celular. Telegram no manda JWT — se
+# protege con el secret_token del header + que quien toca el botón esté en
+# telegram_chat_ids del canal.
+[functions.telegram-webhook]
+verify_jwt = false

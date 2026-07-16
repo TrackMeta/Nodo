@@ -75,7 +75,11 @@ async function boot(){
   if(st.channelId) await load();
 }
 async function load(){
-  const { data:ch } = await supa.from("channels").select("phone_number_id,waba_id,verify_token,telegram_chat_ids").eq("id",st.channelId).maybeSingle();
+  // telegram_webhook_secret dice si el Copiloto de Telegram está activo (migración 0033).
+  let { data:ch, error:chErr } = await supa.from("channels")
+    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_webhook_secret").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch } = await supa.from("channels")
+    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids").eq("id",st.channelId).maybeSingle()); }
   st.channel=ch||{};
   st.secrets={};
   try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
@@ -113,18 +117,37 @@ function renderWA(){
 function renderTG(){
   const c=st.channel||{}, s=st.secrets||{};
   const chats=(c.telegram_chat_ids||[]).join(", ");
+  const copiloto=!!c.telegram_webhook_secret;
   $("tgCard").innerHTML=`
     <div class="card">
       <div class="chd"><span class="ico"><img src="${LOGO.tg}" alt="Telegram"/></span>
-        <div><div class="nm">Telegram</div><div class="sub2">Avisos de ventas y traspaso a humano</div></div>
+        <div><div class="nm">Telegram</div><div class="sub2">Avisos y Copiloto en el celular</div></div>
         <span class="st ${s.telegram_bot_token?'on':''}">${s.telegram_bot_token?'Conectado':'Sin conectar'}</span></div>
-      <div class="desc">Bot que envía avisos a los admins (transferir a humano, ventas). Crea el bot con @BotFather.</div>
+      <div class="desc">Bot que te avisa y por el que podés <b>aprobar pagos desde el celular</b>. Crea el bot con @BotFather.</div>
       <label>Bot token ${badge(s.telegram_bot_token)}</label>
       <input class="in" type="password" id="t_token" autocomplete="off" placeholder="${ph(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
       <label>Chat IDs (admins, separados por coma)</label>
       <input class="in" id="t_chats" value="${esc(chats)}" placeholder="12345678, 87654321"/>
-      <div class="acts"><button class="btn primary" id="saveTG">Guardar Telegram</button></div>`;
+      <div class="desc" style="margin-top:6px;font-size:11.5px">Solo estos chats pueden aprobar desde Telegram. Si el tuyo no está acá, los botones no te van a funcionar.</div>
+      <div class="acts"><button class="btn primary" id="saveTG">Guardar Telegram</button></div>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-weight:700;font-size:13px">Copiloto en Telegram ${copiloto?'<span class="st on" style="margin-left:6px">Activo</span>':''}</div>
+          <div class="desc" style="margin:4px 0 0">Agrega botones a los avisos para que apruebes el adelanto o sueltes la clave sin abrir el panel.
+          ${copiloto?'':'Cargá el bot token y tu chat id primero.'}</div>
+        </div>
+        <button class="btn" id="tgHook" ${s.telegram_bot_token?'':'disabled'}>${copiloto?'Reconectar':'Activar Copiloto'}</button>
+      </div>`;
   $("saveTG").onclick=(e)=>save(e.target,{ telegram_bot_token:$("t_token").value||undefined, telegram_chat_ids:$("t_chats").value });
+  const hk=$("tgHook");
+  if(hk) hk.onclick=async(e)=>{
+    const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Conectando…";
+    try{ await callFn("channel-config",{ action:"telegram_connect", channel_id:st.channelId });
+      toast("Copiloto de Telegram activo ✓"); await load(); }
+    catch(err){ toast(err.message||"No se pudo conectar",true); b.disabled=false; b.textContent=old; }
+  };
 }
 async function save(btn, fields){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";

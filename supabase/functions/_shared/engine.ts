@@ -7,7 +7,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent } from "./capi.ts";
-import { sendTelegram } from "./telegram.ts";
+import { sendTelegram, type TgButton } from "./telegram.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets } from "./db.ts";
@@ -1030,7 +1030,9 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
 }
 
 // Notifica a los admins del canal por Telegram (bot token en Vault).
-async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?: string) {
+// `buttons`: el Copiloto en el celular. Los toques los recibe la Edge Function
+// telegram-webhook, que verifica que el que tocó sea admin de este canal.
+async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?: string, buttons?: TgButton[][]) {
   if (!text) return;
   const { data: channel } = await db.from("channels")
     .select("telegram_chat_ids, nombre").eq("id", run.channel_id).maybeSingle();
@@ -1040,7 +1042,7 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
   const token = secrets?.telegram_bot_token;
   if (!token) { console.warn("[notify_admin] canal sin telegram_bot_token"); return; }
   const prefix = (channel as any)?.nombre ? `[${(channel as any).nombre}] ` : "";
-  await sendTelegram(token, chatIds, prefix + text, photoUrl);
+  await sendTelegram(token, chatIds, prefix + text, photoUrl, buttons);
 }
 
 // Dispara los flujos suscritos a un estado de pedido (igual que order-update),
@@ -1166,7 +1168,13 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Adelanto por aprobar", motivo);
-  await notifyAdmin(db, runlike, `💰 Adelanto recibido — te espera en el Copiloto (${motivo}).`, url);
+  // Con botón: se aprueba desde el celular sin abrir el panel. El toque lo
+  // recibe telegram-webhook, que verifica que seas admin de este canal.
+  await notifyAdmin(db, runlike,
+    `💰 <b>Adelanto por validar</b>\n${motivo}\n` +
+    `Monto leído: ${Number.isFinite(monto) ? monto : "?"} · esperado: ${Number.isFinite(esperado) ? esperado : "?"}`,
+    url,
+    [[{ text: "✅ Aprobar", data: `adel_ok:${(order as any).id}` }]]);
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago y en un momento te confirmo. 🙌").catch(() => {});
   return true;
 }
@@ -1255,7 +1263,10 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
-  await notifyAdmin(db, runlike, `🕵️ Comprobante de saldo por revisar (${motivo}). Te espera en el Copiloto.`, url);
+  await notifyAdmin(db, runlike,
+    `🕵️ <b>Saldo por revisar</b>\n${motivo}\nAl aprobar, el bot le manda la clave de recojo.`,
+    url,
+    clave ? [[{ text: "🔑 Aprobar y dar la clave", data: `saldo_ok:${(order as any).id}` }]] : undefined);
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago del saldo y en breve te confirmo. 🙌").catch(() => {});
   return true;
 }

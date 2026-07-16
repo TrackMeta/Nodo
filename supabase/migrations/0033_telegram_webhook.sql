@@ -1,0 +1,13 @@
+-- Nodo · 0033 — Copiloto en Telegram (Fase 5)
+--
+-- Telegram no manda JWT: para probar que un update viene de Telegram y no de
+-- cualquiera que adivine la URL, se registra un `secret_token` en setWebhook y
+-- Telegram lo devuelve en cada llamada dentro del header
+-- X-Telegram-Bot-Api-Secret-Token. Acá se guarda el que le corresponde a cada
+-- canal (cada bot tiene el suyo).
+--
+-- No va en Vault porque no es una credencial de nadie: es un nonce que solo
+-- sirve para comparar contra el header, y la función lo necesita en cada
+-- request. La autorización de verdad (quién puede aprobar un pago) la da
+-- telegram_chat_ids, que ya existe.
+alter table channels add column if not exists telegram_webhook_secret text;

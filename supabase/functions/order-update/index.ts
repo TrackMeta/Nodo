@@ -18,13 +18,23 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  // Solo miembros (admin u operador).
+  // Dos formas de entrar:
+  //  · Un miembro (admin u operador) desde el panel, con su JWT.
+  //  · Otra Edge Function nuestra, con la service_role key (ej. el Copiloto de
+  //    Telegram, que ya validó por su lado que quien tocó el botón es admin del
+  //    canal). Esa key solo vive server-side, así que presentarla es prueba de
+  //    ser código nuestro. Se reusa esta función a propósito: si el camino de
+  //    Telegram duplicara la lógica, tarde o temprano las dos se separarían.
   const auth = req.headers.get("Authorization") ?? "";
-  const { data: u } = await userClient(auth).auth.getUser();
-  const uid = u?.user?.id;
-  if (!uid) return json({ error: "no_auth" }, 401);
-  const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
-  if (!member) return json({ error: "not_member" }, 403);
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const interno = !!serviceKey && auth === `Bearer ${serviceKey}`;
+  if (!interno) {
+    const { data: u } = await userClient(auth).auth.getUser();
+    const uid = u?.user?.id;
+    if (!uid) return json({ error: "no_auth" }, 401);
+    const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
+    if (!member) return json({ error: "not_member" }, 403);
+  }
 
   let body: { order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
