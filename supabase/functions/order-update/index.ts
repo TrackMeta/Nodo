@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { startFlowRun } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet } from "../_shared/engine.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -58,6 +58,9 @@ Deno.serve(async (req) => {
 
   const { error } = await db.from("orders").update(patch).eq("id", order.id);
   if (error) return json({ error: error.message }, 500);
+  // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
+  // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
+  await syncPedidoSheet(db, order.id);
 
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
   let flowStarted: string | null = null;

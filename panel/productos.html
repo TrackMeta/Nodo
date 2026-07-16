@@ -839,9 +839,9 @@ async function renderReceta(){
         ? {ok:1,msg:`${st.prod.config.extras.length} extra(s) · se ofrecen ${((st.prod.config.extras_momento||"antes")==="antes")?"antes":"después"} de entregar`}
         : {warn:1,msg:"Sin ventas extra (opcional)"},
       go("extras","Configurar"))}
-    ${et(8,"Post-venta","Aviso por Telegram y registro en Google Sheets — el flujo generado ya los incluye.",
+    ${et(8,"Post-venta","Aviso por Telegram, y la hoja de cálculo que se escribe sola (una fila por pedido, que sigue su estado).",
       st.receta.ch?.gsheets?.connected
-        ? {ok:1,msg:"Telegram + Google Sheets · una venta = una fila (no se duplica)"}
+        ? {ok:1,msg:`Telegram + Google Sheets · hoja "${fisico?'Lima / Provincia':'Digital'}"`}
         : {warn:1,msg:"Telegram sí; Google Sheets sin conectar (la venta se entrega igual)"},
       `<a class="btn" href="./config.html" style="height:32px;display:inline-flex;align-items:center">Conectar hoja</a>`)}
     ${et(9,"Remarketing","Recuperar al que no compró, con descuentos.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
@@ -1116,36 +1116,26 @@ async function generarFlujoVenta(){
     // agencia de por medio, así que no existe {{nombre_completo}}.
     // `una_vez`: si el cliente reenvía el comprobante o el motor reintenta, la
     // venta NO se cuenta ni se avisa dos veces (requisito 6).
+    // El pedido se crea también en digital: es lo que alimenta el Dashboard y
+    // la fila de la hoja (que es un espejo de `orders`). Sin esto, una venta
+    // digital no existía en ningún reporte.
     const nRegistrar=await N("accion","Registrar la venta",{
       acciones:[
         { tipo:"add_tag", valor:"Compra" },
-        { tipo:"notify_admin", una_vez:"venta_{{opcion_id}}", foto:"{{ultima_imagen}}",
-          mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nOrigen: {{origen}}\nFecha: {{fecha_hora}}" },
+        { tipo:"crear_pedido", una_vez:"venta_{{opcion_id}}", estado:"confirmada", monto:"{{precio}}",
+          datos:{ opcion:"{{opcion}}", comprobante:"{{ultima_imagen}}" } },
+        { tipo:"notify_admin", una_vez:"aviso_{{opcion_id}}", foto:"{{ultima_imagen}}",
+          mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nPago: {{pago_metodo}}\nOrigen: {{origen}}\nFecha: {{fecha_hora}}" },
       ],
     },false,1520,120);
-    // Registro en Google Sheets. Si no configuraste la hoja, el nodo falla —
-    // por eso sus DOS salidas (éxito y fallo) van a Entregar: una hoja mal
-    // configurada NO puede dejar sin producto a alguien que ya pagó.
-    const nSheet=await N("google_sheets","Registrar en Google Sheets",{
-      accion:"append", hoja:"Ventas", una_vez:"sheet_{{opcion_id}}",
-      columnas:[
-        { col:"Fecha",           valor:"{{fecha_hora}}" },
-        { col:"Cliente",         valor:"{{nombre}}" },
-        { col:"Teléfono",        valor:"{{telefono}}" },
-        { col:"Producto",        valor:"{{producto_nombre}}" },
-        { col:"Plan",            valor:"{{opcion}}" },
-        { col:"Precio",          valor:"{{precio}}" },
-        { col:"Método de pago",  valor:"{{pago_metodo}}" },
-        { col:"Nº operación",    valor:"{{pago_operacion}}" },
-        { col:"Estado",          valor:"Pagado" },
-        { col:"Vendedor",        valor:"IA" },
-        { col:"Canal de origen", valor:"{{origen}}" },
-        { col:"Anuncio",         valor:"{{ad_id}}" },
-      ],
-    },false,1660,120);
+    // Sin nodo de Google Sheets a propósito: la hoja es un ESPEJO automático de
+    // los pedidos (syncPedidoSheet en el motor), así que se escribe sola al
+    // crear el pedido y en cada cambio de estado. Si dependiera de un nodo del
+    // flujo, alcanzaría con que alguien lo borre al editar para que dejen de
+    // registrarse ventas — y nadie se enteraría hasta fin de mes.
     const nEntregar=await N("accion","Entregar el producto",{
       acciones:[{ tipo:"entregar", mensaje:"¡Pago confirmado! 🎉 Acá tienes tu acceso:" }],
-    },false,1940,120);
+    },false,1800,120);
     const nFin=await N("fin","Fin",{},false,2080,120);
     const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
       bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
@@ -1162,7 +1152,6 @@ async function generarFlujoVenta(){
     // Registrar → Sheets → (pase lo que pase) seguir. Las DOS salidas del nodo
     // de Sheets van al mismo lado: sin hoja configurada el nodo falla, y eso no
     // puede dejar sin producto a quien ya pagó.
-    await E(nRegistrar,"continuar",nSheet);
     // OJO: las aristas de salida de nEntregar y nRegistrar se crean abajo según
     // haya extras y en qué momento. Dos aristas con el MISMO handle desde el
     // mismo nodo harían que nextNode elija una al azar.
@@ -1182,8 +1171,7 @@ async function generarFlujoVenta(){
     if(extras.length && !st.extraCat) await cargarCatalogoExtras();
 
     if(!extras.length){
-      await E(nSheet,"exito",nEntregar);
-      await E(nSheet,"fallo",nEntregar);   // la hoja no bloquea la entrega
+      await E(nRegistrar,"continuar",nEntregar);
       await E(nEntregar,"continuar",nFin);
     }else{
       // Dónde cae la cadena cuando termina (rechazo, timeout o extras agotados).
@@ -1214,8 +1202,14 @@ async function generarFlujoVenta(){
         },false,1220,y-90);
         const nDarX=await N("accion",`Entregar extra ${i+1}`,{
           acciones:[
+            // Suma el extra al MISMO pedido: alimenta las "ventas extra" del
+            // Dashboard y la columna "Valor Producto extra" de la hoja, en la
+            // misma fila de la venta principal. (Los extras son del flujo
+            // digital: acá el nombre es el de WhatsApp, no hay extractor.)
+            { tipo:"actualizar_pedido", bump:{ nombre:(info?info.label:`Extra ${i+1}`), precio:String(precio) } },
             { tipo:"entregar", version_id:x.version_id, mensaje:"¡Listo! 🎉 Acá va tu extra:" },
-            { tipo:"notify_admin", mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre_completo}} (+{{telefono}})\nFecha: {{fecha_hora}}`, foto:"{{ultima_imagen}}" },
+            { tipo:"notify_admin", una_vez:`extra_${x.version_id}`, foto:"{{ultima_imagen}}",
+              mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre}} (+{{telefono}})\nFecha: {{fecha_hora}}` },
           ],
         },false,1500,y-90);
         const nReX=await N("mensaje",`Reintentar pago (extra ${i+1})`,{
@@ -1266,12 +1260,10 @@ async function generarFlujoVenta(){
       // no desde Registrar: Registrar ya sale hacia Sheets, y dos aristas con
       // el mismo handle harían que nextNode elija una al azar.
       if(antes){
-        await E(nSheet,"exito",ofrecs[0]);
-        await E(nSheet,"fallo",ofrecs[0]);       // la hoja no bloquea la venta
+        await E(nRegistrar,"continuar",ofrecs[0]);
         await E(nEntregar,"continuar",nFin);     // la salida de la cadena
       }else{
-        await E(nSheet,"exito",nEntregar);
-        await E(nSheet,"fallo",nEntregar);
+        await E(nRegistrar,"continuar",nEntregar);
         await E(nEntregar,"continuar",ofrecs[0]); // entregó y ahora ofrece
       }
     }

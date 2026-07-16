@@ -999,6 +999,121 @@ function parseMonto(raw: unknown, ctx: any): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ESPEJO DE PEDIDOS EN GOOGLE SHEETS
+// La hoja refleja `orders` sola: se llama al crear el pedido y en CADA cambio
+// de estado, y busca la fila por ID para actualizarla en vez de agregar otra.
+// Va acá y no como nodos del flujo a propósito: si dependiera de que cada
+// flujo tenga su nodo de Sheets, alcanzaría con que alguien edite un flujo para
+// que dejen de registrarse ventas y nadie se entere hasta fin de mes.
+//
+// Tres hojas, como los tableros: "Digital", "Lima" y "Provincia" — cada
+// operación tiene datos distintos y mezclarlas hace una hoja ilegible.
+// Nunca lanza: la hoja no puede romper una venta.
+// ═══════════════════════════════════════════════════════════════════
+const EST_HOJA: Record<string, string> = {
+  esperando_adelanto: "Esperando adelanto", adelanto_validado: "Adelanto pagado",
+  por_despachar: "Por despachar", despachado: "Despachado", en_agencia: "En agencia",
+  saldo_pagado: "Saldo pagado", recogido: "Recogido", confirmado: "Confirmado",
+  en_reparto: "En reparto", entregado_cobrado: "Entregado y cobrado",
+  reprogramado: "Reprogramado", rechazado: "Rechazado", no_recogido: "No recogido",
+  cancelado: "Cancelado", confirmada: "Pagado", pendiente: "Pendiente", anulada: "Anulada",
+};
+
+export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
+  try {
+    const { data: o } = await db.from("orders")
+      .select("id, channel_id, contact_id, estado, amount, currency, shipping, order_bumps, created_at, product:product_id(nombre, tipo)")
+      .eq("id", orderId).maybeSingle();
+    if (!o) return;
+    const ord = o as any;
+    const { data: ch } = await db.from("channels").select("gsheets").eq("id", ord.channel_id).maybeSingle();
+    const g = (ch as any)?.gsheets ?? {};
+    if (!g.spreadsheet_id || g.connected === false) return; // sin hoja conectada, no hay nada que hacer
+    const { data: c } = await db.from("contacts")
+      .select("nombre, wa_id, ad_id").eq("id", ord.contact_id).maybeSingle();
+    const ct = (c as any) ?? {};
+    const s = ord.shipping ?? {};
+    const zona = String(s.zona ?? "").toLowerCase();
+    const fisico = ord.product?.tipo === "fisico" || !!zona;
+
+    const fecha = new Intl.DateTimeFormat("es-PE", {
+      timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    }).format(new Date(ord.created_at));
+    const extra = (ord.order_bumps ?? []).reduce((a: number, b: any) => a + Number(b.precio ?? 0), 0);
+
+    let hoja: string; let fila: Record<string, string>;
+    if (!fisico) {
+      hoja = "Digital";
+      fila = {
+        "ID": ord.id,
+        "Ad ID": ct.ad_id ?? "",
+        "Cliente": ct.nombre ?? "",
+        "Celular": ct.wa_id ?? "",
+        "Fecha y hora": fecha,
+        "Valor": String(ord.amount ?? ""),
+        "Producto Principal": [ord.product?.nombre, s.opcion].filter(Boolean).join(" · "),
+        "Valor Producto extra": extra ? String(extra) : "",
+        "Imagen": s.comprobante ?? s.adelanto_comprobante ?? "",
+      };
+    } else if (zona === "lima") {
+      hoja = "Lima";
+      fila = {
+        "ID": ord.id,
+        "Ad ID": ct.ad_id ?? "",
+        "Cliente": s.cliente || ct.nombre || "",
+        "Celular": ct.wa_id ?? "",
+        "Fecha y hora": fecha,
+        "Distrito": s.zona_nombre ?? "",
+        "Dirección": s.direccion ?? "",
+        "Referencia": s.referencia ?? "",
+        "Producto": ord.product?.nombre ?? "",
+        "Opción": s.opcion ?? "",
+        "Valor a cobrar": String(s.saldo ?? ord.amount ?? ""),
+        "Estado": EST_HOJA[ord.estado] ?? ord.estado,
+      };
+    } else {
+      hoja = "Provincia";
+      fila = {
+        "ID": ord.id,
+        "Ad ID": ct.ad_id ?? "",
+        "Cliente": s.cliente || ct.nombre || "",
+        "Celular": ct.wa_id ?? "",
+        "Fecha y hora": fecha,
+        "DNI": s.dni ?? "",
+        "Agencia": [s.ciudad, s.sede].filter(Boolean).join(" · "),
+        "Producto": ord.product?.nombre ?? "",
+        "Opción": s.opcion ?? "",
+        "Valor total": String(ord.amount ?? ""),
+        "Adelanto": String(s.adelanto ?? ""),
+        "Saldo": String(s.saldo ?? ""),
+        "Guía": s.guia ?? "",
+        "Estado": EST_HOJA[ord.estado] ?? ord.estado,
+        "Imagen": s.adelanto_comprobante ?? s.saldo_comprobante ?? "",
+      };
+    }
+
+    // update busca por ID; si no encuentra la fila, la agrega. Así la primera
+    // llamada crea y las siguientes actualizan, sin llevar cuenta de nada.
+    if (g.mode === "oauth") {
+      const { data: tk } = await db.rpc("get_gsheets_token", { p_channel_id: ord.channel_id });
+      const refresh = Array.isArray(tk) ? tk[0]?.refresh_token : (tk as any)?.refresh_token ?? tk;
+      if (!refresh) return;
+      const token = await getAccessToken(String(refresh));
+      await sheetsUpdate(token, String(g.spreadsheet_id), hoja, { "ID": ord.id }, fila);
+    } else if (g.webhook_url) {
+      await fetch(String(g.webhook_url), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hoja, fila, buscar: { "ID": ord.id }, accion: "update" }),
+      });
+    }
+  } catch (e) {
+    // Nunca romper la venta por la hoja.
+    console.error("[syncPedidoSheet]", (e as any)?.message ?? e);
+  }
+}
+
 // Acción entregar: { mensaje? } — envía lo que la opción COMPRADA incluye (uno
 // o varios links y/o archivos). Reemplaza al {{link_entrega}} suelto: cada
 // opción entrega lo suyo (el Básico y el Premium no entregan lo mismo).
@@ -1055,7 +1170,10 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     }).select("id").single();
     if (error) throw new Error(error.message);
     run.vars._order_id = (ord as any).id;
+    run.vars.pedido_id = (ord as any).id; // {{pedido_id}}: la llave de la fila en Sheets
+    ctx.pedido_id = (ord as any).id;
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
   }
@@ -1084,6 +1202,19 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     }
     const monto = parseMonto(a.monto ?? a.amount, ctx);
     if (monto !== undefined) patch.amount = monto;
+    // a.bump: { nombre, precio } — suma una venta extra al pedido. Alimenta las
+    // métricas de "ventas extra" del Dashboard y la columna "Valor Producto
+    // extra" de la hoja, sin inventar una tabla nueva.
+    if (a.bump) {
+      const { data: cur } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+      const previos = ((cur as any)?.order_bumps ?? []) as any[];
+      const nombre = resolve(String(a.bump.nombre ?? ""), ctx);
+      const precio = Number(resolve(String(a.bump.precio ?? "0"), ctx)) || 0;
+      // Idempotente: si ya está ese extra, no se suma dos veces.
+      if (!previos.some((b) => b?.nombre === nombre)) {
+        patch.order_bumps = [...previos, { nombre, precio }];
+      }
+    }
     if (a.datos && Object.keys(a.datos).length) {
       const { data: cur } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
       const ship: Record<string, unknown> = { ...((cur as any)?.shipping ?? {}) };
@@ -1093,6 +1224,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     const { error } = await db.from("orders").update(patch).eq("id", orderId);
     if (error) throw new Error(error.message);
     if (a.estado) await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido → " + patch.estado);
+    await syncPedidoSheet(db, orderId); // la fila sigue al pedido
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al actualizar pedido", String((err as any)?.message ?? err));
   }
@@ -1239,6 +1371,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       shipping: { ...ship, adelanto_operacion: oper, adelanto_validado_auto: true, adelanto_comprobante: url },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
+    await syncPedidoSheet(db, (order as any).id);
     await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
     await notifyAdmin(db, runlike, `✅ Adelanto validado automáticamente. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
     return true;
@@ -1338,6 +1471,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       shipping: { ...ship, saldo_operacion: oper, saldo_validado_auto: true, saldo_comprobante: url },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
+    await syncPedidoSheet(db, (order as any).id);
     await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
     await notifyAdmin(db, runlike, `✅ Saldo validado automáticamente y clave de recojo enviada. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
     return true;
