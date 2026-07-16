@@ -908,7 +908,16 @@ function parseMonto(raw: unknown, ctx: any): number | undefined {
 // Es idempotente por diseño: se puede volver a llamar si el cliente dice "no me
 // llegó el link" — reenvía lo mismo sin cobrar de nuevo.
 async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
-  const opcion = (ctx as any)._opcion as Opcion | null;
+  let opcion = (ctx as any)._opcion as Opcion | null;
+  // a.version_id → entregar una opción CONCRETA en vez de la que compró como
+  // principal. Es lo que usa la venta extra: el extra es otra opción de compra,
+  // con su propio nombre, precio y entrega, así que se entrega con lo mismo.
+  const vid = a?.version_id ? resolve(String(a.version_id), ctx) : "";
+  if (vid) {
+    const { data } = await db.from("product_versions")
+      .select("id, nombre, precio, entrega, descripcion, cantidad").eq("id", vid).maybeSingle();
+    if (data) opcion = data as unknown as Opcion;
+  }
   const items = (Array.isArray(opcion?.entrega) ? opcion!.entrega : []).filter((it: any) => it && it.url);
 
   if (a?.mensaje) await emit(db, run, { text: resolve(String(a.mensaje), ctx) }, ctx);
@@ -1336,6 +1345,11 @@ async function classify(
     candidatos: { clave: string; label: string; detalle?: string | null }[];
     que: string;      // qué se está eligiendo, en español ("la opción de compra")
     perfil?: string;  // perfil de IA a usar (default: extraccion)
+    // "eleccion" (default): distingue ELEGIR de preguntar — una consulta NO fija
+    //   nada (no damos por vendida una opción porque preguntaron el precio).
+    // "intencion": clasificación directa — devuelve la que mejor calza
+    //   (ej. "¿aceptó la venta extra?" → acepta / rechaza / duda).
+    modo?: "eleccion" | "intencion";
   },
 ): Promise<Clasificacion | null> {
   const clean = (opts.texto ?? "").trim();
@@ -1353,20 +1367,27 @@ async function classify(
     const lista = opts.candidatos
       .map((c, i) => `[${i + 1}] ${c.label}${c.detalle ? `: ${String(c.detalle).slice(0, 200)}` : ""}`)
       .join("\n");
+    const modo = opts.modo ?? "eleccion";
     const system =
-      "Eres un clasificador para un chatbot de ventas peruano. Distingues con precisión cuándo un cliente " +
-      "ESTÁ ELIGIENDO algo y cuándo solo ESTÁ PREGUNTANDO o COMPARANDO. Responde ÚNICAMENTE con un objeto " +
-      "JSON, sin texto adicional.";
-    const prompt =
-      `Mensaje del cliente:\n"${clean}"\n\nOpciones de ${opts.que}:\n${lista}\n\n` +
-      `Determina:\n` +
-      `- "intencion": "eligiendo" si decide/confirma una; "cambiando" si ya había elegido y ahora quiere otra; ` +
-      `"preguntando" si solo pide información; "comparando" si contrasta varias o negocia; "ninguna" si no viene al caso.\n` +
-      `- "idx": el número de la opción a la que se refiere, o 0 si ninguna/no está eligiendo.\n` +
-      `- "confianza": 0.0 a 1.0.\n\n` +
-      `IMPORTANTE: preguntar por una opción NO es elegirla. Si el cliente solo pide detalles o compara, ` +
-      `usa "preguntando"/"comparando" con idx 0.\n` +
-      `Responde exactamente: {"intencion":"...","idx":<0-${opts.candidatos.length}>,"confianza":<0.0-1.0>}`;
+      "Eres un clasificador para un chatbot de ventas peruano. " +
+      (modo === "eleccion"
+        ? "Distingues con precisión cuándo un cliente ESTÁ ELIGIENDO algo y cuándo solo ESTÁ PREGUNTANDO o COMPARANDO. "
+        : "Interpretas la respuesta del cliente y la clasificas en una de las opciones dadas. ") +
+      "Responde ÚNICAMENTE con un objeto JSON, sin texto adicional.";
+    const prompt = modo === "eleccion"
+      ? `Mensaje del cliente:\n"${clean}"\n\nOpciones de ${opts.que}:\n${lista}\n\n` +
+        `Determina:\n` +
+        `- "intencion": "eligiendo" si decide/confirma una; "cambiando" si ya había elegido y ahora quiere otra; ` +
+        `"preguntando" si solo pide información; "comparando" si contrasta varias o negocia; "ninguna" si no viene al caso.\n` +
+        `- "idx": el número de la opción a la que se refiere, o 0 si ninguna/no está eligiendo.\n` +
+        `- "confianza": 0.0 a 1.0.\n\n` +
+        `IMPORTANTE: preguntar por una opción NO es elegirla. Si el cliente solo pide detalles o compara, ` +
+        `usa "preguntando"/"comparando" con idx 0.\n` +
+        `Responde exactamente: {"intencion":"...","idx":<0-${opts.candidatos.length}>,"confianza":<0.0-1.0>}`
+      : `Mensaje del cliente:\n"${clean}"\n\n${opts.que}:\n${lista}\n\n` +
+        `Elige el número de la opción que mejor describe lo que el cliente quiere decir. ` +
+        `Si el mensaje no calza con ninguna o es ambiguo, usa 0.\n` +
+        `Responde exactamente: {"idx":<0-${opts.candidatos.length}>,"confianza":<0.0-1.0>}`;
 
     const raw = await runAI({
       provider: ai.provider as Provider, apiKey: ai.api_key, model, system, content: prompt, maxTokens: 120,
@@ -1376,12 +1397,13 @@ async function classify(
     const parsed = JSON.parse(m[0]);
     const idx = Number(parsed?.idx);
     const conf = Number(parsed?.confianza);
-    const intencion = String(parsed?.intencion ?? "ninguna") as Clasificacion["intencion"];
-    const eligiendo = intencion === "eligiendo" || intencion === "cambiando";
-    // Solo devolvemos una clave si REALMENTE está eligiendo. Preguntar no fija nada.
-    const clave = eligiendo && Number.isInteger(idx) && idx >= 1 && idx <= opts.candidatos.length
-      ? opts.candidatos[idx - 1].clave
-      : null;
+    const intencion = String(parsed?.intencion ?? (modo === "intencion" ? "eligiendo" : "ninguna")) as Clasificacion["intencion"];
+    const enRango = Number.isInteger(idx) && idx >= 1 && idx <= opts.candidatos.length;
+    // En modo "eleccion" solo devolvemos clave si REALMENTE está eligiendo:
+    // preguntar no fija nada. En modo "intencion" la clasificación ES la
+    // respuesta, así que no hay nada que filtrar.
+    const eligiendo = modo === "intencion" || intencion === "eligiendo" || intencion === "cambiando";
+    const clave = eligiendo && enRango ? opts.candidatos[idx - 1].clave : null;
     return { intencion, clave, confianza: Number.isFinite(conf) ? conf : 0 };
   } catch (e) {
     console.error("[classify]", (e as any)?.message ?? e);
@@ -1521,6 +1543,36 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     await detectarOpcion(db, run, ctx, String(ctx.last_input)).catch(() => null);
   }
 
+  // Operación "clasificar": mete la última respuesta del cliente en una de las
+  // opciones que define el nodo (ej. acepta / rechaza / duda) y la guarda en un
+  // campo para que un nodo Condición ramifique. Es lo que permite el "corte
+  // inteligente" de la cadena de ventas extra: entiende un "no gracias", un "ya
+  // tengo uno" o un "dale" sin depender de botones.
+  if (op === "clasificar") {
+    const cands = (cfg.opciones ?? []).map((o: any) =>
+      typeof o === "string"
+        ? { clave: o, label: o }
+        : { clave: o.clave ?? o.label, label: o.label ?? o.clave, detalle: o.detalle ?? null });
+    const key = cfg.guardar_en || "clasificacion";
+    // Sin IA, sin candidatos o sin confianza → queda el default. El flujo sigue
+    // por la rama prudente en vez de inventar una decisión del cliente.
+    let val = String(cfg.default ?? "duda");
+    if (cands.length && ctx.last_input) {
+      const cls = await classify(db, run.channel_id, {
+        texto: String(ctx.last_input), candidatos: cands, modo: "intencion",
+        que: cfg.que || "Opciones", perfil: cfg.perfil,
+      });
+      if (cls?.clave && cls.confianza >= Number(cfg.umbral ?? 0.6)) val = cls.clave;
+    }
+    run.vars[key] = val;
+    await setField(db, run.channel_id, run.contact_id, key, val);
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "Intención detectada", `${key}: ${val}`);
+    run.current_node_id =
+      (await nextNode(db, run.flow_id, node.id, "exito")) ??
+      (await nextNode(db, run.flow_id, node.id, "continuar"));
+    return;
+  }
+
   // Prompt de sistema en 3 niveles (§6-OCTIES): negocio → producto → nodo.
   let system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
@@ -1564,7 +1616,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // El monto esperado sale del contexto (opción elegida + oferta activa): así
     // la IA valida contra lo que ESTE cliente debe pagar, y puede decir si el
     // comprobante "corresponde al producto elegido".
-    const esperado = Number(ctx.precio_esperado);
+    // cfg.monto_esperado lo pisa cuando se está cobrando otra cosa (ej. el pago
+    // de una venta extra, que tiene su propio precio).
+    const esperado = cfg.monto_esperado
+      ? Number(resolve(String(cfg.monto_esperado), ctx))
+      : Number(ctx.precio_esperado);
     const vt = buildOcrSystem(info.ocr, Number.isFinite(esperado) ? esperado : null, ctx.moneda ?? null);
     if (vt) system = system ? (vt + "\n\n" + system) : vt;
   }

@@ -213,6 +213,7 @@ function renderDetail(){
       <button class="tab ${st.tab==='receta'?'active':''}" data-t="receta">Receta</button>
       <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
       <button class="tab ${st.tab==='opciones'?'active':''}" data-t="opciones">Opciones de compra</button>
+      <button class="tab ${st.tab==='extras'?'active':''}" data-t="extras">Ventas extra</button>
       <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
       <button class="tab ${st.tab==='activacion'?'active':''}" data-t="activacion">Activación</button>
     </div>
@@ -221,6 +222,7 @@ function renderDetail(){
   if(st.tab==="receta") renderReceta();
   else if(st.tab==="datos") renderDatos();
   else if(st.tab==="opciones") renderOpciones();
+  else if(st.tab==="extras") renderExtras();
   else if(st.tab==="flujos") renderFlujos();
   else renderActivacion();
 }
@@ -665,6 +667,105 @@ function renderEnvio(){
   // Confirmaciones (toggles)
   box.querySelectorAll(".sw.cf").forEach(sw=> sw.onclick=()=>{ const k=sw.dataset.cf; cf[k]=!cf[k]; sw.classList.toggle("on",cf[k]); syncCfg(); });
 }
+// Catálogo de lo ofrecible como extra: toda Opción de compra ACTIVA y CON
+// PRECIO del bot (de este producto o de cualquier otro). Lo usan la pestaña de
+// Ventas extra y el generador de flujo (que puede correr sin haberla abierto).
+async function cargarCatalogoExtras(){
+  const { data:prods } = await supa.from("products")
+    .select("id,nombre,emoji,product_versions(id,nombre,precio,activo)")
+    .eq("channel_id",st.channelId).order("nombre");
+  const cat=[];
+  (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{
+    if(v.activo!==false && v.precio!=null && v.precio!=="")
+      cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio });
+  }));
+  st.extraCat=cat;
+  return cat;
+}
+
+// ── Ventas extra (order bump) ──────────────────────────────────────
+// Un extra NO es un concepto nuevo: es una Opción de compra (de este producto
+// o de otro), así que ya trae su nombre, su precio y su entrega. Acá solo se
+// elige cuál ofrecer, con qué mensaje y en qué momento.
+async function renderExtras(){
+  const b=$("tabBody");
+  b.innerHTML=`<div class="empty">Cargando…</div>`;
+  const cfg=st.prod.config=st.prod.config||{};
+  if(!Array.isArray(cfg.extras)) cfg.extras=[];
+  if(!cfg.extras_momento) cfg.extras_momento="antes";
+  if(cfg.extras_espera_min==null) cfg.extras_espera_min=15;
+
+  const cat=await cargarCatalogoExtras();
+
+  const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${cfg.extras_momento===v?'var(--brand)':'var(--border)'};
+    background:${cfg.extras_momento===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
+    <div style="font-weight:700;font-size:13px">${t}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>`;
+
+  b.innerHTML=`
+    <div class="card" style="border-color:var(--brand-border)">
+      <h4 style="margin-top:0">Ventas extra</h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">
+        Después de que el cliente paga, ofrecerle algo más. Cada extra es una
+        <b>opción de compra</b> ya existente (de este producto o de otro), así que se cobra,
+        valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4 style="margin-top:0">¿Cuándo lo ofrecemos?</h4>
+      <div style="display:flex;gap:10px;margin-top:8px" id="momBox">
+        ${mom("antes","Antes de entregar","Paga → le ofrecés el extra → recién ahí entregás. Suele aceptarse más.")}
+        ${mom("despues","Después de entregar","Paga → entregás → le ofrecés el extra. Más conservador.")}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Si no responde, entregar igual a los</label>
+        <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(cfg.extras_espera_min)}" style="width:90px"/>
+        <span style="font-size:12.5px;color:var(--muted)">minutos</span>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:220px">
+          Nunca se retiene lo que el cliente ya pagó por esperar una venta extra.</span>
+      </div>
+    </div>
+
+    <div id="exList"></div>
+    <button class="btn" id="exAdd" ${cat.length?"":"disabled"}>+ Venta extra</button>
+    ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay opciones con precio en este bot. Creá primero una opción de compra con precio (en este producto o en otro).</div>`}`;
+
+  b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(); });
+  $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
+  $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
+  paintExtras();
+}
+
+function paintExtras(){
+  const cfg=st.prod.config; const cat=st.extraCat||[]; const box=$("exList"); if(!box) return;
+  box.innerHTML="";
+  if(!cfg.extras.length){ box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin ventas extra. El cliente paga y se le entrega directo.</div>`; return; }
+  cfg.extras.forEach((x,i)=>{
+    const el=document.createElement("div"); el.className="card";
+    el.innerHTML=`
+      <div class="row" style="align-items:flex-end;gap:10px">
+        <div style="flex:0 0 auto;font-size:12px;color:var(--faint);font-weight:800;margin-bottom:10px">${i+1}º</div>
+        <div style="flex:1"><label style="margin-top:0">Qué ofrecer</label>
+          <select class="sel exv" style="width:100%">
+            ${cat.map(c=>`<option value="${c.id}" ${x.version_id===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}
+          </select></div>
+        <button class="iconbtn exu" style="flex:0 0 auto;margin-bottom:6px" title="Subir">▲</button>
+        <button class="iconbtn exd" style="flex:0 0 auto;margin-bottom:6px" title="Bajar">▼</button>
+        <button class="iconbtn exdel" style="flex:0 0 auto;margin-bottom:6px">${icon("trash")}</button>
+      </div>
+      <label style="margin-top:12px">Mensaje del ofrecimiento</label>
+      <textarea class="in exm" rows="3" style="min-height:70px;line-height:1.5;font-family:var(--font);resize:vertical"
+        placeholder="Ej. ¡Antes de enviarte todo! 🎁 ¿Le sumas los Planos Premium por solo S/ 49? Te los mando junto con tu curso.">${esc(x.mensaje||"")}</textarea>`;
+    el.querySelector(".exv").onchange=(e)=>{ x.version_id=e.target.value; };
+    el.querySelector(".exm").oninput=(e)=>{ x.mensaje=e.target.value; };
+    el.querySelector(".exdel").onclick=()=>{ cfg.extras.splice(i,1); paintExtras(); };
+    el.querySelector(".exu").onclick=()=>{ if(i===0)return; [cfg.extras[i-1],cfg.extras[i]]=[cfg.extras[i],cfg.extras[i-1]]; paintExtras(); };
+    el.querySelector(".exd").onclick=()=>{ if(i>=cfg.extras.length-1)return; [cfg.extras[i+1],cfg.extras[i]]=[cfg.extras[i],cfg.extras[i+1]]; paintExtras(); };
+    box.appendChild(el);
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // LA RECETA — las 9 etapas de una venta, en orden, con su estado.
 // Es lo que hace que configurar un producto sea "llenar un formulario" en vez
@@ -733,7 +834,11 @@ async function renderReceta(){
         :(conEntrega.length===conPrecio.length&&conPrecio.length?{ok:1,msg:"Todas las opciones tienen entrega"}
           :{err:1,msg:`${conPrecio.length-conEntrega.length} opción(es) con precio pero SIN entrega`}),
       go("opciones","Configurar"))}
-    ${et(7,"Ventas extra","Ofrecer un producto adicional antes o después de entregar.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
+    ${et(7,"Ventas extra","Ofrecer algo más una vez que pagó, antes o después de entregar.",
+      (st.prod.config?.extras||[]).length
+        ? {ok:1,msg:`${st.prod.config.extras.length} extra(s) · se ofrecen ${((st.prod.config.extras_momento||"antes")==="antes")?"antes":"después"} de entregar`}
+        : {warn:1,msg:"Sin ventas extra (opcional)"},
+      go("extras","Configurar"))}
     ${et(8,"Post-venta","Aviso por Telegram y registro en Google Sheets.",{warn:1,msg:"Fase 6 — todavía no construido"},"")}
     ${et(9,"Remarketing","Recuperar al que no compró, con descuentos.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
 
@@ -859,14 +964,16 @@ async function generarFlujoVenta(){
       rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
                condiciones:[{ op:"campo_contiene", campo:"pago_resultado", valor:"PAGO_OK" }] }],
     },false,1240,120);
-    const nEntregar=await N("accion","Entregar + registrar",{
+    const nRegistrar=await N("accion","Registrar la venta",{
       acciones:[
         { tipo:"add_tag", valor:"Compra" },
-        { tipo:"entregar", mensaje:"¡Pago confirmado! 🎉 Acá tienes tu acceso:" },
         { tipo:"notify_admin", mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nFecha: {{fecha_hora}}", foto:"{{ultima_imagen}}" },
       ],
     },false,1520,120);
-    const nFin=await N("fin","Fin",{},false,1800,120);
+    const nEntregar=await N("accion","Entregar el producto",{
+      acciones:[{ tipo:"entregar", mensaje:"¡Pago confirmado! 🎉 Acá tienes tu acceso:" }],
+    },false,1800,120);
+    const nFin=await N("fin","Fin",{},false,2080,120);
     const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
       bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
     },false,960,340);
@@ -876,10 +983,116 @@ async function generarFlujoVenta(){
     await E(nEsImg,"ruta:es_imagen",nOcr);
     await E(nEsImg,"si_no_cumple",nVender);      // bucle: sigue conversando
     await E(nOcr,"exito",nPagoOk);
-    await E(nPagoOk,"ruta:pago_ok",nEntregar);
+    await E(nPagoOk,"ruta:pago_ok",nRegistrar);
     await E(nPagoOk,"si_no_cumple",nRe);
-    await E(nEntregar,"continuar",nFin);
     await E(nRe,"continuar",nEsperar);           // vuelve a escuchar
+    // OJO: las aristas de salida de nEntregar y nRegistrar se crean abajo según
+    // haya extras y en qué momento. Dos aristas con el MISMO handle desde el
+    // mismo nodo harían que nextNode elija una al azar.
+
+    // ── Cadena de ventas extra (order bump) ──
+    // "antes"  (Método 2, el que más convierte): paga → se le ofrecen los
+    //          extras → recién ahí se entrega todo.
+    // "despues": paga → se entrega → se le ofrecen los extras.
+    // En AMBOS, si rechaza o no contesta, se entrega lo que ya pagó: nunca se
+    // retiene un producto pagado por esperar un upsell.
+    const cfg=st.prod.config||{};
+    const extras=(Array.isArray(cfg.extras)?cfg.extras:[]).filter(x=>x&&x.version_id);
+    const antes=(cfg.extras_momento||"antes")==="antes";
+    const esperaSeg=Math.max(60,(Number(cfg.extras_espera_min)||15)*60);
+    // El catálogo puede no estar cargado si nunca se abrió la pestaña de extras
+    // (se puede generar el flujo directo desde la Receta).
+    if(extras.length && !st.extraCat) await cargarCatalogoExtras();
+
+    if(!extras.length){
+      await E(nRegistrar,"continuar",nEntregar);
+      await E(nEntregar,"continuar",nFin);
+    }else{
+      // Dónde cae la cadena cuando termina (rechazo, timeout o extras agotados).
+      const salida = antes ? nEntregar : nFin;
+      const cat=st.extraCat||[];
+      const ofrecs=[], entregas=[];
+      for(let i=0;i<extras.length;i++){
+        const x=extras[i];
+        const info=cat.find(c=>c.id===x.version_id);
+        const y=520+i*420;
+        const precio=info?.precio ?? "";
+        const nOfr=await N("mensaje",`Ofrecer extra ${i+1}`,{
+          bubbles:[{ text:x.mensaje||`¿Le sumas ${info?info.label:"el extra"}? 🎁` }],
+        },false,80,y);
+        const nEsp=await N("pregunta",`Esperar respuesta (extra ${i+1})`,{ text:"", timeout_seg:esperaSeg },false,380,y);
+        const nImg=await N("condicion",`¿Mandó pago? (extra ${i+1})`,{
+          rutas:[{ nombre:"Es imagen", handle:"ruta:es_imagen", match:"todas",
+                   condiciones:[{ op:"campo_igual", campo:"last_input_type", valor:"image" }] }],
+        },false,660,y);
+        const nOcrX=await N("ia",`Validar pago del extra ${i+1}`,{
+          operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false,
+          guardar_en:`pago_extra_${i+1}`, monto_esperado:String(precio),
+          prompt:`Analiza la imagen. Si el pago es VÁLIDO y por S/ ${precio}, responde exactamente PAGO_OK. Si no, responde PAGO_NO y el motivo en una frase.`,
+        },false,940,y-90);
+        const nOkX=await N("condicion",`¿Pago OK? (extra ${i+1})`,{
+          rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
+                   condiciones:[{ op:"campo_contiene", campo:`pago_extra_${i+1}`, valor:"PAGO_OK" }] }],
+        },false,1220,y-90);
+        const nDarX=await N("accion",`Entregar extra ${i+1}`,{
+          acciones:[
+            { tipo:"entregar", version_id:x.version_id, mensaje:"¡Listo! 🎉 Acá va tu extra:" },
+            { tipo:"notify_admin", mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre}} (+{{telefono}})\nFecha: {{fecha_hora}}`, foto:"{{ultima_imagen}}" },
+          ],
+        },false,1500,y-90);
+        const nReX=await N("mensaje",`Reintentar pago (extra ${i+1})`,{
+          bubbles:[{ text:`No pude validar ese pago 🤔 {{pago_extra_${i+1}}}\n\n¿Me lo reenvías?` }],
+        },false,1220,y+90);
+        // Corte inteligente: entiende "no gracias" / "ya tengo" / "dale" sin botones.
+        const nClas=await N("ia",`¿Lo quiere? (extra ${i+1})`,{
+          operacion:"clasificar", guardar_en:`extra_${i+1}_resp`, default:"duda", umbral:0.6,
+          que:"Qué está diciendo el cliente sobre la oferta adicional",
+          opciones:[
+            { clave:"acepta", label:"Acepta", detalle:"Dice que sí, lo quiere, pregunta cómo pagarlo" },
+            { clave:"rechaza", label:"Rechaza", detalle:"Dice que no, que no le interesa, que ya lo tiene, que solo quiere lo que compró" },
+            { clave:"duda", label:"Duda o pregunta", detalle:"Pide más información, no decide todavía" },
+          ],
+        },false,940,y+90);
+        const nRech=await N("condicion",`¿Dijo que no? (extra ${i+1})`,{
+          rutas:[{ nombre:"Rechaza", handle:"ruta:rechaza", match:"todas",
+                   condiciones:[{ op:"campo_igual", campo:`extra_${i+1}_resp`, valor:"rechaza" }] }],
+        },false,1220,y+240);
+        const nResp=await N("ia",`Responder sobre el extra ${i+1}`,{
+          operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
+          prompt:`El cliente está viendo una oferta adicional (${info?info.label:"el extra"}). Responde su duda de forma breve `+
+                 `y ayúdalo a decidir, sin presionar. Si quiere, pásale los datos de pago ({{datos_pago}}).`,
+        },false,1500,y+240);
+
+        primero.push(nOfr);
+        await E(nOfr,"continuar",nEsp);
+        await E(nEsp,"timeout",salida);          // no contestó → se entrega igual
+        await E(nEsp,"continuar",nImg);
+        await E(nImg,"ruta:es_imagen",nOcrX);
+        await E(nImg,"si_no_cumple",nClas);
+        await E(nOcrX,"exito",nOkX);
+        await E(nOkX,"ruta:pago_ok",nDarX);
+        await E(nOkX,"si_no_cumple",nReX);
+        await E(nReX,"continuar",nEsp);
+        await E(nClas,"exito",nRech);
+        await E(nRech,"ruta:rechaza",salida);    // corte de TODA la cadena
+        await E(nRech,"si_no_cumple",nResp);
+        await E(nResp,"exito",nEsp);
+        ofrecs.push(nOfr); entregas.push(nDarX);
+      }
+      // Encadenado: pagar un extra lleva al ofrecimiento del siguiente; el
+      // último cierra la cadena por la salida.
+      for(let i=0;i<entregas.length;i++){
+        await E(entregas[i],"continuar", i+1<ofrecs.length ? ofrecs[i+1] : salida);
+      }
+      // Entrada a la cadena según el momento elegido.
+      if(antes){
+        await E(nRegistrar,"continuar",ofrecs[0]);
+        await E(nEntregar,"continuar",nFin);     // la salida de la cadena
+      }else{
+        await E(nRegistrar,"continuar",nEntregar);
+        await E(nEntregar,"continuar",ofrecs[0]); // entregó y ahora ofrece
+      }
+    }
 
     toast("Flujo de venta generado ✓");
     st.tab="receta"; renderDetail();
