@@ -817,6 +817,7 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "crear_pedido": await crearPedido(db, run, a, ctx); break;
       case "actualizar_pedido": await actualizarPedido(db, run, a, ctx); break;
       case "entregar": await entregarOpcion(db, run, a, ctx); break;
+      case "resolver_zona": await resolverZonaAccion(db, run, a, ctx); break;
       // ── Conversación / contacto ──
       case "nota":
         await logEvent(db, run.channel_id, run.contact_id, "nota", resolve(String(a.valor ?? a.texto ?? ""), ctx) || "Nota"); break;
@@ -1203,7 +1204,17 @@ function funnelOf(estado: any): "mensajeria" | "confirmaciones" | "logistica" {
   return "mensajeria";
 }
 // ¿El pedido va por agencia (provincia) o contraentrega (Lima)?
-function esAgencia(estado: any): boolean {
+// Antes se DEDUCÍA del estado, y eso tenía un hueco real: los dos estados del
+// embudo "confirmaciones" (esperando_adelanto, por_confirmar) devolvían
+// siempre agencia, así que la rama de contraentrega de IA·Pedidos (msg_cod /
+// instr_cod / "enviar fecha") no se activaba NUNCA.
+// Ahora manda la zona REAL del pedido (shipping.zona, que escribe
+// resolver_zona/crear_pedido) y el estado queda solo como respaldo para pedidos
+// viejos que no la tengan.
+function esAgencia(estado: any, zona?: any): boolean {
+  const z = String(zona ?? "").toLowerCase();
+  if (z === "lima") return false;
+  if (z === "provincia") return true;
   const cod = ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado"];
   return !cod.includes(String(estado ?? "").toLowerCase());
 }
@@ -1316,6 +1327,141 @@ async function precioEsperado(
   }
   const legacy = Number(ctx.precio); // productos viejos: precio suelto en config
   return { monto: Number.isFinite(legacy) ? legacy : null, opcion, oferta };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ZONAS DE ENTREGA (reglas DURAS, por código)
+// Reparto de trabajo: la IA interpreta QUÉ LUGAR dijo el cliente (eso es
+// lenguaje, su trabajo); el CÓDIGO decide si lo cubrimos, si llega hoy y si ya
+// pasó la hora de corte (eso es plata y tiempo, no se negocia). Un toggle del
+// usuario tiene que ser una REGLA, no una sugerencia que un modelo puede
+// ignorar o dejarse convencer de saltarse. Además la IA literalmente no sabe
+// qué hora es ni compara horas de forma confiable.
+// La lista es la de entrega REAL del negocio, no el mapa político: los clientes
+// dicen "Huaycán" o "Chosica", no "Ate" ni "Lurigancho" (ver migración 0032).
+// ═══════════════════════════════════════════════════════════════════
+type Zona = { nombre: string; grupo: string; cubro: boolean; mismo_dia: boolean; alias?: string[] };
+
+async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
+  const cache = (run as any)._entregas;
+  if (cache !== undefined) return cache;
+  let out: any = null;
+  try {
+    const { data } = await db.from("channels").select("entregas, timezone").eq("id", run.channel_id).maybeSingle();
+    out = data ?? null;
+  } catch (_) { /* columna pendiente (0032) */ }
+  (run as any)._entregas = out;
+  return out;
+}
+
+const limpiaZona = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+
+// Busca el lugar mencionado contra la lista del negocio. Determinista y gratis:
+// la mayoría de los clientes nombran el distrito tal cual ("soy de SJL").
+function matchZona(zonas: Zona[], texto: string): Zona | null {
+  const t = " " + limpiaZona(texto) + " ";
+  if (t.trim().length < 3) return null;
+  // Candidatos (nombre + alias) ordenados de más largo a más corto: "SANTA
+  // MARIA DEL MAR" tiene que ganarle a "SANTA MARIA", y "SAN JUAN DE
+  // LURIGANCHO" a cualquier "SAN JUAN" suelto.
+  const cands: { z: Zona; s: string }[] = [];
+  for (const z of zonas) {
+    cands.push({ z, s: limpiaZona(z.nombre) });
+    for (const a of (z.alias ?? [])) cands.push({ z, s: limpiaZona(a) });
+  }
+  cands.sort((a, b) => b.s.length - a.s.length);
+  for (const c of cands) if (c.s && t.includes(" " + c.s + " ")) return c.z;
+  return null;
+}
+
+// La IA extrae el lugar de una frase libre ("mándalo por el óvalo de Santa
+// Anita pues"). Solo se usa si el match determinista no encontró nada.
+async function extraerLugar(db: SupabaseClient, channelId: string, texto: string): Promise<string | null> {
+  try {
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) return null; // sin IA → solo match determinista
+    const raw = await runAI({
+      provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+      system: "Extraes lugares del Perú de mensajes de clientes. Responde SOLO con un JSON, sin explicaciones.",
+      content: `Mensaje del cliente:\n"${texto}"\n\n¿A qué distrito, ciudad o localidad del Perú se refiere para su entrega? ` +
+        `Responde exactamente: {"lugar":"<nombre del lugar, o vacío si no menciona ninguno>"}`,
+      maxTokens: 80,
+    });
+    const m = /\{[\s\S]*\}/.exec(raw);
+    if (!m) return null;
+    const lugar = String(JSON.parse(m[0])?.lugar ?? "").trim();
+    return lugar || null;
+  } catch (e) {
+    console.error("[extraerLugar]", (e as any)?.message ?? e);
+    return null;
+  }
+}
+
+// Fecha/hora ACTUAL en la zona horaria del negocio, ya descompuesta.
+function ahoraEnTz(tz: string): { hhmm: string; dia: string; iso: string } {
+  const now = new Date();
+  const hhmm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(now).toLowerCase();
+  const map: Record<string, string> = { mon: "lun", tue: "mar", wed: "mie", thu: "jue", fri: "vie", sat: "sab", sun: "dom" };
+  const iso = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return { hhmm, dia: map[wd] ?? "lun", iso };
+}
+
+// ¿Se puede entregar HOY en esta zona? Todo calculado, nada opinado.
+function entregaHoy(cfg: any, zona: Zona): { hoy: boolean; motivo: string } {
+  const e = cfg?.entregas ?? {};
+  const tz = cfg?.timezone || "America/Lima";
+  const { hhmm, dia, iso } = ahoraEnTz(tz);
+  if (!zona.mismo_dia) return { hoy: false, motivo: "esta zona no tiene entrega el mismo día" };
+  if (dia === "dom" && e.domingos !== true) return { hoy: false, motivo: "los domingos no hay reparto" };
+  if (dia !== "dom" && e.dias && e.dias[dia] === false) return { hoy: false, motivo: "hoy no hay reparto" };
+  if (e.feriados !== true && Array.isArray(e.feriados_fechas) && e.feriados_fechas.includes(iso)) {
+    return { hoy: false, motivo: "hoy es feriado" };
+  }
+  const corte = String(e.corte ?? "");
+  if (corte && hhmm > corte) return { hoy: false, motivo: `ya pasó la hora de corte de hoy (${corte})` };
+  return { hoy: true, motivo: "" };
+}
+
+// Acción resolver_zona: { texto?, guardar_en? } — lee lo que dijo el cliente,
+// resuelve la zona contra la config del negocio y deja el veredicto en campos
+// para que el flujo ramifique y la IA solo lo comunique.
+//   {{zona_entrega}}  lima | provincia
+//   {{zona_nombre}}   el nombre de la zona reconocida
+//   {{entrega_hoy}}   si | no
+//   {{entrega_motivo}} por qué no llega hoy (para que la IA lo explique bien)
+async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any) {
+  const texto = a?.texto ? resolve(String(a.texto), ctx) : String(ctx.last_input ?? "");
+  const cfg = await loadEntregas(db, run);
+  const zonas: Zona[] = cfg?.entregas?.zonas ?? [];
+  if (!zonas.length) return; // sin configuración → no tocar nada
+
+  let z = matchZona(zonas, texto);
+  if (!z) {
+    const lugar = await extraerLugar(db, run.channel_id, texto);
+    if (lugar) z = matchZona(zonas, lugar);
+  }
+
+  // Lo que no está en la lista (o está pero destildado) → Provincia. Por eso
+  // desactivar una zona SÍ tiene efecto real: deja de ser Lima.
+  const esLima = !!z && z.cubro !== false;
+  const set = async (k: string, v: string) => {
+    run.vars[k] = v;
+    await setField(db, run.channel_id, run.contact_id, k, v);
+  };
+  await set("zona_entrega", esLima ? "lima" : "provincia");
+  await set("zona_nombre", z?.nombre ?? "");
+  if (esLima) {
+    const { hoy, motivo } = entregaHoy(cfg, z!);
+    await set("entrega_hoy", hoy ? "si" : "no");
+    await set("entrega_motivo", motivo);
+  } else {
+    await set("entrega_hoy", "no");
+    await set("entrega_motivo", z ? "no cubrimos esa zona con reparto propio" : "");
+  }
+  await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
+    `${z?.nombre ?? "(fuera de Lima)"} → ${esLima ? "lima" : "provincia"}${esLima ? ` · hoy: ${run.vars.entrega_hoy}` : ""}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1521,7 +1667,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const prompt = resolve(String(cfg.prompt ?? ""), ctx);
   const info = await channelIaInfo(db, run);
   const funnel = funnelOf(ctx.pedido_estado);
-  const agencia = esAgencia(ctx.pedido_estado);
+  // ctx.pedido_zona sale de orders.shipping.zona (buildContext expone shipping
+  // como {{pedido_*}}): la zona real le gana a deducirla del estado.
+  const agencia = esAgencia(ctx.pedido_estado, ctx.pedido_zona);
 
   // Control de IA por embudo (IA · Pedidos): si el canal ya configuró Pedidos y
   // el embudo de este contacto está apagado, la IA no responde (lo toma un
