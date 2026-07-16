@@ -1466,6 +1466,127 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// EXTRACTOR DE DATOS CONVERSACIONAL
+// La IA vende Y recolecta al mismo tiempo: después de cada mensaje pesca los
+// datos que aparezcan, sin interrogar ni re-preguntar lo que el cliente ya
+// dijo. Reemplaza la cadena de nodos `pregunta` (que es un formulario disfrazado
+// de chat).
+//
+// Principio acordado con Rodrigo: se pide UNA vez, se acepta lo que venga, y lo
+// dudoso se marca para que un humano lo vea. NUNCA se traba una venta por
+// calidad de dato — salvo que sin ese dato la operación se rompa de verdad.
+// Ejemplo real: una dirección vaga NO bloquea, porque el motorizado igual se la
+// vuelve a pedir el día de la entrega; un DNI mal SÍ bloquea, porque la agencia
+// no entrega el paquete.
+// ═══════════════════════════════════════════════════════════════════
+type CampoDato = {
+  clave: string;
+  label: string;
+  detalle?: string;
+  requerido?: boolean;
+  validar?: "dni";
+};
+
+// Validaciones DURAS, por código. Contar dígitos es exactamente lo que un LLM
+// hace mal, así que no se lo preguntamos: lo verificamos.
+function validarDato(v: CampoDato, valor: string): { ok: boolean; motivo?: string } {
+  const s = String(valor ?? "").trim();
+  if (!s) return { ok: false, motivo: "vacío" };
+  if (v.validar === "dni") {
+    const d = s.replace(/\D/g, "");
+    if (d.length !== 8) return { ok: false, motivo: `el DNI debe tener 8 dígitos (mandó ${d.length})` };
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
+// Heurísticas de "dato dudoso": se ACEPTA igual, solo se marca. No se le
+// pregunta al modelo si el dato "está bien" — eso lo decide el operador.
+function datoDudoso(clave: string, valor: string): string | null {
+  const s = String(valor ?? "").trim();
+  if (clave === "direccion") {
+    const tieneNumero = /\d/.test(s);
+    if (s.length < 12 || !tieneNumero) return "dirección imprecisa (sin calle o número)";
+  }
+  if (clave === "nombre") {
+    if (s.split(/\s+/).filter(Boolean).length < 2) return "falta el apellido";
+  }
+  return null;
+}
+
+async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): Promise<void> {
+  const campos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
+  const texto = String(ctx.last_input ?? "");
+  if (!campos.length || !texto) return;
+
+  // Solo se le pregunta a la IA por lo que TODAVÍA no tenemos: más barato y
+  // evita que "re-extraiga" y pise un dato bueno con uno peor.
+  const faltan = campos.filter((c) => !String(ctx[c.clave] ?? "").trim());
+  if (faltan.length) {
+    try {
+      const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
+      const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+      if (ai?.api_key) {
+        const lista = faltan.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
+        const raw = await runAI({
+          provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+          // Dos reglas aprendidas probando con el modelo real:
+          // 1) Si NO le decimos que copie tal cual, "corrige" solo: un DNI de 7
+          //    dígitos lo omitía en silencio, y entonces nuestra validación por
+          //    código nunca corría y la IA no podía decir "te faltó un dígito".
+          // 2) Si no le decimos que lo impreciso TAMBIÉN es dirección, mandaba
+          //    "por el mercado de Santa Anita" a referencia y la dirección
+          //    quedaba vacía → nunca se marcaba la duda y la re-preguntaba.
+          system: "Extraes datos de mensajes de clientes peruanos para un pedido. Respondes SOLO con un JSON, sin explicaciones.\n" +
+            "REGLAS:\n" +
+            "- Si un dato NO aparece en el mensaje, omítelo: jamás lo inventes ni lo deduzcas.\n" +
+            "- Copia el valor TAL COMO lo dijo el cliente, aunque te parezca incompleto, mal escrito o inválido. " +
+            "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
+            "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
+            "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.",
+          content: `Mensaje del cliente:\n"${texto}"\n\nDatos a buscar:\n${lista}\n\n` +
+            `Devuelve solo los que estén PRESENTES en el mensaje:\n{${faltan.map((c) => `"${c.clave}":"..."`).join(",")}}`,
+          maxTokens: 250,
+        });
+        const m = /\{[\s\S]*\}/.exec(raw);
+        const parsed = m ? JSON.parse(m[0]) : {};
+        for (const c of faltan) {
+          const val = String(parsed?.[c.clave] ?? "").trim();
+          if (!val) continue;
+          const v = validarDato(c, val);
+          if (!v.ok) {
+            // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
+            // le dice a la IA qué pedirle exactamente.
+            run.vars["_error_" + c.clave] = v.motivo ?? "";
+            ctx["_error_" + c.clave] = v.motivo ?? "";
+            continue;
+          }
+          run.vars[c.clave] = val;
+          ctx[c.clave] = val;
+          await setField(db, run.channel_id, run.contact_id, c.clave, val);
+          const duda = datoDudoso(c.clave, val);
+          if (duda) {
+            await setField(db, run.channel_id, run.contact_id, "_duda_" + c.clave, duda);
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ " + duda, `${c.clave}: ${val}`);
+          } else {
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "Dato capturado", `${c.clave}: ${val}`);
+          }
+        }
+      }
+    } catch (e) { console.error("[extraerDatos]", (e as any)?.message ?? e); }
+  }
+
+  // Lo que sigue faltando, para que la IA sepa qué pedir (y el flujo sepa si ya
+  // puede crear el pedido). Se recalcula DESPUÉS de extraer.
+  const pendientes = campos.filter((c) => c.requerido !== false && !String(ctx[c.clave] ?? "").trim());
+  ctx._datos_faltan = pendientes;
+  const completo = pendientes.length === 0;
+  run.vars.datos_completos = completo ? "si" : "no";
+  ctx.datos_completos = completo ? "si" : "no";
+  await setField(db, run.channel_id, run.contact_id, "datos_completos", completo ? "si" : "no");
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // CLASIFICADOR DE TEXTO LIBRE (pieza reusable)
 // El cliente rara vez toca los botones: escribe a su manera ("el completo",
 // "el de 149", "mándalo a Huaycán"). Esta función lee lo que escribió y decide
@@ -1699,6 +1820,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     await resolverZonaAccion(db, run, {}, ctx).catch(() => null);
   }
 
+  // Vende Y recolecta a la vez: pesca del mensaje los datos que hagan falta,
+  // sin interrogar. Deja {{datos_completos}} para que el flujo sepa cuándo ya
+  // puede crear el pedido.
+  if (op === "generar_texto" && ctx.last_input && Array.isArray(cfg.campos) && cfg.campos.length) {
+    await extraerDatos(db, run, cfg, ctx).catch(() => null);
+  }
+
   // Operación "clasificar": mete la última respuesta del cliente en una de las
   // opciones que define el nodo (ej. acepta / rechaza / duda) y la guarda en un
   // campo para que un nodo Condición ramifique. Es lo que permite el "corte
@@ -1776,6 +1904,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
+    }
+    // Qué datos faltan (y cuáles vinieron mal). La IA los pide DENTRO de la
+    // conversación, no como formulario: uno a la vez, sin repetir lo que el
+    // cliente ya dijo, y sin trabar la venta si algo sale impreciso.
+    const faltan = (ctx as any)._datos_faltan as CampoDato[] | undefined;
+    if (faltan?.length) {
+      const errores = faltan.map((c) => ctx["_error_" + c.clave]).filter(Boolean);
+      const L: string[] = [
+        "Todavía te faltan estos datos para cerrar el pedido:",
+        ...faltan.map((c) => `- **${c.label}**${c.detalle ? ` (${c.detalle})` : ""}`),
+        "Pídelos de forma natural dentro de la conversación, **de a uno**, sin sonar a formulario, y sin volver a pedir lo que ya te dio.",
+      ];
+      if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
+      parts.push("## Datos que faltan\n" + L.join("\n"));
+    } else if (ctx.datos_completos === "si") {
+      parts.push("## Datos\nYa tienes todo lo necesario para el pedido: no le pidas más datos, cierra la venta.");
     }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
