@@ -68,7 +68,7 @@ export async function runEngine(
   // Interceptor de SALDO automático (Agente de Logística · modo auto): si entra
   // un comprobante y el contacto tiene un pedido "en_agencia" esperando el
   // saldo, la IA valida el pago y suelta la clave de recojo — o, ante cualquier
-  // duda, lo deriva a "Aprobación de pagos" y avisa por Telegram.
+  // duda, lo deriva al Copiloto y avisa por Telegram.
   if (event.type === "message" && event.mediaRef && (event.msgType === "image" || !event.msgType)) {
     try {
       if (await maybeAutoSaldo(db, channelId, contactId, event)) return;
@@ -1245,7 +1245,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     return true;
   }
 
-  // ⚠️ Ante cualquier duda → Aprobación de pagos + aviso por Telegram + panel.
+  // ⚠️ Ante cualquier duda → al Copiloto + aviso por Telegram.
   const motivo = reuse ? "operación ya usada"
     : !montoOk ? `monto no coincide (pagó ${Number.isFinite(monto) ? monto : "?"}, saldo ${Number.isFinite(saldo) ? saldo : "?"})`
     : !clave ? "el pedido no tiene clave de recojo cargada"
@@ -1255,7 +1255,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
-  await notifyAdmin(db, runlike, `🕵️ Comprobante de saldo por revisar (${motivo}). Apruébalo en “Aprobación de pagos”.`, url);
+  await notifyAdmin(db, runlike, `🕵️ Comprobante de saldo por revisar (${motivo}). Te espera en el Copiloto.`, url);
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago del saldo y en breve te confirmo. 🙌").catch(() => {});
   return true;
 }

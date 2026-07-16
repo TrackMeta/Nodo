@@ -865,9 +865,9 @@ function renderPedidos(b){
       <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Tolerancia del monto <span style="color:var(--faint);font-weight:400">(modo automático)</span></label>
         <input class="in" id="pLogTol" type="number" min="0" step="0.5" value="${Number(p.log.tolerancia ?? 0)}" style="width:110px"/>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta el pago si es al menos <b>el saldo menos esta diferencia</b>. Pagar de más siempre se acepta. Si no cuadra, va a Aprobación de pagos.</span>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta el pago si es al menos <b>el saldo menos esta diferencia</b>. Pagar de más siempre se acepta. Si no cuadra, va al Copiloto.</span>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--muted)">${IC.shield} En modo automático, si hay cualquier duda (monto, fraude o comprobante repetido) el pago cae en <b>Aprobación de pagos</b> y te avisamos por <b>Telegram</b>.</div>
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--muted)">${IC.shield} En modo automático, si hay cualquier duda (monto, fraude o comprobante repetido) el pago cae en el <b>Copiloto</b> y te avisamos por <b>Telegram</b>.</div>
     </div>
 
     <div class="card ia">

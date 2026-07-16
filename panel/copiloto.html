@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Copiloto</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{background:var(--surface-2)}
+  /* El botón que tocás el 90% de las veces va grande y solo; el resto, chicos
+     al costado. Es lo que hace que se pueda usar con una mano. */
+  .btn.main{height:44px;padding:0 22px;font-size:14px;font-weight:700;border:none;color:#04140c;background:var(--green)}
+  .btn.main:hover{filter:brightness(1.07)}
+  .btn.main.blue{background:var(--brand);color:#fff}
+  .btn.main.amber{background:var(--amber);color:#231a05}
+  .btn.danger{color:var(--red);border-color:transparent}.btn.danger:hover{background:var(--red-bg)}
+  .btn svg{width:15px;height:15px}
+  .pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid transparent}
+  .pill.adel{background:var(--amber-bg);color:var(--amber)}
+  .pill.saldo{background:var(--brand-bg);color:var(--brand)}
+  .pill.desp{background:var(--green-bg);color:var(--green)}
+  .pill.camino{background:var(--surface-2);color:var(--muted)}
+  .acard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}
+  .thumb{width:120px;height:120px;border-radius:12px;object-fit:cover;flex:none;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in}
+  .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;text-align:center;padding:6px;cursor:default}
+  .amt{font-size:20px;font-weight:800;letter-spacing:-.5px}
+  .klbl{font-size:11px;color:var(--faint);font-weight:600}
+  /* Veredicto del OCR: la IA ya leyó el comprobante por vos. */
+  .ia{margin-top:9px;font-size:12.5px;border-radius:9px;padding:8px 11px;display:flex;gap:7px;align-items:flex-start}
+  .ia.ok{background:var(--green-bg);color:var(--green)}
+  .ia.duda{background:var(--amber-bg);color:var(--amber)}
+  .flag{margin-top:7px;font-size:12px;color:var(--amber);display:flex;gap:6px;align-items:center}
+  /* Datos copiables: después de aprobar los vas a tipear en Shalom. */
+  .copybox{margin-top:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:10px 12px;
+    font-size:12.5px;line-height:1.7;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .copybox b{color:var(--text)}
+  .sect{font-size:12px;font-weight:800;color:var(--faint);letter-spacing:.4px;text-transform:uppercase;margin:22px 0 10px}
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
+  .lightbox.show{display:flex} .lightbox img{max-width:92vw;max-height:92vh;border-radius:12px}
+  .mrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  @media(max-width:720px){ .acard{flex-direction:column} .thumb{width:100%;height:180px} }
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Copiloto</h1>
+        <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y vos resolvés con un toque. Lo que no necesita decisión no aparece acá: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
+      </div>
+      <div class="nodo-actions"><button class="btn" id="reloadBtn">↻ Actualizar</button></div>
+    </div>
+    <div id="list"></div>
+  </div>
+</div>
+<div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, confirmDialog, askText } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, list:[], imgs:{}, dudas:{} };
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const sym=(o)=>o.currency==="USD"?"$":"S/";
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"copiloto" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  $("reloadBtn").onclick=load;
+  $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
+  await load();
+}
+
+// Las 4 etapas donde el sistema TE NECESITA. Cada una es un momento real de tu
+// día (aprobar un pago, volver de la agencia, avisar que llegó), no un estado
+// de base de datos.
+const ETAPAS=[
+  { id:"adelanto", estados:["esperando_adelanto"], titulo:"Adelanto por validar",
+    sub:"El cliente pagó el adelanto. La IA ya lo leyó; falta tu visto bueno." },
+  { id:"saldo", estados:["en_agencia"], titulo:"Saldo por validar",
+    sub:"Pagaron el saldo en la agencia. Al aprobar, el bot suelta la clave de recojo." },
+  { id:"despachar", estados:["adelanto_validado","por_despachar"], titulo:"Listo para despachar",
+    sub:"Ya cobraste el adelanto. Cuando lo lleves a la agencia, cargá la guía y las fotos." },
+  { id:"camino", estados:["despachado"], titulo:"En camino a la agencia",
+    sub:"Cuando llegue a destino, avisale al cliente para que lo recoja." },
+];
+const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
+
+async function load(){
+  const sel="id,amount,currency,estado,shipping,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)";
+  let { data, error }=await supa.from("orders").select(sel)
+    .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true});
+  if(error){ ({ data }=await supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
+    .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true})); }
+  st.list=data||[];
+
+  const ids=[...new Set(st.list.map(o=>o.contact_id).filter(Boolean))];
+  st.imgs={}; st.dudas={};
+  if(ids.length){
+    // Último comprobante entrante por contacto (respaldo si el pedido no lo guardó).
+    const { data:msgs }=await supa.from("messages").select("contact_id,content,ts")
+      .eq("channel_id",st.channelId).in("contact_id",ids).eq("direction","in").eq("type","image")
+      .order("ts",{ascending:false}).limit(400);
+    (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    // Los ⚠️ que dejó el extractor (dirección imprecisa, falta apellido…).
+    try{
+      const { data:fv }=await supa.from("contact_field_values")
+        .select("contact_id,value,custom_fields!inner(key)").in("contact_id",ids);
+      (fv||[]).forEach(f=>{
+        const k=f.custom_fields&&f.custom_fields.key;
+        if(k&&k.startsWith("_duda_")&&f.value){ (st.dudas[f.contact_id]=st.dudas[f.contact_id]||[]).push(f.value); }
+      });
+    }catch(_){ /* sin campos aún */ }
+  }
+  render();
+}
+
+function render(){
+  const box=$("list");
+  if(!st.list.length){
+    box.innerHTML=`<div class="nodo-empty"><div class="e-ic">${icon("check")}</div><h3>Nada que decidir</h3>
+      <p>Cuando entre un pago para validar, un pedido para despachar o uno que llegó a la agencia, aparece acá.</p></div>`;
+    return;
+  }
+  box.innerHTML="";
+  ETAPAS.forEach(et=>{
+    const items=st.list.filter(o=>et.estados.includes(o.estado));
+    if(!items.length) return;
+    const h=document.createElement("div"); h.className="sect";
+    h.textContent=`${et.titulo} · ${items.length}`;
+    box.appendChild(h);
+    const sub=document.createElement("div");
+    sub.style.cssText="font-size:12.5px;color:var(--muted);margin:-4px 0 12px";
+    sub.textContent=et.sub;
+    box.appendChild(sub);
+    items.forEach(o=>box.appendChild(card(o,et)));
+  });
+}
+
+function card(o,et){
+  const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
+  const el=document.createElement("div"); el.className="acard";
+  const img = et.id==="adelanto" ? (s.adelanto_comprobante || st.imgs[o.contact_id])
+            : et.id==="saldo"    ? (s.saldo_comprobante   || st.imgs[o.contact_id])
+            : null;
+  const monto = et.id==="adelanto" ? s.adelanto : et.id==="saldo" ? s.saldo : o.amount;
+
+  // Veredicto del OCR: es lo que te ahorra abrir la foto y hacer cuentas.
+  let iaBox="";
+  if(et.id==="adelanto" && (s.adelanto_revisar || s.adelanto_monto_leido!=null)){
+    const ok=s.adelanto_ok_ia===true;
+    iaBox=`<div class="ia ${ok?'ok':'duda'}">${icon("robot")}<div>${ok?"La IA lo leyó y cuadra":"La IA no lo dio por bueno"}${
+      s.adelanto_monto_leido!=null?` · leyó <b>${sym(o)} ${esc(s.adelanto_monto_leido)}</b>`:""}${
+      s.adelanto_operacion_leida?` · op <b>${esc(s.adelanto_operacion_leida)}</b>`:""}${
+      s.adelanto_revisar?`<br>${esc(s.adelanto_revisar)}`:""}</div></div>`;
+  }
+  if(et.id==="saldo" && s.saldo_revisar){
+    iaBox=`<div class="ia duda">${icon("robot")}<div>La IA no validó el saldo sola: <b>${esc(s.saldo_revisar)}</b></div></div>`;
+  }
+
+  // Datos copiables: después de aprobar los vas a tipear en el sistema de la
+  // agencia, y un error de tipeo ahí significa que no le entregan el paquete.
+  const datos=[];
+  if(c.nombre) datos.push(["Nombre",c.nombre]);
+  if(s.dni) datos.push(["DNI",s.dni]);
+  if(s.sede) datos.push(["Sede",s.sede]);
+  if(s.direccion) datos.push(["Dirección",s.direccion]);
+  if(s.referencia) datos.push(["Referencia",s.referencia]);
+  if(s.opcion) datos.push(["Pedido",s.opcion]);
+  const copiable=datos.map(([k,v])=>`${k}: ${v}`).join("\n");
+
+  const dudas=st.dudas[o.contact_id]||[];
+  const acts=botones(o,et);
+
+  el.innerHTML=`
+    ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}"/>`
+        :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <span class="pill ${et.id==="adelanto"?"adel":et.id==="saldo"?"saldo":et.id==="despachar"?"desp":"camino"}">${esc(et.titulo)}</span>
+        <span style="font-weight:700;font-size:15px">${p.emoji?esc(p.emoji)+" ":""}${esc(c.nombre||"Cliente")}</span>
+        <span style="font-size:12px;color:var(--faint)">${esc(c.wa_id||"")}</span>
+      </div>
+      <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
+        <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="saldo"?"Saldo a cobrar":"Total"}</div>
+          <div class="amt">${monto!=null&&monto!==""?`${sym(o)} ${esc(monto)}`:'<span style="color:var(--faint);font-size:14px;font-weight:600">—</span>'}</div></div>
+        ${et.id!=="despachar"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
+        ${s.guia?`<div><div class="klbl">Guía</div><div style="font-weight:700;padding-top:4px">${esc(s.guia)}</div></div>`:""}
+        ${s.clave_recojo?`<div><div class="klbl">Clave de recojo</div><div style="font-weight:800;padding-top:4px;color:var(--green)">${esc(s.clave_recojo)}</div></div>`:""}
+      </div>
+      ${iaBox}
+      ${dudas.map(d=>`<div class="flag">${icon("alert")} ${esc(d)}</div>`).join("")}
+      ${(et.id==="saldo"&&!s.clave_recojo)?`<div class="flag">${icon("alert")} Este pedido no tiene clave de recojo cargada — ponela antes de aprobar.</div>`:""}
+      ${datos.length?`<div class="copybox"><div>${datos.map(([k,v])=>`${k}: <b>${esc(v)}</b>`).join("<br>")}</div>
+        <button class="btn" data-copy style="flex:none;height:32px">${icon("file")} Copiar</button></div>`:""}
+      <div class="mrow">${acts.html}</div>
+    </div>`;
+
+  const t=el.querySelector(".thumb[data-full]");
+  if(t) t.onclick=()=>{ $("lightImg").src=t.dataset.full; $("lightbox").classList.add("show"); };
+  const cp=el.querySelector("[data-copy]");
+  if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(copiable); toast("Datos copiados ✓"); }catch(_){ toast("No se pudo copiar",true); } };
+  acts.wire(el,o);
+  return el;
+}
+
+// Un botón principal grande (el que tocás el 90% de las veces) y el resto
+// chicos al costado.
+function botones(o,et){
+  if(et.id==="adelanto") return {
+    html:`<button class="btn main" data-a="ok">${icon("check")} Aprobar y avisarle</button>
+          <button class="btn danger" data-a="no">Rechazar</button>
+          <a class="btn" href="index.html">Abrir el chat</a>`,
+    wire:(el,o)=>{
+      el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"adelanto_validado","Aprobar el adelanto",
+        "El pedido pasa a listo para despachar y el bot le confirma al cliente.");
+      el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"adelanto");
+    }};
+  if(et.id==="saldo") return {
+    html:`<button class="btn main blue" data-a="ok">${icon("key")} Aprobar y dar la clave</button>
+          <button class="btn danger" data-a="no">Rechazar</button>
+          <a class="btn" href="pedidos.html">Ver en Pedidos</a>`,
+    wire:(el,o)=>{
+      el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"saldo_pagado","Aprobar el saldo",
+        "El bot le envía la clave de recojo al cliente.");
+      el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"saldo");
+    }};
+  if(et.id==="despachar") return {
+    html:`<button class="btn main amber" data-a="desp">${icon("box")} Ya lo envié</button>
+          <a class="btn" href="pedidos.html">Ver en Pedidos</a>`,
+    wire:(el,o)=>{ el.querySelector('[data-a="desp"]').onclick=()=>despachar(o); }};
+  return {
+    html:`<button class="btn main" data-a="lleg">${icon("pin")} Avisar que ya llegó</button>
+          <a class="btn" href="pedidos.html">Ver en Pedidos</a>`,
+    wire:(el,o)=>{
+      el.querySelector('[data-a="lleg"]').onclick=()=>aprobar(o,"en_agencia","Avisar que llegó",
+        "El bot le avisa que ya puede recogerlo y le pide el saldo.");
+    }};
+}
+
+async function updateOrder(body){
+  const { data,error }=await supa.functions.invoke("order-update",{ body });
+  if(error){ toast(error.message||"No se pudo actualizar",true); return null; }
+  if(data&&data.error){ toast(data.error,true); return null; }
+  return data;
+}
+
+async function aprobar(o,nuevo,titulo,detalle){
+  const c=o.contact||{};
+  if(!await confirmDialog({ title:titulo, message:`${c.nombre||"Cliente"} — ${detalle}`, confirmText:"Confirmar" })) return;
+  const r=await updateOrder({ order_id:o.id, estado:nuevo });
+  if(r){ toast(r.flow_started?"Listo ✓ · el bot le está escribiendo":"Listo ✓"); await load(); }
+}
+
+async function rechazar(o,tipo){
+  const c=o.contact||{};
+  if(!await confirmDialog({ title:"Rechazar el comprobante",
+    message:`${c.nombre||"Cliente"} — se marca el ${tipo} como no válido. El pedido queda como está; escribile para pedirle un pago correcto.`,
+    confirmText:"Rechazar", danger:true })) return;
+  const patch = tipo==="adelanto" ? { adelanto_rechazado_at:new Date().toISOString(), adelanto_revisar:"Lo rechazaste tú" }
+                                  : { saldo_rechazado_at:new Date().toISOString(), saldo_revisar:"Lo rechazaste tú" };
+  const r=await updateOrder({ order_id:o.id, shipping:patch });
+  if(r){ toast("Marcado como rechazado"); await load(); }
+}
+
+// El momento más móvil de todos: estás en la agencia con la boleta en la mano.
+// Por eso pide lo mínimo — la guía — y las fotos son opcionales.
+async function despachar(o){
+  const guia=await askText({ title:"Ya lo envié", label:"Número de guía de la agencia", placeholder:"Ej. 0012345678", confirmText:"Siguiente" });
+  if(!guia) return;
+  const clave=await askText({ title:"Clave de recojo", label:"La clave que le vas a pedir al cliente al recoger (opcional ahora)", placeholder:"Ej. 4821" });
+  const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{ guia, ...(clave?{ clave_recojo:clave }:{}) } });
+  if(r){ toast(r.flow_started?"Despachado ✓ · el bot le está mandando la guía":"Despachado ✓"); await load(); }
+}
+boot();
+</script>
+</body>
+</html>

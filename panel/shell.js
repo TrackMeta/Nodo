@@ -119,7 +119,7 @@ const NAV_GROUPS = [
     { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
     { id:"disparadores",label:"Disparadores",         href:"disparadores.html", icon:"disparadores" },
-    { id:"aprobaciones",label:"Aprobación de pagos",  href:"aprobaciones.html", icon:"dollar" },
+    { id:"copiloto",   label:"Copiloto",             href:"copiloto.html",    icon:"robot" },
     { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
   ]},
   { key:"cat", sec:"Catálogo", items:[
