@@ -73,6 +73,12 @@ export async function runEngine(
     try {
       if (await maybeAutoSaldo(db, channelId, contactId, event)) return;
     } catch (e) { console.error("[autoSaldo]", (e as any)?.message ?? e); }
+    // Comprobante del ADELANTO: mismo interceptor, un paso antes del embudo.
+    // Vive acá y no en el flujo para que respete tu configuración en el
+    // momento, sin depender de cuándo se generó el flujo.
+    try {
+      if (await maybeAdelanto(db, channelId, contactId, event)) return;
+    } catch (e) { console.error("[adelanto]", (e as any)?.message ?? e); }
   }
 
   let run = await getActiveRun(db, contactId);
@@ -1039,7 +1045,14 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
 
 // Dispara los flujos suscritos a un estado de pedido (igual que order-update),
 // usado por la validación automática de saldo para soltar la clave de recojo.
-async function triggerPedidoEstado(db: SupabaseClient, channelId: string, contactId: string, estado: string) {
+// `forzar`: lo usan los INTERCEPTORES de pago (adelanto/saldo). Ahí sabemos que
+// el run de venta está esperando al cliente, y startFlowRun sin force devuelve
+// false si hay un run activo → el aviso NUNCA se enviaría. O sea: el cliente
+// paga y no recibe confirmación. Cuando el pago ya entró, la conversación de
+// venta terminó y le toca ceder al flujo del pedido.
+async function triggerPedidoEstado(
+  db: SupabaseClient, channelId: string, contactId: string, estado: string, forzar = false,
+) {
   const { data: trigs } = await db.from("flow_triggers")
     .select("flow_id, config, interrumpe, flows!inner(id, estado)")
     .eq("channel_id", channelId).eq("tipo", "pedido_estado").eq("activo", true);
@@ -1048,7 +1061,8 @@ async function triggerPedidoEstado(db: SupabaseClient, channelId: string, contac
     if (!estados.includes(estado)) continue;
     if ((t as any).flows?.estado !== "activo") continue;
     try {
-      const ok = await startFlowRun(db, channelId, contactId, (t as any).flow_id, { force: !!(t as any).interrumpe });
+      const ok = await startFlowRun(db, channelId, contactId, (t as any).flow_id,
+        { force: forzar || !!(t as any).interrumpe });
       if (ok) break;
     } catch (e) { console.error("[triggerPedidoEstado]", (e as any)?.message ?? e); }
   }
@@ -1067,6 +1081,95 @@ const SALDO_SCHEMA = {
   required: ["es_pago", "valido", "motivo"],
   additionalProperties: false,
 } as const;
+
+// Comprobante del ADELANTO (provincia). Mismo patrón que el saldo, porque es
+// la misma decisión: ¿la IA aprueba sola o te consulta?
+//   · manual (default): el OCR igual lo analiza —te ahorra leerlo— pero NO
+//     aprueba: guarda el comprobante y su veredicto en el pedido, te avisa por
+//     Telegram y la tarjeta te espera en el Copiloto. Es lo que pidió Rodrigo:
+//     "la IA me adjunta los datos y el comprobante para yo validarlo".
+//   · auto: si el monto cuadra y no hay señales raras, lo valida y sigue.
+// Devuelve true si "tomó" el mensaje (el flujo no debe seguir con él).
+async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  const { data: order } = await db.from("orders")
+    .select("id, estado, amount, currency, shipping")
+    .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "esperando_adelanto")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!order) return false;
+  const ship = ((order as any).shipping ?? {}) as Record<string, any>;
+
+  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config").eq("id", channelId).maybeSingle();
+  const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
+  const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
+  if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
+
+  const esperado = Number(ship.adelanto);
+  const runlike = { channel_id: channelId, contact_id: contactId } as any;
+
+  // El OCR opina SIEMPRE (aunque decidas vos): así llegás a la tarjeta con el
+  // trabajo de lectura hecho.
+  let parsed: any = null;
+  try {
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (ai?.api_key) {
+      const sys = (buildOcrSystem((ch as any)?.ocr_config, Number.isFinite(esperado) ? esperado : null, (order as any).currency)
+        ?? "Eres un validador experto de comprobantes de pago de Perú.") +
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
+      const raw = await runAI({
+        provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system: sys,
+        content: [imageBlock(url), { type: "text", text: `El cliente debe pagar un ADELANTO de ${Number.isFinite(esperado) ? esperado : "?"} ${(order as any).currency ?? ""}. Analiza si este comprobante corresponde a ese pago.` }],
+        maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
+      });
+      parsed = JSON.parse(raw);
+    }
+  } catch (_) { parsed = null; }
+
+  // No es un comprobante (una foto cualquiera, una equivocación) → no
+  // interceptamos: la IA sigue atendiendo normal.
+  if (parsed && parsed.es_pago === false) return false;
+
+  const monto = Number(parsed?.monto);
+  const oper = parsed?.operacion ? String(parsed.operacion).trim() : null;
+  let reuse = false;
+  if (oper) {
+    const { data: dup } = await db.from("orders").select("id")
+      .eq("channel_id", channelId).eq("shipping->>adelanto_operacion", oper).limit(1).maybeSingle();
+    reuse = !!dup;
+  }
+  const tol = Math.max(0, Number(cfg.tolerancia ?? 1));
+  const montoOk = Number.isFinite(monto) && Number.isFinite(esperado) && esperado > 0 && monto >= (esperado - tol);
+  const puedeAuto = cfg.validacion === "auto" && !!parsed?.valido && montoOk && !reuse;
+
+  if (puedeAuto) {
+    await db.from("orders").update({
+      estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      shipping: { ...ship, adelanto_operacion: oper, adelanto_validado_auto: true, adelanto_comprobante: url },
+    }).eq("id", (order as any).id);
+    await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
+    await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
+    await notifyAdmin(db, runlike, `✅ Adelanto validado automáticamente. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
+    return true;
+  }
+
+  // Manual (o auto con dudas) → queda esperándote en el Copiloto, con la
+  // opinión del OCR ya escrita. NO se aprueba nada a tus espaldas.
+  const motivo = reuse ? "operación ya usada"
+    : !montoOk ? `monto no coincide (pagó ${Number.isFinite(monto) ? monto : "?"}, adelanto ${Number.isFinite(esperado) ? esperado : "?"})`
+    : (parsed?.valido ? "listo para tu aprobación" : (parsed?.motivo || "requiere revisión"));
+  await db.from("orders").update({
+    updated_at: new Date().toISOString(),
+    shipping: {
+      ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
+      adelanto_revisar: motivo, adelanto_monto_leido: Number.isFinite(monto) ? monto : null,
+      adelanto_operacion_leida: oper, adelanto_ok_ia: !!parsed?.valido && montoOk && !reuse,
+    },
+  }).eq("id", (order as any).id);
+  await logEvent(db, channelId, contactId, "nota", "Adelanto por aprobar", motivo);
+  await notifyAdmin(db, runlike, `💰 Adelanto recibido — te espera en el Copiloto (${motivo}).`, url);
+  await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago y en un momento te confirmo. 🙌").catch(() => {});
+  return true;
+}
 
 // Validación AUTOMÁTICA del saldo remanente (modo auto del Agente de Logística).
 // Devuelve true si "tomó" el mensaje (no debe seguir el flujo normal).
@@ -1137,7 +1240,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       shipping: { ...ship, saldo_operacion: oper, saldo_validado_auto: true, saldo_comprobante: url },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
-    await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado");
+    await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
     await notifyAdmin(db, runlike, `✅ Saldo validado automáticamente y clave de recojo enviada. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
     return true;
   }

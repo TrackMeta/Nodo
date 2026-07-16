@@ -725,7 +725,9 @@ function defaultPedidos(){
     embudos:{ mensajeria:true, confirmaciones:false, logistica:false },
     // El pedido de provincia nace sin pagar (así se puede perseguir al que no
     // paga y medir la tasa de abandono); esto evita que se acumulen.
-    adelanto:{ nudge:{ activo:false, horas:12, mensaje:"" }, vencimiento:{ activo:false, horas:48 } },
+    // validacion: quién aprueba el adelanto. Manual por defecto — es el momento
+    // en que decides si despachas o no, así que por defecto te consulta.
+    adelanto:{ validacion:"manual", tolerancia:1, nudge:{ activo:false, horas:12, mensaje:"" }, vencimiento:{ activo:false, horas:48 } },
     conf:{ msg_cod:"", fecha:false, msg_ag_pago:"", msg_ag:"", instr_cod:"", instr_ag:"" },
     log:{ modo:"manual", tolerancia:1, instr_cod:"", instr_ag:"" },
   };
@@ -743,6 +745,7 @@ function renderPedidos(b){
     conf:{ ...D.conf, ...(src.conf||{}) },
     log:{ ...D.log, ...(src.log||{}) },
     adelanto:{
+      ...D.adelanto, ...(src.adelanto||{}),
       nudge:{ ...D.adelanto.nudge, ...((src.adelanto||{}).nudge||{}) },
       vencimiento:{ ...D.adelanto.vencimiento, ...((src.adelanto||{}).vencimiento||{}) },
     },
@@ -798,9 +801,28 @@ function renderPedidos(b){
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.clock}</span><span class="nm">Adelantos de provincia</span></div>
-      <div class="desc">El pedido de provincia se crea apenas el cliente te da sus datos, <b>antes de pagar</b>.
-      Esto mantiene limpia sola la columna “Esperando adelanto”: primero se le recuerda, y si igual no paga, el pedido vence.
-      Si apagás las dos, el tablero se comporta como antes y lo manejás a mano (el botón <b>Cancelar pedido</b> del menú ⋮ siempre está).</div>
+      <div class="desc">El pedido de provincia se crea apenas el cliente te da sus datos, <b>antes de pagar</b>.</div>
+
+      <label style="margin-top:14px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el adelanto?</label>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="adelOpts">
+        ${[["manual","👁","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta con los datos y la foto te espera en el Copiloto."],
+           ["auto","⚡","Automático: si el monto cuadra, valida el adelanto sin consultarme","Ante cualquier duda (monto, fraude o comprobante repetido) te lo deriva igual al Copiloto."]]
+          .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.adelanto.validacion==="auto"):(p.adelanto.validacion!=="auto"); return `
+        <div class="adelopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
+          <span class="adeldot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
+          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${ic} ${t}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>
+        </div>`; }).join("")}
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Tolerancia del monto <span style="color:var(--faint);font-weight:400">(modo automático)</span></label>
+        <input class="in" id="pAdelTol" type="number" min="0" step="0.5" value="${Number(p.adelanto.tolerancia ?? 1)}" style="width:110px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta si pagó al menos el adelanto menos esta diferencia. Pagar de más siempre se acepta.</span>
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin:18px 0 4px"></div>
+      <div class="desc">Si no paga, esto mantiene limpia sola la columna “Esperando adelanto”.
+      Con las dos apagadas, el tablero se comporta como antes y lo manejás a mano (el botón <b>Cancelar pedido</b> del menú ⋮ siempre está).</div>
 
       <div id="pnRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span style="font-weight:600;font-size:13px">Recordarle si no paga</span>
@@ -862,6 +884,18 @@ function renderPedidos(b){
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
   b.querySelectorAll(".emrow").forEach(row=> row.onclick=()=>{ const k=row.dataset.em; p.embudos[k]=!p.embudos[k]; row.querySelector('[data-emsw]').classList.toggle("on",p.embudos[k]); });
   $("pcFechaRow").onclick=()=>{ p.conf.fecha=!p.conf.fecha; $("pcFecha").classList.toggle("on",p.conf.fecha); };
+  // Selección sin re-render (así el radio siempre "prende"), igual que el del saldo.
+  b.querySelectorAll(".adelopt").forEach(opt=> opt.onclick=()=>{
+    p.adelanto.validacion=opt.dataset.modo;
+    b.querySelectorAll(".adelopt").forEach(o=>{
+      const on=o.dataset.modo===p.adelanto.validacion;
+      o.style.borderColor=on?"var(--ia)":"var(--border)";
+      o.style.background=on?"var(--ia-bg)":"transparent";
+      const dot=o.querySelector(".adeldot");
+      dot.style.borderColor=on?"var(--ia)":"var(--border)";
+      dot.firstElementChild.style.display=on?"block":"none";
+    });
+  });
   $("pnRow").onclick=()=>{ p.adelanto.nudge.activo=!p.adelanto.nudge.activo; $("pnSw").classList.toggle("on",p.adelanto.nudge.activo); };
   $("pvRow").onclick=()=>{ p.adelanto.vencimiento.activo=!p.adelanto.vencimiento.activo; $("pvSw").classList.toggle("on",p.adelanto.vencimiento.activo); };
   // Modo de logística: click en la opción (sin re-render, así la selección
@@ -880,6 +914,7 @@ function renderPedidos(b){
     p.conf.instr_cod=$("pcInstrCod").value; p.conf.instr_ag=$("pcInstrAg").value;
     p.log.instr_cod=$("plInstrCod").value; p.log.instr_ag=$("plInstrAg").value;
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
+    p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
     p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
     p.adelanto.nudge.mensaje=$("pnMsg").value.trim();
     p.adelanto.vencimiento.horas=Math.max(1,parseInt($("pvHoras").value,10)||48);

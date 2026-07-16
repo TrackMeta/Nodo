@@ -942,36 +942,13 @@ async function generarFlujoFisico(flowId, N, E){
            "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.",
   },true,80,240);
   const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },false,380,240);
-  const nEsImg=await N("condicion","¿Mandó comprobante?",{
-    rutas:[{ nombre:"Es imagen", handle:"ruta:es_imagen", match:"todas",
-             condiciones:[{ op:"campo_igual", campo:"last_input_type", valor:"image" }] }],
-  },false,660,240);
-
-  // ── Rama del adelanto (provincia) ──
-  const nOcr=await N("ia","Validar el adelanto",{
-    operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false,
-    guardar_en:"pago_resultado", monto_esperado:"{{adelanto}}",
-    prompt:"Analiza la imagen con las reglas del validador. Si el pago del adelanto es VÁLIDO y por el monto correcto, "+
-           "responde exactamente PAGO_OK. Si no, responde PAGO_NO y el motivo en una frase.",
-  },false,960,80);
-  const nPagoOk=await N("condicion","¿Adelanto válido?",{
-    rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
-             condiciones:[{ op:"campo_contiene", campo:"pago_resultado", valor:"PAGO_OK" }] }],
-  },false,1240,80);
-  const nAdelOk=await N("accion","Adelanto validado",{
-    acciones:[
-      { tipo:"actualizar_pedido", estado:"adelanto_validado" },
-      { tipo:"add_tag", valor:"Compra" },
-      { tipo:"notify_admin", mensaje:"💰 ADELANTO PAGADO · {{producto_nombre}}\nCliente: {{nombre}} (+{{telefono}})\nDNI: {{dni}}\nSede: {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nAdelanto: S/ {{adelanto}}", foto:"{{ultima_imagen}}" },
-    ],
-  },false,1520,80);
-  const nGracias=await N("mensaje","Confirmación del adelanto",{
-    bubbles:[{ text:"¡Adelanto confirmado! 🙌\n\nYa estamos preparando tu pedido. Te enviamos la guía apenas lo despachemos por la agencia." }],
-  },false,1800,80);
   const nFin=await N("fin","Fin",{},false,2080,240);
-  const nRe=await N("mensaje","Reintentar el comprobante",{
-    bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
-  },false,960,-40);
+
+  // OJO: acá NO hay rama de "validar el comprobante del adelanto". Eso lo toma
+  // el interceptor `maybeAdelanto` del motor, ANTES del flujo, para que respete
+  // el selector Manual/Automático de IA · Pedidos en el momento y no según cómo
+  // estaba el día que generaste el flujo. Si estaba acá, aprobaría solo aunque
+  // hubieras elegido que te consulte.
 
   // ── Rama Lima (contraentrega: no hay pago por adelantado) ──
   const nEsLima=await N("condicion","¿Es de Lima?",{
@@ -1022,15 +999,9 @@ async function generarFlujoFisico(flowId, N, E){
   },false,1520,640);
 
   await E(nVender,"exito",nEsperar);
-  await E(nEsperar,"continuar",nEsImg);
-  await E(nEsImg,"ruta:es_imagen",nOcr);
-  await E(nEsImg,"si_no_cumple",nEsLima);
-  await E(nOcr,"exito",nPagoOk);
-  await E(nPagoOk,"ruta:pago_ok",nAdelOk);
-  await E(nPagoOk,"si_no_cumple",nRe);
-  await E(nRe,"continuar",nEsperar);
-  await E(nAdelOk,"continuar",nGracias);
-  await E(nGracias,"continuar",nFin);
+  // Sin rama de imagen: el comprobante del adelanto lo intercepta el motor
+  // antes de llegar acá. Lo que sigue es la conversación de venta.
+  await E(nEsperar,"continuar",nEsLima);
   await E(nEsLima,"ruta:lima",nLimaOk);
   await E(nEsLima,"si_no_cumple",nProvOk);
   await E(nLimaOk,"ruta:crear",nCrearLima);
