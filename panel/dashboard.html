@@ -95,7 +95,7 @@
 
     <div class="cols">
       <div class="panel">
-        <h3>Ventas confirmadas</h3><p class="ps" id="salesSum">—</p>
+        <h3>Ventas cerradas</h3><p class="ps" id="salesSum">—</p>
         <div id="salesChart"></div>
       </div>
       <div class="panel">
@@ -339,7 +339,7 @@ function renderProducts(prods, orders, vendido, unavailable){
   });
   const list=Object.values(pmap).filter(p=>p.units>0);
   if(sinProd.units) list.push({ nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
-  if(!list.length){ box.innerHTML=`<div class="empty">Aún no hay ventas confirmadas en este periodo.</div>`; return; }
+  if(!list.length){ box.innerHTML=`<div class="empty">Aún no hay ventas cerradas en este periodo.</div>`; return; }
   list.sort((a,b)=>b.ing-a.ing);
   const maxIng=Math.max(...list.map(p=>p.ing),1);
   let rows="";
