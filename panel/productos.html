@@ -19,9 +19,14 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .pcard .c-tt{font-size:16.5px;font-weight:700;letter-spacing:-.2px}
-  .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border)}
-  .tab{background:transparent;border:none;color:var(--muted);font-size:14px;font-weight:600;padding:10px 16px;border-bottom:2px solid transparent}
+  .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:14px;font-weight:600;padding:10px 16px;border-bottom:2px solid transparent;white-space:nowrap;flex:none;cursor:pointer}
   .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  /* Pestañas avanzadas (Receta, Flujos): existen pero se ven secundarias. */
+  .tab-adv{opacity:.6;font-size:13px}
+  .tab-adv.active{opacity:1}
+  .hint{color:var(--muted);font-size:12.5px;line-height:1.55}
   label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
   .ta{min-height:90px;font-family:monospace;font-size:12px}
@@ -193,7 +198,7 @@ async function createProduct(){
 async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
-  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="receta";
+  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="producto";
   renderDetail(); showDetail();
 }
 async function deleteProduct(){
@@ -210,19 +215,25 @@ function renderDetail(){
   d.innerHTML=`
     <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(st.prod.nombre)}</h1>
     <div class="tabs">
-      <button class="tab ${st.tab==='receta'?'active':''}" data-t="receta">Receta</button>
-      <button class="tab ${st.tab==='datos'?'active':''}" data-t="datos">Datos</button>
+      <button class="tab ${st.tab==='producto'?'active':''}" data-t="producto">Producto</button>
       <button class="tab ${st.tab==='opciones'?'active':''}" data-t="opciones">Opciones de compra</button>
-      <button class="tab ${st.tab==='extras'?'active':''}" data-t="extras">Ventas extra</button>
-      <button class="tab ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
+      <button class="tab ${st.tab==='entrega'?'active':''}" data-t="entrega">Entrega</button>
+      <button class="tab ${st.tab==='ia'?'active':''}" data-t="ia">Cómo lo vende la IA</button>
       <button class="tab ${st.tab==='activacion'?'active':''}" data-t="activacion">Activación</button>
+      <button class="tab ${st.tab==='extras'?'active':''}" data-t="extras">Ventas extra</button>
+      <button class="tab ${st.tab==='remarketing'?'active':''}" data-t="remarketing">Remarketing</button>
+      <button class="tab tab-adv ${st.tab==='receta'?'active':''}" data-t="receta">Receta</button>
+      <button class="tab tab-adv ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
     </div>
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
   if(st.tab==="receta") renderReceta();
-  else if(st.tab==="datos") renderDatos();
+  else if(st.tab==="producto") renderProducto();
+  else if(st.tab==="entrega") renderEntrega();
+  else if(st.tab==="ia") renderProductoIA();
   else if(st.tab==="opciones") renderOpciones();
   else if(st.tab==="extras") renderExtras();
+  else if(st.tab==="remarketing") renderRemarketing();
   else if(st.tab==="flujos") renderFlujos();
   else renderActivacion();
 }
@@ -318,20 +329,22 @@ function normalizeEnvio(c){
   if(!e.confirmaciones) e.confirmaciones={ referencia:false, mapa:true, rango_fecha:false, agencia_def:true, adelanto:true, dni:true };
   c.envio=e; return e;
 }
-function renderDatos(){
+// Config compartido: recompila el contexto IA y refresca el JSON avanzado si está.
+function prodSync(){
+  const c=st.prod.config;
+  c.contexto_producto=compileProductoIA(c, st.prod.tipo||"digital")||undefined;
+  const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2);
+}
+function prodSetC(k,v){ const c=st.prod.config; if(v==null||v==="") delete c[k]; else c[k]=v; prodSync(); }
+
+// ── Pestaña PRODUCTO: lo básico (identidad + precio + costo) ────────
+function renderProducto(){
   const b=$("tabBody");
   const folders=allFolders();
   const c=st.prod.config=st.prod.config||{};
   const tipo=st.prod.tipo||"digital";
-  if(!Array.isArray(c.faq_items)) c.faq_items=parseFaq(c.faq);
-  const ia=c.ia=c.ia||{};
-  // Migra el contexto libre anterior al campo "detalle" del formulario.
-  if(!ia.detalle && c.contexto_producto && !ia._migrado){ ia.detalle=c.contexto_producto; ia._migrado=true; }
-  if(!Array.isArray(ia.ejemplos)) ia.ejemplos=[];
-  if(!Array.isArray(c.ia_multimedia)) c.ia_multimedia=[];
-  const P="#a855f7"; // acento IA
-  const taField=(k,label,ph,rows)=>`<label>${label}</label><textarea class="in ia-f" data-k="${k}" rows="${rows||2}" style="min-height:${(rows||2)*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
   b.innerHTML=`
+    <p class="hint" style="margin:0 0 14px">Lo básico de lo que vendes: nombre, precio y cuánto te cuesta. Las <b>opciones</b> (1 par / 2 pares, Básico / Premium) van en su pestaña; cómo se <b>entrega</b> y cómo lo <b>vende la IA</b>, también.</p>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
       <div class="row" style="align-items:flex-start;margin-top:10px">
@@ -354,7 +367,7 @@ function renderDatos(){
       </div>
     </div>
     <div class="card" style="border-color:rgba(34,192,121,.4);box-shadow:0 0 0 1px rgba(34,192,121,.12) inset">
-      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio y entrega</h4>
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio</h4>
       <div class="row" style="margin-top:10px">
         <div><label style="margin-top:0">Precio base</label><input class="in" id="pPrecio" value="${esc(c.precio??"")}" placeholder="Ej. 120"/></div>
         <div><label style="margin-top:0">Moneda</label>
@@ -362,22 +375,89 @@ function renderDatos(){
       </div>
       <label>Costo (lo que te cuesta a ti)</label>
       <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="Ej. 60"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:5px">Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real
-      (precio − costo − envío); en una opción de 2 unidades se multiplica solo. El cliente nunca lo ve. Si lo dejas vacío, el Dashboard
-      te muestra el ingreso pero no el margen.</div>
-      ${tipo==="digital"?`
-      <label>Link de entrega (digital)</label>
-      <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:7px">Disponible en tus flujos como <b style="color:${P}">{{link_entrega}}</b>.</div>`:`
-      <div style="font-size:11px;color:var(--faint);margin-top:10px">Producto físico: la entrega y el cobro se configuran abajo en <b>Envío y cobro</b>. Los datos de pago generales están en la sección IA → Validador de comprobantes.</div>`}
-      <div style="font-size:11px;color:var(--faint);margin-top:5px">El precio está disponible como <b style="color:${P}">{{precio}}</b>.</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real (precio − costo − envío); en una opción de 2 unidades se multiplica solo. El cliente nunca lo ve. Si lo dejas vacío, el Dashboard te muestra el ingreso pero no el margen.</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:8px">Si vendes varias presentaciones con distinto precio, configúralas en <a href="#" id="goOpc2" style="color:var(--brand)">Opciones de compra →</a>. El precio está disponible en tus flujos como <b style="color:var(--brand)">{{precio}}</b>.</div>
     </div>
-    <div id="envioCard"></div>
-    <div class="card" style="border-color:rgba(168,85,247,.32)">
-      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:${P};display:inline-flex;vertical-align:-.15em">${icon("sparkles")}</span> Conocimiento del producto (para la IA)</h4>
-      <div style="font-size:12px;color:var(--faint)">Llena este formulario del producto: la IA lo usa al conversar sobre él, junto con el Conocimiento del negocio de la sección IA. Todo es opcional — cuanto más, mejor vende.</div>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
+      <label style="margin-top:6px">Config del producto (se genera desde los formularios)</label>
+      <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
+    </details>`;
+  $("pPrecio").onchange=(e)=>prodSetC("precio", e.target.value.trim());
+  $("pMoneda").onchange=(e)=>prodSetC("moneda", e.target.value.trim());
+  $("pCosto").onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
+  $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
+  $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
+  const goOpc=$("goOpc2"); if(goOpc) goOpc.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
+  const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(); }catch(_){ toast("JSON inválido",true); } };
+  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
+  wireEmojiPicker();
+}
 
-      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:14px">
+// Selector de emoji del producto (compartido). Requiere #emojiBtn y #emojiPop.
+function wireEmojiPicker(){
+  const pop=$("emojiPop"), ebtn=$("emojiBtn"); if(!pop||!ebtn) return;
+  pop.style.flexDirection="column";
+  pop.innerHTML=`
+    <input id="emojiAny" placeholder="Escribe o pega cualquier emoji…" maxlength="8"
+      style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:16px;outline:none;margin-bottom:6px"/>
+    <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Tip: <b>Win + .</b> (o <b>Ctrl+Cmd+Espacio</b> en Mac) abre el teclado de emojis.</div>
+    <div style="max-height:230px;overflow-y:auto;margin:0 -2px">
+      ${EMOJI_CATS.map(c=>`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:8px 4px 3px">${c.n}</div><div style="display:flex;flex-wrap:wrap;gap:1px">${splitEmojis(c.e).map(e=>`<button type="button" data-e="${e}" style="width:32px;height:32px;font-size:19px;padding:0;border:none;background:transparent;cursor:pointer;border-radius:8px;line-height:1">${e}</button>`).join("")}</div>`).join("")}
+    </div>
+    <button type="button" data-e="" title="Sin emoji" style="margin-top:6px;width:100%;height:30px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:8px;font-size:12px">Sin emoji</button>`;
+  pop.style.display="none";
+  ebtn.onclick=(ev)=>{ ev.stopPropagation(); pop.style.display=pop.style.display==="none"?"flex":"none"; if(pop.style.display==="flex"){ const inp=$("emojiAny"); if(inp){ inp.value=st.prod.emoji||""; inp.focus(); } } };
+  pop.onclick=(ev)=>ev.stopPropagation();
+  const setEmoji=(v)=>{ st.prod.emoji=(v&&v.trim())||null; ebtn.innerHTML=st.prod.emoji?esc(st.prod.emoji):icon("plus"); };
+  pop.querySelectorAll("button[data-e]").forEach(b=> b.onclick=()=>{ setEmoji(b.dataset.e); pop.style.display="none"; });
+  const any=$("emojiAny");
+  any.oninput=(e)=>setEmoji(e.target.value);
+  any.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); pop.style.display="none"; } };
+  document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
+}
+
+// ── Pestaña ENTREGA: cómo le llega al cliente ──────────────────────
+function renderEntrega(){
+  const b=$("tabBody");
+  const c=st.prod.config=st.prod.config||{};
+  const tipo=st.prod.tipo||"digital";
+  if(tipo==="digital"){
+    b.innerHTML=`
+      <p class="hint" style="margin:0 0 14px">Cómo le llega al cliente lo que compró.</p>
+      <div class="card">
+        <h4 style="display:flex;align-items:center;gap:7px">${icon("link")} Entrega digital</h4>
+        <label>Link o archivo de entrega</label>
+        <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
+        <div style="font-size:11px;color:var(--faint);margin-top:7px">Se entrega al confirmar el pago. Disponible en tus flujos como <b style="color:var(--brand)">{{link_entrega}}</b>. Si tienes varias opciones con distinta entrega, cada una lleva su propio link en <a href="#" id="goOpc3" style="color:var(--brand)">Opciones de compra →</a>.</div>
+      </div>`;
+    const lk=$("pLink"); if(lk) lk.onchange=(e)=>prodSetC("link_entrega", e.target.value.trim());
+    const g=$("goOpc3"); if(g) g.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
+    return;
+  }
+  // Físico: la logística (zonas, agencias, envío gratis, costos) se hereda de
+  // Negocio → Entrega y logística. Acá solo el adelanto y su override.
+  b.innerHTML=`
+    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte— es igual para todos tus productos y se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a>. Acá solo lo que puede cambiar por producto.</p>
+    <div id="envioCard"></div>`;
+  renderEnvio();
+}
+
+// ── Pestaña CÓMO LO VENDE LA IA: conocimiento del producto ─────────
+function renderProductoIA(){
+  const b=$("tabBody");
+  const c=st.prod.config=st.prod.config||{};
+  if(!Array.isArray(c.faq_items)) c.faq_items=parseFaq(c.faq);
+  const ia=c.ia=c.ia||{};
+  if(!ia.detalle && c.contexto_producto && !ia._migrado){ ia.detalle=c.contexto_producto; ia._migrado=true; }
+  if(!Array.isArray(ia.ejemplos)) ia.ejemplos=[];
+  if(!Array.isArray(c.ia_multimedia)) c.ia_multimedia=[];
+  const P="#a855f7";
+  const taField=(k,label,ph,rows)=>`<label>${label}</label><textarea class="in ia-f" data-k="${k}" rows="${rows||2}" style="min-height:${(rows||2)*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
+  b.innerHTML=`
+    <p class="hint" style="margin:0 0 14px">Lo que tu vendedor necesita saber de <b>este</b> producto para venderlo y responder dudas. Todo es opcional — cuanto más, mejor vende. (La personalidad general del vendedor va en <a href="ia.html" style="color:var(--brand)">IA → Vendedor IA</a>.)</p>
+    <div class="card" style="border-color:rgba(168,85,247,.32)">
+      <div style="border:1px solid var(--border);border-radius:12px;padding:13px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Cómo vender este producto</div>
         <label>Estilo de venta</label>
         <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
@@ -388,7 +468,6 @@ function renderDatos(){
         ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
         ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
       </div>
-
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Qué es el producto</div>
         ${taField("resumen","Información resumida (pitch corto)","En 1-2 frases: qué es y por qué conviene.",2)}
@@ -396,20 +475,16 @@ function renderDatos(){
         ${taField("reglas_producto","Reglas del producto","Ej. stock, tallas, colores, garantía, tiempos…",2)}
         ${taField("limites","Límites (nunca hacer / no prometer)","Ej. no prometer entregas en 24h, no dar descuentos mayores a X…",2)}
       </div>
-
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Precio y promociones</div>
         ${taField("reglas_precio","Reglas del precio","Cuándo y cómo se cobra, qué incluye, negociación permitida…",2)}
         <div style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin:10px 0;font-size:12px;color:var(--muted);line-height:1.55">
           <span style="display:inline-flex;flex:none;color:var(--muted)">${icon("productos")}</span>
-          <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>versiones</b> ahora se configuran juntos
-          en la pestaña <b>Opciones de compra</b> — ahí cada uno tiene su precio real, y es contra ese precio
-          que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Opciones de compra →</a></div>
+          <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>versiones</b> se configuran en la pestaña <b>Opciones de compra</b> — ahí cada uno tiene su precio real, y es contra ese precio que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Opciones de compra →</a></div>
         </div>
         ${taField("descuentos","Precios con descuento","Cuándo aplicar un descuento para incentivar (ej. si deja en visto, si duda…) y cuánto.",2)}
         ${taField("metodos_pago","Métodos de pago del producto (opcional)","Si lo llenas, TIENE PRIORIDAD sobre los datos de pago generales de la sección IA.",2)}
       </div>
-
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Ayudas para responder</div>
         <label>Preguntas frecuentes / objeciones</label>
@@ -433,27 +508,11 @@ function renderDatos(){
           <button class="btn mmAdd" data-k="document" style="height:34px">+ Archivo</button>
         </div>
       </div>
-    </div>
-    <details style="margin-bottom:12px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
-      <label style="margin-top:6px">Config del producto (se genera desde el formulario)</label>
-      <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
-    </details>`;
-  const syncCfg=()=>{ c.contexto_producto=compileProductoIA(c, st.prod.tipo||"digital")||undefined; const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2); };
-  const setC=(k,v)=>{ if(v==null||v==="") delete c[k]; else c[k]=v; syncCfg(); };
-  $("pPrecio").onchange=(e)=>setC("precio", e.target.value.trim());
-  $("pMoneda").onchange=(e)=>setC("moneda", e.target.value.trim());
-  // Vacío = "no sé cuánto me cuesta" (sin margen), que NO es lo mismo que 0.
-  $("pCosto").onchange=(e)=>setC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
-  const lk=$("pLink"); if(lk) lk.onchange=(e)=>setC("link_entrega", e.target.value.trim());
-  $("pEmojis").oninput=(e)=>setC("emojis", e.target.value.trim());
-  // Campos del formulario IA (textareas + selects con data-k) → config.ia
-  b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; syncCfg(); }; });
-  // Las ofertas por cantidad se unificaron en "Opciones de compra" (cada una
-  // con su precio real, que es contra el que se valida el pago).
-  const goOp=$("goOpciones");
-  if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
-  // Ejemplos de respuesta
+    </div>`;
+  const setC=(k,v)=>prodSetC(k,v);
+  const g=$("pEmojis"); if(g) g.oninput=(e)=>setC("emojis", e.target.value.trim());
+  b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; prodSync(); }; });
+  const goOp=$("goOpciones"); if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   const paintEj=()=>{
     const box=$("ejList"); box.innerHTML="";
     if(!ia.ejemplos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin ejemplos.</div>`; }
@@ -461,15 +520,14 @@ function renderDatos(){
       const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
       el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in ejs" value="${esc(ej.sit||"")}" placeholder="Situación (ej. dice que está caro)"/><button class="iconbtn ejd" style="flex:0 0 auto">${icon("trash")}</button></div>
         <textarea class="in ejr" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Cómo responder">${esc(ej.resp||"")}</textarea>`;
-      el.querySelector(".ejs").oninput=(e)=>{ ej.sit=e.target.value; syncCfg(); };
-      el.querySelector(".ejr").oninput=(e)=>{ ej.resp=e.target.value; syncCfg(); };
-      el.querySelector(".ejd").onclick=()=>{ ia.ejemplos.splice(i,1); syncCfg(); paintEj(); };
+      el.querySelector(".ejs").oninput=(e)=>{ ej.sit=e.target.value; prodSync(); };
+      el.querySelector(".ejr").oninput=(e)=>{ ej.resp=e.target.value; prodSync(); };
+      el.querySelector(".ejd").onclick=()=>{ ia.ejemplos.splice(i,1); prodSync(); paintEj(); };
       box.appendChild(el);
     });
   };
   paintEj();
   $("ejAdd").onclick=()=>{ ia.ejemplos.push({sit:"",resp:""}); paintEj(); };
-  // Multimedia que la IA puede enviar
   const paintMM=()=>{
     const box=$("mmList"); box.innerHTML="";
     if(!c.ia_multimedia.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin archivos.</div>`; }
@@ -487,15 +545,14 @@ function renderDatos(){
           <textarea class="in mmdesc" rows="2" style="margin-top:8px;min-height:46px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="¿Cuándo debe enviarlo la IA? (ej. cuando pidan ver el catálogo)">${esc(m.descripcion||"")}</textarea>
           <div style="font-size:10.5px;color:var(--faint);margin-top:4px">${esc(m.filename||"")}</div>
         </div>`;
-      el.querySelector(".mmt").oninput=(e)=>{ m.tag=e.target.value.replace(/[^\w-]/g,"").toLowerCase(); syncCfg(); };
-      el.querySelector(".mmdesc").oninput=(e)=>{ m.descripcion=e.target.value; syncCfg(); };
-      el.querySelector(".mmd").onclick=()=>{ c.ia_multimedia.splice(i,1); syncCfg(); paintMM(); };
+      el.querySelector(".mmt").oninput=(e)=>{ m.tag=e.target.value.replace(/[^\w-]/g,"").toLowerCase(); prodSync(); };
+      el.querySelector(".mmdesc").oninput=(e)=>{ m.descripcion=e.target.value; prodSync(); };
+      el.querySelector(".mmd").onclick=()=>{ c.ia_multimedia.splice(i,1); prodSync(); paintMM(); };
       box.appendChild(el);
     });
   };
   paintMM();
-  b.querySelectorAll(".mmAdd").forEach(btn=> btn.onclick=()=>pickProdMedia(btn.dataset.k, paintMM, syncCfg));
-  // FAQ items
+  b.querySelectorAll(".mmAdd").forEach(btn=> btn.onclick=()=>pickProdMedia(btn.dataset.k, paintMM, prodSync));
   const paintFaq=()=>{
     const box=$("faqList"); box.innerHTML="";
     if(!c.faq_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin preguntas todavía.</div>`; }
@@ -503,39 +560,56 @@ function renderDatos(){
       const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
       el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/><button class="iconbtn fdel" style="flex:0 0 auto">${icon("trash")}</button></div>
         <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
-      const sync=()=>{ c.faq=compileFaq(c.faq_items); syncCfg(); };
+      const sync=()=>{ c.faq=compileFaq(c.faq_items); prodSync(); };
       el.querySelector(".fq").oninput=(e)=>{ qa.q=e.target.value; sync(); };
       el.querySelector(".fa").oninput=(e)=>{ qa.a=e.target.value; sync(); };
-      el.querySelector(".fdel").onclick=()=>{ c.faq_items.splice(i,1); c.faq=compileFaq(c.faq_items); syncCfg(); paintFaq(); };
+      el.querySelector(".fdel").onclick=()=>{ c.faq_items.splice(i,1); c.faq=compileFaq(c.faq_items); prodSync(); paintFaq(); };
       box.appendChild(el);
     });
   };
   paintFaq();
   $("faqAdd").onclick=()=>{ c.faq_items.push({q:"",a:""}); paintFaq(); };
-  $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
-  $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
-  const pop=$("emojiPop"), ebtn=$("emojiBtn");
-  pop.style.flexDirection="column";
-  pop.innerHTML=`
-    <input id="emojiAny" placeholder="Escribe o pega cualquier emoji…" maxlength="8"
-      style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:16px;outline:none;margin-bottom:6px"/>
-    <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Tip: <b>Win + .</b> (o <b>Ctrl+Cmd+Espacio</b> en Mac) abre el teclado de emojis.</div>
-    <div style="max-height:230px;overflow-y:auto;margin:0 -2px">
-      ${EMOJI_CATS.map(c=>`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:8px 4px 3px">${c.n}</div><div style="display:flex;flex-wrap:wrap;gap:1px">${splitEmojis(c.e).map(e=>`<button type="button" data-e="${e}" style="width:32px;height:32px;font-size:19px;padding:0;border:none;background:transparent;cursor:pointer;border-radius:8px;line-height:1">${e}</button>`).join("")}</div>`).join("")}
-    </div>
-    <button type="button" data-e="" title="Sin emoji" style="margin-top:6px;width:100%;height:30px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:8px;font-size:12px">Sin emoji</button>`;
-  pop.style.display="none";
-  ebtn.onclick=(ev)=>{ ev.stopPropagation(); pop.style.display=pop.style.display==="none"?"flex":"none"; if(pop.style.display==="flex"){ const inp=$("emojiAny"); if(inp){ inp.value=st.prod.emoji||""; inp.focus(); } } };
-  pop.onclick=(ev)=>ev.stopPropagation();
-  const setEmoji=(v)=>{ st.prod.emoji=(v&&v.trim())||null; ebtn.innerHTML=st.prod.emoji?esc(st.prod.emoji):icon("plus"); };
-  pop.querySelectorAll("button[data-e]").forEach(b=> b.onclick=()=>{ setEmoji(b.dataset.e); pop.style.display="none"; });
-  const any=$("emojiAny");
-  any.oninput=(e)=>setEmoji(e.target.value);
-  any.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); pop.style.display="none"; } };
-  document.addEventListener("click",()=>{ pop.style.display="none"; },{ once:true });
-  $("pConfig").onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderDatos(); }catch(_){ toast("JSON inválido",true); } };
-  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderDatos(); }; // re-render: cambia link/envío
-  renderEnvio();
+}
+
+// ── Pestaña REMARKETING: reenganche por silencio, propio del producto ──
+// El motor de remarketing vive en Secuencias (drip por silencio, lo corre el
+// scheduler). Acá se ve/gestiona la secuencia de ESTE producto sin salir de su
+// ficha; el editor de pasos avanzado sigue en Secuencias.
+async function renderRemarketing(){
+  const b=$("tabBody");
+  b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
+  const { data:seqs, error }=await supa.from("sequences").select("id,nombre,activo,pasos")
+    .eq("channel_id",st.channelId).order("created_at",{ascending:false});
+  if(error){ b.innerHTML=`<div class="card"><p class="hint">No se pudieron cargar las secuencias.</p></div>`; return; }
+  const nPasos=(s)=>{ try{ return Array.isArray(s.pasos)?s.pasos.length:0; }catch{ return 0; } };
+  const list=(seqs||[]);
+  b.innerHTML=`
+    <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no llegó a comprar. Es una secuencia de mensajes por <b>silencio</b>: si el cliente responde, se pausa sola; si compra, sale. La corre el sistema en segundo plano.</p>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px">${icon("secuencias")} Secuencia de remarketing</h4>
+      <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Elige la secuencia que reengancha a este producto, o crea una nueva. Los <b>pasos</b> (cuánto esperar y qué mensaje enviar) se editan en la sección Secuencias.</div>
+      <label>Secuencia asociada a este producto</label>
+      <select class="sel" id="pRemSeq" style="width:100%">
+        <option value="">— Ninguna —</option>
+        ${list.map(s=>`<option value="${s.id}" ${st.prod.config?.remarketing_seq_id===s.id?"selected":""}>${esc(s.nombre||"(sin nombre)")} · ${nPasos(s)} paso(s)${s.activo?"":" · inactiva"}</option>`).join("")}
+      </select>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn" id="remNew">+ Crear secuencia para este producto</button>
+        <button class="btn" id="remEdit" style="border:1px solid var(--border)">Editar pasos en Secuencias →</button>
+      </div>
+      <div style="font-size:11px;color:var(--faint);margin-top:12px">El <b>horario</b> del remarketing (no molestar de madrugada) se configura una vez en la sección Secuencias/Remarketing y aplica a todas.</div>
+    </div>`;
+  const c=st.prod.config=st.prod.config||{};
+  $("pRemSeq").onchange=(e)=>{ const v=e.target.value; if(v) c.remarketing_seq_id=v; else delete c.remarketing_seq_id; prodSync(); toast("Vinculada — recuerda Guardar el producto"); };
+  $("remNew").onclick=async()=>{
+    const nombre=`Remarketing · ${st.prod.nombre}`.slice(0,60);
+    const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, activo:true, pasos:[] }).select("id").single();
+    if(error||!data){ toast("No se pudo crear la secuencia",true); return; }
+    c.remarketing_seq_id=data.id; prodSync();
+    toast("Secuencia creada ✓ — ábrela para agregar pasos");
+    renderRemarketing();
+  };
+  $("remEdit").onclick=()=>{ location.href="secuencias.html"; };
 }
 
 // Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
