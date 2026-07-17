@@ -321,9 +321,13 @@ async function load(){
     kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto deja cada venta"),
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
-    kpi("chart","#22c079","Ganancia real", money(ganancia),
-      sinDatos?`faltan el costo o el envío en ${sinDatos} pedido${sinDatos>1?"s":""}`:"lo cobrado menos el producto y el envío"),
   );
+  // "Ganancia real" no va en Digital: un infoproducto no tiene costo de mercadería
+  // ni envío, así que la ganancia = lo cobrado y duplicaría el KPI "Cobrado".
+  if(tipo!=="digital"){
+    K.push(kpi("chart","#22c079","Ganancia real", money(ganancia),
+      sinDatos?`faltan el costo o el envío en ${sinDatos} pedido${sinDatos>1?"s":""}`:"lo cobrado menos el producto y el envío"));
+  }
   // Logística: en digital no existe nada de esto.
   if(tipo!=="digital"){
     K.push(kpi("alert","#e2564a","Esperando adelanto", espAdel.length,
