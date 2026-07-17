@@ -257,6 +257,13 @@ async function load(){
     supa.from("products").select("id,nombre,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
   ]);
   const s=stats.data||{};
+  // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test); la sección
+  // Contactos lo excluye, así que los dos números no cuadraban. Se corrige acá
+  // con el mismo criterio (no se toca el RPC: la Management API no deja
+  // reemplazar funciones a mano). head:true trae solo el count, sin filas.
+  supa.from("contacts").select("id",{count:"exact",head:true})
+    .eq("channel_id",channelId).neq("wa_id","webchat-test")
+    .then(({count})=>{ if(typeof count==="number"){ s.contactos=count; const el=[...document.querySelectorAll('#kpis .kpi')].find(k=>/Contactos/.test(k.querySelector('.h')?.textContent||"")); if(el) el.querySelector('.v').textContent=String(count); } }).catch(()=>{});
   const ev=evR.error?[]:(evR.data||[]);
   // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
   // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
