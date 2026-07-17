@@ -114,11 +114,10 @@
       <span class="glow"></span>
       <span class="ia-badge" id="iaBadge"></span>
       <h1>Inteligencia Artificial</h1>
-      <p>El cerebro de tu bot. Aquí configuras todo lo que la IA sabe y cómo piensa: el <b>conocimiento del negocio</b> que usa en cada conversación, qué <b>modelo</b> resuelve cada tarea y las <b>cuentas de IA</b> conectadas a este bot.</p>
+      <p>Cómo <b>actúa</b> tu bot: la personalidad del <b>Vendedor IA</b>, qué <b>modelo</b> resuelve cada tarea, cómo <b>valida los comprobantes</b> y las <b>cuentas de IA</b> conectadas. (Lo que el bot <b>sabe</b> de tu negocio va en la sección <b>Negocio</b>.)</p>
     </div>
     <div class="tabs">
       <button class="tab active" data-t="vendedor" id="tabVend"></button>
-      <button class="tab" data-t="conocimiento" id="tabCon"></button>
       <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
@@ -228,7 +227,6 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
   $("tabVend").innerHTML=IC.robot+"<span>Vendedor IA</span>";
-  $("tabCon").innerHTML=IC.book+"<span>Conocimiento</span>";
   $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
@@ -254,7 +252,6 @@ async function loadCfg(){
 function render(){
   const b=$("body");
   if(st.tab==="vendedor") renderVendedor(b);
-  else if(st.tab==="conocimiento") renderConocimiento(b);
   else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
@@ -439,51 +436,10 @@ function renderVendedor(b){
   $("saveVend").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Vendedor guardado ✓"); };
 }
 
-function renderConocimiento(b){
-  const form=seedForm();
-  const field=([k,label,type,ph])=>`
-    <label style="margin-top:14px">${label}</label>
-    ${type==="ta"
-      ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
-      : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
-  b.innerHTML=`
-    <h2>Conocimiento del negocio</h2>
-    <p class="sub">Completa este formulario del negocio: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en la pestaña <b>Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
-      ${NEG_FIELDS.map(field).join("")}
-      <label style="margin-top:18px">Preguntas frecuentes del negocio (FAQ)</label>
-      <div class="desc" style="margin-top:0">Las dudas que más te hacen y su respuesta ideal. La IA responderá con estas.</div>
-      <div id="faqList" style="margin-top:8px"></div>
-      <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
-      <label style="margin-top:18px">Información adicional (texto libre)</label>
-      <textarea class="in" id="nf_extra" rows="3" style="min-height:60px;line-height:1.5;resize:vertical" placeholder="Cualquier otra cosa que la IA deba saber y no encaje arriba.">${esc(form.extra||"")}</textarea>
-      <div class="acts"><button class="btn ia" id="saveNegocio">Guardar conocimiento</button>
-        <button class="btn" id="previewNeg" style="border:1px solid var(--border)">Ver cómo lo lee la IA</button></div>
-    </div>`;
-  const paintFaq=()=>{
-    const box=$("faqList"); box.innerHTML="";
-    if(!form.faq.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Sin preguntas todavía.</div>`; }
-    form.faq.forEach((qa,i)=>{
-      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
-      el.innerHTML=`<div class="row"><div class="f" style="flex:1"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/></div>
-        <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button></div>
-        <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
-      el.querySelector(".fq").oninput=(e)=>qa.q=e.target.value;
-      el.querySelector(".fa").oninput=(e)=>qa.a=e.target.value;
-      el.querySelector("button.danger").onclick=()=>{ form.faq.splice(i,1); paintFaq(); };
-      box.appendChild(el);
-    });
-  };
-  paintFaq();
-  $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
-  const harvest=()=>{
-    NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; });
-    form.extra=$("nf_extra").value;
-  };
-  $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
-  $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado ✓"); };
-}
+// El Conocimiento del negocio se movió a la sección Negocio (negocio.html).
+// Los helpers seedForm/compileNegocio/compilePersona/saveForm/NEG_FIELDS/TONOS
+// se conservan porque el Vendedor IA (renderVendedor) los sigue usando: ambas
+// pantallas guardan el mismo channels.negocio_form completo.
 
 // ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────
 function renderPerfiles(b){
