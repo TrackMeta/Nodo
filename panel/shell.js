@@ -102,34 +102,37 @@ export function icon(n, cls = "ico") {
 
 // Navegación agrupada (DESIGN_SYSTEM.md §7.2). El grupo sin `sec` va
 // arriba sin etiqueta; los demás son colapsables (estado en localStorage).
+// Sidebar hacia la simplicidad: arriba lo del día a día; luego lo que se
+// configura ("Tu negocio"); y el 80% potente pero avanzado queda agrupado en
+// "Avanzado" para no abrumar. Reordenar acá no rompe el resaltado (usa ids).
 const NAV_GROUPS = [
   { key:"top", items:[
     { id:"inbox",       label:"Bandeja",              href:"index.html",      icon:"inbox", cta:true },
     { id:"dashboard",   label:"Dashboard",            href:"dashboard.html",  icon:"dashboard" },
     { id:"pedidos",     label:"Compras / Pedidos",    href:"pedidos.html",    icon:"pedidos" },
+    { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"robot" },
+  ]},
+  { key:"negocio", sec:"Tu negocio", items:[
+    { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
+    { id:"negocio",     label:"Negocio",              href:"negocio.html",    icon:"building" },
+    { id:"ia",          label:"IA",                   href:"ia.html",         icon:"robot", special:"ia" },
   ]},
   { key:"conv", sec:"Conversaciones", items:[
     { id:"contactos",   label:"Contactos",            href:"contactos.html",  icon:"contactos" },
     { id:"respuestas",  label:"Respuestas rápidas",   href:"respuestas.html", icon:"respuestas" },
     { id:"campanas",    label:"Campañas",             href:"campanas.html",   icon:"campanas" },
   ]},
-  { key:"auto", sec:"Automatización", items:[
+  { key:"adv", sec:"Avanzado", items:[
     { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
-    { id:"ia",          label:"IA",                   href:"ia.html",         icon:"robot", special:"ia" },
-    { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
+    { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"disparadores",label:"Disparadores",         href:"disparadores.html", icon:"disparadores" },
-    { id:"copiloto",   label:"Copiloto",             href:"copiloto.html",    icon:"robot" },
-    { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
-  ]},
-  { key:"cat", sec:"Catálogo", items:[
-    { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
     { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
+    { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
     { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
     { id:"etiquetas",   label:"Etiquetas",            href:"etiquetas.html",  icon:"etiquetas" },
   ]},
   { key:"conf", sec:"Configuración", items:[
-    { id:"negocio",     label:"Negocio",              href:"negocio.html",    icon:"building" },
     { id:"canales",     label:"Canales",              href:"canales.html",    icon:"canales" },
     { id:"config",      label:"Ajustes",              href:"config.html",     icon:"config" },
   ]},
@@ -137,7 +140,13 @@ const NAV_GROUPS = [
 
 // ── grupos del sidebar colapsados (persistencia) ────────────────────
 function closedGroups() {
-  try { return JSON.parse(localStorage.getItem("nodo.navClosed") || "[]"); } catch { return []; }
+  // Primera visita (sin preferencia guardada): "Avanzado" arranca colapsado
+  // para no abrumar. Si el usuario ya tocó grupos, se respeta su elección.
+  try {
+    const raw = localStorage.getItem("nodo.navClosed");
+    if (raw == null) return ["adv"];
+    return JSON.parse(raw);
+  } catch { return []; }
 }
 function toggleGroup(key, closed) {
   const set = new Set(closedGroups());

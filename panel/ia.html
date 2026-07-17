@@ -230,7 +230,7 @@ async function boot(){
   $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
-  $("tabPed").innerHTML=IC.truck+"<span>Pedidos</span>";
+  $("tabPed").innerHTML=IC.truck+"<span>Validación de pagos</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
@@ -680,7 +680,10 @@ function renderValidador(b){
 // productos físicos). Se guarda en channels.pedidos_config (jsonb).
 function defaultPedidos(){
   return {
-    embudos:{ mensajeria:true, confirmaciones:false, logistica:false },
+    // Todos activos = la IA responde en todo el flujo del pedido. Antes había un
+    // toggle por embudo (se quitó); dejarlos en true evita que guardar la pantalla
+    // "Validación de pagos" gatee la IA sin querer en canales sin config previa.
+    embudos:{ mensajeria:true, confirmaciones:true, logistica:true },
     // El pedido de provincia nace sin pagar (así se puede perseguir al que no
     // paga y medir la tasa de abandono); esto evita que se acumulen.
     // validacion: quién aprueba el adelanto. Manual por defecto — es el momento
@@ -690,11 +693,9 @@ function defaultPedidos(){
     log:{ modo:"manual", tolerancia:1, instr_cod:"", instr_ag:"" },
   };
 }
-const EMBUDOS=[
-  ["mensajeria","IA de Mensajería","Respuestas automáticas para leads en el embudo de ventas (mensajes entrantes)","bot"],
-  ["confirmaciones","IA de Confirmaciones","Respuestas automáticas para pedidos entrantes por confirmar","check"],
-  ["logistica","IA de Logística","Respuestas automáticas para el embudo de logística (por registrar, por enviar, enviado)","truck"],
-];
+// Los embudos siguen en defaultPedidos() (todos true) y se conservan al guardar;
+// solo se quitó su UI de esta pantalla. El motor gatea con embudos===false, así
+// que el default DEBE quedar en true para no silenciar la IA al guardar.
 function renderPedidos(b){
   const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
   const D = defaultPedidos();
@@ -711,54 +712,8 @@ function renderPedidos(b){
   st.pedidos = p;
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
   b.innerHTML=`
-    <h2>Pedidos físicos</h2>
-    <p class="sub">Cómo la IA <b>confirma</b> pedidos y hace <b>seguimiento logístico</b> (envíos y saldos). Aplica a todos los productos físicos; los requisitos por producto se ajustan en cada ficha de Productos.</p>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.robot}</span><span class="nm">Control de IA por embudo</span></div>
-      <div class="desc">Activa o desactiva la IA de forma independiente para cada embudo. El switch general de <b>Chats</b> desactiva todas las IAs.</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-        ${EMBUDOS.map(([k,t,d,ic])=>`<div class="emrow" data-em="${k}" style="display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:12px;padding:13px 14px;cursor:pointer">
-          <span style="display:inline-flex;color:var(--muted);flex:none">${IC[ic]}</span>
-          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${t}</div><div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45">${d}</div></div>
-          <span class="sw ${p.embudos[k]?'on':''}" data-emsw="${k}" style="flex:none"></span>
-        </div>`).join("")}
-      </div>
-    </div>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Personalización de mensajes</span></div>
-      <div class="desc">Mensajes que la IA envía al confirmar pedidos. Puedes usar variables como <b style="color:#a855f7">{{datos_pago}}</b>, <b style="color:#a855f7">{{nombre}}</b>.
-      <br><br><b>Ojo con la columna de contraentrega:</b> solo se usa si un pedido de <b>Lima</b> queda esperando un pago.
-      El flujo que arma la <b>Receta</b> confirma Lima directo (se paga al recibir), así que con esa configuración
-      la IA solo usa la columna de <b>agencia</b>. La de contraentrega queda para flujos que armes a mano.</div>
-      <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
-        <div class="f">
-          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones contraentrega</div>
-          <label style="margin-top:0">Mensaje al confirmar un pedido (opcional)</label>
-          ${ta(p.conf.msg_cod,"¡Gracias por confiar en nosotros! 🙌\n\n✅ Pedido confirmado\n📦 Entrega: dentro de las 24 h.",5).replace('class="in"','class="in" id="pcMsgCod"')}
-          <div id="pcFechaRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer"><span style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;color:var(--muted)">${IC.sliders}</span><span style="font-weight:600;font-size:13px">Enviar fecha de envío al confirmar el pedido</span></span><span class="sw ${p.conf.fecha?'on':''}" id="pcFecha" style="flex:none"></span></div>
-        </div>
-        <div class="f">
-          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Confirmaciones por agencia</div>
-          <label style="margin-top:0">Mensaje para presentar los métodos de pago (opcional)</label>
-          ${ta(p.conf.msg_ag_pago,"✅ Cuenta BCP empresa: MI NEGOCIO SAC\nBCP: 000-0000000-0-00\n✅ Yape: 900 000 000",4).replace('class="in"','class="in" id="pcMsgAgPago"')}
-          <label style="margin-top:14px">Mensaje al confirmar el pedido (opcional)</label>
-          ${ta(p.conf.msg_ag,"¡Listo! 🙌\n\n✅ Tu pedido ha sido confirmado\n📦 En las próximas horas será enviado a la agencia.",4).replace('class="in"','class="in" id="pcMsgAg"')}
-        </div>
-      </div>
-    </div>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Instrucciones para la IA de confirmaciones</span></div>
-      <div class="desc">Reglas específicas para la IA que confirma pedidos, según el tipo de envío.</div>
-      <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
-        <div class="f"><label style="margin-top:0">Contraentrega</label>
-          ${ta(p.conf.instr_cod,'- "Siempre verificar el distrito antes de confirmar"\n- "Confirmar método de pago antes de cerrar"\n- "Recordar al cliente tener el monto exacto"',6).replace('class="in"','class="in" id="pcInstrCod"')}</div>
-        <div class="f"><label style="margin-top:0">Agencia (Shalom, Olva, etc.)</label>
-          ${ta(p.conf.instr_ag,'- "Verificar datos completos del destinatario"\n- "Si el cliente quiere cambiar producto, derivar a ventas"\n- "Confirmar dirección de la agencia más cercana"',6).replace('class="in"','class="in" id="pcInstrAg"')}</div>
-      </div>
-    </div>
+    <h2>Validación de pagos</h2>
+    <p class="sub">Quién aprueba los pagos de los pedidos físicos —<b>tú</b> con un toque en el Copiloto, o la <b>IA</b> sola si el monto cuadra— y los recordatorios del adelanto. Aplica a todos los productos físicos.</p>
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.clock}</span><span class="nm">Adelantos de provincia</span></div>
@@ -831,20 +786,7 @@ function renderPedidos(b){
       <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--muted)">${IC.shield} En modo automático, si hay cualquier duda (monto, fraude o comprobante repetido) el pago cae en el <b>Copiloto</b> y te avisamos por <b>Telegram</b>.</div>
     </div>
 
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.doc}</span><span class="nm">Instrucciones para la IA de logística</span></div>
-      <div class="desc">Reglas específicas para la IA de seguimiento de envíos, según el tipo de envío.</div>
-      <div class="row" style="align-items:flex-start;gap:22px;margin-top:8px">
-        <div class="f"><label style="margin-top:0">Envío contraentrega</label>
-          ${ta(p.log.instr_cod,'#REGLAS\n\nNo puedes prometer horas exactas de entrega.\n\nNo ofrezcas ni prometas agendar recordatorios ni avisar cuando el motorizado esté cerca.',6).replace('class="in"','class="in" id="plInstrCod"')}</div>
-        <div class="f"><label style="margin-top:0">Envío por agencia</label>
-          ${ta(p.log.instr_ag,'- "Siempre dar el código de seguimiento cuando pregunten"\n- "Si el envío tiene más de 3 días de retraso, escalar"\n- "No prometer fechas exactas de entrega"',6).replace('class="in"','class="in" id="plInstrAg"')}</div>
-      </div>
-    </div>
-
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
-  b.querySelectorAll(".emrow").forEach(row=> row.onclick=()=>{ const k=row.dataset.em; p.embudos[k]=!p.embudos[k]; row.querySelector('[data-emsw]').classList.toggle("on",p.embudos[k]); });
-  $("pcFechaRow").onclick=()=>{ p.conf.fecha=!p.conf.fecha; $("pcFecha").classList.toggle("on",p.conf.fecha); };
   // Selección sin re-render (así el radio siempre "prende"), igual que el del saldo.
   b.querySelectorAll(".adelopt").forEach(opt=> opt.onclick=()=>{
     p.adelanto.validacion=opt.dataset.modo;
@@ -871,9 +813,9 @@ function renderPedidos(b){
     });
   });
   $("pedSave").onclick=async(e)=>{
-    p.conf.msg_cod=$("pcMsgCod").value; p.conf.msg_ag_pago=$("pcMsgAgPago").value; p.conf.msg_ag=$("pcMsgAg").value;
-    p.conf.instr_cod=$("pcInstrCod").value; p.conf.instr_ag=$("pcInstrAg").value;
-    p.log.instr_cod=$("plInstrCod").value; p.log.instr_ag=$("plInstrAg").value;
+    // Los mensajes/instrucciones/embudos por etapa se quitaron de esta pantalla
+    // (peso muerto). Siguen en `p` desde la normalización, así que se conservan
+    // tal cual; acá solo se guarda lo que sí se edita: aprobación + recordatorios.
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
     p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
