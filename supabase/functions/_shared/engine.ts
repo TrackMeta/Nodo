@@ -1159,16 +1159,51 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
 }
 
 // Acción crear_pedido: { estado?, monto?, datos?: { zona:"{{zona_entrega}}", … } }
+// Envío que el cliente paga y que TÚ cobras (entra al total). Zona-aware y
+// compatible con las dos formas de config: nueva (agencia, modo "fijo" →
+// {{envio_cobro}}) y vieja ({gratis, costo_lima, costo_provincia}). El modo
+// "cliente" no cuenta: eso lo paga a la agencia aparte. 0 si es gratis.
+function envioCobroDe(ctx: any, zona: string): number {
+  if (zona === "provincia") {
+    const fijo = Number(ctx.envio_cobro);
+    if (Number.isFinite(fijo) && fijo > 0) return fijo; // forma nueva (modo fijo)
+    if (ctx.envio_gratis === false) { const c = Number(ctx.envio_costo_provincia); if (Number.isFinite(c) && c > 0) return c; }
+  } else if (zona === "lima") {
+    if (ctx.envio_gratis === false) { const c = Number(ctx.envio_costo_lima); if (Number.isFinite(c) && c > 0) return c; }
+  }
+  return 0;
+}
+
 async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
   try {
     const ship: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
     const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+
+    // El envío que cobras se SUMA al total del pedido (decisión de Rodrigo).
+    const base = parseMonto(a.monto ?? a.amount, ctx) ?? 0;
+    const envio = envioCobroDe(ctx, String(ship.zona ?? ctx.zona_entrega ?? ""));
+    if (envio > 0) ship.envio_cobrado = envio; // transparente en el pedido
+    const amount = +(base + envio).toFixed(2);
+
+    // Congela el costo de la mercadería EN el pedido, para que cambiar el costo
+    // del producto después no altere los márgenes ya cerrados (snapshot).
+    try {
+      const pid = (c as any)?.product_id;
+      if (pid) {
+        const { data: p } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+        const unit = (p as any)?.config?.costo;
+        if (unit != null && unit !== "") {
+          const cant = Number(ctx.cantidad) || 1;
+          ship.costo_producto = +(Number(unit) * cant).toFixed(2);
+        }
+      }
+    } catch { /* sin costo → el Dashboard lo marca como "faltan datos" */ }
+
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null,
-      amount: parseMonto(a.monto ?? a.amount, ctx) ?? 0,
-      estado: a.estado || "carrito", shipping: ship,
+      amount, estado: a.estado || "carrito", shipping: ship,
     }).select("id").single();
     if (error) throw new Error(error.message);
     run.vars._order_id = (ord as any).id;
@@ -2643,7 +2678,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
                 if (ag) pc["adelanto_" + agk] = ag.adelanto_valor ?? "";
               }
               const actk = env.agencia_activa || "shalom";
-              pc.adelanto = env.agencias[actk]?.adelanto_valor ?? "";
+              const ag = env.agencias[actk];
+              pc.adelanto = ag?.adelanto_valor ?? "";
+              // {{envio_cobro}}: lo que el cliente paga de envío y que TÚ cobras
+              // (entra al total del pedido). Solo el modo "fijo" es un cargo tuyo;
+              // "cliente" lo paga a la agencia aparte, y "gratis"/"gratis_desde"
+              // no suman. 0 cuando no corresponde.
+              pc.envio_cobro = ag?.modo === "fijo" ? (Number(ag.monto_fijo) || 0) : 0;
             } else {
               // Forma vieja (compat): checkboxes + adelanto único.
               for (const [k, v] of Object.entries(env)) {

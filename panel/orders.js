@@ -94,11 +94,14 @@ export function flete(o){
   return v === "" || v == null ? null : Number(v) || 0;
 }
 
-// Costo de la mercadería. El costo del producto es POR UNIDAD, así que una
-// opción de 2 pares cuesta el doble: `cantidad` la sabe el llamador (sale de
-// product_versions.cantidad de la opción que compró).
-// null = el producto no tiene costo cargado → no se puede hablar de margen.
-export function costoProducto(prod, cantidad = 1){
+// Costo de la mercadería. Manda el SNAPSHOT que se congeló en el pedido al
+// crearlo (`shipping.costo_producto`): así cambiar el costo del producto después
+// no altera los márgenes ya cerrados. Solo si el pedido no lo tiene (pedidos
+// viejos, previos al snapshot) se cae al costo vivo del producto × cantidad.
+// null = no hay dato de costo → no se puede hablar de margen.
+export function costoProducto(o, prod, cantidad = 1){
+  const snap = o?.shipping?.costo_producto;
+  if (snap != null && snap !== "") return Number(snap);
   const unit = prod?.config?.costo;
   if (unit == null || unit === "") return null;
   return Number(unit) * (Number(cantidad) || 1);
@@ -107,7 +110,7 @@ export function costoProducto(prod, cantidad = 1){
 // Ganancia real = lo cobrado − mercadería − envío. Devuelve null si falta algún
 // dato: preferimos no mostrar margen a mostrar uno inventado.
 export function margen(o, prod, cantidad = 1){
-  const cp = costoProducto(prod, cantidad);
+  const cp = costoProducto(o, prod, cantidad);
   const f  = flete(o);
   if (cp == null) return null;
   if (esFisico(o) && f == null) return null; // físico sin flete registrado
