@@ -1003,8 +1003,10 @@ async function generarFlujoFisico(flowId, N, E){
       { tipo:"crear_pedido", estado:"esperando_adelanto", monto:"{{precio}}",
         // La ciudad va SEPARADA de la sede: "Av. España" sola no alcanza para
         // despachar (¿la de Trujillo o la de Lima?).
+        // El saldo es lo que falta TRAS el adelanto ({{saldo}} = precio − adelanto).
+        // Con {{precio}} acá se le cobraba el adelanto dos veces al cliente.
         datos:{ zona:"provincia", ciudad:"{{ciudad}}", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
-                opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{precio}}" } },
+                opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{saldo}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
       { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nAgencia: Shalom {{ciudad}} · {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
     ],

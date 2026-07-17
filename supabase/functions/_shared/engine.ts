@@ -2671,6 +2671,18 @@ async function buildContext(db: SupabaseClient, run: Run) {
     if (oferta) ctx._oferta = oferta;
   } catch (_) { /* migración 0029 pendiente → sigue el precio de config */ }
 
+  // 6) {{saldo}} = lo que falta cobrar DESPUÉS del adelanto, para la venta por
+  // agencia (provincia). Va acá y no en el bloque del producto porque la opción
+  // de compra y la oferta activa PISAN {{precio}} justo arriba: restar antes
+  // daría el saldo del precio viejo (el de 1 par cuando compró 2).
+  // OJO: es solo para provincia. En Lima NO se usa —el motorizado cobra el
+  // precio completo— y {{adelanto}} igual viene con valor porque sale del
+  // producto, no de la zona: usar {{saldo}} allá cobraría de menos.
+  if (Number.isFinite(Number(ctx.precio))) {
+    const adel = Number(ctx.adelanto);
+    ctx.saldo = Math.max(0, +(Number(ctx.precio) - (Number.isFinite(adel) ? adel : 0)).toFixed(2));
+  }
+
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
   // notificación de físicos (guía, saldo, clave de recojo…). Best-effort.
   try {
