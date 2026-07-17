@@ -2738,9 +2738,12 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // OJO: es solo para provincia. En Lima NO se usa —el motorizado cobra el
   // precio completo— y {{adelanto}} igual viene con valor porque sale del
   // producto, no de la zona: usar {{saldo}} allá cobraría de menos.
+  // Incluye el envío que se cobra: el saldo tiene que cerrar adelanto+saldo =
+  // total del pedido (precio + envío). Si no, el envío nunca se cobraría.
   if (Number.isFinite(Number(ctx.precio))) {
     const adel = Number(ctx.adelanto);
-    ctx.saldo = Math.max(0, +(Number(ctx.precio) - (Number.isFinite(adel) ? adel : 0)).toFixed(2));
+    const envio = envioCobroDe(ctx, String(ctx.zona_entrega ?? "provincia"));
+    ctx.saldo = Math.max(0, +(Number(ctx.precio) + envio - (Number.isFinite(adel) ? adel : 0)).toFixed(2));
   }
 
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
