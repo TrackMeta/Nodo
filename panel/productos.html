@@ -360,6 +360,11 @@ function renderDatos(){
         <div><label style="margin-top:0">Moneda</label>
           <select class="sel" id="pMoneda" style="width:100%">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${(c.moneda||"PEN")===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select></div>
       </div>
+      <label>Costo (lo que te cuesta a ti)</label>
+      <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="Ej. 60"/>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real
+      (precio − costo − envío); en una opción de 2 unidades se multiplica solo. El cliente nunca lo ve. Si lo dejas vacío, el Dashboard
+      te muestra el ingreso pero no el margen.</div>
       ${tipo==="digital"?`
       <label>Link de entrega (digital)</label>
       <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
@@ -438,6 +443,8 @@ function renderDatos(){
   const setC=(k,v)=>{ if(v==null||v==="") delete c[k]; else c[k]=v; syncCfg(); };
   $("pPrecio").onchange=(e)=>setC("precio", e.target.value.trim());
   $("pMoneda").onchange=(e)=>setC("moneda", e.target.value.trim());
+  // Vacío = "no sé cuánto me cuesta" (sin margen), que NO es lo mismo que 0.
+  $("pCosto").onchange=(e)=>setC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
   const lk=$("pLink"); if(lk) lk.onchange=(e)=>setC("link_entrega", e.target.value.trim());
   $("pEmojis").oninput=(e)=>setC("emojis", e.target.value.trim());
   // Campos del formulario IA (textareas + selects con data-k) → config.ia

@@ -136,7 +136,7 @@
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, list:[], estado:"all", q:"", view:"compras", kbZona:"lima" };
+const st={ channelId:null, list:[], estado:"all", q:"", view:"compras", kbZona:"lima", entregas:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const ESTADOS=[["all","Todas"],["confirmada","Confirmadas"],["pendiente","Adelantos / Pendientes"],["anulada","Anuladas"]];
 
@@ -195,6 +195,10 @@ async function boot(){
 
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
+  // Costos de reparto por zona: precargan el flete al cerrar un pedido de Lima.
+  // Resiliente: sin `entregas` el modal simplemente no sugiere nada.
+  supa.from("channels").select("entregas").eq("id",st.channelId).maybeSingle()
+    .then(({data})=>{ st.entregas=data?.entregas||null; }).catch(()=>{});
   const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   let { data, error }=await supa.from("orders").select(full).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
   if(error){ // resiliente: sin columnas 0022
@@ -387,11 +391,36 @@ async function updateOrder(body){
   if(data&&data.error){ toast(data.error,true); return null; }
   return data;
 }
+// Estados en los que el pedido de Lima se cierra: ahí ya sabes qué le pagaste al
+// motorizado. Un rechazo también cuesta si igual salió, por eso se pregunta.
+const CIERRE_LIMA=["entregado_cobrado","rechazado"];
+
 async function confirmSet(o,estado,label){
   const c=o.contact||{};
+  const zona=((o.shipping||{}).zona||"").toLowerCase();
+  if(zona==="lima" && CIERRE_LIMA.includes(estado) && (o.shipping||{}).flete==null){
+    return cerrarLima(o,estado,label);
+  }
   if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú✅✓→📍🛵]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${O.label(estado)}".`,confirmText:"Confirmar"})) return;
   const r=await updateOrder({ order_id:o.id, estado });
   if(r){ toast(r.flow_started?"Estado actualizado ✓ · el bot está notificando al cliente":"Estado actualizado ✓"); await load(); }
+}
+
+// Cierre de un pedido de Lima: confirma el estado Y el costo del reparto, que
+// viene precargado con lo configurado para esa zona (Ajustes → Entregas Lima).
+function cerrarLima(o,estado,label){
+  const s=o.shipping||{};
+  const rechazo=estado==="rechazado";
+  modal(`
+    <h3>${icon(rechazo?"ban":"dollar")} ${esc(label.replace(/^[^\wÁÉÍÓÚáéíóú]+\s*/,""))}</h3>
+    <div class="m-sub">${esc((o.contact||{}).nombre||"cliente")}${s.zona_nombre?` · ${esc(s.zona_nombre)}`:""} — el pedido pasa a <b>${esc(O.label(estado))}</b>.
+      ${rechazo?"Si el motorizado fue igual, cárgalo: ese costo es tuyo aunque no hayas vendido.":""}</div>
+    ${fleteHtml(O.costoZonaLima(st.entregas, s.zona_nombre), rechazo?"Lo que le pagaste al motorizado por salir":"Lo que le pagaste al motorizado")}`,
+    async(ov)=>{
+      const r=await updateOrder({ order_id:o.id, estado, shipping:fleteDe(ov) });
+      if(r){ toast(r.flow_started?"Estado actualizado ✓ · el bot está notificando al cliente":"Estado actualizado ✓"); await load(); }
+      return !!r;
+    });
 }
 
 function openMenu(ev,o){
@@ -424,6 +453,8 @@ function modal(html,onSave){
   ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
   ov.querySelector(".cancel").onclick=()=>ov.remove();
   ov.querySelector(".save").onclick=async()=>{ const ok=await onSave(ov); if(ok!==false) ov.remove(); };
+  const b0=ov.querySelector("#mFlete0");
+  if(b0) b0.onclick=()=>{ ov.querySelector("#mFlete").value="0"; };
   document.body.appendChild(ov);
   return ov;
 }
@@ -440,17 +471,47 @@ function openDespacho(o){
     <div class="row2">
       <div><label>Nº de guía</label><input id="mGuia" value="${esc(s.guia||"")}" placeholder="Ej. 034-123456"/></div>
       <div><label>Clave de recojo</label><input id="mClave" value="${esc(s.clave_recojo||"")}" placeholder="La entrega el remitente"/></div>
-    </div>`,
+    </div>
+    ${fleteHtml(s.flete ?? ultimoFlete(o), "Lo que te costó mandarlo (lo tienes en el recibo)")}`,
     async(ov)=>{
       const guia=ov.querySelector("#mGuia").value.trim();
       if(!guia){ toast("Falta el número de guía",true); return false; }
       const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{
         agencia:ov.querySelector("#mAgencia").value, sede:ov.querySelector("#mSede").value.trim(),
-        guia, clave_recojo:ov.querySelector("#mClave").value.trim(),
+        guia, clave_recojo:ov.querySelector("#mClave").value.trim(), ...fleteDe(ov),
       }});
       if(r){ toast(r.flow_started?"Despacho registrado ✓ · el bot está avisando al cliente":"Despacho registrado ✓"); await load(); }
       return !!r;
     });
+}
+
+// ── Costo del envío ────────────────────────────────────────────────
+// Se pide en el momento en que ya lo tienes delante (el recibo de la agencia, o
+// el pago al motorizado), nunca como un campo suelto que nadie llenaría.
+// Vacío = no se registró (≠ 0, que es "no pagué nada"): sin esa diferencia el
+// margen saldría inventado.
+function fleteHtml(sugerido, ayuda){
+  return `<label>Costo del envío ${sugerido!=null?`<span style="font-weight:400;color:var(--faint)">· sugerido S/ ${sugerido}</span>`:""}</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="mFlete" type="number" min="0" step="0.5" value="${sugerido??""}" placeholder="0.00" style="flex:1"/>
+      <button type="button" id="mFlete0" class="btn" style="height:38px;white-space:nowrap">No pagué nada</button>
+    </div>
+    <div style="font-size:11px;color:var(--faint);margin-top:5px">${esc(ayuda)}. Se usa para tu ganancia real; el cliente nunca lo ve.</div>`;
+}
+function fleteDe(ov){
+  const v=ov.querySelector("#mFlete")?.value;
+  return v===""||v==null ? {} : { flete:Number(v) };
+}
+// El último flete que pagaste a ese mismo destino: la 2ª vez que despachas a
+// Trujillo ya viene sugerido. Aprende de tu uso, sin tabla que mantener.
+function ultimoFlete(o){
+  const s=o.shipping||{};
+  if((s.zona||"").toLowerCase()==="lima") return O.costoZonaLima(st.entregas, s.zona_nombre||s.distrito);
+  const ciudad=String(s.ciudad||"").trim().toLowerCase();
+  const prev=st.list.find(x=>x.id!==o.id && x.shipping?.flete!=null
+    && String(x.shipping?.ciudad||"").trim().toLowerCase()===ciudad
+    && (!s.agencia || x.shipping?.agencia===s.agencia));
+  return prev? Number(prev.shipping.flete) : null;
 }
 function openEnvio(o){
   const s=o.shipping||{};

@@ -196,6 +196,9 @@ function renderEntregas(b){
   const E=st.ent;
   E.dias=E.dias||{}; E.horario=E.horario||{};
   if(!Array.isArray(E.feriados_fechas)) E.feriados_fechas=[];
+  // Lo que te cuesta A TI el reparto. Cascada: zona → grupo → todo Lima; lo más
+  // específico manda. Vacío = hereda (no es cero: cero es "no pagué nada").
+  E.costos=E.costos||{}; E.costos.grupos=E.costos.grupos||{}; E.costos.zonas=E.costos.zonas||{};
 
   const sw=(on,id)=>`<span class="ent-sw ${on?'on':''}" data-sw="${id}"></span>`;
   const row=(txt,sub,on,id)=>`<div class="erow" data-row="${id}" style="display:flex;align-items:center;justify-content:space-between;
@@ -236,9 +239,22 @@ function renderEntregas(b){
     </div>
 
     <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Costo de reparto</h3>
+      <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu
+      <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Costo para todo Lima</label>
+        <input class="in" id="entCostoDef" type="number" min="0" step="0.5" placeholder="0.00"
+          value="${E.costos.default??""}" style="width:120px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:220px">
+          Es el valor por defecto. Abajo puedes afinarlo por grupo o por zona suelta — <b>lo más específico manda</b>.</span>
+      </div>
+    </div>
+    <div class="card">
       <h3 style="display:flex;align-items:center;gap:8px">${icon("pin")} Zonas de entrega</h3>
       <p class="sub"><b>Cubro</b> = es Lima (contraentrega). <b>Mismo día</b> = puede llegar hoy si pide antes de la hora de corte.
-      Todo lo que <b>no</b> esté acá (o esté destildado) va por <b>agencia a provincia</b>, automático.</p>
+      Todo lo que <b>no</b> esté acá (o esté destildado) va por <b>agencia a provincia</b>, automático.
+      El <b>costo</b> vacío hereda del grupo, y el del grupo hereda de todo Lima.</p>
       <div id="zonas"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:4px"><button class="btn primary" id="entSave">Guardar cambios</button></div>`;
@@ -252,6 +268,7 @@ function renderEntregas(b){
   b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{
     const k=x.dataset.dia; E.dias[k]=!(E.dias[k]!==false); renderEntregas(b);
   });
+  $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
   $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
   $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
   $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };
@@ -284,19 +301,26 @@ function paintZonas(){
     const nCub=zs.filter(z=>z.cubro!==false).length, nMd=zs.filter(z=>z.mismo_dia===true).length;
     const sec=document.createElement("div");
     sec.style.cssText="border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px";
+    const cg=E.costos.grupos[g];
+    const heredaDe=E.costos.default!=null?`S/ ${E.costos.default}`:"sin costo";
     sec.innerHTML=`
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="font-weight:700;font-size:13.5px">${label}
           <span style="color:var(--faint);font-weight:400;font-size:12px">· ${nCub}/${zs.length} cubiertas · ${nMd} con mismo día</span></div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="margin:0;font-size:11.5px;color:var(--muted);font-weight:700">Costo</label>
+          <input class="in gcost" data-g="${g}" type="number" min="0" step="0.5" value="${cg??""}"
+            placeholder="${heredaDe}" title="Vacío = hereda de todo Lima" style="width:92px;height:28px;font-size:12px"/>
           <button class="btn ga" data-g="${g}" data-k="cubro" data-v="1" style="height:28px;font-size:11.5px">Cubrir todas</button>
           <button class="btn ga" data-g="${g}" data-k="cubro" data-v="0" style="height:28px;font-size:11.5px">Ninguna</button>
           <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="1" style="height:28px;font-size:11.5px">Mismo día: todas</button>
           <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="0" style="height:28px;font-size:11.5px">Mismo día: ninguna</button>
         </div>
       </div>
-      <div class="zgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-top:10px"></div>`;
+      <div class="zgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-top:10px"></div>`;
     const grid=sec.querySelector(".zgrid");
+    // De dónde hereda una zona si no tiene costo propio: del grupo, y si no, de Lima.
+    const fallback = cg??E.costos.default;
     zs.forEach(z=>{
       const el=document.createElement("div");
       el.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:9px;padding:7px 9px";
@@ -304,10 +328,16 @@ function paintZonas(){
           <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.nombre)}</div>
           ${(z.alias&&z.alias.length)?`<div style="font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.alias.join(", "))}</div>`:""}
         </div>
+        <input class="in zcost" type="number" min="0" step="0.5" value="${E.costos.zonas[z.nombre]??""}"
+          placeholder="${fallback!=null?"S/ "+fallback:"—"}" title="Vacío = hereda del grupo" style="width:78px;height:28px;font-size:11.5px;flex:none"/>
         <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zc" ${z.cubro!==false?"checked":""}/> Cubro</label>
         <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zm" ${z.mismo_dia===true?"checked":""}/> Mismo día</label>`;
       el.querySelector(".zc").onchange=(ev)=>{ z.cubro=ev.target.checked; paintZonas(); };
       el.querySelector(".zm").onchange=(ev)=>{ z.mismo_dia=ev.target.checked; paintZonas(); };
+      el.querySelector(".zcost").onchange=(ev)=>{
+        const v=ev.target.value;
+        if(v==="") delete E.costos.zonas[z.nombre]; else E.costos.zonas[z.nombre]=Number(v);
+      };
       grid.appendChild(el);
     });
     box.appendChild(sec);
@@ -316,6 +346,11 @@ function paintZonas(){
     const { g,k,v } = bt.dataset;
     E.zonas.forEach(z=>{ if(z.grupo===g) z[k] = v==="1"; });
     paintZonas();
+  });
+  box.querySelectorAll(".gcost").forEach(inp=> inp.onchange=()=>{
+    const v=inp.value;
+    if(v==="") delete E.costos.grupos[inp.dataset.g]; else E.costos.grupos[inp.dataset.g]=Number(v);
+    paintZonas(); // repinta los placeholders: las zonas de ese grupo heredan de acá
   });
 }
 

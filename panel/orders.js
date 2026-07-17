@@ -80,5 +80,48 @@ export function porCobrar(o){
 
 export const esVenta   = (o) => !!EST[o?.estado]?.venta;
 export const esPerdido = (o) => !!EST[o?.estado]?.perdido;
-// Despachado o en la calle sin haber cobrado todo: es el riesgo vivo.
+// Ya salió físicamente y todavía no está cobrado del todo: es el riesgo vivo.
+// Es un SUBCONJUNTO de porCobrar — se muestra como desglose, no como KPI aparte
+// (dos números que se solapan sin decirlo confunden más de lo que informan).
 export const enLaCalle = (o) => ["despachado","en_agencia","en_reparto"].includes(o?.estado);
+export const esFisico  = (o) => !!EST[o?.estado]?.zona || !!o?.shipping?.zona || o?.product?.tipo === "fisico";
+
+// ── Lo que te cuesta a ti ──────────────────────────────────────────
+// Flete REGISTRADO al cerrar el pedido. `null` = todavía no se registró (≠ 0,
+// que significa "no pagué nada"): sin esto el margen saldría inventado.
+export function flete(o){
+  const v = o?.shipping?.flete;
+  return v === "" || v == null ? null : Number(v) || 0;
+}
+
+// Costo de la mercadería. El costo del producto es POR UNIDAD, así que una
+// opción de 2 pares cuesta el doble: `cantidad` la sabe el llamador (sale de
+// product_versions.cantidad de la opción que compró).
+// null = el producto no tiene costo cargado → no se puede hablar de margen.
+export function costoProducto(prod, cantidad = 1){
+  const unit = prod?.config?.costo;
+  if (unit == null || unit === "") return null;
+  return Number(unit) * (Number(cantidad) || 1);
+}
+
+// Ganancia real = lo cobrado − mercadería − envío. Devuelve null si falta algún
+// dato: preferimos no mostrar margen a mostrar uno inventado.
+export function margen(o, prod, cantidad = 1){
+  const cp = costoProducto(prod, cantidad);
+  const f  = flete(o);
+  if (cp == null) return null;
+  if (esFisico(o) && f == null) return null; // físico sin flete registrado
+  return cobrado(o) - cp - (f ?? 0);
+}
+
+// Costo de reparto configurado para una zona de Lima. Cascada: zona → grupo →
+// todo Lima; lo más específico manda. Vacío hereda (no es cero).
+export function costoZonaLima(entregas, zonaNombre){
+  const c = entregas?.costos;
+  if (!c) return null;
+  const z = String(zonaNombre || "").trim();
+  if (z && c.zonas?.[z] != null) return Number(c.zonas[z]);
+  const zona = (entregas.zonas || []).find((x) => String(x?.nombre||"").toLowerCase() === z.toLowerCase());
+  if (zona?.grupo && c.grupos?.[zona.grupo] != null) return Number(c.grupos[zona.grupo]);
+  return c.default != null ? Number(c.default) : null;
+}

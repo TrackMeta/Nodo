@@ -282,13 +282,36 @@ async function rechazar(o,tipo){
 }
 
 // El momento más móvil de todos: estás en la agencia con la boleta en la mano.
-// Por eso pide lo mínimo — la guía — y las fotos son opcionales.
+// Por eso pide lo mínimo — la guía — y las fotos son opcionales. El costo del
+// envío se pide JUSTO acá porque es el único momento en que lo tienes delante;
+// un campo suelto en otra pantalla no se llenaría nunca.
 async function despachar(o){
   const guia=await askText({ title:"Ya lo envié", label:"Número de guía de la agencia", placeholder:"Ej. 0012345678", confirmText:"Siguiente" });
   if(!guia) return;
   const clave=await askText({ title:"Clave de recojo", label:"La clave que le vas a pedir al cliente al recoger (opcional ahora)", placeholder:"Ej. 4821" });
-  const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{ guia, ...(clave?{ clave_recojo:clave }:{}) } });
+  // Sugerido = lo último que pagaste a esa misma ciudad. La 2ª vez que despachas
+  // a Trujillo ya viene puesto: aprende de tu uso, sin tabla que mantener.
+  const sug=ultimoFlete(o);
+  const costo=await askText({ title:"¿Cuánto te costó enviarlo?",
+    message:"Es para calcular tu ganancia real. El cliente nunca lo ve.",
+    label:sug!=null?`Lo tienes en el recibo — la última vez a ${(o.shipping||{}).ciudad||"ese destino"} pagaste S/ ${sug}`:"Lo tienes en el recibo de la agencia",
+    placeholder:"Ej. 18", value:sug!=null?String(sug):"", confirmText:"Guardar" });
+  const flete=(costo??"").trim();
+  const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{
+    guia, ...(clave?{ clave_recojo:clave }:{}), ...(flete===""?{}:{ flete:Number(flete)||0 }),
+  }});
   if(r){ toast(r.flow_started?"Despachado ✓ · el bot le está mandando la guía":"Despachado ✓"); await load(); }
+}
+
+// Último flete a esa ciudad+agencia, entre los pedidos ya cargados.
+function ultimoFlete(o){
+  const s=o.shipping||{};
+  const ciudad=String(s.ciudad||"").trim().toLowerCase();
+  if(!ciudad) return null;
+  const prev=(st.list||[]).find(x=>x.id!==o.id && x.shipping?.flete!=null
+    && String(x.shipping?.ciudad||"").trim().toLowerCase()===ciudad
+    && (!s.agencia || x.shipping?.agencia===s.agencia));
+  return prev? Number(prev.shipping.flete) : null;
 }
 boot();
 </script>
