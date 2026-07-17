@@ -620,41 +620,108 @@ function renderProductoIA(){
 // El motor de remarketing vive en Secuencias (drip por silencio, lo corre el
 // scheduler). Acá se ve/gestiona la secuencia de ESTE producto sin salir de su
 // ficha; el editor de pasos avanzado sigue en Secuencias.
+// Duración ↔ segundos, para el editor simple de pasos.
+function remSplitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
+function remUid(){ return (crypto.randomUUID?crypto.randomUUID():"v"+Math.random().toString(36).slice(2)); }
+// Texto del primer mensaje de un paso (soporta variantes nuevas y {mensaje} viejo).
+function remStepText(paso){
+  if(paso.mensaje) return String(paso.mensaje);
+  const v=(paso.variantes||[])[0]; const bub=(v?.bubbles||[])[0];
+  return bub?.text||"";
+}
+
 async function renderRemarketing(){
   const b=$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
   const { data:seqs, error }=await supa.from("sequences").select("id,nombre,activo,pasos")
     .eq("channel_id",st.channelId).order("created_at",{ascending:false});
   if(error){ b.innerHTML=`<div class="card"><p class="hint">No se pudieron cargar las secuencias.</p></div>`; return; }
-  const nPasos=(s)=>{ try{ return Array.isArray(s.pasos)?s.pasos.length:0; }catch{ return 0; } };
   const list=(seqs||[]);
-  b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no llegó a comprar. Es una secuencia de mensajes por <b>silencio</b>: si el cliente responde, se pausa sola; si compra, sale. La corre el sistema en segundo plano.</p>
-    <div class="card">
-      <h4 style="display:flex;align-items:center;gap:7px">${icon("secuencias")} Secuencia de remarketing</h4>
-      <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Elige la secuencia que reengancha a este producto, o crea una nueva. Los <b>pasos</b> (cuánto esperar y qué mensaje enviar) se editan en la sección Secuencias.</div>
-      <label>Secuencia asociada a este producto</label>
-      <select class="sel" id="pRemSeq" style="width:100%">
-        <option value="">— Ninguna —</option>
-        ${list.map(s=>`<option value="${s.id}" ${st.prod.config?.remarketing_seq_id===s.id?"selected":""}>${esc(s.nombre||"(sin nombre)")} · ${nPasos(s)} paso(s)${s.activo?"":" · inactiva"}</option>`).join("")}
-      </select>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
-        <button class="btn" id="remNew">+ Crear secuencia para este producto</button>
-        <button class="btn" id="remEdit" style="border:1px solid var(--border)">Editar pasos en Secuencias →</button>
-      </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:12px">El <b>horario</b> del remarketing (no molestar de madrugada) se configura una vez en la sección Secuencias/Remarketing y aplica a todas.</div>
-    </div>`;
   const c=st.prod.config=st.prod.config||{};
-  $("pRemSeq").onchange=(e)=>{ const v=e.target.value; if(v) c.remarketing_seq_id=v; else delete c.remarketing_seq_id; prodSync(); toast("Vinculada — recuerda Guardar el producto"); };
-  $("remNew").onclick=async()=>{
+  const seq=list.find(s=>s.id===c.remarketing_seq_id)||null;
+
+  b.innerHTML=`
+    <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no llegó a comprar. Es una serie de mensajes por <b>silencio</b>: cada paso espera un tiempo sin respuesta y manda un mensaje. Si el cliente responde, se pausa sola; si compra, sale.</p>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h4 style="display:flex;align-items:center;gap:7px;margin:0">${icon("secuencias")} Secuencia de remarketing</h4>
+        <span style="flex:1"></span>
+        ${seq?`<span style="font-size:12px;color:var(--muted)">${esc(seq.nombre)}</span>`:""}
+      </div>
+      ${seq?"":`
+      <div style="font-size:12.5px;color:var(--muted);margin:10px 0 12px;line-height:1.55">Este producto todavía no tiene remarketing. Crea uno o vincula una secuencia que ya tengas.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" id="remNew" style="background:var(--brand,#2b7fff);color:#fff;border:none">+ Crear remarketing para este producto</button>
+        ${list.length?`<select class="sel" id="pRemSeq" style="min-width:200px"><option value="">Vincular una existente…</option>${list.map(s=>`<option value="${s.id}">${esc(s.nombre||"(sin nombre)")}</option>`).join("")}</select>`:""}
+      </div>`}
+      <div id="remSteps" style="margin-top:${seq?"6px":"0"}"></div>
+      ${seq?`
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+        <button class="btn" id="remAdd">+ Agregar paso</button>
+        <button class="btn primary" id="remSave" style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar remarketing</button>
+        <span style="flex:1"></span>
+        <a href="secuencias.html" style="font-size:12px;color:var(--brand)">Editor avanzado (multimedia, rotación) →</a>
+      </div>
+      <div style="font-size:11px;color:var(--faint);margin-top:10px">Desvincular: <a href="#" id="remUnlink" style="color:var(--muted)">quitar el remarketing de este producto</a> (la secuencia no se borra).</div>`:""}
+    </div>`;
+
+  if($("remNew")) $("remNew").onclick=async()=>{
     const nombre=`Remarketing · ${st.prod.nombre}`.slice(0,60);
     const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, activo:true, pasos:[] }).select("id").single();
     if(error||!data){ toast("No se pudo crear la secuencia",true); return; }
     c.remarketing_seq_id=data.id; prodSync();
-    toast("Secuencia creada ✓ — ábrela para agregar pasos");
+    toast("Remarketing creado ✓ — agrega pasos y guarda");
     renderRemarketing();
   };
-  $("remEdit").onclick=()=>{ location.href="secuencias.html"; };
+  if($("pRemSeq")) $("pRemSeq").onchange=(e)=>{ const v=e.target.value; if(v){ c.remarketing_seq_id=v; prodSync(); renderRemarketing(); } };
+  if($("remUnlink")) $("remUnlink").onclick=(e)=>{ e.preventDefault(); delete c.remarketing_seq_id; prodSync(); toast("Desvinculado — recuerda Guardar el producto"); renderRemarketing(); };
+
+  if(!seq) return;
+  // Editor simple de pasos. `pasos` vive en `seq.pasos` (memoria) hasta Guardar.
+  if(!Array.isArray(seq.pasos)) seq.pasos=[];
+  const paintSteps=()=>{
+    const box=$("remSteps"); box.innerHTML="";
+    if(!seq.pasos.length){ box.innerHTML=`<div style="font-size:12.5px;color:var(--faint);padding:10px 0">Sin pasos todavía. Agrega el primero.</div>`; return; }
+    seq.pasos.forEach((paso,i)=>{
+      const { val,u }=remSplitDur(paso.umbral_silencio_seg);
+      const el=document.createElement("div");
+      el.style.cssText="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:10px";
+      el.innerHTML=`
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex:none">${i+1}</span>
+          <span style="font-size:12.5px;color:var(--muted)">Si sigue en silencio</span>
+          <input class="in rnum" type="number" min="1" value="${val}" style="width:70px;height:34px"/>
+          <select class="sel runit" style="height:34px">
+            <option value="60" ${u==="60"?"selected":""}>minutos</option>
+            <option value="3600" ${u==="3600"?"selected":""}>horas</option>
+            <option value="86400" ${u==="86400"?"selected":""}>días</option>
+          </select>
+          <span style="flex:1"></span>
+          <button class="iconbtn rdel" title="Quitar paso" style="flex:none">${icon("trash")}</button>
+        </div>
+        <textarea class="in rmsg" rows="3" style="margin-top:10px;min-height:64px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Mensaje a enviar. Puedes usar {{nombre}}, {{producto_nombre}}, {{precio}}…">${esc(remStepText(paso))}</textarea>`;
+      const setDur=()=>{ paso.umbral_silencio_seg=Math.max(1,Number(el.querySelector(".rnum").value||1))*Number(el.querySelector(".runit").value); };
+      el.querySelector(".rnum").onchange=setDur;
+      el.querySelector(".runit").onchange=setDur;
+      el.querySelector(".rmsg").oninput=(e)=>{
+        // Guarda en el formato de variantes (compatible con el editor avanzado).
+        delete paso.mensaje; delete paso.flow_id; delete paso.template_name;
+        paso.rotacion=false;
+        paso.variantes=[{ id:(paso.variantes?.[0]?.id)||remUid(), nombre:"Variante A", activo:true, peso:1, bubbles:[{ text:e.target.value }] }];
+      };
+      el.querySelector(".rdel").onclick=()=>{ seq.pasos.splice(i,1); paintSteps(); };
+      box.appendChild(el);
+    });
+  };
+  paintSteps();
+  $("remAdd").onclick=()=>{ seq.pasos.push({ umbral_silencio_seg:86400, rotacion:false, variantes:[{ id:remUid(), nombre:"Variante A", activo:true, peso:1, bubbles:[{text:""}] }] }); paintSteps(); };
+  $("remSave").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const { error }=await supa.from("sequences").update({ pasos:seq.pasos }).eq("id",seq.id);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(error.message,true); return; }
+    toast("Remarketing guardado ✓");
+  };
 }
 
 // Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
