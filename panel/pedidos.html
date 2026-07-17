@@ -102,7 +102,7 @@
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, channelName:"", list:[], q:"", kbZona:"lima", entregas:null };
+const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 // ── Ciclo de vida del pedido físico ────────────────────────────────
@@ -153,8 +153,16 @@ async function boot(){
 
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
-  supa.from("channels").select("nombre,entregas").eq("id",st.channelId).maybeSingle()
-    .then(({data})=>{ st.entregas=data?.entregas||null; st.channelName=data?.nombre||""; }).catch(()=>{});
+  // Remitente del rótulo = nombre del NEGOCIO (Negocio → Conocimiento), no el
+  // del canal/bot; si no está, cae al nombre del canal. Resiliente: sin la
+  // columna negocio_form, reintenta solo con nombre+entregas.
+  supa.from("channels").select("nombre,entregas,negocio_form").eq("id",st.channelId).maybeSingle()
+    .then(({data,error})=>{
+      if(error){ return supa.from("channels").select("nombre,entregas").eq("id",st.channelId).maybeSingle()
+        .then(({data:d2})=>{ st.entregas=d2?.entregas||null; st.channelName=d2?.nombre||""; st.remitente=(d2?.nombre||"").trim(); }); }
+      st.entregas=data?.entregas||null; st.channelName=data?.nombre||"";
+      st.remitente=(data?.negocio_form?.nombre || data?.nombre || "").trim();
+    }).catch(()=>{});
   const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   let { data, error }=await supa.from("orders").select(full).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
   if(error){
@@ -287,7 +295,7 @@ function kcard(o){
 function printRotulo(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const zona=zonaDe(o);
-  const remitente=st.channelName||"Remitente";
+  const remitente=st.remitente||st.channelName||"Remitente";
   const tel=c.wa_id?"+"+c.wa_id:"—";
   const pedido=[p.emoji,p.nombre,v.nombre?"· "+v.nombre:""].filter(Boolean).join(" ");
   const nro=(o.order_id||o.id||"").toString().slice(0,8).toUpperCase();
@@ -300,7 +308,9 @@ function printRotulo(o){
       row("Teléfono", tel)+
       row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
       row("Pedido", pedido)+
-      row("Guía", s.guia||"")+
+      // Sin Guía a propósito: el rótulo se imprime ANTES de despachar, cuando la
+      // agencia (Shalom/Olva) todavía no te dio la guía. Vive en la tarjeta del
+      // Kanban una vez registrado el despacho.
       row("N° pedido", nro);
   } else {
     filas =
