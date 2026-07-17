@@ -300,22 +300,35 @@ async function load(){
   });
 
   const K=[
-    kpi("money","#22c079","Cobrado", money(cobrado), `de ${money(vendido)} vendidos`),
-    kpi("clock","#f0a92b","Por cobrar", money(porCobrar), calle?`${money(calle)} ya despachado`:"comprometido pendiente"),
-    kpi("cart","#22c079","Ventas cerradas", compras, "pedidos confirmados"),
-    kpi("ticket","#2b7fff","Ticket promedio", money(ticket)),
+    kpi("money","#22c079","Cobrado", money(cobrado), `plata que ya entró, de ${money(vendido)} vendidos`),
+  ];
+  // "Por cobrar" solo existe en físico: en digital el cliente paga por adelantado
+  // —si no paga, no hay venta— así que sería S/ 0.00 para siempre. Mismo criterio
+  // que los KPIs de logística de abajo.
+  if(tipo!=="digital"){
+    K.push(kpi("clock","#f0a92b","Por cobrar", money(porCobrar),
+      calle?`te deben · ${money(calle)} ya va en camino`:"vendido, todavía sin pagar"));
+  }
+  K.push(
+    kpi("cart","#22c079","Ventas cerradas", compras, "el cliente ya confirmó la compra"),
+    kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto deja cada venta"),
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
-    kpi("chart","#22c079","Ganancia real", money(ganancia), sinDatos?`faltan datos en ${sinDatos} pedido${sinDatos>1?"s":""}`:"cobrado − costo − envío"),
-  ];
-  // Logística: solo tiene sentido si estás mirando físico.
+    kpi("chart","#22c079","Ganancia real", money(ganancia),
+      sinDatos?`faltan el costo o el envío en ${sinDatos} pedido${sinDatos>1?"s":""}`:"lo cobrado menos el producto y el envío"),
+  );
+  // Logística: en digital no existe nada de esto.
   if(tipo!=="digital"){
-    K.push(kpi("alert","#e2564a","Esperando adelanto", espAdel.length, `${money(espAdel.reduce((a,o)=>a+O.total(o),0))} sin confirmar`));
-    K.push(kpi("ban","#e2564a","Perdidos", perdidos, "rechazados o no recogidos"));
+    K.push(kpi("alert","#e2564a","Esperando adelanto", espAdel.length,
+      `dieron sus datos y no pagaron la seña · ${money(espAdel.reduce((a,o)=>a+O.total(o),0))}`));
+    K.push(kpi("ban","#e2564a","Perdidos", perdidos, "rechazados o que nunca recogieron"));
   }
-  K.push(kpi("users","#9b6cf0","Contactos", s.contactos??0, "total en vivo"));
-  K.push(kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0));
-  K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0));
+  // Estos tres son del BOT entero: ni el filtro de fechas ni el de operación los
+  // tocan (salen de dashboard_stats, que cuenta en vivo). Se dice en el subtítulo
+  // para que no se lean como "contactos digitales" al filtrar.
+  K.push(kpi("users","#9b6cf0","Contactos", s.contactos??0, "en todo el bot, ahora mismo"));
+  K.push(kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0, "en todo el bot, ahora mismo"));
+  K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
 
