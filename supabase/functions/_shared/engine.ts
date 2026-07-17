@@ -1045,16 +1045,18 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
 
     let hoja: string; let fila: Record<string, string>;
     if (!fisico) {
+      // Nombres cortos, como los escribió Rodrigo en su hoja. El casado es sin
+      // distinguir mayúsculas, así que "CEL" y "Cel" son la misma columna.
       hoja = "Digital";
       fila = {
         "ID": ord.id,
         "Ad ID": ct.ad_id ?? "",
         "Cliente": ct.nombre ?? "",
-        "Celular": ct.wa_id ?? "",
+        "Cel": ct.wa_id ?? "",
         "Fecha y hora": fecha,
         "Valor": String(ord.amount ?? ""),
-        "Producto Principal": [ord.product?.nombre, s.opcion].filter(Boolean).join(" · "),
-        "Valor Producto extra": extra ? String(extra) : "",
+        "Producto": [ord.product?.nombre, s.opcion].filter(Boolean).join(" · "),
+        "Orderbump": extra ? String(extra) : "",
         "Imagen": s.comprobante ?? s.adelanto_comprobante ?? "",
       };
     } else if (zona === "lima") {

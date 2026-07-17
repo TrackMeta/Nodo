@@ -446,8 +446,24 @@ function renderGsOauth(box, g){
         <div class="desc" style="margin-top:12px">Conectada con <b>${esc(g.google_email)}</b>.</div>
         <label>Enlace de la hoja donde escribir</label>
         <input class="in" id="gso_url" value="${esc(g.spreadsheet_url||'')}" placeholder="https://docs.google.com/spreadsheets/d/1AbC.../edit"/>
-        <label>Pestaña (opcional)</label>
-        <input class="in" id="gso_tab" style="max-width:280px" value="${esc(g.tab||'')}" placeholder="Ventas"/>
+        <div style="border:1px solid var(--border);border-radius:11px;padding:12px 13px;margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.6">
+          <b style="color:var(--text)">Tus ventas se escriben solas — no tienes que preparar nada.</b><br>
+          Nodo crea y mantiene <b>3 pestañas</b> dentro de tu hoja, una por operación
+          (mezclarlas la haría ilegible):
+          <div style="margin:7px 0 7px 2px">
+            📘 <b>Digital</b> · 🛵 <b>Lima</b> · 📦 <b>Provincia</b>
+          </div>
+          Las pestañas y sus encabezados se crean solos la primera vez. Hay <b>una fila por pedido</b>
+          y su <b>Estado se va actualizando</b> (Esperando adelanto → Adelanto pagado → Despachado…),
+          así que filtrando por Estado ves tus ingresos reales — y también a quién se te cayó sin pagar.
+        </div>
+        <label>Pestaña por defecto <span style="color:var(--faint);font-weight:400">(opcional — solo para flujos manuales)</span></label>
+        <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">
+          Las ventas NO usan esto: van a Digital/Lima/Provincia. Esto es solo para un nodo
+          <b>Google Sheets</b> que pongas a mano en el editor de flujos y no le indiques pestaña.
+          Si no sabes qué es, déjalo vacío.
+        </div>
+        <input class="in" id="gso_tab" style="max-width:280px" value="${esc(g.tab||'')}" placeholder="(vacío)"/>
         <div class="acts">
           <button class="btn primary" id="gsoSave">Guardar hoja</button>
           <button class="btn" id="gsoTest">Probar y escribir fila</button>
