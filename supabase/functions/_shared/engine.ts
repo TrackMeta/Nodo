@@ -2698,10 +2698,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
                 : val;
             }
           }
-          // Adelanto: si el producto no fijó uno propio (override), usa el
-          // DEFAULT del negocio (Negocio → Entrega y logística). El override del
-          // producto siempre gana.
-          if (pc.adelanto == null || pc.adelanto === "") {
+          // Adelanto — prioridad: (1) override limpio del producto
+          // (config.adelanto_override, de la pestaña Entrega), (2) lo que venga
+          // de config.envio (compat productos viejos), (3) DEFAULT del negocio.
+          const ov = (p as any).config?.adelanto_override;
+          if (ov != null && ov !== "") {
+            pc.adelanto = Number(ov);
+          } else if (pc.adelanto == null || pc.adelanto === "") {
             const ent = await loadEntregas(db, run);
             const def = (ent as any)?.entregas?.adelanto_default;
             if (def != null && def !== "") pc.adelanto = Number(def);
@@ -2820,6 +2823,28 @@ async function logEvent(
 async function markProduct(db: SupabaseClient, contactId: string, productId?: string | null) {
   if (!productId) return;
   try { await db.from("contacts").update({ product_id: productId }).eq("id", contactId); } catch (_) { /* columna pendiente */ }
+  // Auto-enrolar al remarketing del producto: apenas el contacto muestra interés
+  // (entra a la conversación de ese producto), queda inscrito. El scheduler lo
+  // saca solo si compra (yaCompro), si responde (el silencio se reinicia) o si
+  // pidió no más mensajes (no_remarketing) — así que suscribir a un comprador es
+  // inofensivo (se completa antes de enviarle nada). Solo se inscribe la PRIMERA
+  // vez: si ya hay una suscripción (activa, pausada, completada o cancelada) no
+  // se toca, para no resetear el drip ni pisar un opt-out.
+  try {
+    const { data: p } = await db.from("products").select("channel_id, config").eq("id", productId).maybeSingle();
+    const seqId = (p as any)?.config?.remarketing_seq_id;
+    const chId = (p as any)?.channel_id;
+    if (seqId && chId) {
+      const { data: ex } = await db.from("sequence_subscriptions").select("id")
+        .eq("contact_id", contactId).eq("sequence_id", seqId).maybeSingle();
+      if (!ex) {
+        await db.from("sequence_subscriptions").insert({
+          channel_id: chId, contact_id: contactId, sequence_id: seqId,
+          estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
+        });
+      }
+    }
+  } catch (_) { /* sin remarketing / columnas pendientes → no pasa nada */ }
 }
 
 async function setField(db: SupabaseClient, channelId: string, contactId: string, key: string, value: string | null) {
