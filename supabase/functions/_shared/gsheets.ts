@@ -46,6 +46,77 @@ function colA1(n: number): string {
   return s;
 }
 const q = (s: string) => encodeURIComponent(s);
+// Casar nombres de pestañas y encabezados sin distinguir mayúsculas ni espacios:
+// si el usuario escribió "CEL" a mano, es la misma columna que "Cel".
+const norm = (s: string) => s.toString().trim().toLowerCase();
+
+// ── Las 3 hojas de Nodo ────────────────────────────────────────────
+// Una por operación: mezclar una venta digital con un despacho a provincia hace
+// una hoja ilegible. El orden de las columnas es el orden en que se crean.
+export const HOJAS: Record<string, string[]> = {
+  "Digital": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Valor", "Producto", "Orderbump", "Imagen"],
+  "Lima": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Distrito", "Dirección", "Referencia",
+    "Producto", "Opción", "Valor a cobrar", "Estado"],
+  "Provincia": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "DNI", "Agencia", "Producto", "Opción",
+    "Valor total", "Adelanto", "Saldo", "Guía", "Estado", "Imagen"],
+};
+
+// Deja la hoja LISTA al conectarla: crea las 3 pestañas, escribe los
+// encabezados, congela la fila 1 (para que se quede fija al bajar) y la
+// formatea. La idea es conectar y ya está — sin pedirle al usuario que cree
+// pestañas ni tipee encabezados.
+// Es idempotente y NO pisa lo que el usuario ya tenga: si él escribió "CEL",
+// esa columna se respeta (el casado ignora mayúsculas).
+export async function sheetsBootstrap(token: string, id: string): Promise<{ creadas: string[]; hojas: string[] }> {
+  const meta = await api(token, `${SHEETS}/${id}?fields=sheets.properties(sheetId,title)`);
+  const actuales: { sheetId: number; title: string }[] = (meta.sheets ?? []).map((s: any) => s.properties);
+  const creadas: string[] = [];
+
+  // 1) Las pestañas que falten.
+  const nuevas = Object.keys(HOJAS).filter((t) => !actuales.some((s) => norm(s.title) === norm(t)));
+  if (nuevas.length) {
+    await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", {
+      requests: nuevas.map((title) => ({ addSheet: { properties: { title } } })),
+    });
+    creadas.push(...nuevas);
+  }
+
+  // 2) Encabezados + formato, ya con los ids reales de cada pestaña.
+  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets.properties(sheetId,title)`);
+  const mapa = new Map<string, number>();
+  for (const s of (meta2.sheets ?? [])) mapa.set(norm(s.properties.title), s.properties.sheetId);
+
+  const requests: any[] = [];
+  for (const [tab, cols] of Object.entries(HOJAS)) {
+    const real = (meta2.sheets ?? []).find((s: any) => norm(s.properties.title) === norm(tab))?.properties?.title ?? tab;
+    await ensureHeaders(token, id, real, cols);
+    const sheetId = mapa.get(norm(tab));
+    if (sheetId === undefined) continue;
+    // Fila 1 congelada: al hacer scroll los encabezados se quedan arriba.
+    requests.push({
+      updateSheetProperties: {
+        properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
+        fields: "gridProperties.frozenRowCount",
+      },
+    });
+    requests.push({
+      repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
+        cell: {
+          userEnteredFormat: {
+            backgroundColor: { red: 0.26, green: 0.26, blue: 0.65 },
+            textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+            verticalAlignment: "MIDDLE",
+          },
+        },
+        fields: "userEnteredFormat(backgroundColor,textFormat,verticalAlignment)",
+      },
+    });
+    requests.push({ autoResizeDimensions: { dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: cols.length } } });
+  }
+  if (requests.length) await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", { requests });
+  return { creadas, hojas: Object.keys(HOJAS) };
+}
 
 // Crea la pestaña si no existe. Sin esto, escribir en una pestaña inexistente
 // falla con "Unable to parse range" y —como el error se traga para no romper la
@@ -58,8 +129,6 @@ async function ensureTab(token: string, id: string, tab: string): Promise<void> 
     requests: [{ addSheet: { properties: { title: tab } } }],
   });
 }
-
-const norm = (s: string) => s.toString().trim().toLowerCase();
 
 // Lee los encabezados (fila 1), añadiendo los que falten para las claves dadas.
 // La comparación es SIN distinguir mayúsculas ni espacios: si el usuario ya

@@ -466,7 +466,7 @@ function renderGsOauth(box, g){
         <input class="in" id="gso_tab" style="max-width:280px" value="${esc(g.tab||'')}" placeholder="(vacío)"/>
         <div class="acts">
           <button class="btn primary" id="gsoSave">Guardar hoja</button>
-          <button class="btn" id="gsoTest">Probar y escribir fila</button>
+          <button class="btn" id="gsoTest">Preparar mi hoja de nuevo</button>
           <button class="btn danger" id="gsoDisc" style="margin-left:auto">Desconectar</button>
         </div>`
       :`
@@ -480,20 +480,35 @@ function renderGsOauth(box, g){
     try{ const r=await callFn("gsheets-connect",{ channel_id:st.channelId }); if(r&&r.url) location.href=r.url; else throw new Error(r?.detalle||"no se pudo iniciar"); }
     catch(err){ $("gsoOut").innerHTML=`<span style="color:var(--red)">${esc(err.message||"error")}</span>${/sin_configurar|CLIENT_ID/.test(err.message||"")?" — falta que el administrador configure el cliente OAuth de Google.":""}`; e.target.disabled=false; e.target.textContent=old; }
   };
+  // Guardar la hoja la PREPARA sola: pegas el enlace y ya está lista. Pedirle
+  // al usuario que cree pestañas y tipee encabezados a mano era regalarle un
+  // trabajo que la app puede hacer en un segundo (y que se hace mal).
   const save=$("gsoSave");
   if(save) save.onclick=async(e)=>{
     const url=$("gso_url").value.trim(); const id=sheetIdFrom(url);
     if(!id){ toast("Pega el enlace de la hoja",true); return; }
+    const out=$("gsoOut"); out.innerHTML="";
     await saveGsheets(e.target, { ...g, connected:true, mode:"oauth", spreadsheet_url:url, spreadsheet_id:id, tab:$("gso_tab").value.trim()||null });
+    await prepararHoja(id, out);
   };
   const test=$("gsoTest");
   if(test) test.onclick=async(e)=>{
     const id=sheetIdFrom($("gso_url").value.trim()); if(!id){ toast("Guarda primero la hoja",true); return; }
-    const out=$("gsoOut"); e.target.disabled=true; const old=e.target.textContent; e.target.textContent="Probando…"; out.innerHTML="";
-    try{ const r=await callFn("gsheets-test",{ oauth:true, channel_id:st.channelId, spreadsheet_id:id, tab:$("gso_tab").value.trim()||null });
-      out.innerHTML = r&&r.ok ? `<span style="color:var(--green)">✓ Se escribió una fila de prueba en tu hoja.</span> Ya puedes borrarla.` : `<span style="color:var(--red)">${esc((r&&r.detalle)||"error")}</span>`;
+    const out=$("gsoOut"); e.target.disabled=true; const old=e.target.textContent; e.target.textContent="Preparando…";
+    await prepararHoja(id, out);
+    e.target.disabled=false; e.target.textContent=old;
+  };
+  const prepararHoja=async(id,out)=>{
+    out.innerHTML=`<span style="color:var(--muted)">Preparando tu hoja…</span>`;
+    try{
+      const r=await callFn("gsheets-test",{ preparar:true, channel_id:st.channelId, spreadsheet_id:id });
+      if(!r||!r.ok){ out.innerHTML=`<span style="color:var(--red)">${esc((r&&r.detalle)||"No se pudo preparar la hoja")}</span>`; return; }
+      const nuevas=(r.creadas||[]);
+      out.innerHTML=`<span style="color:var(--green)">✓ Tu hoja está lista.</span>
+        ${nuevas.length?`Se crearon las pestañas <b>${nuevas.map(esc).join("</b>, <b>")}</b>.`
+                       :`Las pestañas <b>Digital</b>, <b>Lima</b> y <b>Provincia</b> ya estaban.`}
+        Los encabezados quedaron puestos y la primera fila fija.`;
     }catch(err){ out.innerHTML=`<span style="color:var(--red)">${esc(err.message||"error")}</span>`; }
-    finally{ e.target.disabled=false; e.target.textContent=old; }
   };
   const disc=$("gsoDisc");
   if(disc) disc.onclick=async(e)=>{ if(!await confirmDialog({title:"Desconectar Google Sheets",message:"¿Desconectar la cuenta de Google de este bot?",confirmText:"Desconectar",danger:true})) return; try{ await callFn("gsheets-connect",{ channel_id:st.channelId, disconnect:true }); }catch(_){} await saveGsheets(e.target,{ connected:false }); };
