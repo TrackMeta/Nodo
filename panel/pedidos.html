@@ -134,20 +134,15 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
+import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], estado:"all", q:"", view:"compras", kbZona:"lima" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const ESTADOS=[["all","Todas"],["confirmada","Confirmadas"],["pendiente","Adelantos / Pendientes"],["anulada","Anuladas"]];
 
 // ── Ciclo de vida del pedido físico (DEFINICION §6-SEPTIES) ────────
-const EST_LABEL={
-  carrito:"Carrito", esperando_adelanto:"Esperando adelanto", adelanto_validado:"Adelanto validado",
-  confirmado:"Confirmado", por_despachar:"Por despachar", despachado:"Despachado",
-  en_agencia:"En agencia", saldo_pagado:"Saldo pagado", recogido:"Recogido",
-  en_reparto:"En reparto", entregado_cobrado:"Entregado y cobrado",
-  reprogramado:"Reprogramado", rechazado:"Rechazado", no_recogido:"No recogido", cancelado:"Cancelado",
-  confirmada:"Confirmada", pendiente:"Pendiente", anulada:"Anulada",
-};
+// Los nombres y el significado de cada estado viven en orders.js (O.label): es
+// la misma fuente que usa el Dashboard para calcular el dinero.
 // Un tablero por OPERACIÓN, no uno solo mezclando las dos.
 // Lima es cosa de horas (motorizado, contraentrega); provincia es cosa de días
 // (adelanto, agencia, guía, saldo, clave). En el tablero único, para un pedido
@@ -180,15 +175,12 @@ function zonaDe(o){
   const cod=["confirmado","en_reparto","entregado_cobrado","reprogramado","rechazado"];
   return cod.includes(String(o.estado||"").toLowerCase()) ? "lima" : "provincia";
 }
-const BAD_STATES=new Set(["rechazado","no_recogido","cancelado","anulada"]);
-const OK_STATES=new Set(["entregado_cobrado","recogido","confirmada","saldo_pagado","adelanto_validado"]);
-
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
-function total(o){ let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); return v; }
+const total=O.total;
 function fecha(iso){ if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})+" · "+d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"}); }
 function rel(iso){ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(s<90) return "hace 1 min"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
 function isFisico(o){ return (o.product&&o.product.tipo==="fisico") || FIS_STATES.has(o.estado) || (o.shipping&&Object.keys(o.shipping).length>0); }
-function badgeClass(e){ return BAD_STATES.has(e)?"bad":(OK_STATES.has(e)?"ok":"warn"); }
+const badgeClass=O.tono;
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -222,20 +214,25 @@ function renderEstados(){
 }
 
 function renderKpis(){
-  const conf=st.list.filter(o=>o.estado==="confirmada"||o.estado==="entregado_cobrado"||o.estado==="recogido");
-  const ing=conf.reduce((a,o)=>a+total(o),0);
-  const pend=st.list.filter(o=>o.estado==="pendiente"||o.estado==="esperando_adelanto").length;
+  // Mismo criterio que el Dashboard: sale todo de orders.js. Antes acá vivían
+  // DOS definiciones distintas de "venta válida" que además no coincidían con
+  // la del Dashboard, y ninguna contaba las ventas de Lima.
+  const ventas=st.list.filter(O.esVenta);
+  const cobrado=ventas.reduce((a,o)=>a+O.cobrado(o),0);
+  const porCobrar=ventas.reduce((a,o)=>a+O.porCobrar(o),0);
+  const vendido=ventas.reduce((a,o)=>a+total(o),0);
   const activos=st.list.filter(o=>isFisico(o)&&FIS_STATES.has(o.estado)&&!["entregado_cobrado","recogido","rechazado","no_recogido","cancelado"].includes(o.estado)).length;
-  const ticket=conf.length?ing/conf.length:0;
+  const ticket=ventas.length?vendido/ventas.length:0;
   const cur=(st.list[0]&&st.list[0].currency)||"PEN";
   let extraUnits=0, extraIng=0;
-  conf.forEach(o=>(o.order_bumps||[]).forEach(b=>{ extraUnits++; extraIng+=Number(b.precio||0); }));
+  ventas.forEach(o=>(o.order_bumps||[]).forEach(b=>{ extraUnits++; extraIng+=Number(b.precio||0); }));
   const K=[
-    ["Compras confirmadas",String(conf.length),"pedidos cerrados"],
-    ["Ingresos confirmados",money(ing,cur),"base + ventas extra"],
+    ["Cobrado",money(cobrado,cur),`de ${money(vendido,cur)} vendidos`],
+    ["Por cobrar",money(porCobrar,cur),"comprometido pendiente"],
+    ["Ventas cerradas",String(ventas.length),"pedidos confirmados"],
     ["Ventas extra",String(extraUnits),`${money(extraIng,cur)} en ingresos`],
     ["Pedidos físicos activos",String(activos),"en el tablero"],
-    ["Ticket promedio",money(ticket,cur),"por compra confirmada"],
+    ["Ticket promedio",money(ticket,cur),"por venta cerrada"],
   ];
   $("kpis").innerHTML=K.map(([l,v,s])=>`<div class="kpi"><div class="k-l">${l}</div><div class="k-v">${v}</div><div class="k-s">${s}</div></div>`).join("");
 }
@@ -271,7 +268,7 @@ function renderTabla(){
     return `<div class="trow">
       <div class="cust"><div class="nm">${esc(c.nombre||"Sin nombre")}</div><div class="ph">${c.wa_id?"+"+esc(c.wa_id):"—"}</div></div>
       <div class="prod"><span class="em">${p.emoji?esc(p.emoji):icon("box")}</span><div style="min-width:0"><div class="pn">${esc(p.nombre||"—")}</div>${v.nombre?`<div class="vv">${esc(v.nombre)}</div>`:""}</div></div>
-      <div><span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado||"—")}</span></div>
+      <div><span class="badge ${badgeClass(o.estado)}">${esc(O.label(o.estado))}</span></div>
       <div class="when">${fecha(o.created_at)}</div>
       <div class="amt">${money(total(o),o.currency)}${bumps?`<span class="bump">+${bumps} venta${bumps>1?"s":""} extra</span>`:""}</div>
     </div>`;
@@ -370,7 +367,7 @@ function kcard(o){
     <div class="kc-sub">
       <span>${p.emoji?esc(p.emoji):icon("box")} ${esc(p.nombre||"—")}</span>
       ${zona?`<span class="zona ${zona==="lima"?"lima":"prov"}">${zona==="lima"?"LIMA":"PROVINCIA"}</span>`:""}
-      <span class="badge ${badgeClass(o.estado)}">${esc(EST_LABEL[o.estado]||o.estado)}</span>
+      <span class="badge ${badgeClass(o.estado)}">${esc(O.label(o.estado))}</span>
     </div>
     <div class="kc-money">${moneyLine}</div>
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
@@ -392,7 +389,7 @@ async function updateOrder(body){
 }
 async function confirmSet(o,estado,label){
   const c=o.contact||{};
-  if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú✅✓→📍🛵]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${EST_LABEL[estado]||estado}".`,confirmText:"Confirmar"})) return;
+  if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú✅✓→📍🛵]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${O.label(estado)}".`,confirmText:"Confirmar"})) return;
   const r=await updateOrder({ order_id:o.id, estado });
   if(r){ toast(r.flow_started?"Estado actualizado ✓ · el bot está notificando al cliente":"Estado actualizado ✓"); await load(); }
 }
@@ -407,7 +404,7 @@ function openMenu(ev,o){
   const trans=zona==="lima"
     ? [["confirmado"],["en_reparto"],["entregado_cobrado"],["reprogramado"],["rechazado"]]
     : [["esperando_adelanto"],["adelanto_validado"],["por_despachar"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
-  trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${EST_LABEL[e]||e}`,()=>confirmSet(o,e,EST_LABEL[e]||e)]); });
+  trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${O.label(e)}`,()=>confirmSet(o,e,O.label(e))]); });
   ops.push(["sep"]);
   ops.push([`${icon("ban")} Cancelar pedido`,()=>confirmSet(o,"cancelado","Cancelar pedido"),"danger"]);
   m.innerHTML=ops.map(([l,_,cls],i)=>l==="sep"?`<div class="sep"></div>`:`<button data-i="${i}" class="${cls||""}">${l}</button>`).join("");

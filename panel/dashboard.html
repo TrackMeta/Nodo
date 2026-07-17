@@ -124,6 +124,7 @@
 
 <script type="module">
 import { supa, mountShell } from "./shell.js";
+import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 const money=(n)=>"S/ "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Anima los números de los KPIs (0 → valor) al cargar. Genérico: separa prefijo
@@ -154,6 +155,10 @@ const IC={
   bump:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="10"/></svg>',
   bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
   repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  ban:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
 };
 
 // ── Filtro de fechas ────────────────────────────────────────────────
@@ -230,34 +235,46 @@ async function load(){
   const [stats, evR, ordR, prodR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
-    supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
+    supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("products").select("id,nombre,product_versions(id,nombre)").eq("channel_id",channelId),
   ]);
   const s=stats.data||{};
   const ev=evR.error?[]:(evR.data||[]);
-  const orders=ordR.error?[]:(ordR.data||[]).filter(o=>o.estado==="confirmada");
+  // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
+  // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
+  const todas=ordR.error?[]:(ordR.data||[]);
+  const orders=todas.filter(O.esVenta);
   const prods=prodR.error?[]:(prodR.data||[]);
   const ordersUnavailable = !!ordR.error;
 
-  // Ingresos desde órdenes (producto + bumps).
-  let ingBase=0, ingBump=0, bumpUnits=0;
+  // Dinero: lo COBRADO de verdad vs lo comprometido que falta entrar. El
+  // adelanto de provincia cuenta como cobro parcial (ver orders.js).
+  let cobrado=0, porCobrar=0, ingBump=0, bumpUnits=0;
   const bumpMap={};
   orders.forEach(o=>{
-    ingBase+=Number(o.amount||0);
+    cobrado+=O.cobrado(o); porCobrar+=O.porCobrar(o);
     (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0); ingBump+=p; bumpUnits++;
       const k=b.nombre||"Venta extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
   });
-  const ingTotal=ingBase+ingBump;
+  const vendido=orders.reduce((a,o)=>a+O.total(o),0);
   const compras=orders.length;
-  const ticket=compras?ingTotal/compras:0;
+  const ticket=compras?vendido/compras:0;
   const leads=ev.filter(e=>e.event_name==="Lead").length;
+  // Salud de la operación: dónde está trabada la plata.
+  const espAdel=todas.filter(o=>o.estado==="esperando_adelanto");
+  const calle=orders.filter(O.enLaCalle).reduce((a,o)=>a+O.porCobrar(o),0);
+  const perdidos=orders.filter(O.esPerdido).length;
 
   $("kpis").innerHTML=[
-    kpi("money","#22c079","Ingresos confirmados", money(ingTotal), `${money(ingBase)} + ${money(ingBump)} extra`),
-    kpi("cart","#22c079","Compras", compras, "órdenes confirmadas"),
+    kpi("money","#22c079","Cobrado", money(cobrado), `de ${money(vendido)} vendidos`),
+    kpi("clock","#f0a92b","Por cobrar", money(porCobrar), "comprometido pendiente"),
+    kpi("cart","#22c079","Ventas cerradas", compras, "pedidos confirmados"),
     kpi("ticket","#2b7fff","Ticket promedio", money(ticket)),
-    kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
+    kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
+    kpi("truck","#9b6cf0","En la calle", money(calle), "despachado sin cobrar"),
+    kpi("alert","#e2564a","Esperando adelanto", espAdel.length, `${money(espAdel.reduce((a,o)=>a+O.total(o),0))} sin confirmar`),
+    kpi("ban","#e2564a","Perdidos", perdidos, "rechazados o no recogidos"),
     kpi("users","#9b6cf0","Contactos", s.contactos??0, "total en vivo"),
     kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0),
     kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0),
@@ -266,7 +283,7 @@ async function load(){
 
   renderFunnel(ev);
   renderSales(orders, r);
-  renderProducts(prods, orders, ingTotal, ordersUnavailable);
+  renderProducts(prods, orders, vendido, ordersUnavailable);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
   renderStages(s.por_stage||{});
 }
@@ -305,7 +322,7 @@ function renderBars(data){
     ${bars}${labels}</svg>`;
 }
 
-function renderProducts(prods, orders, ingTotal, unavailable){
+function renderProducts(prods, orders, vendido, unavailable){
   const box=$("productPerf");
   if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }
   // Agregar por producto y versión.
@@ -327,7 +344,7 @@ function renderProducts(prods, orders, ingTotal, unavailable){
   const maxIng=Math.max(...list.map(p=>p.ing),1);
   let rows="";
   list.forEach(p=>{
-    const share=ingTotal?Math.round(p.ing/ingTotal*100):0;
+    const share=vendido?Math.round(p.ing/vendido*100):0;
     rows+=`<tr><td class="pname"><span class="bar-mini" style="width:${Math.round(p.ing/maxIng*44)}px"></span>${esc(p.nombre)}</td>
       <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td><td class="r">${share}%</td></tr>`;
     Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
