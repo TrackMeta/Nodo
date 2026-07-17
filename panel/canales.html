@@ -88,6 +88,17 @@ async function load(){
 function badge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
 function ph(on,hint){ return on?'•••••••• guardado':hint; }
 
+// Acá no hay nada que un gestor de contraseñas deba tocar: son credenciales de
+// Meta, no un login. Y el navegador se equivoca feo — Chrome llegó a rellenar el
+// Phone Number ID con el nombre de una empresa guardada ("Square") y el Access
+// token con una contraseña cualquiera.
+// OJO: `autocomplete="off"` NO alcanza. Chrome lo ignora en los campos que cree
+// de contacto y SIEMPRE en los de contraseña; lo único que respeta ahí es
+// "new-password". Por eso esto es solo la primera barrera: la red de seguridad
+// de verdad es validar el valor antes de guardarlo.
+const NOFILL='autocomplete="off" data-lpignore="true" data-form-type="other"';
+const NOFILL_PWD='autocomplete="new-password" data-lpignore="true" data-form-type="other"';
+
 function renderWA(){
   const c=st.channel||{}, s=st.secrets||{};
   const conn = !!(c.phone_number_id && s.access_token);
@@ -98,21 +109,44 @@ function renderWA(){
         <span class="st ${conn?'on':''}">${conn?'Conectado':'Sin conectar'}</span></div>
       <div class="desc">Credenciales del número (Meta Developers). El token y el App Secret se guardan cifrados en Vault.</div>
       <div class="row">
-        <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
-        <div class="f"><label>WABA ID</label><input class="in" id="w_waba" value="${esc(c.waba_id)}" placeholder="opcional"/></div>
+        <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
+        <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="opcional"/></div>
       </div>
       <label>Verify token (webhook)</label>
-      <input class="in" id="w_verify" value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
+      <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
       <label>Access token ${badge(s.access_token)}</label>
-      <input class="in" type="password" id="w_token" autocomplete="off" placeholder="${ph(s.access_token,'EAAG...')}"/>
+      <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG...')}"/>
       <label>App Secret ${badge(s.app_secret)}</label>
-      <input class="in" type="password" id="w_secret" autocomplete="off" placeholder="${ph(s.app_secret,'firma del webhook')}"/>
+      <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma del webhook')}"/>
       <div class="acts"><button class="btn primary" id="saveWA">Guardar WhatsApp</button></div>
     </div>`;
-  $("saveWA").onclick=(e)=>save(e.target,{
-    phone_number_id:$("w_phone").value, waba_id:$("w_waba").value, verify_token:$("w_verify").value,
-    access_token:$("w_token").value||undefined, app_secret:$("w_secret").value||undefined,
-  });
+  // Se recuerda lo que vino del servidor para mandar SOLO lo que toques: si se
+  // mandara siempre, un campo que el navegador rellenó (o que quedó vacío) se
+  // guardaría igual — y en el backend un "" se convierte en null, o sea que te
+  // BORRA la credencial que ya tenías.
+  const orig={ phone_number_id:c.phone_number_id??"", waba_id:c.waba_id??"", verify_token:c.verify_token??"" };
+  $("saveWA").onclick=(e)=>{
+    const body={};
+    for(const [k,id] of [["phone_number_id","w_phone"],["waba_id","w_waba"],["verify_token","w_verify"]]){
+      const v=$(id).value.trim();
+      if(v!==String(orig[k]).trim()) body[k]=v;
+    }
+    // El Phone Number ID y el WABA ID de Meta son numéricos. Es la red de
+    // seguridad real: Chrome llegó a rellenar el Phone Number ID con el nombre
+    // de una empresa guardada ("Square") y eso, guardado, rompe el canal sin
+    // ningún aviso. Verificar por código, no confiar en el navegador.
+    for(const [k,label] of [["phone_number_id","Phone Number ID"],["waba_id","WABA ID"]]){
+      if(body[k] && !/^\d{5,}$/.test(body[k])){
+        toast(`El ${label} debe ser solo números — llegó "${body[k]}". ¿Lo rellenó el navegador?`,true);
+        return;
+      }
+    }
+    const tok=$("w_token").value.trim(), sec=$("w_secret").value.trim();
+    if(tok) body.access_token=tok;
+    if(sec) body.app_secret=sec;
+    if(!Object.keys(body).length){ toast("No cambiaste nada"); return; }
+    save(e.target, body);
+  };
 }
 function renderTG(){
   const c=st.channel||{}, s=st.secrets||{};
@@ -126,7 +160,7 @@ function renderTG(){
       <div class="desc">Bot que te avisa y por el que podés <b>aprobar pagos desde el celular</b>. Crea el bot con @BotFather.</div>
       <div style="font-weight:700;font-size:13px;margin-top:14px">1 · El bot</div>
       <label>Bot token ${badge(s.telegram_bot_token)}</label>
-      <input class="in" type="password" id="t_token" autocomplete="off" placeholder="${ph(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
+      <input class="in" type="password" id="t_token" ${NOFILL_PWD} placeholder="${ph(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
       <div class="acts"><button class="btn primary" id="saveTG">Guardar token</button></div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
@@ -143,7 +177,7 @@ function renderTG(){
       <div style="font-weight:700;font-size:13px">3 · Quién puede aprobar</div>
       <div class="desc" style="margin:4px 0 10px">Solo estos chats pueden aprobar pagos desde Telegram. Si el tuyo no está acá, los botones no te van a funcionar.</div>
       <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
-        <input class="in" id="t_chats" value="${esc(chats)}" placeholder="Sin nadie vinculado todavía" style="flex:1;min-width:200px"/>
+        <input class="in" id="t_chats" ${NOFILL} value="${esc(chats)}" placeholder="Sin nadie vinculado todavía" style="flex:1;min-width:200px"/>
         <button class="btn" id="tgPair" ${copiloto?'':'disabled'}>${icon("sparkles")} Detectar mi chat ID</button>
       </div>
       <div id="pairBox"></div>
