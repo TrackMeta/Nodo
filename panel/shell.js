@@ -129,6 +129,7 @@ const NAV_GROUPS = [
     { id:"etiquetas",   label:"Etiquetas",            href:"etiquetas.html",  icon:"etiquetas" },
   ]},
   { key:"conf", sec:"Configuración", items:[
+    { id:"negocio",     label:"Negocio",              href:"negocio.html",    icon:"building" },
     { id:"canales",     label:"Canales",              href:"canales.html",    icon:"canales" },
     { id:"config",      label:"Ajustes",              href:"config.html",     icon:"config" },
   ]},

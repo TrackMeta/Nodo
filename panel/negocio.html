@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Negocio</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .tabs{display:flex;gap:4px;margin:0 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:11px 12px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .tab svg{width:17px;height:17px}
+  h2{font-size:18px;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
+  h3{font-size:16px;margin:0 0 4px;font-weight:700}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:660px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+  .chd .ico svg{width:22px;height:22px}
+  .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  .desc{color:var(--muted);font-size:12.5px;margin:12px 0 4px;line-height:1.55}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .in:focus{border-color:var(--brand)}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .row>.f{flex:1;min-width:170px}
+  .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+  .btn svg{width:16px;height:16px;flex:none}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .btn.danger{color:var(--red);border-color:transparent}
+  /* Entrega: switches y checks propios, prefijo ent- (una clase genérica choca) */
+  .ent-sw{width:38px;height:21px;border-radius:999px;background:var(--border);position:relative;flex:none;transition:background .18s;cursor:pointer}
+  .ent-sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:transform .18s}
+  .ent-sw.on{background:var(--brand)}
+  .ent-sw.on::after{transform:translateX(17px)}
+  .ent-chk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;color:var(--muted)}
+  .ent-chk input{accent-color:var(--brand);cursor:pointer;margin:0}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:820px">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Negocio</h1>
+        <p class="nodo-lead">Todo lo que tu bot necesita <b>saber</b> de tu negocio. Se llena una vez y sirve para todos tus productos. (Cómo <b>habla</b> el bot va en la sección IA.)</p>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-t="conocimiento" id="tabCon"></button>
+      <button class="tab" data-t="entrega" id="tabEnt"></button>
+    </div>
+    <div id="body"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, askText } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
+const st={ channelId:null, tab:"conocimiento", channel:{}, form:{}, retraso:4, ent:null };
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
+  $("tabEnt").innerHTML=icon("truck")+"<span>Entrega y logística</span>";
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  const shell=await mountShell({ active:"negocio" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  if(st.channelId) await load();
+}
+async function load(){
+  let { data:ch, error }=await supa.from("channels")
+    .select("nombre,negocio,negocio_form,buffer_default_seg,entregas").eq("id",st.channelId).maybeSingle();
+  if(error){ ({ data:ch }=await supa.from("channels").select("nombre,negocio,negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
+  st.channel=ch||{};
+  render();
+}
+function render(){
+  const b=$("body");
+  if(st.tab==="conocimiento") renderConocimiento(b);
+  else renderEntregas(b);
+}
+
+// ════════ CONOCIMIENTO DEL NEGOCIO (movido de IA) ════════
+// El usuario llena un formulario; al guardar se compila a Markdown en
+// channels.negocio (lo que lee el motor) + se conserva negocio_form para editar.
+// IMPORTANTE: negocio_form es COMPARTIDO con el Vendedor IA (sección IA). Por eso
+// seedForm carga el form COMPLETO y saveForm lo escribe COMPLETO: editar el
+// conocimiento acá preserva la personalidad que se configuró en IA, y viceversa.
+const NEG_FIELDS=[
+  ["nombre","Nombre del negocio","input","Ej. Mi Negocio"],
+  ["rubro","¿Qué vendes? (productos o servicios)","ta","Ej. Cursos y guías digitales de fitness; también asesorías 1 a 1…"],
+  ["publico","¿A quién le vendes? (cliente ideal)","ta","Ej. Personas de 25-45 en Perú que quieren bajar de peso sin gimnasio"],
+  ["propuesta","Propuesta de valor / diferencial","ta","¿Por qué te compran a ti y no a la competencia?"],
+  ["horario","Horario de atención","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)"],
+  ["transferir","¿Cuándo pasar a una persona? (humano)","ta","Ej. Reclamos, facturación, o si el bot no está seguro de algo"],
+  ["pagos","¿Cómo se paga? (general)","ta","Ej. contraentrega en Lima; adelanto para provincia. Los métodos exactos (Yape/Plin/cuentas) se ponen en IA → Validador de comprobantes y se sincronizan solos."],
+  ["entrega","Envíos y entrega","ta","Ej. Digital: enlace de Drive al confirmar el pago. Físico: Lima 24h contraentrega, provincia por Shalom/Olva con adelanto."],
+  ["politicas","Políticas (cambios, devoluciones, garantía)","ta","Ej. Cambios dentro de 7 días con boleta; sin devolución de digitales."],
+  ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta."],
+];
+const TONOS={ cercano:"Cercano y amigable, con tuteo", formal:"Formal y profesional, trato de usted", directo:"Directo y breve, sin rodeos", divertido:"Divertido y relajado, con buena onda", ventas:"Persuasivo y orientado a cerrar la venta" };
+function compilePersona(form){
+  const p=[];
+  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, asesor(a) de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, preséntate así.`);
+  const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
+  if(t.length) p.push("Tono: "+t.join(". ")+".");
+  p.push(form.negritas?"Puedes usar *negritas* de WhatsApp (un asterisco a cada lado) para resaltar lo importante, con moderación.":"No uses formato de negritas.");
+  const mx=Number(form.emoji_max); const mn=Number(form.emoji_min)||0;
+  if(!isNaN(mx)){ p.push(mx<=0?"No uses emojis.":`Usa emojis con moderación: entre ${mn} y ${mx} por mensaje, solo cuando aporten.`); }
+  return p.length?p.join(" "):"";
+}
+function compileNegocio(form){
+  const L=[]; const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
+  if(form.nombre&&form.nombre.trim()) L.push(`# ${form.nombre.trim()}`);
+  const persona=compilePersona(form); if(persona) L.push("## Cómo debes comportarte\n"+persona);
+  add("Qué vendemos",form.rubro); add("Cliente ideal",form.publico); add("Propuesta de valor",form.propuesta);
+  add("Horario de atención",form.horario);
+  add("Cuándo transferir a una persona",form.transferir); add("Cómo se paga",form.pagos);
+  add("Envíos y entrega",form.entrega); add("Políticas",form.politicas); add("Nunca hacer / no prometer",form.no_hacer);
+  const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
+  if(faq.length) L.push("## Preguntas frecuentes\n"+faq.map(x=>`- P: ${(x.q||"").trim()}\n  R: ${(x.a||"").trim()}`).join("\n"));
+  if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
+  return L.join("\n\n");
+}
+function seedForm(){
+  const c=st.channel||{};
+  let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
+  if(!c.negocio_form && c.negocio) form.extra=c.negocio;
+  if(!Array.isArray(form.faq)) form.faq=[];
+  if(form.negritas===undefined) form.negritas=true;
+  if(form.emoji_min===undefined) form.emoji_min=0;
+  if(form.emoji_max===undefined) form.emoji_max=2;
+  if(form.tono===undefined) form.tono="cercano";
+  st.retraso = c.buffer_default_seg ?? 4;
+  st.form=form;
+  return form;
+}
+async function saveForm(btn){
+  const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
+  const form=st.form;
+  const negocio=compileNegocio(form).trim()||null;
+  let { error }=await supa.from("channels").update({ negocio, negocio_form:form, buffer_default_seg:st.retraso }).eq("id",st.channelId);
+  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio, buffer_default_seg:st.retraso }).eq("id",st.channelId)); }
+  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
+  btn.disabled=false; btn.textContent=old;
+  if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return false; }
+  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso;
+  return true;
+}
+function renderConocimiento(b){
+  const form=seedForm();
+  const field=([k,label,type,ph])=>`
+    <label style="margin-top:14px">${label}</label>
+    ${type==="ta"
+      ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
+      : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
+  b.innerHTML=`
+    <h2>Conocimiento del negocio</h2>
+    <p class="sub">Completa este formulario: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en <b>IA → Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
+    <div class="card">
+      <div class="chd"><span class="ico">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
+      ${NEG_FIELDS.map(field).join("")}
+      <label style="margin-top:18px">Preguntas frecuentes del negocio (FAQ)</label>
+      <div class="desc" style="margin-top:0">Las dudas que más te hacen y su respuesta ideal. La IA responderá con estas.</div>
+      <div id="faqList" style="margin-top:8px"></div>
+      <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
+      <label style="margin-top:18px">Información adicional (texto libre)</label>
+      <textarea class="in" id="nf_extra" rows="3" style="min-height:60px;line-height:1.5;resize:vertical" placeholder="Cualquier otra cosa que la IA deba saber y no encaje arriba.">${esc(form.extra||"")}</textarea>
+      <div class="acts"><button class="btn primary" id="saveNegocio">Guardar conocimiento</button>
+        <button class="btn" id="previewNeg">Ver cómo lo lee la IA</button></div>
+    </div>`;
+  const paintFaq=()=>{
+    const box=$("faqList"); box.innerHTML="";
+    if(!form.faq.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Sin preguntas todavía.</div>`; }
+    form.faq.forEach((qa,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+      el.innerHTML=`<div class="row"><div class="f" style="flex:1"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ¿Hacen envíos a provincia?)"/></div>
+        <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button></div>
+        <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
+      el.querySelector(".fq").oninput=(e)=>qa.q=e.target.value;
+      el.querySelector(".fa").oninput=(e)=>qa.a=e.target.value;
+      el.querySelector("button.danger").onclick=()=>{ form.faq.splice(i,1); paintFaq(); };
+      box.appendChild(el);
+    });
+  };
+  paintFaq();
+  $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
+  const harvest=()=>{
+    NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; });
+    form.extra=$("nf_extra").value;
+  };
+  $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
+  $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado ✓"); };
+}
+
+// ════════ ENTREGA Y LOGÍSTICA (movido de Ajustes → Entregas Lima) ════════
+// Todo lo que se toca acá lo obedece el CÓDIGO, no la IA. Lo que no está en la
+// lista de zonas → Provincia (agencia), automático.
+const GRUPOS=[["centro","Lima Centro"],["moderna","Lima Moderna"],["norte","Lima Norte"],
+              ["sur","Lima Sur"],["este","Lima Este"],["callao","Callao"]];
+const DIAS=[["lun","L"],["mar","M"],["mie","M"],["jue","J"],["vie","V"],["sab","S"]];
+
+function renderEntregas(b){
+  const e=st.channel.entregas;
+  if(!e || !Array.isArray(e.zonas)){
+    b.innerHTML=`<div class="card"><h3>Entrega y logística</h3>
+      <p class="sub">Este bot todavía no tiene zonas de entrega cargadas (falta aplicar la migración 0032).</p></div>`;
+    return;
+  }
+  st.ent=JSON.parse(JSON.stringify(e));
+  const E=st.ent;
+  E.dias=E.dias||{}; E.horario=E.horario||{};
+  if(!Array.isArray(E.feriados_fechas)) E.feriados_fechas=[];
+  E.costos=E.costos||{}; E.costos.grupos=E.costos.grupos||{}; E.costos.zonas=E.costos.zonas||{};
+
+  const sw=(on,id)=>`<span class="ent-sw ${on?'on':''}" data-sw="${id}"></span>`;
+  const rowSw=(txt,sub,on,id)=>`<div class="erow" data-row="${id}" style="display:flex;align-items:center;justify-content:space-between;
+    gap:10px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer;margin-top:8px">
+    <span><span style="font-weight:600;font-size:13px">${txt}</span>
+    ${sub?`<div style="font-size:11.5px;color:var(--faint);margin-top:2px">${sub}</div>`:""}</span>${sw(on,id)}</div>`;
+
+  b.innerHTML=`
+    <h2>Entrega y logística</h2>
+    <p class="sub">Tus zonas de Lima, agencias de provincia y reglas de reparto. Es igual para <b>todos</b> tus productos físicos, por eso vive acá y no en cada producto.</p>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Reglas de entrega</h3>
+      <p class="sub">Lo que configures acá es una <b>regla</b>: el sistema la calcula y la IA solo la comunica. Ella ni siquiera sabe qué hora es — de eso se encarga el motor.</p>
+      ${rowSw("Envío gratis","Se le dice al cliente que el envío no cuesta.",E.envio_gratis!==false,"envio_gratis")}
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Hora de corte para entrega el mismo día</label>
+        <input class="in" id="entCorte" type="time" value="${esc(E.corte||"11:00")}" style="width:120px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Si el cliente pide para hoy después de esta hora, se le ofrece mañana.</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700;margin-right:4px">Días de reparto</label>
+        ${DIAS.map(([k,l])=>`<button class="dbtn" data-dia="${k}"
+          style="width:34px;height:34px;border-radius:9px;border:1.5px solid ${E.dias[k]!==false?'var(--brand)':'var(--border)'};
+          background:${E.dias[k]!==false?'var(--brand)':'transparent'};color:${E.dias[k]!==false?'#fff':'var(--muted)'};
+          font-weight:700;font-size:12px;cursor:pointer">${l}</button>`).join("")}
+      </div>
+      ${rowSw("Entrego domingos","",E.domingos===true,"domingos")}
+      ${rowSw("Entrego feriados","Si está apagado, las fechas de abajo no tienen reparto.",E.feriados===true,"feriados")}
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Horario de entrega</label>
+        <input class="in" id="entDesde" type="time" value="${esc(E.horario.desde||"09:00")}" style="width:120px"/>
+        <span style="font-size:12.5px;color:var(--muted)">a</span>
+        <input class="in" id="entHasta" type="time" value="${esc(E.horario.hasta||"19:00")}" style="width:120px"/>
+      </div>
+      <label style="margin-top:16px">Feriados</label>
+      <div id="ferList" style="margin-top:4px"></div>
+      <button class="btn" id="ferAdd" style="height:32px;margin-top:8px">+ Feriado</button>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Costo de reparto</h3>
+      <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Costo para todo Lima</label>
+        <input class="in" id="entCostoDef" type="number" min="0" step="0.5" placeholder="0.00" value="${E.costos.default??""}" style="width:120px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:220px">Es el valor por defecto. Abajo puedes afinarlo por grupo o por zona suelta — <b>lo más específico manda</b>.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("pin")} Zonas de entrega</h3>
+      <p class="sub"><b>Cubro</b> = es Lima (contraentrega). <b>Mismo día</b> = puede llegar hoy si pide antes de la hora de corte. Todo lo que <b>no</b> esté acá (o esté destildado) va por <b>agencia a provincia</b>, automático. El <b>costo</b> vacío hereda del grupo, y el del grupo hereda de todo Lima.</p>
+      <div id="zonas"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn primary" id="entSave">Guardar cambios</button></div>`;
+
+  b.querySelectorAll(".erow").forEach(r=> r.onclick=()=>{
+    const k=r.dataset.row;
+    E[k] = k==="envio_gratis" ? !(E[k]!==false) : !(E[k]===true);
+    r.querySelector("[data-sw]").classList.toggle("on", k==="envio_gratis" ? E[k]!==false : E[k]===true);
+  });
+  b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{ const k=x.dataset.dia; E.dias[k]=!(E.dias[k]!==false); renderEntregas(b); });
+  $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
+  $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
+  $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
+  $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };
+  $("ferAdd").onclick=()=>{ E.feriados_fechas.push(""); paintFeriados(); };
+  $("entSave").onclick=guardarEntregas;
+  paintFeriados();
+  paintZonas();
+}
+function paintFeriados(){
+  const E=st.ent, box=$("ferList"); if(!box) return;
+  box.innerHTML="";
+  if(!E.feriados_fechas.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin feriados cargados.</div>`; return; }
+  E.feriados_fechas.forEach((f,i)=>{
+    const r=document.createElement("div"); r.style.cssText="display:flex;gap:7px;align-items:center;margin-bottom:6px";
+    r.innerHTML=`<input class="in fd" type="date" value="${esc(f||"")}" style="width:170px"/>
+      <button class="btn fdel" style="height:32px">${icon("trash")}</button>`;
+    r.querySelector(".fd").onchange=(ev)=>{ E.feriados_fechas[i]=ev.target.value; };
+    r.querySelector(".fdel").onclick=()=>{ E.feriados_fechas.splice(i,1); paintFeriados(); };
+    box.appendChild(r);
+  });
+}
+function paintZonas(){
+  const E=st.ent, box=$("zonas"); if(!box) return;
+  box.innerHTML="";
+  GRUPOS.forEach(([g,label])=>{
+    const zs=E.zonas.filter(z=>z.grupo===g);
+    if(!zs.length) return;
+    const nCub=zs.filter(z=>z.cubro!==false).length, nMd=zs.filter(z=>z.mismo_dia===true).length;
+    const sec=document.createElement("div");
+    sec.style.cssText="border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px";
+    const cg=E.costos.grupos[g];
+    const heredaDe=E.costos.default!=null?`S/ ${E.costos.default}`:"sin costo";
+    sec.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:700;font-size:13.5px">${label}
+          <span style="color:var(--faint);font-weight:400;font-size:12px">· ${nCub}/${zs.length} cubiertas · ${nMd} con mismo día</span></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="margin:0;font-size:11.5px;color:var(--muted);font-weight:700">Costo</label>
+          <input class="in gcost" data-g="${g}" type="number" min="0" step="0.5" value="${cg??""}"
+            placeholder="${heredaDe}" title="Vacío = hereda de todo Lima" style="width:92px;height:28px;font-size:12px"/>
+          <button class="btn ga" data-g="${g}" data-k="cubro" data-v="1" style="height:28px;font-size:11.5px">Cubrir todas</button>
+          <button class="btn ga" data-g="${g}" data-k="cubro" data-v="0" style="height:28px;font-size:11.5px">Ninguna</button>
+          <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="1" style="height:28px;font-size:11.5px">Mismo día: todas</button>
+          <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="0" style="height:28px;font-size:11.5px">Mismo día: ninguna</button>
+        </div>
+      </div>
+      <div class="zgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-top:10px"></div>`;
+    const grid=sec.querySelector(".zgrid");
+    const fallback = cg??E.costos.default;
+    zs.forEach(z=>{
+      const el=document.createElement("div");
+      el.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:9px;padding:7px 9px";
+      el.innerHTML=`<div style="min-width:0;flex:1">
+          <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.nombre)}</div>
+          ${(z.alias&&z.alias.length)?`<div style="font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.alias.join(", "))}</div>`:""}
+        </div>
+        <input class="in zcost" type="number" min="0" step="0.5" value="${E.costos.zonas[z.nombre]??""}"
+          placeholder="${fallback!=null?"S/ "+fallback:"—"}" title="Vacío = hereda del grupo" style="width:78px;height:28px;font-size:11.5px;flex:none"/>
+        <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zc" ${z.cubro!==false?"checked":""}/> Cubro</label>
+        <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zm" ${z.mismo_dia===true?"checked":""}/> Mismo día</label>`;
+      el.querySelector(".zc").onchange=(ev)=>{ z.cubro=ev.target.checked; paintZonas(); };
+      el.querySelector(".zm").onchange=(ev)=>{ z.mismo_dia=ev.target.checked; paintZonas(); };
+      el.querySelector(".zcost").onchange=(ev)=>{
+        const v=ev.target.value;
+        if(v==="") delete E.costos.zonas[z.nombre]; else E.costos.zonas[z.nombre]=Number(v);
+      };
+      grid.appendChild(el);
+    });
+    box.appendChild(sec);
+  });
+  box.querySelectorAll(".ga").forEach(bt=> bt.onclick=()=>{
+    const { g,k,v } = bt.dataset;
+    E.zonas.forEach(z=>{ if(z.grupo===g) z[k] = v==="1"; });
+    paintZonas();
+  });
+  box.querySelectorAll(".gcost").forEach(inp=> inp.onchange=()=>{
+    const v=inp.value;
+    if(v==="") delete E.costos.grupos[inp.dataset.g]; else E.costos.grupos[inp.dataset.g]=Number(v);
+    paintZonas();
+  });
+}
+async function guardarEntregas(){
+  const E=st.ent;
+  E.feriados_fechas=(E.feriados_fechas||[]).filter(Boolean);
+  const { error }=await supa.from("channels").update({ entregas:E }).eq("id",st.channelId);
+  if(error){ toast(/entregas|column/.test(error.message)?"Falta aplicar la migración 0032":error.message,true); return; }
+  st.channel.entregas=JSON.parse(JSON.stringify(E));
+  toast("Entrega guardada ✓");
+}
+
+boot();
+</script>
+</body>
+</html>
