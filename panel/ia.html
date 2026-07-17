@@ -36,7 +36,9 @@
   .ia-hero .glow{position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;
     background:radial-gradient(circle,rgba(168,85,247,.35),transparent 70%);filter:blur(20px);pointer-events:none}
 
-  .tabs{display:flex;gap:2px;margin:0 0 22px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  /* Una sola fila con scroll horizontal (7 pestañas no entran en 2 filas sin que
+     "Proveedores" quede descolgada). Mismo patrón que config.html. */
+  .tabs{display:flex;gap:2px;margin:0 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
   .tab{background:transparent;border:none;color:var(--muted);font-size:13px;font-weight:600;padding:10px 11px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
   .tab:hover{color:var(--text)}

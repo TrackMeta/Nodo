@@ -20,7 +20,7 @@
   button{font-family:inherit;cursor:pointer}
   .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{background:var(--surface-2)}
-  /* El botón que tocás el 90% de las veces va grande y solo; el resto, chicos
+  /* El botón que tocas el 90% de las veces va grande y solo; el resto, chicos
      al costado. Es lo que hace que se pueda usar con una mano. */
   .btn.main{height:44px;padding:0 22px;font-size:14px;font-weight:700;border:none;color:#04140c;background:var(--green)}
   .btn.main:hover{filter:brightness(1.07)}
@@ -38,7 +38,7 @@
   .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;text-align:center;padding:6px;cursor:default}
   .amt{font-size:20px;font-weight:800;letter-spacing:-.5px}
   .klbl{font-size:11px;color:var(--faint);font-weight:600}
-  /* Veredicto del OCR: la IA ya leyó el comprobante por vos. */
+  /* Veredicto del OCR: la IA ya leyó el comprobante por ti. */
   .ia{margin-top:9px;font-size:12.5px;border-radius:9px;padding:8px 11px;display:flex;gap:7px;align-items:flex-start}
   .ia.ok{background:var(--green-bg);color:var(--green)}
   .ia.duda{background:var(--amber-bg);color:var(--amber)}
@@ -60,7 +60,7 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Copiloto</h1>
-        <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y vos resolvés con un toque. Lo que no necesita decisión no aparece acá: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
+        <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú resuelves con un toque. Lo que no necesita decisión no aparece aquí: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
       </div>
       <div class="nodo-actions"><button class="btn" id="reloadBtn">↻ Actualizar</button></div>
     </div>
@@ -95,9 +95,9 @@ const ETAPAS=[
   { id:"saldo", estados:["en_agencia"], titulo:"Saldo por validar",
     sub:"Pagaron el saldo en la agencia. Al aprobar, el bot suelta la clave de recojo." },
   { id:"despachar", estados:["adelanto_validado","por_despachar"], titulo:"Listo para despachar",
-    sub:"Ya cobraste el adelanto. Cuando lo lleves a la agencia, cargá la guía y las fotos." },
+    sub:"Ya cobraste el adelanto. Cuando lo lleves a la agencia, carga la guía y las fotos." },
   { id:"camino", estados:["despachado"], titulo:"En camino a la agencia",
-    sub:"Cuando llegue a destino, avisale al cliente para que lo recoja." },
+    sub:"Cuando llegue a destino, avísale al cliente para que lo recoja." },
 ];
 const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
@@ -222,7 +222,7 @@ function card(o,et){
   return el;
 }
 
-// Un botón principal grande (el que tocás el 90% de las veces) y el resto
+// Un botón principal grande (el que tocas el 90% de las veces) y el resto
 // chicos al costado.
 function botones(o,et){
   if(et.id==="adelanto") return {

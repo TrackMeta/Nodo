@@ -818,7 +818,7 @@ async function renderReceta(){
       <h4 style="margin-top:0">Cómo se vende este producto</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
         Las etapas de una venta, en orden. Llená lo que falte y generá el flujo:
-        el sistema lo arma solo y podés seguir editándolo en el editor visual.
+        el sistema lo arma solo y puedes seguir editándolo en el editor visual.
       </div>
     </div>
     ${et(1,"Activación","La palabra clave del anuncio (y la IA que entiende variaciones) que arranca el chat.",
@@ -861,7 +861,7 @@ async function renderReceta(){
           ? `Genera el flujo completo: la <b>IA vende</b>, detecta a dónde va el pedido <b>sin botones</b> (contra tus zonas
              de Ajustes → Entregas Lima) y <b>toma los datos conversando</b>, sin interrogatorio. En <b>Lima</b> crea el
              pedido apenas tiene los datos; en <b>provincia</b> lo crea, pide el adelanto y lo valida.
-             <b>Ahí termina el flujo</b>: despachar, mandar la guía, cobrar el saldo y soltar la clave los operás vos
+             <b>Ahí termina el flujo</b>: despachar, mandar la guía, cobrar el saldo y soltar la clave los operas tú
              desde Pedidos.`
           : `Genera el flujo completo: la <b>IA vende y responde</b>, detecta el comprobante <b>en cualquier momento</b>,
              lo <b>valida contra el precio exacto</b> de la opción elegida y <b>entrega solo</b>. Si el pago no cuadra,
@@ -1050,7 +1050,7 @@ async function generarFlujoVenta(){
   if(!await confirmDialog({
     title: ya?"Regenerar flujo de venta":"Generar flujo de venta",
     message: ya?`Esto REESCRIBE por completo "${esc(ya.nombre)}". Si lo editaste a mano en el editor visual, esos cambios se pierden.`
-               :"Se creará el flujo de venta con la IA como vendedora. Después podés editarlo en el editor visual.",
+               :"Se creará el flujo de venta con la IA como vendedora. Después puedes editarlo en el editor visual.",
     confirmText: ya?"Regenerar":"Generar", danger: !!ya })) return;
 
   toast("Generando…");

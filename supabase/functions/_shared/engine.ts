@@ -1332,7 +1332,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const esperado = Number(ship.adelanto);
   const runlike = { channel_id: channelId, contact_id: contactId } as any;
 
-  // El OCR opina SIEMPRE (aunque decidas vos): así llegás a la tarjeta con el
+  // El OCR opina SIEMPRE (aunque decidas tú): así llegas a la tarjeta con el
   // trabajo de lectura hecho.
   let parsed: any = null;
   try {

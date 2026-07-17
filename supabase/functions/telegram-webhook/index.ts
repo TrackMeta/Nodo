@@ -65,11 +65,11 @@ Deno.serve(async (req) => {
       if (!ids.includes(quienEs)) ids.push(quienEs);
       await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null }).eq("id", channelId);
       await sendTelegram(token, [quienEs],
-        "✅ <b>Listo, quedaste vinculado.</b>\nDesde acá vas a poder aprobar los pagos con un toque.");
+        "✅ <b>Listo, quedaste vinculado.</b>\nDesde aquí vas a poder aprobar los pagos con un toque.");
     } else if (texto === "/start") {
       await sendTelegram(token, [String(msg.chat?.id ?? "")],
-        "👋 Soy el bot de tu Nodo.\nPara vincularte, andá a <b>Canales → Telegram</b> en el panel, tocá " +
-        "<b>Detectar mi chat ID</b> y mandame el código que te muestre.");
+        "👋 Soy el bot de tu Nodo.\nPara vincularte, entra a <b>Canales → Telegram</b> en el panel, toca " +
+        "<b>Detectar mi chat ID</b> y mándame el código que te muestre.");
     }
     return json({ ok: true });
   }

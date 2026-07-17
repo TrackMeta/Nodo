@@ -157,7 +157,7 @@ function renderTG(){
       <div class="chd"><span class="ico"><img src="${LOGO.tg}" alt="Telegram"/></span>
         <div><div class="nm">Telegram</div><div class="sub2">Avisos y Copiloto en el celular</div></div>
         <span class="st ${s.telegram_bot_token?'on':''}">${s.telegram_bot_token?'Conectado':'Sin conectar'}</span></div>
-      <div class="desc">Bot que te avisa y por el que podés <b>aprobar pagos desde el celular</b>. Crea el bot con @BotFather.</div>
+      <div class="desc">Bot que te avisa y por el que puedes <b>aprobar pagos desde el celular</b>. Crea el bot con @BotFather.</div>
       <div style="font-weight:700;font-size:13px;margin-top:14px">1 · El bot</div>
       <label>Bot token ${badge(s.telegram_bot_token)}</label>
       <input class="in" type="password" id="t_token" ${NOFILL_PWD} placeholder="${ph(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
@@ -195,7 +195,7 @@ function renderTG(){
   if(pr) pr.onclick=()=>vincularTelegram();
 }
 
-// Vinculación por código: el panel muestra un código, vos se lo mandás al bot
+// Vinculación por código: el panel muestra un código, tú se lo mandas al bot
 // y el bot te reconoce. Se hace así y no "guardando al primero que escriba"
 // porque eso convertiría en admin a cualquier desconocido que encuentre el bot.
 async function vincularTelegram(){
@@ -211,7 +211,7 @@ async function vincularTelegram(){
       <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Abrí tu bot en Telegram y <b>mandale este código</b>:</div>
       <div style="font-size:30px;font-weight:800;letter-spacing:5px;margin:10px 0;font-variant-numeric:tabular-nums">${esc(r.codigo)}</div>
       <div style="font-size:12px;color:var(--faint)" id="pairTime"></div>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">Apenas lo mandes, tu chat queda vinculado solo — no tenés que copiar nada.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Apenas lo mandes, tu chat queda vinculado solo — no tienes que copiar nada.</div>
     </div>`;
 
   // Espera a que el webhook lo vincule. Se corta solo al vencer el código.
