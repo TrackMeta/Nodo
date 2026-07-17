@@ -91,6 +91,7 @@ const P = {
   pin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
   kanban:'<rect width="7" height="18" x="3" y="3" rx="1.5"/><rect width="7" height="11" x="14" y="3" rx="1.5"/>',
   shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  compass:'<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
   printer:'<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect width="12" height="8" x="6" y="14" rx="1"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${P[n]||""}</svg>`;
@@ -112,7 +113,7 @@ const NAV_GROUPS = [
   { key:"top", items:[
     { id:"inbox",       label:"Bandeja",              href:"index.html",      icon:"inbox", cta:true },
     { id:"dashboard",   label:"Dashboard",            href:"dashboard.html",  icon:"dashboard" },
-    { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"robot" },
+    { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"compass" },
     { id:"pedidos",     label:"Pedidos",              href:"pedidos.html",    icon:"kanban" },
     { id:"compras",     label:"Compras",              href:"compras.html",    icon:"pedidos" },
   ]},
