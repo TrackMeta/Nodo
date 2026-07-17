@@ -271,6 +271,16 @@ function renderEntregas(b){
       <button class="btn" id="ferAdd" style="height:32px;margin-top:8px">+ Feriado</button>
     </div>
     <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Adelanto de provincia</h3>
+      <p class="sub">Cuánto pide el bot de <b>seña</b> para despachar un pedido a provincia. Es el valor por defecto para todos tus productos físicos; un producto puede pedir uno distinto desde su ficha.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Adelanto por defecto</label>
+        <span style="color:var(--muted);font-size:13px">S/</span>
+        <input class="in" id="entAdelDef" type="number" min="0" step="0.5" placeholder="Ej. 20" value="${esc(E.adelanto_default??"")}" style="width:110px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>. El resto (precio − adelanto) se cobra al recoger.</span>
+      </div>
+    </div>
+    <div class="card">
       <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Costo de reparto</h3>
       <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -293,6 +303,7 @@ function renderEntregas(b){
   });
   b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{ const k=x.dataset.dia; E.dias[k]=!(E.dias[k]!==false); renderEntregas(b); });
   $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
+  $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
   $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
   $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
   $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };

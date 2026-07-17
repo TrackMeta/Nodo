@@ -2698,6 +2698,14 @@ async function buildContext(db: SupabaseClient, run: Run) {
                 : val;
             }
           }
+          // Adelanto: si el producto no fijó uno propio (override), usa el
+          // DEFAULT del negocio (Negocio → Entrega y logística). El override del
+          // producto siempre gana.
+          if (pc.adelanto == null || pc.adelanto === "") {
+            const ent = await loadEntregas(db, run);
+            const def = (ent as any)?.entregas?.adelanto_default;
+            if (def != null && def !== "") pc.adelanto = Number(def);
+          }
         }
         (run as any)._prodCtx = pc;
       }

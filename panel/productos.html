@@ -483,7 +483,7 @@ function renderEntrega(){
   // Físico: la logística (zonas, agencias, envío gratis, costos) se hereda de
   // Negocio → Entrega y logística. Acá solo el adelanto y su override.
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte— es igual para todos tus productos y se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a>. Acá solo lo que puede cambiar por producto.</p>
+    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a> y vale para todos tus productos. Acá solo cámbialo si <b>este</b> producto necesita algo distinto; lo que dejes vacío hereda de Negocio.</p>
     <div id="envioCard"></div>`;
   renderEnvio();
 }
