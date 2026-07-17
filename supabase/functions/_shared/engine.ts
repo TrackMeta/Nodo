@@ -1844,22 +1844,41 @@ type CampoDato = {
   label: string;
   detalle?: string;
   requerido?: boolean;
-  validar?: "dni";
+  validar?: "dni" | "sede";
   // Un dato puede hacer falta solo en un camino: el DNI lo pide la agencia
   // (provincia), pero para un envío en Lima con contraentrega no sirve de nada
   // y pedirlo sería fricción gratis.
   solo_si_zona?: "lima" | "provincia";
 };
 
+// Palabras que no identifican NINGUNA oficina en particular. Si al sacarlas la
+// sede queda vacía o queda solo la ciudad, el cliente todavía no dijo cuál es.
+const RUIDO_SEDE = /\b(shalom|olva|agencia|agencias|sede|oficina|sucursal|terminal|de|del|la|el|los|las|en|a|por|mi|su)\b/g;
+
 // Validaciones DURAS, por código. Contar dígitos es exactamente lo que un LLM
 // hace mal, así que no se lo preguntamos: lo verificamos.
-function validarDato(v: CampoDato, valor: string): { ok: boolean; motivo?: string } {
+function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; motivo?: string } {
   const s = String(valor ?? "").trim();
   if (!s) return { ok: false, motivo: "vacío" };
   if (v.validar === "dni") {
     const d = s.replace(/\D/g, "");
     if (d.length !== 8) return { ok: false, motivo: `el DNI debe tener 8 dígitos (mandó ${d.length})` };
     return { ok: true };
+  }
+  // La sede NO puede ser la ciudad. El modelo lo hace igual aunque el detalle del
+  // campo se lo prohíba con todas las letras ("la oficina EXACTA…, NO la ciudad"):
+  // ante "soy de Trujillo" devuelve sede="trujillo", porque es el único lugar que
+  // ve. Y como después no se pisa lo ya capturado, la sede de verdad ("Av.
+  // España") se perdía y el pedido quedaba imposible de despachar —Shalom Trujillo
+  // tiene varias oficinas—. Ya se intentó arreglar por prompt y volvió a pasar,
+  // así que se verifica por código, igual que el DNI.
+  if (v.validar === "sede") {
+    const limpio = limpiaZona(s).replace(RUIDO_SEDE, " ").replace(/\s+/g, " ").trim();
+    if (!limpio) return { ok: false, motivo: "no dijo qué oficina es" };
+    const ciudad = limpiaZona(String(ctx?.ciudad ?? ""));
+    if (ciudad && limpio === ciudad) {
+      return { ok: false, motivo: `"${s}" es la ciudad, no la oficina — falta la sede exacta (ej. «Av. España»)` };
+    }
   }
   return { ok: true };
 }
@@ -1920,7 +1939,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         for (const c of faltan) {
           const val = String(parsed?.[c.clave] ?? "").trim();
           if (!val) continue;
-          const v = validarDato(c, val);
+          const v = validarDato(c, val, ctx);
           if (!v.ok) {
             // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
             // le dice a la IA qué pedirle exactamente.

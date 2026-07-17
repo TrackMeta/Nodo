@@ -935,15 +935,16 @@ async function generarFlujoFisico(flowId, N, E){
   //  · `nombre` NO se puede usar: ctx.nombre ya trae el nombre de WhatsApp del
   //    contacto, así que el extractor creería que ya lo tiene y nunca lo
   //    pediría. A la agencia le llegaría el apodo de WhatsApp y no entregan.
-  //  · `sede` tiene que decir EXPLÍCITAMENTE que no es la ciudad: si no, agarra
-  //    "soy de Trujillo" como sede y, por la regla de no pisar lo capturado,
-  //    después ignora la sede de verdad.
+  //  · `sede` lleva validar:"sede" (verificación por CÓDIGO de que no sea la
+  //    ciudad). Decírselo en el detalle no alcanza: aun con "NO la ciudad" en
+  //    mayúsculas, ante "soy de Trujillo" devuelve sede="trujillo", y como
+  //    después no se pisa lo capturado, la sede real se perdía.
   const campos=[
     { clave:"nombre_completo", label:"Nombre y apellido del que recibe", requerido:true },
     { clave:"direccion", label:"Dirección exacta", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
     { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
-    { clave:"sede", label:"Sede de la agencia", detalle:"la oficina EXACTA donde lo va a recoger (ej. «Av. España»), NO la ciudad", requerido:true, solo_si_zona:"provincia" },
+    { clave:"sede", label:"Sede de la agencia", detalle:"la oficina EXACTA donde lo va a recoger (ej. «Av. España»), NO la ciudad", requerido:true, validar:"sede", solo_si_zona:"provincia" },
   ];
   // Igual que en el digital: se ESCUCHA primero. A este flujo se llega después
   // de los mensajes iniciales; arrancar vendiendo sería hablar encima del saludo.
