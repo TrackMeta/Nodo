@@ -121,7 +121,6 @@
       <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
-      <button class="tab" data-t="pedidos" id="tabPed"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
     </div>
     <div id="body"></div>
@@ -230,7 +229,6 @@ async function boot(){
   $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
-  $("tabPed").innerHTML=IC.truck+"<span>Validación de pagos</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
@@ -255,7 +253,6 @@ function render(){
   else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
-  else if(st.tab==="pedidos") renderPedidos(b);
   else renderProveedores(b);
 }
 function goTab(name){ st.tab=name; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
@@ -672,165 +669,6 @@ function renderValidador(b){
       }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
     }
     btn.disabled=false; btn.textContent=old; toast("Validador guardado ✓"+extra);
-  };
-}
-
-// ── Pedidos: agentes de Confirmación y Logística (pedidos físicos) ──
-// Config GLOBAL del canal (mismos mensajes/instrucciones para todos los
-// productos físicos). Se guarda en channels.pedidos_config (jsonb).
-function defaultPedidos(){
-  return {
-    // Todos activos = la IA responde en todo el flujo del pedido. Antes había un
-    // toggle por embudo (se quitó); dejarlos en true evita que guardar la pantalla
-    // "Validación de pagos" gatee la IA sin querer en canales sin config previa.
-    embudos:{ mensajeria:true, confirmaciones:true, logistica:true },
-    // El pedido de provincia nace sin pagar (así se puede perseguir al que no
-    // paga y medir la tasa de abandono); esto evita que se acumulen.
-    // validacion: quién aprueba el adelanto. Manual por defecto — es el momento
-    // en que decides si despachas o no, así que por defecto te consulta.
-    adelanto:{ validacion:"manual", tolerancia:1, nudge:{ activo:false, horas:12, mensaje:"" }, vencimiento:{ activo:false, horas:48 } },
-    conf:{ msg_cod:"", fecha:false, msg_ag_pago:"", msg_ag:"", instr_cod:"", instr_ag:"" },
-    log:{ modo:"manual", tolerancia:1, instr_cod:"", instr_ag:"" },
-  };
-}
-// Los embudos siguen en defaultPedidos() (todos true) y se conservan al guardar;
-// solo se quitó su UI de esta pantalla. El motor gatea con embudos===false, así
-// que el default DEBE quedar en true para no silenciar la IA al guardar.
-function renderPedidos(b){
-  const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
-  const D = defaultPedidos();
-  const p = {
-    embudos:{ ...D.embudos, ...(src.embudos||{}) },
-    conf:{ ...D.conf, ...(src.conf||{}) },
-    log:{ ...D.log, ...(src.log||{}) },
-    adelanto:{
-      ...D.adelanto, ...(src.adelanto||{}),
-      nudge:{ ...D.adelanto.nudge, ...((src.adelanto||{}).nudge||{}) },
-      vencimiento:{ ...D.adelanto.vencimiento, ...((src.adelanto||{}).vencimiento||{}) },
-    },
-  };
-  st.pedidos = p;
-  const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
-  b.innerHTML=`
-    <h2>Validación de pagos</h2>
-    <p class="sub">Quién aprueba los pagos de los pedidos físicos —<b>tú</b> con un toque en el Copiloto, o la <b>IA</b> sola si el monto cuadra— y los recordatorios del adelanto. Aplica a todos los productos físicos.</p>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.clock}</span><span class="nm">Adelantos de provincia</span></div>
-      <div class="desc">El pedido de provincia se crea apenas el cliente te da sus datos, <b>antes de pagar</b>.</div>
-
-      <label style="margin-top:14px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el adelanto?</label>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="adelOpts">
-        ${[["manual","👁","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta con los datos y la foto te espera en el Copiloto."],
-           ["auto","⚡","Automático: si el monto cuadra, valida el adelanto sin consultarme","Ante cualquier duda (monto, fraude o comprobante repetido) te lo deriva igual al Copiloto."]]
-          .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.adelanto.validacion==="auto"):(p.adelanto.validacion!=="auto"); return `
-        <div class="adelopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
-          <span class="adeldot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
-          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${ic} ${t}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>
-        </div>`; }).join("")}
-      </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Tolerancia del monto <span style="color:var(--faint);font-weight:400">(modo automático)</span></label>
-        <input class="in" id="pAdelTol" type="number" min="0" step="0.5" value="${Number(p.adelanto.tolerancia ?? 1)}" style="width:110px"/>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta si pagó al menos el adelanto menos esta diferencia. Pagar de más siempre se acepta.</span>
-      </div>
-
-      <div style="border-top:1px solid var(--border);margin:18px 0 4px"></div>
-      <div class="desc">Si no paga, esto mantiene limpia sola la columna “Esperando adelanto”.
-      Con las dos apagadas, el tablero se comporta como antes y lo manejas a mano (el botón <b>Cancelar pedido</b> del menú ⋮ siempre está).</div>
-
-      <div id="pnRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
-        <span style="font-weight:600;font-size:13px">Recordarle si no paga</span>
-        <span class="sw ${p.adelanto.nudge.activo?'on':''}" id="pnSw" style="flex:none"></span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Recordar a las</label>
-        <input class="in" id="pnHoras" type="number" min="1" step="1" value="${Number(p.adelanto.nudge.horas ?? 12)}" style="width:90px"/>
-        <span style="font-size:12.5px;color:var(--muted)">horas de creado el pedido</span>
-      </div>
-      <label style="margin-top:12px">Mensaje del recordatorio</label>
-      ${ta(p.adelanto.nudge.mensaje,"¡Hola {{nombre}}! 👋 Tu pedido de {{producto_nombre}} sigue reservado.\n\nPara despacharlo solo falta el adelanto de S/ {{adelanto}}. ¿Te ayudo con algo?",4).replace('class="in"','class="in" id="pnMsg"')}
-
-      <div id="pvRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
-        <span><span style="font-weight:600;font-size:13px">Vencer el pedido si no paga</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Pasa a “Cancelado” y sale de las columnas activas. No se borra: sigue contando para tus métricas.</div></span>
-        <span class="sw ${p.adelanto.vencimiento.activo?'on':''}" id="pvSw" style="flex:none"></span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Vencer a las</label>
-        <input class="in" id="pvHoras" type="number" min="1" step="1" value="${Number(p.adelanto.vencimiento.horas ?? 48)}" style="width:90px"/>
-        <span style="font-size:12.5px;color:var(--muted)">horas de creado el pedido</span>
-      </div>
-    </div>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Agente de logística</span></div>
-      <div class="desc">Cómo el agente IA verifica los pagos de saldos remanentes para entregar la clave de recojo.</div>
-      <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Cómo quieres que tu IA verifique los pagos para entregar la clave de recojo?</label>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="logOpts">
-        ${[["manual","👁","Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave","La IA te avisará cuando reciba un comprobante (WhatsApp o Telegram). Una vez lo apruebes, dará la clave de recojo."],
-           ["auto","⚡","Automático: si el cliente paga el saldo, no me notifiques y dale su clave automáticamente","La IA analiza el comprobante. Si el monto coincide, entrega la clave secreta sola."]]
-          .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.log.modo==="auto"):(p.log.modo!=="auto"); return `
-        <div class="logopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
-          <span class="logdot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
-          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${ic} ${t}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>
-        </div>`; }).join("")}
-      </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Tolerancia del monto <span style="color:var(--faint);font-weight:400">(modo automático)</span></label>
-        <input class="in" id="pLogTol" type="number" min="0" step="0.5" value="${Number(p.log.tolerancia ?? 0)}" style="width:110px"/>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta el pago si es al menos <b>el saldo menos esta diferencia</b>. Pagar de más siempre se acepta. Si no cuadra, va al Copiloto.</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--muted)">${IC.shield} En modo automático, si hay cualquier duda (monto, fraude o comprobante repetido) el pago cae en el <b>Copiloto</b> y te avisamos por <b>Telegram</b>.</div>
-    </div>
-
-    <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
-  // Selección sin re-render (así el radio siempre "prende"), igual que el del saldo.
-  b.querySelectorAll(".adelopt").forEach(opt=> opt.onclick=()=>{
-    p.adelanto.validacion=opt.dataset.modo;
-    b.querySelectorAll(".adelopt").forEach(o=>{
-      const on=o.dataset.modo===p.adelanto.validacion;
-      o.style.borderColor=on?"var(--ia)":"var(--border)";
-      o.style.background=on?"var(--ia-bg)":"transparent";
-      const dot=o.querySelector(".adeldot");
-      dot.style.borderColor=on?"var(--ia)":"var(--border)";
-      dot.firstElementChild.style.display=on?"block":"none";
-    });
-  });
-  $("pnRow").onclick=()=>{ p.adelanto.nudge.activo=!p.adelanto.nudge.activo; $("pnSw").classList.toggle("on",p.adelanto.nudge.activo); };
-  $("pvRow").onclick=()=>{ p.adelanto.vencimiento.activo=!p.adelanto.vencimiento.activo; $("pvSw").classList.toggle("on",p.adelanto.vencimiento.activo); };
-  // Modo de logística: click en la opción (sin re-render, así la selección
-  // siempre "prende") — actualiza el estado y el resaltado de ambas tarjetas.
-  b.querySelectorAll(".logopt").forEach(opt=> opt.onclick=()=>{
-    p.log.modo=opt.dataset.modo;
-    b.querySelectorAll(".logopt").forEach(o=>{
-      const on=o.dataset.modo===p.log.modo;
-      o.style.borderColor=on?"var(--ia)":"var(--border)";
-      o.style.background=on?"var(--ia-bg)":"transparent";
-      const dot=o.querySelector(".logdot"); if(dot){ dot.style.borderColor=on?"var(--ia)":"var(--border)"; dot.firstElementChild.style.display=on?"block":"none"; }
-    });
-  });
-  $("pedSave").onclick=async(e)=>{
-    // Los mensajes/instrucciones/embudos por etapa se quitaron de esta pantalla
-    // (peso muerto). Siguen en `p` desde la normalización, así que se conservan
-    // tal cual; acá solo se guarda lo que sí se edita: aprobación + recordatorios.
-    p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
-    p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
-    p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
-    p.adelanto.nudge.mensaje=$("pnMsg").value.trim();
-    p.adelanto.vencimiento.horas=Math.max(1,parseInt($("pvHoras").value,10)||48);
-    // El nudge sin mensaje no hace nada: mejor avisar que guardarlo mudo.
-    if(p.adelanto.nudge.activo && !p.adelanto.nudge.mensaje){ toast("El recordatorio necesita un mensaje",true); return; }
-    if(p.adelanto.vencimiento.activo && p.adelanto.nudge.activo && p.adelanto.vencimiento.horas<=p.adelanto.nudge.horas){
-      toast("El vencimiento tiene que ser DESPUÉS del recordatorio",true); return;
-    }
-    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
-    btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=p; toast("Pedidos guardado ✓");
   };
 }
 
