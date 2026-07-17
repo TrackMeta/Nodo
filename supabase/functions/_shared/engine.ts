@@ -129,6 +129,22 @@ export async function runEngine(
   await execute(db, run);
 }
 
+// Reanuda un run parqueado esperando la aprobación manual de un pago digital.
+// Lo llama order-update cuando marcas el pedido como confirmado (desde el
+// Copiloto o Telegram): recién entonces el bot entrega el producto y sigue su
+// proceso de venta normal (link + ventas extra + Sheets).
+export async function resumeAfterApproval(
+  db: SupabaseClient, channelId: string, contactId: string,
+): Promise<boolean> {
+  const run = await getActiveRun(db, contactId);
+  if (!run || run.channel_id !== channelId) return false;
+  if ((run.vars as any)?._await?.type !== "aprobacion_digital") return false;
+  const ready = await resumeRun(db, run, { type: "resume" } as EngineEvent);
+  if (!ready) return false;
+  await execute(db, run);
+  return true;
+}
+
 // ── Pasar la conversación a un humano ──────────────────────────────
 // Dos disparadores distintos, porque son dos cosas distintas:
 //   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
@@ -401,6 +417,15 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
   const aw = run.vars._await;
   run.estado = "activo";
 
+  // Aprobación de un pago digital manual: order-update reanuda el run parqueado
+  // en el nodo OCR. Se continúa por 'continuar' → el nodo Condición lee PAGO_OK
+  // (ya guardado) y sigue a la entrega normal (link + extras + Sheets).
+  if (event.type === "resume" && aw?.type === "aprobacion_digital") {
+    run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
+    delete run.vars._await;
+    run.wake_at = null;
+    return true;
+  }
   if (event.type === "resume") {
     // Nos despertó el reloj. Hay dos casos distintos:
     //   · Esperar (sin _await): simplemente seguir por 'continuar'.
@@ -556,6 +581,9 @@ async function execute(db: SupabaseClient, run: Run) {
       }
       case "ia": {
         await runIa(db, run, node, ctx);
+        // El nodo IA puede PARQUEAR el run (pago digital en validación manual):
+        // deja estado "esperando" para que la entrega ocurra recién al aprobar.
+        if (run.estado === "esperando") { await saveRun(db, run); return; }
         break;
       }
       case "evento_fb": {
@@ -1178,6 +1206,31 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
   try {
     const ship: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
+
+    // Pago digital manual: el pedido YA se creó como 'pendiente' al parquear el
+    // pago; ahora que se aprobó y la entrega llegó a este nodo, se ACTUALIZA en
+    // vez de insertar otro (evita el pedido duplicado). Solo aplica en ese caso
+    // (flag _order_precreado): el resto de flujos insertan como siempre.
+    if (run.vars._order_precreado && run.vars._order_id) {
+      const base = parseMonto(a.monto ?? a.amount, ctx) ?? 0;
+      const { data: cur } = await db.from("orders").select("shipping").eq("id", run.vars._order_id).maybeSingle();
+      const merged = { ...((cur as any)?.shipping ?? {}), ...ship, digital_pendiente: false };
+      const patch: Record<string, unknown> = {
+        estado: a.estado || "confirmada", shipping: merged, updated_at: new Date().toISOString(),
+      };
+      if (base) patch.amount = +base.toFixed(2);
+      if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
+        patch.confirmed_at = new Date().toISOString();
+      }
+      await db.from("orders").update(patch).eq("id", run.vars._order_id);
+      run.vars._order_precreado = false;
+      run.vars.pedido_id = run.vars._order_id;
+      ctx.pedido_id = run.vars._order_id;
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido confirmado (pago manual aprobado)");
+      await syncPedidoSheet(db, run.vars._order_id as string);
+      return;
+    }
+
     const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
 
     // El envío que cobras se SUMA al total del pedido (decisión de Rodrigo).
@@ -2229,6 +2282,28 @@ const PERFIL_POR_OP: Record<string, string> = {
   generar_texto: "ventas", analizar_imagen: "ocr", extraer: "extraccion",
 };
 
+// Modo de validación del pago DIGITAL, resolviendo la precedencia acordada con
+// Rodrigo: override del producto (config.validacion_pago) > default del canal
+// (pedidos_config.digital.validacion) > "auto" (comportamiento histórico).
+// Devuelve también si el producto es digital, para no tocar el camino físico.
+async function digitalPagoModo(db: SupabaseClient, run: Run, info: any): Promise<{ manual: boolean; digital: boolean }> {
+  const canal = info?.pedidos?.digital?.validacion === "manual" ? "manual" : "auto";
+  let tipo: string | null = null;
+  let override: string | null = null;
+  try {
+    const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+    const pid = (c as any)?.product_id;
+    if (pid) {
+      const { data: p } = await db.from("products").select("tipo, config").eq("id", pid).maybeSingle();
+      tipo = (p as any)?.tipo ?? null;
+      const v = (p as any)?.config?.validacion_pago;
+      if (v === "auto" || v === "manual") override = v;
+    }
+  } catch (_) { /* sin producto → usa el default del canal */ }
+  const efectivo = override ?? canal;
+  return { manual: efectivo === "manual", digital: tipo !== "fisico" };
+}
+
 async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const cfg = node.config ?? {};
   const op = cfg.operacion ?? "generar_texto";
@@ -2492,6 +2567,45 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       } catch (_) { /* no trajo JSON: el flujo sigue igual con el texto crudo */ }
     }
+    // Pago digital en modo MANUAL: si el comprobante es válido pero el canal (o
+    // este producto) pide aprobación a mano, NO se entrega todavía. Se crea el
+    // pedido como 'pendiente' con la foto, se avisa (Copiloto + Telegram) y el
+    // run queda PARQUEADO en este nodo. Al aprobar, order-update reanuda el run y
+    // la entrega sigue su curso normal (link + extras + Sheets). Vive acá y no en
+    // el flujo, para respetar tu configuración en el MOMENTO del pago.
+    if (op === "analizar_imagen" && !run.vars._pago_manual_pendiente
+        && /PAGO_OK/i.test(String(result ?? ""))) {
+      const modo = await digitalPagoModo(db, run, info);
+      if (modo.digital && modo.manual) {
+        const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
+        const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
+        const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
+        try {
+          const { data: ord } = await db.from("orders").insert({
+            channel_id: run.channel_id, contact_id: run.contact_id,
+            product_id: (cc as any)?.product_id ?? null,
+            amount, estado: "pendiente",
+            shipping: {
+              digital_pendiente: true, digital_comprobante: url,
+              digital_monto_leido: run.vars.pago_monto ?? null,
+              digital_operacion: run.vars.pago_operacion ?? null,
+              digital_ok_ia: true,
+            },
+          }).select("id").single();
+          if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
+        } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
+        run.vars._pago_manual_pendiente = true;
+        const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
+        await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
+          `💳 <b>Pago digital por validar</b>\n${quien} ${amount ? "pagó S/ " + amount : "envió un comprobante"}. Revísalo y apruébalo en el Copiloto.`).catch(() => {});
+        await deliverMessage(db, run.channel_id, run.contact_id, "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Pago digital en revisión (validación manual)").catch(() => {});
+        run.vars._await = { type: "aprobacion_digital", node_id: node.id };
+        run.estado = "esperando";
+        return; // parqueado: la entrega ocurre recién al aprobar
+      }
+    }
+
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");
     if (enviar && result) await emitIaText(db, run, String(result), ctx);

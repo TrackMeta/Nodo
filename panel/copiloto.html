@@ -31,6 +31,7 @@
   .pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid transparent}
   .pill.adel{background:var(--amber-bg);color:var(--amber)}
   .pill.saldo{background:var(--brand-bg);color:var(--brand)}
+  .pill.dig{background:var(--violet-bg,#1e1633);color:var(--violet,#8b5cf6)}
   .pill.desp{background:var(--green-bg);color:var(--green)}
   .pill.camino{background:var(--surface-2);color:var(--muted)}
   .acard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}
@@ -90,6 +91,8 @@ async function boot(){
 // día (aprobar un pago, volver de la agencia, avisar que llegó), no un estado
 // de base de datos.
 const ETAPAS=[
+  { id:"digital", estados:["pendiente"], titulo:"Pago digital por validar",
+    sub:"El cliente pagó un producto digital. La IA leyó el comprobante; al aprobar, el bot le entrega al instante y sigue vendiendo." },
   { id:"adelanto", estados:["esperando_adelanto"], titulo:"Adelanto por validar",
     sub:"El cliente pagó el adelanto. La IA ya lo leyó; falta tu visto bueno." },
   { id:"saldo", estados:["en_agencia"], titulo:"Saldo por validar",
@@ -139,7 +142,10 @@ function render(){
   }
   box.innerHTML="";
   ETAPAS.forEach(et=>{
-    const items=st.list.filter(o=>et.estados.includes(o.estado));
+    let items=st.list.filter(o=>et.estados.includes(o.estado));
+    // "pendiente" solo cuenta como pago digital por validar si trae la marca
+    // (lo dejó el motor al parquear el pago). Otros 'pendiente' no se muestran.
+    if(et.id==="digital") items=items.filter(o=>(o.shipping||{}).digital_pendiente);
     if(!items.length) return;
     const h=document.createElement("div"); h.className="sect";
     h.textContent=`${et.titulo} · ${items.length}`;
@@ -157,11 +163,20 @@ function card(o,et){
   const el=document.createElement("div"); el.className="acard";
   const img = et.id==="adelanto" ? (s.adelanto_comprobante || st.imgs[o.contact_id])
             : et.id==="saldo"    ? (s.saldo_comprobante   || st.imgs[o.contact_id])
+            : et.id==="digital"  ? (s.digital_comprobante  || st.imgs[o.contact_id])
             : null;
-  const monto = et.id==="adelanto" ? s.adelanto : et.id==="saldo" ? s.saldo : o.amount;
+  const monto = et.id==="adelanto" ? s.adelanto : et.id==="saldo" ? s.saldo
+              : et.id==="digital" ? (s.digital_monto_leido ?? o.amount) : o.amount;
 
   // Veredicto del OCR: es lo que te ahorra abrir la foto y hacer cuentas.
   let iaBox="";
+  if(et.id==="digital" && (s.digital_ok_ia!=null || s.digital_monto_leido!=null)){
+    const ok=s.digital_ok_ia===true;
+    iaBox=`<div class="ia ${ok?'ok':'duda'}">${icon("robot")}<div>${ok?"La IA lo leyó y cuadra":"La IA no lo dio por bueno"}${
+      s.digital_monto_leido!=null?` · leyó <b>${sym(o)} ${esc(s.digital_monto_leido)}</b>`:""}${
+      s.digital_operacion?` · op <b>${esc(s.digital_operacion)}</b>`:""}${
+      s.digital_revisar?`<br>${esc(s.digital_revisar)}`:""}</div></div>`;
+  }
   if(et.id==="adelanto" && (s.adelanto_revisar || s.adelanto_monto_leido!=null)){
     const ok=s.adelanto_ok_ia===true;
     iaBox=`<div class="ia ${ok?'ok':'duda'}">${icon("robot")}<div>${ok?"La IA lo leyó y cuadra":"La IA no lo dio por bueno"}${
@@ -195,14 +210,14 @@ function card(o,et){
         :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <span class="pill ${et.id==="adelanto"?"adel":et.id==="saldo"?"saldo":et.id==="despachar"?"desp":"camino"}">${esc(et.titulo)}</span>
+        <span class="pill ${et.id==="digital"?"dig":et.id==="adelanto"?"adel":et.id==="saldo"?"saldo":et.id==="despachar"?"desp":"camino"}">${esc(et.titulo)}</span>
         <span style="font-weight:700;font-size:15px">${p.emoji?esc(p.emoji)+" ":""}${esc(c.nombre||"Cliente")}</span>
         <span style="font-size:12px;color:var(--faint)">${esc(c.wa_id||"")}</span>
       </div>
       <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
         <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="saldo"?"Saldo a cobrar":"Total"}</div>
           <div class="amt">${monto!=null&&monto!==""?`${sym(o)} ${esc(monto)}`:'<span style="color:var(--faint);font-size:14px;font-weight:600">—</span>'}</div></div>
-        ${et.id!=="despachar"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
+        ${et.id!=="despachar"&&et.id!=="digital"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
         ${s.guia?`<div><div class="klbl">Guía</div><div style="font-weight:700;padding-top:4px">${esc(s.guia)}</div></div>`:""}
         ${s.clave_recojo?`<div><div class="klbl">Clave de recojo</div><div style="font-weight:800;padding-top:4px;color:var(--green)">${esc(s.clave_recojo)}</div></div>`:""}
       </div>
@@ -225,10 +240,20 @@ function card(o,et){
 // Un botón principal grande (el que tocas el 90% de las veces) y el resto
 // chicos al costado.
 function botones(o,et){
+  const chat=`index.html?c=${encodeURIComponent(o.contact_id||"")}`;
+  if(et.id==="digital") return {
+    html:`<button class="btn main" data-a="ok">${icon("check")} Aprobar y entregar</button>
+          <button class="btn danger" data-a="no">Rechazar</button>
+          <a class="btn" href="${chat}">Abrir el chat</a>`,
+    wire:(el,o)=>{
+      el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"confirmada","Aprobar el pago digital",
+        "El bot le entrega el producto al instante y sigue con su proceso de venta.");
+      el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"digital");
+    }};
   if(et.id==="adelanto") return {
     html:`<button class="btn main" data-a="ok">${icon("check")} Aprobar y avisarle</button>
           <button class="btn danger" data-a="no">Rechazar</button>
-          <a class="btn" href="index.html">Abrir el chat</a>`,
+          <a class="btn" href="${chat}">Abrir el chat</a>`,
     wire:(el,o)=>{
       el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"adelanto_validado","Aprobar el adelanto",
         "El pedido pasa a listo para despachar y el bot le confirma al cliente.");
@@ -272,13 +297,18 @@ async function aprobar(o,nuevo,titulo,detalle){
 
 async function rechazar(o,tipo){
   const c=o.contact||{};
+  const esDig=tipo==="digital";
   if(!await confirmDialog({ title:"Rechazar el comprobante",
-    message:`${c.nombre||"Cliente"} — se marca el ${tipo} como no válido. El pedido queda como está; escribile para pedirle un pago correcto.`,
+    message:`${c.nombre||"Cliente"} — se marca el ${esDig?"pago":tipo} como no válido.${esDig?" El bot queda en pausa en ese chat para que tú lo atiendas y le pidas un pago correcto.":" El pedido queda como está; escribile para pedirle un pago correcto."}`,
     confirmText:"Rechazar", danger:true })) return;
   const patch = tipo==="adelanto" ? { adelanto_rechazado_at:new Date().toISOString(), adelanto_revisar:"Lo rechazaste tú" }
-                                  : { saldo_rechazado_at:new Date().toISOString(), saldo_revisar:"Lo rechazaste tú" };
+              : tipo==="saldo"    ? { saldo_rechazado_at:new Date().toISOString(), saldo_revisar:"Lo rechazaste tú" }
+              : { digital_rechazado_at:new Date().toISOString(), digital_revisar:"Lo rechazaste tú", digital_pendiente:false };
   const r=await updateOrder({ order_id:o.id, shipping:patch });
-  if(r){ toast("Marcado como rechazado"); await load(); }
+  // Digital rechazado: el run quedó parqueado esperando aprobación → se pausa el
+  // bot para que un humano tome ese chat (evita dejarlo colgado sin atención).
+  if(r && esDig){ try{ await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); }catch(_){} }
+  if(r){ toast(esDig?"Rechazado · el bot quedó en pausa en ese chat":"Marcado como rechazado"); await load(); }
 }
 
 // El momento más móvil de todos: estás en la agencia con la boleta en la mano.

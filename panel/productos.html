@@ -475,8 +475,18 @@ function renderEntrega(){
         <label>Link o archivo de entrega</label>
         <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
         <div style="font-size:11px;color:var(--faint);margin-top:7px">Se entrega al confirmar el pago. Disponible en tus flujos como <b style="color:var(--brand)">{{link_entrega}}</b>. Si tienes varias opciones con distinta entrega, cada una lleva su propio link en <a href="#" id="goOpc3" style="color:var(--brand)">Opciones de compra →</a>.</div>
+      </div>
+      <div class="card">
+        <h4 style="display:flex;align-items:center;gap:7px">${icon("shield")} Validación del pago</h4>
+        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega este producto tras el pago. Por defecto sigue lo que elegiste para todo el canal en <a href="pagos.html" style="color:var(--brand)">Validación de pagos</a>; acá puedes cambiarlo <b>solo para este producto</b>.</div>
+        <select class="in" id="pValPago" style="max-width:320px">
+          <option value="" ${!c.validacion_pago?"selected":""}>Usar el default del canal</option>
+          <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>⚡ Automático — entrega al toque si el monto cuadra</option>
+          <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>👁 Manual — me avisa para aprobarlo yo</option>
+        </select>
       </div>`;
     const lk=$("pLink"); if(lk) lk.onchange=(e)=>prodSetC("link_entrega", e.target.value.trim());
+    const vp=$("pValPago"); if(vp) vp.onchange=(e)=>prodSetC("validacion_pago", e.target.value||undefined);
     const g=$("goOpc3"); if(g) g.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
     return;
   }

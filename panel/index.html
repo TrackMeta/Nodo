@@ -357,6 +357,16 @@ async function boot() {
   // Cargas independientes en PARALELO (antes eran 5 en serie → arranque lento).
   await Promise.all([loadTestFlows(), loadFilters(), loadQuickReplies(), loadInboxFlows(), loadConversations()]);
   subscribeRealtime();
+  // Deep-link: ?c=<contact_id> abre ese chat directo (botón "Abrir chat" de
+  // Compras / Copiloto / Pedidos). Se limpia la URL para no reabrirlo al recargar.
+  try {
+    const cid = new URLSearchParams(location.search).get("c");
+    if (cid) {
+      const { data: c } = await supa.from("contacts")
+        .select("id,nombre,wa_id,bot_activo,stage").eq("id", cid).maybeSingle();
+      if (c) { openChat(c); history.replaceState(null, "", location.pathname); }
+    }
+  } catch (_) { /* sin deep-link */ }
 }
 async function loadInboxFlows(){
   const { data }=await supa.from("flows").select("id,nombre,estado,kind").eq("channel_id",state.channelId).eq("kind","flow").order("nombre");

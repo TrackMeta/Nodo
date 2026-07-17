@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval } from "../_shared/engine.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -62,6 +62,20 @@ Deno.serve(async (req) => {
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);
 
+  // Pago digital manual aprobado: el pedido pasaba a 'confirmada' y su run
+  // quedó parqueado esperando este visto bueno. Se reanuda para que el bot
+  // entregue el producto y siga vendiendo. Solo cuando era un pago digital
+  // pendiente (marca en shipping) → no afecta los pedidos físicos.
+  let resumed = false;
+  if (newEstado === "confirmada" && ((order as any).shipping || {}).digital_pendiente
+      && (order as any).contact_id) {
+    try {
+      resumed = await resumeAfterApproval(db, (order as any).channel_id, (order as any).contact_id);
+    } catch (e) {
+      console.error("[order-update] resume digital:", (e as any)?.message ?? e);
+    }
+  }
+
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
   let flowStarted: string | null = null;
   if (newEstado && (order as any).contact_id) {
@@ -90,5 +104,5 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted });
+  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed });
 });
