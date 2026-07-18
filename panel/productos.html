@@ -1412,6 +1412,7 @@ async function generarFlujoVenta(){
         const nOcrX=await N("ia",`Validar pago del extra ${i+1}`,{
           operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false,
           guardar_en:`pago_extra_${i+1}`, monto_esperado:String(precio),
+          _extra_label:(info?info.label:`Extra ${i+1}`),
           prompt:`Analiza la imagen. Si el pago es VÁLIDO y por S/ ${precio}, responde exactamente PAGO_OK. Si no, responde PAGO_NO y el motivo en una frase.`,
         },false,940,y-90);
         const nOkX=await N("condicion",`¿Pago OK? (extra ${i+1})`,{

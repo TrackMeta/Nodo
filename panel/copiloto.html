@@ -32,6 +32,7 @@
   .pill.adel{background:var(--amber-bg);color:var(--amber)}
   .pill.saldo{background:var(--brand-bg);color:var(--brand)}
   .pill.dig{background:var(--violet-bg,#1e1633);color:var(--violet,#8b5cf6)}
+  .pill.ext{background:var(--green-bg);color:var(--green)}
   .pill.desp{background:var(--green-bg);color:var(--green)}
   .pill.camino{background:var(--surface-2);color:var(--muted)}
   .acard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}
@@ -93,6 +94,8 @@ async function boot(){
 const ETAPAS=[
   { id:"digital", estados:["pendiente"], titulo:"Pago digital por validar",
     sub:"El cliente pagó un producto digital. La IA leyó el comprobante; al aprobar, el bot le entrega al instante y sigue vendiendo." },
+  { id:"extra", estados:[], titulo:"Pago de venta extra por validar",
+    sub:"El cliente sumó un extra a su compra. Al aprobar, el bot se lo entrega y continúa." },
   { id:"adelanto", estados:["esperando_adelanto"], titulo:"Adelanto por validar",
     sub:"El cliente pagó el adelanto. La IA ya lo leyó; falta tu visto bueno." },
   { id:"saldo", estados:["en_agencia"], titulo:"Saldo por validar",
@@ -111,6 +114,14 @@ async function load(){
   if(error){ ({ data }=await supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
     .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true})); }
   st.list=data||[];
+
+  // Pedidos con un pago de VENTA EXTRA pendiente de aprobar: ya están
+  // 'confirmada' (fuera de TODOS), así que se traen aparte y se suman.
+  try{
+    const { data:ex }=await supa.from("orders").select(sel)
+      .eq("channel_id",st.channelId).eq("shipping->>extra_pendiente","true").order("created_at",{ascending:true});
+    if(ex&&ex.length){ const ids=new Set(st.list.map(o=>o.id)); ex.forEach(o=>{ if(!ids.has(o.id)) st.list.push(o); }); }
+  }catch(_){ /* sin la marca aún */ }
 
   const ids=[...new Set(st.list.map(o=>o.contact_id).filter(Boolean))];
   st.imgs={}; st.dudas={};
@@ -146,6 +157,7 @@ function render(){
     // "pendiente" solo cuenta como pago digital por validar si trae la marca
     // (lo dejó el motor al parquear el pago). Otros 'pendiente' no se muestran.
     if(et.id==="digital") items=items.filter(o=>(o.shipping||{}).digital_pendiente);
+    if(et.id==="extra")   items=st.list.filter(o=>(o.shipping||{}).extra_pendiente);
     if(!items.length) return;
     const h=document.createElement("div"); h.className="sect";
     h.textContent=`${et.titulo} · ${items.length}`;
@@ -164,12 +176,20 @@ function card(o,et){
   const img = et.id==="adelanto" ? (s.adelanto_comprobante || st.imgs[o.contact_id])
             : et.id==="saldo"    ? (s.saldo_comprobante   || st.imgs[o.contact_id])
             : et.id==="digital"  ? (s.digital_comprobante  || st.imgs[o.contact_id])
+            : et.id==="extra"    ? (s.extra_comprobante    || st.imgs[o.contact_id])
             : null;
   const monto = et.id==="adelanto" ? s.adelanto : et.id==="saldo" ? s.saldo
-              : et.id==="digital" ? (s.digital_monto_leido ?? o.amount) : o.amount;
+              : et.id==="digital" ? (s.digital_monto_leido ?? o.amount)
+              : et.id==="extra" ? (s.extra_monto_leido ?? "") : o.amount;
 
   // Veredicto del OCR: es lo que te ahorra abrir la foto y hacer cuentas.
   let iaBox="";
+  if(et.id==="extra" && (s.extra_ok_ia!=null || s.extra_monto_leido!=null)){
+    const ok=s.extra_ok_ia===true;
+    iaBox=`<div class="ia ${ok?'ok':'duda'}">${icon("robot")}<div>${ok?"La IA lo leyó y cuadra":"La IA no lo dio por bueno"}${
+      s.extra_monto_leido!=null?` · leyó <b>${sym(o)} ${esc(s.extra_monto_leido)}</b>`:""}${
+      s.extra_operacion?` · op <b>${esc(s.extra_operacion)}</b>`:""}</div></div>`;
+  }
   if(et.id==="digital" && (s.digital_ok_ia!=null || s.digital_monto_leido!=null)){
     const ok=s.digital_ok_ia===true;
     iaBox=`<div class="ia ${ok?'ok':'duda'}">${icon("robot")}<div>${ok?"La IA lo leyó y cuadra":"La IA no lo dio por bueno"}${
@@ -210,12 +230,12 @@ function card(o,et){
         :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <span class="pill ${et.id==="digital"?"dig":et.id==="adelanto"?"adel":et.id==="saldo"?"saldo":et.id==="despachar"?"desp":"camino"}">${esc(et.titulo)}</span>
+        <span class="pill ${et.id==="digital"?"dig":et.id==="extra"?"ext":et.id==="adelanto"?"adel":et.id==="saldo"?"saldo":et.id==="despachar"?"desp":"camino"}">${esc(et.titulo)}</span>
         <span style="font-weight:700;font-size:15px">${p.emoji?esc(p.emoji)+" ":""}${esc(c.nombre||"Cliente")}</span>
         <span style="font-size:12px;color:var(--faint)">${esc(c.wa_id||"")}</span>
       </div>
       <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
-        <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="saldo"?"Saldo a cobrar":"Total"}</div>
+        <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="saldo"?"Saldo a cobrar":et.id==="extra"?esc(s.extra_label||"Venta extra"):"Total"}</div>
           <div class="amt">${monto!=null&&monto!==""?`${sym(o)} ${esc(monto)}`:'<span style="color:var(--faint);font-size:14px;font-weight:600">—</span>'}</div></div>
         ${et.id!=="despachar"&&et.id!=="digital"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
         ${s.guia?`<div><div class="klbl">Guía</div><div style="font-weight:700;padding-top:4px">${esc(s.guia)}</div></div>`:""}
@@ -249,6 +269,14 @@ function botones(o,et){
       el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"confirmada","Aprobar el pago digital",
         "El bot le entrega el producto al instante y sigue con su proceso de venta.");
       el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"digital");
+    }};
+  if(et.id==="extra") return {
+    html:`<button class="btn main" data-a="ok">${icon("check")} Aprobar y entregar</button>
+          <button class="btn danger" data-a="no">Rechazar</button>
+          <a class="btn" href="${chat}">Abrir el chat</a>`,
+    wire:(el,o)=>{
+      el.querySelector('[data-a="ok"]').onclick=()=>aprobarExtra(o);
+      el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"extra");
     }};
   if(et.id==="adelanto") return {
     html:`<button class="btn main" data-a="ok">${icon("check")} Aprobar y avisarle</button>
@@ -295,20 +323,33 @@ async function aprobar(o,nuevo,titulo,detalle){
   if(r){ toast(r.flow_started?"Listo ✓ · el bot le está escribiendo":"Listo ✓"); await load(); }
 }
 
+// Aprobar la venta extra: el pedido ya está confirmado, no cambia de estado.
+// `resume:true` hace que order-update reanude el run parqueado → el bot entrega
+// el extra y sigue (siguiente extra o fin).
+async function aprobarExtra(o){
+  const c=o.contact||{};
+  if(!await confirmDialog({ title:"Aprobar la venta extra",
+    message:`${c.nombre||"Cliente"} — el bot le entrega el extra al instante y continúa.`, confirmText:"Confirmar" })) return;
+  const r=await updateOrder({ order_id:o.id, resume:true,
+    shipping:{ extra_pendiente:false, extra_aprobado_at:new Date().toISOString() } });
+  if(r){ toast(r.resumed?"Extra entregado · el bot le está escribiendo":"Aprobado"); await load(); }
+}
+
 async function rechazar(o,tipo){
   const c=o.contact||{};
-  const esDig=tipo==="digital";
+  // El pago digital y el de extra dejan el run parqueado → al rechazar se pausa
+  // el bot para que un humano tome ese chat (evita dejarlo colgado sin atención).
+  const pausa=tipo==="digital"||tipo==="extra";
   if(!await confirmDialog({ title:"Rechazar el comprobante",
-    message:`${c.nombre||"Cliente"} — se marca el ${esDig?"pago":tipo} como no válido.${esDig?" El bot queda en pausa en ese chat para que tú lo atiendas y le pidas un pago correcto.":" El pedido queda como está; escribile para pedirle un pago correcto."}`,
+    message:`${c.nombre||"Cliente"} — se marca el ${pausa?"pago":tipo} como no válido.${pausa?" El bot queda en pausa en ese chat para que tú lo atiendas y le pidas un pago correcto.":" El pedido queda como está; escribile para pedirle un pago correcto."}`,
     confirmText:"Rechazar", danger:true })) return;
   const patch = tipo==="adelanto" ? { adelanto_rechazado_at:new Date().toISOString(), adelanto_revisar:"Lo rechazaste tú" }
               : tipo==="saldo"    ? { saldo_rechazado_at:new Date().toISOString(), saldo_revisar:"Lo rechazaste tú" }
+              : tipo==="extra"    ? { extra_rechazado_at:new Date().toISOString(), extra_revisar:"Lo rechazaste tú", extra_pendiente:false }
               : { digital_rechazado_at:new Date().toISOString(), digital_revisar:"Lo rechazaste tú", digital_pendiente:false };
   const r=await updateOrder({ order_id:o.id, shipping:patch });
-  // Digital rechazado: el run quedó parqueado esperando aprobación → se pausa el
-  // bot para que un humano tome ese chat (evita dejarlo colgado sin atención).
-  if(r && esDig){ try{ await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); }catch(_){} }
-  if(r){ toast(esDig?"Rechazado · el bot quedó en pausa en ese chat":"Marcado como rechazado"); await load(); }
+  if(r && pausa){ try{ await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); }catch(_){} }
+  if(r){ toast(pausa?"Rechazado · el bot quedó en pausa en ese chat":"Marcado como rechazado"); await load(); }
 }
 
 // El momento más móvil de todos: estás en la agencia con la boleta en la mano.

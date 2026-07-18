@@ -423,6 +423,9 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
   if (event.type === "resume" && aw?.type === "aprobacion_digital") {
     run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
     delete run.vars._await;
+    // Se libera el flag del extra para que el SIGUIENTE extra de la cadena también
+    // pueda parquearse a tu aprobación (el principal solo ocurre una vez).
+    delete run.vars._extra_manual_pendiente;
     run.wake_at = null;
     return true;
   }
@@ -2282,6 +2285,29 @@ const PERFIL_POR_OP: Record<string, string> = {
   generar_texto: "ventas", analizar_imagen: "ocr", extraer: "extraccion",
 };
 
+// ── Anti-reúso determinista de comprobantes ────────────────────────
+// El "no aceptes dos veces el mismo comprobante" deja de ser una instrucción a
+// la IA (blanda) y pasa a ser un chequeo por código: cada nº de operación válido
+// se registra una vez por canal (tabla payment_operations, índice único). Cubre
+// pago principal digital y ventas extra; el índice único aguanta hasta carreras.
+function normOperacion(op: string): string {
+  return String(op ?? "").toUpperCase().replace(/\s+/g, "").trim();
+}
+async function operacionYaUsada(db: SupabaseClient, channelId: string, op: string): Promise<boolean> {
+  const n = normOperacion(op);
+  if (n.length < 4) return false; // muy corto/ilegible → no bloquea (lo juzga la IA)
+  const { data } = await db.from("payment_operations").select("id")
+    .eq("channel_id", channelId).eq("operacion", n).maybeSingle();
+  return !!data;
+}
+async function registrarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<void> {
+  const n = normOperacion(op);
+  if (n.length < 4) return;
+  await db.from("payment_operations").insert({
+    channel_id: channelId, operacion: n, order_id: orderId, contexto,
+  }).then(() => {}, () => { /* choca con el único = ya estaba: ok */ });
+}
+
 // Modo de validación del pago DIGITAL, resolviendo la precedencia acordada con
 // Rodrigo: override del producto (config.validacion_pago) > default del canal
 // (pedidos_config.digital.validacion) > "auto" (comportamiento histórico).
@@ -2567,42 +2593,86 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       } catch (_) { /* no trajo JSON: el flujo sigue igual con el texto crudo */ }
     }
-    // Pago digital en modo MANUAL: si el comprobante es válido pero el canal (o
-    // este producto) pide aprobación a mano, NO se entrega todavía. Se crea el
-    // pedido como 'pendiente' con la foto, se avisa (Copiloto + Telegram) y el
-    // run queda PARQUEADO en este nodo. Al aprobar, order-update reanuda el run y
-    // la entrega sigue su curso normal (link + extras + Sheets). Vive acá y no en
-    // el flujo, para respetar tu configuración en el MOMENTO del pago.
-    if (op === "analizar_imagen" && !run.vars._pago_manual_pendiente
-        && /PAGO_OK/i.test(String(result ?? ""))) {
-      const modo = await digitalPagoModo(db, run, info);
-      if (modo.digital && modo.manual) {
-        const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
-        const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
-        const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
-        try {
-          const { data: ord } = await db.from("orders").insert({
-            channel_id: run.channel_id, contact_id: run.contact_id,
-            product_id: (cc as any)?.product_id ?? null,
-            amount, estado: "pendiente",
-            shipping: {
-              digital_pendiente: true, digital_comprobante: url,
-              digital_monto_leido: run.vars.pago_monto ?? null,
-              digital_operacion: run.vars.pago_operacion ?? null,
-              digital_ok_ia: true,
-            },
-          }).select("id").single();
-          if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
-        } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
-        run.vars._pago_manual_pendiente = true;
-        const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
-        await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
-          `💳 <b>Pago digital por validar</b>\n${quien} ${amount ? "pagó S/ " + amount : "envió un comprobante"}. Revísalo y apruébalo en el Copiloto.`).catch(() => {});
-        await deliverMessage(db, run.channel_id, run.contact_id, "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
-        await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Pago digital en revisión (validación manual)").catch(() => {});
-        run.vars._await = { type: "aprobacion_digital", node_id: node.id };
-        run.estado = "esperando";
-        return; // parqueado: la entrega ocurre recién al aprobar
+    // ── Anti-reúso determinista + validación manual (pagos digitales) ──
+    // Cuando el OCR da el pago por VÁLIDO (PAGO_OK), dos cosas antes de entregar:
+    //  (1) Anti-reúso por código: si el nº de operación ya se usó en este canal,
+    //      se rechaza solo (sin depender de que la IA lo recuerde).
+    //  (2) Validación MANUAL: si el canal/producto lo pide, no se entrega aún; se
+    //      avisa (Copiloto + Telegram) y el run queda parqueado hasta tu visto
+    //      bueno. Distingue el pago PRINCIPAL (crea pedido pendiente) del de una
+    //      VENTA EXTRA (marca el pedido ya existente, sin duplicarlo).
+    if (op === "analizar_imagen" && /PAGO_OK/i.test(String(result ?? ""))) {
+      const esExtra = String(cfg.guardar_en ?? "").startsWith("pago_extra");
+      const opNum = String(run.vars.pago_operacion ?? "").trim();
+
+      if (opNum && await operacionYaUsada(db, run.channel_id, opNum)) {
+        // Reúso → convertir el veredicto en rechazo: la Condición del flujo
+        // manda a "reintentar pago". No se registra (ya estaba) ni se parquea.
+        const aviso = `PAGO_NO Este comprobante ya se usó antes (operación ${opNum}). Envíame uno nuevo, por favor.`;
+        if (cfg.guardar_en) {
+          run.vars[cfg.guardar_en] = aviso;
+          await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, aviso);
+        }
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🚫 Comprobante reusado", `operación ${opNum}`).catch(() => {});
+      } else {
+        if (opNum) {
+          await registrarOperacion(db, run.channel_id, opNum, (run.vars._order_id as string) ?? null, esExtra ? "extra" : "digital").catch(() => {});
+        }
+        const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
+        if (!yaParque) {
+          const modo = await digitalPagoModo(db, run, info);
+          if (modo.digital && modo.manual) {
+            const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
+            const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
+            const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
+            if (esExtra) {
+              // El pedido principal YA existe: se marca para aprobar el extra,
+              // NO se crea otro pedido (el extra se suma como bump al aprobar).
+              const oid = run.vars._order_id as string | undefined;
+              const montoX = Number(cfg.monto_esperado ? resolve(String(cfg.monto_esperado), ctx) : 0) || Number(run.vars.pago_monto) || 0;
+              if (oid) {
+                const { data: cur } = await db.from("orders").select("shipping").eq("id", oid).maybeSingle();
+                await db.from("orders").update({
+                  shipping: {
+                    ...((cur as any)?.shipping ?? {}),
+                    extra_pendiente: true, extra_comprobante: url,
+                    extra_monto_leido: run.vars.pago_monto ?? montoX,
+                    extra_operacion: run.vars.pago_operacion ?? null,
+                    extra_ok_ia: true, extra_label: cfg._extra_label ?? "Venta extra",
+                  },
+                  updated_at: new Date().toISOString(),
+                }).eq("id", oid);
+              }
+              run.vars._extra_manual_pendiente = true;
+              await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
+                `🎁 <b>Pago de venta extra por validar</b>\n${quien} ${montoX ? "pagó S/ " + montoX : "envió un comprobante"} por ${cfg._extra_label ?? "un extra"}. Apruébalo en el Copiloto.`).catch(() => {});
+            } else {
+              const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
+              try {
+                const { data: ord } = await db.from("orders").insert({
+                  channel_id: run.channel_id, contact_id: run.contact_id,
+                  product_id: (cc as any)?.product_id ?? null,
+                  amount, estado: "pendiente",
+                  shipping: {
+                    digital_pendiente: true, digital_comprobante: url,
+                    digital_monto_leido: run.vars.pago_monto ?? null,
+                    digital_operacion: run.vars.pago_operacion ?? null,
+                    digital_ok_ia: true,
+                  },
+                }).select("id").single();
+                if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
+              } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
+              run.vars._pago_manual_pendiente = true;
+              await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
+                `💳 <b>Pago digital por validar</b>\n${quien} ${amount ? "pagó S/ " + amount : "envió un comprobante"}. Revísalo y apruébalo en el Copiloto.`).catch(() => {});
+            }
+            await deliverMessage(db, run.channel_id, run.contact_id, "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
+            await logEvent(db, run.channel_id, run.contact_id, "nota", esExtra ? "🎁 Pago de extra en revisión (validación manual)" : "💳 Pago digital en revisión (validación manual)").catch(() => {});
+            run.vars._await = { type: "aprobacion_digital", node_id: node.id };
+            run.estado = "esperando";
+            return; // parqueado: la entrega ocurre recién al aprobar
+          }
+        }
       }
     }
 

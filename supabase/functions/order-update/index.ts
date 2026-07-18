@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     if (!member) return json({ error: "not_member" }, 403);
   }
 
-  let body: { order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number };
+  let body: { order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number; resume?: boolean };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
 
@@ -62,17 +62,21 @@ Deno.serve(async (req) => {
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);
 
-  // Pago digital manual aprobado: el pedido pasaba a 'confirmada' y su run
-  // quedó parqueado esperando este visto bueno. Se reanuda para que el bot
-  // entregue el producto y siga vendiendo. Solo cuando era un pago digital
-  // pendiente (marca en shipping) → no afecta los pedidos físicos.
+  // Reanudar un run parqueado por validación manual:
+  //  · pago digital PRINCIPAL → el pedido pasa a 'confirmada' (marca
+  //    digital_pendiente); se reanuda para entregar el producto.
+  //  · pago de VENTA EXTRA → el pedido ya está confirmado y no cambia de estado;
+  //    el Copiloto manda `resume:true` (y limpia extra_pendiente) para reanudar
+  //    y entregar el extra.
+  // Solo aplica a estos casos → no afecta los pedidos físicos.
   let resumed = false;
-  if (newEstado === "confirmada" && ((order as any).shipping || {}).digital_pendiente
-      && (order as any).contact_id) {
+  const wantResume = !!body.resume
+    || (newEstado === "confirmada" && ((order as any).shipping || {}).digital_pendiente);
+  if (wantResume && (order as any).contact_id) {
     try {
       resumed = await resumeAfterApproval(db, (order as any).channel_id, (order as any).contact_id);
     } catch (e) {
-      console.error("[order-update] resume digital:", (e as any)?.message ?? e);
+      console.error("[order-update] resume:", (e as any)?.message ?? e);
     }
   }
 
