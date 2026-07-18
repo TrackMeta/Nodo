@@ -131,7 +131,6 @@ const NAV_GROUPS = [
     { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
     { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
     { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
-    { id:"disparadores",label:"Disparadores",         href:"disparadores.html", icon:"disparadores" },
     { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
     { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
     { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
