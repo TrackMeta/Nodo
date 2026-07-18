@@ -2303,7 +2303,18 @@ async function saveProduct(){
   if(!st.prod){ return; }
   // Recompila el conocimiento del producto a config.contexto_producto (lo que
   // el motor inyecta) por si se guarda sin haber tocado el formulario.
-  if(st.prod.config){ const cx=compileProductoIA(st.prod.config, st.prod.tipo||"digital"); if(cx) st.prod.config.contexto_producto=cx; else delete st.prod.config.contexto_producto; }
+  if(st.prod.config){
+    const c=st.prod.config; c.ia=c.ia||{};
+    // MIGRACIÓN DE SEGURIDAD (antes de recompilar): si el conocimiento viejo vive
+    // en contexto_producto pero nunca se migró a la ficha nueva (config.ia) —porque
+    // no se abrió la pestaña "Cómo lo vende la IA"—, migrarlo AHORA. Sin esto, el
+    // recompile de abajo produciría vacío y BORRARÍA el conocimiento (pérdida de
+    // datos silenciosa al guardar desde cualquier otra pestaña). Espeja la
+    // migración de renderProductoIA.
+    if(!c.ia.detalle && c.contexto_producto && !c.ia._migrado){ c.ia.detalle=c.contexto_producto; c.ia._migrado=true; }
+    const cx=compileProductoIA(c, st.prod.tipo||"digital");
+    if(cx) c.contexto_producto=cx; else delete c.contexto_producto;
+  }
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
