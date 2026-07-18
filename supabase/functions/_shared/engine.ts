@@ -1299,13 +1299,23 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     // métricas de "ventas extra" del Dashboard y la columna "Valor Producto
     // extra" de la hoja, sin inventar una tabla nueva.
     if (a.bump) {
-      const { data: cur } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+      const { data: cur } = await db.from("orders").select("order_bumps, shipping").eq("id", orderId).maybeSingle();
       const previos = ((cur as any)?.order_bumps ?? []) as any[];
       const nombre = resolve(String(a.bump.nombre ?? ""), ctx);
       const precio = Number(resolve(String(a.bump.precio ?? "0"), ctx)) || 0;
       // Idempotente: si ya está ese extra, no se suma dos veces.
       if (!previos.some((b) => b?.nombre === nombre)) {
         patch.order_bumps = [...previos, { nombre, precio }];
+        // Venta extra "ride-along" en un pedido FÍSICO: no se cobra aparte, se
+        // suma al SALDO (lo que cobra la agencia en provincia, o el motorizado en
+        // Lima). El adelanto no cambia. Solo si el pedido tiene saldo y el bump lo
+        // pide (los extras digitales usan bump SIN sube_saldo → no lo tocan).
+        if (a.bump.sube_saldo) {
+          const sActual = Number(((cur as any)?.shipping ?? {}).saldo);
+          if (Number.isFinite(sActual)) {
+            patch.shipping = { ...((cur as any)?.shipping ?? {}), saldo: +(sActual + precio).toFixed(2) };
+          }
+        }
       }
     }
     if (a.datos && Object.keys(a.datos).length) {

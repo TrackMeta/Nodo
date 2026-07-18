@@ -887,15 +887,71 @@ function renderEnvio(){
 // Ventas extra y el generador de flujo (que puede correr sin haberla abierto).
 async function cargarCatalogoExtras(){
   const { data:prods } = await supa.from("products")
-    .select("id,nombre,emoji,product_versions(id,nombre,precio,activo)")
+    .select("id,nombre,emoji,tipo,product_versions(id,nombre,precio,activo)")
     .eq("channel_id",st.channelId).order("nombre");
   const cat=[];
   (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{
     if(v.activo!==false && v.precio!=null && v.precio!=="")
-      cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio });
+      cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio, tipo:p.tipo||"digital" });
   }));
   st.extraCat=cat;
   return cat;
+}
+
+// Cadena de ventas extra "ride-along" para pedidos FÍSICOS: el extra NO se cobra
+// aparte, se suma al mismo envío (sube el saldo; el adelanto no cambia). Ofrecer
+// → si acepta (la IA lee el texto libre, sin botones) → sumar al pedido →
+// siguiente; si rechaza o no contesta → se corta la cadena y sale por exitNode.
+async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, esperaSeg, baseY){
+  let prevExit=entryNode;
+  for(let i=0;i<extras.length;i++){
+    const x=extras[i];
+    const info=cat.find(c=>c.id===x.version_id);
+    const precio=info?.precio ?? "";
+    const label=info?info.label:`Extra ${i+1}`;
+    const y=baseY + i*300;
+    const nOfr=await N("mensaje",`Ofrecer extra ${i+1}`,{ bubbles:[{ text:x.mensaje||`¿Le sumas ${label}? Te lo mando junto 🎁` }] },false,1800,y);
+    const nEsp=await N("pregunta",`Esperar respuesta (extra ${i+1})`,{ text:"", timeout_seg:esperaSeg },false,2080,y);
+    const nClas=await N("ia",`¿Lo quiere? (extra ${i+1})`,{
+      operacion:"clasificar", guardar_en:`extraf_${i+1}_resp`, default:"duda", umbral:0.6,
+      que:"Qué dice el cliente sobre sumar el producto adicional a su pedido",
+      opciones:[
+        { clave:"acepta", label:"Acepta", detalle:"Dice que sí, que se lo sume, lo quiere" },
+        { clave:"rechaza", label:"Rechaza", detalle:"Dice que no, que solo lo que pidió, que no le interesa" },
+        { clave:"duda", label:"Duda o pregunta", detalle:"Pide más info, no decide todavía" },
+      ],
+    },false,2360,y);
+    const nCond=await N("condicion",`¿Aceptó? (extra ${i+1})`,{
+      rutas:[
+        { nombre:"Acepta", handle:"ruta:acepta", match:"todas", condiciones:[{op:"campo_igual",campo:`extraf_${i+1}_resp`,valor:"acepta"}] },
+        { nombre:"Rechaza", handle:"ruta:rechaza", match:"todas", condiciones:[{op:"campo_igual",campo:`extraf_${i+1}_resp`,valor:"rechaza"}] },
+      ],
+    },false,2640,y);
+    const nAdd=await N("accion",`Sumar extra ${i+1}`,{
+      acciones:[
+        { tipo:"actualizar_pedido", bump:{ nombre:label, precio:String(precio), sube_saldo:true } },
+        { tipo:"notify_admin", una_vez:`extraf_${x.version_id}`, mensaje:`🎁 VENTA EXTRA (físico) · ${label}\nCliente: {{nombre}} (+{{telefono}})\nSe suma al mismo envío — S/ ${precio}` },
+      ],
+    },false,2920,y);
+    const nConfE=await N("mensaje",`Confirmar extra ${i+1}`,{ bubbles:[{ text:`¡Genial! Te lo sumo al pedido 🎉 Lo pagas junto con el resto.` }] },false,3200,y);
+    const nResp=await N("ia",`Responder sobre el extra ${i+1}`,{
+      operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
+      prompt:`El cliente está viendo una oferta para SUMAR ${label} a su pedido (se envía y cobra junto con lo que ya pidió). Responde su duda de forma breve y sin presionar; si quiere, dile que se lo sumas al mismo envío.`,
+    },false,2640,y+140);
+
+    await E(prevExit,"continuar",nOfr);
+    await E(nOfr,"continuar",nEsp);
+    await E(nEsp,"timeout",exitNode);        // no contestó → sigue sin el extra
+    await E(nEsp,"continuar",nClas);
+    await E(nClas,"exito",nCond);
+    await E(nCond,"ruta:rechaza",exitNode);  // corta TODA la cadena
+    await E(nCond,"si_no_cumple",nResp);     // duda → responder → escuchar
+    await E(nResp,"exito",nEsp);
+    await E(nCond,"ruta:acepta",nAdd);
+    await E(nAdd,"continuar",nConfE);
+    prevExit=nConfE;                          // el siguiente ofrecimiento cuelga de acá
+  }
+  await E(prevExit,"continuar",exitNode);
 }
 
 // ── Ventas extra (order bump) ──────────────────────────────────────
@@ -911,6 +967,7 @@ async function renderExtras(){
   if(cfg.extras_espera_min==null) cfg.extras_espera_min=15;
 
   const cat=await cargarCatalogoExtras();
+  const esFisico=(st.prod.tipo==="fisico");
 
   const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${cfg.extras_momento===v?'var(--brand)':'var(--border)'};
     background:${cfg.extras_momento===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
@@ -921,12 +978,23 @@ async function renderExtras(){
     <div class="card" style="border-color:var(--brand-border)">
       <h4 style="margin-top:0">Ventas extra</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        Después de que el cliente paga, ofrecerle algo más. Cada extra es una
-        <b>opción de compra</b> ya existente (de este producto o de otro), así que se cobra,
-        valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.
+        ${esFisico
+          ? `Después de cerrar el pedido, ofrecerle algo más para <b>sumar al mismo envío</b>. El extra <b>no se paga aparte</b>: se cobra junto con el pedido (contraentrega en Lima, o al saldo en provincia). Cada extra es una <b>opción de compra</b> existente. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`
+          : `Después de que el cliente paga, ofrecerle algo más. Cada extra es una <b>opción de compra</b> ya existente (de este producto o de otro), así que se cobra, valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`}
       </div>
     </div>
 
+    ${esFisico ? `
+    <div class="card">
+      <h4 style="margin-top:0">Cuándo se ofrece</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.55">Justo después de cerrar el pedido, antes de rematar: en Lima tras confirmarlo; en provincia antes de pedir el adelanto (ya con el saldo actualizado). No se cobra aparte, se suma al envío.</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Si no responde, seguimos sin el extra a los</label>
+        <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(cfg.extras_espera_min)}" style="width:90px"/>
+        <span style="font-size:12.5px;color:var(--muted)">minutos</span>
+      </div>
+    </div>
+    ` : `
     <div class="card">
       <h4 style="margin-top:0">¿Cuándo lo ofrecemos?</h4>
       <div style="display:flex;gap:10px;margin-top:8px" id="momBox">
@@ -941,6 +1009,7 @@ async function renderExtras(){
           Nunca se retiene lo que el cliente ya pagó por esperar una venta extra.</span>
       </div>
     </div>
+    `}
 
     <div id="exList"></div>
     <button class="btn" id="exAdd" ${cat.length?"":"disabled"}>+ Venta extra</button>
@@ -1244,10 +1313,25 @@ async function generarFlujoFisico(flowId, N, E){
   await E(nLimaOk,"ruta:crear",nCrearLima);
   await E(nLimaOk,"si_no_cumple",nEsperar);     // faltan datos → la IA ya los pidió
   await E(nCrearLima,"continuar",nConfLima);
-  await E(nConfLima,"continuar",nFin);
   await E(nProvOk,"ruta:crear",nCrearProv);
   await E(nProvOk,"si_no_cumple",nEsperar);     // faltan datos o zona desconocida
-  await E(nCrearProv,"continuar",nPedirAdel);
+
+  // ── Ventas extra "ride-along" (físico) ──
+  // El extra no se cobra aparte: se suma al mismo envío (sube el saldo; en Lima
+  // sube lo que cobra el motorizado, en provincia lo que cobra la agencia). Se
+  // ofrece justo después de cerrar el pedido, antes de rematar (Lima → fin;
+  // provincia → pedir el adelanto, ya con el saldo actualizado).
+  const extras=(Array.isArray(cfg.extras)?cfg.extras:[]).filter(x=>x&&x.version_id);
+  const esperaSeg=Math.max(60,(Number(cfg.extras_espera_min)||15)*60);
+  if(extras.length && !st.extraCat) await cargarCatalogoExtras();
+  const catX=st.extraCat||[];
+  if(extras.length){
+    await buildRideAlongExtras(N,E,nConfLima,nFin,extras,catX,esperaSeg,240);
+    await buildRideAlongExtras(N,E,nCrearProv,nPedirAdel,extras,catX,esperaSeg,640);
+  }else{
+    await E(nConfLima,"continuar",nFin);
+    await E(nCrearProv,"continuar",nPedirAdel);
+  }
   await E(nPedirAdel,"continuar",nEsperar);     // ahora espera el comprobante
 }
 
