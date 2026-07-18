@@ -969,6 +969,7 @@ async function renderExtras(){
   if(!Array.isArray(cfg.extras)) cfg.extras=[];
   if(!cfg.extras_momento) cfg.extras_momento="antes";
   if(cfg.extras_espera_min==null) cfg.extras_espera_min=15;
+  if(!cfg.extras_prov_momento) cfg.extras_prov_momento="post";
 
   const cat=await cargarCatalogoExtras();
   const esFisico=(st.prod.tipo==="fisico");
@@ -991,7 +992,13 @@ async function renderExtras(){
     ${esFisico ? `
     <div class="card">
       <h4 style="margin-top:0">Cuándo se ofrece</h4>
-      <div style="font-size:12.5px;color:var(--muted);line-height:1.55">Justo después de cerrar el pedido, antes de rematar: en Lima tras confirmarlo; en provincia antes de pedir el adelanto (ya con el saldo actualizado). No se cobra aparte, se suma al envío.</div>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.55">En <b>Lima</b> se ofrece apenas confirmas el pedido (es contraentrega). En <b>provincia</b> puedes elegir el momento:</div>
+      <label style="margin-top:14px">En provincia, ofrecer el extra…</label>
+      <select class="in" id="exProvMom" style="max-width:420px">
+        <option value="post" ${cfg.extras_prov_momento==="post"?"selected":""}>Después de validar el adelanto (recomendado)</option>
+        <option value="pre" ${cfg.extras_prov_momento==="pre"?"selected":""}>Antes, junto con la pedida del adelanto</option>
+      </select>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5">Con “después”, el bot ofrece el extra recién cuando el cliente ya pagó el adelanto (mejor momento). Se suma al saldo que cobra la agencia; el adelanto no cambia.</div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
         <label style="margin:0;font-size:12.5px;font-weight:700">Si no responde, seguimos sin el extra a los</label>
         <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(cfg.extras_espera_min)}" style="width:90px"/>
@@ -1021,6 +1028,7 @@ async function renderExtras(){
 
   b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(); });
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
+  const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
   $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
   paintExtras();
 }
@@ -1322,21 +1330,43 @@ async function generarFlujoFisico(flowId, N, E){
 
   // ── Ventas extra "ride-along" (físico) ──
   // El extra no se cobra aparte: se suma al mismo envío (sube el saldo; en Lima
-  // sube lo que cobra el motorizado, en provincia lo que cobra la agencia). Se
-  // ofrece justo después de cerrar el pedido, antes de rematar (Lima → fin;
-  // provincia → pedir el adelanto, ya con el saldo actualizado).
+  // sube lo que cobra el motorizado, en provincia lo que cobra la agencia).
   const extras=(Array.isArray(cfg.extras)?cfg.extras:[]).filter(x=>x&&x.version_id);
   const esperaSeg=Math.max(60,(Number(cfg.extras_espera_min)||15)*60);
+  const provPost=(cfg.extras_prov_momento||"post")==="post"; // configurable
   if(extras.length && !st.extraCat) await cargarCatalogoExtras();
   const catX=st.extraCat||[];
-  if(extras.length){
-    await buildRideAlongExtras(N,E,nConfLima,nFin,extras,catX,esperaSeg,240);
-    await buildRideAlongExtras(N,E,nCrearProv,nPedirAdel,extras,catX,esperaSeg,640);
-  }else{
-    await E(nConfLima,"continuar",nFin);
+
+  // Lima: se ofrece tras confirmar (no hay adelanto que esperar).
+  if(extras.length) await buildRideAlongExtras(N,E,nConfLima,nFin,extras,catX,esperaSeg,240);
+  else await E(nConfLima,"continuar",nFin);
+
+  // Provincia:
+  if(!extras.length){
     await E(nCrearProv,"continuar",nPedirAdel);
+    await E(nPedirAdel,"continuar",nEsperar);
+  }else if(!provPost){
+    // PRE: se ofrece entre crear el pedido y pedir el adelanto (ya sube el saldo).
+    await buildRideAlongExtras(N,E,nCrearProv,nPedirAdel,extras,catX,esperaSeg,640);
+    await E(nPedirAdel,"continuar",nEsperar);
+  }else{
+    // POST (recomendado): crear → pedir adelanto → ESPERAR el adelanto en un nodo
+    // marcado post_adelanto que VUELVE a sí mismo si el cliente escribe (así el run
+    // queda parqueado ahí, confiable). Al validarse el pago (auto o aprobado por
+    // ti), el motor reanuda por "post_adelanto" → "¡recibido!" → ofrecimiento.
+    await E(nCrearProv,"continuar",nPedirAdel);
+    const nEsperarAdel=await N("pregunta","Esperar el adelanto",{ text:"", post_adelanto:true },false,1520,780);
+    const nRespAdel=await N("ia","Responder mientras espera el adelanto",{
+      operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
+      prompt:"El cliente ya tiene su pedido creado y le pediste el adelanto; está por pagarlo. Responde su duda breve (cómo pagar, cuánto es, cuándo llega) sin presionar. NO ofrezcas nada nuevo: solo espera su comprobante.",
+    },false,1800,920);
+    await E(nPedirAdel,"continuar",nEsperarAdel);
+    await E(nEsperarAdel,"continuar",nRespAdel); // escribe (aún no paga)
+    await E(nRespAdel,"exito",nEsperarAdel);     // vuelve a esperar → parqueado ahí
+    const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"¡Adelanto recibido! 🎉 Ya empiezo a preparar tu despacho." }] },false,1520,640);
+    await E(nEsperarAdel,"post_adelanto",nRecibido); // el motor reanuda por acá al validar
+    await buildRideAlongExtras(N,E,nRecibido,nFin,extras,catX,esperaSeg,1040);
   }
-  await E(nPedirAdel,"continuar",nEsperar);     // ahora espera el comprobante
 }
 
 async function generarFlujoVenta(){

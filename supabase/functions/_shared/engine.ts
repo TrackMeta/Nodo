@@ -145,6 +145,32 @@ export async function resumeAfterApproval(
   return true;
 }
 
+// Ofrecer la venta extra DESPUÉS de validar el adelanto (opción configurable del
+// producto físico). Reanuda la conversación de venta —que quedó esperando el
+// adelanto en un nodo marcado `post_adelanto`— hacia el ofrecimiento. Ese nodo de
+// espera VUELVE a sí mismo aunque el cliente escriba, así que el run sigue
+// parqueado ahí hasta que el pago se valida → el ofrecimiento se manda de forma
+// confiable (tan confiable como el aviso de "adelanto recibido"). Devuelve true
+// si reanudó (entonces quien llama NO debe mandar además el aviso normal).
+export async function resumeIntoExtras(
+  db: SupabaseClient, channelId: string, contactId: string,
+): Promise<boolean> {
+  const run = await getActiveRun(db, contactId);
+  if (!run || run.channel_id !== channelId) return false;
+  const aw = (run.vars as any)?._await;
+  if (!aw?.node_id) return false;
+  const node = await getNode(db, aw.node_id);
+  if (!(node as any)?.config?.post_adelanto) return false;
+  const next = await nextNode(db, run.flow_id, aw.node_id, "post_adelanto");
+  if (!next) return false;
+  run.current_node_id = next;
+  delete (run.vars as any)._await;
+  run.estado = "activo";
+  run.wake_at = null;
+  await execute(db, run);
+  return true;
+}
+
 // Entrega los enlaces/archivos de las ventas extra DIGITALES que viajaban en un
 // pedido físico ("ride-along"), una vez que el pedido quedó pagado del todo
 // (Lima: entregado y cobrado; provincia: saldo pagado / recogido). Antes no: dar
@@ -1507,7 +1533,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await syncPedidoSheet(db, (order as any).id);
-    await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
+    // Si el producto ofrece la venta extra DESPUÉS del adelanto, se reanuda la
+    // conversación hacia el ofrecimiento (que saluda "¡recibido!"). Si no aplica
+    // (sin extras post, o el run ya no está esperando), cae al aviso normal.
+    const ofrecio = await resumeIntoExtras(db, channelId, contactId).catch(() => false);
+    if (!ofrecio) await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
     await notifyAdmin(db, runlike, `✅ Adelanto validado automáticamente. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
     return true;
   }

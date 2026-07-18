@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, entregarExtrasDigitales } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, entregarExtrasDigitales, resumeIntoExtras } from "../_shared/engine.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -93,6 +93,18 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Adelanto aprobado a mano: si el producto ofrece la venta extra DESPUÉS del
+  // adelanto, se reanuda la conversación hacia el ofrecimiento (que saluda
+  // "¡recibido!") en vez del aviso normal. Si no aplica, cae al aviso de siempre.
+  let extrasOfrecidos = false;
+  if (newEstado === "adelanto_validado" && (order as any).contact_id) {
+    try {
+      extrasOfrecidos = await resumeIntoExtras(db, (order as any).channel_id, (order as any).contact_id);
+    } catch (e) {
+      console.error("[order-update] resume extras:", (e as any)?.message ?? e);
+    }
+  }
+
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
   let flowStarted: string | null = null;
   if (newEstado && (order as any).contact_id) {
@@ -103,7 +115,7 @@ Deno.serve(async (req) => {
       });
     } catch (_) { /* best-effort */ }
 
-    const { data: trigs } = await db.from("flow_triggers")
+    const { data: trigs } = extrasOfrecidos ? { data: [] } : await db.from("flow_triggers")
       .select("flow_id, config, interrumpe, flows!inner(id, estado)")
       .eq("channel_id", (order as any).channel_id)
       .eq("tipo", "pedido_estado").eq("activo", true);
