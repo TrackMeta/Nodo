@@ -389,10 +389,16 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 .nodo-group.closed .nodo-sec svg{transform:rotate(-90deg)}
 .nodo-group .nodo-gitems{display:flex;flex-direction:column;gap:4px;overflow:hidden}
 .nodo-group.closed .nodo-gitems{display:none}
-/* Comprimido: se ocultan los títulos y cada grupo se separa con una línea */
-.nodo-nav.collapsed .nodo-sec{display:none}
-.nodo-nav.collapsed .nodo-group{margin-top:8px;padding-top:8px;border-top:1px solid var(--border-strong)}
-.nodo-nav.collapsed .nodo-group.closed .nodo-gitems{display:flex}
+/* Comprimido (modo iconos): el encabezado de sección se vuelve un mini-botón
+   con SOLO el chevron (el texto se oculta con font-size:0; el svg es px fijo,
+   así que se mantiene). Así se puede plegar/desplegar cada grupo TAMBIÉN en
+   modo iconos, y un grupo plegado OCULTA sus iconos — respeta el colapso igual
+   que en modo expandido (antes los forzaba a mostrarse todos). El propio
+   chevron + el espaciado separan los grupos, ya no hace falta la línea. */
+.nodo-nav.collapsed .nodo-sec{justify-content:center;padding:0;margin:10px 0 4px;font-size:0;min-height:20px}
+.nodo-nav.collapsed .nodo-sec svg{opacity:.45}
+.nodo-nav.collapsed .nodo-sec:hover svg{opacity:.9}
+.nodo-nav.collapsed .nodo-group{margin-top:6px}
 .nodo-nav.collapsed .nodo-gitems{gap:4px}
 
 /* Ítem de navegación */
