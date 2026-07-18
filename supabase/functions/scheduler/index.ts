@@ -246,6 +246,18 @@ async function processSub(s: any, now: number): Promise<boolean> {
     .eq("contact_id", s.contact_id).in("estado", ["activo", "esperando"]).maybeSingle();
   if (active) return false;
 
+  // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
+  // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
+  // "te dejo el X a S/Y" no es solo texto: el OCR valida contra el precio con
+  // descuento, y el {{precio}} del mensaje ya sale rebajado. Vence a las N horas.
+  if (paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
+    const venceH = Number(paso.oferta.vence_horas ?? 0);
+    const vence = venceH > 0 ? new Date(now + venceH * 3600 * 1000).toISOString() : null;
+    await db.from("contacts").update({
+      oferta_activa: { opcion_id: paso.oferta.version_id, precio: Number(paso.oferta.precio), vence, origen: "remarketing" },
+    }).eq("id", s.contact_id).then(() => {}, () => {}); // best-effort (columna 0030)
+  }
+
   // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
   if (paso.flow_id) await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
   else if (paso.template_name) {
