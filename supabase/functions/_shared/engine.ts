@@ -72,6 +72,12 @@ export async function runEngine(
     return;
   }
 
+  // Reclama su vuelto (pagó de más) → regla DURA: a un humano, no a la IA.
+  if (event.type === "message" && pideVuelto(event.text)) {
+    await escalarVuelto(db, channelId, contactId, event.text ?? "");
+    return;
+  }
+
   // Interceptor de SALDO automático (Agente de Logística · modo auto): si entra
   // un comprobante y el contacto tiene un pedido "en_agencia" esperando el
   // saldo, la IA valida el pago y suelta la clave de recojo — o, ante cualquier
@@ -229,6 +235,45 @@ function pideHumano(text: string): boolean {
     const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
   });
+}
+
+// ── "Pide su vuelto" (pagó de más) → regla DURA → humano ───────────
+// Cuando el cliente pagó de más y RECLAMA la diferencia, no se deja a criterio
+// de la IA (decisión de Rodrigo): es plata, y responder mal quema. Lista
+// determinista, mismo patrón que pideHumano. Frases específicas del vuelto para
+// no escalar de más (un "quiero un cambio de talla" no debe caer acá).
+const PIDE_VUELTO = [
+  "mi vuelto", "el vuelto", "quiero mi vuelto", "me das mi vuelto", "me das el vuelto",
+  "dame mi vuelto", "me devuelves el vuelto", "me devuelve el vuelto", "devuelveme el vuelto", "devuelvame el vuelto",
+  "pague de mas", "pague demas", "he pagado de mas", "pague mas de la cuenta", "pague de mas sin querer",
+  "me devuelves lo de mas", "me devuelve lo de mas", "lo que pague de mas", "devuelveme lo de mas",
+  "me devuelves la diferencia", "me devuelve la diferencia", "quiero la diferencia",
+  "me sobro plata", "me sobro dinero", "me devuelves lo que sobra", "saldo a favor",
+];
+function pideVuelto(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 90) return false;
+  return PIDE_VUELTO.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    if (t === n) return true;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
+async function escalarVuelto(db: SupabaseClient, channelId: string, contactId: string, texto: string) {
+  // Busca el pedido reciente con vuelto > 0 para dar el monto exacto en el aviso.
+  let vuelto = 0;
+  try {
+    const { data: ords } = await db.from("orders").select("shipping")
+      .eq("contact_id", contactId).order("created_at", { ascending: false }).limit(10);
+    for (const o of ords ?? []) { const v = Number(((o as any).shipping ?? {}).vuelto); if (Number.isFinite(v) && v > 0) { vuelto = v; break; } }
+  } catch (_) { /* best-effort */ }
+  const frag = String(texto ?? "").slice(0, 100);
+  const motivo = vuelto > 0
+    ? `💸 Pide su vuelto (pagó de más). Saldo a favor: <b>S/ ${vuelto}</b>. “${frag}”`
+    : `💸 Reclama un vuelto / devolución. “${frag}”`;
+  await pasarAHumano(db, channelId, contactId, motivo);
 }
 
 // Pausa el bot, marca la conversación y avisa. `motivo` explica POR QUÉ, para
