@@ -72,10 +72,11 @@ export async function runEngine(
     return;
   }
 
-  // Reclama su vuelto (pagó de más) → regla DURA: a un humano, no a la IA.
+  // Reclama su vuelto (pagó de más) → el bot lo tranquiliza y te avisa para que
+  // hagas la devolución, sin pausar ni traspasar (así el cliente no queda en el
+  // aire si no estás). Si está desactivado, sigue el flujo normal (lo ve la IA).
   if (event.type === "message" && pideVuelto(event.text)) {
-    await escalarVuelto(db, channelId, contactId, event.text ?? "");
-    return;
+    if (await responderVuelto(db, channelId, contactId, event.text ?? "")) return;
   }
 
   // Interceptor de SALDO automático (Agente de Logística · modo auto): si entra
@@ -261,19 +262,34 @@ function pideVuelto(text: string): boolean {
     return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
   });
 }
-async function escalarVuelto(db: SupabaseClient, channelId: string, contactId: string, texto: string) {
-  // Busca el pedido reciente con vuelto > 0 para dar el monto exacto en el aviso.
+// Reclama su vuelto → el bot lo TRANQUILIZA proactivamente y TE avisa para que
+// hagas la devolución, PERO NO pausa ni traspasa a un humano (si no estás
+// disponible, el cliente no queda en el aire) y sigue con la venta. Activable y
+// con mensaje configurable en Validación de pagos (pedidos_config.vuelto).
+// Devuelve true si lo manejó (entonces runEngine no procesa más ese mensaje).
+async function responderVuelto(db: SupabaseClient, channelId: string, contactId: string, texto: string): Promise<boolean> {
+  const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+  const cfg = (ch as any)?.pedidos_config?.vuelto;
+  if (cfg && cfg.activo === false) return false; // desactivado → lo maneja la IA normal
+  // Monto del vuelto (si hay un pedido reciente con saldo a favor).
   let vuelto = 0;
   try {
     const { data: ords } = await db.from("orders").select("shipping")
       .eq("contact_id", contactId).order("created_at", { ascending: false }).limit(10);
     for (const o of ords ?? []) { const v = Number(((o as any).shipping ?? {}).vuelto); if (Number.isFinite(v) && v > 0) { vuelto = v; break; } }
   } catch (_) { /* best-effort */ }
-  const frag = String(texto ?? "").slice(0, 100);
-  const motivo = vuelto > 0
-    ? `💸 Pide su vuelto (pagó de más). Saldo a favor: <b>S/ ${vuelto}</b>. “${frag}”`
-    : `💸 Reclama un vuelto / devolución. “${frag}”`;
-  await pasarAHumano(db, channelId, contactId, motivo);
+  const def = "¡No te preocupes! 🙌 Registramos que pagaste de más. Un administrador está gestionando la devolución de tu vuelto{{monto}} y te enviaremos la constancia por aquí en un momentito. Seguimos con tu pedido con normalidad. 🙂";
+  let msg = (cfg?.mensaje && String(cfg.mensaje).trim()) ? String(cfg.mensaje) : def;
+  msg = msg.replace(/\{\{\s*vuelto\s*\}\}/g, vuelto > 0 ? `S/ ${vuelto}` : "")
+           .replace(/\{\{\s*monto\s*\}\}/g, vuelto > 0 ? ` (S/ ${vuelto})` : "");
+  await deliverMessage(db, channelId, contactId, msg).catch(() => {});
+  // Aviso al admin: TÚ haces la devolución y le mandas la captura por el chat.
+  const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+  const quien = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
+  await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as any,
+    `💸 <b>${quien} reclama su vuelto</b>\nSaldo a favor: ${vuelto > 0 ? "<b>S/ " + vuelto + "</b>" : "(revisar en Compras)"}\nEl bot ya le dijo que lo estás gestionando — hazle la devolución y mándale la captura por el chat. El bot sigue atendiéndolo.`);
+  await logEvent(db, channelId, contactId, "nota", "💸 Reclamó su vuelto", `saldo a favor ${vuelto > 0 ? "S/ " + vuelto : "?"}`).catch(() => {});
+  return true;
 }
 
 // Pausa el bot, marca la conversación y avisa. `motivo` explica POR QUÉ, para
