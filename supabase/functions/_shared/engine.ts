@@ -1276,46 +1276,89 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
   }
 }
 
-// Acción entregar: { mensaje? } — envía lo que la opción COMPRADA incluye (uno
-// o varios links y/o archivos). Reemplaza al {{link_entrega}} suelto: cada
-// opción entrega lo suyo (el Básico y el Premium no entregan lo mismo).
-// Es idempotente por diseño: se puede volver a llamar si el cliente dice "no me
-// llegó el link" — reenvía lo mismo sin cobrar de nuevo.
+// Acción entregar: { mensaje?, una_burbuja?, diferir?, incluir_buffer?, version_id? }
+// Envía lo que la opción COMPRADA incluye (uno o varios links y/o archivos), y
+// CADA item puede llevar su propio `mensaje` (etiqueta). Modos:
+//  · normal         → cada cosa en su burbuja (mensaje del item + el link/archivo).
+//  · una_burbuja    → UN solo mensaje de texto: encabezado + todos los links en
+//                     líneas. Los ARCHIVOS adjuntos salen aparte (regla de WhatsApp).
+//  · diferir        → NO envía; acumula los items en run.vars._entrega_buffer para
+//                     entregarlos JUNTO con el principal al final (venta extra "antes").
+//  · incluir_buffer → antepone lo acumulado (extras diferidos) a esta entrega y vacía el buffer.
+// Reemplaza al {{link_entrega}} suelto: cada opción entrega lo suyo. Idempotente:
+// se puede volver a llamar ("no me llegó") — reenvía lo mismo sin cobrar de nuevo.
 async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
   let opcion = (ctx as any)._opcion as Opcion | null;
   // a.version_id → entregar una opción CONCRETA en vez de la que compró como
-  // principal. Es lo que usa la venta extra: el extra es otra opción de compra,
-  // con su propio nombre, precio y entrega, así que se entrega con lo mismo.
+  // principal. Es lo que usa la venta extra: el extra es otra opción de compra.
   const vid = a?.version_id ? resolve(String(a.version_id), ctx) : "";
   if (vid) {
     const { data } = await db.from("product_versions")
       .select("id, nombre, precio, entrega, descripcion, cantidad").eq("id", vid).maybeSingle();
     if (data) opcion = data as unknown as Opcion;
   }
-  const items = (Array.isArray(opcion?.entrega) ? opcion!.entrega : []).filter((it: any) => it && it.url);
+  // Items de ESTA opción, con su mensaje opcional ya resuelto (soporta {{vars}}).
+  const items = (Array.isArray(opcion?.entrega) ? opcion!.entrega : [])
+    .filter((it: any) => it && it.url)
+    .map((it: any) => ({
+      tipo: it.tipo, url: String(it.url), nombre: it.nombre ?? "",
+      media_kind: it.media_kind || "document", filename: it.filename ?? undefined,
+      mensaje: it.mensaje ? resolve(String(it.mensaje), ctx) : "",
+    }));
 
-  if (a?.mensaje) await emit(db, run, { text: resolve(String(a.mensaje), ctx) }, ctx);
+  const vars = run.vars as any;
+  // "diferir": guardar para la entrega conjunta del final (no se envía ahora).
+  if (a?.diferir) {
+    if (items.length) vars._entrega_buffer = [...(vars._entrega_buffer || []), ...items];
+    return;
+  }
 
-  if (!items.length) {
-    // Compat: productos viejos con un único link suelto en config.
-    if (ctx.link_entrega) await emit(db, run, { text: String(ctx.link_entrega) }, ctx);
+  // Juntar con lo diferido (venta extra "antes") si corresponde, y vaciar el buffer.
+  let all = items;
+  if (a?.incluir_buffer && Array.isArray(vars._entrega_buffer) && vars._entrega_buffer.length) {
+    all = [...items, ...vars._entrega_buffer];
+    vars._entrega_buffer = [];
+  }
+  const header = a?.mensaje ? resolve(String(a.mensaje), ctx) : "";
+
+  if (!all.length) {
+    // Compat: opción sin items pero con link suelto en config.
+    if (ctx.link_entrega) await emit(db, run, { text: header ? `${header}\n${String(ctx.link_entrega)}` : String(ctx.link_entrega) }, ctx);
+    else if (header) await emit(db, run, { text: header }, ctx);
     else await logEvent(db, run.channel_id, run.contact_id, "error", "Nada que entregar",
       `La opción "${opcion?.nombre ?? "—"}" no tiene entrega configurada`);
     return;
   }
 
-  for (const it of items) {
-    if (it.tipo === "archivo") {
-      await emit(db, run, {
-        media_url: it.url, media_kind: it.media_kind || "document",
-        filename: it.filename ?? undefined, caption: it.nombre ?? "",
-      }, ctx);
-    } else {
-      await emit(db, run, { text: `${it.nombre ? it.nombre + ": " : ""}${it.url}` }, ctx);
+  const links = all.filter((it) => it.tipo !== "archivo");
+  const files = all.filter((it) => it.tipo === "archivo");
+
+  if (a?.una_burbuja) {
+    // Un solo mensaje: encabezado + cada link en su línea (con su etiqueta/mensaje).
+    let text = header;
+    for (const it of links) {
+      const label = it.mensaje || it.nombre;
+      text += (text ? "\n" : "") + (label ? `${label} ` : "") + it.url;
+    }
+    if (text) await emit(db, run, { text }, ctx);
+    // Archivos: obligatoriamente aparte (WhatsApp); su mensaje va de caption.
+    for (const it of files) {
+      await emit(db, run, { media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" }, ctx);
+    }
+  } else {
+    // Burbujas separadas: encabezado, luego cada item (su mensaje + el link/archivo).
+    if (header) await emit(db, run, { text: header }, ctx);
+    for (const it of all) {
+      if (it.mensaje) await emit(db, run, { text: it.mensaje }, ctx);
+      if (it.tipo === "archivo") {
+        await emit(db, run, { media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.nombre ?? "" }, ctx);
+      } else {
+        await emit(db, run, { text: `${it.nombre ? it.nombre + ": " : ""}${it.url}` }, ctx);
+      }
     }
   }
   await logEvent(db, run.channel_id, run.contact_id, "nota", "Producto entregado",
-    `${opcion?.nombre ?? ""} · ${items.length} ${items.length === 1 ? "elemento" : "elementos"}`);
+    `${opcion?.nombre ?? ""} · ${all.length} ${all.length === 1 ? "elemento" : "elementos"}`);
 }
 
 // Acción crear_pedido: { estado?, monto?, datos?: { zona:"{{zona_entrega}}", … } }

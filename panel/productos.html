@@ -510,6 +510,17 @@ function renderEntrega(){
         <div style="font-size:11px;color:var(--faint);margin-top:7px">Se entrega al confirmar el pago. Disponible en tus flujos como <b style="color:var(--brand)">{{link_entrega}}</b>. Si tienes varias opciones con distinta entrega, cada una lleva su propio link en <a href="#" id="goOpc3" style="color:var(--brand)">Opciones de compra →</a>.</div>
       </div>
       <div class="card">
+        <h4 style="display:flex;align-items:center;gap:7px">${icon("message")} Cómo se envía</h4>
+        <label style="margin-top:0">Mensaje de entrega</label>
+        <input class="in" id="pEntMsg" value="${esc(c.entrega_mensaje||"")}" placeholder="¡Pago confirmado! 🎉 Acá tienes tu acceso:"/>
+        <div style="font-size:11px;color:var(--faint);margin-top:7px">El saludo que abre la entrega. Cada link puede además tener su propio mensajito (en <b>Opciones de compra</b>).</div>
+        <label class="chk" style="margin-top:16px;justify-content:space-between">
+          <span style="font-weight:600;font-size:13px">Entregar todo en una sola burbuja</span>
+          <span class="sw ${c.entrega_burbuja_unica?'on':''}" id="pEntUna"></span>
+        </label>
+        <div style="font-size:11px;color:var(--faint);margin-top:7px">Junta el saludo + todos los links en un mismo mensaje. Los <b>archivos adjuntos</b> salen aparte (regla de WhatsApp). Si hay ventas extra “antes”, se entregan junto con el principal.</div>
+      </div>
+      <div class="card">
         <h4 style="display:flex;align-items:center;gap:7px">${icon("shield")} Validación del pago</h4>
         <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega este producto tras el pago. Por defecto sigue lo que elegiste para todo el canal en <a href="pagos.html" style="color:var(--brand)">Validación de pagos</a>; acá puedes cambiarlo <b>solo para este producto</b>.</div>
         <select class="in" id="pValPago" style="max-width:320px">
@@ -519,6 +530,8 @@ function renderEntrega(){
         </select>
       </div>`;
     const lk=$("pLink"); if(lk) lk.onchange=(e)=>prodSetC("link_entrega", e.target.value.trim());
+    const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);
+    const eu=$("pEntUna"); if(eu) eu.onclick=()=>{ const on=!c.entrega_burbuja_unica; c.entrega_burbuja_unica=on; prodSetC("entrega_burbuja_unica", on||undefined); eu.classList.toggle("on", on); };
     const vp=$("pValPago"); if(vp) vp.onchange=(e)=>prodSetC("validacion_pago", e.target.value||undefined);
     const g=$("goOpc3"); if(g) g.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
     return;
@@ -1694,7 +1707,12 @@ async function generarFlujoVenta(){
     // flujo, alcanzaría con que alguien lo borre al editar para que dejen de
     // registrarse ventas — y nadie se enteraría hasta fin de mes.
     const nEntregar=await N("accion","Entregar el producto",{
-      acciones:[{ tipo:"entregar", mensaje:"¡Pago confirmado! 🎉 Acá tienes tu acceso:" }],
+      // Encabezado y estilo de burbuja configurables (pestaña Entrega). incluir_buffer:
+      // junta el principal con los extras "antes" que quedaron diferidos (entrega conjunta).
+      acciones:[{ tipo:"entregar",
+        mensaje:(st.prod.config?.entrega_mensaje||"¡Pago confirmado! 🎉 Acá tienes tu acceso:"),
+        una_burbuja:!!st.prod.config?.entrega_burbuja_unica,
+        incluir_buffer:true }],
     },false,1800,120);
     const nFin=await N("fin","Fin",{},false,2080,120);
     const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
@@ -1768,7 +1786,12 @@ async function generarFlujoVenta(){
             // misma fila de la venta principal. (Los extras son del flujo
             // digital: acá el nombre es el de WhatsApp, no hay extractor.)
             { tipo:"actualizar_pedido", bump:{ nombre:(info?info.label:`Extra ${i+1}`), precio:String(precio) } },
-            { tipo:"entregar", version_id:x.version_id, mensaje:"¡Listo! 🎉 Acá va tu extra:" },
+            // "antes": se DIFIERE la entrega del extra para mandarla junto con el
+            // principal al final. "después": ya se entregó el principal, así que el
+            // extra se entrega al toque (respetando el estilo de burbuja del producto).
+            (antes
+              ? { tipo:"entregar", version_id:x.version_id, diferir:true }
+              : { tipo:"entregar", version_id:x.version_id, una_burbuja:!!cfg.entrega_burbuja_unica, mensaje:"¡Listo! 🎉 Acá va tu extra:" }),
             { tipo:"notify_admin", una_vez:`extra_${x.version_id}`, foto:"{{ultima_imagen}}",
               mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre}} (+{{telefono}})\nFecha: {{fecha_hora}}` },
           ],
@@ -1932,13 +1955,17 @@ function paintEntrega(el,v,fisico){
   const items=v.entrega=Array.isArray(v.entrega)?v.entrega:[];
   if(!items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin entrega configurada.</div>`; return; }
   items.forEach((it,j)=>{
-    const r=document.createElement("div"); r.className="row"; r.style.cssText="align-items:center;margin-bottom:6px;gap:7px";
-    r.innerHTML=`<span style="flex:0 0 auto;color:var(--muted);display:inline-flex">${icon(it.tipo==="archivo"?"file":"link")}</span>
-      <input class="in en" style="flex:0 0 170px" value="${esc(it.nombre||"")}" placeholder="Nombre"/>
-      <input class="in eu" style="flex:1" value="${esc(it.url||"")}" ${it.tipo==="archivo"?"readonly":""}/>
-      <button class="iconbtn edel" style="flex:0 0 auto">${icon("trash")}</button>`;
+    const r=document.createElement("div"); r.style.cssText="margin-bottom:10px;padding:8px 9px;border:1px solid var(--border);border-radius:10px";
+    r.innerHTML=`<div class="row" style="align-items:center;gap:7px">
+        <span style="flex:0 0 auto;color:var(--muted);display:inline-flex">${icon(it.tipo==="archivo"?"file":"link")}</span>
+        <input class="in en" style="flex:0 0 170px" value="${esc(it.nombre||"")}" placeholder="Nombre"/>
+        <input class="in eu" style="flex:1" value="${esc(it.url||"")}" ${it.tipo==="archivo"?"readonly":""}/>
+        <button class="iconbtn edel" style="flex:0 0 auto">${icon("trash")}</button>
+      </div>
+      <input class="in emsg" style="margin-top:6px" value="${esc(it.mensaje||"")}" placeholder="Mensaje al entregar este ${it.tipo==="archivo"?"archivo":"link"} (opcional) — ej. “Acá está tu curso 🎥”"/>`;
     r.querySelector(".en").oninput=(e)=>{ it.nombre=e.target.value; };
     r.querySelector(".eu").oninput=(e)=>{ it.url=e.target.value; };
+    r.querySelector(".emsg").oninput=(e)=>{ it.mensaje=e.target.value; };
     r.querySelector(".edel").onclick=()=>{ items.splice(j,1); paintEntrega(el,v,fisico); };
     box.appendChild(r);
   });
