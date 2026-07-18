@@ -909,6 +909,10 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     const info=cat.find(c=>c.id===x.version_id);
     const precio=info?.precio ?? "";
     const label=info?info.label:`Extra ${i+1}`;
+    // Un extra DIGITAL viaja igual ride-along (se cobra junto), pero su link se
+    // entrega recién cuando el pedido queda pagado del todo (motor:
+    // entregarExtrasDigitales). El bump lleva version_id + digital para saberlo.
+    const esDigital=(info?.tipo==="digital");
     const y=baseY + i*300;
     const nOfr=await N("mensaje",`Ofrecer extra ${i+1}`,{ bubbles:[{ text:x.mensaje||`¿Le sumas ${label}? Te lo mando junto 🎁` }] },false,1800,y);
     const nEsp=await N("pregunta",`Esperar respuesta (extra ${i+1})`,{ text:"", timeout_seg:esperaSeg },false,2080,y);
@@ -929,11 +933,11 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     },false,2640,y);
     const nAdd=await N("accion",`Sumar extra ${i+1}`,{
       acciones:[
-        { tipo:"actualizar_pedido", bump:{ nombre:label, precio:String(precio), sube_saldo:true } },
-        { tipo:"notify_admin", una_vez:`extraf_${x.version_id}`, mensaje:`🎁 VENTA EXTRA (físico) · ${label}\nCliente: {{nombre}} (+{{telefono}})\nSe suma al mismo envío — S/ ${precio}` },
+        { tipo:"actualizar_pedido", bump:{ nombre:label, precio:String(precio), sube_saldo:true, ...(esDigital?{ version_id:x.version_id, digital:true }:{}) } },
+        { tipo:"notify_admin", una_vez:`extraf_${x.version_id}`, mensaje:`🎁 VENTA EXTRA (${esDigital?"digital":"físico"}) · ${label}\nCliente: {{nombre}} (+{{telefono}})\nSe suma al mismo envío — S/ ${precio}${esDigital?"\n(el acceso se envía solo al pagar todo)":""}` },
       ],
     },false,2920,y);
-    const nConfE=await N("mensaje",`Confirmar extra ${i+1}`,{ bubbles:[{ text:`¡Genial! Te lo sumo al pedido 🎉 Lo pagas junto con el resto.` }] },false,3200,y);
+    const nConfE=await N("mensaje",`Confirmar extra ${i+1}`,{ bubbles:[{ text: esDigital?`¡Listo! Te lo sumo al pedido 🎉 Apenas se complete el pago te mando el acceso.`:`¡Genial! Te lo sumo al pedido 🎉 Lo pagas junto con el resto.` }] },false,3200,y);
     const nResp=await N("ia",`Responder sobre el extra ${i+1}`,{
       operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
       prompt:`El cliente está viendo una oferta para SUMAR ${label} a su pedido (se envía y cobra junto con lo que ya pidió). Responde su duda de forma breve y sin presionar; si quiere, dile que se lo sumas al mismo envío.`,

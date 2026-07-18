@@ -145,6 +145,32 @@ export async function resumeAfterApproval(
   return true;
 }
 
+// Entrega los enlaces/archivos de las ventas extra DIGITALES que viajaban en un
+// pedido físico ("ride-along"), una vez que el pedido quedó pagado del todo
+// (Lima: entregado y cobrado; provincia: saldo pagado / recogido). Antes no: dar
+// el link en un cobro contraentrega sería regalar el digital. Idempotente: marca
+// cada bump entregado. La llaman order-update y el interceptor de saldo.
+export async function entregarExtrasDigitales(db: SupabaseClient, channelId: string, contactId: string, orderId: string) {
+  try {
+    const { data: o } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+    const bumps = ((o as any)?.order_bumps ?? []) as any[];
+    if (!bumps.some((b) => b?.digital && b?.version_id && !b?.entregado)) return;
+    let changed = false;
+    for (const b of bumps) {
+      if (!(b?.digital && b?.version_id && !b?.entregado)) continue;
+      const { data: v } = await db.from("product_versions").select("nombre, entrega").eq("id", b.version_id).maybeSingle();
+      const items = (Array.isArray((v as any)?.entrega) ? (v as any).entrega : []).filter((it: any) => it && it.url);
+      if (!items.length) continue; // sin entrega configurada → nada que mandar
+      await deliverMessage(db, channelId, contactId, `🎁 Acá va tu ${b.nombre || (v as any)?.nombre || "extra"}:`).catch(() => {});
+      for (const it of items) await deliverMessage(db, channelId, contactId, String(it.url)).catch(() => {});
+      b.entregado = true; changed = true;
+    }
+    if (changed) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
+  } catch (e) {
+    console.error("[entregarExtrasDigitales]", (e as any)?.message ?? e);
+  }
+}
+
 // ── Pasar la conversación a un humano ──────────────────────────────
 // Dos disparadores distintos, porque son dos cosas distintas:
 //   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
@@ -1305,11 +1331,17 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
       const precio = Number(resolve(String(a.bump.precio ?? "0"), ctx)) || 0;
       // Idempotente: si ya está ese extra, no se suma dos veces.
       if (!previos.some((b) => b?.nombre === nombre)) {
-        patch.order_bumps = [...previos, { nombre, precio }];
+        // Un extra DIGITAL dentro de un pedido físico viaja con su version_id +
+        // digital:true → su link/archivo se entrega cuando el pedido queda pagado
+        // del todo (no antes: sería regalar el digital en un pago contraentrega).
+        const nuevo: Record<string, unknown> = { nombre, precio };
+        if (a.bump.version_id) nuevo.version_id = resolve(String(a.bump.version_id), ctx);
+        if (a.bump.digital) { nuevo.digital = true; nuevo.entregado = false; }
+        patch.order_bumps = [...previos, nuevo];
         // Venta extra "ride-along" en un pedido FÍSICO: no se cobra aparte, se
         // suma al SALDO (lo que cobra la agencia en provincia, o el motorizado en
         // Lima). El adelanto no cambia. Solo si el pedido tiene saldo y el bump lo
-        // pide (los extras digitales usan bump SIN sube_saldo → no lo tocan).
+        // pide.
         if (a.bump.sube_saldo) {
           const sActual = Number(((cur as any)?.shipping ?? {}).saldo);
           if (Number.isFinite(sActual)) {
@@ -1576,6 +1608,9 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await syncPedidoSheet(db, (order as any).id);
     await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
+    // Pedido pagado del todo → recién ahora se entregan las ventas extra
+    // digitales que viajaban en él (link/archivo).
+    await entregarExtrasDigitales(db, channelId, contactId, (order as any).id);
     await notifyAdmin(db, runlike, `✅ Saldo validado automáticamente y clave de recojo enviada. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
     return true;
   }

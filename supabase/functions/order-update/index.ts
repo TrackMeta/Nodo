@@ -8,11 +8,14 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, entregarExtrasDigitales } from "../_shared/engine.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
 const CONFIRM_STATES = ["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"];
+// Estados en que el pedido físico quedó PAGADO DEL TODO → recién ahí se entregan
+// las ventas extra digitales que viajaban en él (ride-along).
+const FULLPAY_STATES = ["entregado_cobrado", "saldo_pagado", "recogido"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -77,6 +80,16 @@ Deno.serve(async (req) => {
       resumed = await resumeAfterApproval(db, (order as any).channel_id, (order as any).contact_id);
     } catch (e) {
       console.error("[order-update] resume:", (e as any)?.message ?? e);
+    }
+  }
+
+  // Pedido físico pagado del todo → entregar las ventas extra digitales que
+  // viajaban en él (link/archivo). Idempotente; no afecta pedidos sin extras.
+  if (newEstado && FULLPAY_STATES.includes(newEstado) && (order as any).contact_id) {
+    try {
+      await entregarExtrasDigitales(db, (order as any).channel_id, (order as any).contact_id, order.id);
+    } catch (e) {
+      console.error("[order-update] entregar extras digitales:", (e as any)?.message ?? e);
     }
   }
 
