@@ -289,6 +289,7 @@ async function load(){
       const k=b.nombre||"Venta extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
   });
   const vendido=orders.reduce((a,o)=>a+O.total(o),0);
+  const vueltoTotal=orders.reduce((a,o)=>a+(Number((o.shipping||{}).vuelto)||0),0);
   const compras=orders.length;
   const ticket=compras?vendido/compras:0;
   const leads=ev.filter(e=>e.event_name==="Lead").length;
@@ -322,6 +323,11 @@ async function load(){
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
   );
+  // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
+  if(vueltoTotal>0){
+    K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
+      "saldo a favor de clientes que pagaron de más"));
+  }
   // "Ganancia real" no va en Digital: un infoproducto no tiene costo de mercadería
   // ni envío, así que la ganancia = lo cobrado y duplicaría el KPI "Cobrado".
   if(tipo!=="digital"){

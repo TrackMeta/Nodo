@@ -1257,6 +1257,26 @@ function envioCobroDe(ctx: any, zona: string): number {
   return 0;
 }
 
+// Pago digital: qué se registra como cobrado. Si el OCR leyó un monto y el
+// cliente pagó MÁS que lo esperado (típico cuando el remarketing bajó el precio
+// pero pagó el de lista), se registra lo que REALMENTE pagó y el excedente queda
+// como `vuelto` (saldo a favor del cliente). Si pagó lo justo, todo normal.
+function pagoRealYVuelto(run: Run, esperadoTotal: number): { amount: number; vuelto: number } {
+  const pagado = Number(run.vars.pago_monto);
+  if (Number.isFinite(pagado) && pagado > esperadoTotal + 0.5) {
+    return { amount: +pagado.toFixed(2), vuelto: +(pagado - esperadoTotal).toFixed(2) };
+  }
+  return { amount: +esperadoTotal.toFixed(2), vuelto: 0 };
+}
+async function avisarVuelto(db: SupabaseClient, run: Run, amount: number, vuelto: number) {
+  try {
+    const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", run.contact_id).maybeSingle();
+    const quien = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
+    await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
+      `💸 <b>Pagó de más · vuelto S/ ${vuelto}</b>\n${quien} pagó <b>S/ ${amount}</b> (S/ ${vuelto} de más). Revisa si se lo devuelves o queda a favor.`).catch(() => {});
+  } catch (_) { /* best-effort */ }
+}
+
 async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
   try {
     const ship: Record<string, unknown> = {};
@@ -1273,11 +1293,15 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       const patch: Record<string, unknown> = {
         estado: a.estado || "confirmada", shipping: merged, updated_at: new Date().toISOString(),
       };
-      if (base) patch.amount = +base.toFixed(2);
+      // Registra lo REALMENTE pagado + el vuelto (excedente) si pagó de más.
+      const pr = pagoRealYVuelto(run, base);
+      if (base) patch.amount = pr.amount;
+      if (pr.vuelto > 0) merged.vuelto = pr.vuelto;
       if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
         patch.confirmed_at = new Date().toISOString();
       }
       await db.from("orders").update(patch).eq("id", run.vars._order_id);
+      if (pr.vuelto > 0) await avisarVuelto(db, run, pr.amount, pr.vuelto);
       run.vars._order_precreado = false;
       run.vars.pedido_id = run.vars._order_id;
       ctx.pedido_id = run.vars._order_id;
@@ -1292,7 +1316,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     const base = parseMonto(a.monto ?? a.amount, ctx) ?? 0;
     const envio = envioCobroDe(ctx, String(ship.zona ?? ctx.zona_entrega ?? ""));
     if (envio > 0) ship.envio_cobrado = envio; // transparente en el pedido
-    const amount = +(base + envio).toFixed(2);
+    const esperado = +(base + envio).toFixed(2);
+    // Venta DIGITAL (confirmada): se registra lo que REALMENTE pagó y, si pagó de
+    // más, el excedente queda como `vuelto` (saldo a favor) y se avisa. El resto
+    // de estados (físico) usan el monto esperado como siempre.
+    let amount = esperado, vuelto = 0;
+    if (a.estado === "confirmada") { const pr = pagoRealYVuelto(run, esperado); amount = pr.amount; vuelto = pr.vuelto; if (vuelto > 0) ship.vuelto = vuelto; }
 
     // Congela el costo de la mercadería EN el pedido, para que cambiar el costo
     // del producto después no altere los márgenes ya cerrados (snapshot).
@@ -1318,6 +1347,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars.pedido_id = (ord as any).id; // {{pedido_id}}: la llave de la fila en Sheets
     ctx.pedido_id = (ord as any).id;
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
     await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
