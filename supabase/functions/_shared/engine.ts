@@ -665,11 +665,11 @@ export async function routeDecision(db: SupabaseClient, channelId: string, text:
   return { tier: "none", flow: null };
 }
 
-async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any): Promise<Run | null> {
+async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any, initialVars: Record<string, unknown> = {}): Promise<Run | null> {
   const initial = await initialNode(db, flow.id);
   const { data, error } = await db.from("flow_runs").insert({
     channel_id: channelId, contact_id: contactId, flow_id: flow.id,
-    current_node_id: initial?.id ?? null, vars: {}, estado: "activo",
+    current_node_id: initial?.id ?? null, vars: initialVars, estado: "activo",
   }).select("*").single();
   // 23505 = ya hay un run activo para este contacto (índice idx_runs_lock):
   // dos webhooks simultáneos → el que pierde la carrera lo maneja el caller.
@@ -780,13 +780,20 @@ async function execute(db: SupabaseClient, run: Run) {
         // mismo saludo a todos). Cada variante = lista de burbujas (texto/media).
         // Elige una variante activa por PESO; si el rotador está apagado, usa
         // siempre la primera variante activa. Luego continúa al flujo de venta/IA.
-        const all = (node.config?.variantes ?? []) as any[];
-        const active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
-        if (active.length) {
-          const rotOn = node.config?.activo !== false && active.length > 1;
-          const chosen = rotOn ? pickWeighted(active) : active[0];
-          for (const b of (chosen.bubbles ?? [])) await emit(db, run, b, ctx);
-          await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial", chosen.nombre ?? "");
+        // RECOMPRA: el cliente ya compró y vuelve por más. En vez del pitch de
+        // bienvenida ("gracias por tu interés"), un saludo cálido de recompra;
+        // el vendedor IA (nodo siguiente) retoma preguntando qué quiere esta vez.
+        if ((run.vars as any)?._recompra) {
+          await emit(db, run, { text: "¡Hola de nuevo! 🎉 Con gusto te preparo tu nuevo pedido. ¿Qué necesitas esta vez?" }, ctx);
+        } else {
+          const all = (node.config?.variantes ?? []) as any[];
+          const active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
+          if (active.length) {
+            const rotOn = node.config?.activo !== false && active.length > 1;
+            const chosen = rotOn ? pickWeighted(active) : active[0];
+            for (const b of (chosen.bubbles ?? [])) await emit(db, run, b, ctx);
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial", chosen.nombre ?? "");
+          }
         }
         // "Y después": continuar a otro flujo (venta o IA) o terminar. Se guarda
         // dentro del rotador, así el flujo Bienvenida es un solo nodo.
@@ -1016,7 +1023,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
 // remarketing). No interrumpe una conversación activa.
 export async function startFlowRun(
   db: SupabaseClient, channelId: string, contactId: string, flowId: string,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; vars?: Record<string, unknown> },
 ): Promise<boolean> {
   if (opts?.force) {
     // Modo prueba: cancela cualquier run y arranca el flujo aunque esté en borrador.
@@ -1028,7 +1035,7 @@ export async function startFlowRun(
   const { data: flow } = await db.from("flows").select("id, estado").eq("id", flowId).maybeSingle();
   if (!flow) return false;
   if (!opts?.force && (flow as any).estado !== "activo") return false;
-  const run = await startRun(db, channelId, contactId, flow);
+  const run = await startRun(db, channelId, contactId, flow, opts?.vars ?? {});
   if (!run) return false; // otro run ganó la carrera del lock
   await execute(db, run);
   return true;
@@ -1997,8 +2004,22 @@ async function limpiarCandadosVenta(db: SupabaseClient, contactId: string) {
   } catch (e) { console.error("[limpiarCandadosVenta]", (e as any)?.message ?? e); }
 }
 
+// Resetea los datos del ITEM (talla, color, opción, "datos completos") para que
+// la recompra los capture de cero — el par nuevo puede ser otra talla/color. La
+// zona, la dirección y el nombre NO se tocan: reusarlos es lo bueno de un
+// recomprador (menos fricción).
+async function resetItemFields(db: SupabaseClient, channelId: string, contactId: string, productId: string) {
+  try {
+    const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
+    const attrs = normalizeAtributos((p as any)?.config?.atributos);
+    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos"];
+    for (const k of claves) await setField(db, channelId, contactId, k, null);
+  } catch (e) { console.error("[resetItemFields]", (e as any)?.message ?? e); }
+}
+
 // Relanza el flujo de venta del producto para una RECOMPRA (pedido nuevo).
-// Limpia los candados una_vez para que el nuevo pedido/aviso no se omitan.
+// Limpia los candados una_vez para que el nuevo pedido/aviso no se omitan, y
+// resetea los datos del item; marca el run con _recompra (saludo cálido).
 async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: string, productId: string | null): Promise<boolean> {
   if (!productId) return false;
   const { data: flow } = await db.from("flows")
@@ -2006,7 +2027,8 @@ async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: s
     .order("created_at").limit(1).maybeSingle();
   if (!flow) return false;
   await limpiarCandadosVenta(db, contactId);
-  const ok = await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true });
+  await resetItemFields(db, channelId, contactId, productId);
+  const ok = await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true, vars: { _recompra: true } });
   if (ok) await logEvent(db, channelId, contactId, "nota", "🔁 Recompra: se relanzó la venta").catch(() => {});
   return ok;
 }
