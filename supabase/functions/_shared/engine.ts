@@ -66,10 +66,22 @@ export async function runEngine(
   }
 
   // ¿Pidió hablar con una persona? Se corta acá: el bot no sigue contestando
-  // encima de alguien que ya pidió un humano.
+  // encima de alguien que ya pidió un humano. Le confirma que lo pasa (con la
+  // expectativa según horario) para no dejarlo en el aire.
   if (event.type === "message" && pideHumano(event.text)) {
-    await pasarAHumano(db, channelId, contactId, "Lo pidió explícitamente: “" + String(event.text ?? "").slice(0, 120) + "”");
+    await pasarAHumano(db, channelId, contactId, "Lo pidió explícitamente: “" + String(event.text ?? "").slice(0, 120) + "”", { aviso: true });
     return;
+  }
+
+  // ¿Reclamo / cliente molesto? Escala a una persona, lo tranquiliza (nunca dead
+  // air) y te avisa. La consulta al canal solo corre si el texto ya disparó la
+  // red determinista, así que es barata. Se puede apagar (humano.reclamos=false).
+  if (event.type === "message" && pideReclamo(event.text)) {
+    const { data: chR } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+    if (((chR as any)?.pedidos_config?.humano?.reclamos ?? true) !== false) {
+      await pasarAHumano(db, channelId, contactId, "😠 Reclamo / cliente molesto: “" + String(event.text ?? "").slice(0, 120) + "”", { aviso: true });
+      return;
+    }
   }
 
   // Reclama su vuelto (pagó de más) → el bot lo tranquiliza y te avisa para que
@@ -262,6 +274,33 @@ function pideVuelto(text: string): boolean {
     return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
   });
 }
+
+// ── Reclamo / cliente molesto → escala a una persona ──────────────────
+// Señales INEQUÍVOCAS de enojo o disputa. Un bot argumentando con un cliente
+// molesto es puro riesgo (pierdes al cliente y quemas tu marca), así que esto no
+// se deja al criterio de la IA: red determinista para lo fuerte, y la IA sigue
+// escalando lo sutil con [[humano]]. Lista corta a propósito: NO queremos que un
+// "esto no me funciona" o "tengo un problema con la talla" (que el bot SÍ puede
+// resolver) escale. Solo enojo/disputa real. Configurable (humano.reclamos).
+const PIDE_RECLAMO = [
+  "estafa", "estafador", "estafadores", "me estafaron", "es un robo", "esto es un robo", "me robaron",
+  "son unos ladrones", "ladrones", "son unos rateros", "son unos abusivos", "esto es un abuso",
+  "voy a denunciar", "los voy a denunciar", "los denuncio", "indecopi",
+  "voy a reportar", "los voy a reportar", "los voy a demandar", "voy a demandar",
+  "pesimo servicio", "pesima atencion", "una verguenza", "es una verguenza", "esto es un fraude",
+  "exijo mi devolucion", "quiero mi devolucion", "devuelvanme mi dinero", "quiero que me devuelvan mi dinero",
+  "estoy indignado", "estoy indignada", "es una estafa", "esto es una estafa",
+];
+function pideReclamo(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 240) return false; // los reclamos suelen ser largos (rants)
+  return PIDE_RECLAMO.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
 // Reclama su vuelto → según el modo configurado en Validación de pagos
 // (pedidos_config.vuelto.modo):
 //   · "tranquilizar" (default): el bot le responde un mensaje configurable, te
@@ -292,7 +331,7 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
     const motivo = vuelto > 0
       ? `💸 Pide su vuelto (pagó de más). Saldo a favor: <b>S/ ${vuelto}</b>. “${frag}”`
       : `💸 Reclama un vuelto / devolución. “${frag}”`;
-    await pasarAHumano(db, channelId, contactId, motivo); // pausa + traspasa + avisa
+    await pasarAHumano(db, channelId, contactId, motivo, { aviso: true }); // pausa + traspasa + avisa al cliente
     return true;
   }
 
@@ -308,17 +347,93 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   return true;
 }
 
+// ── Horario de atención humana (para no traspasar hacia un vacío) ──────
+// La secuencia empieza en lunes para calcular "mañana"/"el <día>".
+const SEQ_DIAS = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"];
+const DIA_NOMBRE: Record<string, string> = {
+  lun: "el lunes", mar: "el martes", mie: "el miércoles", jue: "el jueves",
+  vie: "el viernes", sab: "el sábado", dom: "el domingo",
+};
+function fmtHora(hhmm: string): string {
+  const [H, M] = String(hhmm || "09:00").split(":").map((n) => Number(n));
+  const ap = (H < 12 || H === 24) ? "a.m." : "p.m.";
+  let h12 = H % 12; if (h12 === 0) h12 = 12;
+  return `${h12}:${String(M || 0).padStart(2, "0")} ${ap}`;
+}
+// Frase amable de cuándo vuelve a haber atención ("hoy a las 3:00 p.m.",
+// "mañana a las 9:00 a.m.", "el lunes a las 9:00 a.m.").
+function proximaApertura(h: any, tz: string): string {
+  const { hhmm, dia } = ahoraEnTz(tz);
+  const dias = h?.dias ?? {};
+  const on = (d: string) => dias[d] !== false;
+  const desde = String(h?.desde || "09:00");
+  const fmt = fmtHora(desde);
+  if (on(dia) && hhmm < desde) return `hoy a las ${fmt}`;
+  let idx = SEQ_DIAS.indexOf(dia); if (idx < 0) idx = 0;
+  for (let i = 1; i <= 7; i++) {
+    const d = SEQ_DIAS[(idx + i) % 7];
+    if (on(d)) return `${i === 1 ? "mañana" : DIA_NOMBRE[d]} a las ${fmt}`;
+  }
+  return `a las ${fmt}`;
+}
+// ¿Estamos dentro del horario de atención? Sin horario definido → siempre "sí"
+// (asumimos que estás disponible; el aviso será "en un momento").
+function horarioAtencion(hcfg: any, tz: string): { dentro: boolean; proxima: string | null } {
+  const h = hcfg?.horario ?? {};
+  if (!h.activo) return { dentro: true, proxima: null };
+  const { hhmm, dia } = ahoraEnTz(tz);
+  const dias = h.dias ?? {};
+  const desde = String(h.desde || "09:00");
+  const hasta = String(h.hasta || "20:00");
+  const dentro = dias[dia] !== false && hhmm >= desde && hhmm <= hasta;
+  return { dentro, proxima: dentro ? null : proximaApertura(h, tz) };
+}
+
 // Pausa el bot, marca la conversación y avisa. `motivo` explica POR QUÉ, para
 // que quien la tome sepa a qué entra sin leer todo el hilo.
-async function pasarAHumano(db: SupabaseClient, channelId: string, contactId: string, motivo: string) {
+// `opts.aviso` — regla de oro "nunca dead air": le decimos al cliente qué
+// esperar, según el horario de atención (channels.pedidos_config.humano):
+//   true    → siempre le mandamos un mensaje (dentro: "en un momento"; fuera:
+//             "un asesor te responde <próxima apertura>").
+//   "fuera" → solo si estamos FUERA de horario (para escaladas donde la IA ya
+//             escribió su propio mensaje, que sirve dentro de horario).
+//   false/omitido → no manda nada (el caller ya avisó por su cuenta).
+async function pasarAHumano(
+  db: SupabaseClient, channelId: string, contactId: string, motivo: string,
+  opts?: { aviso?: boolean | "fuera" },
+) {
   try {
     await db.from("contacts").update({ bot_activo: false }).eq("id", contactId);
     await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", contactId);
     await logEvent(db, channelId, contactId, "humano", "Transferido a un humano", motivo);
+
+    let dentro = true, proxima: string | null = null, avisoTxt = "", chequeoHorario = false;
+    if (opts?.aviso === true || opts?.aviso === "fuera") {
+      chequeoHorario = true;
+      const { data: ch } = await db.from("channels").select("pedidos_config, timezone").eq("id", channelId).maybeSingle();
+      const hcfg = (ch as any)?.pedidos_config?.humano ?? {};
+      const tz = (ch as any)?.timezone || "America/Lima";
+      const h = horarioAtencion(hcfg, tz);
+      dentro = h.dentro; proxima = h.proxima;
+      if (opts.aviso === true || !dentro) {
+        if (!dentro) {
+          avisoTxt = String(hcfg.aviso_fuera ?? "").trim() ||
+            `¡Gracias por escribir! 🙌 Ahora mismo no hay un asesor en línea${proxima ? `, pero te responde ${proxima}` : ""}. Déjame tu consulta por aquí y la vemos apenas volvamos. 🙏`;
+        } else {
+          avisoTxt = String(hcfg.aviso_dentro ?? "").trim() ||
+            "¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂";
+        }
+      }
+    }
+    if (avisoTxt) await deliverMessage(db, channelId, contactId, avisoTxt).catch(() => {});
+
     const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
     const quien = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
+    const nota = !chequeoHorario ? "" : dentro
+      ? "\n🟢 En horario de atención."
+      : `\n🔴 Fuera de horario${proxima ? ` — al cliente le dijimos que respondes ${proxima}` : ""}.`;
     await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as any,
-      `🙋 <b>${quien} necesita a una persona</b>\n${motivo}\nEl bot quedó en pausa en esa conversación.`);
+      `🙋 <b>${quien} necesita a una persona</b>\n${motivo}\nEl bot quedó en pausa en esa conversación.${nota}`);
   } catch (e) { console.error("[pasarAHumano]", (e as any)?.message ?? e); }
 }
 
@@ -846,7 +961,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   if (/\[\[\s*humano\s*\]\]/i.test(result)) {
     result = result.replace(/\[\[\s*humano\s*\]\]/gi, "").trim();
     await pasarAHumano(db, run.channel_id, run.contact_id,
-      "La IA pidió ayuda: no pudo resolverlo sola.").catch(() => {});
+      "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: "fuera" }).catch(() => {});
   }
   const re = /\[\[media:([\w-]+)\]\]/g;
   if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result }, ctx); return; }
@@ -2802,7 +2917,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     parts.push(
       "## Cuando necesites a una persona\n" +
       "Si de verdad no puedes resolverlo tú, escribe el marcador `[[humano]]` en tu respuesta " +
-      "(el cliente NO lo ve) y dile con naturalidad que lo pasas con alguien del equipo.\n" +
+      "(el cliente NO lo ve) y dile con calidez que lo pasas con alguien del equipo. " +
+      "NO prometas un tiempo exacto de respuesta (\"en 5 minutos\"): solo dile que lo verá una persona; del horario se encarga el sistema.\n" +
       "Úsalo SOLO si: el cliente está molesto o reclamando, hay un problema con un pedido ya hecho, " +
       "te pide algo que no puedes decidir (un descuento fuera de lo permitido, cambiar o cancelar un pedido), " +
       "o te preguntó dos veces lo mismo y no lograste ayudarlo.\n" +
