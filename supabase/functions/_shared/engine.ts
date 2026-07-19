@@ -2025,6 +2025,18 @@ async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
 
 const limpiaZona = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 
+// "Lima" a secas = la ciudad, no un distrito. El cliente que dice "soy de Lima"
+// SÍ es zona Lima (contraentrega), pero todavía no sabemos su distrito. Esto lo
+// distingue de nombrar un lugar específico fuera de la lista (→ provincia).
+const LIMA_GENERICA = new Set([
+  "lima", "lima metropolitana", "lima ciudad", "ciudad de lima", "lima peru",
+  "capital", "la capital", "lima capital", "lima lima", "lima cercado", "cercado de lima",
+]);
+function esLimaGenerica(s: string): boolean {
+  const n = limpiaZona(s);
+  return LIMA_GENERICA.has(n);
+}
+
 // Busca el lugar mencionado contra la lista del negocio. Determinista y gratis:
 // la mayoría de los clientes nombran el distrito tal cual ("soy de SJL").
 function matchZona(zonas: Zona[], texto: string): Zona | null {
@@ -2054,6 +2066,7 @@ async function extraerLugar(db: SupabaseClient, channelId: string, texto: string
       provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
       system: "Extraes lugares del Perú de mensajes de clientes. Responde SOLO con un JSON, sin explicaciones.",
       content: `Mensaje del cliente:\n"${texto}"\n\n¿A qué distrito, ciudad o localidad del Perú se refiere para su entrega? ` +
+        `Si solo menciona la ciudad de Lima de forma genérica (ej. "soy de Lima", "acá en la capital", "en Lima nomás") sin nombrar un distrito, responde exactamente "Lima". ` +
         `Responde exactamente: {"lugar":"<nombre del lugar, o vacío si no menciona ninguno>"}`,
       maxTokens: 80,
     });
@@ -2101,57 +2114,85 @@ function entregaHoy(cfg: any, zona: Zona): { hoy: boolean; motivo: string } {
 //   {{entrega_hoy}}   si | no
 //   {{entrega_motivo}} por qué no llega hoy (para que la IA lo explique bien)
 async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any) {
-  // La zona NO se re-evalúa una vez que se sabe. Se corre en cada mensaje, así
+  // La zona NO se re-evalúa una vez CONFIRMADA. Se corre en cada mensaje, así
   // que después de "soy de Trujillo" el cliente dice "la sede de Av. España" y
   // el detector tomaba esa CALLE como su ciudad: Trujillo se perdía y el pedido
-  // salía con la agencia mal. Si de verdad se equivocó de zona, lo corrige un
-  // humano desde el Copiloto — es mucho más raro que mencionar una calle.
-  if (!a?.forzar && String(ctx.zona_entrega ?? "").trim()) return;
+  // salía con la agencia mal. EXCEPCIÓN: si el cliente dijo solo "Lima" sin
+  // distrito (`zona_distrito_incierto`), seguimos afinando hasta que lo nombre.
+  // Si de verdad se equivocó de zona ya confirmada, lo corrige un humano.
+  if (!a?.forzar && String(ctx.zona_entrega ?? "").trim() && ctx.zona_distrito_incierto !== "si") return;
 
   const texto = a?.texto ? resolve(String(a.texto), ctx) : String(ctx.last_input ?? "");
   const cfg = await loadEntregas(db, run);
   const zonas: Zona[] = cfg?.entregas?.zonas ?? [];
   if (!zonas.length) return; // sin configuración → no tocar nada
 
+  const set = async (k: string, v: string) => {
+    run.vars[k] = v;
+    ctx[k] = v; // el mismo turno ya lo ve (la IA redacta con el veredicto puesto)
+    await setField(db, run.channel_id, run.contact_id, k, v);
+  };
+
+  // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
+  // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
   let z = matchZona(zonas, texto);
   let lugar: string | null = z ? z.nombre : null;
+  // 2) Sin match directo: la IA extrae el lugar del texto libre, y reintentamos
+  // el match determinista sobre ese lugar (puede venir deletreado distinto).
   if (!z) {
     const ext = await extraerLugar(db, run.channel_id, texto);
-    if (ext) {
-      lugar = ext;
-      z = matchZona(zonas, ext);
-      if (z) lugar = z.nombre;
-    }
+    if (ext) { lugar = ext; z = matchZona(zonas, ext); if (z) lugar = z.nombre; }
   }
   // Si no mencionó NINGÚN lugar, no se toca nada. Antes cualquier mensaje sin
   // lugar ("hola") lo marcaba como provincia, y la IA le hablaba de agencias a
   // alguien que todavía no había dicho de dónde era.
   if (!lugar) return;
 
-  // Lo que no está en la lista (o está pero destildado) → Provincia. Por eso
-  // desactivar una zona SÍ tiene efecto real: deja de ser Lima.
-  const esLima = !!z && z.cubro !== false;
-  const set = async (k: string, v: string) => {
-    run.vars[k] = v;
-    ctx[k] = v; // el mismo turno ya lo ve (la IA redacta con el veredicto puesto)
-    await setField(db, run.channel_id, run.contact_id, k, v);
-  };
-  await set("zona_entrega", esLima ? "lima" : "provincia");
-  await set("zona_nombre", z?.nombre ?? "");
-  // La CIUDAD, que hasta acá se detectaba y se tiraba: zona_nombre solo se
-  // llena si calzó con una zona de Lima, así que en provincia quedaba vacía.
-  // Sin ella "Av. España" no significa nada — ¿la de Trujillo o la de Lima?
-  await set("ciudad", lugar);
-  if (esLima) {
-    const { hoy, motivo } = entregaHoy(cfg, z!);
-    await set("entrega_hoy", hoy ? "si" : "no");
-    await set("entrega_motivo", motivo);
-  } else {
-    await set("entrega_hoy", "no");
-    await set("entrega_motivo", z ? "no cubrimos esa zona con reparto propio" : "");
+  // 3a) Calzó un DISTRITO de la lista → veredicto determinista y CONFIRMADO.
+  // La lista manda: un distrito destildado (cubro=false) es provincia.
+  if (z) {
+    const esLima = z.cubro !== false;
+    await set("zona_entrega", esLima ? "lima" : "provincia");
+    await set("zona_nombre", z.nombre);
+    await set("ciudad", z.nombre);
+    await set("zona_distrito_incierto", ""); // distrito ya conocido → deja de afinar
+    if (esLima) {
+      const { hoy, motivo } = entregaHoy(cfg, z);
+      await set("entrega_hoy", hoy ? "si" : "no");
+      await set("entrega_motivo", motivo);
+    } else {
+      await set("entrega_hoy", "no");
+      await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
+    }
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
+      `${z.nombre} → ${esLima ? "lima" : "provincia"}${esLima ? ` · hoy: ${run.vars.entrega_hoy}` : ""}`);
+    return;
   }
-  await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
-    `${z?.nombre ?? "(fuera de Lima)"} → ${esLima ? "lima" : "provincia"}${esLima ? ` · hoy: ${run.vars.entrega_hoy}` : ""}`);
+
+  // 3b) No calzó distrito, pero el cliente nombró "Lima" a secas (la ciudad).
+  // Es zona Lima (CONTRAENTREGA), pero falta el distrito para despachar y para
+  // saber si llega hoy → lo dejamos ABIERTO y la IA le pregunta el distrito. Sin
+  // esto, "soy de Lima" caía a provincia y se le ofrecía agencia + adelanto (mal).
+  if (esLimaGenerica(lugar)) {
+    await set("zona_entrega", "lima");
+    await set("zona_nombre", "Lima");
+    await set("ciudad", "Lima");
+    await set("zona_distrito_incierto", "si");
+    await set("entrega_hoy", "");   // sin distrito no se puede prometer el mismo día
+    await set("entrega_motivo", "");
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta", "Lima (distrito por confirmar)");
+    return;
+  }
+
+  // 3c) Nombró un lugar específico que NO está en la lista → Provincia (agencia).
+  // La lista del negocio es la fuente de verdad de la cobertura propia.
+  await set("zona_entrega", "provincia");
+  await set("zona_nombre", "");
+  await set("ciudad", lugar);
+  await set("zona_distrito_incierto", "");
+  await set("entrega_hoy", "no");
+  await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
+  await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta", `${lugar} → provincia`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2711,7 +2752,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // sabe qué hora es ni qué zonas cubrimos; el código sí.)
     if (ctx.zona_entrega) {
       const L: string[] = [];
-      if (ctx.zona_entrega === "lima") {
+      if (ctx.zona_entrega === "lima" && ctx.zona_distrito_incierto === "si") {
+        // Dijo "Lima" a secas: es contraentrega, pero falta el distrito. La IA
+        // lo pregunta ANTES de prometer día de entrega, y NUNCA ofrece agencia.
+        L.push("El cliente es de **Lima** → entrega en Lima, CONTRAENTREGA (paga al recibir). NO le ofrezcas envío por agencia ni le pidas adelanto: eso es solo para provincia.");
+        L.push("Todavía NO sabes su **distrito** de Lima. Pregúntaselo con naturalidad para coordinar la entrega; recién con el distrito podrás decirle si llega hoy. No prometas el mismo día hasta saberlo.");
+      } else if (ctx.zona_entrega === "lima") {
         L.push(`El cliente es de **${ctx.zona_nombre || "Lima"}** → entrega en Lima, CONTRAENTREGA (paga al recibir).`);
         L.push(ctx.entrega_hoy === "si"
           ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo."
