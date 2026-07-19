@@ -1956,8 +1956,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 // re-disparaba el flujo de venta (re-pitch) o se quedaba mudo.
 // ═══════════════════════════════════════════════════════════════════
 const COMPRADO_STATES = new Set([
-  "confirmada", "adelanto_validado", "por_despachar", "despachado", "en_agencia",
-  "saldo_pagado", "recogido", "en_reparto", "entregado_cobrado", "reprogramado",
+  "confirmada", "confirmado", "adelanto_validado", "por_despachar", "despachado",
+  "en_agencia", "saldo_pagado", "recogido", "en_reparto", "entregado_cobrado", "reprogramado",
 ]);
 
 // Limpia los candados `una_vez` de venta/aviso para que una RECOMPRA cree un
