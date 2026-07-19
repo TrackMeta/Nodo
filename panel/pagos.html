@@ -88,6 +88,8 @@ function defaultPedidos(){
     // Cuándo el bot deja de responder y te pasa el chat, y qué le dice al cliente
     // (nunca lo deja en el aire). reclamos = escalar ante enojo/disputa.
     humano:{ reclamos:true, horario:{ activo:false, desde:"09:00", hasta:"20:00", dias:{lun:true,mar:true,mie:true,jue:true,vie:true,sab:true,dom:false} }, aviso_dentro:"", aviso_fuera:"" },
+    // Tras la compra, el bot atiende como soporte (no re-vende) y maneja la recompra.
+    postventa:{ activo:true, instrucciones:"" },
   };
 }
 
@@ -116,6 +118,7 @@ function render(b){
     humano:{ ...D.humano, ...(src.humano||{}),
       horario:{ ...D.humano.horario, ...((src.humano||{}).horario||{}),
         dias:{ ...D.humano.horario.dias, ...(((src.humano||{}).horario||{}).dias||{}) } } },
+    postventa:{ ...D.postventa, ...(src.postventa||{}) },
     adelanto:{
       ...D.adelanto, ...(src.adelanto||{}),
       nudge:{ ...D.adelanto.nudge, ...((src.adelanto||{}).nudge||{}) },
@@ -277,6 +280,21 @@ function render(b){
       ${ta(p.humano.aviso_dentro,"¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂",3).replace('class="in"','class="in" id="huDentro"')}
     </div>
 
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">🛎️</span><span class="nm">Atención post-venta</span></div>
+      <div class="desc">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
+
+      <div id="pvRow2" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Activar el modo soporte post-venta</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apagado = tras la compra el bot vuelve a su modo normal (puede re-ofrecer el producto).</div></span>
+        <span class="sw ${p.postventa.activo!==false?'on':''}" id="pvSw2" style="flex:none"></span>
+      </div>
+
+      <label style="margin-top:14px">Indicaciones para la post-venta <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.postventa.instrucciones,"Ej. Si preguntan por la garantía, son 30 días por defecto de fábrica. Para cambios de talla, dentro de 7 días y sin uso.",3).replace('class="in"','class="in" id="pvInstr"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Lo que quieras que el bot tenga presente al atender a un comprador (garantía, cambios, cómo usar el producto…).</div>
+    </div>
+
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
   b.querySelectorAll(".digopt").forEach(opt=> opt.onclick=()=>{
     p.digital.validacion=opt.dataset.modo;
@@ -323,12 +341,14 @@ function render(b){
     const k=x.dataset.dia; const on=!(p.humano.horario.dias[k]!==false); p.humano.horario.dias[k]=on;
     x.style.borderColor=on?"var(--ia)":"var(--border)"; x.style.background=on?"var(--ia)":"transparent"; x.style.color=on?"#fff":"var(--muted)";
   });
+  $("pvRow2").onclick=()=>{ p.postventa.activo=!(p.postventa.activo!==false); $("pvSw2").classList.toggle("on",p.postventa.activo!==false); };
   $("pedSave").onclick=async(e)=>{
     p.digital.tolerancia=Math.max(0,Number($("pDigTol").value)||0);
     if($("huDesde")) p.humano.horario.desde=$("huDesde").value||"09:00";
     if($("huHasta")) p.humano.horario.hasta=$("huHasta").value||"20:00";
     if($("huDentro")) p.humano.aviso_dentro=$("huDentro").value.trim();
     if($("huFuera")) p.humano.aviso_fuera=$("huFuera").value.trim();
+    if($("pvInstr")) p.postventa.instrucciones=$("pvInstr").value.trim();
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);

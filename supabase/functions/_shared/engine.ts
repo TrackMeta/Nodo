@@ -114,6 +114,11 @@ export async function runEngine(
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
     if (event.type !== "message") return;
+    // Modo soporte post-venta: si el contacto YA compró y escribe sin flujo
+    // activo, lo atendemos como cliente (soporte), no re-vendemos. Si quiere
+    // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
+    try { if (await maybePostventa(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
     const decision = await routeDecision(db, channelId, event.text, event.adId);
     const flow = decision.flow;
     if (!flow) return; // ningún flujo maneja este mensaje (ni por IA)
@@ -1938,6 +1943,113 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     url,
     clave ? [[{ text: "🔑 Aprobar y dar la clave", data: `saldo_ok:${(order as any).id}` }]] : undefined);
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago del saldo y en breve te confirmo. 🙌").catch(() => {});
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODO SOPORTE POST-VENTA
+// Una vez que el cliente COMPRÓ, si vuelve a escribir sin un flujo activo, el
+// bot lo atiende como CLIENTE (reenvía su acceso, le da el estado del pedido, lo
+// ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo desde cero. Si
+// quiere COMPRAR de nuevo o más unidades, la IA lo marca con [[recompra]] y se
+// relanza la venta (con un pedido nuevo). Sin esto, tras el nodo "Fin" el bot
+// re-disparaba el flujo de venta (re-pitch) o se quedaba mudo.
+// ═══════════════════════════════════════════════════════════════════
+const COMPRADO_STATES = new Set([
+  "confirmada", "adelanto_validado", "por_despachar", "despachado", "en_agencia",
+  "saldo_pagado", "recogido", "en_reparto", "entregado_cobrado", "reprogramado",
+]);
+
+// Limpia los candados `una_vez` de venta/aviso para que una RECOMPRA cree un
+// pedido nuevo (y su aviso), en vez de omitirlos por idempotencia del contacto.
+async function limpiarCandadosVenta(db: SupabaseClient, contactId: string) {
+  try {
+    const { data } = await db.from("contact_field_values")
+      .select("id, custom_fields!inner(key)").eq("contact_id", contactId);
+    for (const r of (data ?? [])) {
+      if (/^_once_(venta|aviso)_/.test(String((r as any).custom_fields?.key ?? ""))) {
+        await db.from("contact_field_values").delete().eq("id", (r as any).id);
+      }
+    }
+  } catch (e) { console.error("[limpiarCandadosVenta]", (e as any)?.message ?? e); }
+}
+
+async function maybePostventa(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  // 1) ¿Es comprador? Su último pedido está en un estado de compra concretada.
+  const { data: order } = await db.from("orders")
+    .select("estado, product_id, product:product_id(nombre)")
+    .eq("channel_id", channelId).eq("contact_id", contactId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!order || !COMPRADO_STATES.has(String((order as any).estado))) return false;
+
+  // 2) Configurable: se puede apagar (pedidos_config.postventa.activo=false).
+  const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+  const pv = (ch as any)?.pedidos_config?.postventa ?? {};
+  if (pv.activo === false) return false;
+
+  // 3) Contexto (run virtual: no hay flujo activo, solo queremos el contexto del
+  // contacto: producto, {{link_entrega}}, estado del pedido, conocimiento…).
+  const run: any = { id: null, channel_id: channelId, contact_id: contactId, flow_id: null, current_node_id: null, vars: { last_input: event.text ?? "" } };
+  const ctx = await buildContext(db, run);
+  ctx.last_input = event.text ?? "";
+
+  const info = await channelIaInfo(db, run);
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) return false; // sin IA → deja que el ruteo normal intente
+
+  const estadoLegible = EST_HOJA[String((order as any).estado)] ?? "compra registrada";
+  const prod = (order as any).product?.nombre || ctx.producto_nombre || "tu compra";
+  const parts: string[] = [];
+  if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
+  if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + ctx.contexto_producto);
+  parts.push(
+    "## Atención POST-VENTA (tu rol AHORA)\n" +
+    `Este cliente YA COMPRÓ **${prod}**. Estado de su pedido: **${estadoLegible}**. ` +
+    "Con él ya no eres vendedor: eres su SOPORTE. Ahora tu trabajo es:\n" +
+    "- Si te pide su acceso/link o dice que no le llegó, reenvíaselo" +
+    (ctx.link_entrega ? `: ${ctx.link_entrega}` : " (está en su pedido)") + ".\n" +
+    `- Si pregunta por el estado o el seguimiento de su pedido, dile en qué va (${estadoLegible}) con naturalidad.\n` +
+    "- Si necesita ayuda para usar el producto, oriéntalo con lo que sabes de él.\n" +
+    "- Si hay un problema real, un cambio o una devolución que no puedes resolver, escribe `[[humano]]`.\n" +
+    "NO le ofrezcas comprar lo mismo otra vez como si no te conociera, ni le repitas el pitch de venta.\n" +
+    "PERO si el cliente QUIERE COMPRAR de nuevo, más unidades u otro producto, con gusto: dile con calidez que se lo preparas y escribe el marcador `[[recompra]]` (el cliente NO lo ve). No lo trates como desconocido." +
+    (pv.instrucciones && String(pv.instrucciones).trim() ? "\n\nIndicaciones del negocio para la post-venta:\n" + String(pv.instrucciones).trim() : "")
+  );
+  const system = parts.join("\n\n");
+
+  const hist = await historial(db, run, 10);
+  const content = `El cliente (ya comprador) te escribe:\n"${event.text ?? ""}"` +
+    (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
+
+  let result = "";
+  try {
+    result = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, content, maxTokens: 500 });
+  } catch (e) { console.error("[postventa]", (e as any)?.message ?? e); return false; }
+
+  await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta", (event.text ?? "").slice(0, 80)).catch(() => {});
+
+  // ¿Quiere recomprar? Se relanza la venta del MISMO producto (pedido nuevo). Se
+  // limpian los candados una_vez para que el pedido/aviso no se omitan.
+  if (/\[\[\s*recompra\s*\]\]/i.test(result)) {
+    result = result.replace(/\[\[\s*recompra\s*\]\]/gi, "").trim();
+    if (result) await emitIaText(db, run, result, ctx);
+    await limpiarCandadosVenta(db, contactId);
+    const pid = (order as any).product_id;
+    if (pid) {
+      const { data: flow } = await db.from("flows")
+        .select("id").eq("channel_id", channelId).eq("product_id", pid).eq("estado", "activo")
+        .order("created_at").limit(1).maybeSingle();
+      if (flow) {
+        await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true });
+        await logEvent(db, channelId, contactId, "nota", "🔁 Recompra: se relanzó la venta").catch(() => {});
+        return true;
+      }
+    }
+    return true; // sin flujo para relanzar → al menos ya respondió
+  }
+
+  await emitIaText(db, run, result || "¡Hola! 🙂 ¿En qué te ayudo con tu compra?", ctx);
   return true;
 }
 
