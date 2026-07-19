@@ -306,6 +306,29 @@ function pideReclamo(text: string): boolean {
     return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
   });
 }
+
+// ── Recompra (post-venta) → relanzar la venta ─────────────────────────
+// Un comprador que quiere comprar OTRA VEZ / más unidades. Determinista para lo
+// claro (los LLM no escriben el marcador [[recompra]] de forma confiable si
+// pueden responder directo). El [[recompra]] de la IA queda como respaldo para
+// frases más sutiles. Solo se evalúa en modo post-venta (ya es comprador).
+const PIDE_RECOMPRA = [
+  "quiero comprar otro", "quiero comprar otra", "quiero comprar mas", "comprar otro par",
+  "comprar mas pares", "comprar de nuevo", "comprar otra vez", "volver a comprar",
+  "quiero otro par", "quiero otra unidad", "otro par mas", "unidades mas",
+  "quiero pedir otro", "pedir otro", "quiero comprar de nuevo", "me vendes otro",
+  "quiero comprar nuevamente", "necesito otro par", "quiero mas pares",
+];
+function pideRecompra(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 200) return false;
+  return PIDE_RECOMPRA.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
 // Reclama su vuelto → según el modo configurado en Validación de pagos
 // (pedidos_config.vuelto.modo):
 //   · "tranquilizar" (default): el bot le responde un mensaje configurable, te
@@ -1974,6 +1997,20 @@ async function limpiarCandadosVenta(db: SupabaseClient, contactId: string) {
   } catch (e) { console.error("[limpiarCandadosVenta]", (e as any)?.message ?? e); }
 }
 
+// Relanza el flujo de venta del producto para una RECOMPRA (pedido nuevo).
+// Limpia los candados una_vez para que el nuevo pedido/aviso no se omitan.
+async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: string, productId: string | null): Promise<boolean> {
+  if (!productId) return false;
+  const { data: flow } = await db.from("flows")
+    .select("id").eq("channel_id", channelId).eq("product_id", productId).eq("estado", "activo")
+    .order("created_at").limit(1).maybeSingle();
+  if (!flow) return false;
+  await limpiarCandadosVenta(db, contactId);
+  const ok = await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true });
+  if (ok) await logEvent(db, channelId, contactId, "nota", "🔁 Recompra: se relanzó la venta").catch(() => {});
+  return ok;
+}
+
 async function maybePostventa(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   // 1) ¿Es comprador? Su último pedido está en un estado de compra concretada.
   const { data: order } = await db.from("orders")
@@ -1986,6 +2023,15 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   const pv = (ch as any)?.pedidos_config?.postventa ?? {};
   if (pv.activo === false) return false;
+
+  // 2b) Recompra CLARA (determinista): relanza la venta directo, sin gastar un
+  // turno de IA. Un breve "¡con gusto!" y el flujo de venta retoma desde arriba.
+  if (pideRecompra(event.text ?? "")) {
+    if (await relanzarVenta(db, channelId, contactId, (order as any).product_id)) {
+      await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → recompra", (event.text ?? "").slice(0, 80)).catch(() => {});
+      return true;
+    }
+  }
 
   // 3) Contexto (run virtual: no hay flujo activo, solo queremos el contexto del
   // contacto: producto, {{link_entrega}}, estado del pedido, conocimiento…).
@@ -2034,19 +2080,8 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   if (/\[\[\s*recompra\s*\]\]/i.test(result)) {
     result = result.replace(/\[\[\s*recompra\s*\]\]/gi, "").trim();
     if (result) await emitIaText(db, run, result, ctx);
-    await limpiarCandadosVenta(db, contactId);
-    const pid = (order as any).product_id;
-    if (pid) {
-      const { data: flow } = await db.from("flows")
-        .select("id").eq("channel_id", channelId).eq("product_id", pid).eq("estado", "activo")
-        .order("created_at").limit(1).maybeSingle();
-      if (flow) {
-        await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true });
-        await logEvent(db, channelId, contactId, "nota", "🔁 Recompra: se relanzó la venta").catch(() => {});
-        return true;
-      }
-    }
-    return true; // sin flujo para relanzar → al menos ya respondió
+    await relanzarVenta(db, channelId, contactId, (order as any).product_id);
+    return true; // aunque no haya flujo para relanzar, ya respondió
   }
 
   await emitIaText(db, run, result || "¡Hola! 🙂 ¿En qué te ayudo con tu compra?", ctx);
