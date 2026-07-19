@@ -1775,6 +1775,20 @@ async function triggerPedidoEstado(
   }
 }
 
+// Cierra la conversación de VENTA de un contacto (cancela su run activo). Se usa
+// cuando la venta física TERMINÓ (provincia: saldo pagado; Lima: entregado y
+// cobrado): el flujo de venta de provincia es un bucle que nunca llega a "Fin",
+// así que sin esto la IA vendedora seguiría atendiendo para siempre. Al cerrarlo,
+// el siguiente mensaje del cliente lo toma el modo SOPORTE post-venta (que
+// reenvía la clave/acceso, da el estado y maneja la recompra). No toca el flujo
+// de pedido_estado (clave de recojo), que corre por separado.
+export async function cerrarConversacionVenta(db: SupabaseClient, contactId: string) {
+  try {
+    await db.from("flow_runs").update({ estado: "cancelado" })
+      .eq("contact_id", contactId).in("estado", ["activo", "esperando"]);
+  } catch (e) { console.error("[cerrarConversacionVenta]", (e as any)?.message ?? e); }
+}
+
 // Esquema de la validación del comprobante de saldo (salida estructurada).
 const SALDO_SCHEMA = {
   type: "object",
@@ -1959,6 +1973,9 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await syncPedidoSheet(db, (order as any).id);
+    // Venta cerrada → cede el paso al soporte post-venta (la clave la manda el
+    // flujo pedido_estado de la línea siguiente).
+    await cerrarConversacionVenta(db, contactId);
     await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
     // Pedido pagado del todo → recién ahora se entregan las ventas extra
     // digitales que viajaban en él (link/archivo).

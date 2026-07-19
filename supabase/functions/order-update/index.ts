@@ -8,11 +8,14 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, entregarExtrasDigitales, resumeIntoExtras } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta } from "../_shared/engine.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
 const CONFIRM_STATES = ["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"];
+// Venta física TERMINADA: se cierra la conversación de venta para ceder el paso
+// al soporte post-venta (el flujo de venta de provincia es un bucle sin "Fin").
+const FIN_VENTA_FISICA = ["saldo_pagado", "recogido", "entregado_cobrado"];
 // Estados en que el pedido físico quedó PAGADO DEL TODO → recién ahí se entregan
 // las ventas extra digitales que viajaban en él (ride-along).
 const FULLPAY_STATES = ["entregado_cobrado", "saldo_pagado", "recogido"];
@@ -64,6 +67,15 @@ Deno.serve(async (req) => {
   // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);
+
+  // Venta física cerrada (saldo pagado / recogido / entregado) → cierra la
+  // conversación de venta para que el modo SOPORTE post-venta tome el mando.
+  // Va antes del disparo de pedido_estado (clave de recojo), que arranca igual.
+  // No afecta al caso DIGITAL: "confirmada" no está en esta lista y su run se
+  // reanuda (resumeAfterApproval), no se cancela.
+  if (newEstado && FIN_VENTA_FISICA.includes(newEstado) && (order as any).contact_id) {
+    await cerrarConversacionVenta(db, (order as any).contact_id);
+  }
 
   // Reanudar un run parqueado por validación manual:
   //  · pago digital PRINCIPAL → el pedido pasa a 'confirmada' (marca
