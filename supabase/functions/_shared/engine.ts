@@ -2208,6 +2208,70 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// COPILOTO DE RESPUESTAS (botón IA del compositor)
+// Sugiere al ASESOR HUMANO las 3 mejores respuestas para enviarle al cliente
+// AHORA, con la personalidad del Vendedor IA, mirando TODA la conversación + el
+// conocimiento del negocio/producto + el estado del pedido. Lo usa la Edge
+// Function reply-suggest. No envía nada: solo devuelve texto para la barra.
+// ═══════════════════════════════════════════════════════════════════
+export async function sugerirRespuestas(db: SupabaseClient, channelId: string, contactId: string): Promise<string[]> {
+  const run: any = { id: null, channel_id: channelId, contact_id: contactId, flow_id: null, current_node_id: null, vars: {} };
+  const ctx = await buildContext(db, run);
+  const info = await channelIaInfo(db, run);
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (Ajustes → IA · Proveedores).");
+
+  const prod = ctx.producto_nombre || "";
+  const parts: string[] = [];
+  if (info.negocio) parts.push("## Sobre el negocio (incluye tu personalidad, tono y emojis)\n" + info.negocio);
+  if (ctx.contexto_producto) parts.push(`## Sobre el producto${prod ? ` (${prod})` : ""}\n` + ctx.contexto_producto);
+  const pm = (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
+    .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
+  if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
+  if (ctx.pedido_estado) {
+    let p = "## Estado del pedido del cliente\n" + (EST_HOJA[String(ctx.pedido_estado)] ?? String(ctx.pedido_estado));
+    if (ctx.pedido_saldo) p += `\nSaldo pendiente: S/ ${ctx.pedido_saldo}`;
+    if (ctx.pedido_adelanto) p += `\nAdelanto: S/ ${ctx.pedido_adelanto}`;
+    parts.push(p);
+  }
+  parts.push(
+    "## Tu tarea\n" +
+    "Un ASESOR HUMANO de este negocio está atendiendo el chat de WhatsApp de abajo y quiere ayuda para responderle al cliente. " +
+    "Basándote en TODA la conversación, el conocimiento del negocio/producto y el estado del pedido, propón las 3 MEJORES respuestas que el asesor podría enviarle al cliente AHORA MISMO.\n" +
+    "Reglas:\n" +
+    "- Que suenen EXACTAMENTE como este negocio: mismo tono, estilo y emojis que usarías tú vendiendo.\n" +
+    "- Cada una lista para ENVIAR tal cual: sin placeholders, sin marcadores, sin '[nombre]', sin '{{...}}'.\n" +
+    "- Las 3 opciones deben ser ÚTILES y DISTINTAS entre sí para este momento (no 3 versiones de lo mismo).\n" +
+    "- Naturales, humanas y directas. Ni muy largas ni robóticas.\n" +
+    "- NUNCA inventes datos que no sabes (precios, claves de recojo, plazos). Si falta un dato, la respuesta puede pedírselo al cliente.\n" +
+    "Responde SOLO en JSON: {\"sugerencias\":[\"...\",\"...\",\"...\"]}."
+  );
+  const system = parts.join("\n\n");
+  const hist = await historial(db, run, 16);
+  const content = hist
+    ? `## La conversación hasta ahora\n${hist}\n\nGenera las 3 sugerencias para el asesor.`
+    : "El cliente todavía no ha escrito nada en este chat. Sugiere 3 formas cálidas de iniciar o retomar la conversación.";
+
+  const raw = await runAI({
+    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    system, content, maxTokens: 700,
+    jsonSchema: {
+      type: "object",
+      properties: { sugerencias: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 } },
+      required: ["sugerencias"], additionalProperties: false,
+    } as unknown as Record<string, unknown>,
+  });
+  let arr: string[] = [];
+  try {
+    const m = /\{[\s\S]*\}/.exec(raw);
+    const parsed = m ? JSON.parse(m[0]) : {};
+    arr = Array.isArray(parsed?.sugerencias) ? parsed.sugerencias.map((s: any) => String(s ?? "").trim()).filter(Boolean) : [];
+  } catch (_) { arr = []; }
+  return arr.slice(0, 3);
+}
+
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
 async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {

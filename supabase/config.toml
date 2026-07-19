@@ -69,6 +69,10 @@ verify_jwt = false
 [functions.order-update]
 verify_jwt = true
 
+# reply-suggest: sugerencias de respuesta (botón IA del compositor).
+[functions.reply-suggest]
+verify_jwt = true
+
 # gsheets-test: escribe una fila de prueba en la app web de Apps Script del usuario.
 [functions.gsheets-test]
 verify_jwt = true

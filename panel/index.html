@@ -121,6 +121,23 @@
   .send svg{width:19px;height:19px} .send:disabled{opacity:.4}
   .ctool{width:38px;height:42px;flex:none;border:none;background:transparent;color:var(--muted);font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:10px}
   .ctool:hover{color:var(--brand);background:var(--surface-2)} .ctool svg{width:20px;height:20px}
+  /* Botón IA (copiloto de respuestas) */
+  .ctool-ia{width:42px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff!important;box-shadow:0 3px 10px rgba(168,85,247,.35)}
+  .ctool-ia:hover{background:linear-gradient(135deg,#9333ea,#db2777);color:#fff!important}
+  .ctool-ia svg{filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
+  /* Popover de sugerencias IA */
+  .sgpop{overflow-y:auto}
+  .sg-hd{padding:11px 13px;font-size:11.5px;font-weight:800;letter-spacing:.2px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px;background:linear-gradient(90deg,rgba(168,85,247,.10),rgba(236,72,153,.06))}
+  .sg-hd .sgt{background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .sg-hd svg{width:15px;height:15px;color:#c084fc;flex:none}
+  .sg-hd .sg-sub{font-weight:500;color:var(--muted);font-size:10.5px;margin-left:auto;letter-spacing:0}
+  .sg-load{padding:20px 14px;font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:9px}
+  .sg-spin{width:15px;height:15px;border:2px solid var(--border);border-top-color:#c084fc;border-radius:50%;animation:sgspin .7s linear infinite;flex:none}
+  @keyframes sgspin{to{transform:rotate(360deg)}}
+  .sg-item{display:block;width:100%;text-align:left;padding:11px 13px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:13px;line-height:1.5;cursor:pointer;font-family:inherit}
+  .sg-item:last-child{border-bottom:none}
+  .sg-item:hover{background:linear-gradient(90deg,rgba(168,85,247,.12),rgba(236,72,153,.07))}
+  .sg-empty{padding:16px 14px;font-size:12.5px;color:var(--muted);line-height:1.5}
   /* Popovers del compositor */
   .pop{position:absolute;bottom:60px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 44px rgba(0,0,0,.45);z-index:40;overflow:hidden}
   .pop.hidden{display:none}
@@ -296,8 +313,8 @@
         <button class="ctool" id="attachBtn" title="Adjuntar imagen, audio o archivo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <button class="ctool" id="flowBtn" title="Enviar un flujo a este contacto">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+        <button class="ctool ctool-ia" id="suggestBtn" title="Sugerencias de respuesta (IA)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
         </button>
         <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
         <input id="msgInput" placeholder="Escribe un mensaje…" autocomplete="off" />
@@ -306,7 +323,7 @@
         </button>
         <div class="pop qrpop hidden" id="qrPop"></div>
         <div class="pop emojipop hidden" id="emojiPop"></div>
-        <div class="pop qrpop hidden" id="flowPop" style="left:96px;width:300px"></div>
+        <div class="pop qrpop hidden" id="suggestPop" style="left:96px;width:344px"></div>
       </div>
     </div>
   </div>
@@ -509,31 +526,32 @@ function toggleEmojiPop(){
   pop.querySelectorAll(".emgrid button").forEach(b=> b.onclick=()=>insertAtCursor(b.textContent));
   pop.classList.remove("hidden");
 }
-// ── Enviar flujo a este contacto ──
-function toggleFlowPop(){
-  const pop=$("flowPop"); const willOpen=pop.classList.contains("hidden");
+// ── Copiloto de respuestas (botón IA): sugiere 3 respuestas listas para tocar ──
+const SG_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+async function openSuggest(){
+  const pop=$("suggestPop"); const willOpen=pop.classList.contains("hidden");
   $("qrPop").classList.add("hidden"); $("emojiPop").classList.add("hidden");
   if(!willOpen){ pop.classList.add("hidden"); return; }
-  if(!state.inboxFlows.length){ pop.innerHTML=`<div class="qempty">No hay flujos activos.<br><a href="editor.html">Publica un flujo →</a></div>`; }
-  else { pop.innerHTML=`<div class="qrfold">Iniciar un flujo</div>`+state.inboxFlows.map(f=>`<div class="qritem" data-id="${f.id}"><div class="qt">${icon("flujos")} ${esc(f.nombre)}</div></div>`).join(""); }
-  pop.classList.remove("hidden");
-  pop.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ pop.classList.add("hidden"); startFlowForContact(it.dataset.id); });
-}
-async function startFlowForContact(flowId){
-  const f=state.inboxFlows.find(x=>x.id===flowId); if(!f||!state.contactId) return;
-  if(!await confirmDialog({title:"Iniciar flujo",message:`¿Iniciar "${f.nombre}" para este contacto? El bot tomará la conversación.`,confirmText:"Iniciar"})) return;
+  pop.classList.add("sgpop"); pop.classList.remove("hidden");
+  pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span></div><div class="sg-load"><span class="sg-spin"></span>Pensando 3 respuestas…</div>`;
   try{
-    const res=await callFn("flow-start",{ channel_id:state.channelId, contact_id:state.contactId, flow_id:flowId });
+    const res=await callFn("reply-suggest",{ channel_id:state.channelId, contact_id:state.contactId });
     const out=await res.json().catch(()=>({}));
-    if(!res.ok){ toast(out.detalle||out.error||"No se pudo iniciar el flujo",true); return; }
-    setBotPill(true); if(panelData.contact) panelData.contact.bot_activo=true;
-    toast("Flujo iniciado ✓"); loadThread(); loadConversations();
-  }catch{ toast("Error de red",true); }
+    if(pop.classList.contains("hidden")) return; // se cerró mientras cargaba
+    const sug=Array.isArray(out.sugerencias)?out.sugerencias.filter(Boolean):[];
+    if(!res.ok || !sug.length){
+      pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span></div><div class="sg-empty">${esc(out.error||out.detalle||"No pude generar sugerencias ahora. Intenta de nuevo.")}</div>`;
+      return;
+    }
+    pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span><span class="sg-sub">toca una para escribirla</span></div>`+
+      sug.map(s=>`<button class="sg-item" type="button">${esc(s)}</button>`).join("");
+    pop.querySelectorAll(".sg-item").forEach((b,i)=> b.onclick=()=>{ const inp=$("msgInput"); inp.value=sug[i]; inp.focus(); pop.classList.add("hidden"); });
+  }catch{ if(!pop.classList.contains("hidden")) pop.innerHTML=`<div class="sg-empty">Error de red. Intenta de nuevo.</div>`; }
 }
 $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleQrPop(); });
 $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleEmojiPop(); });
-$("flowBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleFlowPop(); });
-function onDocClickComposer(e){ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("flowPop")?.classList.add("hidden"); } }
+$("suggestBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) openSuggest(); });
+function onDocClickComposer(e){ if(!e.target.closest(".composer")){ $("qrPop")?.classList.add("hidden"); $("emojiPop")?.classList.add("hidden"); $("suggestPop")?.classList.add("hidden"); } }
 document.addEventListener("click",onDocClickComposer);
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
