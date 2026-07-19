@@ -300,6 +300,7 @@ function printRotulo(o){
   const pedido=[p.emoji,p.nombre,v.nombre?"· "+v.nombre:""].filter(Boolean).join(" ");
   const nro=(o.order_id||o.id||"").toString().slice(0,8).toUpperCase();
   const row=(k,val,big)=> val?`<tr><td class="k">${esc(k)}</td><td class="v ${big?'big':''}">${esc(val)}</td></tr>`:"";
+  const atrLine=Object.entries(s.atributos||{}).map(([k,v])=>`${k}: ${v}`).join("   ·   ");
   let filas="";
   if(zona==="provincia"){
     filas =
@@ -308,6 +309,7 @@ function printRotulo(o){
       row("Teléfono", tel)+
       row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
       row("Pedido", pedido)+
+      row("Detalle", atrLine, true)+
       // Sin Guía a propósito: el rótulo se imprime ANTES de despachar, cuando la
       // agencia (Shalom/Olva) todavía no te dio la guía. Vive en la tarjeta del
       // Kanban una vez registrado el despacho.
@@ -320,6 +322,7 @@ function printRotulo(o){
       row("Distrito", s.distrito||"")+
       row("Referencia", s.referencia||"")+
       row("Pedido", pedido)+
+      row("Detalle", atrLine, true)+
       row("A COBRAR", money(total(o),o.currency)+"  ·  CONTRAENTREGA", true);
   }
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"/>

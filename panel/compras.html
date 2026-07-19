@@ -236,6 +236,9 @@ function card(o){
     if(s.direccion||s.distrito) meta.push(esc([s.distrito,s.direccion].filter(Boolean).join(" · ")));
     if(s.referencia) meta.push("Ref: "+esc(s.referencia));
   }
+  // Atributos capturados (talla, color…) — aplican a cualquier tipo.
+  const atr=Object.entries(s.atributos||{}).map(([k,v])=>`${esc(k)}: <b>${esc(v)}</b>`).join(" · ");
+  if(atr) meta.push(atr);
   const sh=shots(o,tipo);
   const shotsHtml = sh.length
     ? `<div class="shots">${sh.map(([u,cap_])=>`<div class="shot"><img src="${esc(u)}" data-full="${esc(u)}"/><span class="cap">${cap_}</span></div>`).join("")}</div>`

@@ -985,7 +985,9 @@ function remPickMedia(box,paso,v,kind){
 
 // Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
 // enviará sola). Reusa la Edge Function media-upload igual que pickMedia.
-function pickProdMedia(kind, onDone, syncCfg){
+// Sube un archivo y lo agrega a `arr` con un tag único. `tagBase` opcional fija
+// el prefijo del tag (ej. "atr_talla" para la multimedia de un atributo).
+function pickMediaTo(kind, arr, onDone, syncCfg, tagBase){
   const accept={image:"image/*",video:"video/*",document:"*/*"}[kind]||"*/*";
   const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
   inp.onchange=async()=>{
@@ -995,15 +997,18 @@ function pickProdMedia(kind, onDone, syncCfg){
       const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
       const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
       if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
-      const arr=st.prod.config.ia_multimedia=st.prod.config.ia_multimedia||[];
-      const base=(file.name||"archivo").replace(/\.[^.]+$/,"").replace(/[^\w-]/g,"").toLowerCase().slice(0,16)||"archivo";
-      let tag=base, n=2; while(arr.some(x=>x.tag===tag)) tag=base+n++;
+      const base=String(tagBase||(file.name||"archivo").replace(/\.[^.]+$/,"")).replace(/[^\w-]/g,"").toLowerCase().slice(0,20)||"archivo";
+      let tag=base, n=2; while(arr.some(x=>x.tag===tag)) tag=base+"_"+n++;
       arr.push({ tag, media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, descripcion:"" });
       if(syncCfg) syncCfg();
       toast("Archivo agregado ✓"); if(onDone) onDone();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
+}
+function pickProdMedia(kind, onDone, syncCfg){
+  const arr=st.prod.config.ia_multimedia=st.prod.config.ia_multimedia||[];
+  pickMediaTo(kind, arr, onDone, syncCfg);
 }
 
 // ── Config de envío del producto físico (DEFINICION §6-SEPTIES) ────
@@ -1882,10 +1887,13 @@ function renderOpciones(){
     <div id="opWarn"></div>
     <button class="btn" id="opAdd">+ Opción de compra</button>
     <div class="card" style="margin-top:18px">
-      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Atributos</h4>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">
-        Detalles que la IA debe capturar pero que <b>no cambian el precio</b> (talla, color…).
-        Si algo cambia el precio o lo que se entrega, no es un atributo: es una opción de compra.
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Atributos <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
+        Detalles que la IA debe <b>preguntar y registrar</b> antes de cerrar la venta, pero que
+        <b>no cambian el precio</b> (talla, color, modelo…). La IA los pesca de la conversación sin interrogar,
+        y quedan guardados en el pedido y en el <b>rótulo de envío</b>.
+        <br>Si algo cambia el precio o lo que se entrega, no es un atributo: es una
+        <a href="#" id="atGoOp" style="color:var(--brand)">opción de compra ↑</a>.
       </div>
       <div id="atList"></div>
       <button class="btn" id="atAdd" style="margin-top:8px">+ Atributo</button>
@@ -1896,8 +1904,13 @@ function renderOpciones(){
     st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length });
     paintOpciones(fisico);
   };
-  $("atAdd").onclick=()=>{ cfg.atributos.push({ nombre:"", obligatorio:true }); paintAtributos(); };
+  $("atAdd").onclick=()=>{ cfg.atributos.push({ nombre:"", clave:"", obligatorio:true, valores:"", ayuda:"", media:[] }); paintAtributos(); };
+  const gA=$("atGoOp"); if(gA) gA.onclick=(e)=>{ e.preventDefault(); $("opAdd").scrollIntoView({behavior:"smooth",block:"center"}); };
 }
+
+// Slug estable para la clave de un atributo → {{clave}}, campo del contacto y
+// tag de su multimedia. Debe coincidir con slugAttr() del motor (engine.ts).
+function slugAttr(s){ return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,32); }
 
 function paintOpciones(fisico){
   const box=$("opList"); box.innerHTML="";
@@ -2011,16 +2024,62 @@ function warnColision(){
 
 function paintAtributos(){
   const cfg=st.prod.config; const box=$("atList"); box.innerHTML="";
-  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin atributos.</div>`; }
+  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin atributos todavía. Agrega uno si la IA debe preguntar la talla, el color, etc.</div>`; }
   cfg.atributos.forEach((a,i)=>{
-    const r=document.createElement("div"); r.className="row"; r.style.cssText="align-items:center;margin-bottom:7px;gap:7px";
-    r.innerHTML=`<input class="in an" style="flex:1" value="${esc(a.nombre||"")}" placeholder="Ej. Talla, Color"/>
-      <label class="chk" style="flex:0 0 auto"><input type="checkbox" class="ao" ${a.obligatorio!==false?"checked":""}/> Obligatorio</label>
-      <button class="iconbtn adel" style="flex:0 0 auto">${icon("trash")}</button>`;
-    r.querySelector(".an").oninput=(e)=>{ a.nombre=e.target.value; };
-    r.querySelector(".ao").onchange=(e)=>{ a.obligatorio=e.target.checked; };
-    r.querySelector(".adel").onclick=()=>{ cfg.atributos.splice(i,1); paintAtributos(); };
-    box.appendChild(r);
+    if(!Array.isArray(a.media)) a.media=[];
+    if(!a.clave) a.clave=slugAttr(a.nombre)||("atributo"+(i+1));
+    const el=document.createElement("div"); el.className="card"; el.style.marginBottom="10px";
+    el.innerHTML=`
+      <div class="row" style="align-items:flex-end;gap:10px">
+        <div style="flex:1"><label style="margin-top:0">Nombre</label>
+          <input class="in an" value="${esc(a.nombre||"")}" placeholder="Ej. Talla, Color, Modelo"/></div>
+        <label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="ao" ${a.obligatorio!==false?"checked":""}/> Obligatorio</label>
+        <button class="iconbtn adel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
+      </div>
+      <div class="clhint" style="font-size:11px;color:var(--faint);margin-top:5px">La IA guarda lo que elija el cliente en <b style="color:var(--brand)">{{${esc(a.clave||"atributo")}}}</b> — aparece en el pedido y en el rótulo.</div>
+      <label>Valores posibles <span style="color:var(--faint);font-weight:400">(opcional, separados por coma)</span></label>
+      <input class="in aval" value="${esc(a.valores||"")}" placeholder="Ej. 38, 39, 40, 41, 42, 43, 44"/>
+      <div style="font-size:11px;color:var(--faint);margin-top:4px">Si los pones, la IA los ofrece y confirma que lo que dijo el cliente sea uno de ellos. Vacío = respuesta libre.</div>
+      <label>Ayuda para la IA <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      <input class="in ahelp" value="${esc(a.ayuda||"")}" placeholder="Ej. Si no sabe su talla, ofrécele la guía de medidas"/>
+      <label style="margin-top:12px">Multimedia de apoyo <span style="color:var(--faint);font-weight:400">— la IA lo envía cuando ayuda a decidir (guía de tallas, carta de colores…)</span></label>
+      <div class="atmm" style="margin-top:5px"></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn atmadd" data-k="image" style="height:32px">${icon("image")} Imagen</button>
+        <button class="btn atmadd" data-k="video" style="height:32px">Video</button>
+        <button class="btn atmadd" data-k="document" style="height:32px">${icon("file")} Archivo</button>
+      </div>`;
+    const anI=el.querySelector(".an");
+    anI.oninput=(e)=>{ a.nombre=e.target.value; a.clave=slugAttr(e.target.value); const h=el.querySelector(".clhint b"); if(h) h.textContent="{{"+(a.clave||"atributo")+"}}"; };
+    anI.onblur=()=>{ prodSync(); };
+    el.querySelector(".ao").onchange=(e)=>{ a.obligatorio=e.target.checked; prodSync(); };
+    el.querySelector(".aval").oninput=(e)=>{ a.valores=e.target.value; prodSync(); };
+    el.querySelector(".ahelp").oninput=(e)=>{ a.ayuda=e.target.value; prodSync(); };
+    el.querySelector(".adel").onclick=()=>{ cfg.atributos.splice(i,1); prodSync(); paintAtributos(); };
+    const mmBox=el.querySelector(".atmm");
+    const paintAtMM=()=>{
+      mmBox.innerHTML="";
+      if(!a.media.length){ mmBox.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin archivos.</div>`; }
+      a.media.forEach((m,j)=>{
+        const r=document.createElement("div"); r.style.cssText="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:7px;display:flex;gap:10px;align-items:flex-start";
+        let prev="";
+        if(m.media_kind==="image") prev=`<img src="${esc(m.media_url)}" style="width:54px;height:54px;object-fit:cover;border-radius:7px;flex:none"/>`;
+        else if(m.media_kind==="video") prev=`<video src="${esc(m.media_url)}" style="width:54px;height:54px;object-fit:cover;border-radius:7px;flex:none"></video>`;
+        else prev=`<div style="width:54px;height:54px;border-radius:7px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">${icon("file")}</div>`;
+        r.innerHTML=`${prev}
+          <div style="flex:1;min-width:0">
+            <textarea class="in atmdesc" rows="2" style="min-height:44px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="¿Cuándo enviarlo? (ej. cuando el cliente dude de su talla)">${esc(m.descripcion||"")}</textarea>
+            <div style="font-size:10.5px;color:var(--faint);margin-top:3px">${esc(m.filename||"")}</div>
+          </div>
+          <button class="iconbtn atmdel" style="flex:0 0 auto">${icon("trash")}</button>`;
+        r.querySelector(".atmdesc").oninput=(e)=>{ m.descripcion=e.target.value; prodSync(); };
+        r.querySelector(".atmdel").onclick=()=>{ a.media.splice(j,1); prodSync(); paintAtMM(); };
+        mmBox.appendChild(r);
+      });
+    };
+    paintAtMM();
+    el.querySelectorAll(".atmadd").forEach(btn=> btn.onclick=()=>pickMediaTo(btn.dataset.k, a.media, paintAtMM, prodSync, "atr_"+(a.clave||"attr")));
+    box.appendChild(el);
   });
 }
 
@@ -2314,6 +2373,18 @@ async function saveProduct(){
     if(!c.ia.detalle && c.contexto_producto && !c.ia._migrado){ c.ia.detalle=c.contexto_producto; c.ia._migrado=true; }
     const cx=compileProductoIA(c, st.prod.tipo||"digital");
     if(cx) c.contexto_producto=cx; else delete c.contexto_producto;
+    // Atributos: descarta los sin nombre y asegura una clave estable (la usa el
+    // motor para {{clave}}, el campo del contacto y el tag de su multimedia).
+    if(Array.isArray(c.atributos)){
+      c.atributos=c.atributos.filter(a=>a&&String(a.nombre||"").trim());
+      const usadas=new Set();
+      c.atributos.forEach((a,i)=>{
+        let k=slugAttr(a.nombre)||("atributo"+(i+1)); let base=k, n=2;
+        while(usadas.has(k)) k=base+"_"+n++;
+        usadas.add(k); a.clave=k;
+        if(!Array.isArray(a.media)) a.media=[];
+      });
+    }
   }
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);

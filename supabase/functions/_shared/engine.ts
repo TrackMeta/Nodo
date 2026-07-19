@@ -1402,6 +1402,19 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     const ship: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
 
+    // Atributos capturados (talla, color…) → quedan en el pedido, por su NOMBRE
+    // legible, para el rótulo de envío y Compras. Se leen de las variables del
+    // run por su clave (los pobló extraerDatos). Solo los que tienen valor.
+    const atrs: any[] = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
+    if (atrs.length) {
+      const bag: Record<string, string> = {};
+      for (const at of atrs) {
+        const v = String(ctx[at.clave] ?? run.vars?.[at.clave] ?? "").trim();
+        if (v) bag[at.nombre] = v;
+      }
+      if (Object.keys(bag).length) ship.atributos = bag;
+    }
+
     // Pago digital manual: el pedido YA se creó como 'pendiente' al parquear el
     // pago; ahora que se aprobó y la entrega llegó a este nodo, se ACTUALIZA en
     // vez de insertar otro (evita el pedido duplicado). Solo aplica en ese caso
@@ -2595,9 +2608,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 
   // Vende Y recolecta a la vez: pesca del mensaje los datos que hagan falta,
   // sin interrogar. Deja {{datos_completos}} para que el flujo sepa cuándo ya
-  // puede crear el pedido.
-  if (op === "generar_texto" && ctx.last_input && Array.isArray(cfg.campos) && cfg.campos.length) {
-    await extraerDatos(db, run, cfg, ctx).catch(() => null);
+  // puede crear el pedido. Los campos del flujo se suman a los ATRIBUTOS del
+  // producto (talla, color…): se capturan igual, y los obligatorios entran a
+  // {{datos_completos}} para que la IA no cierre sin ellos.
+  if (op === "generar_texto" && ctx.last_input) {
+    const attrCampos = (Array.isArray(ctx._atributos) ? ctx._atributos : []).map((a: any) => ({
+      clave: a.clave, label: a.nombre, requerido: a.obligatorio !== false,
+      detalle: [a.valores?.length ? `valores posibles: ${a.valores.join(", ")}` : "", a.ayuda]
+        .filter(Boolean).join(". ") || undefined,
+    }));
+    const campos = [...(Array.isArray(cfg.campos) ? cfg.campos : []), ...attrCampos];
+    if (campos.length) await extraerDatos(db, run, { ...cfg, campos }, ctx).catch(() => null);
   }
 
   // Operación "clasificar": mete la última respuesta del cliente en una de las
@@ -2657,6 +2678,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Solo cuando decida, confirma cuál y su precio.`;
         parts.push("## Opciones de compra disponibles\n" + lista + estado);
       }
+    }
+    // Atributos del pedido (talla, color…): la IA los pregunta con naturalidad y
+    // los confirma antes de cerrar. Le decimos qué YA tiene (para no repreguntar),
+    // qué falta, y qué multimedia de apoyo puede enviar. El motor ya los capturó
+    // arriba (extraerDatos): acá solo se le instruye cómo conversarlos.
+    const atributos: any[] = Array.isArray(ctx._atributos) ? ctx._atributos : [];
+    if (atributos.length) {
+      const L: string[] = [];
+      for (const a of atributos) {
+        const val = String(ctx[a.clave] ?? "").trim();
+        if (val) { L.push(`- ${a.nombre}: YA registrado = "${val}". No lo vuelvas a preguntar.`); continue; }
+        const req = a.obligatorio !== false ? "obligatorio" : "opcional";
+        const vals = a.valores?.length ? ` — valores: ${a.valores.join(", ")}` : "";
+        L.push(`- ${a.nombre} (${req})${vals}.${a.ayuda ? ` ${a.ayuda}` : ""}`);
+      }
+      const apoyos = atributos.flatMap((a: any) => (a.media || []).map((m: any) => ({ a, m })))
+        .filter((x: any) => x.m && x.m.tag);
+      const apoyoTxt = apoyos.length
+        ? "\n\nApoyos que PUEDES enviar (escribe `[[media:TAG]]` en una línea aparte cuando ayude a decidir):\n" +
+          apoyos.map((x: any) => `- [[media:${x.m.tag}]] — ${x.m.descripcion || `apoyo para ${x.a.nombre}`}`).join("\n")
+        : "";
+      const faltan = atributos.filter((a: any) => a.obligatorio !== false && !String(ctx[a.clave] ?? "").trim());
+      const cierre = faltan.length
+        ? `\n\nAún te falta capturar: **${faltan.map((a: any) => a.nombre).join(", ")}**. Pídelos con naturalidad, de a pocos, sin interrogar ni pedir todo de golpe, y no confirmes el pedido hasta tenerlos.`
+        : "\n\nYa tienes todos los atributos obligatorios: no los vuelvas a pedir.";
+      parts.push("## Datos que debes capturar de este pedido\n" + L.join("\n") + apoyoTxt + cierre);
     }
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
@@ -3018,6 +3065,35 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     (await nextNode(db, run.flow_id, node.id, "continuar"));
 }
 
+// ── Atributos del producto (talla, color…) ─────────────────────────
+// Detalles que la IA pregunta y registra pero que NO cambian el precio (eso
+// serían Opciones de compra). Se capturan como campos (extraerDatos), quedan en
+// {{clave}} y en el pedido (shipping.atributos), y cada uno puede traer
+// multimedia de apoyo que la IA envía por [[media:tag]] (ej. guía de tallas).
+type Atributo = { nombre: string; clave: string; obligatorio: boolean; valores: string[]; ayuda: string; media: any[] };
+function slugAttr(s: string): string {
+  return String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32);
+}
+function normalizeAtributos(raw: any): Atributo[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Atributo[] = []; const usadas = new Set<string>();
+  raw.forEach((a: any, i: number) => {
+    const nombre = String(a?.nombre ?? "").trim();
+    if (!nombre) return;
+    let clave = String(a?.clave ?? "").trim() || slugAttr(nombre) || ("atributo" + (i + 1));
+    let base = clave, n = 2;
+    while (usadas.has(clave)) clave = base + "_" + n++;
+    usadas.add(clave);
+    const valores = String(a?.valores ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
+    const media = (Array.isArray(a?.media) ? a.media : [])
+      .filter((m: any) => m && m.media_url)
+      .map((m: any, j: number) => ({ ...m, tag: String(m.tag || ("atr_" + clave + (j ? "_" + j : ""))) }));
+    out.push({ nombre, clave, obligatorio: a?.obligatorio !== false, valores, ayuda: String(a?.ayuda ?? "").trim(), media });
+  });
+  return out;
+}
+
 // ── Contexto y resolución de variables {{ }} ───────────────────────
 async function buildContext(db: SupabaseClient, run: Run) {
   const { data: c } = await db.from("contacts")
@@ -3074,10 +3150,19 @@ async function buildContext(db: SupabaseClient, run: Run) {
             if (v == null || typeof v === "object") continue;
             pc[k] = v;
           }
+          // Atributos del producto (talla, color…): definiciones normalizadas para
+          // capturarlos y mostrarle a la IA qué falta. "_" = interno, no {{...}}.
+          const attrs = normalizeAtributos((p as any).config?.atributos);
+          if (attrs.length) pc._atributos = attrs;
           // Multimedia que la IA puede enviar (se resuelve por [[media:tag]] al
-          // emitir el texto). Se guarda con "_" para no filtrarse a {{...}}.
+          // emitir el texto). Se guarda con "_" para no filtrarse a {{...}}. El
+          // catálogo suma la multimedia del producto MÁS la de apoyo de cada
+          // atributo, así el mismo mecanismo [[media:tag]] envía una guía de tallas.
+          const cat: any[] = [];
           const mm = (p as any).config?.ia_multimedia;
-          if (Array.isArray(mm)) pc._ia_multimedia = mm;
+          if (Array.isArray(mm)) for (const x of mm) if (x && x.tag && x.media_url) cat.push(x);
+          for (const a of attrs) for (const m of a.media) cat.push(m);
+          if (cat.length) pc._ia_multimedia = cat;
           const env = (p as any).config?.envio;
           if (env && typeof env === "object") {
             if (env.agencias && env.agencias.shalom) {
