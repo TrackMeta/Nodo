@@ -743,6 +743,15 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     run.wake_at = null;
     return true;
   }
+  // Pago digital POR VALIDAR: el cliente escribe antes de tu visto bueno. Antes
+  // se quedaba mudo (iba al buffer y nunca se contestaba); ahora le responde en
+  // modo "verificando" y el run SIGUE parqueado hasta que apruebes.
+  if (aw.type === "aprobacion_digital" && event.type === "message") {
+    await responderVerificando(db, run, event);
+    run.estado = "esperando"; // permanece parqueado esperando tu aprobación
+    await saveRun(db, run);
+    return false;
+  }
   // Tipo inesperado (ej. escribió texto donde esperábamos botón) → buffer.
   run.vars._buffer = [...(run.vars._buffer ?? []), event];
   await saveRun(db, run);
@@ -2031,6 +2040,43 @@ async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: s
   const ok = await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true, vars: { _recompra: true } });
   if (ok) await logEvent(db, channelId, contactId, "nota", "🔁 Recompra: se relanzó la venta").catch(() => {});
   return ok;
+}
+
+// El cliente escribe mientras su pago digital está POR VALIDAR (el run quedó
+// parqueado esperando tu visto bueno). En vez de quedarse MUDO, el bot le
+// responde en modo "verificando": lo acompaña y contesta lo que pueda, pero NO
+// confirma el pago ni entrega nada (eso pasa recién cuando apruebas). Si no hay
+// IA, manda un mensaje fijo. El run sigue parqueado (no se toca acá).
+async function responderVerificando(db: SupabaseClient, run: Run, event: EngineEvent) {
+  const fallback = "¡Sigo verificando tu pago! 🙌 Apenas lo confirme te llega tu acceso por aquí. Cualquier cosa, dime.";
+  try {
+    const ctx = await buildContext(db, run);
+    ctx.last_input = event.text ?? "";
+    const info = await channelIaInfo(db, run);
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) { await deliverMessage(db, run.channel_id, run.contact_id, fallback).catch(() => {}); return; }
+    const parts: string[] = [];
+    if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
+    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
+    parts.push(
+      "## Estás VERIFICANDO su pago\n" +
+      "El cliente ya envió su comprobante y su pago está siendo revisado por una persona del equipo. " +
+      "Acompáñalo con calidez y contéstale lo que puedas, PERO:\n" +
+      "- NO confirmes el pago ni digas que ya está validado.\n" +
+      "- NO entregues el producto, el acceso ni el link todavía.\n" +
+      "- Si pregunta cuánto falta, dile que lo estás verificando y que apenas se confirme le llega su acceso por aquí (no des un tiempo exacto).\n" +
+      "- Si el problema es serio o insiste mucho, escribe `[[humano]]`."
+    );
+    const hist = await historial(db, run, 8);
+    const content = `El cliente (con su pago en verificación) te escribe:\n"${event.text ?? ""}"` +
+      (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
+    const result = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system: parts.join("\n\n"), content, maxTokens: 400 });
+    await emitIaText(db, run, result || fallback, ctx);
+  } catch (e) {
+    console.error("[responderVerificando]", (e as any)?.message ?? e);
+    await deliverMessage(db, run.channel_id, run.contact_id, fallback).catch(() => {});
+  }
 }
 
 async function maybePostventa(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
