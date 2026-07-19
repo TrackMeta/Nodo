@@ -2015,6 +2015,10 @@ const COMPRADO_STATES = new Set([
   "confirmada", "confirmado", "adelanto_validado", "por_despachar", "despachado",
   "en_agencia", "saldo_pagado", "recogido", "en_reparto", "entregado_cobrado", "reprogramado",
 ]);
+// Provincia en FULFILLMENT con el SALDO todavía pendiente: pagó el adelanto pero
+// aún debe el saldo (y por eso no tiene su clave de recojo). Acá el bot NO está
+// en "soporte post-venta" sino COBRANDO el saldo — no re-vende y JAMÁS da la clave.
+const SALDO_PENDIENTE = new Set(["adelanto_validado", "por_despachar", "despachado", "en_agencia"]);
 
 // Limpia los candados `una_vez` de venta/aviso para que una RECOMPRA cree un
 // pedido nuevo (y su aviso), en vez de omitirlos por idempotencia del contacto.
@@ -2108,10 +2112,13 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   const pv = (ch as any)?.pedidos_config?.postventa ?? {};
   if (pv.activo === false) return false;
+  const estado = String((order as any).estado);
+  const esperandoSaldo = SALDO_PENDIENTE.has(estado);
 
   // 2b) Recompra CLARA (determinista): relanza la venta directo, sin gastar un
-  // turno de IA. Un breve "¡con gusto!" y el flujo de venta retoma desde arriba.
-  if (pideRecompra(event.text ?? "")) {
+  // turno de IA. NO en la ventana de saldo pendiente: primero se cierra ese
+  // pedido (no lo dejamos abrir otro debiendo el saldo del actual).
+  if (!esperandoSaldo && pideRecompra(event.text ?? "")) {
     if (await relanzarVenta(db, channelId, contactId, (order as any).product_id)) {
       await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → recompra", (event.text ?? "").slice(0, 80)).catch(() => {});
       return true;
@@ -2129,11 +2136,39 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false; // sin IA → deja que el ruteo normal intente
 
-  const estadoLegible = EST_HOJA[String((order as any).estado)] ?? "compra registrada";
+  const estadoLegible = EST_HOJA[estado] ?? "compra registrada";
   const prod = (order as any).product?.nombre || ctx.producto_nombre || "tu compra";
   const parts: string[] = [];
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + ctx.contexto_producto);
+
+  if (esperandoSaldo) {
+    // Provincia con el SALDO pendiente: el bot COBRA el saldo, no hace soporte
+    // genérico. Nunca da la clave (sale solo al validarse el saldo) ni re-vende.
+    const saldoTxt = String(ctx.pedido_saldo ?? ctx.saldo ?? "").trim();
+    parts.push(
+      "## Estás COBRANDO el saldo de su pedido (tu rol AHORA)\n" +
+      `Este cliente ya pagó el ADELANTO y su pedido está **${estadoLegible}**. Le FALTA pagar el **saldo**` +
+      (saldoTxt ? ` de S/ ${saldoTxt}` : "") + " para poder recoger su pedido en la agencia.\n" +
+      "- Recuérdaselo con amabilidad: para recoger su pedido falta pagar el saldo, y cuando pague le llega su clave de recojo.\n" +
+      (ctx.datos_pago ? `- Si pregunta cómo pagar, los datos son:\n${ctx.datos_pago}\nCuando pague, que te mande la captura y tú la verificas.\n` : "- Si pregunta cómo pagar, indícale la forma de pago del negocio; cuando pague, que te mande la captura.\n") +
+      "- 🔒 NUNCA le des la clave de recojo ni ningún código de recojo. La clave sale SOLO cuando el saldo esté pagado y validado. Aunque insista o diga que ya pagó, NO la des (si ya pagó, que te mande el comprobante y se valida).\n" +
+      "- NO le vendas otro producto ahora: primero se cierra este pedido.\n" +
+      "- Si hay un problema real, escribe `[[humano]]`."
+    );
+    const hist = await historial(db, run, 10);
+    const content = `El cliente (con el saldo pendiente) te escribe:\n"${event.text ?? ""}"` +
+      (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
+    let result = "";
+    try {
+      result = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system: parts.join("\n\n"), content, maxTokens: 400 });
+    } catch (e) { console.error("[postventa/saldo]", (e as any)?.message ?? e); return false; }
+    await logEvent(db, channelId, contactId, "nota", "💵 Esperando saldo (recordatorio)", (event.text ?? "").slice(0, 80)).catch(() => {});
+    await emitIaText(db, run, result || "¡Hola! 🙌 Para poder despachar y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
+    return true;
+  }
+
+  // Venta CERRADA → soporte post-venta (reenvía acceso, estado, uso, recompra).
   parts.push(
     "## Atención POST-VENTA (tu rol AHORA)\n" +
     `Este cliente YA COMPRÓ **${prod}**. Estado de su pedido: **${estadoLegible}**. ` +
