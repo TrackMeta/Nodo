@@ -77,6 +77,63 @@ Deno.serve(async (req) => {
       return json({ ok: true, codigo, vence });
     }
 
+    // Diagnóstico REAL de la conexión. "Conectado" en el panel solo significaba
+    // "hay un token guardado": no probaba que el token siga siendo válido, que
+    // el webhook esté registrado, ni que los avisos lleguen a alguien. Acá se
+    // comprueban las tres cosas contra Telegram y se manda un mensaje de prueba.
+    if (action === "telegram_test") {
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.telegram_bot_token;
+      if (!token) return json({ ok: true, bot: null, webhook: null, enviados: 0, chats: 0, motivo: "sin_token" });
+
+      const tg = async (m: string) => {
+        try {
+          const r = await fetch(`https://api.telegram.org/bot${token}/${m}`);
+          return await r.json();
+        } catch (e) { return { ok: false, description: String((e as any)?.message ?? e) }; }
+      };
+      const me = await tg("getMe");
+      const wh = await tg("getWebhookInfo");
+
+      const { data: c } = await db.from("channels")
+        .select("telegram_chat_ids, telegram_webhook_secret, nombre").eq("id", channel_id).maybeSingle();
+      const chatIds = ((c as any)?.telegram_chat_ids ?? []).map(String);
+
+      // El envío de prueba se hace chat por chat para poder decir CUÁL falló:
+      // el error típico es que alguien bloqueó al bot y hay que sacarlo.
+      const detalle: { chat: string; ok: boolean; error?: string }[] = [];
+      for (const chat of chatIds) {
+        try {
+          const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chat, parse_mode: "HTML", disable_web_page_preview: true,
+              text: `🔔 <b>Prueba de conexión</b>\n<i>${(c as any)?.nombre ?? "Tu bot"}</i> · si lees esto, los avisos te van a llegar bien.`,
+            }),
+          });
+          const d = await r.json();
+          detalle.push({ chat, ok: !!d?.ok, error: d?.ok ? undefined : (d?.description ?? "falló") });
+        } catch (e) { detalle.push({ chat, ok: false, error: String((e as any)?.message ?? e) }); }
+      }
+
+      const esperada = `${Deno.env.get("SUPABASE_URL")}/functions/v1/telegram-webhook?ch=${channel_id}`;
+      return json({
+        ok: true,
+        bot: me?.ok ? { nombre: me.result?.first_name, usuario: me.result?.username } : null,
+        bot_error: me?.ok ? null : (me?.description ?? "token inválido"),
+        webhook: {
+          registrado: !!wh?.result?.url,
+          apunta_bien: wh?.result?.url === esperada,
+          copiloto: !!(c as any)?.telegram_webhook_secret,
+          pendientes: wh?.result?.pending_update_count ?? 0,
+          ultimo_error: wh?.result?.last_error_message ?? null,
+        },
+        chats: chatIds.length,
+        enviados: detalle.filter((d) => d.ok).length,
+        detalle,
+      });
+    }
+
     if (action === "save") {
       // ── Campos planos del canal ─────────────────────────────────
       const upd: Record<string, unknown> = {};

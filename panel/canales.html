@@ -181,7 +181,17 @@ function renderTG(){
         <button class="btn" id="tgPair" ${copiloto?'':'disabled'}>${icon("sparkles")} Detectar mi chat ID</button>
       </div>
       <div id="pairBox"></div>
-      <div class="acts"><button class="btn" id="saveChats">Guardar chats</button></div>`;
+      <div class="acts"><button class="btn" id="saveChats">Guardar chats</button></div>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-weight:700;font-size:13px">4 · ¿Funciona de verdad?</div>
+          <div class="desc" style="margin:4px 0 0">Comprueba que el token siga siendo válido, que el webhook esté bien registrado y te manda un mensaje de prueba. <b>"Conectado" solo dice que hay un token guardado.</b></div>
+        </div>
+        <button class="btn" id="tgTest" ${s.telegram_bot_token?'':'disabled'}>Probar conexión</button>
+      </div>
+      <div id="tgDiag"></div>`;
   $("saveTG").onclick=(e)=>save(e.target,{ telegram_bot_token:$("t_token").value||undefined });
   $("saveChats").onclick=(e)=>save(e.target,{ telegram_chat_ids:$("t_chats").value });
   const hk=$("tgHook");
@@ -193,6 +203,44 @@ function renderTG(){
   };
   const pr=$("tgPair");
   if(pr) pr.onclick=()=>vincularTelegram();
+  const tt=$("tgTest");
+  if(tt) tt.onclick=async(e)=>{
+    const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Probando…";
+    try{ pintarDiag(await callFn("channel-config",{ action:"telegram_test", channel_id:st.channelId })); }
+    catch(err){ toast(err.message||"No se pudo probar",true); }
+    b.disabled=false; b.textContent=old;
+  };
+}
+
+// Resultado del diagnóstico, en cristiano: cada línea dice qué pasa Y qué hacer
+// si está mal. Un "❌ error 403" sin más no le sirve a nadie.
+function pintarDiag(r){
+  const box=$("tgDiag"); if(!box) return;
+  const fila=(ok,txt,ayuda)=>`
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-top:7px">
+      <span style="flex:0 0 16px;line-height:1.5">${ok?"✅":"⚠️"}</span>
+      <span style="font-size:12.5px;line-height:1.5">${txt}
+      ${ayuda?`<div style="color:var(--faint);font-size:11.5px;margin-top:1px">${ayuda}</div>`:""}</span>
+    </div>`;
+  const w=r.webhook||{}, filas=[];
+  filas.push(r.bot
+    ? fila(true, `El bot responde: <b>${esc(r.bot.nombre||"")}</b>${r.bot.usuario?` (@${esc(r.bot.usuario)})`:""}`)
+    : fila(false, "El bot token no sirve", esc(r.bot_error||"Telegram lo rechazó. Genera uno nuevo con @BotFather y guárdalo arriba.")));
+  if(r.bot){
+    filas.push(w.registrado && w.apunta_bien
+      ? fila(true, "El Copiloto está bien conectado", w.pendientes?`Hay ${w.pendientes} actualizaciones en cola.`:"")
+      : fila(false, w.registrado?"El Copiloto apunta a otro lado":"El Copiloto no está conectado",
+             "Toca <b>Activar Copiloto</b> arriba. Sin esto los botones de aprobar no funcionan."));
+    if(w.ultimo_error) filas.push(fila(false, "Telegram reportó un error reciente", esc(w.ultimo_error)));
+    filas.push(r.chats===0
+      ? fila(false, "No hay nadie vinculado", "Los avisos no le llegan a nadie. Usa <b>Detectar mi chat ID</b>.")
+      : (r.enviados===r.chats
+          ? fila(true, `Mensaje de prueba enviado a ${r.enviados} de ${r.chats} ${r.chats===1?"chat":"chats"}`, "Revisa tu Telegram: debería estar ahí.")
+          : fila(false, `Solo llegó a ${r.enviados} de ${r.chats} chats`,
+                 (r.detalle||[]).filter(d=>!d.ok).map(d=>`<code>${esc(d.chat)}</code>: ${esc(d.error||"")}`).join("<br>")
+                 + "<br>Lo normal es que ese chat nunca le escribió al bot o lo bloqueó.")));
+  }
+  box.innerHTML=`<div style="border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-top:10px;background:var(--surface)">${filas.join("")}</div>`;
 }
 
 // Vinculación por código: el panel muestra un código, tú se lo mandas al bot
