@@ -919,7 +919,11 @@ async function execute(db: SupabaseClient, run: Run) {
         // conversacional de la IA: responde y vuelve a escuchar). Antes se
         // emitía igual e insertaba una burbuja EN BLANCO en el chat.
         const pregTxt = resolve(node.config?.text ?? "", ctx);
-        if (pregTxt.trim()) await emit(db, run, { text: pregTxt }, ctx);
+        // Los botones van con la pregunta, pero el run queda esperando INPUT, no
+        // un botón: así el toque entra como texto (runEngine lo convierte) y da
+        // igual si el cliente toca o escribe. Si esperáramos `button`, quien
+        // escriba se quedaría sin respuesta — el viejo problema de los botones.
+        if (pregTxt.trim()) await emit(db, run, { text: pregTxt, buttons: node.config?.buttons }, ctx);
         run.vars._await = { type: "input", node_id: node.id, guardar_en: node.config?.guardar_en };
         run.estado = "esperando";
         // timeout_seg: si el cliente NO contesta en ese tiempo, el scheduler
