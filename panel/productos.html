@@ -1754,6 +1754,7 @@ async function generarFlujoVenta(){
     // pedido. Lo demás (despacho, guía, saldo, clave) lo opera un humano.
     if((st.prod.tipo||"digital")==="fisico"){
       await generarFlujoFisico(flowId, N, E);
+      await enlazarInicialesConVenta(flowId);
       toast("Flujo de venta generado ✓");
       st.tab="receta"; renderDetail();
       return;
@@ -1958,9 +1959,35 @@ async function generarFlujoVenta(){
       }
     }
 
+    await enlazarInicialesConVenta(flowId);
     toast("Flujo de venta generado ✓");
     st.tab="receta"; renderDetail();
   }catch(e){ toast("Error al generar: "+(e.message||e),true); }
+}
+
+// Engancha los mensajes iniciales al flujo de venta recién generado.
+//
+// Nacían con "y después: nada", así que el bot saludaba, terminaba la
+// conversación y el siguiente mensaje del cliente ("sí, lo quiero, ¿cómo pago?")
+// ya no encontraba flujo: caía al respaldo o al silencio. Las dos piezas se
+// creaban bien por separado y nadie las unía — y el desplegable para unirlas
+// solo se puede usar DESPUÉS de generar el flujo, así que el orden natural
+// dejaba el producto siempre roto.
+//
+// Solo se toca si está en "nada": si el operador eligió a propósito otro
+// destino, no se le pisa.
+async function enlazarInicialesConVenta(flowId){
+  try{
+    const fIni=st.receta?.fIni; if(!fIni) return;
+    const { data:nodo } = await supa.from("flow_nodes")
+      .select("id,config").eq("flow_id",fIni.id).eq("tipo","rotador").maybeSingle();
+    if(!nodo) return;
+    const cfg=nodo.config||{};
+    const des=cfg.despues||{modo:"nada"};
+    if(des.modo==="flujo" && des.flow_id) return;   // ya apunta a algo: respetarlo
+    cfg.despues={ modo:"flujo", flow_id:flowId };
+    await supa.from("flow_nodes").update({ config:cfg }).eq("id",nodo.id);
+  }catch(e){ console.error("[enlazarInicialesConVenta]",e); }
 }
 
 // ── Opciones de compra ─────────────────────────────────────────────
