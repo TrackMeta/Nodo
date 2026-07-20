@@ -278,6 +278,10 @@ async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="producto";
+  // Con qué tipo se abrió: si lo cambia, el flujo YA GENERADO sigue vendiendo
+  // como el tipo viejo (un digital pediría dirección, un físico entregaría un
+  // link) y eso no se nota hasta que un cliente lo sufre.
+  st.tipoGuardado=p?.tipo||"digital";
   renderDetail(); showDetail();
 }
 async function deleteProduct(){
@@ -423,7 +427,7 @@ function renderProducto(){
   const c=st.prod.config=st.prod.config||{};
   const tipo=st.prod.tipo||"digital";
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">Lo básico de lo que vendes: nombre, precio y cuánto te cuesta. Las <b>opciones</b> (1 par / 2 pares, Básico / Premium) van en su pestaña; cómo se <b>entrega</b> y cómo lo <b>vende la IA</b>, también.</p>
+    <p class="hint" style="margin:0 0 14px">Lo básico de lo que vendes: nombre, precio y cuánto te cuesta. Las <b>opciones</b> (${tipo==="fisico"?"1 par / 2 pares, pack familiar":"Básico / Premium, con o sin plantillas"}) van en su pestaña; cómo se <b>entrega</b> y cómo lo <b>vende la IA</b>, también.</p>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
       <div class="row" style="align-items:flex-start;margin-top:10px">
@@ -444,6 +448,16 @@ function renderProducto(){
             <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
           </select></div>
       </div>
+      ${st.tipoGuardado && st.tipoGuardado!==tipo ? `
+      <div style="margin-top:12px;border:1px solid var(--amber,#f0a92b);background:rgba(240,169,43,.08);border-radius:11px;padding:10px 12px;
+                  font-size:12.5px;line-height:1.55;color:var(--muted)">
+        <b style="color:var(--amber,#f0a92b)">Cambiaste el tipo de producto.</b>
+        El flujo de venta que ya existe sigue vendiéndolo como <b>${st.tipoGuardado==="fisico"?"físico":"digital"}</b>:
+        ${st.tipoGuardado==="fisico"
+          ? "le va a seguir pidiendo dirección y cobrando contraentrega."
+          : "le va a seguir entregando un link al confirmar el pago."}
+        Después de guardar, <b>regenera el flujo</b> en la pestaña Receta.
+      </div>` : ""}
     </div>
     <div class="card" style="border-color:rgba(34,192,121,.4);box-shadow:0 0 0 1px rgba(34,192,121,.12) inset">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio</h4>
@@ -452,9 +466,11 @@ function renderProducto(){
         <div><label style="margin-top:0">Moneda</label>
           <select class="sel" id="pMoneda" style="width:100%">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${(c.moneda||"PEN")===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select></div>
       </div>
-      <label>Costo (lo que te cuesta a ti)</label>
-      <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="Ej. 60"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:5px">Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real (precio − costo − envío); en una opción de 2 unidades se multiplica solo. El cliente nunca lo ve. Si lo dejas vacío, el Dashboard te muestra el ingreso pero no el margen.</div>
+      <label>Costo (lo que te cuesta a ti)${tipo==="digital"?` <span style="font-weight:400;color:var(--faint);text-transform:none">— opcional</span>`:""}</label>
+      <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="${tipo==="fisico"?"Ej. 60":"Ej. 0"}"/>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">${tipo==="fisico"
+        ? `Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real (precio − costo − envío); en una opción de 2 unidades se multiplica solo.`
+        : `Lo que te cuesta cada venta (comisión de la pasarela, licencias…). El Dashboard lo usa para tu ganancia real (precio − costo). En un digital suele ser 0.`} El cliente nunca lo ve. Si lo dejas vacío, el Dashboard te muestra el ingreso pero no el margen.</div>
       <div style="font-size:11px;color:var(--faint);margin-top:8px">Si vendes varias presentaciones con distinto precio, configúralas en <a href="#" id="goOpc2" style="color:var(--brand)">Opciones de compra →</a>. El precio está disponible en tus flujos como <b style="color:var(--brand)">{{precio}}</b>.</div>
     </div>
     <details style="margin-bottom:12px">
@@ -1365,7 +1381,7 @@ async function renderReceta(){
   const fVenta=(flows||[]).find(f=>f.role==="venta");
   let trigs=[];
   if(fIni){ const { data:t } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=t||[]; }
-  const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets").eq("id",st.channelId).maybeSingle();
+  const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets,entregas").eq("id",st.channelId).maybeSingle();
   st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{} };
 
   const ops=st.versions.filter(v=>v.activo!==false);
@@ -1463,6 +1479,16 @@ function renderSalud(){
   if(!fisico){
     const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.length));
     if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${v.nombre||"—"}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
+  }
+  // Físico sin adelanto resoluble: el flujo de provincia manda "confírmalo con
+  // un adelanto de *S/ *" — con el monto en blanco. Se ve roto y nadie paga.
+  if(fisico){
+    const ov=st.prod.config?.adelanto_override;
+    const propio=(ov!=null&&String(ov).trim()!=="");
+    const viejo=st.prod.config?.envio?.agencias?.shalom?.adelanto_valor;
+    const def=st.receta?.ch?.entregas?.adelanto_default;
+    const hay = propio || (viejo!=null&&String(viejo).trim()!=="") || (def!=null&&String(def).trim()!=="");
+    if(!hay) errs.push("Sin adelanto: el pedido a provincia le pediría <b>“un adelanto de S/ ”</b> con el monto en blanco. Ponlo en Negocio → Entrega, o solo para este producto en su pestaña Entrega.");
   }
   const metodos=(st.receta?.ch?.ocr_config?.metodos||[]).filter(m=>m&&(m.app||m.numero||m.titular));
   if(!metodos.length) warns.push("El Validador de comprobantes no tiene métodos de pago: la IA no podrá verificar a quién le pagaron.");
@@ -1942,8 +1968,8 @@ function renderOpciones(){
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Atributos <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
         Detalles que la IA debe <b>preguntar y registrar</b> antes de cerrar la venta, pero que
-        <b>no cambian el precio</b> (talla, color, modelo…). La IA los pesca de la conversación sin interrogar,
-        y quedan guardados en el pedido y en el <b>rótulo de envío</b>.
+        <b>no cambian el precio</b> (${fisico?"talla, color, modelo…":"nombre para el certificado, idioma…"}).
+        La IA los pesca de la conversación sin interrogar, y quedan guardados en el pedido${fisico?" y en el <b>rótulo de envío</b>":""}.
         <br>Si algo cambia el precio o lo que se entrega, no es un atributo: es una
         <a href="#" id="atGoOp" style="color:var(--brand)">opción de compra ↑</a>.
       </div>
@@ -2074,9 +2100,23 @@ function warnColision(){
     </div>` : "";
 }
 
+// Los ejemplos cambian con el tipo: pedirle la "talla" a quien vende un ebook
+// no solo sobra, hace dudar de si el producto está bien configurado.
+const EJ_ATRIBUTO = {
+  fisico:  { nombre:"Ej. Talla, Color, Modelo", valores:"Ej. 38, 39, 40, 41, 42, 43, 44",
+             ayuda:"Ej. Si no sabe su talla, ofrécele la guía de medidas",
+             media:"guía de tallas, carta de colores…", vacio:"la talla, el color, etc.",
+             donde:" y en el rótulo" },
+  digital: { nombre:"Ej. Nombre para el certificado, Idioma", valores:"Ej. Español, Inglés, Portugués",
+             ayuda:"Ej. Si duda del idioma, dile que el material viene en los dos",
+             media:"una muestra, un índice…", vacio:"algún dato antes de entregar (nombre, idioma, etc.)",
+             donde:"" },
+};
+
 function paintAtributos(){
   const cfg=st.prod.config; const box=$("atList"); box.innerHTML="";
-  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin atributos todavía. Agrega uno si la IA debe preguntar la talla, el color, etc.</div>`; }
+  const EJ = EJ_ATRIBUTO[(st.prod.tipo||"digital")==="fisico" ? "fisico" : "digital"];
+  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin atributos todavía. Agrega uno si la IA debe preguntar ${EJ.vacio}</div>`; }
   cfg.atributos.forEach((a,i)=>{
     if(!Array.isArray(a.media)) a.media=[];
     if(!a.clave) a.clave=slugAttr(a.nombre)||("atributo"+(i+1));
@@ -2084,17 +2124,17 @@ function paintAtributos(){
     el.innerHTML=`
       <div class="row" style="align-items:flex-end;gap:10px">
         <div style="flex:1"><label style="margin-top:0">Nombre</label>
-          <input class="in an" value="${esc(a.nombre||"")}" placeholder="Ej. Talla, Color, Modelo"/></div>
+          <input class="in an" value="${esc(a.nombre||"")}" placeholder="${EJ.nombre}"/></div>
         <label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="ao" ${a.obligatorio!==false?"checked":""}/> Obligatorio</label>
         <button class="iconbtn adel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
       </div>
-      <div class="clhint" style="font-size:11px;color:var(--faint);margin-top:5px">La IA guarda lo que elija el cliente en <b style="color:var(--brand)">{{${esc(a.clave||"atributo")}}}</b> — aparece en el pedido y en el rótulo.</div>
+      <div class="clhint" style="font-size:11px;color:var(--faint);margin-top:5px">La IA guarda lo que elija el cliente en <b style="color:var(--brand)">{{${esc(a.clave||"atributo")}}}</b> — aparece en el pedido${EJ.donde}.</div>
       <label>Valores posibles <span style="color:var(--faint);font-weight:400">(opcional, separados por coma)</span></label>
-      <input class="in aval" value="${esc(a.valores||"")}" placeholder="Ej. 38, 39, 40, 41, 42, 43, 44"/>
+      <input class="in aval" value="${esc(a.valores||"")}" placeholder="${EJ.valores}"/>
       <div style="font-size:11px;color:var(--faint);margin-top:4px">Si los pones, la IA los ofrece y confirma que lo que dijo el cliente sea uno de ellos. Vacío = respuesta libre.</div>
       <label>Ayuda para la IA <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-      <input class="in ahelp" value="${esc(a.ayuda||"")}" placeholder="Ej. Si no sabe su talla, ofrécele la guía de medidas"/>
-      <label style="margin-top:12px">Multimedia de apoyo <span style="color:var(--faint);font-weight:400">— la IA lo envía cuando ayuda a decidir (guía de tallas, carta de colores…)</span></label>
+      <input class="in ahelp" value="${esc(a.ayuda||"")}" placeholder="${EJ.ayuda}"/>
+      <label style="margin-top:12px">Multimedia de apoyo <span style="color:var(--faint);font-weight:400">— la IA lo envía cuando ayuda a decidir (${EJ.media})</span></label>
       <div class="atmm" style="margin-top:5px"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn atmadd" data-k="image" style="height:32px">${icon("image")} Imagen</button>
