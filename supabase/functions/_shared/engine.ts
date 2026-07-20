@@ -2808,10 +2808,39 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // Si de verdad se equivocó de zona ya confirmada, lo corrige un humano.
   if (!a?.forzar && String(ctx.zona_entrega ?? "").trim() && ctx.zona_distrito_incierto !== "si") return;
 
-  const texto = a?.texto ? resolve(String(a.texto), ctx) : String(ctx.last_input ?? "");
   const cfg = await loadEntregas(db, run);
   const zonas: Zona[] = cfg?.entregas?.zonas ?? [];
   if (!zonas.length) return; // sin configuración → no tocar nada
+
+  // Dónde buscar el lugar. El último mensaje PRIMERO y, si ahí no dijo ninguno,
+  // hacia atrás (del más nuevo al más viejo).
+  //
+  // Con solo `last_input` se perdía la ciudad del PRIMER mensaje —el que dispara
+  // la palabra clave y solo atiende el saludo—, y como mucha gente escribe todo
+  // junto ("hola quiero zapatillas, soy de San Isidro, Av. X 200"), la zona no
+  // se resolvía NUNCA: la condición ¿Es de Lima? no routeaba, los campos de Lima
+  // ni siquiera entraban al extractor y **el pedido no se creaba**, mientras la
+  // IA seguía conversando y hasta prometiendo el envío. Verificado en vivo.
+  //
+  // Del más nuevo al más viejo a propósito: si se corrigió ("mejor mándalo a
+  // Lima"), gana lo último que dijo.
+  const textos: string[] = [];
+  if (a?.texto) {
+    textos.push(resolve(String(a.texto), ctx));
+  } else {
+    const ultimo = String(ctx.last_input ?? "").trim();
+    if (ultimo) textos.push(ultimo);
+    try {
+      const { data: previos } = await db.from("messages")
+        .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(6);
+      for (const m of previos ?? []) {
+        const t = String((m as any).content?.text ?? (m as any).content?.caption ?? "").trim();
+        if (t && !textos.includes(t)) textos.push(t);
+      }
+    } catch (_) { /* sin historial: se sigue con el último mensaje */ }
+  }
+  if (!textos.length) return;
 
   const set = async (k: string, v: string) => {
     run.vars[k] = v;
@@ -2819,15 +2848,23 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     await setField(db, run.channel_id, run.contact_id, k, v);
   };
 
-  // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
-  // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
-  let z = matchZona(zonas, texto);
-  let lugar: string | null = z ? z.nombre : null;
-  // 2) Sin match directo: la IA extrae el lugar del texto libre, y reintentamos
-  // el match determinista sobre ese lugar (puede venir deletreado distinto).
-  if (!z) {
-    const ext = await extraerLugar(db, run.channel_id, texto);
-    if (ext) { lugar = ext; z = matchZona(zonas, ext); if (z) lugar = z.nombre; }
+  // Se prueba mensaje por mensaje y se corta con el PRIMERO que dé un lugar
+  // (recordar: van del más nuevo al más viejo, así que gana lo más reciente).
+  let z: Zona | null = null;
+  let lugar: string | null = null;
+  let texto = textos[0];
+  for (const t of textos) {
+    // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
+    // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
+    z = matchZona(zonas, t);
+    lugar = z ? z.nombre : null;
+    // 2) Sin match directo: la IA extrae el lugar del texto libre, y reintentamos
+    // el match determinista sobre ese lugar (puede venir deletreado distinto).
+    if (!z) {
+      const ext = await extraerLugar(db, run.channel_id, t);
+      if (ext) { lugar = ext; z = matchZona(zonas, ext); if (z) lugar = z.nombre; }
+    }
+    if (lugar) { texto = t; break; }
   }
   // Si no mencionó NINGÚN lugar, no se toca nada. Antes cualquier mensaje sin
   // lugar ("hola") lo marcaba como provincia, y la IA le hablaba de agencias a
@@ -2961,6 +2998,26 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   const texto = String(ctx.last_input ?? "");
   if (!campos.length || !texto) return;
 
+  // Lo que el cliente ya dijo ANTES, no solo su último mensaje.
+  //
+  // Con `last_input` a secas se perdía todo lo del PRIMER mensaje: ese lo atiende
+  // el rotador (el saludo), y el extractor recién corre en el turno siguiente.
+  // Como la gente compra por WhatsApp escribiendo todo junto ("hola quiero 2
+  // pares, soy Juan Pérez, Av. X 123, Miraflores"), el bot tiraba esos datos y
+  // después los preguntaba uno por uno — justo lo contrario de "los pesca de la
+  // conversación sin interrogar". Verificado: tras darlo todo en el saludo,
+  // nombre/dirección/ciudad/referencia quedaban VACÍOS.
+  let contexto = texto;
+  try {
+    const { data: previos } = await db.from("messages")
+      .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
+      .order("ts", { ascending: false }).limit(6);
+    const lineas = (previos ?? []).reverse()
+      .map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim())
+      .filter(Boolean);
+    if (lineas.length > 1) contexto = lineas.join("\n");
+  } catch (_) { /* sin historial, se sigue con el último mensaje */ }
+
   // Solo se le pregunta a la IA por lo que TODAVÍA no tenemos: más barato y
   // evita que "re-extraiga" y pise un dato bueno con uno peor.
   const faltan = campos.filter((c) => !String(ctx[c.clave] ?? "").trim());
@@ -2985,9 +3042,11 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             "- Copia el valor TAL COMO lo dijo el cliente, aunque te parezca incompleto, mal escrito o inválido. " +
             "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
             "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
-            "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.",
-          content: `Mensaje del cliente:\n"${texto}"\n\nDatos a buscar:\n${lista}\n\n` +
-            `Devuelve solo los que estén PRESENTES en el mensaje:\n{${faltan.map((c) => `"${c.clave}":"..."`).join(",")}}`,
+            "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
+            "- Te pasamos los últimos mensajes del cliente, del más viejo al más nuevo. Si se corrigió, " +
+            "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).",
+          content: `Mensajes del cliente (del más viejo al más nuevo):\n"""\n${contexto}\n"""\n\nDatos a buscar:\n${lista}\n\n` +
+            `Devuelve solo los que estén PRESENTES en esos mensajes:\n{${faltan.map((c) => `"${c.clave}":"..."`).join(",")}}`,
           maxTokens: 250,
         });
         const m = /\{[\s\S]*\}/.exec(raw);
