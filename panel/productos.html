@@ -1407,7 +1407,7 @@ async function renderReceta(){
     <div class="card" style="border-color:var(--brand-border)">
       <h4 style="margin-top:0">Cómo se vende este producto</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        Las etapas de una venta, en orden. Llená lo que falte y generá el flujo:
+        Las etapas de una venta, en orden. Llena lo que falte y genera el flujo:
         el sistema lo arma solo y puedes seguir editándolo en el editor visual.
       </div>
     </div>
@@ -1458,12 +1458,26 @@ async function renderReceta(){
              lo pide de nuevo y la IA sigue atendiendo dudas.`}
       </div>
       <button class="btn primary" id="genFlow">${st.receta.fVenta?"Regenerar flujo de venta":"Generar flujo de venta"}</button>
-      ${st.receta.fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(st.receta.fVenta.nombre)}" (${st.receta.fVenta.estado}). Regenerar lo reescribe por completo.</div>`:""}
+      ${st.receta.fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(st.receta.fVenta.nombre)}". Regenerar lo reescribe por completo.</div>`:""}
+      ${st.receta.fVenta && st.receta.fVenta.estado!=="activo" ? `
+      <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55">
+        <b style="color:var(--red,#e2564a)">El flujo de venta está en borrador: este producto NO vende.</b>
+        El bot manda los mensajes iniciales y se queda callado, porque solo salta a flujos activos.
+        <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Activarlo ahora</button></div>
+      </div>` : ""}
     </div>`;
 
   b.querySelectorAll("[data-go]").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.go; renderDetail(); });
   renderSalud();
   const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
+  const av=$("activarVenta");
+  if(av) av.onclick=async(e)=>{
+    e.target.disabled=true;
+    const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
+    if(error){ toast(error.message,true); e.target.disabled=false; return; }
+    toast("Flujo activado ✓ · el producto ya vende");
+    st.tab="receta"; renderDetail();
+  };
 }
 
 // Salud del producto: lo que impediría vender bien. Se avisa ACÁ, antes de
@@ -1704,11 +1718,19 @@ async function generarFlujoVenta(){
     if(flowId){
       await supa.from("flow_edges").delete().eq("flow_id",flowId);
       await supa.from("flow_nodes").delete().eq("flow_id",flowId);
-      await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}`, estado:"borrador" }).eq("id",flowId);
+      // Al REGENERAR no se toca el estado: si el flujo ya estaba vendiendo, se
+      // lo dejaba en borrador y el producto se quedaba mudo sin avisar.
+      await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}` }).eq("id",flowId);
     }else{
       const { data,error } = await supa.from("flows").insert({
         channel_id:st.channelId, product_id:st.prod.id, nombre:`Venta · ${st.prod.nombre}`,
-        role:"venta", kind:"flow", estado:"borrador",
+        // ACTIVO, no borrador: el rotador de mensajes iniciales solo salta a
+        // flujos activos, así que un flujo recién generado en borrador hacía que
+        // el producto saludara y se quedara MUDO — sin que nada lo dijera. Los
+        // mensajes iniciales ya se creaban activos: eran dos mitades del mismo
+        // producto con criterios distintos. Lo que impide vender lo avisa
+        // "Salud del producto"; el estado no es el lugar para esconderlo.
+        role:"venta", kind:"flow", estado:"activo",
         descripcion:`Venta de ${st.prod.nombre} con IA. Generado desde la receta.`,
       }).select("id").single();
       if(error){ toast(error.message,true); return; }
@@ -2234,7 +2256,8 @@ async function renderActivacion(){
     root.innerHTML=`<div class="card">
       <h4>${icon("message")}Mensajes iniciales</h4>
       <div style="font-size:13px;color:var(--muted);margin:8px 0 14px;line-height:1.55">Los mensajes con los que arranca el chat cuando el cliente escribe tu palabra clave (o llega desde tu anuncio). Puedes crear <b>varias versiones que el bot rota</b> para variar el copy y reducir el riesgo de baneo.</div>
-      <button class="btn primary" id="createWelcome">Crear mensajes iniciales</button></div>`;
+      <button class="btn primary" id="createWelcome">Crear mensajes iniciales</button>
+      <div style="font-size:12px;color:var(--faint);margin-top:10px">Al crearlos aparece acá el campo de <b>palabras clave</b>: se enganchan a estos mensajes, por eso van juntos.</div></div>`;
     $("createWelcome").onclick=createWelcome;
     return;
   }
