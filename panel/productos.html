@@ -1575,7 +1575,14 @@ async function generarFlujoFisico(flowId, N, E){
     detectar_opcion:true, detectar_zona:true, campos,
     prompt:"Continúa la conversación de forma natural: responde dudas, explica el valor y guía a la compra. "+
            "Pregúntale a dónde se lo enviamos para saber cómo despacharlo. Pide los datos que falten de a uno, "+
-           "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.",
+           "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.\n"+
+           // El adelanto lo fija el negocio y lo pide un mensaje FIJO del flujo,
+           // con el monto exacto. Sin esta línea la IA preguntaba "¿con cuánto te
+           // gustaría hacer el adelanto?" y el mensaje siguiente decía "de S/ 20":
+           // el bot se contradecía solo, y el cliente podía pagar de menos.
+           "IMPORTANTE sobre el adelanto: su monto lo decide el negocio, NO el cliente. "+
+           "Nunca preguntes cuánto quiere adelantar ni negocies la cifra. "+
+           "Tampoco le pidas el adelanto tú: apenas estén sus datos, el sistema le manda el monto exacto y los datos de pago.",
   },false,80,240);
   const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },true,380,240);
   const nFin=await N("fin","Fin",{},false,2080,240);
