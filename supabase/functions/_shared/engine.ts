@@ -2753,7 +2753,12 @@ async function extraerLugar(db: SupabaseClient, channelId: string, texto: string
       system: "Extraes lugares del Perú de mensajes de clientes. Responde SOLO con un JSON, sin explicaciones.",
       content: `Mensaje del cliente:\n"${texto}"\n\n¿A qué distrito, ciudad o localidad del Perú se refiere para su entrega? ` +
         `Si solo menciona la ciudad de Lima de forma genérica (ej. "soy de Lima", "acá en la capital", "en Lima nomás") sin nombrar un distrito, responde exactamente "Lima". ` +
-        `Responde exactamente: {"lugar":"<nombre del lugar, o vacío si no menciona ninguno>"}`,
+        // Solo el distrito/ciudad, nunca la dirección. Un cliente escribe "mándalo
+        // a la agencia de la calle Real" y esto respondía "calle real": el pedido
+        // salía con esa calle como CIUDAD y el paquete se despachaba a ciegas.
+        // Una calle, una sede de agencia o una referencia NO son una localidad.
+        `IMPORTANTE: solo cuenta el distrito, ciudad o provincia. Una calle, avenida, jirón, número de puerta, sede u oficina de agencia (ej. "la agencia de la calle Real", "Shalom Av. España 200", "al costado del mercado") NO es una localidad: si el mensaje solo trae eso y no nombra el distrito o la ciudad, responde vacío. ` +
+        `Responde exactamente: {"lugar":"<nombre del distrito, ciudad o provincia, o vacío si no menciona ninguno>"}`,
       maxTokens: 80,
     });
     const m = /\{[\s\S]*\}/.exec(raw);
@@ -3057,6 +3062,13 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
             "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
             "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
+            // El cliente casi nunca responde "limpio". A "¿cuál es la sede?"
+            // contesta "shalom real 500 huancayo", y como la descripción del campo
+            // decía "la oficina EXACTA, NO la ciudad", el modelo lo omitía ENTERO:
+            // la sede quedaba vacía, el pedido no se completaba y la IA repreguntaba.
+            "- El cliente suele responder con más cosas de las pedidas (la sede junto con su ciudad, " +
+            "el nombre junto con el DNI). Quédate con la parte que corresponde a cada dato y guárdala igual: " +
+            "nunca descartes un dato entero porque venga mezclado con otra información.\n" +
             "- Te pasamos los últimos mensajes del cliente, del más viejo al más nuevo. Si se corrigió, " +
             "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).\n" +
             "- También te pasamos la última pregunta del vendedor. Úsala SOLO para entender respuestas " +
@@ -3533,8 +3545,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Pedir la sede nombrando la ciudad: "Av. España" a secas no sirve para
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.
-        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, el **adelanto**, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
+        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
           `Pregúntale la sede nombrando su ciudad, no en abstracto.`);
+        // El adelanto: monto RESUELTO por el motor (override del producto →
+        // agencia → default de Negocio). Antes no se le decía ninguno, así que la
+        // IA repetía el número que encontrara escrito en la descripción del
+        // producto o del negocio —texto congelado que envejece— y el mensaje fijo
+        // del flujo mandaba otro: el cliente oía "S/ 20", pagaba 20, y el pedido
+        // esperaba 30. Ahora manda el del motor, que es el que se cobra de verdad.
+        if (ctx.adelanto != null && String(ctx.adelanto).trim() !== "") {
+          L.push(`El adelanto de este pedido es de **S/ ${ctx.adelanto}** — ese monto exacto, no otro. ` +
+            `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.`);
+        }
+        L.push("El adelanto **no lo pides tú**: lo pide un mensaje del sistema con los datos de pago, apenas tengas los datos. " +
+          "No lo negocies ni preguntes con cuánto quiere adelantar, y no le pidas su número de teléfono ni ningún dato de contacto: ya le escribes por su WhatsApp.");
       }
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
@@ -3553,7 +3577,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
       parts.push("## Datos que faltan\n" + L.join("\n"));
     } else if (ctx.datos_completos === "si") {
-      parts.push("## Datos\nYa tienes todo lo necesario para el pedido: no le pidas más datos, cierra la venta.");
+      // Ojo con el "confírmame": con todo capturado, la IA seguía pidiendo
+      // confirmar el DNI o la sede… en el mismo turno en que el flujo ya creaba
+      // el pedido y mandaba los datos de pago. El cliente recibía "¿me confirmas
+      // la sede?" y justo debajo "paga S/ 30": dos burbujas que se contradicen.
+      parts.push("## Datos\nYa tienes todo lo necesario para el pedido: no le pidas más datos ni le pidas que confirme los que ya te dio. " +
+        "En este mismo turno el sistema cierra el pedido y le manda cómo pagar, así que NO termines con una pregunta: cierra la venta.");
     }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);

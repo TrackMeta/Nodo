@@ -363,9 +363,14 @@ function compileConfirmaciones(c,tipo){
   const on=(arr)=>arr.filter(([k])=>cf[k]).map(([,l])=>"- "+l);
   const cod=on(CONFIRM_COD), ag=on(CONFIRM_AG);
   if(!cod.length&&!ag.length) return "";
-  const L=["## Requisitos para confirmar el pedido"];
-  if(cod.length) L.push("Para pedidos contraentrega, verifica antes de confirmar:\n"+cod.join("\n"));
-  if(ag.length) L.push("Para pedidos por agencia, verifica antes de confirmar:\n"+ag.join("\n"));
+  // "Verifica antes de confirmar" se leía como "pídele que te lo confirme": con
+  // el DNI ya capturado y válido, la IA respondía "confírmame cuál es el DNI
+  // correcto" — repreguntaba un dato bueno justo cuando el pedido ya estaba
+  // creado. Es una lista de lo que NO puede faltar, no un pedido de confirmación.
+  const L=["## Requisitos para confirmar el pedido",
+    "Es lo que no puede FALTAR para cerrar el pedido. Si el cliente ya te lo dio, dalo por bueno: no se lo vuelvas a pedir ni le pidas que lo confirme."];
+  if(cod.length) L.push("Para pedidos contraentrega, no cierres el pedido sin tener:\n"+cod.join("\n"));
+  if(ag.length) L.push("Para pedidos por agencia, no cierres el pedido sin tener:\n"+ag.join("\n"));
   return L.join("\n\n");
 }
 function compileProductoIA(c,tipo){
