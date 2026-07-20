@@ -1623,7 +1623,9 @@ async function generarFlujoFisico(flowId, N, E){
     ],
   },false,1240,440);
   const nConfLima=await N("mensaje","Confirmación Lima",{
-    bubbles:[{ text:"¡Listo, {{nombre}}! ✅ Tu pedido quedó confirmado.\n\n🛵 Pagas al recibirlo. Te avisamos cuando salga el motorizado." }],
+    // {{cliente}} y no {{nombre}}: acá ya dio su nombre completo para el rótulo,
+    // así que usar el del perfil de WhatsApp queda raro.
+    bubbles:[{ text:"¡Listo, {{cliente}}! ✅ Tu pedido quedó confirmado.\n\n🛵 Pagas al recibirlo. Te avisamos cuando salga el motorizado." }],
   },false,1520,440);
 
   // ── Rama Provincia (crea el pedido y recién ahí pide el adelanto) ──

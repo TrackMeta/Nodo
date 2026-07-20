@@ -4048,6 +4048,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
     ctx.envio_cobrado = envioZona;
   }
 
+  // {{cliente}} — cómo llamarlo. Prefiere el nombre que DIO para el envío antes
+  // que el del perfil de WhatsApp: si le pedimos el nombre completo para el
+  // rótulo, usar el del perfil después queda raro ("¡Listo, Carlitos123!") y en
+  // el banco de pruebas salía "¡Listo, Prueba (webchat)!". Cae al del perfil
+  // cuando todavía no dio ninguno.
+  ctx.cliente = String(ctx.nombre_completo ?? "").trim()
+             || String(ctx.nombre ?? "").trim()
+             || String(ctx.wa_id ?? "");
+
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
   // notificación de físicos (guía, saldo, clave de recojo…). Best-effort.
   try {
