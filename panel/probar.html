@@ -58,8 +58,12 @@
   .msg img,.msg video{max-width:230px;border-radius:10px;display:block} .msg audio{max-width:230px}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
   .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
-  .btns{align-self:flex-start;display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}
-  .btnchip{font-size:12px;padding:6px 14px;border:1px solid var(--brand);border-radius:20px;color:var(--brand);background:transparent}
+  /* Los botones cuelgan de la burbuja que los envió: mismo lado que ella (los
+     manda el bot, así que van a la DERECHA) y apilados justo debajo, como en
+     WhatsApp. Antes quedaban sueltos a la izquierda, como si los hubiera
+     mandado el cliente. */
+  .btns{align-self:flex-end;width:230px;max-width:70%;display:flex;flex-direction:column;gap:3px;margin:3px 0 4px}
+  .btnchip{font-size:12.5px;padding:7px 12px;border:1px solid var(--brand);border-radius:10px;color:var(--brand);background:transparent;width:100%;text-align:center;cursor:pointer}
   .btnchip:hover{background:var(--brand-bg)}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px;text-align:center;padding:20px}
 
