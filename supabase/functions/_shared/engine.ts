@@ -647,7 +647,7 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
         const hit = kws.some((k) =>
           k && (mode === "exacta" ? norm === k
             : mode === "empieza" ? norm.startsWith(k)
-            : norm.includes(k))
+            : contienePalabra(norm, k))
         );
         if (hit && !kwHit) kwHit = flow; // keyword gana sobre entrada
       }
@@ -4175,6 +4175,26 @@ async function removeTag(db: SupabaseClient, channelId: string, contactId: strin
     .eq("channel_id", channelId).eq("nombre", tagName).maybeSingle();
   if (tag) await db.from("contact_tags").delete().eq("contact_id", contactId).eq("tag_id", (tag as any).id);
 }
+// Modo "contiene" de las palabras clave: la clave tiene que aparecer como
+// PALABRA, no como pedazo de otra. Con includes() crudo, "desactivar" disparaba
+// la clave "activar" y "problema"/"producto" disparaban "pro" — o sea, el bot
+// arrancaba a vender por una coincidencia accidental.
+//
+// El límite es "no-letra-ni-dígito" y no solo espacio: la clave suele venir
+// pegada a puntuación ("tienen el pro?"). El sufijo opcional -s/-es tolera el
+// plural, para que "zapatilla" siga agarrando "zapatillas".
+//
+// (El detector de opt-out ya usaba límites de palabra por la misma razón; acá
+// faltaba.)
+function contienePalabra(texto: string, clave: string): boolean {
+  const esc = clave.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  try {
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${esc}(es|s)?([^\\p{L}\\p{N}]|$)`, "u").test(texto);
+  } catch (_) {
+    return texto.includes(clave); // regex inválida → no dejar el flujo sin ruta
+  }
+}
+
 function normalize(s: string): string {
   return (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 }
