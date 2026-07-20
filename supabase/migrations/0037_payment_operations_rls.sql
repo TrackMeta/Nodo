@@ -1,0 +1,12 @@
+-- Nodo · 0037 — RLS en payment_operations (era la ÚNICA tabla sin RLS)
+--
+-- Se creó en 0035 sin habilitar RLS, así que quedó abierta al público: con la
+-- anon key —que viaja en el JS del panel y cualquiera puede descargar— se podía
+-- leer, insertar y BORRAR. Borrar una fila es lo grave: esta tabla es la que
+-- impide reusar un comprobante, así que sin su registro el mismo pago sirve
+-- infinitas veces. Insertar también hace daño: se puede "quemar" por adelantado
+-- el número de operación de un cliente legítimo para que su pago sea rechazado.
+--
+-- Sin políticas a propósito: nadie llega por PostgREST. El motor entra con la
+-- service role, que se salta RLS, así que sigue funcionando igual.
+alter table payment_operations enable row level security;

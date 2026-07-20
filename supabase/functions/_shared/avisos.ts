@@ -196,6 +196,22 @@ export const AVISOS: AvisoDef[] = [
       "🙏 Hazle la devolución y mándale la captura. El bot lo sigue atendiendo.",
   },
 
+  {
+    clave: "entrega_fallida", grupo: "pagos",
+    titulo: "No se pudo entregar algo ya pagado",
+    desc: "El cliente pagó pero el envío del acceso falló (se cayó WhatsApp, venció el token…). Hay que mandárselo a mano. Este no conviene apagarlo.",
+    vars: ["cliente", "telefono", "producto"],
+    texto:
+      "⚠️ *NO SE PUDO ENTREGAR*\n" +
+      "\n" +
+      "🛍 {{producto}}\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "\n" +
+      "💸 Ya te pagó y NO lo recibió. Mándaselo tú por el chat.",
+  },
+
   // ── Atención ─────────────────────────────────────────────────────
   {
     clave: "pide_humano", grupo: "atencion",

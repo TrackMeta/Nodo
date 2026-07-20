@@ -285,9 +285,21 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
       const { data: v } = await db.from("product_versions").select("nombre, entrega").eq("id", b.version_id).maybeSingle();
       const items = (Array.isArray((v as any)?.entrega) ? (v as any).entrega : []).filter((it: any) => it && it.url);
       if (!items.length) continue; // sin entrega configurada → nada que mandar
-      await deliverMessage(db, channelId, contactId, `🎁 Acá va tu ${b.nombre || (v as any)?.nombre || "extra"}:`).catch(() => {});
-      for (const it of items) await deliverMessage(db, channelId, contactId, String(it.url)).catch(() => {});
-      b.entregado = true; changed = true;
+      const nombre = b.nombre || (v as any)?.nombre || "extra";
+      // Solo se marca entregado si el envío SALIÓ. Antes el error se tragaba y
+      // se marcaba igual: el cliente pagaba, no recibía nada, y como la marca es
+      // lo que hace idempotente a esta función, no se reintentaba NUNCA ni
+      // aparecía en ningún lado. Ahora, si falla, queda sin marcar (el próximo
+      // intento lo reintenta) y te avisa para que lo mandes a mano.
+      try {
+        await deliverMessage(db, channelId, contactId, `🎁 Acá va tu ${nombre}:`);
+        for (const it of items) await deliverMessage(db, channelId, contactId, String(it.url));
+        b.entregado = true; changed = true;
+      } catch (e) {
+        console.error("[entregarExtrasDigitales] no se pudo entregar:", (e as any)?.message ?? e);
+        await logEvent(db, channelId, contactId, "nota", "⚠️ No se pudo entregar un extra digital", nombre).catch(() => {});
+        await avisar(db, channelId, contactId, "entrega_fallida", { producto: nombre });
+      }
     }
     if (changed) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
   } catch (e) {
@@ -1636,6 +1648,12 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
 // los checkboxes con costo_lima/costo_provincia), para no cambiarle el
 // comportamiento a los productos que nadie volvió a tocar.
 function envioCobroDe(ctx: any, zona: string): number {
+  // Sin zona física no hay envío que cobrar: un producto digital no se despacha.
+  // Sin este corte, una venta digital caía en la rama "provincia" (el ternario de
+  // abajo trata cualquier cosa que no sea "lima" como provincia) y se le sumaba
+  // el envío de provincia al total. Solo se notaba con el modo "se suma al
+  // total"; con "incluido" daba 0 y el error quedaba dormido.
+  if (zona !== "lima" && zona !== "provincia") return 0;
   const modo = String(ctx._envio_modo ?? "");
   if (modo === "incluido" || modo === "agencia") return 0;
   if (modo === "suma") {

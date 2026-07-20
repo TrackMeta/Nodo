@@ -16,9 +16,17 @@ const db = serviceClient();
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Protección: si hay SCHEDULER_SECRET configurado, exigir el header.
+  // Protección: FAIL-CLOSED. Sin secreto configurado no se atiende a nadie.
+  // Antes era "si hay secreto, exigirlo": bastaba con que alguien borrara o
+  // renombrara SCHEDULER_SECRET para que este endpoint —que dispara campañas y
+  // remarketing a clientes REALES— quedara abierto a internet, y nada avisaba.
+  // El webhook de WhatsApp ya usaba este criterio; acá faltaba.
   const secret = Deno.env.get("SCHEDULER_SECRET");
-  if (secret && req.headers.get("x-scheduler-secret") !== secret) {
+  if (!secret) {
+    console.error("[scheduler] falta SCHEDULER_SECRET — no se atiende el tick");
+    return json({ error: "sin_secreto" }, 503);
+  }
+  if (req.headers.get("x-scheduler-secret") !== secret) {
     return json({ error: "forbidden" }, 403);
   }
 

@@ -86,6 +86,21 @@ export const esPerdido = (o) => !!EST[o?.estado]?.perdido;
 export const enLaCalle = (o) => ["despachado","en_agencia","en_reparto"].includes(o?.estado);
 export const esFisico  = (o) => !!EST[o?.estado]?.zona || !!o?.shipping?.zona || o?.product?.tipo === "fisico";
 
+// De qué operación es un pedido: "digital" | "lima" | "provincia".
+// Manda la zona REAL (shipping.zona); si el pedido es viejo y no la trae, se
+// deduce del estado, que ya la declara en EST.
+//
+// Vivía copiado en pedidos.html y compras.html con una lista de estados Lima
+// escrita a mano. Estaba en sync de milagro: agregar un estado Lima a EST y
+// olvidarse de las dos copias lo habría contado como provincia, en silencio. Es
+// el mismo descuido que tuvo al Dashboard sin contar las ventas físicas.
+export function zonaDe(o){
+  if (!esFisico(o)) return "digital";
+  const z = String(o?.shipping?.zona ?? "").toLowerCase();
+  if (z === "lima" || z === "provincia") return z;
+  return EST[o?.estado]?.zona ?? "provincia";
+}
+
 // ── Lo que te cuesta a ti ──────────────────────────────────────────
 // Flete REGISTRADO al cerrar el pedido. `null` = todavía no se registró (≠ 0,
 // que significa "no pagué nada"): sin esto el margen saldría inventado.

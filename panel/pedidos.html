@@ -129,12 +129,9 @@ const FIS_STATES=new Set([...KB_LIMA,...KB_PROV].flatMap(c=>c[2]));
 // dos pantallas se complementen y no compitan por el mismo click.
 const COPILOTO_STATES=new Set(["esperando_adelanto","en_agencia"]);
 
-function zonaDe(o){
-  const z=String((o.shipping||{}).zona||"").toLowerCase();
-  if(z==="lima"||z==="provincia") return z;
-  const cod=["confirmado","en_reparto","entregado_cobrado","reprogramado","rechazado"];
-  return cod.includes(String(o.estado||"").toLowerCase()) ? "lima" : "provincia";
-}
+// La zona la decide orders.js (ahí vive la tabla de estados). Acá había una
+// copia con la lista de estados Lima escrita a mano.
+const zonaDe = O.zonaDe;
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
 const total=O.total;
 function rel(iso){ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(s<90) return "hace 1 min"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
