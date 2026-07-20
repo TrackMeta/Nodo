@@ -250,20 +250,24 @@ async function load(){
   const r=computeRange();
   const fromISO=r.from.toISOString(), toISO=r.to.toISOString();
   // Live totals + eventos + órdenes en paralelo.
-  const [stats, evR, ordR, prodR] = await Promise.all([
+  // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test); la
+  // sección Contactos lo excluye, así que los dos números no cuadraban. Se
+  // corrige acá con el mismo criterio (no se toca el RPC: la Management API no
+  // deja reemplazar funciones a mano). head:true trae solo el count, sin filas.
+  //
+  // Va DENTRO del Promise.all a propósito. Antes se lanzaba suelto y parcheaba
+  // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
+  // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
+  // según quién ganara la carrera — y el día que se probó, ganó el bueno.
+  const [stats, evR, ordR, prodR, contR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("products").select("id,nombre,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
+    supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
   ]);
   const s=stats.data||{};
-  // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test); la sección
-  // Contactos lo excluye, así que los dos números no cuadraban. Se corrige acá
-  // con el mismo criterio (no se toca el RPC: la Management API no deja
-  // reemplazar funciones a mano). head:true trae solo el count, sin filas.
-  supa.from("contacts").select("id",{count:"exact",head:true})
-    .eq("channel_id",channelId).neq("wa_id","webchat-test")
-    .then(({count})=>{ if(typeof count==="number"){ s.contactos=count; const el=[...document.querySelectorAll('#kpis .kpi')].find(k=>/Contactos/.test(k.querySelector('.h')?.textContent||"")); if(el) el.querySelector('.v').textContent=String(count); } }).catch(()=>{});
+  if(typeof contR?.count==="number") s.contactos=contR.count;
   const ev=evR.error?[]:(evR.data||[]);
   // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
   // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
