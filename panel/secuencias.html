@@ -111,6 +111,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], folder:"__all", localFolders:new Set() };
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
@@ -367,8 +368,9 @@ function renderBubble(box,paso,v,bub,bi){
     </div>
     ${preview}
     ${kind==="text"
-      ? `<textarea class="ta btext" rows="2" style="min-height:52px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>`
+      ? `<textarea class="ta btext" rows="2" style="min-height:52px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+  if(kind==="text") wireBotones(el,bub,()=>renderMsgComposer(box,paso));
   const tx=el.querySelector(".btext"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
   const cp=el.querySelector(".bcap"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
   el.querySelector(".bdel").onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderMsgComposer(box,paso); };
@@ -397,7 +399,7 @@ function cleanSteps(pasos){
   return (pasos||[]).map(p=>{
     if(p.flow_id||p.template_name) return p;
     if(Array.isArray(p.variantes)){
-      p.variantes.forEach(v=>{ v.bubbles=(v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim())); });
+      p.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
       p.variantes=p.variantes.filter(v=> v.bubbles.length);
       if(!p.variantes.length) p.variantes=[newVariant(0)];
     }

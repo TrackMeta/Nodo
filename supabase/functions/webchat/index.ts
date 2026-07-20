@@ -109,7 +109,9 @@ Deno.serve(async (req) => {
   // Correr el motor.
   try {
     const event = buttonId
-      ? { type: "button" as const, buttonId }
+      // `title` importa: si nadie espera este botón, el motor lo convierte en un
+      // mensaje de texto con el título (el atajo "escribe por el cliente").
+      ? { type: "button" as const, buttonId, title: text ?? buttonId }
       : {
         type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text",
         // Media de prueba (URL pública de Storage): imagen → OCR, audio → STT.

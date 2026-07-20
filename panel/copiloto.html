@@ -72,7 +72,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askText } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{} };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -337,19 +337,37 @@ async function aprobarExtra(o){
 
 async function rechazar(o,tipo){
   const c=o.contact||{};
-  // El pago digital y el de extra dejan el run parqueado → al rechazar se pausa
-  // el bot para que un humano tome ese chat (evita dejarlo colgado sin atención).
-  const pausa=tipo==="digital"||tipo==="extra";
-  if(!await confirmDialog({ title:"Rechazar el comprobante",
-    message:`${c.nombre||"Cliente"} — se marca el ${pausa?"pago":tipo} como no válido.${pausa?" El bot queda en pausa en ese chat para que tú lo atiendas y le pidas un pago correcto.":" El pedido queda como está; escribile para pedirle un pago correcto."}`,
-    confirmText:"Rechazar", danger:true })) return;
+  // El pago digital y el de extra dejan la conversación PARQUEADA esperando tu
+  // visto bueno, así que rechazar tiene que decidir además qué pasa con el chat:
+  // si no se desparquea, el cliente solo recibiría "estoy verificando tu pago"
+  // por siempre. Por eso acá se elige, en vez de asumir.
+  const parqueado=tipo==="digital"||tipo==="extra";
+  let quien="humano";
+  if(parqueado){
+    quien=await askChoice({ title:"Rechazar el comprobante",
+      message:`${c.nombre||"Cliente"} — marcas el pago como no válido. ¿Y después?`,
+      value:"bot", options:[
+        { value:"bot", label:"Que el bot le pida otro", icon:"robot",
+          desc:"Le dice que no pudo validar ese comprobante y le pide que reenvíe uno correcto. La venta sigue sola, y el siguiente comprobante vuelve a pasar por ti." },
+        { value:"humano", label:"Lo atiendo yo", icon:"user",
+          desc:"El bot queda en pausa en este chat y le escribes tú." },
+      ] });
+    if(!quien) return;
+  }else{
+    if(!await confirmDialog({ title:"Rechazar el comprobante",
+      message:`${c.nombre||"Cliente"} — se marca el ${tipo} como no válido. El pedido queda como está; escríbele para pedirle un pago correcto.`,
+      confirmText:"Rechazar", danger:true })) return;
+  }
   const patch = tipo==="adelanto" ? { adelanto_rechazado_at:new Date().toISOString(), adelanto_revisar:"Lo rechazaste tú" }
               : tipo==="saldo"    ? { saldo_rechazado_at:new Date().toISOString(), saldo_revisar:"Lo rechazaste tú" }
               : tipo==="extra"    ? { extra_rechazado_at:new Date().toISOString(), extra_revisar:"Lo rechazaste tú", extra_pendiente:false }
               : { digital_rechazado_at:new Date().toISOString(), digital_revisar:"Lo rechazaste tú", digital_pendiente:false };
-  const r=await updateOrder({ order_id:o.id, shipping:patch });
+  const r=await updateOrder({ order_id:o.id, shipping:patch,
+    ...(parqueado?{ reject:quien, reject_motivo:"No pude validar ese comprobante. ¿Me lo reenvías, por favor?" }:{}) });
+  const pausa=parqueado&&quien==="humano";
   if(r && pausa){ try{ await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); }catch(_){} }
-  if(r){ toast(pausa?"Rechazado · el bot quedó en pausa en ese chat":"Marcado como rechazado"); await load(); }
+  if(r){ toast(pausa?"Rechazado · el bot quedó en pausa en ese chat"
+                    :(r.rejected?"Rechazado · el bot le está pidiendo otro comprobante":"Marcado como rechazado")); await load(); }
 }
 
 // El momento más móvil de todos: estás en la agencia con la boleta en la mano.

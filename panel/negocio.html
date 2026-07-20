@@ -243,10 +243,16 @@ function renderEntregas(b){
     <h2>Entrega y logística</h2>
     <p class="sub">Tus zonas de Lima, agencias de provincia y reglas de reparto. Es igual para <b>todos</b> tus productos físicos, por eso vive acá y no en cada producto.</p>
     <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} ¿Cómo se cobra el envío?</h3>
+      <p class="sub">Es lo que el <b>cliente</b> paga (o no) por recibir su pedido. No lo confundas con el <b>costo de reparto</b> de más abajo, que es lo que te cuesta a ti y solo sirve para calcular tu ganancia.</p>
+      <div id="envModos"></div>
+      <div id="envMontos"></div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:10px">Un producto puede llevar la contraria desde su ficha (pestaña <b>Entrega</b>). Si no la lleva, usa esta regla.</div>
+    </div>
+    <div class="card">
       <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Reglas de entrega</h3>
       <p class="sub">Lo que configures acá es una <b>regla</b>: el sistema la calcula y la IA solo la comunica. Ella ni siquiera sabe qué hora es — de eso se encarga el motor.</p>
-      ${rowSw("Envío gratis","Se le dice al cliente que el envío no cuesta.",E.envio_gratis!==false,"envio_gratis")}
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Hora de corte para entrega el mismo día</label>
         <input class="in" id="entCorte" type="time" value="${esc(E.corte||"11:00")}" style="width:120px"/>
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Si el cliente pide para hoy después de esta hora, se le ofrece mañana.</span>
@@ -298,9 +304,10 @@ function renderEntregas(b){
 
   b.querySelectorAll(".erow").forEach(r=> r.onclick=()=>{
     const k=r.dataset.row;
-    E[k] = k==="envio_gratis" ? !(E[k]!==false) : !(E[k]===true);
-    r.querySelector("[data-sw]").classList.toggle("on", k==="envio_gratis" ? E[k]!==false : E[k]===true);
+    E[k] = !(E[k]===true);
+    r.querySelector("[data-sw]").classList.toggle("on", E[k]===true);
   });
+  paintEnvio();
   b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{ const k=x.dataset.dia; E.dias[k]=!(E.dias[k]!==false); renderEntregas(b); });
   $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
   $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
@@ -312,6 +319,48 @@ function renderEntregas(b){
   paintFeriados();
   paintZonas();
 }
+// Los 3 modos de cobro del envío. El texto importa tanto como la opción: la
+// diferencia entre "incluido" y "se suma" es plata, y no se nota sola.
+const ENV_MODOS=[
+  ["incluido","Incluido en el precio","El cliente no paga envío aparte — el flete sale de tu margen. Es lo más común: el precio de lista ya lo contempla."],
+  ["suma","Se suma al total","Al precio del producto se le agrega el envío. El cliente paga los dos y el pedido los cobra juntos."],
+  ["agencia","Lo paga en la agencia","Solo para provincia: el cliente paga el envío al recoger, directo a la agencia. No pasa por tu caja."],
+];
+// Un negocio viejo sin `envio_modo` se lee desde el toggle que había antes.
+const envModoDe=(E)=> E.envio_modo || (E.envio_gratis!==false ? "incluido" : "suma");
+
+function paintEnvio(){
+  const E=st.ent, box=$("envModos"); if(!box) return;
+  const act=envModoDe(E);
+  box.innerHTML=ENV_MODOS.map(([v,t,d])=>`
+    <div class="envopt" data-v="${v}" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-top:8px;
+      border:1.5px solid ${v===act?'var(--brand)':'var(--border)'};border-radius:11px;padding:11px 12px;
+      background:${v===act?'color-mix(in srgb,var(--brand) 8%,transparent)':'transparent'}">
+      <span style="flex:0 0 16px;height:16px;margin-top:1px;border-radius:50%;border:2px solid ${v===act?'var(--brand)':'var(--border)'};
+        background:${v===act?'var(--brand)':'transparent'};box-shadow:${v===act?'inset 0 0 0 3px var(--card,#fff)':'none'}"></span>
+      <span><span style="font-weight:600;font-size:13px">${t}</span>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:2px">${d}</div></span>
+    </div>`).join("");
+  box.querySelectorAll(".envopt").forEach(r=> r.onclick=()=>{ E.envio_modo=r.dataset.v; paintEnvio(); });
+
+  // Los montos solo tienen sentido si el cliente paga el envío aparte.
+  const m=$("envMontos"); if(!m) return;
+  if(act!=="suma"){ m.innerHTML=""; return; }
+  m.innerHTML=`
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <span style="font-size:12.5px;font-weight:700">Cuánto le cobras</span>
+      <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600">Lima
+        <span style="color:var(--muted)">S/</span>
+        <input class="in" id="envLima" type="number" min="0" step="0.5" placeholder="0" value="${E.envio_cobro_lima??""}" style="width:90px"/></label>
+      <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600">Provincia
+        <span style="color:var(--muted)">S/</span>
+        <input class="in" id="envProv" type="number" min="0" step="0.5" placeholder="0" value="${E.envio_cobro_provincia??""}" style="width:90px"/></label>
+      <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Se suma al total del pedido. Disponible en tus flujos como <b style="color:var(--brand)">{{total_cobrar}}</b> (precio + envío).</span>
+    </div>`;
+  $("envLima").onchange=(ev)=>{ E.envio_cobro_lima = ev.target.value===""?undefined:Number(ev.target.value); };
+  $("envProv").onchange=(ev)=>{ E.envio_cobro_provincia = ev.target.value===""?undefined:Number(ev.target.value); };
+}
+
 function paintFeriados(){
   const E=st.ent, box=$("ferList"); if(!box) return;
   box.innerHTML="";
@@ -388,6 +437,9 @@ function paintZonas(){
 async function guardarEntregas(){
   const E=st.ent;
   E.feriados_fechas=(E.feriados_fechas||[]).filter(Boolean);
+  // Se fija el modo aunque no lo hayan tocado: así el motor deja de adivinarlo
+  // desde el toggle viejo y hay una sola respuesta a "¿quién paga el envío?".
+  E.envio_modo=envModoDe(E);
   const { error }=await supa.from("channels").update({ entregas:E }).eq("id",st.channelId);
   if(error){ toast(/entregas|column/.test(error.message)?"Falta aplicar la migración 0032":error.message,true); return; }
   st.channel.entregas=JSON.parse(JSON.stringify(E));

@@ -123,6 +123,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", localFolders:new Set() };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -549,11 +550,51 @@ function renderEntrega(){
         <input class="in" id="pAdelOv" type="number" min="0" step="0.5" value="${esc(c.adelanto_override??"")}" placeholder="por defecto de Negocio" style="width:150px"/>
         <span id="adelHint" style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>.</span>
       </div>
+    </div>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("truck")}</span> Envío de este producto</h4>
+      <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Solo si <b>este</b> producto se cobra distinto al resto (por ejemplo, uno grande donde sí cobras el envío aparte).</div>
+      <select class="in" id="pEnvModo" style="max-width:420px">
+        <option value="">Como diga mi negocio${c.envio_modo?"":" (actual)"}</option>
+        <option value="incluido" ${c.envio_modo==="incluido"?"selected":""}>Incluido en el precio — el cliente no paga envío</option>
+        <option value="suma" ${c.envio_modo==="suma"?"selected":""}>Se suma al total — el cliente paga producto + envío</option>
+        <option value="agencia" ${c.envio_modo==="agencia"?"selected":""}>Lo paga en la agencia — no pasa por tu caja</option>
+      </select>
+      <div id="pEnvMontos"></div>
+      <div id="envHint" style="font-size:11.5px;color:var(--faint);margin-top:10px"></div>
     </div>`;
   const ov=$("pAdelOv"); if(ov) ov.onchange=(e)=>prodSetC("adelanto_override", e.target.value.trim()===""?undefined:Number(e.target.value));
+  const pintarEnvMontos=()=>{
+    const box=$("pEnvMontos"); if(!box) return;
+    if(c.envio_modo!=="suma"){ box.innerHTML=""; return; }
+    box.innerHTML=`
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px">
+        <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600">Lima
+          <span style="color:var(--muted)">S/</span>
+          <input class="in" id="pEnvLima" type="number" min="0" step="0.5" placeholder="el de Negocio" value="${esc(c.envio_cobro_lima??"")}" style="width:110px"/></label>
+        <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600">Provincia
+          <span style="color:var(--muted)">S/</span>
+          <input class="in" id="pEnvProv" type="number" min="0" step="0.5" placeholder="el de Negocio" value="${esc(c.envio_cobro_provincia??"")}" style="width:110px"/></label>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:180px">Vacío = usa el monto de Negocio.</span>
+      </div>`;
+    $("pEnvLima").onchange=(e)=>prodSetC("envio_cobro_lima", e.target.value.trim()===""?undefined:Number(e.target.value));
+    $("pEnvProv").onchange=(e)=>prodSetC("envio_cobro_provincia", e.target.value.trim()===""?undefined:Number(e.target.value));
+  };
+  const em2=$("pEnvModo"); if(em2) em2.onchange=(e)=>{ c.envio_modo=e.target.value||undefined; prodSetC("envio_modo", c.envio_modo); pintarEnvMontos(); };
+  pintarEnvMontos();
   // Mostrar el default de Negocio como referencia (carga perezosa).
   supa.from("channels").select("entregas").eq("id",st.channelId).maybeSingle()
-    .then(({data})=>{ const def=data?.entregas?.adelanto_default; const h=$("adelHint"); if(h && def!=null && def!==""){ h.innerHTML=`Por defecto de Negocio: <b>S/ ${esc(def)}</b>. Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>.`; } }).catch(()=>{});
+    .then(({data})=>{
+      const E=data?.entregas||{};
+      const def=E.adelanto_default; const h=$("adelHint");
+      if(h && def!=null && def!==""){ h.innerHTML=`Por defecto de Negocio: <b>S/ ${esc(def)}</b>. Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>.`; }
+      const eh=$("envHint");
+      if(eh){
+        const modo=E.envio_modo || (E.envio_gratis!==false?"incluido":"suma");
+        const txt={incluido:"incluido en el precio",suma:"se suma al total",agencia:"lo paga en la agencia"}[modo]||modo;
+        eh.innerHTML=`Tu negocio hoy dice: <b>${esc(txt)}</b>. <a href="negocio.html" style="color:var(--brand)">Cambiarlo para todos →</a>`;
+      }
+    }).catch(()=>{});
 }
 
 // ── Pestaña CÓMO LO VENDE LA IA: conocimiento del producto ─────────
@@ -825,7 +866,7 @@ async function renderRemarketing(){
     // Limpia burbujas/variantes vacías antes de guardar (igual que el avanzado).
     seq.pasos.forEach(p=>{
       if(Array.isArray(p.variantes)){
-        p.variantes.forEach(v=>{ v.bubbles=(v.bubbles||[]).filter(bu=> bu.media_url || (bu.text&&bu.text.trim())); });
+        p.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(bu=> bu.media_url || (bu.text&&bu.text.trim()))); });
         p.variantes=p.variantes.filter(v=> v.bubbles.length);
         if(!p.variantes.length) p.variantes=[remNewVariant(0)];
       }
@@ -957,8 +998,9 @@ function remBubble(box,paso,v,bub,bi){
     </div>
     ${preview}
     ${kind==="text"
-      ? `<textarea class="in" data-btext rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>`
+      ? `<textarea class="in" data-btext rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in" data-bcap placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+  if(kind==="text") wireBotones(el,bub,()=>remComposer(box,paso));
   const tx=el.querySelector("[data-btext]"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
   const cp=el.querySelector("[data-bcap]"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
   el.querySelector("[data-bdel]").onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); remComposer(box,paso); };
@@ -1516,12 +1558,16 @@ async function generarFlujoFisico(flowId, N, E){
   },false,960,440);
   const nCrearLima=await N("accion","Crear pedido Lima",{
     acciones:[
+      // `monto` es la BASE: el motor le suma el envío que se cobre. Pero lo que
+      // el motorizado tiene que cobrar en la puerta es el TOTAL ({{total_cobrar}}
+      // = precio + envío). Con {{precio}} ahí, cobrar envío en Lima significaba
+      // regalarlo: el pedido decía 130 y el motorizado cobraba 120.
       { tipo:"crear_pedido", estado:"confirmado", monto:"{{precio}}",
         datos:{ zona:"lima", zona_nombre:"{{zona_nombre}}", direccion:"{{direccion}}", referencia:"{{referencia}}",
-                cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{precio}}", entrega_hoy:"{{entrega_hoy}}" } },
+                cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{total_cobrar}}", entrega_hoy:"{{entrega_hoy}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
       { tipo:"add_tag", valor:"Compra" },
-      { tipo:"notify_admin", mensaje:"🛵 PEDIDO LIMA (contraentrega)\nCliente: {{nombre_completo}} (+{{telefono}})\nZona: {{zona_nombre}} · ¿hoy?: {{entrega_hoy}}\nDirección: {{direccion}}\nRef: {{referencia}}\nOpción: {{opcion}} — cobrar S/ {{precio}}" },
+      { tipo:"notify_admin", mensaje:"🛵 PEDIDO LIMA (contraentrega)\nCliente: {{nombre_completo}} (+{{telefono}})\nZona: {{zona_nombre}} · ¿hoy?: {{entrega_hoy}}\nDirección: {{direccion}}\nRef: {{referencia}}\nOpción: {{opcion}} — cobrar S/ {{total_cobrar}}" },
     ],
   },false,1240,440);
   const nConfLima=await N("mensaje","Confirmación Lima",{
@@ -1547,7 +1593,7 @@ async function generarFlujoFisico(flowId, N, E){
         datos:{ zona:"provincia", ciudad:"{{ciudad}}", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
                 opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{saldo}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
-      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nAgencia: Shalom {{ciudad}} · {{sede}}\nOpción: {{opcion}} — total S/ {{precio}}\nEsperando adelanto de S/ {{adelanto}}" },
+      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nAgencia: Shalom {{ciudad}} · {{sede}}\nOpción: {{opcion}} — total S/ {{total_cobrar}}\nEsperando adelanto de S/ {{adelanto}}" },
     ],
   },false,1240,640);
   const nPedirAdel=await N("mensaje","Pedir el adelanto",{
@@ -2307,8 +2353,9 @@ function renderBubble(v,vi,bub,bi){
     </div>
     ${preview}
     ${kind==="text"
-      ? `<textarea class="in btext" rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>`
+      ? `<textarea class="in btext" rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+  if(kind==="text") wireBotones(el,bub,()=>{ harvest(); renderComposer(); });
   el.querySelector(".bdel").onclick=()=>{ harvest(); v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderComposer(); };
   el.querySelector(".bup").onclick=()=>{ if(bi===0)return; harvest(); [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderComposer(); };
   el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; harvest(); [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderComposer(); };
@@ -2336,7 +2383,7 @@ async function saveWelcome(){
   harvest();
   const cfg=st.act.node.config;
   // Limpia burbujas de texto vacías; descarta variantes sin burbujas.
-  cfg.variantes.forEach(v=>{ v.bubbles=(v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim())); });
+  cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
   cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
   if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
   if(cfg.despues.modo==="flujo" && !cfg.despues.flow_id){ toast("Elegí a qué flujo continuar",true); return; }

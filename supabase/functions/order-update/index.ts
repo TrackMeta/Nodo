@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta } from "../_shared/engine.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -95,6 +95,22 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Comprobante RECHAZADO en el Copiloto: el run quedaba parqueado y el bot le
+  // respondía "estoy verificando tu pago" para siempre. Se reanuda por la rama
+  // de pago inválido para que pida un comprobante nuevo. Solo si el operador
+  // eligió que el bot siga (si prefiere atenderlo él, manda `reject:"humano"` y
+  // el chat queda pausado con el run parqueado, que es inofensivo).
+  let rejected = false;
+  if (body.reject === "bot" && (order as any).contact_id) {
+    try {
+      rejected = await rejectDigitalPending(
+        db, (order as any).channel_id, (order as any).contact_id,
+        typeof body.reject_motivo === "string" ? body.reject_motivo : undefined);
+    } catch (e) {
+      console.error("[order-update] reject:", (e as any)?.message ?? e);
+    }
+  }
+
   // Pedido físico pagado del todo → entregar las ventas extra digitales que
   // viajaban en él (link/archivo). Idempotente; no afecta pedidos sin extras.
   if (newEstado && FULLPAY_STATES.includes(newEstado) && (order as any).contact_id) {
@@ -145,5 +161,5 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed });
+  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected });
 });

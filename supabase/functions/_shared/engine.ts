@@ -42,6 +42,19 @@ interface Node {
 export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
+  // BOTÓN = ATAJO QUE ESCRIBE POR EL CLIENTE. Salvo que el flujo esté esperando
+  // justo ese botón (ruteo determinista por arista `boton:<id>`, que solo usan
+  // los esqueletos viejos y el editor avanzado), el toque se convierte en un
+  // mensaje de texto con el título del botón. Así lo ve TODO lo que sigue: la
+  // IA, las condiciones y los interceptores de arriba (opt-out, pide-humano,
+  // reclamo), que solo miran eventos de tipo "message". Antes, un toque sin
+  // arista que lo esperara caía al buffer y el cliente se quedaba sin respuesta.
+  if (event.type === "button") {
+    if (!(await esperaEsteBoton(db, contactId, event.buttonId))) {
+      event = { type: "message", text: event.title ?? event.buttonId, msgType: "text" };
+    }
+  }
+
   // STT: si entra una nota de voz, transcribirla a texto ANTES de todo, para
   // que los triggers de palabra clave, condiciones y la IA la entiendan como
   // si el cliente hubiera escrito. El audio original queda guardado igual.
@@ -165,6 +178,66 @@ export async function resumeAfterApproval(
   if ((run.vars as any)?._await?.type !== "aprobacion_digital") return false;
   const ready = await resumeRun(db, run, { type: "resume" } as EngineEvent);
   if (!ready) return false;
+  await execute(db, run);
+  return true;
+}
+
+// ¿El flujo está parado esperando ESTE botón y hay una arista que lo atienda?
+// Solo entonces vale el ruteo determinista; en cualquier otro caso el toque se
+// trata como texto. Cuesta una consulta extra, y únicamente cuando tocan un
+// botón.
+async function esperaEsteBoton(db: SupabaseClient, contactId: string, buttonId: string): Promise<boolean> {
+  try {
+    const run = await getActiveRun(db, contactId);
+    const aw = (run?.vars as any)?._await;
+    if (!run || aw?.type !== "button" || !aw.node_id) return false;
+    return !!(await nextNode(db, run.flow_id, aw.node_id, `boton:${buttonId}`));
+  } catch (_) { return false; }
+}
+
+// Puerta de salida de un nodo IA: la misma que usaría si hubiera corrido solo.
+// El generador cablea 'exito'; 'continuar' queda de respaldo para flujos hechos
+// a mano en el editor.
+async function salidaOcr(db: SupabaseClient, flowId: string, nodeId: string) {
+  return (await nextNode(db, flowId, nodeId, "exito")) ??
+         (await nextNode(db, flowId, nodeId, "continuar"));
+}
+
+// Rechazar el comprobante de un pago parqueado (lo llama order-update desde el
+// Copiloto). Sin esto el run se quedaba congelado para siempre: el cliente podía
+// escribir mil veces y solo recibía "estoy verificando tu pago".
+//
+// No se inventa un camino nuevo: el flujo YA sabe pedir un comprobante nuevo
+// —es la rama 'pago inválido' de la Condición ¿Pago válido?—, así que se marca
+// el resultado como NO y se reanuda por ahí. Como el nombre de la variable que
+// mira la Condición depende del nodo (pago_resultado en la venta principal,
+// pago_extra_N en cada extra), se lee del propio nodo (`guardar_en`).
+export async function rejectDigitalPending(
+  db: SupabaseClient, channelId: string, contactId: string, motivo?: string,
+): Promise<boolean> {
+  const run = await getActiveRun(db, contactId);
+  if (!run || run.channel_id !== channelId) return false;
+  const aw = (run.vars as any)?._await;
+  if (aw?.type !== "aprobacion_digital" || !aw.node_id) return false;
+
+  const node = await getNode(db, aw.node_id);
+  const clave = String((node as any)?.config?.guardar_en || "pago_resultado");
+  const razon = String(motivo ?? "").trim() || "El comprobante no pasó la revisión.";
+  const veredicto = `PAGO_NO ${razon}`;
+  run.vars[clave] = veredicto;
+  await setField(db, channelId, contactId, clave, veredicto).catch(() => {});
+
+  // Se liberan los flags para que el SIGUIENTE comprobante vuelva a pasar por tu
+  // aprobación. Sin esto, el segundo intento se aprobaría solo — justo después
+  // de que rechazaras el primero por sospechoso.
+  delete (run.vars as any)._pago_manual_pendiente;
+  delete (run.vars as any)._extra_manual_pendiente;
+
+  run.current_node_id = await salidaOcr(db, run.flow_id, aw.node_id);
+  delete (run.vars as any)._await;
+  run.estado = "activo";
+  run.wake_at = null;
+  await logEvent(db, channelId, contactId, "nota", "❌ Pago rechazado · el bot pide un comprobante nuevo").catch(() => {});
   await execute(db, run);
   return true;
 }
@@ -690,10 +763,13 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
   run.estado = "activo";
 
   // Aprobación de un pago digital manual: order-update reanuda el run parqueado
-  // en el nodo OCR. Se continúa por 'continuar' → el nodo Condición lee PAGO_OK
-  // (ya guardado) y sigue a la entrega normal (link + extras + Sheets).
+  // en el nodo OCR. Se sale por la MISMA puerta que usaría el nodo si hubiera
+  // corrido solo ('exito', con 'continuar' de respaldo) → el nodo Condición lee
+  // PAGO_OK (ya guardado) y sigue a la entrega normal (link + extras + Sheets).
+  // OJO: mirar solo 'continuar' devolvía null (el generador cablea 'exito') y el
+  // run se daba por completado SIN entregar lo que el cliente ya había pagado.
   if (event.type === "resume" && aw?.type === "aprobacion_digital") {
-    run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
+    run.current_node_id = await salidaOcr(db, run.flow_id, aw.node_id);
     delete run.vars._await;
     // Se libera el flag del extra para que el SIGUIENTE extra de la cadena también
     // pueda parquearse a tu aprobación (el principal solo ocurre una vez).
@@ -774,7 +850,9 @@ async function execute(db: SupabaseClient, run: Run) {
         let hasButtons = false;
         for (const b of bubbles) {
           await emit(db, run, b, ctx);
-          if (b.buttons?.length) hasButtons = true;
+          // Solo se queda esperando si de verdad salieron botones: con títulos
+          // vacíos no se envía ninguno y el flujo esperaría un toque imposible.
+          if ((b.buttons ?? []).some((x: any) => String(x?.title ?? "").trim())) hasButtons = true;
         }
         if (hasButtons) {
           run.vars._await = { type: "button", node_id: node.id };
@@ -967,18 +1045,32 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   }
 
   // ── Burbuja de TEXTO / BOTONES ──
-  const isInteractive = !!bubble.buttons?.length;
+  // Saneado acá y no solo en el panel: es la red que agarra los botones vacíos,
+  // los títulos largos o los ids repetidos vengan de donde vengan (datos viejos,
+  // el editor avanzado, un import). Cualquiera de esas tres cosas hace que Meta
+  // rechace el mensaje ENTERO, y el cliente se quedaría sin nada.
+  const vistos = new Set<string>();
+  const btns = (bubble.buttons ?? [])
+    .map((b: any, i: number) => {
+      let id = String(b?.id ?? "").trim() || `atajo_${i + 1}`;
+      while (vistos.has(id)) id += "_";
+      vistos.add(id);
+      return { id: id.slice(0, 256), title: String(b?.title ?? "").trim().slice(0, 20) };
+    })
+    .filter((b: any) => b.title)
+    .slice(0, 3);
+  // Los botones cuelgan de un cuerpo de texto: sin texto no hay interactivo.
+  const isInteractive = btns.length > 0 && !!text;
   const content: any = {};
   if (text) content.text = text;
   if (bubble.media_id) content.media_id = bubble.media_id;
-  if (isInteractive) content.buttons = bubble.buttons;
+  if (isInteractive) content.buttons = btns;
 
   let wamid = ""; let status = "sent"; let error: any = null;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (text || isInteractive)) {
     try {
       wamid = isInteractive
-        ? await sendButtons(d.phoneNumberId, d.token, ctx.wa_id, text,
-            bubble.buttons.map((b: any) => ({ id: b.id, title: b.title })))
+        ? await sendButtons(d.phoneNumberId, d.token, ctx.wa_id, text, btns)
         : await sendText(d.phoneNumberId, d.token, ctx.wa_id, text);
     } catch (e) {
       status = "failed";
@@ -1521,11 +1613,22 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
 }
 
 // Acción crear_pedido: { estado?, monto?, datos?: { zona:"{{zona_entrega}}", … } }
-// Envío que el cliente paga y que TÚ cobras (entra al total). Zona-aware y
-// compatible con las dos formas de config: nueva (agencia, modo "fijo" →
-// {{envio_cobro}}) y vieja ({gratis, costo_lima, costo_provincia}). El modo
-// "cliente" no cuenta: eso lo paga a la agencia aparte. 0 si es gratis.
+// Envío que el cliente paga APARTE y que entra al total del pedido. Los tres
+// modos (Negocio → Entrega, con override por producto):
+//   · "incluido" → 0. El flete sale de tu margen; el cliente no paga nada extra.
+//     Es el caso normal: el precio de lista ya lo contempla.
+//   · "suma"     → el monto de la zona se suma a lo que paga el cliente.
+//   · "agencia"  → 0. Lo paga en la agencia al recoger; no pasa por tu caja.
+// Sin modo resuelto se cae a la forma vieja del producto (agencia modo "fijo" o
+// los checkboxes con costo_lima/costo_provincia), para no cambiarle el
+// comportamiento a los productos que nadie volvió a tocar.
 function envioCobroDe(ctx: any, zona: string): number {
+  const modo = String(ctx._envio_modo ?? "");
+  if (modo === "incluido" || modo === "agencia") return 0;
+  if (modo === "suma") {
+    const v = Number(zona === "lima" ? ctx._envio_cobro_lima : ctx._envio_cobro_provincia);
+    return Number.isFinite(v) && v > 0 ? +v.toFixed(2) : 0;
+  }
   if (zona === "provincia") {
     const fijo = Number(ctx.envio_cobro);
     if (Number.isFinite(fijo) && fijo > 0) return fijo; // forma nueva (modo fijo)
@@ -3413,19 +3516,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 `🎁 <b>Pago de venta extra por validar</b>\n${quien} ${montoX ? "pagó S/ " + montoX : "envió un comprobante"} por ${cfg._extra_label ?? "un extra"}. Apruébalo en el Copiloto.`).catch(() => {});
             } else {
               const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
+              const ship = {
+                digital_pendiente: true, digital_comprobante: url,
+                digital_monto_leido: run.vars.pago_monto ?? null,
+                digital_operacion: run.vars.pago_operacion ?? null,
+                digital_ok_ia: true,
+              };
               try {
-                const { data: ord } = await db.from("orders").insert({
-                  channel_id: run.channel_id, contact_id: run.contact_id,
-                  product_id: (cc as any)?.product_id ?? null,
-                  amount, estado: "pendiente",
-                  shipping: {
-                    digital_pendiente: true, digital_comprobante: url,
-                    digital_monto_leido: run.vars.pago_monto ?? null,
-                    digital_operacion: run.vars.pago_operacion ?? null,
-                    digital_ok_ia: true,
-                  },
-                }).select("id").single();
-                if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
+                // Si ya había un pendiente de esta misma venta (típico: le
+                // rechazaste el comprobante anterior y mandó otro), se REUSA en vez
+                // de crear un segundo pedido — si no, cada intento fallido dejaría
+                // un 'pendiente' huérfano en la base.
+                const previo = run.vars._order_precreado ? String(run.vars._order_id ?? "") : "";
+                let reusado = false;
+                if (previo) {
+                  const { data: cur } = await db.from("orders").select("shipping, estado").eq("id", previo).maybeSingle();
+                  if ((cur as any)?.estado === "pendiente") {
+                    await db.from("orders").update({
+                      amount, shipping: { ...((cur as any).shipping ?? {}), ...ship },
+                      updated_at: new Date().toISOString(),
+                    }).eq("id", previo);
+                    reusado = true;
+                  }
+                }
+                if (!reusado) {
+                  const { data: ord } = await db.from("orders").insert({
+                    channel_id: run.channel_id, contact_id: run.contact_id,
+                    product_id: (cc as any)?.product_id ?? null,
+                    amount, estado: "pendiente", shipping: ship,
+                  }).select("id").single();
+                  if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
+                }
               } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
               run.vars._pago_manual_pendiente = true;
               await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
@@ -3696,6 +3817,20 @@ async function buildContext(db: SupabaseClient, run: Run) {
             const def = (ent as any)?.entregas?.adelanto_default;
             if (def != null && def !== "") pc.adelanto = Number(def);
           }
+          // Cómo se cobra el envío — prioridad: (1) override del producto
+          // (pestaña Entrega), (2) regla del negocio, (3) nada → forma vieja.
+          // Los montos siguen la misma cascada: un producto puede cobrar un
+          // envío distinto, y si no fija monto usa el del negocio.
+          const cf: any = (p as any).config ?? {};
+          const ent = await loadEntregas(db, run);
+          const E: any = (ent as any)?.entregas ?? {};
+          const modo = String(cf.envio_modo || E.envio_modo || "");
+          if (modo) {
+            pc._envio_modo = modo;
+            const pick = (a: any, b: any) => (a != null && a !== "" ? a : b);
+            pc._envio_cobro_lima = Number(pick(cf.envio_cobro_lima, E.envio_cobro_lima)) || 0;
+            pc._envio_cobro_provincia = Number(pick(cf.envio_cobro_provincia, E.envio_cobro_provincia)) || 0;
+          }
         }
         (run as any)._prodCtx = pc;
       }
@@ -3742,6 +3877,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
     const adel = Number(ctx.adelanto);
     const envio = envioCobroDe(ctx, String(ctx.zona_entrega ?? "provincia"));
     ctx.saldo = Math.max(0, +(Number(ctx.precio) + envio - (Number.isFinite(adel) ? adel : 0)).toFixed(2));
+    // {{total_cobrar}} = TODO lo que el cliente paga por este pedido, envío
+    // incluido. Es lo que se le dice al motorizado de Lima (que cobra el íntegro
+    // contraentrega) y el total que se avisa en provincia. Con {{precio}} ahí,
+    // un envío cobrado se perdía: el pedido decía 130 y se cobraban 120.
+    // (zona real, sin el default a provincia de arriba: {{saldo}} es un concepto
+    // de provincia, pero el total se le dice a cualquiera.)
+    const envioZona = envioCobroDe(ctx, String(ctx.zona_entrega ?? ""));
+    ctx.total_cobrar = +(Number(ctx.precio) + envioZona).toFixed(2);
+    ctx.envio_cobrado = envioZona;
   }
 
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
