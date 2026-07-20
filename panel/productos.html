@@ -2006,7 +2006,7 @@ function renderOpciones(){
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("productos")} Opciones de compra</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
         Todo lo que el cliente puede comprar de este producto. Las <b>versiones</b> (Básico/Premium),
-        los <b>packs</b> y las <b>ofertas por cantidad</b> son lo mismo: una opción con su precio y lo que entrega.
+        los <b>packs</b> y las <b>ofertas por cantidad</b> son lo mismo: una opción con su precio${fisico?"":" y lo que entrega"}.
         La IA detecta cuál eligió aunque lo escriba a su manera, y el validador de pagos usa ese precio
         como <b>monto esperado</b>.
       </div>
@@ -2060,12 +2060,19 @@ function paintOpciones(fisico){
       </div>
       <label>Descripción <span style="color:var(--faint);font-weight:400">(para que la IA sepa venderla y reconocerla)</span></label>
       <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}"/>
+      ${fisico ? `
+      <div style="margin-top:12px;font-size:11.5px;color:var(--faint);line-height:1.55">
+        Este producto se <b>envía</b>, así que no entrega nada por el chat: la venta termina cuando se crea el pedido.
+        ¿Quieres regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>,
+        que sí lo manda cuando el pedido está pagado del todo.
+      </div>`
+      : `
       <label style="margin-top:12px">Qué entrega <span style="color:var(--faint);font-weight:400">(uno o varios links y/o archivos)</span></label>
       <div class="oe" style="margin-top:5px"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn oel" style="height:32px">${icon("link")} Link</button>
         <button class="btn oef" style="height:32px">${icon("file")} Archivo</button>
-      </div>`;
+      </div>`}`;
     el.querySelector(".on").oninput=(e)=>{ v.nombre=e.target.value; };
     el.querySelector(".op").oninput=(e)=>{ v.precio=e.target.value; warnColision(); };
     const oc=el.querySelector(".oc"); if(oc) oc.oninput=(e)=>{ v.cantidad=parseInt(e.target.value,10)||1; };
@@ -2080,7 +2087,10 @@ function paintOpciones(fisico){
     // seguidas (primero el link, después el nombre) para una sola acción — y el
     // nombre ya se edita en la propia fila, así que la segunda no aportaba nada.
     // Además, si cancelabas la segunda, la primera quedaba a medias.
-    el.querySelector(".oel").onclick=()=>{
+    // En físico no hay bloque de entrega (se envía, no se manda por chat): solo
+    // el atajo a Ventas extra, que es donde sí vive un regalo digital.
+    const oel=el.querySelector(".oel");
+    if(oel) oel.onclick=()=>{
       v.entrega=Array.isArray(v.entrega)?v.entrega:[];
       v.entrega.push({ tipo:"link", url:"", nombre:"" });
       paintEntrega(el,v,fisico);
@@ -2088,8 +2098,11 @@ function paintOpciones(fisico){
       const ultima=filas[filas.length-1];
       if(ultima) ultima.focus();
     };
-    el.querySelector(".oef").onclick=()=>pickEntregaFile(v,()=>paintEntrega(el,v,fisico));
-    paintEntrega(el,v,fisico);
+    const oef=el.querySelector(".oef");
+    if(oef) oef.onclick=()=>pickEntregaFile(v,()=>paintEntrega(el,v,fisico));
+    const oge=el.querySelector(".oGoExtra");
+    if(oge) oge.onclick=(e)=>{ e.preventDefault(); st.tab="extras"; renderDetail(); };
+    if(el.querySelector(".oe")) paintEntrega(el,v,fisico);
     box.appendChild(el);
   });
   warnColision();
