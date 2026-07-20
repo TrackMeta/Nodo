@@ -1567,6 +1567,16 @@ async function generarFlujoFisico(flowId, N, E){
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
     { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
     { clave:"sede", label:"Sede de la agencia", detalle:"la oficina EXACTA donde lo va a recoger (ej. «Av. España»), NO la ciudad", requerido:true, validar:"sede", solo_si_zona:"provincia" },
+    // VA ÚLTIMO y solo en LIMA: tener los datos NO es lo mismo que querer
+    // comprar. En Lima el pedido nace "confirmado" y sale un motorizado, así que
+    // un mensaje de consulta bien completo ("¿tienen talla 38? soy Juan Pérez,
+    // Av. Larco 100, Miraflores") despachaba un pedido que nadie pidió, y el
+    // flete lo pagabas tú. En provincia no hace falta: ahí nada se mueve hasta
+    // que pague el adelanto.
+    { clave:"confirmo", label:"Confirmación de la compra", requerido:true, solo_si_zona:"lima",
+      detalle:"pon «si» SOLO si el cliente dijo claramente que quiere comprarlo o que confirma el pedido " +
+              "(«sí, lo quiero», «confirmo», «mándamelo», «ya, envíalo»). " +
+              "Preguntar el precio, la talla, si hay stock o si llegan a su zona NO es confirmar: en ese caso OMITE este dato." },
   ];
   // Igual que en el digital: se ESCUCHA primero. A este flujo se llega después
   // de los mensajes iniciales; arrancar vendiendo sería hablar encima del saludo.
