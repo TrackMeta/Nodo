@@ -1477,7 +1477,8 @@ function renderSalud(){
   if(!ops.length) errs.push("El producto no tiene ninguna opción de compra activa.");
   if(!conPrecio.length) errs.push("Ninguna opción tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
   if(!fisico){
-    const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.length));
+    // Cuenta solo los items con URL: una fila de entrega vacía no entrega nada.
+    const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim())));
     if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${v.nombre||"—"}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
   }
   // Físico sin adelanto resoluble: el flujo de provincia manda "confírmalo con
@@ -2000,7 +2001,7 @@ function paintOpciones(fisico){
     el.innerHTML=`
       <div class="row" style="align-items:flex-end;gap:10px">
         <div style="flex:1.4"><label style="margin-top:0">Nombre</label>
-          <input class="in on" value="${esc(v.nombre||"")}" placeholder="Ej. Premium · 2 pares · Pack familiar"/></div>
+          <input class="in on" value="${esc(v.nombre||"")}" placeholder="${fisico?"Ej. 1 par · 2 pares · Pack familiar":"Ej. Básico · Premium · Pack completo"}"/></div>
         <div style="flex:0 0 110px"><label style="margin-top:0">Precio</label>
           <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}"/></div>
         ${fisico?`<div style="flex:0 0 95px"><label style="margin-top:0">Unidades</label>
@@ -2009,7 +2010,7 @@ function paintOpciones(fisico){
         <button class="iconbtn odel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
       </div>
       <label>Descripción <span style="color:var(--faint);font-weight:400">(para que la IA sepa venderla y reconocerla)</span></label>
-      <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="Ej. Incluye los planos y el pack de herramientas"/>
+      <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}"/>
       <label style="margin-top:12px">Qué entrega <span style="color:var(--faint);font-weight:400">(uno o varios links y/o archivos)</span></label>
       <div class="oe" style="margin-top:5px"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
@@ -2026,13 +2027,17 @@ function paintOpciones(fisico){
       if(v.id) st.delVersions.push(v.id);
       st.versions.splice(i,1); paintOpciones(fisico);
     };
-    el.querySelector(".oel").onclick=async()=>{
-      const url=await askText({title:"Link de entrega",label:"Pega el link (Drive, curso, acceso…)",placeholder:"https://…"});
-      if(!url) return;
-      const nombre=await askText({title:"Nombre del link",label:"¿Cómo se llama? (opcional)",placeholder:"Ej. Curso completo"});
+    // Agrega una fila vacía y pone el cursor en el link. Antes eran DOS ventanas
+    // seguidas (primero el link, después el nombre) para una sola acción — y el
+    // nombre ya se edita en la propia fila, así que la segunda no aportaba nada.
+    // Además, si cancelabas la segunda, la primera quedaba a medias.
+    el.querySelector(".oel").onclick=()=>{
       v.entrega=Array.isArray(v.entrega)?v.entrega:[];
-      v.entrega.push({ tipo:"link", url, nombre:nombre||"" });
+      v.entrega.push({ tipo:"link", url:"", nombre:"" });
       paintEntrega(el,v,fisico);
+      const filas=el.querySelectorAll(".oe .eu");
+      const ultima=filas[filas.length-1];
+      if(ultima) ultima.focus();
     };
     el.querySelector(".oef").onclick=()=>pickEntregaFile(v,()=>paintEntrega(el,v,fisico));
     paintEntrega(el,v,fisico);
@@ -2050,7 +2055,7 @@ function paintEntrega(el,v,fisico){
     r.innerHTML=`<div class="row" style="align-items:center;gap:7px">
         <span style="flex:0 0 auto;color:var(--muted);display:inline-flex">${icon(it.tipo==="archivo"?"file":"link")}</span>
         <input class="in en" style="flex:0 0 170px" value="${esc(it.nombre||"")}" placeholder="Nombre"/>
-        <input class="in eu" style="flex:1" value="${esc(it.url||"")}" ${it.tipo==="archivo"?"readonly":""}/>
+        <input class="in eu" style="flex:1" value="${esc(it.url||"")}" ${it.tipo==="archivo"?"readonly":`placeholder="Pega el link — Drive, curso, acceso…"`}/>
         <button class="iconbtn edel" style="flex:0 0 auto">${icon("trash")}</button>
       </div>
       <input class="in emsg" style="margin-top:6px" value="${esc(it.mensaje||"")}" placeholder="Mensaje al entregar este ${it.tipo==="archivo"?"archivo":"link"} (opcional) — ej. “Acá está tu curso 🎥”"/>`;
@@ -2534,7 +2539,9 @@ async function saveProduct(){
       precio:(v.precio===""||v.precio==null)?null:Number(v.precio),
       cantidad:Number(v.cantidad)||1,
       descripcion:v.descripcion||null,
-      entrega:Array.isArray(v.entrega)?v.entrega:[],
+      // Se descartan las filas de entrega sin link: no entregan nada y harían
+      // que "Salud del producto" diera el visto bueno a una opción rota.
+      entrega:(Array.isArray(v.entrega)?v.entrega:[]).filter(it=>it&&String(it.url||"").trim()),
       activo:v.activo!==false,
       price_list:v.price_list||[], drive_link:v.drive_link||null, // legado
     };
