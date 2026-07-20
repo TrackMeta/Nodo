@@ -3018,6 +3018,20 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     if (lineas.length > 1) contexto = lineas.join("\n");
   } catch (_) { /* sin historial, se sigue con el último mensaje */ }
 
+  // La última pregunta del BOT. Sin ella, una respuesta corta no tiene a qué
+  // agarrarse: a "¿qué talla usas?" el cliente contesta "38 negras" y el
+  // extractor sacaba el color pero NO la talla (con "talla 38" sí la sacaba).
+  // Igual con "ya" o "sí" para confirmar. Va como contexto, nunca como fuente
+  // de datos: el bot repite la dirección al confirmarla y no queremos que la
+  // "capture" de su propia boca.
+  let pregunta = "";
+  try {
+    const { data: ult } = await db.from("messages")
+      .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "out")
+      .order("ts", { ascending: false }).limit(1).maybeSingle();
+    pregunta = String((ult as any)?.content?.text ?? "").trim().slice(0, 400);
+  } catch (_) { /* sin pregunta previa: se extrae igual */ }
+
   // Solo se le pregunta a la IA por lo que TODAVÍA no tenemos: más barato y
   // evita que "re-extraiga" y pise un dato bueno con uno peor.
   const faltan = campos.filter((c) => !String(ctx[c.clave] ?? "").trim());
@@ -3044,9 +3058,14 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
             "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
             "- Te pasamos los últimos mensajes del cliente, del más viejo al más nuevo. Si se corrigió, " +
-            "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).",
-          content: `Mensajes del cliente (del más viejo al más nuevo):\n"""\n${contexto}\n"""\n\nDatos a buscar:\n${lista}\n\n` +
-            `Devuelve solo los que estén PRESENTES en esos mensajes:\n{${faltan.map((c) => `"${c.clave}":"..."`).join(",")}}`,
+            "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).\n" +
+            "- También te pasamos la última pregunta del vendedor. Úsala SOLO para entender respuestas " +
+            "cortas: si preguntó la talla y el cliente dijo «38 negras», la talla es 38. " +
+            "NUNCA saques datos de esa pregunta: el vendedor repite lo que ya sabe, y copiarlo de ahí " +
+            "sería inventar que el cliente lo dijo.",
+          content: (pregunta ? `Lo último que preguntó el vendedor:\n"""\n${pregunta}\n"""\n\n` : "") +
+            `Mensajes del cliente (del más viejo al más nuevo):\n"""\n${contexto}\n"""\n\nDatos a buscar:\n${lista}\n\n` +
+            `Devuelve solo los que el CLIENTE haya dicho:\n{${faltan.map((c) => `"${c.clave}":"..."`).join(",")}}`,
           maxTokens: 250,
         });
         const m = /\{[\s\S]*\}/.exec(raw);
