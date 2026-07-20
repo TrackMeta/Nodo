@@ -25,14 +25,20 @@ const db = serviceClient();
 // order-update. Los pagos DIGITALES y los de venta EXTRA además hay que
 // REANUDAR (`resume`): su conversación quedó parqueada esperando el visto bueno,
 // y sin eso el cliente pagaría y no recibiría nada.
-const ACCIONES: Record<string, { estado?: string; desde: string[]; ok: string; extra?: Record<string, unknown> }> = {
+// `extra` es una FUNCIÓN, no un objeto: adentro va la hora, y un objeto a nivel
+// de módulo la congelaría en el arranque de la función (todas las aprobaciones
+// quedarían con la misma marca de tiempo).
+const ACCIONES: Record<string, { estado?: string; desde: string[]; ok: string; extra?: () => Record<string, unknown> }> = {
   adel_ok:    { estado: "adelanto_validado", desde: ["esperando_adelanto"], ok: "Adelanto aprobado ✅" },
   saldo_ok:   { estado: "saldo_pagado",      desde: ["en_agencia"],         ok: "Saldo aprobado ✅ · el bot manda la clave" },
   llego:      { estado: "en_agencia",        desde: ["despachado"],         ok: "Avisado ✅" },
   digital_ok: { estado: "confirmada",        desde: ["pendiente"],          ok: "Pago aprobado ✅ · el bot entrega el producto" },
   extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "despachado", "en_agencia"],
                 ok: "Extra aprobado ✅ · el bot lo entrega",
-                extra: { resume: true, shipping: { extra_pendiente: false } } },
+                // `extra_aprobado_at` lo escribe también el Copiloto del panel:
+                // el rastro tiene que ser el mismo se apruebe desde donde se apruebe.
+                extra: () => ({ resume: true,
+                  shipping: { extra_pendiente: false, extra_aprobado_at: new Date().toISOString() } }) },
 };
 
 Deno.serve(async (req) => {
@@ -125,7 +131,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       order_id: orderId, via: "telegram",
       ...(def.estado ? { estado: def.estado } : {}),
-      ...(def.extra ?? {}),
+      ...(def.extra ? def.extra() : {}),
     }),
   }).then((r) => r.json()).catch((e) => ({ error: String(e?.message ?? e) }));
 
