@@ -1767,7 +1767,9 @@ async function generarFlujoVenta(){
     },false,1800,120);
     const nFin=await N("fin","Fin",{},false,2080,120);
     const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
-      bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
+      // {{pago_resultado_motivo}} y no {{pago_resultado}}: el crudo trae el token
+      // PAGO_NO y el JSON que el OCR agrega, y el cliente los estaba viendo.
+      bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado_motivo}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
     },false,960,340);
 
     await E(nVender,"exito",nEsperar);
@@ -1848,7 +1850,7 @@ async function generarFlujoVenta(){
           ],
         },false,1500,y-90);
         const nReX=await N("mensaje",`Reintentar pago (extra ${i+1})`,{
-          bubbles:[{ text:`No pude validar ese pago 🤔 {{pago_extra_${i+1}}}\n\n¿Me lo reenvías?` }],
+          bubbles:[{ text:`No pude validar ese pago 🤔 {{pago_extra_${i+1}_motivo}}\n\n¿Me lo reenvías?` }],
         },false,1220,y+90);
         // Corte inteligente: entiende "no gracias" / "ya tengo" / "dale" sin botones.
         const nClas=await N("ia",`¿Lo quiere? (extra ${i+1})`,{

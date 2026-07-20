@@ -3841,6 +3841,22 @@ async function buildContext(db: SupabaseClient, run: Run) {
   Object.assign(ctx, run.vars);
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
 
+  // 4.5) Veredictos del OCR en limpio. `pago_resultado` (y `pago_extra_N`) traen
+  // un token técnico —PAGO_OK / PAGO_NO— y el JSON que el OCR agrega con lo que
+  // leyó. La Condición NECESITA el token, pero el cliente no debería verlo: los
+  // mensajes de "no pude validar tu comprobante" mostraban literalmente
+  // "PAGO_NO ... {"banco":"Yape",...}". Se expone una versión limpia por si el
+  // mensaje quiere explicar el motivo, sin tocar la original.
+  for (const k of Object.keys(ctx)) {
+    if (!/^pago_(resultado|extra_\d+)$/.test(k)) continue;
+    const s = String(ctx[k] ?? "");
+    if (!s) continue;
+    ctx[k + "_motivo"] = s
+      .replace(/\{[\s\S]*\}/g, "")        // el JSON que agrega el OCR
+      .replace(/\bPAGO_(OK|NO)\b\s*[:.-]?\s*/gi, "")
+      .trim();
+  }
+
   // 5) Opción de compra elegida (unifica versión/pack/cantidad). Su precio PISA
   // al precio suelto del producto: {{precio}} siempre refleja lo que ESTE
   // cliente debe pagar ahora (opción + oferta activa). Va después de los campos
