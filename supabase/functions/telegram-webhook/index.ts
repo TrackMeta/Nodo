@@ -21,10 +21,18 @@ const db = serviceClient();
 
 // Qué hace cada botón. `estado` es a dónde pasa el pedido; el flujo de aviso al
 // cliente lo dispara order-update, igual que cuando lo tocás desde el panel.
-const ACCIONES: Record<string, { estado: string; desde: string[]; ok: string }> = {
-  adel_ok:  { estado: "adelanto_validado", desde: ["esperando_adelanto"], ok: "Adelanto aprobado ✅" },
-  saldo_ok: { estado: "saldo_pagado",      desde: ["en_agencia"],         ok: "Saldo aprobado ✅ · el bot manda la clave" },
-  llego:    { estado: "en_agencia",        desde: ["despachado"],         ok: "Avisado ✅" },
+// `estado`: a dónde pasa el pedido. `extra` : lo que se le suma al cuerpo de
+// order-update. Los pagos DIGITALES y los de venta EXTRA además hay que
+// REANUDAR (`resume`): su conversación quedó parqueada esperando el visto bueno,
+// y sin eso el cliente pagaría y no recibiría nada.
+const ACCIONES: Record<string, { estado?: string; desde: string[]; ok: string; extra?: Record<string, unknown> }> = {
+  adel_ok:    { estado: "adelanto_validado", desde: ["esperando_adelanto"], ok: "Adelanto aprobado ✅" },
+  saldo_ok:   { estado: "saldo_pagado",      desde: ["en_agencia"],         ok: "Saldo aprobado ✅ · el bot manda la clave" },
+  llego:      { estado: "en_agencia",        desde: ["despachado"],         ok: "Avisado ✅" },
+  digital_ok: { estado: "confirmada",        desde: ["pendiente"],          ok: "Pago aprobado ✅ · el bot entrega el producto" },
+  extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "despachado", "en_agencia"],
+                ok: "Extra aprobado ✅ · el bot lo entrega",
+                extra: { resume: true, shipping: { extra_pendiente: false } } },
 };
 
 Deno.serve(async (req) => {
@@ -114,7 +122,11 @@ Deno.serve(async (req) => {
       "Content-Type": "application/json",
       Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
     },
-    body: JSON.stringify({ order_id: orderId, estado: def.estado, via: "telegram" }),
+    body: JSON.stringify({
+      order_id: orderId, via: "telegram",
+      ...(def.estado ? { estado: def.estado } : {}),
+      ...(def.extra ?? {}),
+    }),
   }).then((r) => r.json()).catch((e) => ({ error: String(e?.message ?? e) }));
 
   if (res?.error) {

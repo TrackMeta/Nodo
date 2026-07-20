@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Avisos de Telegram</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:680px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin-bottom:14px}
+  .grp{font-size:11.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);margin:22px 0 10px}
+  .av{border:1px solid var(--border);border-radius:14px;margin-bottom:10px;background:var(--surface);overflow:hidden}
+  .av.off{opacity:.55}
+  .avhd{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;cursor:pointer}
+  .avhd .tt{font-weight:700;font-size:14px}
+  .avhd .ds{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.5}
+  .avbody{padding:0 16px 16px;border-top:1px solid var(--border);margin-top:2px}
+  .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--brand-bg);border-color:var(--brand)} .sw.on::after{left:20px;background:var(--brand)}
+  .ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);
+      padding:11px 13px;font-size:13px;outline:none;font-family:var(--font);line-height:1.6;resize:vertical;min-height:150px}
+  .ta:focus{border-color:var(--brand)}
+  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);
+       font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .vr{display:inline-block;background:var(--brand-bg);color:var(--brand);border-radius:6px;padding:2px 7px;
+      font-size:11px;font-weight:700;margin:0 4px 4px 0;cursor:pointer;border:1px solid transparent}
+  .vr:hover{border-color:var(--brand)}
+  .lab{font-size:11.5px;color:var(--muted);font-weight:700;margin:14px 0 6px;display:block}
+  /* Vista previa: se imita el chat de Telegram para juzgar cómo QUEDA, no cómo
+     se escribe. Sin esto hay que mandarse un aviso real para ver el resultado. */
+  .tgprev{background:#17212b;border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.55;
+          color:#fff;white-space:pre-wrap;word-break:break-word;border:1px solid #0d1620}
+  .tgprev b{font-weight:700} .tgprev i{color:#9fb4c7}
+  .tgbtn{margin-top:8px;background:#232e3c;border-radius:8px;padding:8px;text-align:center;color:#6ab3f3;font-size:12.5px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:820px">
+    <div class="nodo-head">
+      <div class="grow">
+        <a href="canales.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;text-decoration:none;margin-bottom:6px">← Volver a Canales</a>
+        <h1 class="nodo-title">Avisos de Telegram</h1>
+        <p class="nodo-lead">Lo que tu bot te manda al celular cuando pasa algo. Apaga los que te sobren y reescribe los que quieras.</p>
+      </div>
+      <button class="btn primary" id="save" style="height:40px">Guardar cambios</button>
+    </div>
+    <div id="body"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, confirmDialog } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+const st={ channelId:null, catalogo:[], cfg:{ items:{}, hora:true }, abierto:null };
+
+const GRUPOS=[
+  ["ventas","Ventas y pedidos"],
+  ["pagos","Pagos por validar"],
+  ["atencion","Atención al cliente"],
+];
+
+// Valores de mentira para la vista previa. Son los mismos para todos los avisos
+// (sobran los que no aplican) y están elegidos para que se note el formato.
+const DEMO={
+  cliente:"Juan Pérez", telefono:"+51 999 888 777",
+  producto:"Zapatillas Runner Pro", opcion:"2 pares", extra:"Medias deportivas",
+  monto:"210", total_cobrar:"210", adelanto:"20", saldo:"190", vuelto:"15",
+  monto_leido:"200", monto_esperado:"210", operacion:"00123456",
+  motivo:"el monto no coincide", clave_recojo:"4821",
+  zona_nombre:"Miraflores", direccion:"Av. Larco 123", referencia:"portón azul",
+  entrega_hoy:"sí", ciudad:"Trujillo", sede:"Av. España", dni:"70123456",
+  pago_metodo:"Yape", origen:"Anuncio de Facebook", horario:"\n🟢 En horario de atención.",
+};
+
+async function callFn(name, body){
+  const { data, error }=await supa.functions.invoke(name,{ body });
+  if(error) throw new Error(error.message||"falló");
+  if(data&&data.error) throw new Error(data.detalle||data.error);
+  return data;
+}
+
+async function boot(){
+  const sh=await mountShell({ active:"canales" });
+  st.channelId=sh.channelId;
+  try{
+    const r=await callFn("channel-config",{ action:"avisos_catalogo", channel_id:st.channelId });
+    st.catalogo=r.catalogo||[];
+    st.cfg={ items:{ ...(r.config?.items||{}) }, hora:r.config?.hora!==false };
+  }catch(e){ toast(e.message||"No pude cargar los avisos",true); return; }
+  render();
+  $("save").onclick=guardar;
+}
+
+// Estado efectivo de un aviso: lo guardado, o el default del catálogo.
+const encendido=(a)=> st.cfg.items[a.clave]?.on!==false;
+const textoDe=(a)=> (st.cfg.items[a.clave]?.texto ?? a.texto);
+const editado=(a)=> typeof st.cfg.items[a.clave]?.texto==="string" && st.cfg.items[a.clave].texto!==a.texto;
+
+function render(){
+  const b=$("body");
+  b.innerHTML=`
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:700;font-size:13.5px">Poner la hora en cada aviso</div>
+        <div style="color:var(--muted);font-size:12px;margin-top:3px;line-height:1.5">
+          La hora en que <b>pasó</b>, no la del mensaje. Sirve si lees Telegram más tarde o si los avisos se acumulan.</div>
+      </div>
+      <span class="sw ${st.cfg.hora?'on':''}" id="swHora"></span>
+    </div>
+    ${GRUPOS.map(([g,label])=>`
+      <div class="grp">${label}</div>
+      ${st.catalogo.filter(a=>a.grupo===g).map(fila).join("")}
+    `).join("")}`;
+
+  $("swHora").onclick=()=>{ st.cfg.hora=!st.cfg.hora; render(); };
+  b.querySelectorAll("[data-sw]").forEach(el=> el.onclick=(ev)=>{
+    ev.stopPropagation();
+    const a=st.catalogo.find(x=>x.clave===el.dataset.sw);
+    const it=st.cfg.items[a.clave]||(st.cfg.items[a.clave]={});
+    it.on=!encendido(a);
+    render();
+  });
+  b.querySelectorAll("[data-open]").forEach(el=> el.onclick=()=>{
+    const k=el.dataset.open;
+    st.abierto = st.abierto===k ? null : k;
+    render();
+  });
+  // El textarea NO re-renderiza al escribir (perdería el foco): solo se
+  // actualiza la vista previa, que es lo único que depende del texto.
+  b.querySelectorAll("[data-ta]").forEach(ta=> ta.oninput=()=>{
+    const a=st.catalogo.find(x=>x.clave===ta.dataset.ta);
+    (st.cfg.items[a.clave]||(st.cfg.items[a.clave]={})).texto=ta.value;
+    const pv=b.querySelector(`[data-pv="${a.clave}"]`);
+    if(pv) pv.innerHTML=previsualizar(ta.value, a);
+  });
+  b.querySelectorAll("[data-var]").forEach(ch=> ch.onclick=()=>{
+    const [clave,v]=ch.dataset.var.split("|");
+    const ta=b.querySelector(`[data-ta="${clave}"]`); if(!ta) return;
+    const i=ta.selectionStart??ta.value.length;
+    ta.value=ta.value.slice(0,i)+`{{${v}}}`+ta.value.slice(ta.selectionEnd??i);
+    ta.focus(); ta.selectionStart=ta.selectionEnd=i+v.length+4;
+    ta.dispatchEvent(new Event("input",{bubbles:true}));
+  });
+  b.querySelectorAll("[data-reset]").forEach(btn=> btn.onclick=async()=>{
+    const a=st.catalogo.find(x=>x.clave===btn.dataset.reset);
+    if(!await confirmDialog({ title:"Volver al texto original",
+      message:"Se pierde lo que escribiste en este aviso.", confirmText:"Volver al original", danger:true })) return;
+    if(st.cfg.items[a.clave]) delete st.cfg.items[a.clave].texto;
+    render();
+  });
+}
+
+function fila(a){
+  const on=encendido(a), abierto=st.abierto===a.clave;
+  return `
+    <div class="av ${on?'':'off'}">
+      <div class="avhd" data-open="${a.clave}">
+        <span style="flex:1">
+          <span class="tt">${esc(a.titulo)}${editado(a)?' <span style="font-size:10.5px;color:var(--amber);font-weight:600">· editado</span>':''}</span>
+          <div class="ds">${esc(a.desc)}</div>
+        </span>
+        <span class="sw ${on?'on':''}" data-sw="${a.clave}"></span>
+        <span style="color:var(--faint);font-size:11px;margin-top:4px">${abierto?"▲":"▼"}</span>
+      </div>
+      ${abierto?`
+        <div class="avbody">
+          <span class="lab">Texto del aviso</span>
+          <textarea class="ta" data-ta="${a.clave}">${esc(textoDe(a))}</textarea>
+          <div style="font-size:11.5px;color:var(--faint);margin-top:6px">
+            Se escribe igual que en el bot: <b>*negrita*</b>, <i>_cursiva_</i> y las variables de abajo. Toca una para insertarla.</div>
+          <div style="margin-top:8px">${a.vars.map(v=>`<span class="vr" data-var="${a.clave}|${v}">{{${v}}}</span>`).join("")}</div>
+          <span class="lab">Cómo se va a ver</span>
+          <div class="tgprev" data-pv="${a.clave}">${previsualizar(textoDe(a), a)}</div>
+          ${editado(a)?`<div style="margin-top:12px"><button class="btn" data-reset="${a.clave}">Volver al texto original</button></div>`:""}
+        </div>`:""}
+    </div>`;
+}
+
+// Réplica de renderAviso() del motor (avisos.ts): mismo orden —marcado primero,
+// valores escapados después— y misma regla de líneas vacías. Si cambia allá,
+// cambia acá: la vista previa mentiría, que es peor que no tenerla.
+function previsualizar(plantilla, a){
+  const HUECO=String.fromCharCode(0);
+  const cuerpo=esc(plantilla)
+    .replace(/\*([^*\n]+)\*/g,"<b>$1</b>")
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s.,;:!?)]|$)/g,"$1<i>$2</i>");
+  const lineas=cuerpo.split("\n").map(linea=>{
+    let con=0,tot=0;
+    const out=linea.replace(/\{\{\s*([\w.-]+)\s*\}\}/g,(_,k)=>{
+      tot++;
+      const v=DEMO[k];
+      if(v===undefined||String(v).trim()==="") return HUECO;
+      con++; return esc(String(v));
+    });
+    if(tot>0&&con===0) return null;
+    return out.split(HUECO).join("—");
+  });
+  let html=lineas.filter(l=>l!==null).join("\n").replace(/\n{3,}/g,"\n\n").trim();
+  if(st.cfg.hora) html+='\n\n<i>🕐 14:32</i>';
+  const botones=['💬 Abrir el chat'];
+  if(a.clave==="adelanto_validar") botones.unshift("✅ Aprobar el adelanto");
+  if(a.clave==="saldo_validar") botones.unshift("🔑 Aprobar y dar la clave");
+  if(a.clave==="pago_digital_validar"||a.clave==="pago_extra_validar") botones.unshift("✅ Aprobar y entregar");
+  return `<b>[Prime Digital]</b>\n`+html+botones.map(t=>`<div class="tgbtn">${t}</div>`).join("");
+}
+
+async function guardar(e){
+  const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Guardando…";
+  try{
+    await callFn("channel-config",{ action:"avisos_guardar", channel_id:st.channelId,
+      items:st.cfg.items, hora:st.cfg.hora });
+    toast("Avisos guardados ✓");
+  }catch(err){ toast(err.message||"No se pudo guardar",true); }
+  b.disabled=false; b.textContent=old;
+}
+
+boot();
+</script>
+</body>
+</html>

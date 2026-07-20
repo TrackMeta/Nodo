@@ -1218,7 +1218,8 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     const nAdd=await N("accion",`Sumar extra ${i+1}`,{
       acciones:[
         { tipo:"actualizar_pedido", bump:{ nombre:label, precio:String(precio), sube_saldo:true, ...(esDigital?{ version_id:x.version_id, digital:true }:{}) } },
-        { tipo:"notify_admin", una_vez:`extraf_${x.version_id}`, mensaje:`🎁 VENTA EXTRA (${esDigital?"digital":"físico"}) · ${label}\nCliente: {{nombre}} (+{{telefono}})\nSe suma al mismo envío — S/ ${precio}${esDigital?"\n(el acceso se envía solo al pagar todo)":""}` },
+        { tipo:"notify_admin", una_vez:`extraf_${x.version_id}`, plantilla:"venta_extra",
+          datos:{ extra:`${label} (${esDigital?"digital":"físico"}, va en el mismo envío)`, monto:String(precio) } },
       ],
     },false,2920,y);
     const nConfE=await N("mensaje",`Confirmar extra ${i+1}`,{ bubbles:[{ text: esDigital?`¡Listo! Te lo sumo al pedido 🎉 Apenas se complete el pago te mando el acceso.`:`¡Genial! Te lo sumo al pedido 🎉 Lo pagas junto con el resto.` }] },false,3200,y);
@@ -1567,7 +1568,10 @@ async function generarFlujoFisico(flowId, N, E){
                 cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{total_cobrar}}", entrega_hoy:"{{entrega_hoy}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
       { tipo:"add_tag", valor:"Compra" },
-      { tipo:"notify_admin", mensaje:"🛵 PEDIDO LIMA (contraentrega)\nCliente: {{nombre_completo}} (+{{telefono}})\nZona: {{zona_nombre}} · ¿hoy?: {{entrega_hoy}}\nDirección: {{direccion}}\nRef: {{referencia}}\nOpción: {{opcion}} — cobrar S/ {{total_cobrar}}" },
+      // El texto vive en el catálogo de avisos (Canales → Avisos de Telegram),
+      // no acá: así se puede apagar o reescribir sin regenerar el flujo, y
+      // regenerarlo no pisa lo que el operador haya editado.
+      { tipo:"notify_admin", plantilla:"pedido_lima" },
     ],
   },false,1240,440);
   const nConfLima=await N("mensaje","Confirmación Lima",{
@@ -1593,7 +1597,7 @@ async function generarFlujoFisico(flowId, N, E){
         datos:{ zona:"provincia", ciudad:"{{ciudad}}", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
                 opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{saldo}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
-      { tipo:"notify_admin", mensaje:"📦 PEDIDO PROVINCIA por confirmar\nCliente: {{nombre_completo}} (+{{telefono}})\nDNI: {{dni}}\nAgencia: Shalom {{ciudad}} · {{sede}}\nOpción: {{opcion}} — total S/ {{total_cobrar}}\nEsperando adelanto de S/ {{adelanto}}" },
+      { tipo:"notify_admin", plantilla:"pedido_provincia" },
     ],
   },false,1240,640);
   const nPedirAdel=await N("mensaje","Pedir el adelanto",{
@@ -1749,7 +1753,7 @@ async function generarFlujoVenta(){
         { tipo:"crear_pedido", una_vez:"venta_{{opcion_id}}", estado:"confirmada", monto:"{{precio}}",
           datos:{ opcion:"{{opcion}}", comprobante:"{{ultima_imagen}}" } },
         { tipo:"notify_admin", una_vez:"aviso_{{opcion_id}}", foto:"{{ultima_imagen}}",
-          mensaje:"💰 VENTA · {{producto_nombre}}\nOpción: {{opcion}}\nCliente: {{nombre}} (+{{telefono}})\nMonto: S/ {{precio}}\nPago: {{pago_metodo}}\nOrigen: {{origen}}\nFecha: {{fecha_hora}}" },
+          plantilla:"venta_digital" },
       ],
     },false,1520,120);
     // Sin nodo de Google Sheets a propósito: la hoja es un ESPEJO automático de
@@ -1846,7 +1850,7 @@ async function generarFlujoVenta(){
               ? { tipo:"entregar", version_id:x.version_id, diferir:true }
               : { tipo:"entregar", version_id:x.version_id, una_burbuja:!!cfg.entrega_burbuja_unica, mensaje:"¡Listo! 🎉 Acá va tu extra:" }),
             { tipo:"notify_admin", una_vez:`extra_${x.version_id}`, foto:"{{ultima_imagen}}",
-              mensaje:`🎁 VENTA EXTRA · ${info?info.label:""}\nCliente: {{nombre}} (+{{telefono}})\nFecha: {{fecha_hora}}` },
+              plantilla:"venta_extra", datos:{ extra:(info?info.label:`Extra ${i+1}`), monto:String(precio) } },
           ],
         },false,1500,y-90);
         const nReX=await N("mensaje",`Reintentar pago (extra ${i+1})`,{

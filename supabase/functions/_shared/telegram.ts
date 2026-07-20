@@ -3,9 +3,15 @@
 // El bot token vive cifrado en Vault por canal; los chat ids en channels.
 // ═══════════════════════════════════════════════════════════════════
 
-// Botón inline: `data` viaja en el callback cuando lo tocan (máx 64 bytes, así
-// que va "accion:uuid" y nada más).
-export type TgButton = { text: string; data: string };
+// Botón inline. Dos formas, excluyentes:
+//  · `data` → viaja en el callback cuando lo tocan (máx 64 bytes, así que va
+//    "accion:uuid" y nada más). Sirve para actuar: aprobar, dar la clave…
+//  · `url`  → abre un link. Es el "Abrir el chat" que lleva a la conversación
+//    en el panel sin tener que buscarla a mano en la Bandeja.
+export type TgButton = { text: string; data?: string; url?: string };
+
+const armarBoton = (b: TgButton) =>
+  b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data ?? "" };
 
 // Envía un mensaje a cada chat id configurado. Si `photoUrl` viene, manda la
 // imagen con el texto como pie (sendPhoto) — útil para el comprobante. No lanza.
@@ -19,7 +25,7 @@ export async function sendTelegram(
   const usePhoto = !!photoUrl && /^https?:\/\//.test(photoUrl);
   const url = `https://api.telegram.org/bot${botToken}/${usePhoto ? "sendPhoto" : "sendMessage"}`;
   const markup = buttons?.length
-    ? { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) }
+    ? { inline_keyboard: buttons.map((row) => row.map(armarBoton)) }
     : undefined;
   for (const chatId of chatIds) {
     try {
@@ -30,6 +36,24 @@ export async function sendTelegram(
       let res = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
+
+      // HTML mal formado tumba el mensaje ENTERO ("can't parse entities"). El
+      // aviso importa más que las negritas: se reintenta en texto plano, sin
+      // etiquetas, antes que dejar al operador sin enterarse de una venta.
+      if (!res.ok) {
+        const err = await res.clone().text().catch(() => "");
+        if (/parse entities|parse_mode/i.test(err)) {
+          console.error("[telegram] HTML inválido, reintento en texto plano:", err);
+          const plano = text.replace(/<[^>]+>/g, "");
+          const bodyPlano: Record<string, unknown> = usePhoto
+            ? { chat_id: chatId, photo: photoUrl, caption: plano.slice(0, 1024) }
+            : { chat_id: chatId, text: plano, disable_web_page_preview: true };
+          if (markup) bodyPlano.reply_markup = markup;
+          res = await fetch(url, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyPlano),
+          });
+        }
+      }
       // Si Telegram no pudo bajar la foto, reintentar como texto (no perder el
       // aviso). OJO: hay que rehacer el reply_markup — sin él llegaría el aviso
       // pero SIN los botones, o sea sin forma de aprobar nada.

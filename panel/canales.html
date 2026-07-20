@@ -191,7 +191,16 @@ function renderTG(){
         </div>
         <button class="btn" id="tgTest" ${s.telegram_bot_token?'':'disabled'}>Probar conexión</button>
       </div>
-      <div id="tgDiag"></div>`;
+      <div id="tgDiag"></div>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-weight:700;font-size:13px">5 · Qué te avisa y cómo</div>
+          <div class="desc" style="margin:4px 0 0">Los 14 avisos que te manda el bot: apaga los que te sobren y reescribe los que quieras, con vista previa.</div>
+        </div>
+        <a class="btn" href="avisos.html" style="text-decoration:none">Personalizar los avisos →</a>
+      </div>`;
   $("saveTG").onclick=(e)=>save(e.target,{ telegram_bot_token:$("t_token").value||undefined });
   $("saveChats").onclick=(e)=>save(e.target,{ telegram_chat_ids:$("t_chats").value });
   const hk=$("tgHook");

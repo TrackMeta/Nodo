@@ -8,6 +8,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
+import { renderAviso, avisoActivo, textoDeAviso, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets } from "./db.ts";
@@ -442,8 +443,8 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   msg = msg.replace(/\{\{\s*vuelto\s*\}\}/g, vuelto > 0 ? `S/ ${vuelto}` : "")
            .replace(/\{\{\s*monto\s*\}\}/g, vuelto > 0 ? ` (S/ ${vuelto})` : "");
   await deliverMessage(db, channelId, contactId, msg).catch(() => {});
-  await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as any,
-    `💸 <b>${quien} reclama su vuelto</b>\nSaldo a favor: ${vuelto > 0 ? "<b>S/ " + vuelto + "</b>" : "(revisar en Compras)"}\nEl bot ya le dijo que lo estás gestionando — hazle la devolución y mándale la captura por el chat. El bot sigue atendiéndolo.`);
+  await avisar(db, channelId, contactId, "reclama_vuelto",
+    { cliente: quien, vuelto: vuelto > 0 ? vuelto : "" });
   await logEvent(db, channelId, contactId, "nota", "💸 Reclamó su vuelto", `saldo a favor ${vuelto > 0 ? "S/ " + vuelto : "?"}`).catch(() => {});
   return true;
 }
@@ -533,8 +534,7 @@ async function pasarAHumano(
     const nota = !chequeoHorario ? "" : dentro
       ? "\n🟢 En horario de atención."
       : `\n🔴 Fuera de horario${proxima ? ` — al cliente le dijimos que respondes ${proxima}` : ""}.`;
-    await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as any,
-      `🙋 <b>${quien} necesita a una persona</b>\n${motivo}\nEl bot quedó en pausa en esa conversación.${nota}`);
+    await avisar(db, channelId, contactId, "pide_humano", { cliente: quien, motivo, horario: nota });
   } catch (e) { console.error("[pasarAHumano]", (e as any)?.message ?? e); }
 }
 
@@ -1308,14 +1308,27 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "notify_admin": {
         // `foto` opcional: adjunta la imagen (p.ej. {{ultima_imagen}}) como foto.
         const foto = a.foto ? resolve(String(a.foto), ctx) : undefined;
-        await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx), foto);
+        // `plantilla` → el aviso sale del catálogo y el operador puede apagarlo
+        // o reescribirlo desde el panel. Es lo que emite el generador.
+        // `mensaje` → texto literal; lo siguen usando los flujos viejos y quien
+        // escriba un aviso a mano en el editor avanzado.
+        if (a.plantilla) {
+          // `datos`: lo que el aviso necesita y el contexto no tiene (el nombre y
+          // el precio de ESTE extra, por ejemplo). Se resuelven por si traen {{}}.
+          const extra: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(a.datos ?? {})) extra[k] = resolve(String(v ?? ""), ctx);
+          await avisar(db, run.channel_id, run.contact_id, String(a.plantilla), { ...datosAviso(ctx), ...extra }, { foto });
+        } else {
+          await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx), foto);
+        }
         break;
       }
       case "transfer_human": {
         await db.from("contacts").update({ bot_activo: false }).eq("id", run.contact_id);
         await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", run.contact_id);
-        const msg = a.mensaje ? resolve(String(a.mensaje), ctx) : `🙋 ${ctx.nombre || ctx.wa_id} necesita atención humana`;
-        await notifyAdmin(db, run, msg);
+        if (a.mensaje) await notifyAdmin(db, run, resolve(String(a.mensaje), ctx));
+        else await avisar(db, run.channel_id, run.contact_id, "transferido",
+          { ...datosAviso(ctx), motivo: "Lo transfirió el flujo." });
         await logEvent(db, run.channel_id, run.contact_id, "humano", "Transferido a un humano");
         break;
       }
@@ -1652,10 +1665,7 @@ function pagoRealYVuelto(run: Run, esperadoTotal: number): { amount: number; vue
 }
 async function avisarVuelto(db: SupabaseClient, run: Run, amount: number, vuelto: number) {
   try {
-    const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", run.contact_id).maybeSingle();
-    const quien = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
-    await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
-      `💸 <b>Pagó de más · vuelto S/ ${vuelto}</b>\n${quien} pagó <b>S/ ${amount}</b> (S/ ${vuelto} de más). Revisa si se lo devuelves o queda a favor.`).catch(() => {});
+    await avisar(db, run.channel_id, run.contact_id, "pago_de_mas", { monto: amount, vuelto });
   } catch (_) { /* best-effort */ }
 }
 
@@ -1853,6 +1863,83 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
   await sendTelegram(token, chatIds, prefix + text, photoUrl, buttons);
 }
 
+// Dónde vive el panel, para el botón "Abrir el chat" de los avisos.
+const PANEL_URL = Deno.env.get("PANEL_URL") ?? "https://trackmeta.github.io/Nodo/panel";
+
+// Traduce el contexto del flujo a los nombres que usan las plantillas. Existen
+// dos vocabularios por historia: el del motor ({{producto_nombre}},
+// {{nombre_completo}}) y el de los avisos, que se eligió por cómo se lee en el
+// celular ({{producto}}, {{cliente}}). Acá se juntan, en un solo lugar.
+function datosAviso(ctx: any): Record<string, unknown> {
+  return {
+    ...ctx,
+    cliente: ctx.nombre_completo || ctx.nombre || ctx.wa_id || "",
+    producto: ctx.producto_nombre || "",
+    monto: ctx.precio ?? "",
+    telefono: ctx.telefono ? `+${ctx.telefono}` : "",
+  };
+}
+
+// ── Avisos de Telegram por PLANTILLA ───────────────────────────────
+// El camino nuevo: en vez de armar el texto en el código, se manda la CLAVE del
+// aviso y sus datos. El texto (y si se manda o no) sale de lo que el operador
+// configuró en el panel; si no tocó nada, del catálogo en avisos.ts.
+//
+// Los datos del contacto se resuelven acá y no en cada llamada: son los mismos
+// siempre ({{cliente}}, {{telefono}}) y repetirlos en 10 sitios garantizaba que
+// alguno quedara distinto.
+async function avisar(
+  db: SupabaseClient, channelId: string, contactId: string | null,
+  clave: string, datos: Record<string, unknown> = {},
+  opts: { foto?: string; botones?: TgButton[][] } = {},
+) {
+  try {
+    const { data: channel } = await db.from("channels")
+      .select("telegram_chat_ids, nombre, telegram_avisos, timezone").eq("id", channelId).maybeSingle();
+    const chatIds = (channel as any)?.telegram_chat_ids ?? [];
+    if (!chatIds.length) return;
+
+    const cfg = (channel as any)?.telegram_avisos as AvisosConfig | null;
+    if (!avisoActivo(cfg, clave)) return;   // lo apagó desde el panel
+
+    const secrets = await getChannelSecrets(db, channelId);
+    const token = secrets?.telegram_bot_token;
+    if (!token) { console.warn("[avisar] canal sin telegram_bot_token"); return; }
+
+    if (contactId && (datos.cliente == null || datos.telefono == null)) {
+      const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+      if (datos.cliente == null) datos.cliente = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
+      if (datos.telefono == null) {
+        const wa = String((c as any)?.wa_id ?? "");
+        datos.telefono = wa && wa !== "webchat-test" ? "+" + wa : "";
+      }
+    }
+
+    let texto = renderAviso(textoDeAviso(cfg, clave), datos);
+    if (!texto) return;
+
+    // La hora del hecho, no la del mensaje: si Telegram se atrasa o lo lees a la
+    // noche, "llegó 14:32" es lo que ubica. Se puede apagar desde el panel.
+    if (cfg?.hora !== false) {
+      const hora = new Date().toLocaleTimeString("es-PE", {
+        hour: "2-digit", minute: "2-digit",
+        timeZone: (channel as any)?.timezone || "America/Lima",
+      });
+      texto += `\n\n<i>🕐 ${hora}</i>`;
+    }
+
+    // "Abrir el chat" va SIEMPRE de último, después de los botones de acción:
+    // primero lo que resuelve el aviso, después lo que te lleva a mirar.
+    const botones = [...(opts.botones ?? [])];
+    if (contactId) botones.push([{ text: "💬 Abrir el chat", url: `${PANEL_URL}/index.html?c=${contactId}` }]);
+
+    const prefix = (channel as any)?.nombre ? `<b>[${(channel as any).nombre}]</b>\n` : "";
+    await sendTelegram(token, chatIds, prefix + texto, opts.foto, botones.length ? botones : undefined);
+  } catch (e) {
+    console.error("[avisar]", (e as any)?.message ?? e);
+  }
+}
+
 // Dispara los flujos suscritos a un estado de pedido (igual que order-update),
 // usado por la validación automática de saldo para soltar la clave de recojo.
 // `forzar`: lo usan los INTERCEPTORES de pago (adelanto/saldo). Ahí sabemos que
@@ -1977,7 +2064,8 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // (sin extras post, o el run ya no está esperando), cae al aviso normal.
     const ofrecio = await resumeIntoExtras(db, channelId, contactId).catch(() => false);
     if (!ofrecio) await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
-    await notifyAdmin(db, runlike, `✅ Adelanto validado automáticamente. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
+    await avisar(db, channelId, contactId, "adelanto_auto",
+      { monto, operacion: oper ?? "" }, { foto: url });
     return true;
   }
 
@@ -1997,11 +2085,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   await logEvent(db, channelId, contactId, "nota", "Adelanto por aprobar", motivo);
   // Con botón: se aprueba desde el celular sin abrir el panel. El toque lo
   // recibe telegram-webhook, que verifica que seas admin de este canal.
-  await notifyAdmin(db, runlike,
-    `💰 <b>Adelanto por validar</b>\n${motivo}\n` +
-    `Monto leído: ${Number.isFinite(monto) ? monto : "?"} · esperado: ${Number.isFinite(esperado) ? esperado : "?"}`,
-    url,
-    [[{ text: "✅ Aprobar", data: `adel_ok:${(order as any).id}` }]]);
+  await avisar(db, channelId, contactId, "adelanto_validar", {
+    monto_leido: Number.isFinite(monto) ? monto : "",
+    monto_esperado: Number.isFinite(esperado) ? esperado : "",
+    operacion: oper ?? "", motivo,
+  }, { foto: url, botones: [[{ text: "✅ Aprobar el adelanto", data: `adel_ok:${(order as any).id}` }]] });
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago y en un momento te confirmo. 🙌").catch(() => {});
   return true;
 }
@@ -2083,7 +2171,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     // Pedido pagado del todo → recién ahora se entregan las ventas extra
     // digitales que viajaban en él (link/archivo).
     await entregarExtrasDigitales(db, channelId, contactId, (order as any).id);
-    await notifyAdmin(db, runlike, `✅ Saldo validado automáticamente y clave de recojo enviada. Monto ${monto}${oper ? " · op " + oper : ""}.`, url);
+    await avisar(db, channelId, contactId, "saldo_auto",
+      { monto, operacion: oper ?? "" }, { foto: url });
     return true;
   }
 
@@ -2097,10 +2186,14 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
-  await notifyAdmin(db, runlike,
-    `🕵️ <b>Saldo por revisar</b>\n${motivo}\nAl aprobar, el bot le manda la clave de recojo.`,
-    url,
-    clave ? [[{ text: "🔑 Aprobar y dar la clave", data: `saldo_ok:${(order as any).id}` }]] : undefined);
+  await avisar(db, channelId, contactId, "saldo_validar", {
+    monto_leido: Number.isFinite(monto) ? monto : "",
+    monto_esperado: Number.isFinite(saldo) ? saldo : "",
+    operacion: oper ?? "", motivo, clave_recojo: clave ?? "",
+  }, {
+    foto: url,
+    botones: clave ? [[{ text: "🔑 Aprobar y dar la clave", data: `saldo_ok:${(order as any).id}` }]] : undefined,
+  });
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago del saldo y en breve te confirmo. 🙌").catch(() => {});
   return true;
 }
@@ -3512,8 +3605,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 }).eq("id", oid);
               }
               run.vars._extra_manual_pendiente = true;
-              await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
-                `🎁 <b>Pago de venta extra por validar</b>\n${quien} ${montoX ? "pagó S/ " + montoX : "envió un comprobante"} por ${cfg._extra_label ?? "un extra"}. Apruébalo en el Copiloto.`).catch(() => {});
+              await avisar(db, run.channel_id, run.contact_id, "pago_extra_validar",
+                { cliente: quien, extra: cfg._extra_label ?? "Venta extra", monto: montoX || "" },
+                { foto: url, botones: oid ? [[{ text: "✅ Aprobar y entregar", data: `extra_ok:${oid}` }]] : undefined });
             } else {
               const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
               const ship = {
@@ -3549,8 +3643,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 }
               } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
               run.vars._pago_manual_pendiente = true;
-              await notifyAdmin(db, { channel_id: run.channel_id, contact_id: run.contact_id } as any,
-                `💳 <b>Pago digital por validar</b>\n${quien} ${amount ? "pagó S/ " + amount : "envió un comprobante"}. Revísalo y apruébalo en el Copiloto.`).catch(() => {});
+              await avisar(db, run.channel_id, run.contact_id, "pago_digital_validar", {
+                cliente: quien, producto: ctx.producto_nombre ?? "",
+                monto: amount || "", operacion: run.vars.pago_operacion ?? "",
+              }, {
+                foto: url,
+                botones: run.vars._order_id
+                  ? [[{ text: "✅ Aprobar y entregar", data: `digital_ok:${run.vars._order_id}` }]] : undefined,
+              });
             }
             await deliverMessage(db, run.channel_id, run.contact_id, "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
             await logEvent(db, run.channel_id, run.contact_id, "nota", esExtra ? "🎁 Pago de extra en revisión (validación manual)" : "💳 Pago digital en revisión (validación manual)").catch(() => {});

@@ -8,6 +8,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets } from "../_shared/db.ts";
 import { setWebhook } from "../_shared/telegram.ts";
+import { AVISOS } from "../_shared/avisos.ts";
 
 const db = serviceClient();
 // Campos planos del canal editables desde el panel.
@@ -75,6 +76,35 @@ Deno.serve(async (req) => {
       const { error } = await db.from("channels").update({ telegram_pair: { codigo, vence } }).eq("id", channel_id);
       if (error) return json({ error: "guardar_codigo", detalle: error.message }, 400);
       return json({ ok: true, codigo, vence });
+    }
+
+    // El catálogo de avisos + lo que el canal tenga configurado. El panel NO
+    // tiene su propia copia de la lista a propósito: dos listas se separan al
+    // primer cambio y nadie se entera hasta que un aviso sale mal.
+    if (action === "avisos_catalogo") {
+      const { data: c } = await db.from("channels").select("telegram_avisos").eq("id", channel_id).maybeSingle();
+      return json({ ok: true, catalogo: AVISOS, config: (c as any)?.telegram_avisos ?? null });
+    }
+
+    // Guarda el on/off y el texto propio de cada aviso. Se manda el objeto
+    // entero: es chico y así borrar un texto (volver al default) es simplemente
+    // no mandarlo, sin necesidad de un "borrar" aparte.
+    if (action === "avisos_guardar") {
+      const items: Record<string, { on?: boolean; texto?: string }> = {};
+      for (const a of AVISOS) {
+        const v = body.items?.[a.clave];
+        if (!v) continue;
+        const fila: { on?: boolean; texto?: string } = {};
+        if (v.on === false) fila.on = false;                       // solo se guarda lo apagado
+        const t = typeof v.texto === "string" ? v.texto.trim() : "";
+        if (t && t !== a.texto) fila.texto = t.slice(0, 3000);      // igual al default → no se guarda
+        if (Object.keys(fila).length) items[a.clave] = fila;
+      }
+      const cfg: Record<string, unknown> = { items };
+      if (body.hora === false) cfg.hora = false;
+      const { error } = await db.from("channels").update({ telegram_avisos: cfg }).eq("id", channel_id);
+      if (error) return json({ error: "guardar_avisos", detalle: error.message }, 400);
+      return json({ ok: true });
     }
 
     // Diagnóstico REAL de la conexión. "Conectado" en el panel solo significaba
