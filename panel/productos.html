@@ -1294,8 +1294,8 @@ async function renderExtras(){
     <div class="card">
       <h4 style="margin-top:0">¿Cuándo lo ofrecemos?</h4>
       <div style="display:flex;gap:10px;margin-top:8px" id="momBox">
-        ${mom("antes","Antes de entregar","Paga → le ofrecés el extra → recién ahí entregás. Suele aceptarse más.")}
-        ${mom("despues","Después de entregar","Paga → entregás → le ofrecés el extra. Más conservador.")}
+        ${mom("antes","Antes de entregar","Paga → le ofreces el extra → recién ahí entregas. Suele aceptarse más.")}
+        ${mom("despues","Después de entregar","Paga → entregas → le ofreces el extra. Más conservador.")}
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
         <label style="margin:0;font-size:12.5px;font-weight:700">Si no responde, entregar igual a los</label>
@@ -1309,7 +1309,7 @@ async function renderExtras(){
 
     <div id="exList"></div>
     <button class="btn" id="exAdd" ${cat.length?"":"disabled"}>+ Venta extra</button>
-    ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay opciones con precio en este bot. Creá primero una opción de compra con precio (en este producto o en otro).</div>`}`;
+    ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay opciones con precio en este bot. Crea primero una opción de compra con precio (en este producto o en otro).</div>`}`;
 
   b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(); });
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
@@ -1473,7 +1473,7 @@ function renderSalud(){
     <span style="color:${c};display:inline-flex;flex:none">${icon(ic)}</span><div>${t}</div></div>`;
   box.innerHTML = (errs.length||warns.length)
     ? `<div style="border:1px solid ${errs.length?"var(--red)":"#f0a92b"};background:${errs.length?"rgba(239,68,68,.06)":"rgba(240,169,43,.07)"};border-radius:11px;padding:12px">
-        <div style="font-weight:700;font-size:12.5px;margin-bottom:7px">${errs.length?"Esto impide vender":"Revisá esto antes de publicar"}</div>
+        <div style="font-weight:700;font-size:12.5px;margin-bottom:7px">${errs.length?"Esto impide vender":"Revisa esto antes de publicar"}</div>
         ${errs.map(e=>line(e,"var(--red)","alert")).join("")}${warns.map(w=>line(w,"#f0a92b","alert")).join("")}
       </div>`
     : `<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:#22c079">
@@ -1967,7 +1967,7 @@ function slugAttr(s){ return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"
 function paintOpciones(fisico){
   const box=$("opList"); box.innerHTML="";
   if(!st.versions.length){
-    box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin opciones todavía. Agregá al menos una (si el producto es simple, alcanza con una llamada "Única").</div>`;
+    box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin opciones todavía. Agrega al menos una (si el producto es simple, alcanza con una llamada "Única").</div>`;
   }
   st.versions.forEach((v,i)=>{
     const el=document.createElement("div"); el.className="card";
@@ -2001,7 +2001,7 @@ function paintOpciones(fisico){
       st.versions.splice(i,1); paintOpciones(fisico);
     };
     el.querySelector(".oel").onclick=async()=>{
-      const url=await askText({title:"Link de entrega",label:"Pegá el link (Drive, curso, acceso…)",placeholder:"https://…"});
+      const url=await askText({title:"Link de entrega",label:"Pega el link (Drive, curso, acceso…)",placeholder:"https://…"});
       if(!url) return;
       const nombre=await askText({title:"Nombre del link",label:"¿Cómo se llama? (opcional)",placeholder:"Ej. Curso completo"});
       v.entrega=Array.isArray(v.entrega)?v.entrega:[];
@@ -2188,7 +2188,7 @@ async function renderActivacion(){
   if(!flow){
     root.innerHTML=`<div class="card">
       <h4>${icon("message")}Mensajes iniciales</h4>
-      <div style="font-size:13px;color:var(--muted);margin:8px 0 14px;line-height:1.55">Los mensajes con los que arranca el chat cuando el cliente escribe tu palabra clave (o llega desde tu anuncio). Podés crear <b>varias versiones que el bot rota</b> para variar el copy y reducir el riesgo de baneo.</div>
+      <div style="font-size:13px;color:var(--muted);margin:8px 0 14px;line-height:1.55">Los mensajes con los que arranca el chat cuando el cliente escribe tu palabra clave (o llega desde tu anuncio). Puedes crear <b>varias versiones que el bot rota</b> para variar el copy y reducir el riesgo de baneo.</div>
       <button class="btn primary" id="createWelcome">Crear mensajes iniciales</button></div>`;
     $("createWelcome").onclick=createWelcome;
     return;
@@ -2282,7 +2282,7 @@ function renderComposer(){
           <option value="flujo"${des.modo==="flujo"?" selected":""}>Continuar a un flujo</option>
         </select>
         <select class="sel" id="actFlow" style="flex:1;min-width:180px;${des.modo==="flujo"?"":"display:none"}">
-          <option value="">— Elegí el flujo (venta / IA) —</option>
+          <option value="">— Elige el flujo (venta / IA) —</option>
           ${st.act.others.filter(f=>f.estado==="activo").map(f=>`<option value="${f.id}"${des.flow_id===f.id?" selected":""}>${esc(f.nombre)}</option>`).join("")}
         </select>
       </div>
@@ -2392,7 +2392,7 @@ async function saveWelcome(){
   cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
   cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
   if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
-  if(cfg.despues.modo==="flujo" && !cfg.despues.flow_id){ toast("Elegí a qué flujo continuar",true); return; }
+  if(cfg.despues.modo==="flujo" && !cfg.despues.flow_id){ toast("Elige a qué flujo continuar",true); return; }
   const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
   if(eN){ toast(eN.message,true); return; }
   // Disparadores

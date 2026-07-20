@@ -19,9 +19,9 @@ import { answerCallback, editButtons, sendTelegram } from "../_shared/telegram.t
 
 const db = serviceClient();
 
-// Qué hace cada botón. `estado` es a dónde pasa el pedido; el flujo de aviso al
-// cliente lo dispara order-update, igual que cuando lo tocás desde el panel.
-// `estado`: a dónde pasa el pedido. `extra` : lo que se le suma al cuerpo de
+// Qué hace cada botón. El flujo de aviso al cliente lo dispara order-update,
+// igual que cuando lo tocas desde el panel.
+// `estado`: a dónde pasa el pedido. `extra`: lo que se le suma al cuerpo de
 // order-update. Los pagos DIGITALES y los de venta EXTRA además hay que
 // REANUDAR (`resume`): su conversación quedó parqueada esperando el visto bueno,
 // y sin eso el cliente pagaría y no recibiría nada.
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
   }
 
   // Idempotencia: el aviso va a varios chats y cada uno conserva sus botones.
-  // Si otro ya resolvió (o vos lo hiciste desde el panel), no se re-ejecuta.
+  // Si otro ya resolvió (o lo hiciste tú desde el panel), no se re-ejecuta.
   if (!def.desde.includes((order as any).estado)) {
     await answerCallback(token, cb.id, "Ese pedido ya fue resuelto", true);
     if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);

@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     if (action === "telegram_connect") {
       const secrets = await getChannelSecrets(db, channel_id);
       const token = secrets?.telegram_bot_token;
-      if (!token) return json({ error: "sin_token", detalle: "Cargá primero el bot token del canal." }, 400);
+      if (!token) return json({ error: "sin_token", detalle: "Carga primero el bot token del canal." }, 400);
       const secret = crypto.randomUUID().replace(/-/g, "");
       const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/telegram-webhook?ch=${channel_id}`;
       const r = await setWebhook(token, url, secret);
@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
     if (action === "telegram_pair_start") {
       const { data: c } = await db.from("channels").select("telegram_webhook_secret").eq("id", channel_id).maybeSingle();
       if (!(c as any)?.telegram_webhook_secret) {
-        return json({ error: "sin_webhook", detalle: "Activá primero el Copiloto: sin eso el bot no puede recibir tu código." }, 400);
+        return json({ error: "sin_webhook", detalle: "Activa primero el Copiloto: sin eso el bot no puede recibir tu código." }, 400);
       }
       const codigo = String(Math.floor(100000 + Math.random() * 900000));
       const vence = new Date(Date.now() + 5 * 60 * 1000).toISOString();
