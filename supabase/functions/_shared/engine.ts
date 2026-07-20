@@ -1088,6 +1088,11 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
       status = "failed";
       error = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
       console.error("[emit] fallo envío WhatsApp:", error);
+      // El flujo sigue como si nada (no se puede "des-avanzar" una conversación),
+      // así que lo único que evita que esto pase inadvertido es avisar. Sin esto,
+      // un "acá está tu clave de recojo" rechazado dejaba al cliente esperando y
+      // a nadie enterado: había que abrir ESE chat y notar la marca de fallido.
+      await avisarEnvioFallido(db, run.channel_id, run.contact_id, error);
     }
   }
   await db.from("messages").insert({
@@ -1879,6 +1884,23 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
   if (!token) { console.warn("[notify_admin] canal sin telegram_bot_token"); return; }
   const prefix = (channel as any)?.nombre ? `[${(channel as any).nombre}] ` : "";
   await sendTelegram(token, chatIds, prefix + text, photoUrl, buttons);
+}
+
+// Un canal mal configurado (token vencido, número dado de baja) hace fallar
+// TODOS los mensajes: sin freno, el aviso se volvería spam y dejarías de leerlo,
+// que es la peor forma de perder una alerta. Uno cada 10 minutos por canal
+// alcanza para enterarte; el detalle de cada mensaje queda en la Bandeja.
+const ultimoAvisoFallo = new Map<string, number>();
+
+async function avisarEnvioFallido(db: SupabaseClient, channelId: string, contactId: string, error: any) {
+  try {
+    const ahora = Date.now();
+    const previo = ultimoAvisoFallo.get(channelId) ?? 0;
+    if (ahora - previo < 10 * 60 * 1000) return;
+    ultimoAvisoFallo.set(channelId, ahora);
+    const motivo = String(error?.message ?? error?.error?.message ?? "WhatsApp no aceptó el mensaje").slice(0, 300);
+    await avisar(db, channelId, contactId, "envio_fallido", { motivo });
+  } catch (_) { /* avisar de un fallo no puede provocar otro */ }
 }
 
 // Dónde vive el panel, para el botón "Abrir el chat" de los avisos.

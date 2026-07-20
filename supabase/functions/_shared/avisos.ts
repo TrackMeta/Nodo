@@ -212,6 +212,21 @@ export const AVISOS: AvisoDef[] = [
       "💸 Ya te pagó y NO lo recibió. Mándaselo tú por el chat.",
   },
 
+  {
+    clave: "envio_fallido", grupo: "atencion",
+    titulo: "WhatsApp rechazó un mensaje",
+    desc: "El bot quiso escribirle a un cliente y WhatsApp no lo dejó. La causa típica: pasaron más de 24 h desde que el cliente escribió, y para eso hace falta una plantilla aprobada. El cliente NO recibió nada.",
+    vars: ["cliente", "telefono", "motivo"],
+    texto:
+      "📵 *WHATSAPP RECHAZÓ UN MENSAJE*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "⚠️ {{motivo}}\n" +
+      "\n" +
+      "❗ El cliente *no recibió* ese mensaje. Escríbele tú.",
+  },
+
   // ── Atención ─────────────────────────────────────────────────────
   {
     clave: "pide_humano", grupo: "atencion",
