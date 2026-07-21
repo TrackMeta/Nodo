@@ -490,8 +490,30 @@ function renderPixel(box){
       <label>Token CAPI (Conversions API) ${s.capi_token?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'}</label>
       <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':'token del pixel (Eventos → Configuración)'}"/>
       <div class="acts"><button class="btn primary" id="savePixel">Guardar Pixel</button></div>
+    </div>
+    <div class="card">
+      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Probar la conexión</span></div>
+      <div class="desc">Manda un evento de prueba a Meta con tu Pixel y token, sin hacer una venta. En Meta ve a <b>Events Manager → Probar eventos</b>, copia el código y pégalo acá para verlo llegar en vivo.</div>
+      <div class="f"><label>Código de prueba <span style="font-weight:400;color:var(--faint)">(opcional)</span></label><input class="in" id="m_test_code" placeholder="p. ej. TEST12345"/></div>
+      <div class="acts"><button class="btn" id="testPixel">Enviar evento de prueba</button></div>
+      <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
     </div>`;
   $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value, capi_token:$("s_capi_token").value||undefined });
+  $("testPixel").onclick=(e)=>testPixel(e.target);
+}
+
+async function testPixel(btn){
+  const out=$("testPixelOut"); out.innerHTML="";
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Enviando…";
+  try{
+    const r=await callFn("capi-test",{ channel_id:st.channelId, test_event_code:$("m_test_code").value||undefined });
+    if(r&&r.ok){
+      out.innerHTML=`<span style="color:var(--ok,#22c079)">✓ Meta recibió el evento${r.received?` (${r.received})`:""}.</span> Míralo en <b>Events Manager → Probar eventos</b>. Si no pusiste código, aparece en el reporte general en unos minutos.`;
+    } else {
+      out.innerHTML=`<span style="color:var(--danger,#e2564a)">No se pudo: ${esc((r&&r.error)||"error")}</span>`;
+    }
+  }catch(e){ out.innerHTML=`<span style="color:var(--danger,#e2564a)">No se pudo: ${esc(e.message||"error")}</span>`; }
+  finally{ btn.disabled=false; btn.textContent=old; }
 }
 
 async function saveChannel(btn, fields){
