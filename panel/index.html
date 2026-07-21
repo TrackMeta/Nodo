@@ -107,15 +107,35 @@
   .pill{font-size:11px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
   .pill.on{background:var(--green-bg);color:var(--green)}
   .pill.off{background:var(--amber-bg);color:var(--amber)}
-  .win{margin-left:auto;font-size:11px;color:var(--muted)}
-  .win.fep{color:var(--green);font-weight:700}
-  .win.closed{color:var(--amber);font-weight:700}
+  /* Chip de ventana de escritura (encabezado del chat): píldora con icono.
+     Verde = FEP del anuncio viva (mensajes gratis) · neutro = ventana 24h ·
+     ámbar = cerrada (solo plantillas). */
+  .win{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+    padding:5px 11px;border-radius:20px;background:var(--surface-2);color:var(--muted);
+    border:1px solid var(--border);white-space:nowrap}
+  .win:empty{display:none}
+  .win .ico{width:12px;height:12px}
+  .win.fep{background:var(--green-bg);color:var(--green);border-color:rgba(16,185,129,.35);
+    box-shadow:0 0 12px rgba(16,185,129,.18)}
+  .win.closed{background:var(--amber-bg);color:var(--amber);border-color:rgba(245,158,11,.35)}
   .idot.fep{background:var(--green-bg);color:var(--green)}
   .idot.ad{background:var(--brand-bg);color:var(--brand)}
-  .tplbar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);flex-wrap:wrap}
-  .tplbar b{color:var(--text)}
-  .tplbar .tplbtn{margin-left:auto;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--green-bg);color:var(--green);font-weight:700;font-size:12.5px;cursor:pointer}
-  .tplbar .tplbtn:hover{filter:brightness(1.06)}
+  /* Barra "ventana cerrada": reemplaza al compositor. Tarjeta con candado,
+     texto en dos líneas y botón de acción verde. */
+  .tplbar{display:flex;align-items:center;gap:14px;padding:14px 18px;border-top:1px solid var(--line);
+    background:linear-gradient(180deg,var(--amber-bg),transparent)}
+  .tplbar .tb-ic{width:38px;height:38px;border-radius:12px;background:var(--amber-bg);color:var(--amber);
+    display:flex;align-items:center;justify-content:center;flex:none;border:1px solid rgba(245,158,11,.3)}
+  .tplbar .tb-ic .ico{width:17px;height:17px}
+  .tplbar .tb-tx{font-size:12px;color:var(--muted);line-height:1.5;min-width:0}
+  .tplbar .tb-tx b{display:block;color:var(--text);font-size:13px;margin-bottom:1px}
+  .tplbar .tplbtn{margin-left:auto;display:inline-flex;align-items:center;gap:8px;flex:none;
+    padding:10px 18px;border-radius:12px;border:none;background:var(--green);color:#fff;
+    font-weight:800;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(16,185,129,.28);
+    transition:transform .12s,filter .12s}
+  .tplbar .tplbtn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .tplbar .tplbtn .ico{width:14px;height:14px}
+  @media (max-width:760px){ .tplbar{flex-wrap:wrap} .tplbar .tplbtn{margin-left:52px} }
   .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
   .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
   .msg .meta{font-size:10px;color:var(--faint);margin-top:3px}
@@ -319,8 +339,10 @@
         <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
       </div>
       <div class="tplbar hidden" id="tplBar">
-        <span><b>La ventana para escribir se cerró.</b> WhatsApp solo permite retomar la conversación con una plantilla aprobada; cuando el cliente responda, la ventana se abre de nuevo.</span>
-        <button class="tplbtn" id="tplSendBtn" type="button">Enviar plantilla…</button>
+        <span class="tb-ic" id="tbIc"></span>
+        <span class="tb-tx"><b>La ventana para escribir se cerró</b>
+          WhatsApp solo permite retomar con una plantilla aprobada. Cuando el cliente responda, la ventana se abre de nuevo.</span>
+        <button class="tplbtn" id="tplSendBtn" type="button"><span id="tbBtnIc"></span>Enviar plantilla…</button>
       </div>
       <div class="composer">
         <button class="ctool" id="qrBtn" title="Respuestas rápidas">
@@ -600,7 +622,7 @@ function renderConversations(){
     // Origen anuncio (CTWA): verde si la ventana gratis de 72h sigue viva.
     const fepViva = cv.window_type === "fep_72h" && cv.expira_at && new Date(cv.expira_at) > new Date();
     const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
-      + (fepViva?'<span class="idot fep">Anuncio · gratis</span>':(c.source?'<span class="idot ad">Anuncio</span>':''))
+      + (fepViva?`<span class="idot fep">${icon("megaphone")} Anuncio · gratis</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
       + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
       + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'');
     const pEmoji = c.product && c.product.emoji ? `<span class="av-emoji">${esc(c.product.emoji)}</span>` : "";
@@ -915,13 +937,13 @@ async function updateWindow() {
   const ms = data?.expira_at ? new Date(data.expira_at) - new Date() : 0;
   const h = Math.floor(ms/3.6e6), mm = Math.floor((ms%3.6e6)/6e4);
   if (ms <= 0) {
-    w.textContent = "Ventana cerrada · solo plantillas"; w.className = "win closed";
+    w.innerHTML = `${icon("lock")} Ventana cerrada · solo plantillas`; w.className = "win closed";
     setComposerLock(true); return;
   }
   if (data.window_type === "fep_72h") {
-    w.textContent = `Anuncio · mensajes gratis ${h}h ${mm}m`; w.className = "win fep";
+    w.innerHTML = `${icon("megaphone")} Anuncio · mensajes gratis ${h}h ${mm}m`; w.className = "win fep";
   } else {
-    w.textContent = `Ventana 24h · ${h}h ${mm}m`; w.className = "win";
+    w.innerHTML = `${icon("clock")} Ventana 24h · ${h}h ${mm}m`; w.className = "win";
   }
   setComposerLock(false);
 }
@@ -987,6 +1009,8 @@ async function sendButton(id, title) {
 $("sendBtn").addEventListener("click", sendMsg);
 $("msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
 $("tplSendBtn").addEventListener("click", openTplPicker);
+$("tbIc").innerHTML = icon("lock");
+$("tbBtnIc").innerHTML = icon("message");
 // Fuera de ventana: iniciar con una plantilla aprobada (la elige el operador;
 // las variables {{...}} las resuelve el backend con los datos del contacto).
 async function openTplPicker() {

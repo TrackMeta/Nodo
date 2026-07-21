@@ -43,6 +43,21 @@
   .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
   .metabox label{margin-top:12px}
   .metabox label:first-of-type{margin-top:0}
+  /* Fila del toggle "solo anuncios": icono + texto + switch (patrón .sw de ia.html) */
+  .adsrow{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px}
+  .adsrow .ads-ic{width:38px;height:38px;border-radius:12px;background:var(--green-bg);color:var(--green);
+    display:flex;align-items:center;justify-content:center;flex:none;border:1px solid rgba(16,185,129,.3)}
+  .adsrow .ads-ic .ico{width:17px;height:17px}
+  .adsrow .ads-tx{min-width:0;flex:1}
+  .adsrow .ads-tx b{display:block;font-size:13px;margin-bottom:1px}
+  .adsrow .ads-tx span{color:var(--muted);font-size:11.5px;line-height:1.5;display:block}
+  .swx{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);
+    position:relative;transition:.15s;flex:none;cursor:pointer}
+  .swx::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;
+    background:var(--muted);transition:.15s}
+  .swx.on{background:var(--green-bg);border-color:rgba(16,185,129,.45)}
+  .swx.on::after{left:20px;background:var(--green)}
   .copyrow{display:flex;gap:8px;align-items:stretch}
   .copyrow .in{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px}
   .copybtn{flex:none;width:42px;border:1px solid var(--border);background:var(--surface);border-radius:10px;color:var(--muted);display:flex;align-items:center;justify-content:center}
@@ -152,13 +167,14 @@ function renderWA(){
 
       <div class="metabox">
         <div class="mt">3 · Comportamiento del bot</div>
-        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-top:8px">
-          <input type="checkbox" id="w_soloads" style="margin-top:3px;accent-color:var(--brand,#22c55e)" ${c.ia_router?.solo_anuncios?"checked":""}/>
-          <span>
-            <b>Responder solo a clientes que llegan por anuncio</b><br/>
-            <span class="mh">Activo: el bot atiende únicamente a quienes entran tocando un anuncio de Meta (traen la ventana gratis de 72 h). Los mensajes orgánicos se guardan en la Bandeja para que los atienda una persona. Se puede prender y apagar cuando quieras.</span>
+        <div class="adsrow">
+          <span class="ads-ic">${icon("megaphone")}</span>
+          <span class="ads-tx">
+            <b>Responder solo a clientes que llegan por anuncio</b>
+            <span>El bot atiende únicamente a quienes entran tocando un anuncio de Meta (traen la ventana gratis de 72 h). Los mensajes orgánicos quedan en la Bandeja para que los atienda una persona.</span>
           </span>
-        </label>
+          <div class="swx ${c.ia_router?.solo_anuncios?"on":""}" id="w_soloads" role="switch" aria-checked="${c.ia_router?.solo_anuncios?"true":"false"}" title="Prender/apagar"></div>
+        </div>
       </div>
 
       <div class="acts">
@@ -204,12 +220,14 @@ function renderWA(){
   $("waTest").onclick=(e)=>probarWA(e.target);
   // Toggle "solo anuncios": guarda al instante (merge sobre ia_router para no
   // pisar el resto del ruteo — fallback_flow_id, umbral, etc.).
-  $("w_soloads").onchange=async(e)=>{
-    const ir={ ...(st.channel.ia_router||{}), solo_anuncios:e.target.checked };
+  $("w_soloads").onclick=async(e)=>{
+    const sw=e.currentTarget, on=!sw.classList.contains("on");
+    const ir={ ...(st.channel.ia_router||{}), solo_anuncios:on };
     const { error }=await supa.from("channels").update({ ia_router:ir }).eq("id",st.channelId);
-    if(error){ toast(error.message,true); e.target.checked=!e.target.checked; return; }
+    if(error){ toast(error.message,true); return; }
+    sw.classList.toggle("on",on); sw.setAttribute("aria-checked",on?"true":"false");
     st.channel.ia_router=ir;
-    toast(e.target.checked?"El bot ahora solo responde a clientes de anuncios ✓":"El bot vuelve a responder a todos ✓");
+    toast(on?"El bot ahora solo responde a clientes de anuncios ✓":"El bot vuelve a responder a todos ✓");
   };
 }
 async function copiar(txt){
