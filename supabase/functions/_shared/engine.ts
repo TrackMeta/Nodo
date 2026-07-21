@@ -1222,8 +1222,12 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
   return texto || null;
 }
 
-// Sube una imagen entrante (comprobante) a Storage y devuelve su URL pública.
-// WhatsApp no da URL pública del media; el webchat sí (se devuelve tal cual).
+// D4 · comprobantes en bucket PRIVADO + URL firmada larga (data financiera).
+const COMPROBANTES_BUCKET = "comprobantes";
+const SIGNED_TTL = 60 * 60 * 24 * 365; // 1 año
+
+// Sube una imagen entrante (comprobante) al bucket privado y devuelve una URL
+// FIRMADA de larga duración. El webchat manda URLs http públicas → tal cual.
 async function ingestImage(db: SupabaseClient, channelId: string, contactId: string, mediaRef: string): Promise<string | null> {
   if (/^https?:/.test(mediaRef)) return mediaRef;            // webchat: ya pública
   if (!mediaRef.startsWith("wa-media:")) return null;
@@ -1231,16 +1235,32 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
   if (!secrets?.access_token) return null;
   const { bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token);
   const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-  // Multi-tenant: los archivos se agrupan por cuenta (acct/{account_id}/…).
+  // D4: los comprobantes (data financiera del cliente) van a un bucket PRIVADO,
+  // agrupados por cuenta. Nada de bucket público listable.
   const acc = await accountOfChannel(db, channelId);
-  const path = `acct/${acc || "misc"}/comprobantes/${contactId}/${Date.now()}.${ext}`;
-  let up = await db.storage.from("media").upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
+  const path = `${acc || "misc"}/${contactId}/${Date.now()}.${ext}`;
+  let up = await db.storage.from(COMPROBANTES_BUCKET).upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
   if (up.error && /bucket|not found/i.test(up.error.message)) {
-    await db.storage.createBucket("media", { public: true }).catch(() => {}); // 1ª vez
-    up = await db.storage.from("media").upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
+    await db.storage.createBucket(COMPROBANTES_BUCKET, { public: false }).catch(() => {}); // 1ª vez, privado
+    up = await db.storage.from(COMPROBANTES_BUCKET).upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
   }
   if (up.error) { console.error("[ingestImage] upload:", up.error.message); return null; }
-  return db.storage.from("media").getPublicUrl(path).data?.publicUrl ?? null;
+  // URL firmada de larga duración: sirve en panel, Telegram y Sheets sin exponer
+  // el bucket (no público, no listable, revocable rotando el secreto del bucket).
+  const { data: signed } = await db.storage.from(COMPROBANTES_BUCKET).createSignedUrl(path, SIGNED_TTL);
+  return signed?.signedUrl ?? null;
+}
+
+// Descarga cualquier URL http(s) a data-URI base64 (para pasar imágenes de un
+// bucket PRIVADO al modelo de visión, que no puede leer URLs firmadas).
+async function urlToDataUri(url: string): Promise<string> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`no se pudo descargar la imagen (${r.status})`);
+  const mime = r.headers.get("content-type") || "image/jpeg";
+  const buf = new Uint8Array(await r.arrayBuffer());
+  let s = ""; const CHUNK = 0x8000;
+  for (let i = 0; i < buf.length; i += CHUNK) s += String.fromCharCode(...buf.subarray(i, i + CHUNK));
+  return `data:${mime};base64,${btoa(s)}`;
 }
 
 // Guarda la transcripción dentro de la burbuja del audio → el operador la lee
@@ -3717,6 +3737,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const secrets = await getChannelSecrets(db, run.channel_id);
         if (!secrets?.access_token) throw new Error("canal sin access_token para leer el media");
         src = await fetchMediaAsDataUri(src.slice("wa-media:".length), secrets.access_token);
+      } else if (/^https?:\/\//.test(src)) {
+        // El comprobante vive en bucket privado (URL firmada); el modelo de
+        // visión no puede leer URLs firmadas → se descarga a base64 acá.
+        src = await urlToDataUri(src);
       }
       const blocks: ContentBlock[] = [];
       // Imágenes de REFERENCIA del validador (opcional, máx 3): ayudan a la IA a
