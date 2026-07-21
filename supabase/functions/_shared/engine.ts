@@ -11,7 +11,7 @@ import { sendTelegram, type TgButton } from "./telegram.ts";
 import { renderAviso, avisoActivo, textoDeAviso, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
-import { getChannelSecrets } from "./db.ts";
+import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
 
 export type EngineEvent =
@@ -1231,7 +1231,9 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
   if (!secrets?.access_token) return null;
   const { bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token);
   const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-  const path = `comprobantes/${contactId}/${Date.now()}.${ext}`;
+  // Multi-tenant: los archivos se agrupan por cuenta (acct/{account_id}/…).
+  const acc = await accountOfChannel(db, channelId);
+  const path = `acct/${acc || "misc"}/comprobantes/${contactId}/${Date.now()}.${ext}`;
   let up = await db.storage.from("media").upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
   if (up.error && /bucket|not found/i.test(up.error.message)) {
     await db.storage.createBucket("media", { public: true }).catch(() => {}); // 1ª vez

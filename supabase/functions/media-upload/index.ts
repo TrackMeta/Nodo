@@ -5,7 +5,7 @@
 //   devuelve su URL pública. Crea el bucket la primera vez.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel, accountOfChannel } from "../_shared/db.ts";
 
 const db = serviceClient();
 const BUCKET = "media";
@@ -39,7 +39,9 @@ Deno.serve(async (req) => {
   if (bytes.length > MAX_BYTES) return json({ error: "muy_grande", detalle: "Máx 16 MB" }, 413);
 
   const ext = ((filename?.split(".").pop() || guessExt(content_type) || "bin")).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
-  const path = `chat/${channel_id || "misc"}/${crypto.randomUUID()}.${ext}`;
+  // Multi-tenant: agrupar por cuenta (acct/{account_id}/chat/{channel_id}/…).
+  const acc = channel_id ? await accountOfChannel(db, channel_id) : null;
+  const path = `acct/${acc || "misc"}/chat/${channel_id || "misc"}/${crypto.randomUUID()}.${ext}`;
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, {
     contentType: content_type || "application/octet-stream", upsert: false,
   });

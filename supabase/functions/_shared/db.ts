@@ -42,6 +42,16 @@ export async function userOwnsChannel(
   return !!mem;
 }
 
+// Cuenta dueña de un canal. Multi-tenant: se usa para agrupar los archivos de
+// Storage por cuenta (rutas acct/{account_id}/…). Devuelve null si no hay.
+export async function accountOfChannel(
+  db: SupabaseClient, channelId: string | undefined | null,
+): Promise<string | null> {
+  if (!channelId) return null;
+  const { data } = await db.from("channels").select("account_id").eq("id", channelId).maybeSingle();
+  return (data as { account_id?: string } | null)?.account_id ?? null;
+}
+
 // Descifra los secretos de un canal vía Vault (RPC SECURITY DEFINER).
 export async function getChannelSecrets(db: SupabaseClient, channelId: string) {
   const { data, error } = await db
