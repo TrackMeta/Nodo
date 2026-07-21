@@ -164,6 +164,65 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Diagnóstico REAL de WhatsApp. "Conectado" en el panel solo significa "hay
+    // un token guardado": no prueba que Meta lo acepte, ni que la app esté
+    // suscrita a la WABA (sin eso NO entra ni un mensaje). Acá se comprueba todo
+    // contra Graph y se lee la calidad del número (verde/amarillo/rojo).
+    if (action === "whatsapp_test") {
+      const { data: c } = await db.from("channels")
+        .select("phone_number_id, waba_id, verify_token").eq("id", channel_id).maybeSingle();
+      const phoneId = (c as any)?.phone_number_id;
+      const wabaId = (c as any)?.waba_id;
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.access_token;
+
+      // Sin lo mínimo no tiene sentido llamar a Meta: se dice qué falta.
+      if (!phoneId || !token) {
+        return json({ ok: true, configurado: false, falta: { phone: !phoneId, token: !token } });
+      }
+
+      const V = "v25.0";
+      const g = async (path: string) => {
+        try {
+          const r = await fetch(`https://graph.facebook.com/${V}/${path}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          return { status: r.status, body: await r.json() };
+        } catch (e) {
+          return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } };
+        }
+      };
+
+      // 1) El número: valida token + phone_number_id de un solo tiro.
+      const num = await g(`${phoneId}?fields=verified_name,display_phone_number,quality_rating,code_verification_status`);
+      const numOk = num.status === 200 && !num.body?.error;
+
+      // 2) Suscripción de la app a la WABA (necesaria para RECIBIR mensajes).
+      let suscripcion: { comprobado: boolean; suscrito?: boolean; error?: string } | null = null;
+      if (wabaId) {
+        const sub = await g(`${wabaId}/subscribed_apps`);
+        if (sub.status === 200 && Array.isArray((sub.body as any)?.data)) {
+          suscripcion = { comprobado: true, suscrito: (sub.body as any).data.length > 0 };
+        } else {
+          suscripcion = { comprobado: false, error: (sub.body as any)?.error?.message ?? "no se pudo consultar" };
+        }
+      }
+
+      return json({
+        ok: true,
+        configurado: true,
+        numero: numOk ? {
+          nombre: (num.body as any).verified_name ?? null,
+          telefono: (num.body as any).display_phone_number ?? null,
+          calidad: (num.body as any).quality_rating ?? null,
+          verificado: (num.body as any).code_verification_status ?? null,
+        } : null,
+        numero_error: numOk ? null : ((num.body as any)?.error?.message ?? "Meta rechazó el token o el Phone Number ID"),
+        webhook: { app_secret: !!secrets?.app_secret, verify_token: !!(c as any)?.verify_token },
+        suscripcion,
+      });
+    }
+
     if (action === "save") {
       // ── Campos planos del canal ─────────────────────────────────
       const upd: Record<string, unknown> = {};

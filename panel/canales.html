@@ -38,6 +38,18 @@
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
   .btn.primary{background:var(--brand);border:none;color:#fff}
   .btn.primary:hover{background:var(--brand-2)}
+  .metabox{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin:14px 0 4px}
+  .metabox .mt{font-weight:700;font-size:12.5px;margin-bottom:2px}
+  .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
+  .metabox label{margin-top:12px}
+  .metabox label:first-of-type{margin-top:0}
+  .copyrow{display:flex;gap:8px;align-items:stretch}
+  .copyrow .in{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px}
+  .copybtn{flex:none;width:42px;border:1px solid var(--border);background:var(--surface);border-radius:10px;color:var(--muted);display:flex;align-items:center;justify-content:center}
+  .copybtn:hover{color:var(--text);border-color:var(--brand)}
+  .copybtn svg{width:16px;height:16px}
+  .steps{color:var(--muted);font-size:11.5px;line-height:1.6;margin-top:10px}
+  .steps b{color:var(--text)}
   .future{border:1px dashed var(--border);border-radius:16px;padding:20px;color:var(--faint);font-size:13px;display:flex;align-items:center;gap:14px}
   .future .ico{width:44px;height:44px;border-radius:12px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px;flex:none}
 </style>
@@ -61,7 +73,8 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, SUPABASE_URL } from "./shell.js";
+const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channel:{}, secrets:{} };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -108,17 +121,41 @@ function renderWA(){
         <div><div class="nm">WhatsApp Cloud API</div><div class="sub2">Número principal de ventas y atención</div></div>
         <span class="st ${conn?'on':''}">${conn?'Conectado':'Sin conectar'}</span></div>
       <div class="desc">Credenciales del número (Meta Developers). El token y el App Secret se guardan cifrados en Vault.</div>
-      <div class="row">
-        <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
-        <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="opcional"/></div>
+
+      <div class="metabox">
+        <div class="mt">1 · Configura el webhook en Meta</div>
+        <div class="mh">Ve a <b>Meta → WhatsApp → Configuración → Webhook → Editar</b> y pega estos dos valores. Después pulsa <b>Verificar y guardar</b> y suscríbete al campo <b>messages</b>.</div>
+        <label>URL de devolución de llamada</label>
+        <div class="copyrow">
+          <input class="in" id="w_hook" readonly value="${esc(WEBHOOK_URL)}"/>
+          <button class="copybtn" data-copy="${esc(WEBHOOK_URL)}" title="Copiar">${icon("copy")}</button>
+        </div>
+        <label>Token de verificación</label>
+        <div class="copyrow">
+          <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
+          <button class="copybtn" id="w_verify_copy" title="Copiar">${icon("copy")}</button>
+        </div>
+        <div class="mh" style="margin:8px 0 0">Elige el token que quieras (cualquier frase); tiene que ser <b>el mismo</b> aquí y en Meta. Guarda con el botón de abajo para conservarlo.</div>
       </div>
-      <label>Verify token (webhook)</label>
-      <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
-      <label>Access token ${badge(s.access_token)}</label>
-      <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG...')}"/>
-      <label>App Secret ${badge(s.app_secret)}</label>
-      <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma del webhook')}"/>
-      <div class="acts"><button class="btn primary" id="saveWA">Guardar WhatsApp</button></div>
+
+      <div class="metabox">
+        <div class="mt">2 · Datos del número (Meta → WhatsApp → Configuración de la API)</div>
+        <div class="row" style="margin-top:8px">
+          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
+          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="para recibir mensajes"/></div>
+        </div>
+        <label>Access token ${badge(s.access_token)}</label>
+        <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente)')}"/>
+        <label>App Secret ${badge(s.app_secret)}</label>
+        <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
+      </div>
+
+      <div class="acts">
+        <button class="btn primary" id="saveWA">Guardar WhatsApp</button>
+        <button class="btn" id="waTest">Probar conexión</button>
+      </div>
+      <div class="desc" style="margin:8px 0 0">“Conectado” solo dice que hay un token guardado. <b>Probar conexión</b> comprueba de verdad que Meta acepta el número y que la app puede recibir mensajes.</div>
+      <div id="waDiag"></div>
     </div>`;
   // Se recuerda lo que vino del servidor para mandar SOLO lo que toques: si se
   // mandara siempre, un campo que el navegador rellenó (o que quedó vacío) se
@@ -147,6 +184,77 @@ function renderWA(){
     if(!Object.keys(body).length){ toast("No cambiaste nada"); return; }
     save(e.target, body);
   };
+  // Copiar al portapapeles (URL fija por data-copy; verify token = valor vivo del input).
+  $("waCard").querySelectorAll(".copybtn[data-copy]").forEach(b=>{
+    b.onclick=()=>copiar(b.getAttribute("data-copy"));
+  });
+  const vcopy=$("w_verify_copy");
+  if(vcopy) vcopy.onclick=()=>{ const v=$("w_verify").value.trim(); v?copiar(v):toast("Escribe primero un verify token",true); };
+  $("waTest").onclick=(e)=>probarWA(e.target);
+}
+async function copiar(txt){
+  try{ await navigator.clipboard.writeText(txt); toast("Copiado ✓"); }
+  catch{ toast("No se pudo copiar — selecciónalo a mano",true); }
+}
+
+// Diagnóstico REAL de WhatsApp: cada línea dice qué pasa Y qué hacer si falla,
+// igual que el de Telegram. "Conectado" solo decía "hay un token guardado".
+async function probarWA(btn){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Probando…";
+  const box=$("waDiag");
+  try{
+    const r=await callFn("channel-config",{ action:"whatsapp_test", channel_id:st.channelId });
+    pintarWA(r);
+  }catch(err){
+    if(box) box.innerHTML="";
+    toast(err.message||"No se pudo probar",true);
+  }
+  btn.disabled=false; btn.textContent=old;
+}
+function pintarWA(r){
+  const box=$("waDiag"); if(!box) return;
+  const fila=(ok,txt,ayuda)=>`
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-top:7px">
+      <span style="flex:0 0 16px;line-height:1.5">${ok?"✅":"⚠️"}</span>
+      <span style="font-size:12.5px;line-height:1.5">${txt}
+      ${ayuda?`<div style="color:var(--faint);font-size:11.5px;margin-top:1px">${ayuda}</div>`:""}</span>
+    </div>`;
+  const filas=[];
+  if(!r.configurado){
+    const faltan=[]; if(r.falta?.phone) faltan.push("Phone Number ID"); if(r.falta?.token) faltan.push("Access token");
+    filas.push(fila(false, "Falta cargar credenciales", `Completa y guarda: <b>${faltan.join(" y ")}</b>.`));
+    box.innerHTML=`<div style="border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-top:10px;background:var(--surface)">${filas.join("")}</div>`;
+    return;
+  }
+  // 1) El número (token + phone_number_id).
+  if(r.numero){
+    const cal=(r.numero.calidad||"").toUpperCase();
+    const calTxt={GREEN:"calidad verde (sana)",YELLOW:"calidad amarilla (ojo)",RED:"calidad roja (en riesgo)"}[cal]||(cal?`calidad ${cal.toLowerCase()}`:"");
+    filas.push(fila(true, `Meta acepta el número: <b>${esc(r.numero.nombre||r.numero.telefono||"OK")}</b>${r.numero.telefono&&r.numero.nombre?` · ${esc(r.numero.telefono)}`:""}`,
+      calTxt+(cal==="RED"?" — baja el ritmo de envíos y evita mensajes en frío.":"")));
+  }else{
+    filas.push(fila(false, "Meta rechazó el token o el Phone Number ID", esc(r.numero_error||"Revisa que el Access token sea válido (mejor uno permanente) y que el Phone Number ID sea el correcto.")));
+  }
+  // 2) Webhook listo para recibir.
+  filas.push(r.webhook?.app_secret
+    ? fila(true, "App Secret cargado (la firma del webhook se puede validar)")
+    : fila(false, "Falta el App Secret", "Sin él, Nodo rechaza los webhooks de Meta. Está en Meta → Configuración → Básica."));
+  filas.push(r.webhook?.verify_token
+    ? fila(true, "Verify token guardado")
+    : fila(false, "Falta el verify token", "Escríbelo arriba (el mismo que pongas en Meta) y guarda."));
+  // 3) Suscripción de la app a la WABA (solo si hay WABA ID).
+  if(r.suscripcion){
+    if(!r.suscripcion.comprobado){
+      filas.push(fila(false, "No se pudo comprobar la suscripción de la app", esc(r.suscripcion.error||"")));
+    }else{
+      filas.push(r.suscripcion.suscrito
+        ? fila(true, "La app está suscrita a la cuenta (los mensajes entrantes llegarán)")
+        : fila(false, "La app NO está suscrita a la WABA", "En Meta → WhatsApp → Configuración → Webhook, suscríbete al campo <b>messages</b>."));
+    }
+  }else{
+    filas.push(fila(true, "Suscripción no comprobada", "Agrega el WABA ID arriba para verificar automáticamente que la app recibe mensajes."));
+  }
+  box.innerHTML=`<div style="border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-top:10px;background:var(--surface)">${filas.join("")}</div>`;
 }
 function renderTG(){
   const c=st.channel||{}, s=st.secrets||{};
