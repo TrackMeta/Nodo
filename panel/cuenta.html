@@ -147,7 +147,7 @@ async function mkTeamCode(accId){
   const r = await callFn({ action:"create_team_invite", account_id:accId, role:"operador" });
   if(!r) return;
   const box = $("teamBox-"+accId);
-  box.innerHTML = codeBox("Código de equipo", r.code, "Quien lo use se une como operador. También sirve el link de abajo. Vence en 14 días.") +
+  box.innerHTML = codeBox("Código de equipo", r.code, "Reutilizable: compártelo con todo tu equipo. Cada quien se une como operador. También sirve el link de abajo. Vence en 14 días.") +
     `<div style="margin-top:8px" class="muted" data-link>${esc(r.link)}</div>`;
   wireCopy(box, r.code);
 }

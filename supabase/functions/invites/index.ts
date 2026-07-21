@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       if (!(me as any).platform_admin) return json({ error: "forbidden", detalle: "Solo el admin de plataforma crea cuentas." }, 403);
       const tok = linkToken();
       const { error } = await db.from("invitations").insert({
-        token: tok, kind: "new_account",
+        token: tok, kind: "new_account", usos_max: 1,   // link de cuenta = 1 solo uso
         nombre_sugerido: (body.nombre_sugerido || "").toString().trim() || null,
         created_by: uid,
       });
