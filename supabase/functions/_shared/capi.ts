@@ -16,6 +16,37 @@ export interface CapiOpts {
   currency?: string;
   orderId?: string;      // comprobante → dedup de compra
   eventId?: string;      // si no se da, se deriva de orderId/contacto
+  // El ctwa_clid CONGELADO del pedido. Se antepone al del contacto porque el
+  // Purchase se dispara al cierre (días después), cuando el contacto ya pudo
+  // hacer clic en otro anuncio y sobrescribir su ctwa_clid. La foto del pedido
+  // mantiene la venta pegada al anuncio que de verdad la originó.
+  ctwaClid?: string;
+  // Datos extra para subir el Event Match Quality (se hashean acá, en tu
+  // servidor; nunca salen en claro hacia un tercero). Meta matchea mejor con
+  // nombre + ciudad + país además del teléfono.
+  match?: { fullName?: string; city?: string; country?: string };
+}
+
+// Estados de un pedido que significan VENTA REAL (dinero cobrado / entregado):
+//   · "confirmada"        → venta DIGITAL PAGADA (femenino, "Pagado").
+//   · "entregado_cobrado" → Lima: el motorizado ENTREGÓ y COBRÓ.
+//   · "recogido"/"saldo_pagado" → provincia: recogió y pagó el saldo.
+// El Purchase se dispara SOLO en estos — un "no recogido" nunca cuenta.
+// ⚠️ OJO con "confirmado" (masculino): es el pedido de LIMA recién creado, que
+// es CONTRAENTREGA — todavía NO cobró nada (orders.js: cobro "nada"). NO va acá,
+// a propósito: contarlo dispararía el Purchase antes de la entrega (justo lo que
+// no queremos). Lima recién cuenta como venta en "entregado_cobrado". No agregar
+// "confirmado" a este set.
+export const PURCHASE_STATES = new Set(
+  ["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"],
+);
+
+// Normaliza y hashea un dato personal para Meta (SHA-256, minúsculas, sin
+// espacios de sobra). El ctwa_clid y el teléfono se tratan aparte.
+async function hashPii(v: string | undefined | null): Promise<string | null> {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  return await sha256Hex(s);
 }
 
 export interface CapiResult {
@@ -36,10 +67,12 @@ export async function sendCapiEvent(
   const { data: channel } = await db.from("channels")
     .select("pixel_id, page_id").eq("id", channelId).maybeSingle();
   const { data: contact } = await db.from("contacts")
-    .select("wa_id, ctwa_clid").eq("id", contactId).maybeSingle();
+    .select("wa_id, ctwa_clid, nombre").eq("id", contactId).maybeSingle();
   if (!channel?.pixel_id) return { ok: false, error: "canal sin pixel_id" };
 
-  const hasCtwa = !!contact?.ctwa_clid;
+  // ctwa CONGELADO del pedido primero; el del contacto solo como respaldo.
+  const ctwa = opts.ctwaClid || contact?.ctwa_clid || null;
+  const hasCtwa = !!ctwa;
   const actionSource = hasCtwa ? "business_messaging" : "website";
 
   // event_id estable: por comprobante (compra) o por contacto+evento.
@@ -68,9 +101,26 @@ export async function sendCapiEvent(
   }
 
   // ── Construir payload ─────────────────────────────────────────────
+  // Cuantas más claves de match legítimas, mejor atribuye Meta (Event Match
+  // Quality). Todo lo personal va HASHEADO; el ctwa_clid va en claro (es un id
+  // de clic, no un dato personal).
   const userData: Record<string, unknown> = {};
-  if (contact?.wa_id) userData.ph = [await sha256Hex(contact.wa_id)];
-  if (hasCtwa) userData.ctwa_clid = contact!.ctwa_clid;
+  if (contact?.wa_id) userData.ph = [await sha256Hex(String(contact.wa_id).replace(/\D/g, ""))];
+  if (hasCtwa) userData.ctwa_clid = ctwa;
+  // Nombre: preferimos el que dio para el envío (opts.match.fullName), y si no,
+  // el del perfil. Se parte en nombre/apellido.
+  const full = String(opts.match?.fullName || contact?.nombre || "").trim();
+  if (full) {
+    const parts = full.split(/\s+/);
+    const fn = await hashPii(parts[0]);
+    const ln = parts.length > 1 ? await hashPii(parts.slice(1).join(" ")) : null;
+    if (fn) userData.fn = [fn];
+    if (ln) userData.ln = [ln];
+  }
+  const ct = await hashPii(String(opts.match?.city || "").replace(/\s+/g, ""));
+  if (ct) userData.ct = [ct];
+  const country = await hashPii(opts.match?.country); // ej. "pe"
+  if (country) userData.country = [country];
 
   const customData: Record<string, unknown> = {};
   if (opts.value != null) { customData.value = opts.value; customData.currency = opts.currency ?? "PEN"; }
@@ -110,4 +160,33 @@ export async function sendCapiEvent(
 async function markEvent(db: SupabaseClient, channelId: string, eventId: string, estado: string, resp: unknown) {
   await db.from("capi_events").update({ estado, meta_response: resp })
     .eq("channel_id", channelId).eq("event_id", eventId);
+}
+
+// Dispara el Purchase de un pedido SI (y solo si) su estado es una venta real
+// (dinero cobrado). Idempotente por `order_id`: aunque el pedido pase por varios
+// estados de cierre (saldo_pagado y luego recogido), Meta recibe UN solo
+// Purchase. Usa el ctwa_clid CONGELADO en el pedido (no el del contacto, que
+// pudo cambiar). Se llama desde donde sea que un pedido llegue a un estado de
+// cierre: el Kanban/Copiloto (order-update) y las validaciones automáticas.
+export interface OrderLike {
+  id: string;
+  channel_id: string;
+  contact_id: string;
+  estado?: string;
+  amount?: number | null;
+  currency?: string | null;
+  shipping?: Record<string, unknown> | null;
+}
+export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promise<CapiResult | null> {
+  if (!order?.estado || !PURCHASE_STATES.has(order.estado)) return null;
+  const ship = (order.shipping ?? {}) as Record<string, unknown>;
+  const val = Number(order.amount);
+  return await sendCapiEvent(db, order.channel_id, order.contact_id, {
+    eventName: "Purchase",
+    value: Number.isFinite(val) && val > 0 ? val : undefined,
+    currency: (order.currency as string) || "PEN",
+    orderId: order.id, // → event_id "Purchase:<id>" = una sola vez por pedido
+    ctwaClid: (ship.ctwa_clid as string) || undefined,
+    match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined, country: "pe" },
+  });
 }

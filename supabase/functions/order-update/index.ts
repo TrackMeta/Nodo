@@ -9,6 +9,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
 import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta } from "../_shared/engine.ts";
+import { maybePurchase } from "../_shared/capi.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -47,7 +48,7 @@ Deno.serve(async (req) => {
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
 
   const { data: order } = await db.from("orders")
-    .select("id, channel_id, contact_id, estado, shipping")
+    .select("id, channel_id, contact_id, estado, shipping, amount, currency")
     .eq("id", body.order_id).maybeSingle();
   if (!order) return json({ error: "no_existe" }, 404);
 
@@ -67,6 +68,21 @@ Deno.serve(async (req) => {
   // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);
+
+  // Purchase a Meta SOLO cuando la venta es real (dinero cobrado): Lima
+  // entregado y cobrado, provincia recogido / saldo pagado, digital confirmado.
+  // Es el punto por donde pasan todos los cierres que marca un humano. Idempotente
+  // por pedido (dedup en capi) y usa el ctwa_clid CONGELADO en el pedido. Un
+  // "no recogido" nunca llega acá. No lanza si el canal no tiene pixel/token.
+  if (newEstado) {
+    try {
+      await maybePurchase(db, {
+        id: order.id, channel_id: (order as any).channel_id, contact_id: (order as any).contact_id,
+        estado: newEstado, amount: (patch.amount as number) ?? (order as any).amount,
+        currency: (order as any).currency, shipping: (patch.shipping as any) ?? (order as any).shipping,
+      });
+    } catch (e) { console.error("[order-update] capi purchase:", (e as any)?.message ?? e); }
+  }
 
   // Venta física cerrada (saldo pagado / recogido / entregado) → cierra la
   // conversación de venta para que el modo SOPORTE post-venta tome el mando.

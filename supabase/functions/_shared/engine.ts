@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
-import { sendCapiEvent } from "./capi.ts";
+import { sendCapiEvent, maybePurchase } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
 import { renderAviso, avisoActivo, textoDeAviso, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
@@ -1756,6 +1756,14 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       ctx.pedido_id = run.vars._order_id;
       await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido confirmado (pago manual aprobado)");
       await syncPedidoSheet(db, run.vars._order_id as string);
+      // Venta digital confirmada → Purchase a Meta (dedup por pedido). El ctwa va
+      // congelado en `merged` desde que nació el pendiente.
+      try {
+        await maybePurchase(db, {
+          id: run.vars._order_id as string, channel_id: run.channel_id, contact_id: run.contact_id,
+          estado: patch.estado as string, amount: (patch.amount as number) ?? pr.amount, shipping: merged,
+        });
+      } catch (e) { console.error("[crearPedido] capi purchase (precreado):", (e as any)?.message ?? e); }
       return;
     }
 
@@ -1795,6 +1803,13 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       if (motivo) ship.sede_por_confirmar = motivo;
     }
 
+    // Atribución CONGELADA en el pedido: el ctwa_clid del contacto se sobrescribe
+    // con cada clic nuevo en un anuncio, y el Purchase se dispara al CIERRE (días
+    // después). Guardar acá el clic que originó ESTA venta la mantiene pegada al
+    // anuncio correcto para siempre. `_capturado_at` documenta cuándo se tomó.
+    if (ctx.ctwa_clid) ship.ctwa_clid = ctx.ctwa_clid;
+    if (ctx.ad_id) ship.ad_id = ctx.ad_id;
+
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null,
@@ -1807,6 +1822,15 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
     if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
     await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
+    // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
+    // automático), Purchase a Meta. Físico nace en esperando_adelanto/confirmada
+    // de Lima: maybePurchase ignora lo que no es cierre real. Dedup por pedido.
+    try {
+      await maybePurchase(db, {
+        id: (ord as any).id, channel_id: run.channel_id, contact_id: run.contact_id,
+        estado: a.estado || "carrito", amount, shipping: ship,
+      });
+    } catch (e) { console.error("[crearPedido] capi purchase:", (e as any)?.message ?? e); }
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
   }
@@ -2234,6 +2258,15 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await syncPedidoSheet(db, (order as any).id);
+    // Saldo pagado = venta cerrada → Purchase a Meta (dedup por pedido). El ctwa
+    // va congelado en el pedido; usamos el monto total del pedido, no el saldo.
+    try {
+      await maybePurchase(db, {
+        id: (order as any).id, channel_id: channelId, contact_id: contactId,
+        estado: "saldo_pagado", amount: (order as any).amount,
+        currency: (order as any).currency, shipping: { ...ship, saldo_operacion: oper },
+      });
+    } catch (e) { console.error("[maybeAutoSaldo] capi purchase:", (e as any)?.message ?? e); }
     // Venta cerrada → cede el paso al soporte post-venta (la clave la manda el
     // flujo pedido_estado de la línea siguiente).
     await cerrarConversacionVenta(db, contactId);
@@ -3787,12 +3820,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 { foto: url, botones: oid ? [[{ text: "✅ Aprobar y entregar", data: `extra_ok:${oid}` }]] : undefined });
             } else {
               const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
-              const ship = {
+              const ship: Record<string, unknown> = {
                 digital_pendiente: true, digital_comprobante: url,
                 digital_monto_leido: run.vars.pago_monto ?? null,
                 digital_operacion: run.vars.pago_operacion ?? null,
                 digital_ok_ia: true,
               };
+              // Atribución congelada desde que nace el pedido (ver crearPedido):
+              // el Purchase se manda al aprobarlo, cuando el ctwa del contacto
+              // ya pudo cambiar.
+              if (ctx.ctwa_clid) ship.ctwa_clid = ctx.ctwa_clid;
+              if (ctx.ad_id) ship.ad_id = ctx.ad_id;
               try {
                 // Si ya había un pendiente de esta misma venta (típico: le
                 // rechazaste el comprobante anterior y mandó otro), se REUSA en vez
