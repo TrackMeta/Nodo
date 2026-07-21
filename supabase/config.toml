@@ -53,6 +53,17 @@ verify_jwt = true
 [functions.channel-config]
 verify_jwt = true
 
+# signup: registro POR INVITACIÓN (crea usuario + aplica invitación). PÚBLICA:
+# no lleva JWT (el que se registra aún no tiene sesión). Se protege exigiendo
+# una invitación válida, no un token.
+[functions.signup]
+verify_jwt = false
+
+# invites: gestiona invitaciones de cuenta (platform admin) y de equipo (account
+# admin). Requiere sesión del panel.
+[functions.invites]
+verify_jwt = true
+
 # media-upload: sube adjuntos del panel al bucket público `media`.
 [functions.media-upload]
 verify_jwt = true
