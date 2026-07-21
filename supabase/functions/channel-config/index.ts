@@ -6,7 +6,7 @@
 //   Acciones: status | save
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, getChannelSecrets } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
 import { setWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 
@@ -35,6 +35,9 @@ Deno.serve(async (req) => {
 
   const { data: channel } = await db.from("channels").select("id").eq("id", channel_id).maybeSingle();
   if (!channel) return json({ error: "canal_invalido" }, 400);
+  // Multi-tenant: el que llama debe ser miembro de la cuenta dueña del canal
+  // (esta función toca secretos del canal — el chequeo es imprescindible aquí).
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   try {
     if (action === "status") {

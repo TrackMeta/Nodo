@@ -5,7 +5,7 @@
 //   devuelve su URL pública. Crea el bucket la primera vez.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 
 const db = serviceClient();
 const BUCKET = "media";
@@ -26,6 +26,8 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, filename, content_type, data } = body;
   if (!data) return json({ error: "falta_data" }, 400);
+  // Multi-tenant: si se sube a la carpeta de un canal, debe ser de tu cuenta.
+  if (channel_id && !(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   await ensureBucket();
 

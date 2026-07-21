@@ -20,6 +20,28 @@ export function userClient(authHeader: string): SupabaseClient {
   });
 }
 
+// ¿El usuario (por su id de auth) es miembro ACTIVO de la cuenta dueña del
+// canal? Multi-tenant: las Edge Functions corren con service_role y se saltan
+// la RLS, así que ESTE chequeo es el que impide operar el canal de OTRA cuenta
+// pasando su channel_id. La RLS del panel tapa la lectura directa; esto tapa
+// las funciones. Devuelve false ante cualquier duda (uid/canal faltante, canal
+// sin cuenta, o sin membresía activa).
+export async function userOwnsChannel(
+  db: SupabaseClient,
+  uid: string | undefined | null,
+  channelId: string | undefined | null,
+): Promise<boolean> {
+  if (!uid || !channelId) return false;
+  const { data: ch } = await db
+    .from("channels").select("account_id").eq("id", channelId).maybeSingle();
+  const accountId = (ch as { account_id?: string } | null)?.account_id;
+  if (!accountId) return false;
+  const { data: mem } = await db
+    .from("account_members").select("user_id")
+    .eq("account_id", accountId).eq("user_id", uid).eq("activo", true).maybeSingle();
+  return !!mem;
+}
+
 // Descifra los secretos de un canal vía Vault (RPC SECURITY DEFINER).
 export async function getChannelSecrets(db: SupabaseClient, channelId: string) {
   const { data, error } = await db

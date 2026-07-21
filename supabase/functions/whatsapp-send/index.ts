@@ -4,7 +4,7 @@
 //   pausa el bot al intervenir el humano y guarda el mensaje saliente.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, getChannelSecrets } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
 import { sendText, sendMedia, MetaApiError } from "../_shared/meta.ts";
 
 const db = serviceClient();
@@ -41,6 +41,8 @@ Deno.serve(async (req) => {
   if (!channel || !channel.activo || !channel.phone_number_id) {
     return json({ error: "canal_invalido" }, 400);
   }
+  // Multi-tenant: solo un miembro de la cuenta dueña del canal puede enviar.
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   const { data: contact } = await db
     .from("contacts").select("id, wa_id").eq("id", contact_id).maybeSingle();
   if (!contact) return json({ error: "contacto_invalido" }, 400);

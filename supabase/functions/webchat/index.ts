@@ -5,7 +5,7 @@
 //   Permite probar flujos SIN un WhatsApp real.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { runEngine, startFlowRun } from "../_shared/engine.ts";
 
 const db = serviceClient();
@@ -30,6 +30,7 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, text, buttonId, reset, media, flow_id } = body;
   if (!channel_id) return json({ error: "falta_channel" }, 400);
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   const mediaKind = media?.url ? (media.kind || "document") : null;
 
   // Contacto de prueba del canal.

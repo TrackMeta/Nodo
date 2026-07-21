@@ -6,7 +6,7 @@
 //   panel para depurar el ruteo antes de gastar en anuncios.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { routeDecision } from "../_shared/engine.ts";
 
 const db = serviceClient();
@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, text, ad_id } = body;
   if (!channel_id || typeof text !== "string") return json({ error: "faltan_campos" }, 400);
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   try {
     const d = await routeDecision(db, channel_id, text, ad_id || undefined);

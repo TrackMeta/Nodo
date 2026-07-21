@@ -5,7 +5,7 @@
 //   borrador), cancelando cualquier run activo previo.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { startFlowRun } from "../_shared/engine.ts";
 
 const db = serviceClient();
@@ -28,6 +28,7 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, contact_id, flow_id } = body;
   if (!channel_id || !contact_id || !flow_id) return json({ error: "faltan_campos" }, 400);
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   // Validar que el flujo pertenece al canal.
   const { data: flow } = await db

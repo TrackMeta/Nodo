@@ -6,7 +6,7 @@
 //   pedido. NO envía nada: el asesor toca una y se escribe en la barra.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { sugerirRespuestas } from "../_shared/engine.ts";
 
 const db = serviceClient();
@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
   let body: { channel_id?: string; contact_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.channel_id || !body.contact_id) return json({ error: "faltan_datos" }, 400);
+  if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   try {
     const sugerencias = await sugerirRespuestas(db, body.channel_id, body.contact_id);

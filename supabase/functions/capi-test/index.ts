@@ -6,7 +6,7 @@
 //   aparece ahí en vivo. No toca capi_events ni las métricas reales.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, getChannelSecrets } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
 import { sha256Hex } from "../_shared/crypto.ts";
 
 const db = serviceClient();
@@ -27,6 +27,7 @@ Deno.serve(async (req) => {
   let body: { channel_id?: string; test_event_code?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.channel_id) return json({ error: "falta_channel" }, 400);
+  if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   const { data: channel } = await db.from("channels")
     .select("pixel_id").eq("id", body.channel_id).maybeSingle();

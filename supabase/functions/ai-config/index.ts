@@ -6,7 +6,7 @@
 //   Acciones: save | test | delete | default
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { runAI, type Provider } from "../_shared/ai.ts";
 
 const db = serviceClient();
@@ -34,6 +34,8 @@ Deno.serve(async (req) => {
   // Verificar que el canal existe.
   const { data: channel } = await db.from("channels").select("id").eq("id", channel_id).maybeSingle();
   if (!channel) return json({ error: "canal_invalido" }, 400);
+  // Multi-tenant: el que llama debe ser miembro de la cuenta dueña del canal.
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   try {
     switch (action) {

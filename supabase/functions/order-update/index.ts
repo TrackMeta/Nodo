@@ -7,7 +7,7 @@
 //   §6-SEPTIES, división de trabajo bot↔humano).
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 
@@ -35,9 +35,10 @@ Deno.serve(async (req) => {
   const auth = req.headers.get("Authorization") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const interno = !!serviceKey && auth === `Bearer ${serviceKey}`;
+  let uid: string | undefined;
   if (!interno) {
     const { data: u } = await userClient(auth).auth.getUser();
-    const uid = u?.user?.id;
+    uid = u?.user?.id;
     if (!uid) return json({ error: "no_auth" }, 401);
     const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
     if (!member) return json({ error: "not_member" }, 403);
@@ -51,6 +52,11 @@ Deno.serve(async (req) => {
     .select("id, channel_id, contact_id, estado, shipping, amount, currency")
     .eq("id", body.order_id).maybeSingle();
   if (!order) return json({ error: "no_existe" }, 404);
+  // Multi-tenant: si entra un humano (no el service-role interno del Copiloto),
+  // su cuenta debe ser dueña del canal del pedido.
+  if (!interno && !(await userOwnsChannel(db, uid, (order as any).channel_id))) {
+    return json({ error: "forbidden_channel" }, 403);
+  }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (body.shipping && typeof body.shipping === "object") {
