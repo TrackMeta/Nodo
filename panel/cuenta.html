@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Cuenta y equipo</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  .card h2{font-size:15px;font-weight:700;margin:0 0 4px;display:flex;align-items:center;gap:9px}
+  .card h2 svg{width:17px;height:17px;color:var(--muted)}
+  .desc{color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.55}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .in{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .in:focus{border-color:var(--brand)}
+  .btn{height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--faint)}
+  .btn.primary{background:var(--brand);border:none;color:#fff} .btn.primary:hover{background:var(--brand-2)}
+  .btn.sm{height:32px;padding:0 11px;font-size:12.5px}
+  .btn.danger{color:var(--red);border-color:transparent;background:transparent}
+  .btn.danger:hover{background:rgba(226,86,74,.1)}
+  .mem{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--border)}
+  .mem .av{width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);flex:none}
+  .mem .nm{font-weight:600;font-size:13.5px}
+  .mem .em{color:var(--faint);font-size:11.5px}
+  .badge{font-size:10.5px;padding:2px 9px;border-radius:20px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+  .badge.admin{background:var(--brand-bg);color:var(--brand);border-color:transparent}
+  .badge.plan{background:var(--green-bg);color:var(--green);border-color:transparent;text-transform:capitalize}
+  .codebox{background:var(--surface-2);border:1px dashed var(--brand);border-radius:12px;padding:14px 16px;margin-top:12px}
+  .codebox .lbl{font-size:11.5px;color:var(--muted);margin-bottom:6px}
+  .codebox .val{font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:700;word-break:break-all;color:var(--text)}
+  .copyrow{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .inv{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);font-size:12.5px}
+  .inv .t{font-family:ui-monospace,Menlo,monospace;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .muted{color:var(--muted)}
+  .plat{border:1px solid var(--brand);background:var(--brand-bg)}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:760px">
+    <div class="nodo-head"><div class="grow">
+      <h1 class="nodo-title">Cuenta y equipo</h1>
+      <p class="nodo-lead">Administra tu cuenta, invita a tu equipo con un código, y — si eres dueño de Nodo — crea cuentas para tus clientes.</p>
+    </div></div>
+    <div id="platCard" style="margin-top:20px"></div>
+    <div id="accts"></div>
+    <div id="invCard"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+const $ = (id) => document.getElementById(id);
+const st = { uid:null, me:null, accounts:[] };
+const esc = (s) => (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ini = (s) => (s||"?").trim().charAt(0).toUpperCase();
+
+async function boot(){
+  const { data:{session} } = await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  await mountShell({ active:"cuenta" });
+  await load();
+}
+
+async function load(){
+  st.uid = (await supa.auth.getUser()).data.user?.id;
+  const { data: me } = await supa.from("app_users").select("id,nombre,platform_admin").eq("id",st.uid).maybeSingle();
+  st.me = me || {};
+  const { data: mems } = await supa.from("account_members")
+    .select("account_id,role,accounts(id,nombre,plan)").eq("user_id",st.uid).eq("activo",true);
+  st.accounts = (mems||[]).map(m=>({ id:m.account_id, role:m.role, nombre:m.accounts?.nombre, plan:m.accounts?.plan, members:[] }));
+  for(const a of st.accounts){
+    const { data: ms } = await supa.from("account_members")
+      .select("user_id,role,app_users(nombre)").eq("account_id",a.id).eq("activo",true);
+    a.members = ms||[];
+  }
+  render();
+  loadInvites();
+}
+
+function render(){
+  // Platform admin: crear cuenta de cliente.
+  $("platCard").innerHTML = st.me.platform_admin ? `
+    <div class="card plat">
+      <h2>${icon("sparkles")} Crear una cuenta de cliente</h2>
+      <p class="desc">Genera un link de invitación. Quien lo abra crea su propia cuenta de Nodo y queda como su administrador — aislada de las demás.</p>
+      <div class="row">
+        <input class="in" id="bizName" placeholder="Nombre del negocio (opcional)" style="flex:1;min-width:200px"/>
+        <button class="btn primary" id="mkAccount">Generar link de cuenta</button>
+      </div>
+      <div id="acctLinkBox"></div>
+    </div>` : "";
+  if(st.me.platform_admin) $("mkAccount").onclick = mkAccountLink;
+
+  // Cada cuenta del usuario.
+  $("accts").innerHTML = st.accounts.map(a=>{
+    const soyAdmin = a.role === "admin";
+    const members = a.members.map(m=>{
+      const yo = m.user_id === st.uid;
+      const nm = m.app_users?.nombre || "(sin nombre)";
+      return `<div class="mem">
+        <div class="av">${esc(ini(nm))}</div>
+        <div style="flex:1;min-width:0"><div class="nm">${esc(nm)}${yo?' <span class="muted">· tú</span>':''}</div></div>
+        <span class="badge ${m.role==='admin'?'admin':''}">${m.role==='admin'?'Admin':'Operador'}</span>
+        ${(soyAdmin && !yo) ? `<button class="btn danger sm" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button>` : ''}
+      </div>`;
+    }).join("");
+    return `<div class="card" data-acc="${esc(a.id)}">
+      <h2>${icon("building")} <span class="acctName">${esc(a.nombre||"Mi cuenta")}</span>
+        <span class="badge plan">${esc(a.plan||"trial")}</span>
+        ${soyAdmin?`<button class="btn sm" data-rename="${esc(a.id)}" style="margin-left:auto">Renombrar</button>`:''}</h2>
+      <p class="desc">Miembros de esta cuenta${soyAdmin?' · como admin puedes invitar y quitar gente.':''}</p>
+      ${members}
+      ${soyAdmin?`<div class="row" style="margin-top:16px">
+        <button class="btn primary" data-team="${esc(a.id)}">${icon("users")} Generar código de equipo</button>
+        <span class="muted" style="font-size:12px">Compártelo con quien quieras sumar como operador.</span>
+      </div><div id="teamBox-${esc(a.id)}"></div>`:''}
+    </div>`;
+  }).join("") || `<div class="card"><p class="muted">No perteneces a ninguna cuenta todavía.</p></div>`;
+
+  // Wiring.
+  document.querySelectorAll("[data-rename]").forEach(b=> b.onclick=()=>renameAccount(b.getAttribute("data-rename")));
+  document.querySelectorAll("[data-team]").forEach(b=> b.onclick=()=>mkTeamCode(b.getAttribute("data-team")));
+  document.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>removeMember(b.getAttribute("data-acc"), b.getAttribute("data-rm")));
+}
+
+async function mkAccountLink(){
+  const nombre = $("bizName").value.trim();
+  const r = await callFn({ action:"create_account_invite", nombre_sugerido:nombre });
+  if(!r) return;
+  $("acctLinkBox").innerHTML = codeBox("Link de invitación de cuenta", r.link, "Envíaselo a tu cliente. Vence en 14 días.");
+  wireCopy($("acctLinkBox"), r.link);
+}
+async function mkTeamCode(accId){
+  const r = await callFn({ action:"create_team_invite", account_id:accId, role:"operador" });
+  if(!r) return;
+  const box = $("teamBox-"+accId);
+  box.innerHTML = codeBox("Código de equipo", r.code, "Quien lo use se une como operador. También sirve el link de abajo. Vence en 14 días.") +
+    `<div style="margin-top:8px" class="muted" data-link>${esc(r.link)}</div>`;
+  wireCopy(box, r.code);
+}
+async function renameAccount(accId){
+  const acc = st.accounts.find(a=>a.id===accId);
+  const nuevo = await askText({ title:"Renombrar cuenta", value:acc?.nombre||"", placeholder:"Nombre de la cuenta", confirmText:"Guardar" });
+  if(nuevo==null) return;
+  const { error } = await supa.from("accounts").update({ nombre:nuevo.trim() }).eq("id",accId);
+  if(error){ toast(error.message,true); return; }
+  toast("Cuenta renombrada ✓"); load();
+}
+async function removeMember(accId, userId){
+  const ok = await confirmDialog({ title:"Quitar del equipo", message:"Esta persona dejará de ver y operar esta cuenta.", confirmText:"Quitar", danger:true });
+  if(!ok) return;
+  const { error } = await supa.from("account_members").delete().eq("account_id",accId).eq("user_id",userId);
+  if(error){ toast(error.message,true); return; }
+  toast("Miembro quitado ✓"); load();
+}
+
+async function loadInvites(){
+  const r = await callFn({ action:"list" }, true);
+  const invs = (r?.invites||[]).filter(i=>!i.used_at);
+  $("invCard").innerHTML = invs.length ? `
+    <div class="card">
+      <h2>${icon("mail")} Invitaciones activas</h2>
+      <p class="desc">Links y códigos que generaste y aún no se usan.</p>
+      ${invs.map(i=>`<div class="inv">
+        <span class="badge">${i.kind==='new_account'?'Cuenta':'Equipo'}</span>
+        <span class="t">${esc(i.token)}</span>
+        <button class="btn danger sm" data-rev="${esc(i.id)}">Revocar</button>
+      </div>`).join("")}
+    </div>` : "";
+  document.querySelectorAll("[data-rev]").forEach(b=> b.onclick=async()=>{
+    await callFn({ action:"revoke", id:b.getAttribute("data-rev") }); loadInvites();
+  });
+}
+
+function codeBox(label, value, hint){
+  return `<div class="codebox">
+    <div class="lbl">${esc(label)}</div>
+    <div class="val" data-val>${esc(value)}</div>
+    <div class="copyrow"><button class="btn sm" data-copy>${icon("copy")} Copiar</button>
+      <span class="muted" style="font-size:11.5px">${esc(hint)}</span></div>
+  </div>`;
+}
+function wireCopy(scope, text){
+  const b = scope.querySelector("[data-copy]");
+  if(b) b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(text); toast("Copiado ✓"); }catch{ toast("No se pudo copiar",true); } };
+}
+async function callFn(body, silent){
+  const { data, error } = await supa.functions.invoke("invites", { body });
+  if(error){ let d=""; try{ d=(await error.context.json())?.detalle||""; }catch{} if(!silent) toast(d||error.message||"Error",true); return null; }
+  return data;
+}
+boot();
+</script>
+</body>
+</html>

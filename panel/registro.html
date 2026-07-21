@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Crear cuenta</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --red:#e2564a;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  :root[data-theme="light"]{ --bg:#f6f8fb; --surface:#fff; --surface-2:#eef2f7; --border:#dde3ec; --text:#151a22; --muted:#5a6675; --faint:#8a95a4; --brand-bg:#e7f0ff; }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;display:flex;align-items:center;justify-content:center;padding:24px}
+  button{font-family:inherit;cursor:pointer} input{font-family:inherit}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:400px}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .brand img{width:44px;height:44px;border-radius:12px}
+  .brand h1{font-size:20px;font-weight:600;margin:0}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 20px;line-height:1.5}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;background:var(--brand-bg);color:var(--brand);margin-bottom:18px}
+  label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px}
+  .in{width:100%;height:44px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 14px;font-size:14px;outline:none;transition:border .15s}
+  .in:focus{border-color:var(--brand)}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:5px}
+  .btn{width:100%;height:46px;background:var(--brand);color:#fff;border:none;border-radius:12px;font-weight:600;font-size:14px;margin-top:22px;transition:background .15s}
+  .btn:hover{background:var(--brand-2)} .btn:disabled{opacity:.55;cursor:default}
+  .msg{font-size:13px;margin-top:14px;min-height:18px;line-height:1.5}
+  .msg.err{color:var(--red)} .msg.ok{color:var(--green)}
+  .foot{margin-top:18px;font-size:12.5px;color:var(--muted);text-align:center}
+  .foot a{color:var(--brand);text-decoration:none}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+  <form class="card" id="form" autocomplete="off">
+    <div class="brand"><img src="../assets/logo-128.png" alt="Nodo" /><h1>Nodo</h1></div>
+    <div class="pill" id="pill">Invitación</div>
+    <p class="sub" id="sub">Completa tus datos para empezar.</p>
+
+    <div id="codeRow" class="hidden">
+      <label>Código de invitación</label>
+      <input class="in" id="code" placeholder="Pega tu código o link" />
+      <div class="hint">Te lo dio quien te invitó.</div>
+    </div>
+
+    <div id="bizRow" class="hidden">
+      <label>Nombre de tu negocio</label>
+      <input class="in" id="business" placeholder="Ej: Mi Tienda" />
+      <div class="hint">Así se llamará tu cuenta en Nodo (lo puedes cambiar después).</div>
+    </div>
+
+    <label>Tu nombre</label>
+    <input class="in" id="nombre" placeholder="Cómo te llamas" autocomplete="off" />
+
+    <label>Correo</label>
+    <input class="in" type="email" id="email" placeholder="tu@correo.com" autocomplete="off" />
+
+    <label>Contraseña</label>
+    <input class="in" type="password" id="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" />
+
+    <button class="btn" id="btn" type="submit">Crear mi cuenta</button>
+    <div class="msg" id="msg"></div>
+    <div class="foot">¿Ya tienes cuenta? <a href="index.html">Inicia sesión</a></div>
+  </form>
+
+<script type="module">
+import { supa } from "./shell.js";
+const $ = (id) => document.getElementById(id);
+const p = new URLSearchParams(location.search);
+// El token puede venir como link de cuenta (?invite=) o código de equipo (?join=).
+let urlToken = p.get("invite") || p.get("join") || "";
+const esCuenta = !!p.get("invite");
+const esEquipo = !!p.get("join");
+
+function setUI(){
+  if (esCuenta){
+    $("pill").textContent = "Cuenta nueva";
+    $("sub").textContent = "Crea tu cuenta de Nodo y serás su administrador.";
+    $("bizRow").classList.remove("hidden");
+    $("btn").textContent = "Crear mi cuenta";
+  } else if (esEquipo){
+    $("pill").textContent = "Unirte a un equipo";
+    $("sub").textContent = "Completa tus datos para unirte al equipo que te invitó.";
+    $("btn").textContent = "Unirme";
+  } else {
+    // Sin token en el link: que peguen el código. No sabemos el tipo hasta enviarlo.
+    $("pill").textContent = "Invitación";
+    $("sub").textContent = "Ingresa el código que te compartieron y tus datos.";
+    $("codeRow").classList.remove("hidden");
+    $("bizRow").classList.remove("hidden");
+    $("bizRow").querySelector(".hint").textContent = "Solo si tu invitación es para una cuenta nueva.";
+  }
+}
+setUI();
+
+function show(text, ok){ const m = $("msg"); m.className = "msg " + (ok ? "ok" : "err"); m.textContent = text; }
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const token = (urlToken || $("code").value || "").trim();
+  const email = $("email").value.trim().toLowerCase();
+  const password = $("password").value;
+  const nombre = $("nombre").value.trim();
+  const business_name = $("business").value.trim();
+  if (!token){ show("Falta el código de invitación."); return; }
+  if (!email.includes("@")){ show("Escribe un correo válido."); return; }
+  if (password.length < 8){ show("La contraseña debe tener al menos 8 caracteres."); return; }
+
+  $("btn").disabled = true; show("Creando tu cuenta…", true);
+  try{
+    const { data, error } = await supa.functions.invoke("signup", {
+      body: { token, email, password, nombre, business_name },
+    });
+    if (error){
+      let d = "No se pudo completar el registro.";
+      try{ d = (await error.context.json())?.detalle || d; }catch{}
+      show(d); $("btn").disabled = false; return;
+    }
+    if (!data?.ok){ show(data?.detalle || "No se pudo completar el registro."); $("btn").disabled = false; return; }
+    // Registro OK → iniciar sesión y entrar al panel.
+    show("¡Listo! Entrando…", true);
+    const { error: le } = await supa.auth.signInWithPassword({ email, password });
+    if (le){ show("Cuenta creada. Ya puedes iniciar sesión.", true); setTimeout(()=>location.href="index.html", 1200); return; }
+    location.href = "index.html";
+  }catch(err){
+    show(String(err?.message || err)); $("btn").disabled = false;
+  }
+});
+</script>
+</body>
+</html>
