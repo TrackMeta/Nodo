@@ -380,7 +380,7 @@ import { supa, mountShell, toast, icon, confirmDialog, askChoice, SUPABASE_URL, 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [],
-  filters: { sinResponder:false, compro:false, producto:"", tags:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
+  filters: { sinResponder:false, compro:false, anuncio:false, producto:"", tags:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -460,6 +460,7 @@ function renderFilters(){
     <h4>Estado</h4>
     <button class="ftog ${f.sinResponder?"on":""}" id="fSin" type="button"><span class="ftg-nm">Sin responder</span><span class="fcount" id="cSin"></span></button>
     <button class="ftog ${f.compro?"on":""}" id="fComp" type="button"><span class="ftg-nm">Compró producto</span><span class="fcount" id="cComp"></span></button>
+    <button class="ftog ${f.anuncio?"on":""}" id="fAds" type="button"><span class="ftg-nm">${icon("megaphone")} Llegó por anuncio</span><span class="fcount" id="cAds"></span></button>
     <h4>Producto</h4>
     <select class="fsel" id="fProd"><option value="">Todos</option>${state.products.map(p=>`<option value="${p.id}" ${f.producto===p.id?"selected":""}>${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
@@ -470,9 +471,10 @@ function renderFilters(){
     <button class="fclear" id="fClear">Limpiar filtros</button>`;
   $("fSin").onclick=()=>{ f.sinResponder=!f.sinResponder; $("fSin").classList.toggle("on",f.sinResponder); renderConversations(); };
   $("fComp").onclick=()=>{ f.compro=!f.compro; $("fComp").classList.toggle("on",f.compro); renderConversations(); };
+  $("fAds").onclick=()=>{ f.anuncio=!f.anuncio; $("fAds").classList.toggle("on",f.anuncio); renderConversations(); };
   $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
-  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, compro:false, producto:"", tags:new Set() }; renderFilters(); renderConversations(); };
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, compro:false, anuncio:false, producto:"", tags:new Set() }; renderFilters(); renderConversations(); };
   updateFilterCounts();
 }
 // Conteo por filtro dentro del modo actual (Bot/Humano).
@@ -482,6 +484,7 @@ function updateFilterCounts(){
   const set=(id,n)=>{ const el=$(id); if(el) el.textContent=n; };
   set("cSin", convs.filter(cv=>cv.no_leidos>0).length);
   set("cComp", convs.filter(cv=>cv.contact.stage==="comprado").length);
+  set("cAds", convs.filter(cv=>!!cv.contact.source).length);
   const box=$("fTags");
   if(box) box.querySelectorAll("[data-tagcount]").forEach(el=>{ const id=el.dataset.tagcount; el.textContent=convs.filter(cv=>(cv.contact.contact_tags||[]).some(t=>t.tag_id===id)).length; });
 }
@@ -598,6 +601,7 @@ function applyFilters(cv){
   const f = state.filters, c = cv.contact;
   if (f.sinResponder && !(cv.no_leidos>0)) return false;
   if (f.compro && c.stage !== "comprado") return false;
+  if (f.anuncio && !c.source) return false;
   if (f.producto && c.product_id !== f.producto) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
   return true;
