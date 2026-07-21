@@ -40,9 +40,34 @@ interface Node {
 }
 
 // ── Entrada principal ──────────────────────────────────────────────
+// ¿El canal está en modo "solo anuncios" y este contacto NO vino por uno?
+// El flag vive en channels.ia_router.solo_anuncios (activable desde Canales).
+// "Vino por anuncio" = el webhook le capturó referral CTWA alguna vez
+// (ad_id / ctwa_clid / source). El contacto de pruebas del webchat está exento.
+async function soloAnunciosBloquea(
+  db: SupabaseClient, channelId: string, contactId: string,
+): Promise<boolean> {
+  const { data: ch } = await db.from("channels")
+    .select("ia_router").eq("id", channelId).maybeSingle();
+  if (!(ch as any)?.ia_router?.solo_anuncios) return false;
+  const { data: c } = await db.from("contacts")
+    .select("wa_id, ad_id, ctwa_clid, source").eq("id", contactId).maybeSingle();
+  if (!c) return false;
+  if ((c as any).wa_id === "webchat-test") return false;
+  const deAnuncio = Boolean((c as any).ad_id || (c as any).ctwa_clid || (c as any).source);
+  return !deAnuncio;
+}
+
 export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
+  // "Solo anuncios": si el canal lo tiene activado, el bot atiende únicamente
+  // a los contactos que llegaron por un anuncio CTWA (tienen la ventana gratis
+  // de 72h). Un contacto orgánico no recibe respuesta automática: su mensaje
+  // ya quedó guardado y visible en la Bandeja para que lo tome un humano.
+  // El contacto de Probar flujos queda exento para no romper las pruebas.
+  if (await soloAnunciosBloquea(db, channelId, contactId)) return;
+
   // BOTÓN = ATAJO QUE ESCRIBE POR EL CLIENTE. Salvo que el flujo esté esperando
   // justo ese botón (ruteo determinista por arista `boton:<id>`, que solo usan
   // los esqueletos viejos y el editor avanzado), el toque se convierte en un

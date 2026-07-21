@@ -6,6 +6,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
 import { sendText, sendMedia, MetaApiError } from "../_shared/meta.ts";
+import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
 const db = serviceClient();
 
@@ -26,11 +27,12 @@ Deno.serve(async (req) => {
   let body: {
     channel_id?: string; contact_id?: string; text?: string;
     media?: { kind?: string; url?: string; caption?: string; filename?: string };
+    template?: { name?: string; language?: string };
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, contact_id, text, media } = body;
+  const { channel_id, contact_id, text, media, template } = body;
   const mediaKind = media?.url ? (["image", "audio", "video", "document"].includes(media.kind || "") ? media.kind! : "document") : null;
-  if (!channel_id || !contact_id || (!text?.trim() && !mediaKind)) {
+  if (!channel_id || !contact_id || (!text?.trim() && !mediaKind && !template?.name)) {
     return json({ error: "faltan_campos" }, 400);
   }
 
@@ -47,12 +49,42 @@ Deno.serve(async (req) => {
     .from("contacts").select("id, wa_id").eq("id", contact_id).maybeSingle();
   if (!contact) return json({ error: "contacto_invalido" }, 400);
 
-  // ── Validar ventana de 24h (gate único de salida) ─────────────────
+  // ── Plantilla: el único mensaje que WhatsApp acepta FUERA de ventana ──
+  // No pasa por el gate de abajo. La plantilla debe existir en el canal,
+  // estar activa y aprobada; los {{params}} los resuelve sendTemplateToContact
+  // con los datos del contacto.
+  if (template?.name) {
+    const { data: tpl } = await db.from("wa_templates")
+      .select("name, language, params, activa, estado_meta")
+      .eq("channel_id", channel_id).eq("name", template.name)
+      .eq("language", template.language || "es").maybeSingle();
+    if (!tpl || tpl.activa === false || ((tpl as any).estado_meta ?? "aprobada") !== "aprobada") {
+      return json({ error: "plantilla_invalida", detalle: "La plantilla no existe, está inactiva o no está aprobada." }, 400);
+    }
+    // Humano interviene → pausar el bot, igual que con texto libre.
+    await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
+    try {
+      const wamid = await sendTemplateToContact(db, channel_id, contact_id, {
+        name: tpl.name, language: tpl.language || "es",
+        params: ((tpl as any).params ?? []) as string[],
+      });
+      await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
+      return json({ ok: true, wamid });
+    } catch (e) {
+      const meta = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
+      console.error("[send] plantilla fallo:", meta);
+      return json({ error: "meta_error", detalle: meta }, 502);
+    }
+  }
+
+  // ── Validar ventana (gate único de salida para texto y media) ─────
+  // expira_at ya es la MAYOR entre la ventana de servicio (24h) y la
+  // Free Entry Point (72h del anuncio), calculada por el webhook.
   const { data: conv } = await db
     .from("conversations").select("expira_at").eq("contact_id", contact_id).maybeSingle();
   const abierta = conv?.expira_at && new Date(conv.expira_at) > new Date();
   if (!abierta) {
-    return json({ error: "ventana_cerrada", detalle: "Fuera de la ventana de 24h: solo plantillas (próxima fase)." }, 403);
+    return json({ error: "ventana_cerrada", detalle: "La ventana se cerró: solo puedes iniciar con una plantilla aprobada." }, 403);
   }
 
   // ── Obtener token del canal (Vault) y enviar ──────────────────────

@@ -124,24 +124,31 @@ async function processInbound(
     patch.ad_id = ref.source_id ?? null;
     patch.ctwa_clid = ref.ctwa_clid ?? null;
     patch.source = ref.source_type ?? "ctwa";
+    // Free Entry Point: el mensaje que entra desde un anuncio abre 72h de
+    // mensajería gratis (Meta). Un clic nuevo en un anuncio la re-abre.
+    patch.fep_hasta = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
   }
 
   const { data: contact, error: upErr } = await db
     .from("contacts")
     .upsert(patch, { onConflict: "channel_id,wa_id" })
-    .select("id, bot_activo")
+    .select("id, bot_activo, fep_hasta")
     .single();
   if (upErr) throw new Error(`upsert contact: ${upErr.message}`);
 
-  // Asegurar la conversación y refrescar la ventana de 24h ANTES de
-  // insertar el mensaje (el trigger de no_leidos necesita la fila).
-  const expira = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  // Asegurar la conversación y refrescar la ventana ANTES de insertar el
+  // mensaje (el trigger de no_leidos necesita la fila). La ventana efectiva
+  // de escritura es la MAYOR entre la de servicio (últ. msg + 24h) y la
+  // Free Entry Point del contacto, si sigue viva.
+  const ahora = Date.now();
+  const svc = ahora + 24 * 60 * 60 * 1000;
+  const fepMs = contact.fep_hasta ? new Date(contact.fep_hasta as string).getTime() : 0;
   await db.from("conversations").upsert(
     {
       channel_id: channelId,
       contact_id: contact.id,
-      window_type: "service_24h",
-      expira_at: expira,
+      window_type: fepMs > ahora ? "fep_72h" : "service_24h",
+      expira_at: new Date(Math.max(svc, fepMs)).toISOString(),
       updated_at: new Date().toISOString(),
     },
     { onConflict: "contact_id" },

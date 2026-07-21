@@ -90,9 +90,9 @@ async function boot(){
 async function load(){
   // telegram_webhook_secret dice si el Copiloto de Telegram está activo (migración 0033).
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_webhook_secret").eq("id",st.channelId).maybeSingle();
+    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_webhook_secret,ia_router").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
-    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids").eq("id",st.channelId).maybeSingle()); }
+    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",st.channelId).maybeSingle()); }
   st.channel=ch||{};
   st.secrets={};
   try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
@@ -150,6 +150,17 @@ function renderWA(){
         <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
       </div>
 
+      <div class="metabox">
+        <div class="mt">3 · Comportamiento del bot</div>
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="w_soloads" style="margin-top:3px;accent-color:var(--brand,#22c55e)" ${c.ia_router?.solo_anuncios?"checked":""}/>
+          <span>
+            <b>Responder solo a clientes que llegan por anuncio</b><br/>
+            <span class="mh">Activo: el bot atiende únicamente a quienes entran tocando un anuncio de Meta (traen la ventana gratis de 72 h). Los mensajes orgánicos se guardan en la Bandeja para que los atienda una persona. Se puede prender y apagar cuando quieras.</span>
+          </span>
+        </label>
+      </div>
+
       <div class="acts">
         <button class="btn primary" id="saveWA">Guardar WhatsApp</button>
         <button class="btn" id="waTest">Probar conexión</button>
@@ -191,6 +202,15 @@ function renderWA(){
   const vcopy=$("w_verify_copy");
   if(vcopy) vcopy.onclick=()=>{ const v=$("w_verify").value.trim(); v?copiar(v):toast("Escribe primero un verify token",true); };
   $("waTest").onclick=(e)=>probarWA(e.target);
+  // Toggle "solo anuncios": guarda al instante (merge sobre ia_router para no
+  // pisar el resto del ruteo — fallback_flow_id, umbral, etc.).
+  $("w_soloads").onchange=async(e)=>{
+    const ir={ ...(st.channel.ia_router||{}), solo_anuncios:e.target.checked };
+    const { error }=await supa.from("channels").update({ ia_router:ir }).eq("id",st.channelId);
+    if(error){ toast(error.message,true); e.target.checked=!e.target.checked; return; }
+    st.channel.ia_router=ir;
+    toast(e.target.checked?"El bot ahora solo responde a clientes de anuncios ✓":"El bot vuelve a responder a todos ✓");
+  };
 }
 async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado ✓"); }
