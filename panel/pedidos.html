@@ -54,6 +54,7 @@
   .badge.ok{background:var(--green-bg);color:var(--green)}
   .badge.warn{background:var(--amber-bg);color:var(--amber)}
   .badge.bad{background:var(--red-bg);color:var(--red)}
+  .kc-warn{margin-top:8px;width:100%;font-size:11.5px;font-weight:700;padding:7px 9px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg);color:var(--amber);cursor:pointer;text-align:left;display:block;line-height:1.35}
   /* Menú contextual + modal */
   .menu{position:fixed;z-index:60;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.45);padding:6px;min-width:210px}
   .menu button{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--text);font-size:13px;padding:8px 10px;border-radius:8px}
@@ -273,6 +274,7 @@ function kcard(o){
     </div>
     <div class="kc-money">${moneyLine}</div>
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
+    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠ Confirmar sede Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
       <button class="rot" title="Imprimir rótulo">${icon("printer")}</button>
@@ -282,6 +284,8 @@ function kcard(o){
   if(mb&&act) mb.onclick=()=>{ if(act.modal==="despacho") openDespacho(o); else confirmSet(o,act.estado,act.label); };
   el.querySelector(".rot").onclick=(ev)=>{ ev.stopPropagation(); printRotulo(o); };
   el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
+  const wb=el.querySelector("[data-cfsede]");
+  if(wb) wb.onclick=(ev)=>{ ev.stopPropagation(); openConfirmSede(o); };
   return el;
 }
 
@@ -425,11 +429,30 @@ function modal(html,onSave){
   document.body.appendChild(ov);
   return ov;
 }
+// Confirmar la sede Shalom cuando el bot la capturó imprecisa (modelo "acepta y
+// tú confirmas"). Disponible desde el chip de la tarjeta en cualquier estado, no
+// solo al despachar. Al guardar limpia la bandera `sede_por_confirmar`.
+function openConfirmSede(o){
+  const s=o.shipping||{};
+  modal(`
+    <h3>⚠ Confirmar sede Shalom</h3>
+    <div class="m-sub">${esc((o.contact||{}).nombre||"")}${s.ciudad?" · "+esc(cap(s.ciudad)):""}. El cliente dijo: <b>"${esc(s.sede||"—")}"</b>${s.sede_por_confirmar?` (${esc(s.sede_por_confirmar)})`:""}. Ponla como la oficina Shalom exacta donde va a recoger.</div>
+    <label>Sede / oficina Shalom</label>
+    <input id="cSede" value="${esc(s.sede||"")}" placeholder="Ej. Shalom Huancayo · Av. Real 500"/>`,
+    async(ov)=>{
+      const sede=ov.querySelector("#cSede").value.trim();
+      if(!sede){ toast("Escribe la sede",true); return false; }
+      const r=await updateOrder({ order_id:o.id, shipping:{ sede, sede_por_confirmar:null } });
+      if(r){ toast("Sede confirmada"); await load(); }
+      return !!r;
+    });
+}
 function openDespacho(o){
   const s=o.shipping||{};
   modal(`
     <h3>${icon("box")} Registrar despacho</h3>
     <div class="m-sub">${esc((o.contact||{}).nombre||"")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
+    ${s.sede_por_confirmar?`<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg);color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">⚠ La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina Shalom exacta antes de despachar.</div>`:""}
     <div class="row2">
       <div><label>Agencia</label>
         <select id="mAgencia"><option value="shalom" ${s.agencia==="shalom"?"selected":""}>Shalom</option><option value="olva" ${s.agencia==="olva"?"selected":""}>Olva Courier</option><option value="otra" ${s.agencia&&!["shalom","olva"].includes(s.agencia)?"selected":""}>Otra</option></select></div>
@@ -445,7 +468,7 @@ function openDespacho(o){
       if(!guia){ toast("Falta el número de guía",true); return false; }
       const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{
         agencia:ov.querySelector("#mAgencia").value, sede:ov.querySelector("#mSede").value.trim(),
-        guia, clave_recojo:ov.querySelector("#mClave").value.trim(), ...fleteDe(ov),
+        guia, clave_recojo:ov.querySelector("#mClave").value.trim(), sede_por_confirmar:null, ...fleteDe(ov),
       }});
       if(r){ toast(r.flow_started?"Despacho registrado · el bot está avisando al cliente":"Despacho registrado"); await load(); }
       return !!r;

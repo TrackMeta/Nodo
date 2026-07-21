@@ -1696,6 +1696,23 @@ async function avisarVuelto(db: SupabaseClient, run: Run, amount: number, vuelto
   } catch (_) { /* best-effort */ }
 }
 
+// ¿La sede que dio el cliente alcanza para despachar por agencia? Sin el
+// directorio real de oficinas Shalom (pendiente: Rodrigo lo pasará más adelante)
+// no se puede validar de verdad; esto solo detecta las claramente imprecisas
+// para que un humano las confirme en Pedidos antes de despachar. Prefiere marcar
+// de más: en provincia, despachar a una sede vaga es mandar el paquete al aire.
+function sedeImprecisa(sede: string, ciudad: string): string | null {
+  const s = String(sede ?? "").trim();
+  if (!s) return null; // vacía → la maneja "faltan datos", no es "por confirmar"
+  const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  if (ciudad && norm(s) === norm(ciudad)) return "solo dice la ciudad, falta la oficina exacta";
+  if (s.length < 6) return "muy corta para ubicar la oficina";
+  // La mayoría de oficinas Shalom verificables traen una dirección con altura;
+  // "la de la calle Real" (sin número) no basta para que la agencia la ubique.
+  if (!/\d/.test(s)) return "sin dirección con número — confírmala con la oficina Shalom exacta";
+  return null;
+}
+
 async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
   try {
     const ship: Record<string, unknown> = {};
@@ -1768,6 +1785,15 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         }
       }
     } catch { /* sin costo → el Dashboard lo marca como "faltan datos" */ }
+
+    // Modelo "acepta y tú confirmas": si la sede de provincia se ve imprecisa, se
+    // marca para confirmarla en Pedidos antes de despachar (el bot no interroga al
+    // cliente). La bandera se limpia al confirmar la sede en el panel.
+    const zonaShip = String(ship.zona ?? ctx.zona_entrega ?? "").toLowerCase();
+    if (zonaShip === "provincia") {
+      const motivo = sedeImprecisa(String(ship.sede ?? ""), String(ship.ciudad ?? ctx.ciudad ?? ""));
+      if (motivo) ship.sede_por_confirmar = motivo;
+    }
 
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
