@@ -1868,6 +1868,9 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     ctx.pedido_id = (ord as any).id;
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
     await moverEtapa(db, run.channel_id, run.contact_id, stageDeEstado(a.estado || "carrito"));
+    // Etiqueta automática de zona/tipo (filtrable en la Bandeja): Lima/Provincia
+    // según la entrega física; Digital si el pedido no lleva zona (venta digital).
+    await autoEtiquetaZona(db, run.channel_id, run.contact_id, zonaShip === "lima" ? "lima" : zonaShip === "provincia" ? "provincia" : "digital");
     if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
     await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
     // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
@@ -4418,11 +4421,13 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
   // vez: si ya hay una suscripción (activa, pausada, completada o cancelada) no
   // se toca, para no resetear el drip ni pisar un opt-out.
   try {
-    const { data: p } = await db.from("products").select("channel_id, config").eq("id", productId).maybeSingle();
+    const { data: p } = await db.from("products").select("channel_id, config, tipo").eq("id", productId).maybeSingle();
     const seqId = (p as any)?.config?.remarketing_seq_id;
     const chId = (p as any)?.channel_id;
     // Entró a la venta de un producto → Interesado (solo avanza; si ya compró, no toca).
     if (chId) await moverEtapa(db, chId, contactId, "interesado");
+    // Producto digital → etiqueta "Digital" desde ya (filtrable en la Bandeja).
+    if (chId && (p as any)?.tipo === "digital") await autoEtiquetaZona(db, chId, contactId, "digital");
     if (seqId && chId) {
       const { data: ex } = await db.from("sequence_subscriptions").select("id")
         .eq("contact_id", contactId).eq("sequence_id", seqId).maybeSingle();
@@ -4463,14 +4468,23 @@ async function hasTag(db: SupabaseClient, contactId: string, tagName: string): P
     .select("tag_id, tags!inner(nombre)").eq("contact_id", contactId);
   return (data ?? []).some((r: any) => r.tags?.nombre === tagName);
 }
-async function addTag(db: SupabaseClient, channelId: string, contactId: string, tagName: string) {
+async function addTag(db: SupabaseClient, channelId: string, contactId: string, tagName: string, color?: string) {
   let { data: tag } = await db.from("tags").select("id")
     .eq("channel_id", channelId).eq("nombre", tagName).maybeSingle();
   if (!tag) {
-    const ins = await db.from("tags").insert({ channel_id: channelId, nombre: tagName }).select("id").single();
+    const ins = await db.from("tags").insert({ channel_id: channelId, nombre: tagName, ...(color ? { color } : {}) }).select("id").single();
     tag = ins.data;
   }
   if (tag) await db.from("contact_tags").upsert({ contact_id: contactId, tag_id: (tag as any).id }, { onConflict: "contact_id,tag_id" });
+}
+
+// Etiqueta automática de zona/tipo para poder filtrar en la Bandeja: Lima /
+// Provincia (físico, según la entrega) · Digital (producto digital). Se crea sola
+// con su color la primera vez. Silenciosa: nunca rompe la venta.
+async function autoEtiquetaZona(db: SupabaseClient, channelId: string, contactId: string, kind: "lima" | "provincia" | "digital") {
+  const m = { lima: ["Lima", "#378ADD"], provincia: ["Provincia", "#EF9F27"], digital: ["Digital", "#8b5cf6"] } as const;
+  const [nombre, color] = m[kind];
+  await addTag(db, channelId, contactId, nombre, color).catch(() => {});
 }
 async function removeTag(db: SupabaseClient, channelId: string, contactId: string, tagName: string) {
   const { data: tag } = await db.from("tags").select("id")
