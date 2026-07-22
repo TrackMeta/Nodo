@@ -297,13 +297,23 @@ function wireToolbar(){
 // ── Detalle día por día ────────────────────────────────────────────
 // Serie diaria derivada de los totales del anuncio (distribución determinista
 // con variación, para el mockup). Con datos reales viene de ad_insights por día.
+// Pesos con variación (semilla distinta por métrica → cada una se mueve sola,
+// así el CPA/ROAS por día NO salen idénticos como en un reparto proporcional).
+function wser(n,seed){ const w=[]; for(let i=0;i<n;i++) w.push(0.45+Math.abs(Math.sin(i*1.3+seed)+0.45*Math.cos(i*0.7+seed*2))); return w; }
+function distrib(total,w){ const s=w.reduce((a,b)=>a+b,0); return w.map(x=>total*x/s); }
+// Reparto ENTERO que suma exacto al total (redondeo acumulado) — ventas y
+// confirmaciones son contables: nunca "1.4".
+function allocInt(total,w){ const s=w.reduce((a,b)=>a+b,0); let acc=0,prev=0; return w.map(x=>{ acc+=total*x/s; const c=Math.round(acc); const v=c-prev; prev=c; return v; }); }
 function serie(a,days=14){
-  const w=[]; let tot=0;
-  for(let i=0;i<days;i++){ const x=0.55+0.9*Math.abs(Math.sin(i*1.3+a.gasto*0.03)+0.3*Math.cos(i*0.7)); w.push(x); tot+=x; }
+  const gasto=distrib(a.gasto, wser(days,a.gasto*0.03));
+  const impr =distrib(a.impr,  wser(days,a.impr*0.001+2));
+  const clics=distrib(a.clics, wser(days,a.clics*0.01+5));
+  const conf =allocInt(a.conf,   wser(days,a.conf*5+1));
+  const ventas=allocInt(a.ventas,wser(days,a.ventas*7+3));
+  const precio = a.ventas ? a.ingresos/a.ventas : 0;   // ingreso promedio por venta
   const today=new Date();
-  return w.map((x,i)=>{
-    const f=x/tot; const d=new Date(today); d.setDate(d.getDate()-(days-1-i));
-    return { fecha:d, gasto:a.gasto*f, impr:a.impr*f, clics:a.clics*f, conf:a.conf*f, ventas:a.ventas*f, ingresos:a.ingresos*f };
+  return Array.from({length:days},(_,i)=>{ const d=new Date(today); d.setDate(d.getDate()-(days-1-i));
+    return { fecha:d, gasto:gasto[i], impr:impr[i], clics:clics[i], conf:conf[i], ventas:ventas[i], ingresos:ventas[i]*precio };
   });
 }
 function renderDetail(){
@@ -330,8 +340,10 @@ function renderDetail(){
     <div class="panel"><div class="scroll"><table><thead><tr>
       <th>Día</th><th>Gasto</th><th>Impresiones</th><th>Clics</th><th>Confirm.</th><th>Ventas</th><th>CPA real</th><th>Ingresos</th><th>ROAS</th>
     </tr></thead><tbody>${S.map(d=>{
-      const cpa=d.ventas?d.gasto/d.ventas:0, roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r';
-      return `<tr><td>${d.fecha.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${nf(d.conf,1)}</td><td class="num">${nf(d.ventas,1)}</td><td class="num">${money(cpa)}</td><td class="num">${money(d.ingresos)}</td><td class="num"><span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span></td></tr>`;
+      const roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r';
+      const cpaCell = d.ventas ? money(d.gasto/d.ventas) : '<span style="color:var(--faint)">—</span>';
+      const roasCell = d.ventas ? `<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>` : '<span style="color:var(--faint)">—</span>';
+      return `<tr><td>${d.fecha.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.conf}</td><td class="num">${d.ventas}</td><td class="num">${cpaCell}</td><td class="num">${money(d.ingresos)}</td><td class="num">${roasCell}</td></tr>`;
     }).join("")}</tbody></table></div></div>`;
   $("back").onclick=()=>{ st.sel=null; render(); };
 }
