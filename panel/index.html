@@ -383,7 +383,7 @@ injectExtrasCss();
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [],
-  filters: { sinResponder:false, compro:false, anuncio:false, producto:"", tags:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
+  filters: { sinResponder:false, anuncio:false, producto:"", tags:new Set(), stages:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -427,6 +427,14 @@ async function boot() {
         .select("id,nombre,wa_id,bot_activo,stage").eq("id", cid).maybeSingle();
       if (c) { openChat(c); history.replaceState(null, "", location.pathname); }
     }
+    // Deep-link: ?stage=<etapa> abre la Bandeja ya filtrada por esa etapa del
+    // embudo (botón de la sección Embudo).
+    const stg = new URLSearchParams(location.search).get("stage");
+    if (stg && EMBUDO_STAGES.some(s=>s.k===stg)) {
+      state.filters.stages = new Set([stg]);
+      history.replaceState(null, "", location.pathname);
+      renderFilters(); renderConversations();
+    }
   } catch (_) { /* sin deep-link */ }
 }
 async function loadInboxFlows(){
@@ -462,8 +470,9 @@ function renderFilters(){
     <div class="ft">${svgFilter()} FILTROS</div>
     <h4>Estado</h4>
     <button class="ftog ${f.sinResponder?"on":""}" id="fSin" type="button"><span class="ftg-nm">Sin responder</span><span class="fcount" id="cSin"></span></button>
-    <button class="ftog ${f.compro?"on":""}" id="fComp" type="button"><span class="ftg-nm">Compró producto</span><span class="fcount" id="cComp"></span></button>
     <button class="ftog ${f.anuncio?"on":""}" id="fAds" type="button"><span class="ftg-nm">${icon("megaphone")} Llegó por anuncio</span><span class="fcount" id="cAds"></span></button>
+    <h4>Etapa del embudo</h4>
+    ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
     <h4>Producto</h4>
     <select class="fsel" id="fProd"><option value="">Todos</option>${state.products.map(p=>`<option value="${p.id}" ${f.producto===p.id?"selected":""}>${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
@@ -473,11 +482,11 @@ function renderFilters(){
     }</div>
     <button class="fclear" id="fClear">Limpiar filtros</button>`;
   $("fSin").onclick=()=>{ f.sinResponder=!f.sinResponder; $("fSin").classList.toggle("on",f.sinResponder); renderConversations(); };
-  $("fComp").onclick=()=>{ f.compro=!f.compro; $("fComp").classList.toggle("on",f.compro); renderConversations(); };
   $("fAds").onclick=()=>{ f.anuncio=!f.anuncio; $("fAds").classList.toggle("on",f.anuncio); renderConversations(); };
+  box.querySelectorAll("[data-stage]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); btn.classList.toggle("on"); renderConversations(); });
   $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
-  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, compro:false, anuncio:false, producto:"", tags:new Set() }; renderFilters(); renderConversations(); };
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, anuncio:false, producto:"", tags:new Set(), stages:new Set() }; renderFilters(); renderConversations(); };
   updateFilterCounts();
 }
 // Conteo por filtro dentro del modo actual (Bot/Humano).
@@ -486,8 +495,9 @@ function updateFilterCounts(){
   const convs = (state.convs||[]).filter(inMode);
   const set=(id,n)=>{ const el=$(id); if(el) el.textContent=n; };
   set("cSin", convs.filter(cv=>cv.no_leidos>0).length);
-  set("cComp", convs.filter(cv=>cv.contact.stage==="comprado").length);
   set("cAds", convs.filter(cv=>!!cv.contact.source).length);
+  const sbox=$("filters");
+  if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>(cv.contact.stage||"nuevo")===k).length; });
   const box=$("fTags");
   if(box) box.querySelectorAll("[data-tagcount]").forEach(el=>{ const id=el.dataset.tagcount; el.textContent=convs.filter(cv=>(cv.contact.contact_tags||[]).some(t=>t.tag_id===id)).length; });
 }
@@ -603,7 +613,7 @@ document.addEventListener("click",onDocClickComposer);
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
   if (f.sinResponder && !(cv.no_leidos>0)) return false;
-  if (f.compro && c.stage !== "comprado") return false;
+  if (f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
   if (f.anuncio && !c.source) return false;
   if (f.producto && c.product_id !== f.producto) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
@@ -618,7 +628,7 @@ function renderConversations(){
   const nBot = byFilter.filter(isBot).length, nHum = byFilter.length - nBot;
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+` Bot (${nBot})`; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+` Humano (${nHum})`; }
   updateFilterCounts();
-  const anyFilter = state.filters.sinResponder||state.filters.compro||state.filters.producto||state.filters.tags.size;
+  const anyFilter = state.filters.sinResponder||state.filters.anuncio||state.filters.producto||state.filters.tags.size||state.filters.stages.size;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano")}</div>`; return; }
   list.forEach(cv => {
     const c = cv.contact;
@@ -681,6 +691,13 @@ document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(sta
 // Etapas reales del embudo (los viejos p1–p4 eran placeholders muertos; ya se
 // limpiaron en Campañas). value=lo que se guarda · label=lo que se muestra.
 const STAGES = [["nuevo","Nuevo"],["interesado","Interesado"],["comprado","Comprado"],["perdido","Perdido"]];
+// Con color, para los filtros de la Bandeja (mismos colores que la sección Embudo).
+const EMBUDO_STAGES = [
+  { k:"nuevo",      label:"Nuevo",      color:"#378ADD" },
+  { k:"interesado", label:"Interesado", color:"#EF9F27" },
+  { k:"comprado",   label:"Comprado",   color:"#1D9E75" },
+  { k:"perdido",    label:"Perdido",    color:"#888780" },
+];
 let panelData = {};
 const TZ_BY_PREFIX={ "593":"America/Guayaquil","591":"America/La_Paz","502":"America/Guatemala","503":"America/El_Salvador","506":"America/Costa_Rica","507":"America/Panama","51":"America/Lima","52":"America/Mexico_City","57":"America/Bogota","56":"America/Santiago","54":"America/Argentina/Buenos_Aires","58":"America/Caracas","34":"Europe/Madrid","1":"America/New_York" };
 const COUNTRY_BY_PREFIX={ "593":"🇪🇨 Ecuador","591":"🇧🇴 Bolivia","502":"🇬🇹 Guatemala","503":"🇸🇻 El Salvador","506":"🇨🇷 Costa Rica","507":"🇵🇦 Panamá","51":"🇵🇪 Perú","52":"🇲🇽 México","57":"🇨🇴 Colombia","56":"🇨🇱 Chile","54":"🇦🇷 Argentina","58":"🇻🇪 Venezuela","34":"🇪🇸 España","1":"🇺🇸 / 🇨🇦" };

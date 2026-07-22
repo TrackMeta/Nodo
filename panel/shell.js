@@ -96,6 +96,7 @@ const P = {
   copy:'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   megaphone:'<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+  embudo:'<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
   lock:'<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${P[n]||""}</svg>`;
@@ -117,6 +118,7 @@ const NAV_GROUPS = [
   { key:"top", items:[
     { id:"inbox",       label:"Bandeja",              href:"index.html",      icon:"inbox", cta:true },
     { id:"dashboard",   label:"Dashboard",            href:"dashboard.html",  icon:"dashboard" },
+    { id:"embudo",      label:"Embudo",               href:"embudo.html",     icon:"embudo" },
     { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"compass" },
     { id:"pedidos",     label:"Pedidos",              href:"pedidos.html",    icon:"kanban" },
     { id:"compras",     label:"Compras",              href:"compras.html",    icon:"pedidos" },

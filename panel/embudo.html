@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Embudo</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-bg:#12233f; --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --font:"Inter",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin:6px 0 20px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:15px 17px}
+  .kpi .h{color:var(--muted);font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .kpi .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .kpi .v{font-size:28px;font-weight:650;margin-top:9px;letter-spacing:-.5px}
+  .kpi .d{font-size:11.5px;color:var(--faint);margin-top:2px}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
+  .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
+  .panel .ps{color:var(--muted);font-size:12.5px;margin:0 0 18px}
+  /* Embudo */
+  .funnel{display:flex;flex-direction:column;gap:11px}
+  .frow{display:flex;align-items:center;gap:14px;width:100%;background:none;border:none;padding:8px;border-radius:12px;text-align:left;transition:background .12s}
+  .frow:hover{background:var(--surface-2)}
+  .fhead{width:150px;flex:none;display:flex;align-items:center;gap:9px}
+  .fdot{width:11px;height:11px;border-radius:50%;flex:none}
+  .fname{font-size:14px;font-weight:600}
+  .fsub{font-size:11px;color:var(--faint)}
+  .fbar{flex:1;height:34px;background:var(--surface-2);border-radius:9px;overflow:hidden;position:relative}
+  .fbar span{display:block;height:100%;border-radius:9px;min-width:3px;transition:width .5s ease}
+  .fmeta{width:96px;flex:none;text-align:right}
+  .fmeta .fn{font-size:18px;font-weight:700}
+  .fmeta .fp{font-size:11px;color:var(--muted)}
+  .fgo{width:20px;flex:none;color:var(--faint);opacity:0;transition:opacity .12s}
+  .frow:hover .fgo{opacity:1}
+  .hint{font-size:12px;color:var(--faint);margin-top:14px;display:flex;align-items:center;gap:7px}
+  .live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600}
+  .live .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .conv{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .convpill{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:9px 13px;font-size:12.5px;color:var(--muted)}
+  .convpill b{color:var(--text);font-size:15px;font-weight:700}
+  .empty{color:var(--faint);font-size:13px;padding:20px 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Embudo</h1>
+        <p class="nodo-lead">Dónde está cada contacto en el camino de compra, <b>en vivo</b>. Toca una etapa para verla en la Bandeja. Es la foto de las <b>personas</b>; para las ventas está <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
+      </div>
+      <div class="nodo-actions"><span class="live"><span class="pulse"></span>En vivo</span> <button class="btn" id="reloadBtn">↻ Actualizar</button></div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="panel">
+      <h3>Distribución del embudo</h3>
+      <p class="ps">Cuántos contactos hay ahora mismo en cada etapa.</p>
+      <div class="funnel" id="funnel"><div class="empty">Cargando…</div></div>
+      <div class="conv" id="conv"></div>
+      <div class="hint"><span id="totalHint"></span></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const st={ channelId:null, counts:{}, total:0, rt:null };
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const nf=new Intl.NumberFormat("es-PE");
+
+// Las 4 etapas reales del embudo (mismas que la Bandeja y Campañas).
+const STAGES=[
+  { k:"nuevo",      label:"Nuevo",      color:"#378ADD", desc:"Recién escribió" },
+  { k:"interesado", label:"Interesado", color:"#EF9F27", desc:"Preguntó, quiere más" },
+  { k:"comprado",   label:"Comprado",   color:"#1D9E75", desc:"Cerró la compra" },
+  { k:"perdido",    label:"Perdido",    color:"#888780", desc:"Se cayó / no compró" },
+];
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"embudo" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });
+  $("reloadBtn").onclick=load;
+  subscribe();
+  await load();
+}
+
+// Conteo por etapa sin traer filas (head+count). El contacto de prueba de
+// webchat no cuenta. "nuevo" incluye los que aún no tienen etapa (null).
+async function countStage(k){
+  let q=supa.from("contacts").select("*",{count:"exact",head:true})
+    .eq("channel_id",st.channelId).neq("wa_id","webchat-test");
+  q = k==="nuevo" ? q.or("stage.eq.nuevo,stage.is.null") : q.eq("stage",k);
+  const { count, error }=await q;
+  return error ? 0 : (count||0);
+}
+
+async function load(){
+  if(!st.channelId){ render(); return; }
+  const totalQ=supa.from("contacts").select("*",{count:"exact",head:true})
+    .eq("channel_id",st.channelId).neq("wa_id","webchat-test");
+  const [total,...counts]=await Promise.all([
+    totalQ.then(r=>r.count||0),
+    ...STAGES.map(s=>countStage(s.k)),
+  ]);
+  st.total=total;
+  st.counts=Object.fromEntries(STAGES.map((s,i)=>[s.k,counts[i]]));
+  render();
+}
+
+function render(){
+  const c=st.counts, total=st.total||0;
+  const pct=(n)=> total? Math.round(n/total*100):0;
+  // KPIs
+  const activos=(c.nuevo||0)+(c.interesado||0); // aún sin decidir
+  $("kpis").innerHTML=[
+    ["Total contactos", nf.format(total), "en este canal", "var(--brand)"],
+    ["Sin decidir", nf.format(activos), "Nuevos + Interesados", "#EF9F27"],
+    ["Compraron", nf.format(c.comprado||0), pct(c.comprado||0)+"% del total", "var(--green)"],
+    ["Perdidos", nf.format(c.perdido||0), pct(c.perdido||0)+"% del total", "#888780"],
+  ].map(([h,v,d,col])=>`<div class="kpi"><div class="h"><span class="dot" style="background:${col}"></span>${h}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+
+  // Funnel
+  const max=Math.max(1,...STAGES.map(s=>c[s.k]||0));
+  $("funnel").innerHTML= total===0
+    ? `<div class="empty">Aún no hay contactos en este canal.<br>Cuando lleguen mensajes, verás el embudo llenarse acá.</div>`
+    : STAGES.map(s=>{
+      const n=c[s.k]||0;
+      return `<button class="frow" data-stage="${s.k}" title="Ver en la Bandeja">
+        <div class="fhead"><span class="fdot" style="background:${s.color}"></span><div><div class="fname">${s.label}</div><div class="fsub">${s.desc}</div></div></div>
+        <div class="fbar"><span style="width:${Math.round(n/max*100)}%;background:${s.color}"></span></div>
+        <div class="fmeta"><div class="fn">${nf.format(n)}</div><div class="fp">${pct(n)}% del total</div></div>
+        <div class="fgo">›</div>
+      </button>`;
+    }).join("");
+  $("funnel").querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=> location.href="index.html?stage="+b.dataset.stage);
+
+  // Conversión honesta (foto actual): cuántos llegaron a comprar del total.
+  const convTotal= pct(c.comprado||0);
+  const interesados=(c.interesado||0)+(c.comprado||0); // pasaron de "solo nuevo"
+  $("conv").innerHTML= total===0 ? "" : `
+    <div class="convpill">Conversión a compra: <b>${convTotal}%</b></div>
+    <div class="convpill">Mostraron interés: <b>${pct(interesados)}%</b></div>
+    <div class="convpill">Se perdieron: <b>${pct(c.perdido||0)}%</b></div>`;
+  $("totalHint").textContent= total? `${nf.format(total)} contactos · foto de este momento (se actualiza sola)` : "";
+}
+
+// Tiempo real: cualquier cambio de contacto (nuevo, o cambio de etapa) recuenta.
+function subscribe(){
+  if(st.rt) supa.removeChannel(st.rt);
+  let t=null;
+  st.rt=supa.channel("nodo-embudo").on("postgres_changes",
+    { event:"*", schema:"public", table:"contacts" },
+    ()=>{ clearTimeout(t); t=setTimeout(load,500); }).subscribe();
+}
+boot();
+</script>
+</body>
+</html>
