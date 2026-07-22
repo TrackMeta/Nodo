@@ -563,7 +563,7 @@ function renderFlowCards(){
       <div class="c-ic" style="${isSk?'background:var(--amber-bg);color:var(--amber)':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
       <div class="c-tt">${esc(f.nombre)}</div>
       <div class="c-sub">${isSk?"esqueleto":esc(f.role||"flujo")}</div>
-      <div class="c-foot"><span class="nodo-pill ${on?'on':'neutral'}">${on?'Activo':esc(f.estado)}</span><span style="font-size:11.5px;color:var(--faint)">${prod}</span></div>`;
+      <div class="c-foot"><span class="nodo-pill ${on?'on':'neutral'}">${on?'Activo':esc((f.estado||"").replace(/^./,c=>c.toUpperCase()))}</span><span style="font-size:11.5px;color:var(--faint)">${prod}</span></div>`;
     el.onclick=()=>openFlow(f.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";

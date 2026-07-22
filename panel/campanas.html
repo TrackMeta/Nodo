@@ -152,7 +152,7 @@ function renderGrid(){
     const seg=c.segmento||{}; const total=c.total||0, sent=c.enviados||0, fail=c.fallidos||0;
     const el=document.createElement("div"); el.className="cc";
     el.innerHTML=`
-      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${c.estado}</span></div>
+      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${(c.estado||"").replace(/^./,c=>c.toUpperCase())}</span></div>
       <div class="meta">Plantilla: <b>${tpl?esc(tpl.name):"—"}</b><br>
         Segmento: <b>${(seg.tags||[]).length?esc((seg.tags||[]).join(", ")):"todos"}</b>${(seg.stage||[]).length?` · ${esc((seg.stage||[]).join(", "))}`:""}<br>
         ${c.programada_at?`Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:"Envío inmediato al activar"}</div>

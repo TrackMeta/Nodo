@@ -151,7 +151,7 @@ function renderCards(){
     const estado=t.estado_meta||"aprobada";
     const el=document.createElement("div"); el.className="nodo-card tcard";
     el.innerHTML=`
-      <div class="c-top"><span class="c-tt">${esc(t.name)}</span><span class="chip ${estado}">${estado}</span></div>
+      <div class="c-top"><span class="c-tt">${esc(t.name)}</span><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span></div>
       <div class="wa-chat tprev"><div class="wa-out">${waHighlight(t.body_preview||"(sin cuerpo)")}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
       <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}</div>`;
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
@@ -172,7 +172,7 @@ function renderDetail(){
   const t=st.tpl, estado=t.estado_meta||"aprobada";
   d.innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-      <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado}</span>
+      <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span>
     </div>
     <div class="dcard">
       <div class="row">
