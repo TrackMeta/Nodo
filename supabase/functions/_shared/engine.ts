@@ -3050,7 +3050,7 @@ type CampoDato = {
   label: string;
   detalle?: string;
   requerido?: boolean;
-  validar?: "dni" | "sede";
+  validar?: "dni" | "sede" | "direccion";
   // Un dato puede hacer falta solo en un camino: el DNI lo pide la agencia
   // (provincia), pero para un envío en Lima con contraentrega no sirve de nada
   // y pedirlo sería fricción gratis.
@@ -3084,6 +3084,21 @@ function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; mot
     const ciudad = limpiaZona(String(ctx?.ciudad ?? ""));
     if (ciudad && limpio === ciudad) {
       return { ok: false, motivo: `"${s}" es la ciudad, no la oficina — falta la sede exacta (ej. «Av. España»)` };
+    }
+  }
+  // La dirección NO puede ser una ciudad o distrito pelado. Igual que con la sede,
+  // el modelo mete "Lima"/"Miraflores" en dirección cuando el cliente dice "soy de
+  // Lima" (es el único lugar que ve), y como después no se pisa lo ya capturado, la
+  // dirección de verdad ("Av. Larco 345") se perdía. Se acepta una referencia vaga
+  // pero REAL (tiene número, una vía, o un punto: "por el mercado X"); se rechaza el
+  // nombre de ciudad/distrito solo, para que el flujo la vuelva a pedir.
+  if ((v.validar as string) === "direccion" || v.clave === "direccion") {
+    const low = " " + normalize(s) + " ";
+    const tieneNumero = /\d/.test(s);
+    const tieneVia = /\b(av|avenida|jr|jiron|calle|ca|pasaje|psje|prolongacion|prol|mz|manzana|lote|lt|urb|urbanizacion|km|carretera|panamericana|block|dpto|departamento|interior|int)\b/.test(low);
+    const tieneRef = /\b(frente|costado|espalda|altura|cerca|esquina|cuadra|cdra|mercado|colegio|parque|plaza|iglesia|grifo|paradero|ovalo|cruce|puente|lado|junto|detras|atras|entrada|posta|hospital|banco|tienda|bodega)\b/.test(low);
+    if (!tieneNumero && !tieneVia && !tieneRef) {
+      return { ok: false, motivo: `"${s}" parece la ciudad o el distrito, no la dirección — falta la calle y el número (ej. «Av. Larco 345, dpto 502»)` };
     }
   }
   return { ok: true };
@@ -3170,6 +3185,9 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
             "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
             "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
+            "- PERO el nombre de una ciudad o distrito SOLO (\"Lima\", \"Miraflores\", \"Trujillo\", \"soy de Lima\") NO es una dirección: " +
+            "es la ciudad o el distrito. La dirección lleva una calle/avenida/jirón con número, o un punto concreto (un mercado, un " +
+            "colegio, un parque). Si el cliente solo menciona la ciudad o el distrito, NO lo pongas en el campo de dirección: déjalo vacío.\n" +
             // El cliente casi nunca responde "limpio". A "¿cuál es la sede?"
             // contesta "shalom real 500 huancayo", y como la descripción del campo
             // decía "la oficina EXACTA, NO la ciudad", el modelo lo omitía ENTERO:
