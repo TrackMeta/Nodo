@@ -690,13 +690,14 @@ document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(sta
 // ── Panel de contacto: datos, medios, flujos, secuencias, timeline ──
 // Etapas reales del embudo (los viejos p1–p4 eran placeholders muertos; ya se
 // limpiaron en Campañas). value=lo que se guarda · label=lo que se muestra.
-const STAGES = [["nuevo","Nuevo"],["interesado","Interesado"],["comprado","Comprado"],["perdido","Perdido"]];
+const STAGES = [["nuevo","Nuevo"],["interesado","Interesado"],["compromiso","Compromiso de pago"],["comprado","Comprado"],["perdido","Perdido"]];
 // Con color, para los filtros de la Bandeja (mismos colores que la sección Embudo).
 const EMBUDO_STAGES = [
-  { k:"nuevo",      label:"Nuevo",      color:"#378ADD" },
-  { k:"interesado", label:"Interesado", color:"#EF9F27" },
-  { k:"comprado",   label:"Comprado",   color:"#1D9E75" },
-  { k:"perdido",    label:"Perdido",    color:"#888780" },
+  { k:"nuevo",      label:"Nuevo",               color:"#378ADD" },
+  { k:"interesado", label:"Interesado",          color:"#EF9F27" },
+  { k:"compromiso", label:"Compromiso de pago",  color:"#8b5cf6" },
+  { k:"comprado",   label:"Comprado",            color:"#1D9E75" },
+  { k:"perdido",    label:"Perdido",             color:"#888780" },
 ];
 let panelData = {};
 const TZ_BY_PREFIX={ "593":"America/Guayaquil","591":"America/La_Paz","502":"America/Guatemala","503":"America/El_Salvador","506":"America/Costa_Rica","507":"America/Panama","51":"America/Lima","52":"America/Mexico_City","57":"America/Bogota","56":"America/Santiago","54":"America/Argentina/Buenos_Aires","58":"America/Caracas","34":"Europe/Madrid","1":"America/New_York" };

@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 
 const db = serviceClient();
@@ -88,6 +88,9 @@ Deno.serve(async (req) => {
         currency: (order as any).currency, shipping: (patch.shipping as any) ?? (order as any).shipping,
       });
     } catch (e) { console.error("[order-update] capi purchase:", (e as any)?.message ?? e); }
+    // Embudo automático: el cambio de estado del pedido mueve la etapa de la
+    // persona (compromiso / comprado / perdido). Solo avanza; nunca retrocede.
+    await moverEtapa(db, (order as any).channel_id, (order as any).contact_id, stageDeEstado(newEstado));
   }
 
   // Venta física cerrada (saldo pagado / recogido / entregado) → cierra la

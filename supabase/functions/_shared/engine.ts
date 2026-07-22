@@ -1867,6 +1867,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars.pedido_id = (ord as any).id; // {{pedido_id}}: la llave de la fila en Sheets
     ctx.pedido_id = (ord as any).id;
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    await moverEtapa(db, run.channel_id, run.contact_id, stageDeEstado(a.estado || "carrito"));
     if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
     await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
     // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
@@ -2304,6 +2305,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       shipping: { ...ship, saldo_operacion: oper, saldo_validado_auto: true, saldo_comprobante: url },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
+    await moverEtapa(db, channelId, contactId, "comprado");
     await syncPedidoSheet(db, (order as any).id);
     // Saldo pagado = venta cerrada → Purchase a Meta (dedup por pedido). El ctwa
     // va congelado en el pedido; usamos el monto total del pedido, no el saldo.
@@ -3906,6 +3908,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                     amount, estado: "pendiente", shipping: ship,
                   }).select("id").single();
                   if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
+                  await moverEtapa(db, run.channel_id, run.contact_id, "compromiso");
                 }
               } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
               run.vars._pago_manual_pendiente = true;
@@ -4037,6 +4040,7 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       confirmed_at: new Date().toISOString(),
     }); // si la tabla orders no existe (0017 pendiente) o el order_id se repite, el error se ignora
     await logEvent(db, run.channel_id, run.contact_id, "compra", "Compra registrada", value ? `${currency} ${value}` : "");
+    await moverEtapa(db, run.channel_id, run.contact_id, "comprado");
   }
 
   const handle = res.ok ? "exito" : "fallo";
@@ -4340,6 +4344,42 @@ async function logEvent(
   } catch (_) { /* tabla pendiente de migrar */ }
 }
 
+// ── Embudo automático ────────────────────────────────────────────────
+// La etapa del contacto (contacts.stage) se mueve SOLA según lo que pasa en la
+// venta. Mapea el estado del PEDIDO → la etapa de la PERSONA. Ver panel/embudo.html.
+//   comprado   = venta cerrada, la plata entró (mismo criterio que el Purchase a Meta)
+//   perdido    = el pedido se cayó
+//   compromiso = hizo el pedido pero falta pagar/recibir (contraentrega, adelanto, pago sin validar)
+const STAGE_COMPRADO = new Set(["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"]);
+const STAGE_PERDIDO = new Set(["rechazado", "no_recogido", "cancelado", "anulada"]);
+const STAGE_COMPROMISO = new Set(["confirmado", "en_reparto", "reprogramado", "esperando_adelanto", "adelanto_validado", "por_despachar", "despachado", "en_agencia", "pendiente"]);
+export function stageDeEstado(estado?: string | null): string | null {
+  const e = String(estado ?? "");
+  if (STAGE_COMPRADO.has(e)) return "comprado";
+  if (STAGE_PERDIDO.has(e)) return "perdido";
+  if (STAGE_COMPROMISO.has(e)) return "compromiso";
+  return null; // carrito u otros → no toca la etapa
+}
+const STAGE_RANK: Record<string, number> = { nuevo: 0, interesado: 1, compromiso: 2, comprado: 3 };
+// Mueve la etapa SOLO hacia adelante (nunca retrocede), salvo a "perdido" y solo
+// si el contacto no era ya "comprado" (un comprador no se marca perdido por un
+// pedido posterior que se cayó). Silenciosa ante errores: nunca rompe la venta.
+export async function moverEtapa(db: SupabaseClient, channelId: string, contactId: string, target: string | null) {
+  if (!target || !contactId) return;
+  try {
+    const { data } = await db.from("contacts").select("stage").eq("id", contactId).maybeSingle();
+    const cur = String((data as any)?.stage || "nuevo");
+    if (cur === target) return;
+    if (target === "perdido") {
+      if ((STAGE_RANK[cur] ?? 0) >= STAGE_RANK.comprado) return;
+    } else if ((STAGE_RANK[cur] ?? 0) >= (STAGE_RANK[target] ?? 0)) {
+      return;
+    }
+    await db.from("contacts").update({ stage: target }).eq("id", contactId);
+    if (channelId) await logEvent(db, channelId, contactId, "nota", "Etapa (auto): " + target).catch(() => {});
+  } catch (_) { /* la columna puede faltar; no romper la venta */ }
+}
+
 // Atribuye el contacto al producto del flujo (para el emoji y filtros de la
 // Bandeja). Se activa al entrar a un flujo ligado a un producto.
 async function markProduct(db: SupabaseClient, contactId: string, productId?: string | null) {
@@ -4356,6 +4396,8 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
     const { data: p } = await db.from("products").select("channel_id, config").eq("id", productId).maybeSingle();
     const seqId = (p as any)?.config?.remarketing_seq_id;
     const chId = (p as any)?.channel_id;
+    // Entró a la venta de un producto → Interesado (solo avanza; si ya compró, no toca).
+    if (chId) await moverEtapa(db, chId, contactId, "interesado");
     if (seqId && chId) {
       const { data: ex } = await db.from("sequence_subscriptions").select("id")
         .eq("contact_id", contactId).eq("sequence_id", seqId).maybeSingle();
