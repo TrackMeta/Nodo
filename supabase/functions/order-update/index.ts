@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 
 const db = serviceClient();
@@ -89,8 +89,13 @@ Deno.serve(async (req) => {
       });
     } catch (e) { console.error("[order-update] capi purchase:", (e as any)?.message ?? e); }
     // Embudo automático: el cambio de estado del pedido mueve la etapa de la
-    // persona (confirmado / comprado / perdido). Solo avanza; nunca retrocede.
-    await moverEtapa(db, (order as any).channel_id, (order as any).contact_id, stageDeEstado(newEstado));
+    // persona. Al AVANZAR (confirmado/comprado) solo sube. Pero si el estado es de
+    // PÉRDIDA (anulada, cancelado, rechazado, no_recogido), se RECALCULA desde los
+    // pedidos que quedan: así anular la única venta baja a "perdido", pero si le
+    // queda otra compra real se mantiene "comprado".
+    const st = stageDeEstado(newEstado);
+    if (st === "perdido") await recomputeStageOnLoss(db, (order as any).channel_id, (order as any).contact_id);
+    else await moverEtapa(db, (order as any).channel_id, (order as any).contact_id, st);
   }
 
   // Venta física cerrada (saldo pagado / recogido / entregado) → cierra la

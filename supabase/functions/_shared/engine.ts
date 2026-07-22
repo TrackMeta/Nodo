@@ -4408,6 +4408,33 @@ export async function moverEtapa(db: SupabaseClient, channelId: string, contactI
   } catch (_) { /* la columna puede faltar; no romper la venta */ }
 }
 
+// Al ANULAR / perder un pedido, recalcula la etapa del contacto desde los
+// pedidos que le QUEDAN: toma la más alta que aún merece (comprado > confirmado
+// > interesado); si tenía pedidos pero ninguno da etapa positiva, "perdido".
+// A diferencia de moverEtapa (que solo AVANZA), este SÍ puede bajar — es el único
+// caso donde corresponde, porque la venta que lo subió a "comprado" ya no cuenta.
+// Así, anular la ÚNICA venta de alguien lo baja a perdido, pero si le queda otra
+// compra real se mantiene comprado.
+export async function recomputeStageOnLoss(db: SupabaseClient, channelId: string, contactId: string) {
+  if (!contactId) return;
+  try {
+    const { data: orders } = await db.from("orders").select("estado").eq("contact_id", contactId);
+    let best: string | null = null;
+    let hadAny = false;
+    for (const o of orders ?? []) {
+      hadAny = true;
+      const s = stageDeEstado((o as any).estado);
+      if (s && s !== "perdido" && (best == null || (STAGE_RANK[s] ?? 0) > (STAGE_RANK[best] ?? 0))) best = s;
+    }
+    const target = best ?? (hadAny ? "perdido" : null);
+    if (!target) return;
+    const { data: c } = await db.from("contacts").select("stage").eq("id", contactId).maybeSingle();
+    if (String((c as any)?.stage || "nuevo") === target) return;
+    await db.from("contacts").update({ stage: target }).eq("id", contactId);
+    if (channelId) await logEvent(db, channelId, contactId, "nota", "Etapa recalculada: " + target).catch(() => {});
+  } catch (_) { /* columna puede faltar; no romper nada */ }
+}
+
 // Atribuye el contacto al producto del flujo (para el emoji y filtros de la
 // Bandeja). Se activa al entrar a un flujo ligado a un producto.
 async function markProduct(db: SupabaseClient, contactId: string, productId?: string | null) {
