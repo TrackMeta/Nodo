@@ -165,8 +165,9 @@
 
 <script type="module">
 import { supa, mountShell, icon } from "./shell.js";
+import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", cols:new Set(), sel:null, range:null };
+const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
 
 const money=(v)=>{ const s=v<0?"-":""; return s+"S/ "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
 const money0=(v)=>"S/ "+Math.round(v).toLocaleString("es-PE");
@@ -175,15 +176,37 @@ const pct=(v)=>nf(v*100,2)+"%";
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const TAGLBL={digital:"DIGITAL",lima:"LIMA",provincia:"PROVINCIA",fisico:"FÍSICO"};
 
-// ── Datos de ejemplo (mientras no haya cuenta de anuncios conectada) ──
-// Cada anuncio con sus totales; el detalle día por día se deriva abajo.
-const ADS=[
-  {campaign:"🛍️ Zapatillas Runner — Julio",adset:"Lima · 25–45",name:"Zapatillas · Video · Lima",tag:"lima",prod:"👟 Zapatillas Runner",prodTag:"fisico",gasto:450,impr:38000,alcance:22000,clics:640,clicsWA:95,conf:38,ventas:22,ingresos:2178,neta:430},
-  {campaign:"🛍️ Zapatillas Runner — Julio",adset:"Lima · 25–45",name:"Zapatillas · Foto · Lima",tag:"lima",prod:"👟 Zapatillas Runner",prodTag:"fisico",gasto:220,impr:19500,alcance:12800,clics:300,clicsWA:40,conf:15,ventas:9,ingresos:891,neta:140},
-  {campaign:"🛍️ Zapatillas Runner — Julio",adset:"Provincia",name:"Zapatillas · Carrusel · Prov",tag:"provincia",prod:"👟 Zapatillas Runner",prodTag:"fisico",gasto:380,impr:41000,alcance:26000,clics:560,clicsWA:72,conf:30,ventas:11,ingresos:1089,neta:60},
-  {campaign:"💻 Curso Steel Framing — Digital",adset:"Interesados construcción",name:"Curso · Testimonio",tag:"digital",prod:"💻 Curso Steel Framing",prodTag:"digital",gasto:300,impr:28000,alcance:17000,clics:520,clicsWA:60,conf:16,ventas:15,ingresos:2235,neta:1935},
-  {campaign:"💻 Curso Steel Framing — Digital",adset:"Interesados construcción",name:"Curso · Oferta 24h",tag:"digital",prod:"💻 Curso Steel Framing",prodTag:"digital",gasto:260,impr:30000,alcance:20000,clics:410,clicsWA:22,conf:5,ventas:1,ingresos:149,neta:-111},
-];
+// ── Datos REALES ────────────────────────────────────────────────────
+// El gasto/entrega sale de ads_insights + ads_meta (los baja ads-sync desde
+// Meta); las ventas/margen salen de orders atribuidos por shipping.ad_id (ya
+// los tiene Nodo). Se cruzan por ad_id. Mientras no haya sincronización, las
+// tablas están vacías → la sección muestra su estado vacío.
+const ymd=(d)=>{ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; };
+async function loadData(){
+  st.rows=[]; st.loaded=false;
+  const cid=st.channelId; if(!cid){ st.loaded=true; return; }
+  const r=st.range||computePreset("30d"); const from=ymd(r.from), to=ymd(r.to);
+  let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
+  try{ [insR,metaR,ordR]=await Promise.all([
+    supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to),
+    supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id").eq("channel_id",cid),
+    supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",from).lte("created_at",to+"T23:59:59"),
+  ]); }catch(_){ st.loaded=true; return; }
+  const meta=Object.fromEntries((metaR.data||[]).map(m=>[m.ad_id,m]));
+  const byAd={};
+  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; byAd[adId]={ ad_id:adId, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, daily:{} }; } return byAd[adId]; };
+  const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
+  (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=+i.gasto||0; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=+i.gasto||0; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
+  (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=(o.created_at||"").slice(0,10); const d=day(row,f);
+    if(esConf){ row.conf++; d.conf++; }
+    if(esVenta){ row.ventas++; row.ingresos+=tot; row._margen+=(mg==null?tot:mg); d.ventas++; d.ingresos+=tot; }
+    if(!row.tag){ const z=O.zonaDe(o); row.tag=z==="lima"?"lima":z==="provincia"?"provincia":"digital"; }
+    if(!row.prod && o.product){ row.prod=(o.product.emoji?o.product.emoji+" ":"")+(o.product.nombre||""); row.prodTag=o.product.tipo==="fisico"?"fisico":"digital"; }
+  });
+  Object.values(byAd).forEach(row=>{ row.neta=row._margen-row.gasto; });   // ganancia neta = margen − gasto de ads
+  st.rows=Object.values(byAd); st.loaded=true;
+}
+async function reload(){ await loadData(); render(); }
 
 // Todas las métricas derivadas de una fila de totales.
 function metrics(a){
@@ -236,21 +259,26 @@ async function loadAccount(){
   st.adAccounts=[]; st.syncError=null;
   try{ const { data }=await supa.from("ad_accounts").select("account_id,nombre").eq("channel_id",st.channelId).eq("activo",true); st.adAccounts=data||[]; }catch(_){}
   try{ const { data }=await supa.from("channels").select("ads_sync_error").eq("id",st.channelId).maybeSingle(); st.syncError=data?.ads_sync_error||null; }catch(_){}
-  renderStatus(); render();
+  renderStatus(); await reload();
 }
 function renderStatus(){
   const n=st.adAccounts.length;
-  const errBanner = st.syncError
-    ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="config.html">Ajustes → Meta</a>.</div></div>`
-    : "";
   $("statusSlot").innerHTML = n
     ? `<span class="okpill">${icon("megaphone")} ${n} cuenta${n>1?'s':''} conectada${n>1?'s':''}</span>`
-    : `<span class="demopill"><span class="d"></span>DATOS DE EJEMPLO</span>`;
-  $("noticeSlot").innerHTML = errBanner + (n
-    ? `<div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      <div>Conectado a ${n} cuenta${n>1?'s':''} de anuncios. La sincronización con Meta corre según la frecuencia que elijas en Ajustes; los primeros números reales aparecen tras la primera corrida. Mientras tanto ves datos de ejemplo.</div></div>`
-    : `<div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      <div>Estás viendo <b>datos de ejemplo</b>. Para llenarlo con tus números reales, <a href="config.html">conecta tus cuentas de anuncios en Ajustes → Meta</a>. Las ventas, el margen y la atribución por anuncio ya los tiene Nodo; solo falta el gasto de Meta.</div></div>`);
+    : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
+  $("noticeSlot").innerHTML = st.syncError
+    ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="config.html">Ajustes → Meta</a>.</div></div>`
+    : "";
+}
+function emptyStateHtml(){
+  const n=st.adAccounts.length;
+  return `<div class="nodo-empty" style="border:none;padding:52px 20px">
+    <div class="e-ic">${icon("rendimiento")}</div>
+    <h3>${n?"Aún no hay datos en este periodo":"Conecta tu cuenta de anuncios"}</h3>
+    <p>${n
+      ? `Estás conectado a ${n} cuenta${n>1?'s':''}. Los números aparecen tras la <b>primera sincronización con Meta</b> (según la frecuencia que elijas en Ajustes → Meta). Si acabas de conectar, dale unos minutos o prueba otro periodo.`
+      : `Para ver tu <b>CPA real</b>, <b>ganancia neta</b> y <b>ROAS</b> por anuncio, <a href="config.html" style="color:var(--brand)">conecta tu cuenta de anuncios en Ajustes → Meta</a>. Las ventas, el margen y la atribución por anuncio ya los tiene Nodo; solo falta el gasto de Meta.`}</p>
+  </div>`;
 }
 
 function render(){
@@ -271,12 +299,15 @@ function render(){
       </div>
       <div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>
     </div>
-    <div class="kpis" id="kpis"></div>
-    <div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;
-  renderKpis(); renderTable(); wireToolbar();
+    <div id="content"></div>`;
+  wireToolbar();
+  if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }
+  if(!st.rows.length){ $("content").innerHTML=emptyStateHtml(); return; }
+  $("content").innerHTML=`<div class="kpis" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;
+  renderKpis(); renderTable();
 }
 function renderKpis(){
-  const m=metrics(sumAds(ADS));
+  const m=metrics(sumAds(st.rows));
   const K=[
     ["Gasto en anuncios",money0(m.gasto),"var(--brand)",m.ventas+" ventas reales"],
     ["Ventas reales",String(m.ventas),"var(--green)","cobradas de verdad"],
@@ -288,23 +319,23 @@ function renderKpis(){
 }
 function renderTable(){
   if(st.vista==="anuncio"){ renderAnuncio(); } else { renderProducto(); }
-  $("tfoot").innerHTML=`<tr><td>Total</td>${cells(metrics(sumAds(ADS)))}</tr>`;
+  $("tfoot").innerHTML=`<tr><td>Total</td>${cells(metrics(sumAds(st.rows)))}</tr>`;
 }
 function nameCell(name,tag,emoji,drill){
   return `<div class="nm">${emoji?`<span class="em">${emoji}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
 }
 function renderAnuncio(){
   $("thead").innerHTML=headRow("Anuncio");
-  const camps=[...new Set(ADS.map(a=>a.campaign))];
+  const camps=[...new Set(st.rows.map(a=>a.campaign))];
   let html="";
   camps.forEach((camp,ci)=>{
-    const cads=ADS.filter(a=>a.campaign===camp);
+    const cads=st.rows.filter(a=>a.campaign===camp);
     html+=`<tr class="camp" data-c="${ci}"><td><div class="nm"><span class="caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span><span class="t1">${esc(camp)}</span></div></td>${cells(metrics(sumAds(cads)))}</tr>`;
     const asets=[...new Set(cads.map(a=>a.adset))];
     asets.forEach(aset=>{
       const aads=cads.filter(a=>a.adset===aset);
       html+=`<tr class="adset kid k${ci}"><td><span class="adname">Conjunto · ${esc(aset)}</span></td>${cells(metrics(sumAds(aads)))}</tr>`;
-      aads.forEach(a=>{ const i=ADS.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true)}</td>${cells(metrics(a))}</tr>`; });
+      aads.forEach(a=>{ const i=st.rows.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true)}</td>${cells(metrics(a))}</tr>`; });
     });
   });
   $("tbody").innerHTML=html;
@@ -313,11 +344,12 @@ function renderAnuncio(){
 }
 function renderProducto(){
   $("thead").innerHTML=headRow("Producto");
-  const prods=[...new Set(ADS.map(a=>a.prod))];
+  const key=(a)=>a.prod||"— sin producto —";
+  const prods=[...new Set(st.rows.map(key))];
   $("tbody").innerHTML=prods.map(p=>{
-    const pads=ADS.filter(a=>a.prod===p); const a0=pads[0];
-    const parts=p.split(" "); const em=parts.shift();
-    return `<tr class="ad" data-prod="${esc(p)}"><td>${nameCell(parts.join(" "),a0.prodTag,em,false)}</td>${cells(metrics(sumAds(pads)))}</tr>`;
+    const pads=st.rows.filter(a=>key(a)===p); const a0=pads[0];
+    const parts=String(p).split(" "); const em=/\p{Emoji}/u.test(parts[0])?parts.shift():"";
+    return `<tr class="ad"><td>${nameCell(parts.join(" ")||p,a0.prodTag,em,false)}</td>${cells(metrics(sumAds(pads)))}</tr>`;
   }).join("");
 }
 function wireToolbar(){
@@ -389,40 +421,32 @@ function renderPicker(){
   pop.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>{ pk.focus=new Date(pk.focus.getFullYear(),pk.focus.getMonth()+Number(b.dataset.nav),1); renderPicker(); });
   pop.querySelectorAll("[data-ymd]").forEach(b=>b.onclick=()=>{ const [yy,mm,dd]=b.dataset.ymd.split("_").map(Number); const date=new Date(yy,mm,dd); if(!pk.from||(pk.from&&pk.to)){ pk.from=date; pk.to=null; } else { if(date>=pk.from) pk.to=date; else { pk.to=pk.from; pk.from=date; } } pk.preset=null; renderPicker(); });
   $("drCancel").onclick=()=>$("drPop").classList.remove("show");
-  $("drApply").onclick=()=>{ if(!pk.from) return; if(!pk.to) pk.to=pk.from; st.range={from:pk.from,to:pk.to,preset:pk.preset}; $("drPop").classList.remove("show"); render(); };
+  $("drApply").onclick=()=>{ if(!pk.from) return; if(!pk.to) pk.to=pk.from; st.range={from:pk.from,to:pk.to,preset:pk.preset}; $("drPop").classList.remove("show"); reload(); };
 }
 
 // ── Detalle día por día ────────────────────────────────────────────
-// Serie diaria derivada de los totales del anuncio (distribución determinista
-// con variación, para el mockup). Con datos reales viene de ad_insights por día.
-// Pesos con variación (semilla distinta por métrica → cada una se mueve sola,
-// así el CPA/ROAS por día NO salen idénticos como en un reparto proporcional).
-function wser(n,seed){ const w=[]; for(let i=0;i<n;i++) w.push(0.45+Math.abs(Math.sin(i*1.3+seed)+0.45*Math.cos(i*0.7+seed*2))); return w; }
-function distrib(total,w){ const s=w.reduce((a,b)=>a+b,0); return w.map(x=>total*x/s); }
-// Reparto ENTERO que suma exacto al total (redondeo acumulado) — ventas y
-// confirmaciones son contables: nunca "1.4".
-function allocInt(total,w){ const s=w.reduce((a,b)=>a+b,0); let acc=0,prev=0; return w.map(x=>{ acc+=total*x/s; const c=Math.round(acc); const v=c-prev; prev=c; return v; }); }
-function serie(a,days=14){
-  const gasto=distrib(a.gasto, wser(days,a.gasto*0.03));
-  const impr =distrib(a.impr,  wser(days,a.impr*0.001+2));
-  const clics=distrib(a.clics, wser(days,a.clics*0.01+5));
-  const conf =allocInt(a.conf,   wser(days,a.conf*5+1));
-  const ventas=allocInt(a.ventas,wser(days,a.ventas*7+3));
-  const precio = a.ventas ? a.ingresos/a.ventas : 0;   // ingreso promedio por venta
-  const today=new Date();
-  return Array.from({length:days},(_,i)=>{ const d=new Date(today); d.setDate(d.getDate()-(days-1-i));
-    return { fecha:d, gasto:gasto[i], impr:impr[i], clics:clics[i], conf:conf[i], ventas:ventas[i], ingresos:ventas[i]*precio };
-  });
+// Serie diaria REAL: recorre cada día del periodo y toma lo que ads-sync +
+// orders dejaron en row.daily (0 si ese día no hubo nada).
+function serieReal(row){
+  const r=st.range||computePreset("30d"); const out=[]; let d=new Date(r.from); const end=new Date(r.to);
+  let guard=0;
+  while(d<=end && guard++<400){ const f=ymd(d); const x=row.daily[f]||{};
+    out.push({ fecha:new Date(d), gasto:x.gasto||0, impr:x.impr||0, clics:x.clics||0, conf:x.conf||0, ventas:x.ventas||0, ingresos:x.ingresos||0 });
+    d=new Date(d); d.setDate(d.getDate()+1);
+  }
+  return out;
 }
 function renderDetail(){
-  const a=ADS[st.sel]; const m=metrics(a); const S=serie(a);
+  const a=st.rows[st.sel]; if(!a){ st.sel=null; return render(); }
+  const m=metrics(a); const S=serieReal(a);
+  const emoji=(a.prod||"").split(" ")[0]||"";
   const v=$("view");
   v.innerHTML=`
     <button class="back" id="back">${icon("chevronLeft")||'‹'} Volver a Rendimiento</button>
     <div class="dhd">
-      <span class="em">${esc(a.prod.split(" ")[0])}</span>
-      <div><h2>${esc(a.name)}</h2><div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)} · <span class="tag ${a.tag}">${TAGLBL[a.tag]}</span> · ${esc(a.prod)}</div></div>
-      <span class="okpill" style="margin-left:auto">${icon("megaphone")} últimos 14 días</span>
+      ${/\p{Emoji}/u.test(emoji)?`<span class="em">${esc(emoji)}</span>`:""}
+      <div><h2>${esc(a.name)}</h2><div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)}${a.tag?` · <span class="tag ${a.tag}">${TAGLBL[a.tag]}</span>`:""}${a.prod?` · ${esc(a.prod)}`:""}</div></div>
+      <span class="okpill" style="margin-left:auto">${icon("megaphone")} ${esc(rangeLabel(st.range))}</span>
     </div>
     <div class="kpis">
       ${kpiMini("Gasto",money0(m.gasto),"var(--brand)")}
