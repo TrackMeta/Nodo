@@ -193,6 +193,33 @@ export const EXTRAS_CSS = `
   /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */
   .cpanel .cx-sec:not([open])>.cx-sec-body{display:none}
   .cpanel .cf-tech:not([open])>*:not(summary){display:none}
+  /* Copiloto en la ficha (validación de pagos in-situ) */
+  .cpanel .cx-copiloto{border:1.5px solid var(--brand);border-radius:14px;padding:12px;margin:12px 0 4px;background:var(--surface-2);display:flex;flex-direction:column;gap:9px}
+  .cpanel .cx-cop2-hd{display:flex;align-items:center;gap:8px;color:var(--brand)}
+  .cpanel .cx-cop2-pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;border-radius:999px}
+  .cpanel .cx-cop2-pill.dig{background:rgba(139,92,246,.16);color:#8b5cf6}
+  .cpanel .cx-cop2-pill.ext{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
+  .cpanel .cx-cop2-pill.adel{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
+  .cpanel .cx-cop2-pill.saldo{background:var(--brand-bg);color:var(--brand)}
+  .cpanel .cx-cop2-pill.desp{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
+  .cpanel .cx-cop2-pill.camino{background:var(--surface);color:var(--muted)}
+  .cpanel .cx-cop2-img{width:100%;max-height:190px;object-fit:cover;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;background:var(--surface)}
+  .cpanel .cx-cop2-noimg{width:100%;height:74px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px}
+  .cpanel .cx-cop2-amt{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .cpanel .cx-cop2-lbl{font-size:11px;color:var(--muted)}
+  .cpanel .cx-cop2-val{font-size:18px;font-weight:800;letter-spacing:-.3px}
+  .cpanel .cx-cop2-ia,.cpanel .cx-cop2-warn{display:flex;gap:7px;align-items:flex-start;font-size:12px;line-height:1.4;border-radius:9px;padding:8px 10px}
+  .cpanel .cx-cop2-ia svg,.cpanel .cx-cop2-warn svg{flex:none;margin-top:1px}
+  .cpanel .cx-cop2-ia.ok{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
+  .cpanel .cx-cop2-ia.duda,.cpanel .cx-cop2-warn{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
+  .cpanel .cx-cop2-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+  .cpanel .cx-cop2-btn{flex:1;min-width:120px;height:38px;border-radius:10px;border:none;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .cpanel .cx-cop2-btn.main{background:var(--green);color:#04140c}
+  .cpanel .cx-cop2-btn.main.blue{background:var(--brand);color:#fff}
+  .cpanel .cx-cop2-btn.main.amber{background:var(--amber);color:#231a05}
+  .cpanel .cx-cop2-btn.main:hover{filter:brightness(1.07)}
+  .cpanel .cx-cop2-btn.danger{flex:none;min-width:0;padding:0 14px;background:transparent;color:var(--red);border:1px solid var(--border)}
+  .cpanel .cx-cop2-btn.danger:hover{background:var(--red-bg,rgba(239,68,68,.12))}
   .cpanel .cx-actions{display:flex;gap:8px;margin:12px 0 2px}
   .cpanel .cx-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;
     border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);
@@ -234,6 +261,136 @@ export const EXTRAS_CSS = `
   .cf-tech .cf-trow .k{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--faint);word-break:break-all;flex:1}
   .cf-tech .cf-trow .v{color:var(--muted);text-align:right;word-break:break-word;max-width:45%}
 `;
+
+// ── Copiloto en la ficha ───────────────────────────────────────────
+// El mismo cockpit de decisión de copiloto.html, pero adaptado al panel
+// angosto y enfocado en UN pedido (el del contacto abierto). Solo aparece
+// cuando ese pedido necesita TU decisión (validar un pago, despachar, avisar).
+const ROBOT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="7" r="4"/><path d="M12 11v0M8 16h.01M16 16h.01"/></svg>';
+
+// La etapa de decisión de un pedido (subconjunto de las ETAPAS de copiloto.html).
+// null = no hay nada que decidir → la tarjeta no se muestra.
+export function copilotoEtapa(o) {
+  if (!o) return null;
+  const s = o.shipping || {};
+  if (o.estado === "pendiente" && s.digital_pendiente) return { id: "digital", titulo: "Pago digital por validar", pill: "dig" };
+  if (s.extra_pendiente) return { id: "extra", titulo: "Venta extra por validar", pill: "ext" };
+  if (o.estado === "esperando_adelanto") return { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" };
+  if (o.estado === "en_agencia") return { id: "saldo", titulo: "Saldo por validar", pill: "saldo" };
+  if (o.estado === "adelanto_validado" || o.estado === "por_despachar") return { id: "despachar", titulo: "Listo para despachar", pill: "desp" };
+  if (o.estado === "despachado") return { id: "camino", titulo: "En camino a la agencia", pill: "camino" };
+  return null;
+}
+
+// El veredicto del OCR (lo que te ahorra abrir la foto y hacer cuentas).
+function ocrVerdictHtml(o, et, sym) {
+  const s = o.shipping || {};
+  const line = (ok, monto, op, extra) => `<div class="cx-cop2-ia ${ok ? "ok" : "duda"}">${ROBOT}<span>${ok ? "La IA lo leyó y cuadra" : "La IA no lo dio por bueno"}${monto != null && monto !== "" ? ` · leyó <b>${sym} ${esc(monto)}</b>` : ""}${op ? ` · op <b>${esc(op)}</b>` : ""}${extra ? `<br>${esc(extra)}` : ""}</span></div>`;
+  if (et.id === "digital" && (s.digital_ok_ia != null || s.digital_monto_leido != null)) return line(s.digital_ok_ia === true, s.digital_monto_leido, s.digital_operacion, s.digital_revisar);
+  if (et.id === "extra" && (s.extra_ok_ia != null || s.extra_monto_leido != null)) return line(s.extra_ok_ia === true, s.extra_monto_leido, s.extra_operacion, null);
+  if (et.id === "adelanto" && (s.adelanto_revisar || s.adelanto_monto_leido != null)) return line(s.adelanto_ok_ia === true, s.adelanto_monto_leido, s.adelanto_operacion_leida, s.adelanto_revisar);
+  if (et.id === "saldo" && s.saldo_revisar) return `<div class="cx-cop2-ia duda">${ROBOT}<span>La IA no validó el saldo sola: <b>${esc(s.saldo_revisar)}</b></span></div>`;
+  return "";
+}
+
+function copilotoBtns(et) {
+  const B = (a, txt, cls) => `<button class="cx-cop2-btn ${cls || "main"}" data-a="${a}">${txt}</button>`;
+  if (et.id === "digital") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
+  if (et.id === "extra") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
+  if (et.id === "adelanto") return B("ok", "✓ Aprobar y avisar") + B("no", "Rechazar", "danger");
+  if (et.id === "saldo") return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
+  if (et.id === "despachar") return B("desp", "📦 Ya lo envié", "main amber");
+  return B("lleg", "📍 Avisar que llegó");
+}
+
+// La tarjeta compacta del Copiloto para la ficha (imagen, monto, veredicto,
+// botones). `fallbackImg` = último comprobante entrante, por si el pedido no lo
+// guardó en shipping.
+export function copilotoCardHtml(o, et, fallbackImg) {
+  const s = o.shipping || {};
+  const sym = o.currency === "USD" ? "$" : "S/";
+  const img = et.id === "adelanto" ? (s.adelanto_comprobante || fallbackImg)
+    : et.id === "saldo" ? (s.saldo_comprobante || fallbackImg)
+    : et.id === "digital" ? (s.digital_comprobante || fallbackImg)
+    : et.id === "extra" ? (s.extra_comprobante || fallbackImg) : null;
+  const monto = et.id === "adelanto" ? s.adelanto : et.id === "saldo" ? s.saldo
+    : et.id === "digital" ? (s.digital_monto_leido ?? o.amount)
+    : et.id === "extra" ? (s.extra_monto_leido ?? "") : o.amount;
+  const montoLbl = et.id === "adelanto" ? "Adelanto" : et.id === "saldo" ? "Saldo a cobrar"
+    : et.id === "extra" ? (s.extra_label || "Venta extra") : "Total";
+  const needClave = et.id === "saldo" && !s.clave_recojo;
+  return `<div class="cx-copiloto" data-order="${esc(o.id)}">
+    <div class="cx-cop2-hd">${ROBOT}<span class="cx-cop2-pill ${et.pill}">${esc(et.titulo)}</span></div>
+    ${img ? `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante"/>`
+      : (et.id === "adelanto" || et.id === "saldo" || et.id === "digital") ? `<div class="cx-cop2-noimg">Sin comprobante todavía</div>` : ""}
+    <div class="cx-cop2-amt"><span class="cx-cop2-lbl">${esc(montoLbl)}</span><span class="cx-cop2-val">${monto != null && monto !== "" ? sym + " " + esc(monto) : "—"}</span></div>
+    ${s.clave_recojo ? `<div class="cx-cop2-amt"><span class="cx-cop2-lbl">Clave de recojo</span><span class="cx-cop2-val" style="font-size:15px;color:var(--green)">${esc(s.clave_recojo)}</span></div>` : ""}
+    ${ocrVerdictHtml(o, et, sym)}
+    ${needClave ? `<div class="cx-cop2-warn">${ROBOT}<span>Este pedido no tiene clave de recojo — ponla antes de aprobar.</span></div>` : ""}
+    <div class="cx-cop2-acts">${copilotoBtns(et)}</div>
+  </div>`;
+}
+
+// Engancha los botones de la tarjeta. deps = { supa, toast, confirmDialog,
+// askChoice, askText, reload } (los provee cada página: la Bandeja y Probar).
+export function wireCopiloto(root, o, et, deps) {
+  const el = root.querySelector(".cx-copiloto"); if (!el) return;
+  const { supa, toast, confirmDialog, askChoice, askText, reload } = deps;
+  const c = o.contact || {};
+  const img = el.querySelector(".cx-cop2-img[data-full]");
+  if (img) img.onclick = () => window.open(img.dataset.full, "_blank");
+  const update = async (body) => {
+    const { data, error } = await supa.functions.invoke("order-update", { body });
+    if (error) { toast(error.message || "No se pudo actualizar", true); return null; }
+    if (data && data.error) { toast(data.error, true); return null; }
+    return data;
+  };
+  const aprobar = async (nuevo, titulo, detalle) => {
+    if (!await confirmDialog({ title: titulo, message: `${c.nombre || "Cliente"} — ${detalle}`, confirmText: "Confirmar" })) return;
+    const r = await update({ order_id: o.id, estado: nuevo });
+    if (r) { toast(r.flow_started ? "Listo ✓ · el bot le está escribiendo" : "Listo ✓"); reload && reload(); }
+  };
+  const aprobarExtra = async () => {
+    if (!await confirmDialog({ title: "Aprobar la venta extra", message: `${c.nombre || "Cliente"} — el bot le entrega el extra y continúa.`, confirmText: "Confirmar" })) return;
+    const r = await update({ order_id: o.id, resume: true, shipping: { extra_pendiente: false, extra_aprobado_at: new Date().toISOString() } });
+    if (r) { toast(r.resumed ? "Extra entregado ✓" : "Aprobado ✓"); reload && reload(); }
+  };
+  const rechazar = async (tipo) => {
+    const parqueado = tipo === "digital" || tipo === "extra";
+    let quien = "humano";
+    if (parqueado) {
+      quien = await askChoice({ title: "Rechazar el comprobante", message: `${c.nombre || "Cliente"} — marcas el pago como no válido. ¿Y después?`, value: "bot", options: [
+        { value: "bot", label: "Que el bot le pida otro", icon: "robot", desc: "Le dice que no pudo validar ese comprobante y le pide que reenvíe uno correcto. La venta sigue sola." },
+        { value: "humano", label: "Lo atiendo yo", icon: "user", desc: "El bot queda en pausa en este chat y le escribes tú." },
+      ] });
+      if (!quien) return;
+    } else if (!await confirmDialog({ title: "Rechazar el comprobante", message: `${c.nombre || "Cliente"} — se marca el ${tipo} como no válido. Escríbele para pedirle un pago correcto.`, confirmText: "Rechazar", danger: true })) return;
+    const patch = tipo === "adelanto" ? { adelanto_rechazado_at: new Date().toISOString(), adelanto_revisar: "Lo rechazaste tú" }
+      : tipo === "saldo" ? { saldo_rechazado_at: new Date().toISOString(), saldo_revisar: "Lo rechazaste tú" }
+      : tipo === "extra" ? { extra_rechazado_at: new Date().toISOString(), extra_revisar: "Lo rechazaste tú", extra_pendiente: false }
+      : { digital_rechazado_at: new Date().toISOString(), digital_revisar: "Lo rechazaste tú", digital_pendiente: false };
+    const r = await update({ order_id: o.id, shipping: patch, ...(parqueado ? { reject: quien, reject_motivo: "No pude validar ese comprobante. ¿Me lo reenvías, por favor?" } : {}) });
+    const pausa = parqueado && quien === "humano";
+    if (r && pausa) { try { await supa.from("contacts").update({ bot_activo: false }).eq("id", o.contact_id); } catch (_) { /* */ } }
+    if (r) { toast(pausa ? "Rechazado · el bot quedó en pausa" : (r.rejected ? "Rechazado · el bot le pide otro comprobante" : "Marcado como rechazado")); reload && reload(); }
+  };
+  const despachar = async () => {
+    const guia = await askText({ title: "Ya lo envié", label: "Número de guía de la agencia", placeholder: "Ej. 0012345678", confirmText: "Siguiente" });
+    if (!guia) return;
+    const clave = await askText({ title: "Clave de recojo", label: "La clave que le pedirás al cliente al recoger (opcional ahora)", placeholder: "Ej. 4821" });
+    const costo = await askText({ title: "¿Cuánto te costó enviarlo?", message: "Es para calcular tu ganancia real. El cliente nunca lo ve.", label: "Lo tienes en el recibo de la agencia", placeholder: "Ej. 18", confirmText: "Guardar" });
+    const flete = (costo ?? "").trim();
+    const r = await update({ order_id: o.id, estado: "despachado", shipping: { guia, ...(clave ? { clave_recojo: clave } : {}), ...(flete === "" ? {} : { flete: Number(flete) || 0 }) } });
+    if (r) { toast(r.flow_started ? "Despachado ✓ · el bot le manda la guía" : "Despachado ✓"); reload && reload(); }
+  };
+  const b = (a) => el.querySelector(`[data-a="${a}"]`);
+  if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }
+  else if (et.id === "extra") { b("ok").onclick = aprobarExtra; b("no").onclick = () => rechazar("extra"); }
+  else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para despachar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
+  else if (et.id === "saldo") { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
+  else if (et.id === "despachar") { b("desp").onclick = despachar; }
+  else if (et.id === "camino") { b("lleg").onclick = () => aprobar("en_agencia", "Avisar que llegó", "El bot le avisa que ya puede recogerlo y le pide el saldo."); }
+}
 
 let cssInjected = false;
 export function injectExtrasCss() {

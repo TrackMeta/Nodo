@@ -218,9 +218,9 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec } from "./contact-extras.js";
+import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto } from "./contact-extras.js";
 injectExtrasCss();
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
@@ -517,6 +517,8 @@ function renderContactPanel(){
   const subsBody = subsA.length?subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join(""):'<div class="cempty">Sin secuencias activas</div>';
   const nodosBody = nodos.length?nodos.slice(0,20).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join(""):'<div class="cempty">El motor registrará aquí los nodos</div>';
   const errsBody = errs.length?errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join(""):'<div class="cempty">Sin errores</div>';
+  const cet = copilotoEtapa(order);
+  const compFallback = (media.find(m=>m.direction==="in" && m.type==="image")||{}).content?.media_url || null;
   p.innerHTML=`
     <div class="chd">
       <div class="bigav">${icon("probar")}</div>
@@ -528,6 +530,7 @@ function renderContactPanel(){
       ${order&&O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Rótulo</button>`:""}
     </div>
     <div id="pCopBox"></div>
+    ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${sec("Datos del cliente", datosBody, {open:true})}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${sec("Etapa del embudo", stageBody, {open:true})}
@@ -544,6 +547,7 @@ function renderContactPanel(){
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{ await supa.from("contact_field_values").upsert({ contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },{ onConflict:"contact_id,field_id" }); vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓"); });
   const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{ rot.disabled=true; const rem=await remitenteDe(supa,st.channelId); printRotulo({...order,contact}, rem); rot.disabled=false; };
   const cop=$("pCopiloto"); if(cop) cop.onclick=()=> panelCopiloto();
+  if(cet) wireCopiloto(p, {...order,contact,contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText, reload:refreshPanel });
 }
 async function panelCopiloto(){
   const box=$("pCopBox"); if(!box) return;

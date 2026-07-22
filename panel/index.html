@@ -375,9 +375,9 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec } from "./contact-extras.js";
+import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto } from "./contact-extras.js";
 injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
@@ -766,6 +766,8 @@ function renderContactPanel(){
   const subsBody = subsA.length ? subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join("") : '<div class="cempty">Sin secuencias activas</div>';
   const nodosBody = nodos.length ? nodos.slice(0,15).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">El motor registrará aquí los nodos ejecutados</div>';
   const errsBody = errs.length ? errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">Sin errores registrados</div>';
+  const cet = copilotoEtapa(order); // ¿este contacto tiene algo que decidir?
+  const compFallback = (media.find(m=>m.direction==="in" && m.type==="image")||{}).content?.media_url || null;
   p.innerHTML = `
     <div class="chd">
       <div style="position:relative">
@@ -780,6 +782,7 @@ function renderContactPanel(){
       ${order&&O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Rótulo</button>`:""}
     </div>
     <div id="pCopBox"></div>`:""}
+    ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${!isTest?sec("Datos", datosRows, {open:true}):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${sec("Etapa del embudo", stageBody, {open:true})}
@@ -813,6 +816,8 @@ function renderContactPanel(){
     printRotulo({...order, contact}, rem); rot.disabled=false;
   };
   const cop=$("pCopiloto"); if(cop) cop.onclick=()=> panelCopiloto();
+  if(cet) wireCopiloto(p, {...order, contact, contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText,
+    reload:()=>{ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); } });
 }
 // Copiloto de la ficha: sugiere respuestas y, al tocar una, la escribe en el
 // compositor. Reusa reply-suggest (la misma IA del botón del compositor).
