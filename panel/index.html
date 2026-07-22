@@ -376,6 +376,9 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import * as O from "./orders.js";
+import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss } from "./contact-extras.js";
+injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
@@ -692,7 +695,7 @@ async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
   p.innerHTML = `<div class="cmuted" style="padding:20px 0;text-align:center">Cargando…</div>`;
   const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
-  const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes] = await Promise.all([
+  const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes, orderRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id", c.id),
@@ -702,10 +705,12 @@ async function loadContactPanel(c){
     supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id", c.id).order("created_at",{ascending:false}),
     supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id", c.id).order("suscrito_at",{ascending:false}),
     supa.from("contact_events").select("*").eq("contact_id", c.id).order("created_at",{ascending:false}).limit(100),
+    latestOrder(supa, c.id),
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
   panelData = {
     contact: ctRes.data || c,
+    order: orderRes || null,
     allTags: tagsRes.data || [],
     assigned: new Set((ctagsRes.data||[]).map(r=>r.tag_id)),
     fields: fieldsRes.data || [],
@@ -718,9 +723,11 @@ async function loadContactPanel(c){
   renderContactPanel();
 }
 function renderContactPanel(){
-  const { contact, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
+  const { contact, order, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
   const p = $("cpanel");
   const isTest = contact.wa_id === "webchat-test";
+  const userFields = fields.filter(f=>!esCampoInterno(f.key)); // datos del cliente
+  const techFields = fields.filter(f=> esCampoInterno(f.key) && (vals[f.id]!=null && vals[f.id]!=="")); // candados internos del motor
   const avail = allTags.filter(t=>!assigned.has(t.id));
   const emoji = contact.product && contact.product.emoji ? contact.product.emoji : "";
   const runsA = runs.filter(r=>["activo","esperando"].includes(r.estado));
@@ -734,9 +741,8 @@ function renderContactPanel(){
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
     <div class="kv"><span class="k">Estado del bot</span><span class="v">${botTxt}</span></div>
-    <div class="kv"><span class="k">Etapa</span><span class="v">${esc(contact.stage||"nuevo")}</span></div>
-    <div class="kv"><span class="k">Origen</span><span class="v">${esc(contact.source||"Directo")}</span></div>
-    <div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${contact.ad_id?esc(contact.ad_id):"—"}</span></div>
+    <div class="kv"><span class="k">Origen</span><span class="v">${esc(origenLabel(contact.source))}</span></div>
+    ${contact.ad_id?`<div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id)}</span></div>`:""}
     ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?emoji+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}
     <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
     <div class="kv"><span class="k">Último mensaje</span><span class="v" title="${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):''}">${contact.ultimo_mensaje_cliente_at?rel(contact.ultimo_mensaje_cliente_at):"—"}</span></div>`;
@@ -750,6 +756,12 @@ function renderContactPanel(){
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
     </div>
     ${datosRows}
+    ${!isTest?`<div class="cx-actions">
+      <button class="cx-btn ia" id="pCopiloto">${SG_SPARK} Copiloto</button>
+      ${order&&O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Rótulo</button>`:""}
+    </div>
+    <div id="pCopBox"></div>`:""}
+    ${order?`<h4>Pedido</h4>${pedidoResumenHtml(order)}`:""}
     <h4>Etapa del embudo</h4>
     <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
@@ -762,10 +774,13 @@ function renderContactPanel(){
       : '<div class="cmuted" style="margin-top:7px">Crea etiquetas en la sección Etiquetas</div>'}
     <h4>Campos personalizados</h4>
     <div id="pFields">${
-      fields.length
-        ? fields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
-        : '<span class="cmuted">Este canal no tiene campos personalizados aún</span>'
+      userFields.length
+        ? userFields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
+        : '<span class="cmuted">Este contacto no tiene campos con datos aún</span>'
     }</div>
+    ${techFields.length?`<details class="cf-tech"><summary>Campos técnicos del motor (${techFields.length})</summary>${
+      techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("")
+    }</details>`:""}
     <h4>Medios y archivos</h4>
     ${media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>` : '<div class="cempty">Sin archivos enviados</div>'}
     <h4>Flujos en ejecución</h4>
@@ -794,6 +809,29 @@ function renderContactPanel(){
       { onConflict:"contact_id,field_id" });
     vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓");
   });
+  const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{
+    rot.disabled=true; const rem=await remitenteDe(supa, state.channelId);
+    printRotulo({...order, contact}, rem); rot.disabled=false;
+  };
+  const cop=$("pCopiloto"); if(cop) cop.onclick=()=> panelCopiloto();
+}
+// Copiloto de la ficha: sugiere respuestas y, al tocar una, la escribe en el
+// compositor. Reusa reply-suggest (la misma IA del botón del compositor).
+async function panelCopiloto(){
+  const box=$("pCopBox"); if(!box) return;
+  if(box.dataset.open==="1"){ box.dataset.open="0"; box.innerHTML=""; return; }
+  box.dataset.open="1";
+  box.innerHTML=`<div class="cx-cop"><div class="cx-cop-hd">${SG_SPARK} Copiloto</div><div class="cx-cop-body"><div class="cx-cop-load"><span class="cx-spin"></span>Pensando 3 respuestas…</div></div></div>`;
+  const body=box.querySelector(".cx-cop-body");
+  try{
+    const res=await callFn("reply-suggest",{ channel_id:state.channelId, contact_id:state.contactId });
+    const out=await res.json().catch(()=>({}));
+    if(box.dataset.open!=="1") return;
+    const sug=Array.isArray(out.sugerencias)?out.sugerencias.filter(Boolean):[];
+    if(!res.ok || !sug.length){ body.innerHTML=`<div class="cx-cop-empty">${esc(out.error||out.detalle||"No pude sugerir respuestas ahora. Intenta de nuevo.")}</div>`; return; }
+    body.innerHTML=`<div class="cx-cop-empty" style="margin-bottom:1px">Toca una para escribirla en el chat:</div>`+sug.map(s=>`<button class="cx-sug" type="button">${esc(s)}</button>`).join("");
+    body.querySelectorAll(".cx-sug").forEach((b,i)=> b.onclick=()=>{ const inp=$("msgInput"); if(inp){ inp.value=sug[i]; inp.focus(); } toast("Respuesta lista en el chat ✓"); });
+  }catch{ if(box.dataset.open==="1") body.innerHTML=`<div class="cx-cop-empty">Error de red. Intenta de nuevo.</div>`; }
 }
 // ── Eventos / Timeline ──
 async function logEvent(contactId, tipo, titulo, detalle){

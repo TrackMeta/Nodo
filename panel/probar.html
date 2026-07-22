@@ -219,6 +219,9 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import * as O from "./orders.js";
+import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss } from "./contact-extras.js";
+injectExtrasCss();
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
 const STAGES=["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
@@ -468,7 +471,7 @@ function updateComposerMode(){
 function refreshPanel(){ if(st.contactId) loadContactPanel({ id:st.contactId, wa_id:"webchat-test", nombre:st.contactName }); }
 async function loadContactPanel(c){
   const p=$("cpanel"); p.classList.remove("hidden");
-  const [ctRes,tagsRes,ctagsRes,fieldsRes,valsRes,msgRes,runsRes,subsRes,evRes]=await Promise.all([
+  const [ctRes,tagsRes,ctagsRes,fieldsRes,valsRes,msgRes,runsRes,subsRes,evRes,orderRes]=await Promise.all([
     supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at,primera_interaccion,ad_id,ctwa_clid,ultimo_mensaje_cliente_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji)").eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id",c.id),
@@ -478,15 +481,18 @@ async function loadContactPanel(c){
     supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id",c.id).order("created_at",{ascending:false}),
     supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id",c.id).order("suscrito_at",{ascending:false}),
     supa.from("contact_events").select("*").eq("contact_id",c.id).order("created_at",{ascending:false}).limit(100),
+    latestOrder(supa,c.id),
   ]);
   if(st.contactId!==c.id) return;
-  panelData={ contact:ctRes.data||c, allTags:tagsRes.data||[], assigned:new Set((ctagsRes.data||[]).map(r=>r.tag_id)), fields:fieldsRes.data||[], vals:Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id,v.value])), media:(msgRes.data||[]).filter(m=>m.content&&m.content.media_url), runs:runsRes.error?[]:(runsRes.data||[]), subs:subsRes.error?[]:(subsRes.data||[]), events:evRes.error?[]:(evRes.data||[]) };
+  panelData={ contact:ctRes.data||c, order:orderRes||null, allTags:tagsRes.data||[], assigned:new Set((ctagsRes.data||[]).map(r=>r.tag_id)), fields:fieldsRes.data||[], vals:Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id,v.value])), media:(msgRes.data||[]).filter(m=>m.content&&m.content.media_url), runs:runsRes.error?[]:(runsRes.data||[]), subs:subsRes.error?[]:(subsRes.data||[]), events:evRes.error?[]:(evRes.data||[]) };
   setBotPill(panelData.contact.bot_activo!==false);
   renderContactPanel();
 }
 function renderContactPanel(){
-  const { contact,allTags,assigned,fields,vals,media,runs,subs,events }=panelData;
+  const { contact,order,allTags,assigned,fields,vals,media,runs,subs,events }=panelData;
   const p=$("cpanel");
+  const userFields=fields.filter(f=>!esCampoInterno(f.key));
+  const techFields=fields.filter(f=>esCampoInterno(f.key) && (vals[f.id]!=null && vals[f.id]!==""));
   const avail=allTags.filter(t=>!assigned.has(t.id));
   const runsA=runs.filter(r=>["activo","esperando"].includes(r.estado));
   const subsA=subs.filter(s=>s.estado==="activa");
@@ -503,18 +509,25 @@ function renderContactPanel(){
     <div class="kv"><span class="k">Teléfono</span><span class="v">Web Chat · sin número</span></div>
     <div class="kv"><span class="k">Estado del bot</span><span class="v">${contact.bot_activo!==false?'<span style="color:var(--green)">● Activo</span>':'<span style="color:var(--amber)">● En pausa</span>'}</span></div>
     <div class="kv"><span class="k">Producto</span><span class="v">${contact.product?`${contact.product.emoji?contact.product.emoji+" ":""}${esc(contact.product.nombre||"")}`:"—"}</span></div>
-    <div class="kv"><span class="k">Origen</span><span class="v">${esc(contact.source||"Directo")}</span></div>
-    <div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id||"—")}</span></div>
+    <div class="kv"><span class="k">Origen</span><span class="v">${esc(origenLabel(contact.source))}</span></div>
+    ${contact.ad_id?`<div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id)}</span></div>`:""}
     <div class="kv"><span class="k">Hora local</span><span class="v">${fmtTime.format(new Date())}</span></div>
     <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtFull(contact.primera_interaccion||contact.created_at)||"—"}</span></div>
     <div class="kv"><span class="k">Último mensaje</span><span class="v">${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):"—"}</span></div>
+    <div class="cx-actions">
+      <button class="cx-btn ia" id="pCopiloto">${SG_SPARK} Copiloto</button>
+      ${order&&O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Rótulo</button>`:""}
+    </div>
+    <div id="pCopBox"></div>
+    ${order?`<h4>Pedido</h4>${pedidoResumenHtml(order)}`:""}
     <h4>Etapa del embudo</h4>
     <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
     <div id="pTags">${[...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}22;color:${c};border-color:${c}55">${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar" style="color:${c}">×</button></span>`; }).join("")||'<span class="cmuted">Sin etiquetas</span>'}</div>
     ${avail.length?`<select class="cselect" id="pAddTag" style="margin-top:7px"><option value="">+ añadir etiqueta…</option>${avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("")}</select>`:'<div class="cmuted" style="margin-top:7px">Crea etiquetas en la sección Etiquetas</div>'}
     <h4>Campos capturados</h4>
-    <div id="pFields">${fields.length?fields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join(""):'<span class="cmuted">Este canal no tiene campos aún</span>'}</div>
+    <div id="pFields">${userFields.length?userFields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join(""):'<span class="cmuted">Aún no se han capturado campos</span>'}</div>
+    ${techFields.length?`<details class="cf-tech"><summary>Campos técnicos del motor (${techFields.length})</summary>${techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("")}</details>`:""}
     <h4>Medios enviados</h4>
     ${media.length?`<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>`:'<div class="cempty">Sin archivos</div>'}
     <h4>Flujos en ejecución</h4>
@@ -529,6 +542,24 @@ function renderContactPanel(){
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{ await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag); const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre); assigned.delete(b.dataset.tag); renderContactPanel(); });
   const add=$("pAddTag"); if(add) add.onchange=async()=>{ if(!add.value) return; await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:add.value },{ onConflict:"contact_id,tag_id" }); const t=allTags.find(x=>x.id===add.value); logEvent(contact.id,"etiqueta_add","Etiqueta añadida",t?.nombre); assigned.add(add.value); renderContactPanel(); };
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{ await supa.from("contact_field_values").upsert({ contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },{ onConflict:"contact_id,field_id" }); vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓"); });
+  const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{ rot.disabled=true; const rem=await remitenteDe(supa,st.channelId); printRotulo({...order,contact}, rem); rot.disabled=false; };
+  const cop=$("pCopiloto"); if(cop) cop.onclick=()=> panelCopiloto();
+}
+async function panelCopiloto(){
+  const box=$("pCopBox"); if(!box) return;
+  if(box.dataset.open==="1"){ box.dataset.open="0"; box.innerHTML=""; return; }
+  box.dataset.open="1";
+  box.innerHTML=`<div class="cx-cop"><div class="cx-cop-hd">${SG_SPARK} Copiloto</div><div class="cx-cop-body"><div class="cx-cop-load"><span class="cx-spin"></span>Pensando 3 respuestas…</div></div></div>`;
+  const body=box.querySelector(".cx-cop-body");
+  try{
+    const res=await callFn("reply-suggest",{ channel_id:st.channelId, contact_id:st.contactId });
+    const out=await res.json().catch(()=>({}));
+    if(box.dataset.open!=="1") return;
+    const sug=Array.isArray(out.sugerencias)?out.sugerencias.filter(Boolean):[];
+    if(!res.ok || !sug.length){ body.innerHTML=`<div class="cx-cop-empty">${esc(out.error||out.detalle||"No pude sugerir respuestas ahora. Intenta de nuevo.")}</div>`; return; }
+    body.innerHTML=`<div class="cx-cop-empty" style="margin-bottom:1px">Toca una para escribirla:</div>`+sug.map(s=>`<button class="cx-sug" type="button">${esc(s)}</button>`).join("");
+    body.querySelectorAll(".cx-sug").forEach((b,i)=> b.onclick=()=>{ const inp=$("msgInput"); if(inp){ inp.value=sug[i]; inp.focus(); } });
+  }catch{ if(box.dataset.open==="1") body.innerHTML=`<div class="cx-cop-empty">Error de red. Intenta de nuevo.</div>`; }
 }
 async function logEvent(contactId,tipo,titulo,detalle){ try{ await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){} }
 // ── Acciones ──
