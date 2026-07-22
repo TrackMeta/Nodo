@@ -418,7 +418,7 @@ injectExtrasCss();
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [],
-  filters: { sinResponder:false, anuncio:false, producto:"", tags:new Set(), stages:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
+  filters: { sinResponder:false, anuncio:false, archivado:false, producto:"", tags:new Set(), stages:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -484,7 +484,9 @@ async function loadConversations() {
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200);
   if (error) { ({ data } = await supa.from("conversations").select(sel(false))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200)); }
-  state.convs = (data||[]).filter(cv=>cv.contact && !cv.archivada && !cv.contact.bloqueado && cv.contact.wa_id!=="webchat-test");
+  // Los archivados se conservan en state.convs (para contarlos y para el filtro
+  // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.
+  state.convs = (data||[]).filter(cv=>cv.contact && !cv.contact.bloqueado && cv.contact.wa_id!=="webchat-test");
   renderConversations();
 }
 
@@ -506,6 +508,7 @@ function renderFilters(){
     <h4>Estado</h4>
     <button class="ftog ${f.sinResponder?"on":""}" id="fSin" type="button"><span class="ftg-nm">Sin responder</span><span class="fcount" id="cSin"></span></button>
     <button class="ftog ${f.anuncio?"on":""}" id="fAds" type="button"><span class="ftg-nm">${icon("megaphone")} Llegó por anuncio</span><span class="fcount" id="cAds"></span></button>
+    <button class="ftog ${f.archivado?"on":""}" id="fArch" type="button"><span class="ftg-nm">${icon("archive")} Archivados</span><span class="fcount" id="cArch"></span></button>
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
     <h4>Producto</h4>
@@ -518,10 +521,11 @@ function renderFilters(){
     <button class="fclear" id="fClear">Limpiar filtros</button>`;
   $("fSin").onclick=()=>{ f.sinResponder=!f.sinResponder; $("fSin").classList.toggle("on",f.sinResponder); renderConversations(); };
   $("fAds").onclick=()=>{ f.anuncio=!f.anuncio; $("fAds").classList.toggle("on",f.anuncio); renderConversations(); };
+  $("fArch").onclick=()=>{ f.archivado=!f.archivado; $("fArch").classList.toggle("on",f.archivado); renderConversations(); };
   box.querySelectorAll("[data-stage]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); btn.classList.toggle("on"); renderConversations(); });
   $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
-  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, anuncio:false, producto:"", tags:new Set(), stages:new Set() }; renderFilters(); renderConversations(); };
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, anuncio:false, archivado:false, producto:"", tags:new Set(), stages:new Set() }; renderFilters(); renderConversations(); };
   updateFilterCounts();
 }
 // Conteo por filtro dentro del modo actual (Bot/Humano).
@@ -529,12 +533,13 @@ function updateFilterCounts(){
   const inMode = (cv)=> state.mode==="bot" ? cv.contact.bot_activo!==false : cv.contact.bot_activo===false;
   const convs = (state.convs||[]).filter(inMode);
   const set=(id,n)=>{ const el=$(id); if(el) el.textContent=n; };
-  set("cSin", convs.filter(cv=>cv.no_leidos>0).length);
-  set("cAds", convs.filter(cv=>!!cv.contact.source).length);
+  set("cSin", convs.filter(cv=>cv.no_leidos>0 && !cv.archivada).length);
+  set("cAds", convs.filter(cv=>!!cv.contact.source && !cv.archivada).length);
+  set("cArch", convs.filter(cv=>cv.archivada).length);
   const sbox=$("filters");
-  if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>(cv.contact.stage||"nuevo")===k).length; });
+  if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.stage||"nuevo")===k).length; });
   const box=$("fTags");
-  if(box) box.querySelectorAll("[data-tagcount]").forEach(el=>{ const id=el.dataset.tagcount; el.textContent=convs.filter(cv=>(cv.contact.contact_tags||[]).some(t=>t.tag_id===id)).length; });
+  if(box) box.querySelectorAll("[data-tagcount]").forEach(el=>{ const id=el.dataset.tagcount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.contact_tags||[]).some(t=>t.tag_id===id)).length; });
 }
 function svgFilter(){ return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>'; }
 
@@ -647,6 +652,7 @@ function onDocClickComposer(e){ if(!e.target.closest(".composer")){ $("qrPop")?.
 document.addEventListener("click",onDocClickComposer);
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
+  if (f.archivado){ if(!cv.archivada) return false; } else if (cv.archivada) return false;
   if (f.sinResponder && !(cv.no_leidos>0)) return false;
   if (f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
   if (f.anuncio && !c.source) return false;
@@ -660,7 +666,7 @@ function renderConversations(){
   const list = state.convs.filter(cv => (state.mode==="bot" ? isBot(cv) : !isBot(cv)) && applyFilters(cv));
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+" Bot"; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+" Humano"; }
   updateFilterCounts();
-  const anyFilter = state.filters.sinResponder||state.filters.anuncio||state.filters.producto||state.filters.tags.size||state.filters.stages.size;
+  const anyFilter = state.filters.sinResponder||state.filters.anuncio||state.filters.archivado||state.filters.producto||state.filters.tags.size||state.filters.stages.size;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano")}</div>`; return; }
   list.forEach(cv => {
     const c = cv.contact;
@@ -864,12 +870,14 @@ function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit"
 // ── Menú de acciones del contacto ──
 function renderActionsMenu(){
   const m=$("actionsMenu");
+  const cv=(state.convs||[]).find(c=>c.contact_id===state.contactId);
+  const arch=!!cv?.archivada;
   m.innerHTML=`
     <button class="actitem" data-a="tag">${icon("etiquetas")} Agregar etiqueta</button>
     <button class="actitem" data-a="rebot">${icon("play")} Reactivar bot</button>
     <button class="actitem" data-a="follow">${icon("bookmark")} Marcar como seguimiento</button>
     <button class="actitem" data-a="unread">${icon("mail")} Marcar como no leído</button>
-    <button class="actitem" data-a="archive">${icon("archive")} Archivar</button>
+    <button class="actitem" data-a="${arch?"unarchive":"archive"}">${icon("archive")} ${arch?"Desarchivar":"Archivar"}</button>
     <button class="actitem" data-a="export">${icon("download")} Exportar mensajes</button>
     <div class="actsep"></div>
     <button class="actitem danger" data-a="block">${icon("ban")} Bloquear contacto</button>
@@ -886,6 +894,7 @@ async function actionHandler(a){
   if(a==="follow"){ await conv().update({ requiere_humano:true }).eq("contact_id",cid); logEvent(cid,"nota","Marcado para seguimiento"); toast("Marcado para seguimiento ✓"); loadConversations(); return; }
   if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído ✓"); backToList(); loadConversations(); return; }
   if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado ✓"); backToList(); loadConversations(); return; }
+  if(a==="unarchive"){ await conv().update({ archivada:false }).eq("contact_id",cid); logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado ✓"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="export"){ return exportMessages(); }
   if(a==="block"){ if(!await confirmDialog({title:"Bloquear contacto",message:"El bot dejará de responderle y saldrá de la bandeja.",confirmText:"Bloquear",danger:true})) return;
     let { error }=await supa.from("contacts").update({ bloqueado:true }).eq("id",cid);
