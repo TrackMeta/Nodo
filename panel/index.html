@@ -74,7 +74,12 @@
   .sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:36px;padding:0 10px;font-size:13px;outline:none}
   .conv{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;position:relative}
   .conv:hover{background:var(--surface)}
-  .conv.active{background:var(--surface-2)}
+  .conv.active{background:var(--brand-bg);box-shadow:inset 3px 0 0 var(--brand)}
+  .conv.active:hover{background:var(--brand-bg)}
+  .conv.active .nm{color:var(--brand)}
+  /* Comprado (dorado): su box-shadow lo usa la animación, así que el
+     seleccionado se marca con un anillo de marca en vez de la barra. */
+  .conv.bought.active{outline:2px solid var(--brand);outline-offset:-2px}
   /* Compra destacada — tono dorado elegante */
   /* Venta cerrada = boleto dorado brillante (estilo Willy Wonka) */
   .conv.bought{overflow:hidden;
