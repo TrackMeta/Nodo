@@ -76,19 +76,11 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon } from "./shell.js";
+import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, counts:{}, total:0, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const nf=new Intl.NumberFormat("es-PE");
-
-// Las 4 etapas reales del embudo (mismas que la Bandeja y Campañas).
-const STAGES=[
-  { k:"nuevo",      label:"Nuevo",      color:"#378ADD", desc:"Recién escribió" },
-  { k:"interesado", label:"Interesado", color:"#EF9F27", desc:"Preguntó, quiere más" },
-  { k:"confirmado", label:"Confirmado", color:"#8b5cf6", desc:"Confirmó recibir / adelanto validado" },
-  { k:"comprado",   label:"Comprado",   color:"#1D9E75", desc:"Venta cerrada, plata dentro" },
-  { k:"perdido",    label:"Perdido",    color:"#888780", desc:"Se cayó / no compró" },
-];
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }

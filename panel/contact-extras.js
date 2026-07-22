@@ -21,6 +21,27 @@ export function money(v, cur) {
   catch { return (cur || "PEN") + " " + Number(v || 0).toFixed(2); }
 }
 
+// Las etapas del embudo — FUENTE ÚNICA (la Bandeja, la ficha y la sección Embudo
+// la importan). value=lo que se guarda · label=lo que se muestra · color/desc.
+export const EMBUDO_STAGES = [
+  { k: "nuevo",      label: "Nuevo",      color: "#378ADD", desc: "Recién escribió" },
+  { k: "interesado", label: "Interesado", color: "#EF9F27", desc: "Preguntó, quiere más" },
+  { k: "confirmado", label: "Confirmado", color: "#8b5cf6", desc: "Confirmó recibir / adelanto validado" },
+  { k: "comprado",   label: "Comprado",   color: "#1D9E75", desc: "Venta cerrada, plata dentro" },
+  { k: "perdido",    label: "Perdido",    color: "#888780", desc: "Se cayó / no compró" },
+];
+
+// Selector de etapa bonito para la ficha: píldoras con el color de cada etapa,
+// la actual resaltada. Reemplaza el <select> plano. Los clicks los cablea la
+// página (busca [data-stagepick]).
+export function stagePickerHtml(current) {
+  const cur = String(current || "nuevo");
+  return `<div class="cx-stagepick">${EMBUDO_STAGES.map((s) => {
+    const on = s.k === cur;
+    return `<button type="button" class="cx-stagechip${on ? " on" : ""}" data-stagepick="${s.k}"${on ? ` style="background:${s.color}1c;border-color:${s.color};color:${s.color}"` : ""}><span class="cx-sd" style="background:${s.color}"></span><span class="cx-sl">${esc(s.label)}</span>${on ? '<span class="cx-sck">✓</span>' : ""}</button>`;
+  }).join("")}</div>`;
+}
+
 // Campos internos del motor: candados `una_vez` (_once_venta_…, _once_aviso_…),
 // estado persistido (_await) y cualquier clave que empiece con "_". No son datos
 // del cliente — se ocultan de "Campos personalizados" (antes ensuciaban la ficha
@@ -190,6 +211,17 @@ export const EXTRAS_CSS = `
   .cpanel .cx-sec-ar{margin-left:auto;width:7px;height:7px;border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);transform:rotate(-45deg);transition:transform .18s;flex:none}
   .cpanel .cx-sec[open]>summary .cx-sec-ar{transform:rotate(45deg)}
   .cpanel .cx-sec-body{padding:2px 0 14px}
+  /* Selector de etapa (píldoras bonitas, reemplaza el <select>) */
+  .cpanel .cx-stagepick{display:flex;flex-direction:column;gap:6px}
+  .cpanel .cx-stagechip{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:11px;border:1px solid var(--border);
+    background:var(--surface-2);color:var(--muted);font-size:12.5px;font-family:inherit;cursor:pointer;text-align:left;width:100%;
+    transition:border-color .14s,background .14s,transform .05s}
+  .cpanel .cx-stagechip:hover{border-color:var(--faint)}
+  .cpanel .cx-stagechip:active{transform:scale(.99)}
+  .cpanel .cx-stagechip.on{font-weight:700;box-shadow:0 1px 6px rgba(0,0,0,.06)}
+  .cpanel .cx-stagechip .cx-sd{width:10px;height:10px;border-radius:50%;flex:none}
+  .cpanel .cx-stagechip .cx-sl{flex:1}
+  .cpanel .cx-stagechip .cx-sck{font-size:13px;font-weight:800;flex:none}
   /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */
   .cpanel .cx-sec:not([open])>.cx-sec-body{display:none}
   .cpanel .cf-tech:not([open])>*:not(summary){display:none}
