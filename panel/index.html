@@ -1169,6 +1169,13 @@ $("tbBtnIc").innerHTML = icon("message");
 // las variables {{...}} las resuelve el backend con los datos del contacto).
 async function openTplPicker() {
   if (!state.contactId) return;
+  // Antes de nada: ¿el número de WhatsApp está conectado? Si no, no tiene
+  // sentido elegir una plantilla (el envío fallaría con "canal_invalido").
+  const { data: ch } = await supa.from("channels").select("phone_number_id,activo").eq("id", state.channelId).maybeSingle();
+  if (!ch || !ch.activo || !ch.phone_number_id) {
+    toast("Aún no conectaste tu número de WhatsApp. Conéctalo en Canales → WhatsApp para poder enviar plantillas.", true);
+    return;
+  }
   const { data, error } = await supa.from("wa_templates")
     .select("id,name,language,categoria,body_preview,estado_meta,activa")
     .eq("channel_id", state.channelId).order("name");
@@ -1186,7 +1193,17 @@ async function openTplPicker() {
   if (!ok) return;
   const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, template: { name: t.name, language: t.language || "es" } });
   const o = await r.json().catch(() => ({}));
-  if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "No se pudo enviar la plantilla", true); return; }
+  if (!r.ok) {
+    const FRIEND = {
+      canal_invalido: "Aún no conectaste tu número de WhatsApp. Conéctalo en Canales → WhatsApp.",
+      sin_token: "Falta el token de tu número de WhatsApp. Revísalo en Canales → WhatsApp.",
+      forbidden_channel: "No tienes permiso para enviar en este canal.",
+      no_auth: "Tu sesión expiró. Vuelve a iniciar sesión.",
+      not_member: "Tu sesión expiró. Vuelve a iniciar sesión.",
+    };
+    toast(FRIEND[o.error] || o.detalle?.message || o.detalle || o.error || "No se pudo enviar la plantilla", true);
+    return;
+  }
   toast("Plantilla enviada ✓"); setBotPill(false);
 }
 async function sendMsg() {
