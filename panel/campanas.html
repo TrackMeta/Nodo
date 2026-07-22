@@ -102,7 +102,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.j
 const $=(id)=>document.getElementById(id);
 // Etapas reales del ciclo de vida del contacto (contacts.stage). Se quitaron
 // los placeholders p1–p4 que no correspondían a ninguna etapa del negocio.
-const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["compromiso","Compromiso de pago"],["comprado","Comprado"],["perdido","Perdido"]];
+const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set() };
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}

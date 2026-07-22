@@ -83,11 +83,11 @@ const nf=new Intl.NumberFormat("es-PE");
 
 // Las 4 etapas reales del embudo (mismas que la Bandeja y Campañas).
 const STAGES=[
-  { k:"nuevo",      label:"Nuevo",              color:"#378ADD", desc:"Recién escribió" },
-  { k:"interesado", label:"Interesado",         color:"#EF9F27", desc:"Preguntó, quiere más" },
-  { k:"compromiso", label:"Compromiso de pago", color:"#8b5cf6", desc:"Hizo el pedido, falta pagar" },
-  { k:"comprado",   label:"Comprado",           color:"#1D9E75", desc:"Venta cerrada, plata dentro" },
-  { k:"perdido",    label:"Perdido",            color:"#888780", desc:"Se cayó / no compró" },
+  { k:"nuevo",      label:"Nuevo",      color:"#378ADD", desc:"Recién escribió" },
+  { k:"interesado", label:"Interesado", color:"#EF9F27", desc:"Preguntó, quiere más" },
+  { k:"confirmado", label:"Confirmado", color:"#8b5cf6", desc:"Confirmó recibir / adelanto validado" },
+  { k:"comprado",   label:"Comprado",   color:"#1D9E75", desc:"Venta cerrada, plata dentro" },
+  { k:"perdido",    label:"Perdido",    color:"#888780", desc:"Se cayó / no compró" },
 ];
 
 async function boot(){
@@ -131,7 +131,7 @@ function render(){
   $("kpis").innerHTML=[
     ["Total contactos", nf.format(total), "en este canal", "var(--brand)"],
     ["Sin decidir", nf.format(activos), "Nuevos + Interesados", "#EF9F27"],
-    ["Por cerrar", nf.format(c.compromiso||0), "comprometidos a pagar", "#8b5cf6"],
+    ["Confirmados", nf.format(c.confirmado||0), "por recibir o pagar saldo", "#8b5cf6"],
     ["Compraron", nf.format(c.comprado||0), pct(c.comprado||0)+"% del total", "var(--green)"],
     ["Perdidos", nf.format(c.perdido||0), pct(c.perdido||0)+"% del total", "#888780"],
   ].map(([h,v,d,col])=>`<div class="kpi"><div class="h"><span class="dot" style="background:${col}"></span>${h}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
@@ -153,7 +153,7 @@ function render(){
 
   // Conversión honesta (foto actual): cuántos llegaron a comprar del total.
   const convTotal= pct(c.comprado||0);
-  const interesados=(c.interesado||0)+(c.compromiso||0)+(c.comprado||0); // pasaron de "solo nuevo"
+  const interesados=(c.interesado||0)+(c.confirmado||0)+(c.comprado||0); // pasaron de "solo nuevo"
   $("conv").innerHTML= total===0 ? "" : `
     <div class="convpill">Conversión a compra: <b>${convTotal}%</b></div>
     <div class="convpill">Mostraron interés: <b>${pct(interesados)}%</b></div>

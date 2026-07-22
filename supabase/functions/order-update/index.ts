@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
       });
     } catch (e) { console.error("[order-update] capi purchase:", (e as any)?.message ?? e); }
     // Embudo automático: el cambio de estado del pedido mueve la etapa de la
-    // persona (compromiso / comprado / perdido). Solo avanza; nunca retrocede.
+    // persona (confirmado / comprado / perdido). Solo avanza; nunca retrocede.
     await moverEtapa(db, (order as any).channel_id, (order as any).contact_id, stageDeEstado(newEstado));
   }
 

@@ -3908,7 +3908,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                     amount, estado: "pendiente", shipping: ship,
                   }).select("id").single();
                   if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
-                  await moverEtapa(db, run.channel_id, run.contact_id, "compromiso");
+                  // Pago digital sin validar aún → sigue Interesado (no es Confirmado).
+                  await moverEtapa(db, run.channel_id, run.contact_id, "interesado");
                 }
               } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
               run.vars._pago_manual_pendiente = true;
@@ -4349,18 +4350,24 @@ async function logEvent(
 // venta. Mapea el estado del PEDIDO → la etapa de la PERSONA. Ver panel/embudo.html.
 //   comprado   = venta cerrada, la plata entró (mismo criterio que el Purchase a Meta)
 //   perdido    = el pedido se cayó
-//   compromiso = hizo el pedido pero falta pagar/recibir (contraentrega, adelanto, pago sin validar)
+//   confirmado = compromiso VALIDADO, falta la plata final: Lima contraentrega (ya
+//                confirmó que lo recibe, paga en la puerta) · provincia con el PRIMER
+//                ADELANTO ya validado, en adelante.
+//   interesado = pedido creado pero SIN validar aún (provincia esperando el adelanto,
+//                pago digital sin aprobar): mostró intención, todavía puede abandonar.
 const STAGE_COMPRADO = new Set(["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"]);
 const STAGE_PERDIDO = new Set(["rechazado", "no_recogido", "cancelado", "anulada"]);
-const STAGE_COMPROMISO = new Set(["confirmado", "en_reparto", "reprogramado", "esperando_adelanto", "adelanto_validado", "por_despachar", "despachado", "en_agencia", "pendiente"]);
+const STAGE_CONFIRMADO = new Set(["confirmado", "en_reparto", "reprogramado", "adelanto_validado", "por_despachar", "despachado", "en_agencia"]);
+const STAGE_INTERESADO = new Set(["esperando_adelanto", "pendiente"]);
 export function stageDeEstado(estado?: string | null): string | null {
   const e = String(estado ?? "");
   if (STAGE_COMPRADO.has(e)) return "comprado";
   if (STAGE_PERDIDO.has(e)) return "perdido";
-  if (STAGE_COMPROMISO.has(e)) return "compromiso";
+  if (STAGE_CONFIRMADO.has(e)) return "confirmado";
+  if (STAGE_INTERESADO.has(e)) return "interesado";
   return null; // carrito u otros → no toca la etapa
 }
-const STAGE_RANK: Record<string, number> = { nuevo: 0, interesado: 1, compromiso: 2, comprado: 3 };
+const STAGE_RANK: Record<string, number> = { nuevo: 0, interesado: 1, confirmado: 2, comprado: 3 };
 // Mueve la etapa SOLO hacia adelante (nunca retrocede), salvo a "perdido" y solo
 // si el contacto no era ya "comprado" (un comprador no se marca perdido por un
 // pedido posterior que se cayó). Silenciosa ante errores: nunca rompe la venta.

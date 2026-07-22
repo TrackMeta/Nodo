@@ -225,7 +225,7 @@ injectExtrasCss();
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
 // Etapas reales del embudo (los viejos p1–p4 eran placeholders muertos).
-const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["compromiso","Compromiso de pago"],["comprado","Comprado"],["perdido","Perdido"]];
+const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
 const EMOJI_CATS=[
   { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },
   { n:"Gestos", e:"👋🤚🖐✋🖖👌🤌🤏✌️🤞🤟🤘🤙👈👉👆🖕👇☝️👍👎✊👊🤛🤜👏🙌👐🤲🤝🙏✍️💅🤳💪🦾🦵🦿🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄" },
