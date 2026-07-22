@@ -63,5 +63,6 @@ export async function getChannelSecrets(db: SupabaseClient, channelId: string) {
     app_secret: string | null;
     capi_token: string | null;
     telegram_bot_token: string | null;
+    ads_token: string | null;
   } | null;
 }

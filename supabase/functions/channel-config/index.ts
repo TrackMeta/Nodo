@@ -14,7 +14,7 @@ const db = serviceClient();
 // Campos planos del canal editables desde el panel.
 const PLAIN = ["phone_number_id", "waba_id", "verify_token", "pixel_id", "page_id"];
 // Secretos → Vault.
-const SECRETS = ["access_token", "app_secret", "capi_token", "telegram_bot_token"];
+const SECRETS = ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -46,6 +46,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, secrets: {
         access_token: !!(s as any).access_token, app_secret: !!(s as any).app_secret,
         capi_token: !!(s as any).capi_token, telegram_bot_token: !!(s as any).telegram_bot_token,
+        ads_token: !!(s as any).ads_token,
       } });
     }
 

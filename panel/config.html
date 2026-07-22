@@ -499,27 +499,54 @@ function renderPixel(box){
       <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
     </div>
     <div class="card">
-      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Conexión de anuncios (para Rendimiento)</span></div>
-      <div class="desc">Conecta tu cuenta publicitaria para ver el <b>gasto</b> de cada anuncio junto a tus ventas reales en la sección <b>Rendimiento</b> (CPA de confirmación, CPA real, ganancia neta y ROAS). Las ventas, el margen y la atribución por anuncio ya los tiene Nodo.</div>
-      <div class="f"><label>ID de la cuenta de anuncios ${c.ad_account_id?'<span class="badge on">Guardado</span>':'<span class="badge">Sin configurar</span>'}</label>
-        <input class="in" id="m_ad_account" value="${esc(c.ad_account_id)}" placeholder="act_1234567890"/></div>
-      <div class="acts"><button class="btn primary" id="saveAds">Guardar cuenta</button></div>
+      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Conexión de anuncios (Rendimiento)</span></div>
+      <div class="desc">Conecta tus cuentas publicitarias para ver el <b>gasto</b> de cada anuncio junto a tus ventas reales en la sección <b>Rendimiento</b> (CPA de confirmación, CPA real, ganancia neta y ROAS). Puedes seguir <b>varias cuentas</b>; las ventas, el margen y la atribución por anuncio ya los tiene Nodo.</div>
+
+      <label>Cuentas publicitarias</label>
+      <div id="adAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
+      <div class="row" style="align-items:flex-end;gap:8px">
+        <div class="f" style="flex:1;margin:0"><input class="in" id="m_ad_acc_new" placeholder="act_1234567890"/></div>
+        <div class="f" style="margin:0"><input class="in" id="m_ad_acc_name" placeholder="Nombre (opcional)" style="max-width:170px"/></div>
+        <button class="btn" id="addAdAcc">Agregar</button>
+      </div>
+
+      <label style="margin-top:16px">Token de lectura (ads_read) ${s.ads_token?'<span class="badge on">Conectado</span>':'<span class="badge">Sin conectar</span>'}</label>
+      <input class="in" type="password" id="s_ads_token" autocomplete="off" placeholder="${s.ads_token?'•••••••• guardado':'token del usuario de sistema con permiso ads_read'}"/>
+      <div class="acts"><button class="btn primary" id="saveAdsToken">Guardar token</button></div>
+
       <div style="font-size:12px;color:var(--faint);margin-top:12px;line-height:1.7;border-top:1px solid var(--border);padding-top:12px">
-        <b style="color:var(--muted)">Cómo obtener el ID:</b> en <b>Meta Ads Manager</b> → arriba a la izquierda está el selector de cuenta; el número que aparece como <span style="font-family:monospace">act_…</span> es tu ID de cuenta publicitaria.<br>
-        <b style="color:var(--muted)">Falta el permiso de lectura:</b> para que Nodo baje el gasto necesita un <b>token con permiso <span style="font-family:monospace">ads_read</span></b> de esa cuenta (se genera en un <b>Meta App</b> con un <b>usuario de sistema</b>). Ese paso se activa en la próxima actualización; por ahora guarda tu ID de cuenta y la sección funciona con datos de ejemplo.
+        <b style="color:var(--muted)">Cómo conectarlo:</b><br>
+        1. <b>ID de cuenta:</b> en <b>Meta Ads Manager</b>, arriba a la izquierda, está el selector de cuenta — el <span style="font-family:monospace">act_…</span> es tu ID. Agrégalo arriba.<br>
+        2. <b>Token de lectura:</b> en <b>Business Settings → Usuarios del sistema</b>, crea uno, asígnale tus cuentas de anuncios con acceso, y genera un token con el permiso <span style="font-family:monospace">ads_read</span>. Pégalo aquí.<br>
+        <span style="color:var(--muted)">Un mismo token de usuario de sistema puede leer <b>varias cuentas</b>: lo conectas una vez y agregas arriba todas las que quieras seguir.</span>
       </div>
     </div>`;
   $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value, capi_token:$("s_capi_token").value||undefined });
   $("testPixel").onclick=(e)=>testPixel(e.target);
-  $("saveAds").onclick=saveAdAccount;
+  $("addAdAcc").onclick=addAdAccount;
+  $("saveAdsToken").onclick=(e)=>saveChannel(e.target,{ ads_token:$("s_ads_token").value||undefined });
+  loadAdAccounts();
 }
-async function saveAdAccount(){
-  let v=$("m_ad_account").value.trim();
-  if(v && !/^act_/.test(v)) v="act_"+v.replace(/^act_/,"");   // normaliza: acepta con o sin "act_"
-  const { error }=await supa.from("channels").update({ ad_account_id:v||null }).eq("id",st.channelId);
+async function loadAdAccounts(){
+  const box=$("adAccList"); if(!box) return;
+  const { data,error }=await supa.from("ad_accounts").select("id,account_id,nombre").eq("channel_id",st.channelId).order("created_at");
+  if(error){ box.innerHTML=`<span style="color:var(--red);font-size:12.5px">${esc(error.message)}</span>`; return; }
+  if(!data||!data.length){ box.innerHTML=`<span style="color:var(--faint);font-size:12.5px">Aún no agregaste ninguna cuenta.</span>`; return; }
+  box.innerHTML=data.map(a=>`<div style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px">
+    <span style="font-family:monospace;font-size:12.5px;color:var(--text)">${esc(a.account_id)}</span>
+    ${a.nombre?`<span style="color:var(--muted);font-size:12px">${esc(a.nombre)}</span>`:""}
+    <button class="btn" data-del="${a.id}" style="margin-left:auto;height:30px;padding:0 11px;font-size:12px">Quitar</button>
+  </div>`).join("");
+  box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{ await supa.from("ad_accounts").delete().eq("id",b.dataset.del); loadAdAccounts(); });
+}
+async function addAdAccount(){
+  let v=$("m_ad_acc_new").value.trim();
+  if(!v){ toast("Escribe el ID de la cuenta (act_…)",true); return; }
+  if(!/^act_/.test(v)) v="act_"+v.replace(/^act_/,"");   // acepta con o sin "act_"
+  const nombre=$("m_ad_acc_name").value.trim()||null;
+  const { error }=await supa.from("ad_accounts").upsert({ channel_id:st.channelId, account_id:v, nombre },{ onConflict:"channel_id,account_id" });
   if(error){ toast(error.message,true); return; }
-  if(st.channel) st.channel.ad_account_id=v||null;
-  toast(v?"Cuenta de anuncios guardada ✓":"Cuenta de anuncios quitada");
+  $("m_ad_acc_new").value=""; $("m_ad_acc_name").value=""; toast("Cuenta agregada ✓"); loadAdAccounts();
 }
 
 async function testPixel(btn){
