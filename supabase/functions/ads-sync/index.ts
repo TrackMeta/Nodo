@@ -45,14 +45,21 @@ Deno.serve(async (req) => {
   for (const [channelId, cuentas] of porCanal) {
     const token = (await getChannelSecrets(db, channelId))?.ads_token;
     if (!token) { resumen.push({ channelId, saltado: "sin_token" }); continue; }
+    let authErr: string | null = null;
     for (const acct of cuentas) {
       try {
         const n = await syncCuenta(channelId, acct, token, since, until);
         resumen.push({ channelId, acct, filas: n });
       } catch (e) {
-        resumen.push({ channelId, acct, error: String((e as any)?.message ?? e) });
+        const msg = String((e as any)?.message ?? e);
+        resumen.push({ channelId, acct, error: msg });
+        if ((e as any)?.authError) authErr = msg;   // token inválido/caducado
       }
     }
+    // Anota o limpia el estado del token del canal → el panel avisa si falla.
+    await db.from("channels").update(
+      authErr ? { ads_sync_error: authErr } : { ads_sync_error: null, ads_sync_at: new Date().toISOString() },
+    ).eq("id", channelId);
   }
   return json({ ok: true, canales: porCanal.size, resumen });
 });
@@ -80,7 +87,10 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
     const res = await fetch(url);
     const body = await res.json();
     if (!res.ok || body.error) {
-      throw new Error(body?.error?.message ?? `graph ${res.status}`);
+      const e = body?.error ?? {};
+      const err = new Error(e.message ?? `graph ${res.status}`) as Error & { authError?: boolean };
+      err.authError = e.code === 190 || /OAuthException/i.test(String(e.type ?? ""));
+      throw err;
     }
     for (const r of body.data ?? []) {
       const adId = String(r.ad_id);
