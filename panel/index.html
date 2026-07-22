@@ -252,7 +252,12 @@
   .tagadd{position:relative;display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--border);border-radius:20px;padding:4px 11px 4px 9px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s}
   .tagadd:hover{border-color:var(--brand);color:var(--brand)}
   .tagadd svg{width:13px;height:13px}
-  .tagadd select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;font-size:12px}
+  .tagadd-wrap{position:relative;display:inline-flex}
+  .tagpop{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:172px;max-height:236px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px}
+  .tagpop[hidden]{display:none}
+  .tagpop-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:12.5px;font-weight:600;padding:7px 9px;border-radius:7px;cursor:pointer}
+  .tagpop-item:hover{background:var(--surface-2)}
+  .tagpop-item .tdot{width:8px;height:8px;border-radius:50%;flex:none}
   .cfield{margin-bottom:9px}
   .cfield label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
   .cinput,.cselect{width:100%;height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 9px;font-size:13px;outline:none;font-family:inherit}
@@ -804,7 +809,7 @@ function renderContactPanel(){
   const tagsBody = `<div id="pTags" class="tagrow">${
       [...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}1e;color:${c};border-color:${c}4d"><span class="tdot" style="background:${c}"></span>${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar">×</button></span>`; }).join("")
     }${avail.length
-      ? `<label class="tagadd" title="Añadir etiqueta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Añadir</span><select id="pAddTag" aria-label="Añadir etiqueta"><option value="">+ añadir etiqueta…</option>${avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("")}</select></label>`
+      ? `<span class="tagadd-wrap"><button class="tagadd" id="pAddBtn" type="button" title="Añadir etiqueta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Añadir</span></button><div class="tagpop" id="pTagPop" hidden>${avail.map(t=>{ const c=tagHex(t.color); return `<button class="tagpop-item" type="button" data-add="${t.id}"><span class="tdot" style="background:${c}"></span>${esc(t.nombre)}</button>`; }).join("")}</div></span>`
       : ""}</div>${
       (!assigned.size && !avail.length) ? '<div class="cmuted" style="margin-top:6px">Crea etiquetas en la sección Etiquetas para clasificar a tus clientes.</div>'
       : (!assigned.size ? '<div class="cmuted" style="margin-top:6px">Sin etiquetas aún — añade una para segmentar y filtrar.</div>' : "")}`;
@@ -849,12 +854,17 @@ function renderContactPanel(){
     const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre);
     assigned.delete(b.dataset.tag); renderContactPanel();
   });
-  const add=$("pAddTag"); if(add) add.onchange=async()=>{
-    if(!add.value) return;
-    await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:add.value }, { onConflict:"contact_id,tag_id" });
-    const t=allTags.find(x=>x.id===add.value); logEvent(contact.id,"etiqueta_add","Etiqueta añadida",t?.nombre);
-    assigned.add(add.value); renderContactPanel();
-  };
+  const addBtn=$("pAddBtn"), pop=$("pTagPop");
+  if(addBtn && pop){
+    addBtn.onclick=(e)=>{ e.stopPropagation(); pop.hidden=!pop.hidden; };
+    pop.querySelectorAll("[data-add]").forEach(b=> b.onclick=async(e)=>{
+      e.stopPropagation();
+      await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:b.dataset.add }, { onConflict:"contact_id,tag_id" });
+      const t=allTags.find(x=>x.id===b.dataset.add); logEvent(contact.id,"etiqueta_add","Etiqueta añadida",t?.nombre);
+      assigned.add(b.dataset.add); renderContactPanel();
+    });
+  }
+  if(!window.__tagPopWired){ window.__tagPopWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".tagadd-wrap")) document.querySelectorAll(".tagpop").forEach(x=>{ x.hidden=true; }); }); }
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{
     await supa.from("contact_field_values").upsert(
       { contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },
@@ -897,7 +907,7 @@ function backToList(){ state.contactId=null; $("chatView").classList.add("hidden
 async function actionHandler(a){
   const cid=state.contactId; if(!cid) return;
   const conv=()=>supa.from("conversations");
-  if(a==="tag"){ const sel=$("pAddTag"); if(sel){ sel.scrollIntoView({block:"center"}); setTimeout(()=>sel.focus(),150); } else toast("Crea etiquetas en la sección Etiquetas",true); return; }
+  if(a==="tag"){ const btn=$("pAddBtn"); if(btn){ btn.scrollIntoView({block:"center"}); setTimeout(()=>btn.click(),150); } else toast("Crea etiquetas en la sección Etiquetas",true); return; }
   if(a==="rebot"){ await supa.from("contacts").update({ bot_activo:true }).eq("id",cid); setBotPill(true); if(panelData.contact) panelData.contact.bot_activo=true; logEvent(cid,"bot_reactiva","Bot reactivado"); toast("Bot reactivado ✓"); loadConversations(); return; }
   if(a==="follow"){ await conv().update({ requiere_humano:true }).eq("contact_id",cid); logEvent(cid,"nota","Marcado para seguimiento"); toast("Marcado para seguimiento ✓"); loadConversations(); return; }
   if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído ✓"); backToList(); loadConversations(); return; }
