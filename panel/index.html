@@ -84,14 +84,15 @@
   .av-emoji{position:absolute;right:-3px;bottom:-3px;font-size:14px;line-height:1;background:var(--surface);border-radius:50%;padding:1px}
   .conv .dots{display:flex;gap:5px;margin-top:4px;align-items:center;flex-wrap:wrap}
   .idot{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:4px}
-  .idot.bot{background:var(--green-bg);color:var(--green)}
+  .idot.bot{background:rgba(168,85,247,.14);color:#a855f7}
   .idot.paused{background:var(--amber-bg);color:var(--amber)}
   .idot.human{background:var(--brand-bg);color:var(--brand)}
   .idot.bought{background:rgba(240,169,43,.16);color:#f0a92b}
   .modewrap{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px;flex:1}
   .modebtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
   .modebtn.active{background:var(--brand);color:#fff}
-  .modebtn.active[data-mode="bot"]{background:var(--green)}
+  /* El "Bot" toma el diseño de la sección IA (violeta→fucsia); "Humano" queda azul. */
+  .modebtn.active[data-mode="bot"]{background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 2px 8px rgba(168,85,247,.32)}
   .conv .body{min-width:0;flex:1}
   .conv .r1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
   .conv .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -104,6 +105,18 @@
   .chat .hd{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
   .chat .hd .nm{font-weight:600}
   .chat .hd .ph{font-size:12px;color:var(--muted)}
+  /* Header en 3 zonas: izq (contacto) · centro (botón bot) · der (ventana/vistas/menú) */
+  .hd-side{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+  .hd-right{justify-content:flex-end}
+  .hd-right .win{margin-left:0}
+  /* Botón único activar/desactivar bot, al centro, con el diseño de la sección IA */
+  .botbtn{flex:none;display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 16px;border-radius:20px;border:none;
+    font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .06s,border-color .15s,color .15s}
+  .botbtn:active{transform:scale(.97)}
+  .botbtn.on{background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;box-shadow:0 3px 12px rgba(168,85,247,.38)}
+  .botbtn.on:hover{filter:brightness(1.07)}
+  .botbtn.off{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+  .botbtn.off:hover{border-color:#a855f7;color:#a855f7}
   .pill{font-size:11px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px}
   .pill.on{background:var(--green-bg);color:var(--green)}
   .pill.off{background:var(--amber-bg);color:var(--amber)}
@@ -315,19 +328,23 @@
     </div>
     <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
       <div class="hd">
-        <div class="av" id="chAv"></div>
-        <div style="min-width:0">
-          <div class="nm" id="chName"></div>
-          <div class="ph" id="chPhone"></div>
+        <div class="hd-side hd-left">
+          <div class="av" id="chAv"></div>
+          <div style="min-width:0">
+            <div class="nm" id="chName"></div>
+            <div class="ph" id="chPhone"></div>
+          </div>
         </div>
-        <span class="pill on" id="chBot">● Bot activo</span>
-        <span class="win" id="chWin"></span>
-        <div class="hdtoggle" id="viewToggle">
-          <button class="htb active" data-v="chat">Chat</button>
-          <button class="htb" data-v="timeline">Actividad</button>
+        <button class="botbtn on" id="chBot" type="button">🤖 Bot activo</button>
+        <div class="hd-side hd-right">
+          <span class="win" id="chWin"></span>
+          <div class="hdtoggle" id="viewToggle">
+            <button class="htb active" data-v="chat">Chat</button>
+            <button class="htb" data-v="timeline">Actividad</button>
+          </div>
+          <button class="hdmenu" id="actionsBtn" title="Acciones del contacto">⋮</button>
+          <div class="actmenu hidden" id="actionsMenu"></div>
         </div>
-        <button class="hdmenu" id="actionsBtn" title="Acciones del contacto">⋮</button>
-        <div class="actmenu hidden" id="actionsMenu"></div>
       </div>
       <div class="thread" id="thread"></div>
       <div class="testbar hidden" id="testBar">
@@ -877,7 +894,18 @@ $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.c
 function onDocClickActions(e){ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); }
 document.addEventListener("click",onDocClickActions);
 
-function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
+function setBotPill(on){ const b=$("chBot"); if(!b) return; b.className="botbtn "+(on?"on":"off"); b.textContent=(on?"🤖 Bot activo":"🤖 Bot en pausa"); b.title=on?"El bot está atendiendo — toca para pausarlo y atender tú":"Bot en pausa — toca para reactivarlo"; }
+// Un solo botón para activar/desactivar el bot en este chat (header, al centro).
+async function toggleBot(){
+  const cid=state.contactId; if(!cid) return;
+  const on=$("chBot").classList.contains("on"); // estado visible = fuente de verdad
+  await supa.from("contacts").update({ bot_activo:!on }).eq("id",cid);
+  if(panelData.contact) panelData.contact.bot_activo=!on;
+  setBotPill(!on);
+  logEvent(cid, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
+  toast(on?"Bot pausado — atiendes tú ✓":"Bot reactivado ✓");
+  loadConversations();
+}
 function updateComposerMode(){
   if(!state.isTest){ $("msgInput").placeholder = "Escribe un mensaje…"; return; }
   const asBot = state.testAs === "bot";
@@ -891,6 +919,7 @@ document.querySelectorAll("#modeToggle .modebtn").forEach(b=> b.onclick = () => 
   document.querySelectorAll("#modeToggle .modebtn").forEach(x=>x.classList.toggle("active", x===b));
   renderConversations();
 });
+$("chBot").addEventListener("click", ()=>{ if(state.contactId && !state.isTest) toggleBot(); });
 
 async function loadThread() {
   const [{ data:msgs }, evRes] = await Promise.all([
