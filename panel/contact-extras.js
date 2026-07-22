@@ -64,6 +64,15 @@ export async function remitenteDe(supa, channelId) {
   }
 }
 
+// Sección desplegable (acordeón) de la ficha. `count` pinta una pastilla con el
+// número; `open` la deja abierta al cargar. Usa <details> nativo: los hijos
+// siguen en el DOM aunque esté cerrada, así los handlers (inputs, selects) que
+// se enganchan después por querySelector siguen funcionando.
+export function sec(title, body, { open = false, count = null } = {}) {
+  const badge = (typeof count === "number" && count > 0) ? `<span class="cx-sec-n">${count}</span>` : "";
+  return `<details class="cx-sec"${open ? " open" : ""}><summary><span class="cx-sec-t">${esc(title)}</span>${badge}<span class="cx-sec-ar"></span></summary><div class="cx-sec-body">${body || ""}</div></details>`;
+}
+
 const TONO_COLOR = { ok: "var(--green)", warn: "var(--amber)", bad: "var(--red)" };
 
 // Tarjeta compacta del pedido dentro de la ficha (producto, estado, zona, plata,
@@ -171,6 +180,19 @@ export function printRotulo(o, remitente) {
 // Estilos de las tarjetas nuevas de la ficha (Copiloto, Pedido, acciones,
 // campos técnicos). Se inyectan una vez por página con injectExtrasCss().
 export const EXTRAS_CSS = `
+  /* Secciones desplegables (acordeón) */
+  .cpanel .cx-sec{border-top:1px solid var(--border)}
+  .cpanel .cx-sec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:13px 2px;
+    font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);user-select:none;transition:color .12s}
+  .cpanel .cx-sec>summary::-webkit-details-marker{display:none}
+  .cpanel .cx-sec>summary:hover{color:var(--text)}
+  .cpanel .cx-sec-n{background:var(--surface-2);color:var(--muted);border-radius:999px;font-size:10px;font-weight:700;padding:1px 7px;min-width:18px;text-align:center;line-height:1.6}
+  .cpanel .cx-sec-ar{margin-left:auto;width:7px;height:7px;border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);transform:rotate(-45deg);transition:transform .18s;flex:none}
+  .cpanel .cx-sec[open]>summary .cx-sec-ar{transform:rotate(45deg)}
+  .cpanel .cx-sec-body{padding:2px 0 14px}
+  /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */
+  .cpanel .cx-sec:not([open])>.cx-sec-body{display:none}
+  .cpanel .cf-tech:not([open])>*:not(summary){display:none}
   .cpanel .cx-actions{display:flex;gap:8px;margin:12px 0 2px}
   .cpanel .cx-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;
     border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);

@@ -377,7 +377,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss } from "./contact-extras.js";
+import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec } from "./contact-extras.js";
 injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
@@ -678,7 +678,9 @@ function setChatView(v){
 document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(state.contactId) setChatView(b.dataset.v); });
 
 // ── Panel de contacto: datos, medios, flujos, secuencias, timeline ──
-const STAGES = ["nuevo","interesado","p1","p2","p3","p4","comprado","perdido"];
+// Etapas reales del embudo (los viejos p1–p4 eran placeholders muertos; ya se
+// limpiaron en Campañas). value=lo que se guarda · label=lo que se muestra.
+const STAGES = [["nuevo","Nuevo"],["interesado","Interesado"],["comprado","Comprado"],["perdido","Perdido"]];
 let panelData = {};
 const TZ_BY_PREFIX={ "593":"America/Guayaquil","591":"America/La_Paz","502":"America/Guatemala","503":"America/El_Salvador","506":"America/Costa_Rica","507":"America/Panama","51":"America/Lima","52":"America/Mexico_City","57":"America/Bogota","56":"America/Santiago","54":"America/Argentina/Buenos_Aires","58":"America/Caracas","34":"Europe/Madrid","1":"America/New_York" };
 const COUNTRY_BY_PREFIX={ "593":"🇪🇨 Ecuador","591":"🇧🇴 Bolivia","502":"🇬🇹 Guatemala","503":"🇸🇻 El Salvador","506":"🇨🇷 Costa Rica","507":"🇵🇦 Panamá","51":"🇵🇪 Perú","52":"🇲🇽 México","57":"🇨🇴 Colombia","56":"🇨🇱 Chile","54":"🇦🇷 Argentina","58":"🇻🇪 Venezuela","34":"🇪🇸 España","1":"🇺🇸 / 🇨🇦" };
@@ -736,7 +738,6 @@ function renderContactPanel(){
   const errs  = events.filter(e=>e.tipo==="error");
   const botTxt = contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>';
   const datosRows = isTest ? "" : `
-    <h4>Datos</h4>
     <div class="kv"><span class="k">Teléfono</span><span class="v">+${esc(contact.wa_id)}</span></div>
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
@@ -746,6 +747,25 @@ function renderContactPanel(){
     ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?emoji+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}
     <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
     <div class="kv"><span class="k">Último mensaje</span><span class="v" title="${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):''}">${contact.ultimo_mensaje_cliente_at?rel(contact.ultimo_mensaje_cliente_at):"—"}</span></div>`;
+  const stageBody = `<select class="cselect" id="pStage">${STAGES.map(([v,l])=>`<option value="${v}" ${v===(contact.stage||"nuevo")?"selected":""}>${l}</option>`).join("")}</select>`;
+  const tagsBody = `<div id="pTags">${
+      [...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}22;color:${c};border-color:${c}55">${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar" style="color:${c}">×</button></span>`; }).join("")
+      || '<span class="cmuted">Sin etiquetas</span>'
+    }</div>${avail.length
+      ? `<select class="cselect" id="pAddTag" style="margin-top:7px"><option value="">+ añadir etiqueta…</option>${avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("")}</select>`
+      : '<div class="cmuted" style="margin-top:7px">Crea etiquetas en la sección Etiquetas</div>'}`;
+  const fieldsBody = `<div id="pFields">${
+      userFields.length
+        ? userFields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
+        : '<span class="cmuted">Este contacto no tiene campos con datos aún</span>'
+    }${techFields.length?`<details class="cf-tech"><summary>Campos técnicos del motor (${techFields.length})</summary>${
+      techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("")
+    }</details>`:""}</div>`;
+  const mediaBody = media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>` : '<div class="cempty">Sin archivos enviados</div>';
+  const runsBody = runsA.length ? runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc(r.estado)}</span></div>`).join("") : '<div class="cempty">Ningún flujo activo</div>';
+  const subsBody = subsA.length ? subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join("") : '<div class="cempty">Sin secuencias activas</div>';
+  const nodosBody = nodos.length ? nodos.slice(0,15).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">El motor registrará aquí los nodos ejecutados</div>';
+  const errsBody = errs.length ? errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">Sin errores registrados</div>';
   p.innerHTML = `
     <div class="chd">
       <div style="position:relative">
@@ -755,42 +775,21 @@ function renderContactPanel(){
       <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
     </div>
-    ${datosRows}
     ${!isTest?`<div class="cx-actions">
-      <button class="cx-btn ia" id="pCopiloto">${SG_SPARK} Copiloto</button>
+      <button class="cx-btn ia" id="pCopiloto">${SG_SPARK} Sugerir respuesta</button>
       ${order&&O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Rótulo</button>`:""}
     </div>
     <div id="pCopBox"></div>`:""}
-    ${order?`<h4>Pedido</h4>${pedidoResumenHtml(order)}`:""}
-    <h4>Etapa del embudo</h4>
-    <select class="cselect" id="pStage">${STAGES.map(s=>`<option ${s===contact.stage?"selected":""}>${s}</option>`).join("")}</select>
-    <h4>Etiquetas</h4>
-    <div id="pTags">${
-      [...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}22;color:${c};border-color:${c}55">${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar" style="color:${c}">×</button></span>`; }).join("")
-      || '<span class="cmuted">Sin etiquetas</span>'
-    }</div>
-    ${avail.length
-      ? `<select class="cselect" id="pAddTag" style="margin-top:7px"><option value="">+ añadir etiqueta…</option>${avail.map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join("")}</select>`
-      : '<div class="cmuted" style="margin-top:7px">Crea etiquetas en la sección Etiquetas</div>'}
-    <h4>Campos personalizados</h4>
-    <div id="pFields">${
-      userFields.length
-        ? userFields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
-        : '<span class="cmuted">Este contacto no tiene campos con datos aún</span>'
-    }</div>
-    ${techFields.length?`<details class="cf-tech"><summary>Campos técnicos del motor (${techFields.length})</summary>${
-      techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("")
-    }</details>`:""}
-    <h4>Medios y archivos</h4>
-    ${media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>` : '<div class="cempty">Sin archivos enviados</div>'}
-    <h4>Flujos en ejecución</h4>
-    ${runsA.length ? runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc(r.estado)}</span></div>`).join("") : '<div class="cempty">Ningún flujo activo</div>'}
-    <h4>Secuencias suscritas</h4>
-    ${subsA.length ? subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join("") : '<div class="cempty">Sin secuencias activas</div>'}
-    <h4>Nodos ejecutados</h4>
-    ${nodos.length ? nodos.slice(0,15).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">El motor registrará aquí los nodos ejecutados</div>'}
-    <h4>Registro de errores</h4>
-    ${errs.length ? errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">Sin errores registrados</div>'}`;
+    ${!isTest?sec("Datos", datosRows, {open:true}):""}
+    ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
+    ${sec("Etapa del embudo", stageBody, {open:true})}
+    ${sec("Etiquetas", tagsBody, {count:assigned.size})}
+    ${sec("Campos personalizados", fieldsBody, {count:userFields.length})}
+    ${sec("Medios y archivos", mediaBody, {count:media.length})}
+    ${sec("Flujos en ejecución", runsBody, {count:runsA.length})}
+    ${sec("Secuencias suscritas", subsBody, {count:subsA.length})}
+    ${sec("Nodos ejecutados", nodosBody, {count:nodos.length})}
+    ${sec("Registro de errores", errsBody, {count:errs.length})}`;
   const st=$("pStage"); if(st) st.onchange = async (e)=>{ await supa.from("contacts").update({ stage:e.target.value }).eq("id",contact.id); contact.stage=e.target.value; logEvent(contact.id,"nota","Etapa cambiada a "+e.target.value); toast("Etapa actualizada ✓"); loadConversations(); };
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{
     await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
@@ -821,7 +820,7 @@ async function panelCopiloto(){
   const box=$("pCopBox"); if(!box) return;
   if(box.dataset.open==="1"){ box.dataset.open="0"; box.innerHTML=""; return; }
   box.dataset.open="1";
-  box.innerHTML=`<div class="cx-cop"><div class="cx-cop-hd">${SG_SPARK} Copiloto</div><div class="cx-cop-body"><div class="cx-cop-load"><span class="cx-spin"></span>Pensando 3 respuestas…</div></div></div>`;
+  box.innerHTML=`<div class="cx-cop"><div class="cx-cop-hd">${SG_SPARK} Sugerencias de la IA</div><div class="cx-cop-body"><div class="cx-cop-load"><span class="cx-spin"></span>Pensando 3 respuestas…</div></div></div>`;
   const body=box.querySelector(".cx-cop-body");
   try{
     const res=await callFn("reply-suggest",{ channel_id:state.channelId, contact_id:state.contactId });
