@@ -78,18 +78,21 @@
   /* Compra destacada — tono dorado elegante */
   /* Venta cerrada = boleto dorado brillante (estilo Willy Wonka) */
   .conv.bought{overflow:hidden;
-    background:linear-gradient(135deg,rgba(255,214,90,.30),rgba(240,169,43,.13) 55%,rgba(255,236,179,.22));
-    box-shadow:inset 0 0 0 1px rgba(240,169,43,.5), 0 4px 18px rgba(240,169,43,.30)}
-  .conv.bought:hover{background:linear-gradient(135deg,rgba(255,214,90,.38),rgba(240,169,43,.18) 55%,rgba(255,236,179,.28))}
+    background:linear-gradient(135deg,rgba(255,210,74,.34),rgba(240,169,43,.15) 55%,rgba(255,236,179,.26));
+    animation:wonkaGlow 2.8s ease-in-out infinite}
+  .conv.bought:hover{background:linear-gradient(135deg,rgba(255,210,74,.42),rgba(240,169,43,.2) 55%,rgba(255,236,179,.3))}
+  @keyframes wonkaGlow{
+    0%,100%{box-shadow:inset 0 0 0 1px rgba(240,169,43,.5), 0 3px 14px rgba(240,169,43,.30)}
+    50%{box-shadow:inset 0 0 0 1px rgba(255,198,56,.9), 0 6px 26px rgba(255,190,50,.60)}}
   .conv.bought::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;z-index:2;
-    background:linear-gradient(#ffe9a8,#f0a92b 50%,#c9790f);box-shadow:0 0 10px rgba(240,169,43,.85)}
-  /* Destello que barre la tarjeta (translateX = suave y liviano) */
-  .conv.bought::after{content:"";position:absolute;top:0;bottom:0;left:0;width:55%;z-index:3;pointer-events:none;
-    background:linear-gradient(105deg,transparent,rgba(255,252,224,.55),rgba(255,255,255,.30),transparent);
+    background:linear-gradient(#fff0c0,#f0a92b 50%,#c9790f);box-shadow:0 0 12px rgba(255,190,50,.9)}
+  /* Glint metálico que barre la tarjeta (translateX = suave y liviano) */
+  .conv.bought::after{content:"";position:absolute;top:0;bottom:0;left:0;width:60%;z-index:3;pointer-events:none;
+    background:linear-gradient(105deg,transparent 12%,rgba(255,255,255,.28) 40%,rgba(255,255,255,.85) 49%,rgba(255,247,210,.6) 55%,transparent 84%);
     transform:translateX(-180%) skewX(-16deg);animation:wonkaShine 4.2s ease-in-out infinite}
-  @keyframes wonkaShine{0%{transform:translateX(-180%) skewX(-16deg)}55%,100%{transform:translateX(330%) skewX(-16deg)}}
-  @media (prefers-reduced-motion: reduce){ .conv.bought::after{display:none} }
-  .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 12px rgba(240,169,43,.7)}
+  @keyframes wonkaShine{0%{transform:translateX(-180%) skewX(-16deg)}52%,100%{transform:translateX(330%) skewX(-16deg)}}
+  @media (prefers-reduced-motion: reduce){ .conv.bought::after{display:none} .conv.bought{animation:none} }
+  .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 14px rgba(255,190,50,.85)}
   .avwrap{position:relative;flex:none}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
   .av-emoji{position:absolute;right:-3px;bottom:-3px;font-size:14px;line-height:1;background:var(--surface);border-radius:50%;padding:1px}
