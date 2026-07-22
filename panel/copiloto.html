@@ -20,6 +20,9 @@
   button{font-family:inherit;cursor:pointer}
   .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{background:var(--surface-2)}
+  #reloadBtn svg{width:15px;height:15px}
+  #reloadBtn.spin svg{animation:rspin .8s linear infinite}
+  @keyframes rspin{to{transform:rotate(360deg)}}
   /* El botón que tocas el 90% de las veces va grande y solo; el resto, chicos
      al costado. Es lo que hace que se pueda usar con una mano. */
   .btn.main{height:44px;padding:0 22px;font-size:14px;font-weight:700;border:none;color:#04140c;background:var(--green)}
@@ -64,7 +67,7 @@
         <h1 class="nodo-title">Copiloto</h1>
         <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú resuelves con un toque. Lo que no necesita decisión no aparece aquí: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
       </div>
-      <div class="nodo-actions"><button class="btn" id="reloadBtn">↻ Actualizar</button></div>
+      <div class="nodo-actions"><button class="btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
     </div>
     <div id="list"></div>
   </div>
@@ -83,7 +86,7 @@ async function boot(){
   const shell=await mountShell({ active:"copiloto" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
-  $("reloadBtn").onclick=load;
+  $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
   await load();
 }
