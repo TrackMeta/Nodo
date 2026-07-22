@@ -95,7 +95,10 @@
   .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 14px rgba(255,190,50,.85)}
   .avwrap{position:relative;flex:none}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
-  .av-emoji{position:absolute;right:-3px;bottom:-3px;font-size:14px;line-height:1;background:var(--surface);border-radius:50%;padding:1px}
+  /* Badge del producto: círculo limpio con aro y sombra (se ve intencional) */
+  .av-emoji{position:absolute;right:-4px;bottom:-4px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+    font-size:12px;line-height:1;background:var(--surface);border-radius:50%;
+    box-shadow:0 0 0 1.5px var(--border), 0 1px 3px rgba(0,0,0,.18)}
   .conv .dots{display:flex;gap:5px;margin-top:4px;align-items:center;flex-wrap:wrap}
   .idot{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:4px}
   .idot.bot{background:rgba(168,85,247,.14);color:#a855f7}
