@@ -116,7 +116,7 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   $("tabMarca").innerHTML=IC.tag+"<span>Marca</span>";
   $("tabGeneral").innerHTML=IC.sliders+"<span>General</span>";
-  $("tabPixel").innerHTML=`<img src="${LOGO.meta}" alt=""/><span>Pixel de Meta</span>`;
+  $("tabPixel").innerHTML=`<img src="${LOGO.meta}" alt=""/><span>Meta</span>`;
   $("tabSheets").innerHTML=`<img src="${LOGO.sheets}" alt=""/><span>Google Sheets</span>`;
   $("tabApariencia").innerHTML=IC.monitor+"<span>Apariencia</span>";
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
@@ -478,8 +478,8 @@ async function saveBrand(btn){
 function renderPixel(box){
   const c=st.channel||{}, s=st.secrets||{};
   box.innerHTML=`
-    <h2>Conexión del Pixel de Meta</h2>
-    <p class="sub">Envío de conversiones a Meta (Conversions API) para optimizar tus campañas de Click-to-WhatsApp: Lead, InitiateCheckout y Purchase.</p>
+    <h2>Meta</h2>
+    <p class="sub">Todo lo de Meta en un lugar: el <b>Pixel / Conversions API</b> (envía Lead, InitiateCheckout y Purchase para optimizar tus campañas Click-to-WhatsApp) y la <b>conexión de anuncios</b> que alimenta la sección Rendimiento.</p>
     <div class="card">
       <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Pixel / Conversions API</span></div>
       <div class="desc">El Pixel ID y el Page ID identifican tu activo publicitario; el token CAPI autoriza el envío de eventos.</div>
