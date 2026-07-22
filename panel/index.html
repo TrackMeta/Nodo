@@ -113,6 +113,7 @@
   .botbtn{flex:none;display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 16px;border-radius:20px;border:none;
     font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .06s,border-color .15s,color .15s}
   .botbtn:active{transform:scale(.97)}
+  .botbtn svg{width:16px;height:16px}
   .botbtn.on{background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;box-shadow:0 3px 12px rgba(168,85,247,.38)}
   .botbtn.on:hover{filter:brightness(1.07)}
   .botbtn.off{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
@@ -335,7 +336,7 @@
             <div class="ph" id="chPhone"></div>
           </div>
         </div>
-        <button class="botbtn on" id="chBot" type="button">🤖 Bot activo</button>
+        <button class="botbtn on" id="chBot" type="button">Bot activo</button>
         <div class="hd-side hd-right">
           <span class="win" id="chWin"></span>
           <div class="hdtoggle" id="viewToggle">
@@ -640,10 +641,7 @@ function renderConversations(){
   const box = $("convList"); box.innerHTML = "";
   const isBot = (cv)=> cv.contact.bot_activo !== false;
   const list = state.convs.filter(cv => (state.mode==="bot" ? isBot(cv) : !isBot(cv)) && applyFilters(cv));
-  // contador en las pestañas (sobre el total del canal, sin el filtro de modo)
-  const byFilter = state.convs.filter(applyFilters);
-  const nBot = byFilter.filter(isBot).length, nHum = byFilter.length - nBot;
-  const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+` Bot (${nBot})`; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+` Humano (${nHum})`; }
+  const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+" Bot"; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+" Humano"; }
   updateFilterCounts();
   const anyFilter = state.filters.sinResponder||state.filters.anuncio||state.filters.producto||state.filters.tags.size||state.filters.stages.size;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano")}</div>`; return; }
@@ -894,7 +892,7 @@ $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.c
 function onDocClickActions(e){ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); }
 document.addEventListener("click",onDocClickActions);
 
-function setBotPill(on){ const b=$("chBot"); if(!b) return; b.className="botbtn "+(on?"on":"off"); b.textContent=(on?"🤖 Bot activo":"🤖 Bot en pausa"); b.title=on?"El bot está atendiendo — toca para pausarlo y atender tú":"Bot en pausa — toca para reactivarlo"; }
+function setBotPill(on){ const b=$("chBot"); if(!b) return; b.className="botbtn "+(on?"on":"off"); b.innerHTML=icon("robot")+(on?" Bot activo":" Bot en pausa"); b.title=on?"El bot está atendiendo — toca para pausarlo y atender tú":"Bot en pausa — toca para reactivarlo"; }
 // Un solo botón para activar/desactivar el bot en este chat (header, al centro).
 async function toggleBot(){
   const cid=state.contactId; if(!cid) return;
