@@ -76,9 +76,20 @@
   .conv:hover{background:var(--surface)}
   .conv.active{background:var(--surface-2)}
   /* Compra destacada — tono dorado elegante */
-  .conv.bought{background:linear-gradient(90deg,rgba(240,169,43,.10),transparent 70%)}
-  .conv.bought::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(#f0a92b,#d98a15)}
-  .conv.bought .av{box-shadow:0 0 0 2px #f0a92b}
+  /* Venta cerrada = boleto dorado brillante (estilo Willy Wonka) */
+  .conv.bought{overflow:hidden;
+    background:linear-gradient(135deg,rgba(255,214,90,.30),rgba(240,169,43,.13) 55%,rgba(255,236,179,.22));
+    box-shadow:inset 0 0 0 1px rgba(240,169,43,.5), 0 4px 18px rgba(240,169,43,.30)}
+  .conv.bought:hover{background:linear-gradient(135deg,rgba(255,214,90,.38),rgba(240,169,43,.18) 55%,rgba(255,236,179,.28))}
+  .conv.bought::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;z-index:2;
+    background:linear-gradient(#ffe9a8,#f0a92b 50%,#c9790f);box-shadow:0 0 10px rgba(240,169,43,.85)}
+  /* Destello que barre la tarjeta (translateX = suave y liviano) */
+  .conv.bought::after{content:"";position:absolute;top:0;bottom:0;left:0;width:55%;z-index:3;pointer-events:none;
+    background:linear-gradient(105deg,transparent,rgba(255,252,224,.55),rgba(255,255,255,.30),transparent);
+    transform:translateX(-180%) skewX(-16deg);animation:wonkaShine 4.2s ease-in-out infinite}
+  @keyframes wonkaShine{0%{transform:translateX(-180%) skewX(-16deg)}55%,100%{transform:translateX(330%) skewX(-16deg)}}
+  @media (prefers-reduced-motion: reduce){ .conv.bought::after{display:none} }
+  .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 12px rgba(240,169,43,.7)}
   .avwrap{position:relative;flex:none}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
   .av-emoji{position:absolute;right:-3px;bottom:-3px;font-size:14px;line-height:1;background:var(--surface);border-radius:50%;padding:1px}
@@ -87,7 +98,7 @@
   .idot.bot{background:rgba(168,85,247,.14);color:#a855f7}
   .idot.paused{background:var(--amber-bg);color:var(--amber)}
   .idot.human{background:var(--brand-bg);color:var(--brand)}
-  .idot.bought{background:rgba(240,169,43,.16);color:#f0a92b}
+  .idot.bought{background:linear-gradient(135deg,#ffe08a,#f0a92b);color:#5a3a00;font-weight:800;box-shadow:0 1px 5px rgba(240,169,43,.55)}
   .modewrap{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px;flex:1}
   .modebtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
   .modebtn.active{background:var(--brand);color:#fff}
