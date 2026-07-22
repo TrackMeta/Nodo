@@ -167,7 +167,8 @@
 import { supa, mountShell, icon } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
+const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
+function visibleRows(){ return st.tipo==="all" ? st.rows : st.rows.filter(r=>r.tag===st.tipo); }
 
 const money=(v)=>{ const s=v<0?"-":""; return s+"S/ "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
 const money0=(v)=>"S/ "+Math.round(v).toLocaleString("es-PE");
@@ -292,7 +293,7 @@ function render(){
         <div class="drpop" id="drPop"></div>
       </div>
       <span class="tlabel">Tipo</span>
-      <div class="chips" data-demo><button class="chip on">Todos</button><button class="chip">Digital</button><button class="chip">Lima</button><button class="chip">Provincia</button></div>
+      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["lima","Lima"],["provincia","Provincia"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
       <div class="seg" id="vista">
         <button class="${st.vista==='anuncio'?'on':''}" data-v="anuncio">${icon("megaphone")} Por anuncio</button>
         <button class="${st.vista==='producto'?'on':''}" data-v="producto">${icon("box")} Por producto</button>
@@ -307,7 +308,7 @@ function render(){
   renderKpis(); renderTable();
 }
 function renderKpis(){
-  const m=metrics(sumAds(st.rows));
+  const m=metrics(sumAds(visibleRows()));
   const K=[
     ["Gasto en anuncios",money0(m.gasto),"var(--brand)",m.ventas+" ventas reales"],
     ["Ventas reales",String(m.ventas),"var(--green)","cobradas de verdad"],
@@ -318,18 +319,21 @@ function renderKpis(){
   $("kpis").innerHTML=K.map(([k,v,c,s])=>`<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`).join("");
 }
 function renderTable(){
+  const rows=visibleRows();
+  $("thead").innerHTML=headRow(st.vista==="anuncio"?"Anuncio":"Producto");
+  if(!rows.length){ $("tbody").innerHTML=`<tr><td colspan="${visibleCols().length+1}" style="text-align:center;color:var(--faint);padding:26px">Ningún anuncio de este tipo en el periodo.</td></tr>`; $("tfoot").innerHTML=""; return; }
   if(st.vista==="anuncio"){ renderAnuncio(); } else { renderProducto(); }
-  $("tfoot").innerHTML=`<tr><td>Total</td>${cells(metrics(sumAds(st.rows)))}</tr>`;
+  $("tfoot").innerHTML=`<tr><td>Total</td>${cells(metrics(sumAds(rows)))}</tr>`;
 }
 function nameCell(name,tag,emoji,drill){
   return `<div class="nm">${emoji?`<span class="em">${emoji}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
 }
 function renderAnuncio(){
-  $("thead").innerHTML=headRow("Anuncio");
-  const camps=[...new Set(st.rows.map(a=>a.campaign))];
+  const rows=visibleRows();
+  const camps=[...new Set(rows.map(a=>a.campaign))];
   let html="";
   camps.forEach((camp,ci)=>{
-    const cads=st.rows.filter(a=>a.campaign===camp);
+    const cads=rows.filter(a=>a.campaign===camp);
     html+=`<tr class="camp" data-c="${ci}"><td><div class="nm"><span class="caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span><span class="t1">${esc(camp)}</span></div></td>${cells(metrics(sumAds(cads)))}</tr>`;
     const asets=[...new Set(cads.map(a=>a.adset))];
     asets.forEach(aset=>{
@@ -343,18 +347,18 @@ function renderAnuncio(){
   $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>{ st.sel=Number(tr.dataset.ad); render(); });
 }
 function renderProducto(){
-  $("thead").innerHTML=headRow("Producto");
+  const rows=visibleRows();
   const key=(a)=>a.prod||"— sin producto —";
-  const prods=[...new Set(st.rows.map(key))];
+  const prods=[...new Set(rows.map(key))];
   $("tbody").innerHTML=prods.map(p=>{
-    const pads=st.rows.filter(a=>key(a)===p); const a0=pads[0];
+    const pads=rows.filter(a=>key(a)===p); const a0=pads[0];
     const parts=String(p).split(" "); const em=/\p{Emoji}/u.test(parts[0])?parts.shift():"";
     return `<tr class="ad"><td>${nameCell(parts.join(" ")||p,a0.prodTag,em,false)}</td>${cells(metrics(sumAds(pads)))}</tr>`;
   }).join("");
 }
 function wireToolbar(){
   $("vista").querySelectorAll("button").forEach(b=>b.onclick=()=>{ st.vista=b.dataset.v; render(); });
-  document.querySelectorAll(".chips[data-demo]").forEach(g=>g.onclick=(e)=>{ const b=e.target.closest(".chip"); if(!b)return; g.querySelectorAll(".chip").forEach(x=>x.classList.toggle("on",x===b)); });
+  $("tipoChips").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; render(); });
   // Selector de fechas
   $("drTrigger").onclick=(e)=>{ e.stopPropagation(); const p=$("drPop"); if(p.classList.contains("show")) p.classList.remove("show"); else openPicker(); };
   if(!window.__drWired){ window.__drWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".drpicker")){ const p=document.getElementById("drPop"); if(p) p.classList.remove("show"); } }); }
