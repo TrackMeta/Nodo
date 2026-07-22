@@ -445,7 +445,7 @@ injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
-const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "",
+const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", threadCache: {},
   filters: { sinResponder:false, anuncio:false, archivado:false, producto:"", tags:new Set(), stages:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
 const $ = (id) => document.getElementById(id);
 
@@ -734,11 +734,14 @@ async function openChat(c) {
   setBotPill(c.bot_activo);
   $("testBar").classList.toggle("hidden", !state.isTest);
   updateComposerMode();
-  setChatView("chat");
+  setChatView("chat", { reload:false });   // evita un loadThread doble
   renderActionsMenu();
-  await loadThread();
-  await markRead();
-  loadConversations();
+  // Marca la fila como activa y limpia su badge SIN re-consultar toda la lista
+  // (antes loadConversations() bajaba ~200 conversaciones en cada clic).
+  const cv = state.convs.find(x=>x.contact_id===c.id); if(cv) cv.no_leidos=0;
+  renderConversations();
+  loadThread();          // pinta el hilo — usa caché si existe (instantáneo)
+  markRead();            // en segundo plano; no bloquea la apertura
   updateWindow();
   loadContactPanel(c);
 }
@@ -747,10 +750,10 @@ async function openChat(c) {
 // "Chat" = solo mensajes. "Actividad" = intercala en el MISMO hilo los eventos
 // del motor (nodos, campos capturados, etiquetas, flujos, errores) en su
 // posición cronológica junto a los mensajes.
-function setChatView(v){
+function setChatView(v, opts){
   state.chatView = v;
   document.querySelectorAll("#viewToggle .htb").forEach(b=> b.classList.toggle("active", b.dataset.v===v));
-  loadThread();
+  if(!opts || opts.reload!==false) loadThread();
 }
 document.querySelectorAll("#viewToggle .htb").forEach(b=> b.onclick=()=>{ if(state.contactId) setChatView(b.dataset.v); });
 
@@ -985,20 +988,47 @@ $("chBot").addEventListener("click", ()=>{ if(state.contactId && !state.isTest) 
   x.addEventListener("click", ()=>{ inp.value=""; state.search=""; x.hidden=true; inp.focus(); renderConversations(); });
 })();
 
-async function loadThread() {
-  const [{ data:msgs }, evRes] = await Promise.all([
-    supa.from("messages").select("*").eq("contact_id", state.contactId).order("ts").limit(300),
-    state.chatView==="timeline"
-      ? supa.from("contact_events").select("*").eq("contact_id", state.contactId).order("created_at").limit(300)
-      : Promise.resolve({ data: [] }),
-  ]);
+function renderThread(msgs, evs){
   const items = [
     ...(msgs||[]).map(m=>({ kind:"msg", ts:m.ts, data:m })),
-    ...((evRes.data||[]).map(e=>({ kind:"ev", ts:e.created_at, data:e }))),
+    ...((evs||[]).map(e=>({ kind:"ev", ts:e.created_at, data:e }))),
   ].sort((a,b)=> new Date(a.ts)-new Date(b.ts));
   const t = $("thread"); t.innerHTML = "";
   items.forEach(it=> it.kind==="msg" ? renderMsg(it.data) : renderEvent(it.data));
   t.scrollTop = t.scrollHeight;
+}
+// Carga el hilo con estrategia "stale-while-revalidate": si hay caché del chat,
+// se pinta AL INSTANTE y se revalida en segundo plano; solo re-renderiza si algo
+// cambió (sin parpadeo). El threadReqId descarta respuestas que llegan tarde
+// cuando ya cambiaste de chat, así navegar es casi instantáneo.
+let threadReqId = 0;
+async function loadThread() {
+  const cid = state.contactId;
+  const reqId = ++threadReqId;
+  const chatMode = state.chatView !== "timeline";
+  let painted = false;
+  if (chatMode && state.threadCache[cid]) { renderThread(state.threadCache[cid], []); painted = true; }
+  else { $("thread").innerHTML = ""; }   // limpia el chat anterior de inmediato
+  const [{ data:msgs }, evRes] = await Promise.all([
+    supa.from("messages").select("*").eq("contact_id", cid).order("ts").limit(300),
+    chatMode ? Promise.resolve({ data: [] })
+      : supa.from("contact_events").select("*").eq("contact_id", cid).order("created_at").limit(300),
+  ]);
+  if (reqId !== threadReqId || cid !== state.contactId) return;   // cambiaste de chat: descarta
+  const fresh = msgs || [];
+  if (chatMode) {
+    // Conserva mensajes que llegaron por realtime durante el fetch (no perder nada).
+    const freshIds = new Set(fresh.map(m=>m.id));
+    const extra = (state.threadCache[cid]||[]).filter(m=>!freshIds.has(m.id));
+    const merged = extra.length ? [...fresh, ...extra].sort((a,b)=> new Date(a.ts)-new Date(b.ts)) : fresh;
+    const prev = state.threadCache[cid];
+    const unchanged = painted && prev && prev.length===merged.length && (!merged.length || prev[prev.length-1]?.id===merged[merged.length-1]?.id);
+    state.threadCache[cid] = merged;
+    if (unchanged) return;
+    renderThread(merged, []);
+  } else {
+    renderThread(fresh, evRes.data||[]);
+  }
 }
 function renderEvent(e){
   const t=$("thread"); const el=document.createElement("div"); el.className="actline";
@@ -1235,6 +1265,10 @@ function subscribeRealtime() {
   state.rt = supa.channel("nodo-inbox")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
       const m = p.new;
+      // Mantiene la caché al día (chat abierto o en segundo plano) para que
+      // reabrirlo siga siendo instantáneo y no pierda mensajes.
+      const cache = state.threadCache[m.contact_id];
+      if (cache && !cache.some(x=>x.id===m.id)) cache.push(m);
       if (m.contact_id === state.contactId) {
         // Con Actividad ON, recarga el hilo para intercalar los eventos que el
         // motor acaba de registrar; con OFF basta con pintar el mensaje.
