@@ -315,7 +315,7 @@ function renderKeywords(){
     el.innerHTML=`
       <div class="head">
         <div class="dest">${f?`<span class="em">${f.product_id&&st.products[f.product_id]?.emoji?st.products[f.product_id].emoji:icon("flujos")}</span><span class="nm">${esc(flowLabel(f))}</span>`:'<span class="nm" style="color:var(--red)">Flujo eliminado</span>'}</div>
-        ${f?`<span class="pill ${estClass}">${f.estado}</span>`:""}
+        ${f?`<span class="pill ${estClass}">${(f.estado||"").charAt(0).toUpperCase()+(f.estado||"").slice(1)}</span>`:""}
         <div class="sw${t.activo?" on":""}" data-act title="Activar/desactivar"></div>
         <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>
       </div>
