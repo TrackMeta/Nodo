@@ -396,7 +396,7 @@ async function load(){
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
-  renderBand({ bruta, gastoAds, neta, roas, pctAds, hasAds, sinCostoF });
+  renderBand({ bruta, gastoAds, neta, roas, pctAds, hasAds, sinCostoF, tipo });
 
   renderFunnel(s.por_stage||{});
   renderSales(orders, r, dailyMargin, dailySpend, hasAds);
@@ -406,7 +406,9 @@ async function load(){
 
 function renderBand(b){
   const box=$("pband"); if(!box) return;
-  const brutaS = b.sinCostoF?`tras mercadería y envío · faltan costos en ${b.sinCostoF} pedido${b.sinCostoF>1?"s":""}`:"tras mercadería y envío";
+  const brutaS = b.tipo==="digital"
+    ? "sin costo de mercadería ni envío (digital)"
+    : (b.sinCostoF?`tras mercadería y envío · faltan costos en ${b.sinCostoF} pedido${b.sinCostoF>1?"s":""}`:"tras mercadería y envío");
   if(!b.hasAds){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v green">${money(b.bruta)}</span><span class="pb-s">${brutaS}</span></div>
