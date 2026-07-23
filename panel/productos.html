@@ -126,6 +126,8 @@ import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.j
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", localFolders:new Set() };
+// Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
+function prodFolder(){ return ((st.prod?.emoji?st.prod.emoji+" ":"")+(st.prod?.nombre||"")).slice(0,60); }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // Emojis para IDENTIFICAR el producto (se muestran sobre el avatar en la
 // Bandeja). El emoji del producto se conserva; el picker ofrece TODOS.
@@ -839,7 +841,8 @@ async function renderRemarketing(){
 
   if($("remNew")) $("remNew").onclick=async()=>{
     const nombre=`Remarketing · ${st.prod.nombre}`.slice(0,60);
-    const { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, activo:true, pasos:[] }).select("id").single();
+    let { data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, activo:true, pasos:[], folder:prodFolder() }).select("id").single();
+    if(error && /folder|column/.test(error.message)){ ({ data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, activo:true, pasos:[] }).select("id").single()); }
     if(error||!data){ toast("No se pudo crear la secuencia",true); return; }
     c.remarketing_seq_id=data.id; prodSync();
     toast("Remarketing creado ✓ — agrega pasos y guarda");
@@ -1751,10 +1754,10 @@ async function generarFlujoVenta(){
       await supa.from("flow_nodes").delete().eq("flow_id",flowId);
       // Al REGENERAR no se toca el estado: si el flujo ya estaba vendiendo, se
       // lo dejaba en borrador y el producto se quedaba mudo sin avisar.
-      await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}` }).eq("id",flowId);
+      await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}`, folder:prodFolder() }).eq("id",flowId);
     }else{
       const { data,error } = await supa.from("flows").insert({
-        channel_id:st.channelId, product_id:st.prod.id, nombre:`Venta · ${st.prod.nombre}`,
+        channel_id:st.channelId, product_id:st.prod.id, nombre:`Venta · ${st.prod.nombre}`, folder:prodFolder(),
         // ACTIVO, no borrador: el rotador de mensajes iniciales solo salta a
         // flujos activos, así que un flujo recién generado en borrador hacía que
         // el producto saludara y se quedara MUDO — sin que nada lo dijera. Los
@@ -2351,7 +2354,7 @@ async function renderActivacion(){
 async function createWelcome(){
   const { data:flow, error } = await supa.from("flows").insert({
     channel_id:st.channelId, product_id:st.prod.id, kind:"flow", role:"mensajes_iniciales",
-    nombre:"Mensajes iniciales · "+st.prod.nombre, estado:"activo"
+    nombre:"Mensajes iniciales · "+st.prod.nombre, estado:"activo", folder:prodFolder()
   }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await supa.from("flow_nodes").insert({ flow_id:flow.id, tipo:"rotador", nombre:"Mensajes iniciales", es_inicial:true, config:{activo:true,variantes:[newVariant(0)],despues:{modo:"nada"}}, pos_x:80, pos_y:80 });
