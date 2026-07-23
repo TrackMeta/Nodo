@@ -1639,7 +1639,7 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
   const vid = a?.version_id ? resolve(String(a.version_id), ctx) : "";
   if (vid) {
     const { data } = await db.from("product_versions")
-      .select("id, nombre, precio, entrega, descripcion, cantidad").eq("id", vid).maybeSingle();
+      .select("id, nombre, precio, entrega, descripcion, cantidad, entrega_mensaje").eq("id", vid).maybeSingle();
     if (data) opcion = data as unknown as Opcion;
   }
   // Items de ESTA opción, con su mensaje opcional ya resuelto (soporta {{vars}}).
@@ -1664,7 +1664,12 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     all = [...items, ...vars._entrega_buffer];
     vars._entrega_buffer = [];
   }
-  const header = a?.mensaje ? resolve(String(a.mensaje), ctx) : "";
+  // Mensaje de apertura: si la OPCIÓN comprada tiene el suyo propio, gana; si no,
+  // el general del producto (a.mensaje). Así el Premium puede abrir distinto al Básico.
+  const optMsg = (opcion as any)?.entrega_mensaje;
+  const header = (optMsg && String(optMsg).trim())
+    ? resolve(String(optMsg), ctx)
+    : (a?.mensaje ? resolve(String(a.mensaje), ctx) : "");
 
   if (!all.length) {
     // Compat: opción sin items pero con link suelto en config.
@@ -2742,7 +2747,7 @@ async function loadOpciones(db: SupabaseClient, run: Run, productId: string): Pr
   let list: Opcion[] = [];
   try {
     const { data } = await db.from("product_versions")
-      .select("id, nombre, precio, entrega, descripcion, cantidad")
+      .select("id, nombre, precio, entrega, descripcion, cantidad, entrega_mensaje")
       .eq("product_id", productId).eq("activo", true).order("orden");
     list = (data ?? []) as Opcion[];
   } catch (_) { /* columnas pendientes (0029) → sin opciones */ }

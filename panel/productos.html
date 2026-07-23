@@ -2106,12 +2106,15 @@ function paintOpciones(fisico){
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn oel" style="height:32px">${icon("link")} Link</button>
         <button class="btn oef" style="height:32px">${icon("file")} Archivo / imagen / video</button>
-      </div>`}`;
+      </div>
+      <label style="margin-top:14px">Mensaje de apertura de esta opción <span style="color:var(--faint);font-weight:400">(opcional — vacío = usa el general del producto)</span></label>
+      <input class="in oemsg" value="${esc(v.entrega_mensaje||"")}" placeholder="Ej. ¡Bienvenido al Premium! 🌟 Acá tienes todo:"/>`}`;
     el.querySelector(".on").oninput=(e)=>{ v.nombre=e.target.value; };
     el.querySelector(".op").oninput=(e)=>{ v.precio=e.target.value; warnColision(); };
     const oc=el.querySelector(".oc"); if(oc) oc.oninput=(e)=>{ v.cantidad=parseInt(e.target.value,10)||1; };
     el.querySelector(".oa").onchange=(e)=>{ v.activo=e.target.checked; warnColision(); };
     el.querySelector(".odesc").oninput=(e)=>{ v.descripcion=e.target.value; };
+    const oem=el.querySelector(".oemsg"); if(oem) oem.oninput=(e)=>{ v.entrega_mensaje=e.target.value; };
     el.querySelector(".odel").onclick=async()=>{
       if(!await confirmDialog({title:"Eliminar opción",message:`¿Eliminar "${esc(v.nombre||"esta opción")}"? Los pedidos ya hechos con ella no se tocan.`,confirmText:"Eliminar",danger:true})) return;
       if(v.id) st.delVersions.push(v.id);
@@ -2632,12 +2635,13 @@ async function saveProduct(){
       // Se descartan las filas de entrega sin link: no entregan nada y harían
       // que "Salud del producto" diera el visto bueno a una opción rota.
       entrega:(Array.isArray(v.entrega)?v.entrega:[]).filter(it=>it&&String(it.url||"").trim()),
+      entrega_mensaje:(v.entrega_mensaje||"").trim()||null,
       activo:v.activo!==false,
       price_list:v.price_list||[], drive_link:v.drive_link||null, // legado
     };
     if(v.id) row.id=v.id;
     let { data, error } = await supa.from("product_versions").upsert(row).select("id").single();
-    if(error && /precio|entrega|descripcion|activo|cantidad|column/.test(error.message)){
+    if(error && /precio|entrega|descripcion|activo|cantidad|entrega_mensaje|column/.test(error.message)){
       // Resiliente: si 0029 no está aplicada, guarda al menos lo viejo.
       const legacy={ product_id:st.prod.id, nombre:v.nombre||"Única", price_list:v.price_list||[], drive_link:v.drive_link||null, orden:i };
       if(v.id) legacy.id=v.id;
