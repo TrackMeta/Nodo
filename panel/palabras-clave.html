@@ -86,6 +86,18 @@
   .empty{text-align:center;color:var(--faint);padding:38px;border:1px dashed var(--border);border-radius:12px}
   .hint{font-size:11px;color:var(--faint);margin-top:6px}
 
+  /* Palabras/frases como chips apilables */
+  .chipbox{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:8px;display:flex;flex-wrap:wrap;gap:7px;align-items:center;min-height:44px}
+  .chipbox:focus-within{border-color:var(--brand)}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--brand-bg);color:var(--brand);border:1px solid var(--brand);border-radius:20px;padding:5px 6px 5px 12px;font-size:12.5px;font-weight:600;max-width:100%}
+  .chip .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip .x{flex:none;width:18px;height:18px;border:none;border-radius:50%;background:transparent;color:var(--brand);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:.75}
+  .chip .x:hover{opacity:1;background:rgba(43,127,255,.18)}
+  .chipin{flex:1;min-width:120px;border:none;background:transparent;color:var(--text);font-size:13.5px;outline:none;font-family:inherit;height:28px}
+  .chipadd{flex:none;height:30px;padding:0 12px;border-radius:8px;border:1px dashed var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px}
+  .chipadd:hover{border-color:var(--brand);color:var(--brand)}
+  .chipadd svg{width:13px;height:13px}
+
   /* Router */
   .rgrid{display:flex;flex-direction:column;gap:16px}
   .switchline{display:flex;align-items:center;gap:12px}
@@ -165,9 +177,9 @@
     <div class="tabpane on" id="pane-kw">
       <div class="panel">
         <h3>Nueva palabra clave</h3>
-        <p class="sub">Elige el flujo que se activa y las frases que lo disparan (separadas por comas). Se guardan en el flujo, así que también las verás en la ficha del producto.</p>
+        <p class="sub">Elige el <b>producto</b> que se activa y las frases que lo disparan. Se conectan al flujo de venta de ese producto, así que también las verás en su ficha.</p>
         <div class="row">
-          <div style="flex:1.2"><label>Flujo a activar</label><select class="in" id="nFlow"></select></div>
+          <div style="flex:1.2"><label>Producto a activar</label><select class="in" id="nProd"></select></div>
           <div style="flex:none;width:160px"><label>Coincidencia</label>
             <select class="in" id="nMatch">
               <option value="contiene">Contiene la frase</option>
@@ -177,10 +189,13 @@
           </div>
         </div>
         <div style="margin-top:12px"><label>Palabras / frases clave</label>
-          <input class="in" id="nKws" placeholder="quiero info, más información, precio, cuánto cuesta"/>
-          <div class="hint">Se normalizan (sin distinguir mayúsculas ni tildes). “Contiene” es lo más flexible para anuncios.</div>
+          <div class="chipbox" id="nChipBox">
+            <input class="chipin" id="nChipIn" placeholder="Escribe una frase y pulsa Enter…"/>
+            <button class="chipadd" id="nChipAdd" type="button"><span id="plusIc"></span> Agregar</button>
+          </div>
+          <div class="hint">Agrega tantas frases como quieras (Enter o “Agregar”). Se normalizan (sin distinguir mayúsculas ni tildes). “Contiene” es lo más flexible para anuncios.</div>
         </div>
-        <div style="margin-top:14px"><button class="btn" id="addBtn"><span id="plusIc"></span> Agregar</button></div>
+        <div style="margin-top:14px"><button class="btn" id="addBtn">${''}<span id="saveIc"></span> Guardar palabra clave</button></div>
       </div>
 
       <div class="kw" id="kwList"></div>
@@ -229,7 +244,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{} };
+const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{}, prodList:[], newKws:[] };
 
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
@@ -242,7 +257,7 @@ function flowLabel(f){ const p=f.product_id?st.products[f.product_id]:null; cons
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
-  $("simIc").innerHTML=FLASK; $("plusIc").innerHTML=PLUS;
+  $("simIc").innerHTML=FLASK; $("plusIc").innerHTML=PLUS; $("saveIc").innerHTML=PLUS;
   const shell=await mountShell({ active:"palabras" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; loadAll(); });
@@ -254,6 +269,11 @@ async function boot(){
   $("simBtn").onclick=simulate;
   $("simText").addEventListener("keydown",e=>{ if(e.key==="Enter") simulate(); });
   $("addBtn").onclick=addKeyword;
+  $("nChipAdd").onclick=addNewChip;
+  $("nChipIn").addEventListener("keydown",e=>{
+    if(e.key==="Enter"){ e.preventDefault(); addNewChip(); }
+    else if(e.key==="Backspace" && !e.target.value && st.newKws.length){ st.newKws.pop(); renderNewChips(); }
+  });
   $("rActivo").onclick=()=>{ st.router.activo=!st.router.activo; renderRouter(); };
   $("rUmbral").oninput=e=>{ $("rUmbralVal").textContent=e.target.value+"%"; };
   $("saveRouter").onclick=saveRouter;
@@ -283,11 +303,35 @@ async function loadAll(){
 }
 
 function renderFlowSelects(){
-  const opts=st.flows.map(f=>`<option value="${f.id}">${esc(flowLabel(f))}${f.estado!=="activo"?" (borrador)":""}</option>`).join("");
-  $("nFlow").innerHTML=opts||`<option value="">— No hay flujos —</option>`;
+  // El usuario elige un PRODUCTO; internamente se conecta a su flujo de venta.
+  $("nProd").innerHTML = st.prodList?.length
+    ? st.prodList.map(p=>`<option value="${p.id}">${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")
+    : `<option value="">— No hay productos —</option>`;
   const act=st.flows.filter(f=>f.estado==="activo");
   $("rFallback").innerHTML=`<option value="">— Ninguno (no responder) —</option>`+
     act.map(f=>`<option value="${f.id}"${st.router.fallback_flow_id===f.id?" selected":""}>${esc(flowLabel(f))}</option>`).join("");
+  renderNewChips();
+}
+// Flujo de venta de un producto (el que activa la palabra clave).
+function mainFlowFor(productId){
+  const fs=st.flows.filter(f=>f.product_id===productId); if(!fs.length) return null;
+  return fs.find(f=>/venta|activaci|principal|inicial/i.test(f.nombre)) || fs.find(f=>f.estado==="activo") || fs[0];
+}
+// Chips de la palabra clave nueva (apilables, no separadas por coma).
+function renderNewChips(){
+  const box=$("nChipBox"); if(!box) return; const inp=$("nChipIn");
+  box.querySelectorAll(".chip").forEach(c=>c.remove());
+  st.newKws.forEach((k,i)=>{
+    const c=document.createElement("span"); c.className="chip";
+    c.innerHTML=`<span class="tx">${esc(k)}</span><button class="x" type="button" title="Quitar">×</button>`;
+    c.querySelector(".x").onclick=()=>{ st.newKws.splice(i,1); renderNewChips(); };
+    box.insertBefore(c, inp);
+  });
+}
+function addNewChip(){
+  const inp=$("nChipIn"); const v=(inp.value||"").trim(); if(!v) return;
+  if(!st.newKws.some(k=>norm(k)===norm(v))) st.newKws.push(v);
+  inp.value=""; renderNewChips(); inp.focus();
 }
 
 // ── Colisiones: una misma palabra normalizada en 2+ triggers ──
@@ -320,7 +364,12 @@ function renderKeywords(){
         <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>
       </div>
       <div class="body">
-        <div class="kf"><label>Palabras / frases</label><input class="in kws" value="${esc(kws)}"/></div>
+        <div class="kf"><label>Palabras / frases</label>
+          <div class="chipbox" data-cb>
+            ${(t.config?.keywords||[]).map((k,i)=>`<span class="chip"><span class="tx">${esc(k)}</span><button class="x" type="button" data-rm="${i}" title="Quitar">×</button></span>`).join("")}
+            <input class="chipin" data-ci placeholder="Agregar frase…"/>
+          </div>
+        </div>
         <div class="mf"><label>Coincidencia</label>
           <select class="in mm">
             <option value="contiene"${match==="contiene"?" selected":""}>Contiene</option>
@@ -330,7 +379,12 @@ function renderKeywords(){
         </div>
       </div>
       ${warned?`<div class="warnmsg">${WARN} Colisión: <b style="margin:0 4px">${esc([...new Set(warned)].join(", "))}</b> también dispara otro flujo. Ganará cualquiera al azar.</div>`:""}`;
-    el.querySelector(".kws").onchange=e=>updateTrigger(t,{ keywords:splitKws(e.target.value) });
+    const kwsArr=(t.config?.keywords||[]).slice();
+    el.querySelector("[data-ci]").addEventListener("keydown",e=>{
+      if(e.key==="Enter"){ e.preventDefault(); const v=e.target.value.trim(); if(v && !kwsArr.some(k=>norm(k)===norm(v))){ kwsArr.push(v); updateTrigger(t,{keywords:kwsArr}); } }
+      else if(e.key==="Backspace" && !e.target.value && kwsArr.length){ kwsArr.pop(); updateTrigger(t,{keywords:kwsArr}); }
+    });
+    el.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>{ kwsArr.splice(+b.dataset.rm,1); updateTrigger(t,{keywords:kwsArr}); });
     el.querySelector(".mm").onchange=e=>updateTrigger(t,{ match:e.target.value });
     el.querySelector("[data-act]").onclick=()=>toggleTrigger(t);
     el.querySelector("[data-del]").onclick=()=>removeTrigger(t);
@@ -340,14 +394,19 @@ function renderKeywords(){
 function splitKws(raw){ return (raw||"").split(",").map(s=>s.trim()).filter(Boolean); }
 
 async function addKeyword(){
-  const flowId=$("nFlow").value; const kws=splitKws($("nKws").value); const match=$("nMatch").value;
-  if(!flowId){ toast("Elige un flujo",true); return; }
-  if(!kws.length){ toast("Escribe al menos una palabra clave",true); return; }
+  const prodId=$("nProd").value;
+  // por si el usuario escribió una frase y no la agregó como chip
+  const pending=($("nChipIn").value||"").trim(); if(pending) addNewChip();
+  const kws=st.newKws.slice(); const match=$("nMatch").value;
+  if(!prodId){ toast("Elige un producto",true); return; }
+  if(!kws.length){ toast("Agrega al menos una palabra clave",true); return; }
+  const flow=mainFlowFor(prodId);
+  if(!flow){ toast("Ese producto no tiene flujo de venta todavía. Créalo en Productos.",true); return; }
   const { error }=await supa.from("flow_triggers").insert({
-    channel_id:st.channelId, flow_id:flowId, tipo:"keyword", config:{ keywords:kws, match }, activo:true
+    channel_id:st.channelId, flow_id:flow.id, tipo:"keyword", config:{ keywords:kws, match }, activo:true
   });
   if(error){ toast(error.message,true); return; }
-  $("nKws").value=""; toast("Palabra clave agregada ✓"); await loadAll();
+  st.newKws=[]; renderNewChips(); toast("Palabra clave agregada ✓"); await loadAll();
 }
 async function updateTrigger(t, patch){
   const config={ ...(t.config||{}), ...patch };
