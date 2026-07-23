@@ -118,7 +118,7 @@
   .bita-nav{display:inline-flex;align-items:center;gap:8px}
   .bita-nav button{width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:16px;line-height:1;cursor:pointer}
   .bita-nav button:hover{border-color:var(--brand);color:var(--brand)}
-  .bita-nav .m{font-weight:700;font-size:14px;min-width:132px;text-align:center;text-transform:capitalize}
+  .bita-nav .m{font-weight:700;font-size:14px;min-width:132px;text-align:center}
   .bita-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
   .bita-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:4px}
   .bita-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
@@ -662,7 +662,7 @@ async function loadBitacora(monthStart){
 async function renderBitacora(){
   const cal=$("bitaCal");
   cal.innerHTML=`<div style="grid-column:1/-1;text-align:center;color:var(--faint);padding:24px">Cargando…</div>`;
-  $("bitaMonth").textContent=new Intl.DateTimeFormat("es-PE",{month:"long",year:"numeric"}).format(bitaMonth);
+  { const ms=new Intl.DateTimeFormat("es-PE",{month:"long",year:"numeric"}).format(bitaMonth); $("bitaMonth").textContent=ms.charAt(0).toUpperCase()+ms.slice(1); }
   $("bitaTitle").textContent=`Profit diario (${CUR})`;
   const day=await loadBitacora(bitaMonth);
   const profitOf=(k)=>{ const d=day[k]; return d?(d.margin-d.spend-d.exp):null; };
