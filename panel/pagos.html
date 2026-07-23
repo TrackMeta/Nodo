@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Validación de pagos</title>
+<title>Nodo · Pagos y atención</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -53,8 +53,8 @@
     <div class="nodo-head">
       <div class="grow">
         <a href="pedidos.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;text-decoration:none;margin-bottom:6px">← Volver a Pedidos</a>
-        <h1 class="nodo-title">Validación de pagos</h1>
-        <p class="nodo-lead">Cómo se aprueban los pagos de tus pedidos físicos y los recordatorios del adelanto.</p>
+        <h1 class="nodo-title">Pagos y atención</h1>
+        <p class="nodo-lead">Cómo el bot valida los pagos, maneja adelantos y saldos, y cómo atiende al cliente: cuándo pasa a un asesor y el modo post-venta.</p>
       </div>
     </div>
     <div id="body"></div>
@@ -70,6 +70,8 @@ const IC={
   shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
   zap:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>',
   coins:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg>',
+  agent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M18 14h3v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M20 17v2a4 4 0 0 1-4 4h-4"/></svg>',
+  support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.9" y1="4.9" x2="9.2" y2="9.2"/><line x1="14.8" y1="14.8" x2="19.1" y2="19.1"/><line x1="14.8" y1="9.2" x2="19.1" y2="4.9"/><line x1="4.9" y1="19.1" x2="9.2" y2="14.8"/></svg>',
 };
 const st={ channelId:null, channel:{}, pedidos:null };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -248,7 +250,7 @@ function render(b){
     </div>
 
     <div class="card ia">
-      <div class="chd"><span class="ico iaic">🙋</span><span class="nm">Cuándo pasar a un asesor</span></div>
+      <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
       <div class="desc">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
 
       <div id="huRecRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
@@ -285,7 +287,7 @@ function render(b){
     </div>
 
     <div class="card ia">
-      <div class="chd"><span class="ico iaic">🛎️</span><span class="nm">Atención post-venta</span></div>
+      <div class="chd"><span class="ico iaic">${IC.support}</span><span class="nm">Atención post-venta</span></div>
       <div class="desc">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
 
       <div id="pvRow2" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
@@ -367,7 +369,7 @@ function render(b){
     const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=p; toast("Validación de pagos guardada ✓");
+    st.channel.pedidos_config=p; toast("Pagos y atención guardado ✓");
   };
 }
 
