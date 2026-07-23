@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Conciliar pagos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:rgba(43,127,255,.13);
+    --green:#22c079; --green-bg:rgba(34,192,121,.13); --amber:#f0a92b; --amber-bg:rgba(240,169,43,.13);
+    --red:#e2564a; --red-bg:rgba(226,86,74,.13); --violet:#8b5cf6; --violet-bg:rgba(139,92,246,.13);
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+  .btn:hover{background:var(--surface-2)}
+  .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
+  .btn.ok{background:var(--green);border:none;color:#04140c}
+  .btn.sm{height:30px;padding:0 11px;font-size:12px;border-radius:8px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin-bottom:16px}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 6px;font-weight:700}
+  .in{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:38px;padding:0 11px;font-size:13.5px;outline:none;font-family:inherit}
+  .in:focus{border-color:var(--brand)}
+  /* Zona de carga */
+  .drop{border:1.5px dashed var(--border);border-radius:14px;padding:26px 18px;text-align:center;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--brand);background:var(--brand-bg)}
+  .drop .big{font-size:15px;font-weight:700;margin-bottom:4px}
+  .drop .sub{font-size:12.5px;color:var(--muted);line-height:1.5}
+  /* Resumen */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:.12s}
+  .kpi:hover{border-color:var(--brand)}
+  .kpi.on{border-color:var(--brand);background:var(--brand-bg)}
+  .kpi .k{font-size:11.5px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px}
+  .kpi .k .d{width:8px;height:8px;border-radius:50%}
+  .kpi .v{font-size:24px;font-weight:800;letter-spacing:-.5px;margin-top:5px}
+  .kpi .s{font-size:11px;color:var(--faint);margin-top:2px}
+  /* Filas */
+  .row{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:12px 14px;margin-bottom:9px}
+  .row .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .row .nm{font-weight:700;font-size:14px}
+  .row .amt{font-weight:800;font-size:15px;margin-left:auto}
+  .por{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+  .por span{font-size:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:3px 9px;color:var(--muted)}
+  .por span.good{background:var(--green-bg);color:var(--green);border-color:transparent}
+  .por span.warn{background:var(--amber-bg);color:var(--amber);border-color:transparent}
+  .acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+  .opt{border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-top:7px;cursor:pointer;display:flex;gap:10px;align-items:flex-start}
+  .opt:hover{border-color:var(--brand)}
+  .opt.on{border-color:var(--brand);background:var(--brand-bg)}
+  .pill{font-size:10px;font-weight:800;letter-spacing:.3px;padding:2px 8px;border-radius:12px}
+  .pill.ok{background:var(--green-bg);color:var(--green)}
+  .pill.rev{background:var(--amber-bg);color:var(--amber)}
+  .pill.bad{background:var(--red-bg);color:var(--red)}
+  .pill.mon{background:var(--violet-bg);color:var(--violet)}
+  .muted{color:var(--muted);font-size:12.5px;line-height:1.55}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5}
+  .bar{position:sticky;bottom:0;background:linear-gradient(to top,var(--bg) 70%,transparent);padding:14px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:900px">
+    <div class="nodo-head">
+      <div class="grow">
+        <a href="compras.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;text-decoration:none;margin-bottom:6px">← Volver a Compras</a>
+        <h1 class="nodo-title">Conciliar pagos</h1>
+        <p class="nodo-lead">Sube el reporte de tu banco o billetera y lo cruzo con las ventas que Nodo da por cobradas. Sirve para cazar dos cosas: <b>ventas que el bot dio por pagadas y el banco no respalda</b>, y <b>plata que entró y Nodo no registró</b>.<br>
+        <span style="color:var(--faint)">El archivo se lee en tu navegador — no se sube a ningún lado.</span></p>
+      </div>
+    </div>
+    <div id="view"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
+import * as O from "./orders.js";
+import { leerReporte, emparejar, pagosSinVenta } from "./conciliar.js";
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money=(v)=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fFecha=(d)=>d?new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(d):"—";
+
+const st={ channelId:null, desde:null, hasta:null, archivo:null, rep:null,
+           ventas:[], res:null, sinVenta:null, cubeta:"cuadradas", decisiones:new Map() };
+
+// El pago SIEMPRE ocurre antes del comprobante, y el comprobante antes de que
+// apruebes. Por eso los movimientos se leen con holgura hacia atrás: si cortara
+// el archivo igual que las ventas, un pago de las 23:55 de la víspera dejaría
+// huérfana a la venta aprobada a las 00:10 — un falso "sin pago" de puro borde.
+const MARGEN_HORAS=6;
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"compras" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; st.rep=null; st.res=null; render(); });
+  const hoy=new Date(); const antes=new Date(hoy.getTime()-30*86400000);
+  st.hasta=hoy.toISOString().slice(0,10); st.desde=antes.toISOString().slice(0,10);
+  render();
+}
+
+// ── Paso 1: rango + archivo ────────────────────────────────────────
+function render(){
+  if(st.res) return renderResultado();
+  $("view").innerHTML=`
+    <div class="card">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+        <div><label>Desde</label><input class="in" type="date" id="fDesde" value="${st.desde}"/></div>
+        <div><label>Hasta</label><input class="in" type="date" id="fHasta" value="${st.hasta}"/></div>
+        <div class="hint" style="flex:1;min-width:220px;margin:0">Se revisan las ventas <b>cobradas al 100%</b> de estas fechas. Del archivo leo también unas horas antes, porque el pago siempre entra antes del comprobante.</div>
+      </div>
+      <div class="drop" id="drop">
+        <div class="big">📄 Suelta acá el reporte, o toca para elegirlo</div>
+        <div class="sub">Excel (.xlsx) o CSV. Reconozco el de <b>Yape</b> y me adapto a otros por los nombres de sus columnas.</div>
+        <div class="sub" id="dropName" style="margin-top:8px;color:var(--brand);font-weight:700"></div>
+      </div>
+      <div class="bar"><button class="btn primary" id="go" disabled>Conciliar</button>
+        <span class="hint" id="est" style="margin:0"></span></div>
+    </div>`;
+  const drop=$("drop"), inp=document.createElement("input");
+  inp.type="file"; inp.accept=".xlsx,.csv,.txt";
+  drop.onclick=()=>inp.click();
+  inp.onchange=()=>{ if(inp.files[0]) setArchivo(inp.files[0]); };
+  ["dragenter","dragover"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("over");}));
+  ["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("over");}));
+  drop.addEventListener("drop",ev=>{ const f=ev.dataTransfer.files[0]; if(f) setArchivo(f); });
+  $("fDesde").onchange=(e)=>st.desde=e.target.value;
+  $("fHasta").onchange=(e)=>st.hasta=e.target.value;
+  $("go").onclick=conciliar;
+}
+function setArchivo(f){
+  st.archivo=f;
+  $("dropName").textContent="✓ "+f.name;
+  $("go").disabled=false;
+}
+
+// ── Paso 2: cargar datos y cruzar ──────────────────────────────────
+async function conciliar(){
+  const b=$("go"); b.disabled=true; b.textContent="Leyendo…";
+  try{
+    st.rep=await leerReporte(st.archivo);
+  }catch(e){ toast(e.message||"No pude leer el archivo",true); b.disabled=false; b.textContent="Conciliar"; return; }
+
+  b.textContent="Cruzando…";
+  const desde=new Date(st.desde+"T00:00:00"), hasta=new Date(st.hasta+"T23:59:59");
+  // Ventas cobradas al 100% del rango (mismo criterio que Compras).
+  const { data:ords }=await supa.from("orders")
+    .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
+    .eq("channel_id",st.channelId).gte("created_at",desde.toISOString()).lte("created_at",hasta.toISOString())
+    .limit(4000);
+  const cerradas=(ords||[]).filter(o=>O.EST[o.estado] && O.EST[o.estado].cobro==="todo");
+
+  // Cuándo llegó el comprobante: es la referencia horaria buena. La aprobación
+  // puede ser horas después (validación manual), y el pago ocurrió antes de la
+  // captura, no antes del clic.
+  const ids=[...new Set(cerradas.map(o=>o.contact_id).filter(Boolean))];
+  let imgs=[];
+  if(ids.length){
+    const { data:ms }=await supa.from("messages").select("contact_id,ts")
+      .eq("channel_id",st.channelId).in("contact_id",ids).eq("direction","in").eq("type","image")
+      .gte("ts",new Date(desde.getTime()-MARGEN_HORAS*3600000).toISOString())
+      .lte("ts",hasta.toISOString()).order("ts",{ascending:false}).limit(6000);
+    imgs=(ms||[]).map(m=>({ contact_id:m.contact_id, fecha:new Date(m.ts) }));
+  }
+  const ultimaImg=new Map();
+  for(const m of imgs) if(!ultimaImg.has(m.contact_id)) ultimaImg.set(m.contact_id,m.fecha);
+
+  st.ventas=cerradas.map(o=>({
+    id:o.id, monto:O.total(o), cliente:(o.shipping||{}).cliente || (o.contact||{}).nombre || "",
+    producto:(o.product||{}).nombre||"",
+    fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
+    _o:o, _yaConciliado:(o.shipping||{}).conciliacion||null,
+  }));
+
+  // Los ya conciliados en una corrida anterior no se vuelven a tocar.
+  const pendientes=st.ventas.filter(v=>!v._yaConciliado);
+  const desdeMov=new Date(desde.getTime()-MARGEN_HORAS*3600000);
+  const movs=st.rep.movs.filter(m=>m.fecha>=desdeMov && m.fecha<=hasta);
+  st.res=emparejar(pendientes,movs,{modo:"prudente"});
+  st.res.yaConciliadas=st.ventas.filter(v=>v._yaConciliado);
+  // Señales para el ruido: los comprobantes que sí entraron por WhatsApp.
+  const señales=imgs.map(m=>({ fecha:m.fecha, contacto:m.contact_id }));
+  st.sinVenta=pagosSinVenta(st.res.libres,señales);
+  st.movsEnRango=movs.length;
+  st.decisiones=new Map();
+  st.cubeta = st.res.revisar.length ? "revisar" : "cuadradas";
+  renderResultado();
+}
+
+// ── Paso 3: resultado ──────────────────────────────────────────────
+function renderResultado(){
+  const r=st.res;
+  const K=[
+    ["cuadradas","Cuadradas",r.cuadradas.length,"var(--green)","venta y pago que calzan"],
+    ["revisar","Por revisar",r.revisar.length,"var(--amber)","tú decides cuál es"],
+    ["sinpago","Ventas sin pago",r.sinPago.length,"var(--red)","el banco no las respalda"],
+    ["sinventa","Pagos sin venta",st.sinVenta.conSeñal.length,"var(--violet)","entró plata no registrada"],
+  ];
+  $("view").innerHTML=`
+    <div class="card" style="padding:14px 16px;margin-bottom:14px">
+      <div class="muted"><b>${esc(st.archivo.name)}</b> · formato ${esc(st.rep.formato)} · ${st.movsEnRango} movimientos en el rango
+      ${st.rep.salientes?` · ${st.rep.salientes} salidas ignoradas`:""}
+      ${r.yaConciliadas.length?` · ${r.yaConciliadas.length} ventas ya conciliadas antes (no se tocan)`:""}
+      <button class="btn sm" id="otro" style="margin-left:10px">Otro archivo</button></div>
+    </div>
+    <div class="kpis">${K.map(([k,t,n,c,s])=>`
+      <div class="kpi ${st.cubeta===k?"on":""}" data-k="${k}">
+        <div class="k"><span class="d" style="background:${c}"></span>${t}</div>
+        <div class="v" style="color:${c}">${n}</div><div class="s">${s}</div></div>`).join("")}</div>
+    <div id="lista"></div>
+    <div class="bar">
+      <button class="btn ok" id="aplicar">Guardar lo decidido</button>
+      <span class="hint" id="cuenta" style="margin:0"></span>
+    </div>`;
+  $("otro").onclick=()=>{ st.res=null; st.rep=null; render(); };
+  document.querySelectorAll(".kpi").forEach(el=> el.onclick=()=>{ st.cubeta=el.dataset.k; renderResultado(); });
+  $("aplicar").onclick=aplicar;
+  renderLista();
+  actualizarCuenta();
+}
+
+function fila(inner){ const d=document.createElement("div"); d.className="row"; d.innerHTML=inner; return d; }
+function chips(por){ return `<div class="por">${por.map(p=>{
+  const cls=/calza|exacto/.test(p)?"good":/otro titular|después/.test(p)?"warn":"";
+  return `<span class="${cls}">${esc(p)}</span>`;}).join("")}</div>`; }
+function cab(v){ return `<div class="top">
+  <span class="nm">${esc(v.cliente||"Sin nombre")}</span>
+  <span class="muted" style="font-size:12px">${esc(v.producto||"")}</span>
+  <span class="amt">${money(v.monto)}</span></div>
+  <div class="hint" style="margin-top:2px">comprobante ${fFecha(v.fecha)}</div>`; }
+
+function renderLista(){
+  const box=$("lista"); box.innerHTML="";
+  const r=st.res;
+  if(st.cubeta==="cuadradas"){
+    if(!r.cuadradas.length) return vacio(box,"Ninguna venta cuadró automáticamente.","Mira “Por revisar”: ahí están las que tienen candidatos pero no son seguras.");
+    r.cuadradas.forEach(c=>{
+      const el=fila(`${cab(c.venta)}
+        <div class="hint" style="margin-top:8px"><span class="pill ok">CUADRA</span> con el pago de <b>${esc(c.mov.quien||"—")}</b> · ${fFecha(c.mov.fecha)}</div>
+        ${chips(c.por)}
+        <div class="acts"><button class="btn sm" data-a="no">No es este pago</button></div>`);
+      el.querySelector('[data-a="no"]').onclick=()=>{ st.decisiones.set(c.venta.id,{tipo:"descartar"}); el.style.opacity=.45; actualizarCuenta(); };
+      box.appendChild(el);
+    });
+    return;
+  }
+  if(st.cubeta==="revisar"){
+    if(!r.revisar.length) return vacio(box,"Nada que decidir.","Todas las ventas con candidatos quedaron claras.");
+    r.revisar.forEach(x=>{
+      const el=fila(`${cab(x.venta)}
+        <div class="hint" style="margin-top:8px"><span class="pill rev">TÚ DECIDES</span> ${x.motivo==="otro_pedido_lo_reclama"?"otra venta reclama el mismo pago":"hay varios pagos que podrían ser"}</div>
+        ${x.opciones.map((o,i)=>`<div class="opt" data-i="${i}">
+          <div style="flex:1;min-width:0"><b style="font-size:13px">${esc(o.mov.quien||"—")} · ${money(o.mov.monto)}</b>
+          <div class="hint" style="margin-top:1px">${fFecha(o.mov.fecha)}</div>${chips(o.por)}</div></div>`).join("")}
+        <div class="acts">
+          <button class="btn sm" data-a="otro">Cobré por otro medio</button>
+          <button class="btn sm" data-a="nada">Dejar sin decidir</button></div>`);
+      el.querySelectorAll(".opt").forEach(op=> op.onclick=()=>{
+        el.querySelectorAll(".opt").forEach(o=>o.classList.remove("on")); op.classList.add("on");
+        st.decisiones.set(x.venta.id,{tipo:"cuadrar",mov:x.opciones[+op.dataset.i].mov,por:x.opciones[+op.dataset.i].por});
+        actualizarCuenta();
+      });
+      el.querySelector('[data-a="otro"]').onclick=()=>marcarOtroMedio(x.venta,el);
+      el.querySelector('[data-a="nada"]').onclick=()=>{ st.decisiones.delete(x.venta.id); el.querySelectorAll(".opt").forEach(o=>o.classList.remove("on")); actualizarCuenta(); };
+      box.appendChild(el);
+    });
+    return;
+  }
+  if(st.cubeta==="sinpago"){
+    if(!r.sinPago.length) return vacio(box,"Todas tus ventas tienen respaldo en el banco.","Nada que investigar en este rango.");
+    box.insertAdjacentHTML("beforebegin","");
+    r.sinPago.forEach(s=>{
+      const met=metodoDe(s.venta._o);
+      const el=fila(`${cab(s.venta)}
+        <div class="hint" style="margin-top:8px"><span class="pill bad">SIN RESPALDO</span> no hay ningún movimiento de ${money(s.venta.monto)} cerca de esa hora
+        ${met?` · el comprobante decía <b>${esc(met)}</b>`:""}</div>
+        <div class="acts">
+          <button class="btn sm" data-a="otro">Cobré por otro medio</button>
+          <a class="btn sm" href="index.html?c=${encodeURIComponent(s.venta._o.contact_id||"")}" target="_blank">Ver el chat</a>
+          <button class="btn sm" data-a="anular" style="color:var(--red)">Anular venta…</button></div>`);
+      el.querySelector('[data-a="otro"]').onclick=()=>marcarOtroMedio(s.venta,el);
+      el.querySelector('[data-a="anular"]').onclick=()=>anular(s.venta,el);
+      box.appendChild(el);
+    });
+    return;
+  }
+  // Pagos sin venta
+  const sv=st.sinVenta;
+  if(!sv.conSeñal.length) return vacio(box,"No hay pagos huérfanos que parezcan de Nodo.",
+    `${sv.ajenos.length} movimientos del archivo no calzaron con ninguna venta, pero tampoco hay señal de que fueran del bot (ningún cliente escribió cerca de esa hora). Se ignoran.`);
+  box.insertAdjacentHTML("beforeend",`<div class="muted" style="margin-bottom:10px">Entró esta plata y Nodo no la tiene registrada. Puede que el bot no leyera bien el comprobante o que no llegara a pasarlo.
+    <b>${sv.ajenos.length}</b> movimientos más no calzaron con nada y no parecen de Nodo — se ignoran.</div>`);
+  sv.conSeñal.slice(0,200).forEach(x=>{
+    box.appendChild(fila(`<div class="top"><span class="nm">${esc(x.mov.quien||"—")}</span>
+      <span class="amt" style="color:var(--violet)">${money(x.mov.monto)}</span></div>
+      <div class="hint">${fFecha(x.mov.fecha)}${x.mov.nota?` · “${esc(x.mov.nota)}”`:""}</div>
+      <div class="hint" style="margin-top:6px"><span class="pill mon">SIN REGISTRAR</span> un cliente mandó un comprobante cerca de esa hora</div>`));
+  });
+}
+function vacio(box,t,s){ box.innerHTML=`<div class="nodo-empty" style="border:none"><h3>${esc(t)}</h3><p>${esc(s)}</p></div>`; }
+function metodoDe(o){ const s=o.shipping||{}; return s.digital_metodo||s.adelanto_metodo||s.saldo_metodo||""; }
+
+async function marcarOtroMedio(v,el){
+  const motivo=await askChoice({ title:"Cobré por otro medio",
+    message:`${v.cliente||"Este cliente"} — ${money(v.monto)}. Queda sellada y no volverá a aparecer como sospechosa.`,
+    value:"otro_banco", options:[
+      { value:"otro_banco", label:"Otro banco o billetera", icon:"dollar", desc:"El pago existe, pero no en este archivo." },
+      { value:"efectivo",   label:"En efectivo",            icon:"dollar", desc:"Me pagó en la mano." },
+      { value:"otro",       label:"Otro motivo",            icon:"note",   desc:"Lo escribo yo." },
+    ] });
+  if(!motivo) return;
+  let detalle=motivo;
+  if(motivo==="otro"){ detalle=await askText({ title:"¿Por qué está bien?", label:"Motivo", placeholder:"Ej. lo pagó con el saldo a favor" }); if(!detalle) return; }
+  st.decisiones.set(v.id,{tipo:"otro_medio",motivo:detalle});
+  el.style.opacity=.5; el.querySelectorAll("button").forEach(b=>b.disabled=true);
+  actualizarCuenta();
+}
+async function anular(v,el){
+  const motivo=await askText({ title:"Anular esta venta",
+    message:"Sale del Dashboard, de Compras y de las métricas (no se borra: queda registrada como anulada).",
+    label:"Motivo (para tu registro)", placeholder:"Ej: pago falso, el banco no lo respalda",
+    confirmText:"Anular venta", cancelText:"No, dejarla" });
+  if(!motivo) return;
+  const estado=(v._o.product||{}).tipo==="digital"?"anulada":"cancelado";
+  const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:v.id, estado,
+    shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } } });
+  if(error||data?.error){ toast(error?.message||data.error,true); return; }
+  toast("Venta anulada ✓"); el.style.opacity=.4; el.querySelectorAll("button").forEach(b=>b.disabled=true);
+}
+function actualizarCuenta(){
+  const n=st.decisiones.size;
+  const c=$("cuenta"); if(c) c.textContent = n? `${n} cambio${n===1?"":"s"} sin guardar` : "Elige qué guardar";
+  const b=$("aplicar"); if(b) b.disabled = n===0 && !st.res.cuadradas.length;
+}
+
+// ── Paso 4: guardar ────────────────────────────────────────────────
+// Todo queda con su rastro (archivo, fecha, por qué) para poder deshacerlo.
+async function aplicar(){
+  const b=$("aplicar"); b.disabled=true; b.textContent="Guardando…";
+  const sello=(extra)=>({ archivo:st.archivo.name, at:new Date().toISOString(), ...extra });
+  const tareas=[];
+  for(const c of st.res.cuadradas){
+    const d=st.decisiones.get(c.venta.id);
+    if(d && d.tipo==="descartar") continue;             // el humano dijo que no
+    tareas.push([c.venta.id, sello({ estado:"cuadrado", automatico:true, por:c.por,
+      mov:{ quien:c.mov.quien, monto:c.mov.monto, fecha:c.mov.fecha.toISOString() } })]);
+  }
+  for(const [id,d] of st.decisiones){
+    if(d.tipo==="cuadrar") tareas.push([id, sello({ estado:"cuadrado", automatico:false, por:d.por,
+      mov:{ quien:d.mov.quien, monto:d.mov.monto, fecha:d.mov.fecha.toISOString() } })]);
+    else if(d.tipo==="otro_medio") tareas.push([id, sello({ estado:"otro_medio", motivo:d.motivo })]);
+  }
+  let ok=0, fail=0;
+  for(const [id,conc] of tareas){
+    const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:id, shipping:{ conciliacion:conc } } });
+    if(error||data?.error) fail++; else ok++;
+  }
+  b.textContent="Guardar lo decidido"; b.disabled=false;
+  toast(fail? `${ok} guardadas · ${fail} fallaron` : `${ok} ventas conciliadas ✓`, !!fail);
+  if(ok) { st.res=null; st.rep=null; render(); }
+}
+
+boot();
+</script>
+</body>
+</html>
