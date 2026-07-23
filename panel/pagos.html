@@ -63,6 +63,7 @@
 
 <script type="module">
 import { supa, mountShell, toast } from "./shell.js";
+import { attachVarPicker } from "./var-picker.js";
 const $=(id)=>document.getElementById(id);
 const IC={
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
@@ -280,30 +281,32 @@ function render(b){
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Avisos de pedido</span></div>
-      <div class="desc">Cuando mueves un pedido físico, el bot le escribe al cliente. <b>Ese texto vive en un flujo</b>, no acá: abajo ves cuál se dispara en cada momento y puedes ir a editarlo.<br><br>
-      Ojo con la <b>ventana de 24 horas</b>: WhatsApp solo te deja escribir libremente durante ese rato desde el último mensaje del cliente, y un pedido físico se despacha días después. Fuera de la ventana Meta rechaza el mensaje —a ti te llega el error y <b>el cliente no recibe nada</b>—, así que elige también qué <b>plantilla aprobada</b> usar en cada momento. Al mover el pedido te proponemos sola la que corresponda.</div>
+      <div class="desc">Lo que el bot le escribe al cliente cuando mueves su pedido. <b>Escríbelo acá</b> y listo — no hace falta armar nada más.<br><br>
+      Ojo con la <b>ventana de 24 horas</b>: WhatsApp solo te deja escribir libremente durante ese rato desde el último mensaje del cliente, y un pedido físico se despacha días después. Fuera de la ventana Meta rechaza el mensaje —a ti te llega el error y <b>el cliente no recibe nada</b>—, así que además puedes dejar elegida una <b>plantilla aprobada</b> para esos casos. Al mover el pedido te proponemos sola la que corresponda.</div>
       <div id="avisosBox">${MOMENTOS.map(([k,t,d])=>{
-        const fl=st.flujos[k];
-        return `<div style="margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px">
-          <div style="font-weight:600;font-size:13px">${t}</div>
-          <div style="font-size:11.5px;color:var(--faint);margin-top:2px">${d}</div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px">
-            <span style="font-size:11.5px;color:var(--muted);font-weight:700;min-width:118px">Dentro de la ventana</span>
-            ${fl ? `<span style="font-size:12.5px">${esc(fl.nombre)}</span>
-                   <a href="editor.html?flow=${encodeURIComponent(fl.id)}" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none">editar →</a>`
-                 : `<span style="font-size:12px;color:var(--amber);font-weight:600">Sin aviso armado — no se enviará nada</span>`}
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px">
-            <span style="font-size:11.5px;color:var(--muted);font-weight:700;min-width:118px">Fuera de la ventana</span>
+        const a=p.avisos[k]||{}; const fl=st.flujos[k];
+        return `<div style="margin-top:14px;border:1px solid var(--border);border-radius:12px;padding:13px 14px">
+          <div style="font-weight:700;font-size:13.5px">${t}</div>
+          <div style="font-size:11.5px;color:var(--faint);margin-top:2px;margin-bottom:9px">${d}</div>
+          <textarea class="in" data-avtxt="${k}" rows="3" placeholder="Escribe lo que le va a llegar al cliente…"
+            style="min-height:74px;line-height:1.5;font-family:var(--font);resize:vertical">${esc(a.texto||"")}</textarea>
+          <div data-avvars="${k}"></div>
+          ${k==="despachado" ? `<div data-avfoto style="display:flex;align-items:center;gap:9px;margin-top:9px;cursor:pointer">
+            <span class="sw ${a.foto_guia?'on':''}" data-avfotosw style="flex:none"></span>
+            <span style="font-size:12.5px">Adjuntar la foto de la guía<div style="font-size:11px;color:var(--faint)">La que subes al registrar el despacho. Si no subiste ninguna, sale solo el texto.</div></span>
+          </div>` : ""}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:11px;padding-top:10px;border-top:1px solid var(--border)">
+            <span style="font-size:11.5px;color:var(--muted);font-weight:700;min-width:150px">Si la ventana está cerrada</span>
             ${st.tpls.length ? `<select class="in" data-aviso="${k}" style="width:auto;min-width:190px;flex:none">
               <option value="">— Sin plantilla —</option>
-              ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${((p.avisos[k]||{}).template===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
+              ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${(a.template===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
             </select>` : `<span style="font-size:12px;color:var(--faint)">Necesitas una plantilla aprobada (sección <b>Plantillas</b>)</span>`}
           </div>
+          ${fl ? `<div style="font-size:11px;color:var(--faint);margin-top:8px">También tienes el flujo <b>${esc(fl.nombre)}</b> escuchando este estado. Si escribes un mensaje acá, <b>manda este</b> y el flujo no se dispara. <a href="editor.html?flow=${encodeURIComponent(fl.id)}" target="_blank" style="color:var(--brand);text-decoration:none">verlo →</a></div>` : ""}
         </div>`;}).join("")}</div>
-      <div class="snote"><span class="si">${IC.shield}</span><span>${st.tpls.length
-        ? "Las variables de la plantilla se rellenan con los datos del cliente y de su pedido (<b>{{pedido_guia}}</b>, <b>{{pedido_sede}}</b>, <b>{{pedido_saldo}}</b>…)."
-        : "Sin plantillas aprobadas, fuera de la ventana solo podrás elegir “no avisar”. Créalas en <b>Plantillas</b> y vuelve acá para asignarlas."}</span></div>
+      <div class="snote"><span class="si">${IC.shield}</span><span>Con <b>Insertar dato</b> pones cosas como el número de guía o la sede: se reemplazan por los datos reales de cada cliente al enviar. ${st.tpls.length
+        ? "En las plantillas también se rellenan solos."
+        : "Sin plantillas aprobadas, fuera de la ventana solo podrás elegir “no avisar”."}</span></div>
     </div>
 
     <div class="card ia">
@@ -409,6 +412,18 @@ function render(b){
     x.style.borderColor=on?"var(--ia)":"var(--border)"; x.style.background=on?"var(--ia)":"transparent"; x.style.color=on?"#fff":"var(--muted)";
   });
   $("pvRow2").onclick=()=>{ p.postventa.activo=!(p.postventa.activo!==false); $("pvSw2").classList.toggle("on",p.postventa.activo!==false); };
+  // Avisos de pedido: botón "Insertar dato" en cada mensaje + el toggle de la foto.
+  b.querySelectorAll("[data-avtxt]").forEach(ta=>{
+    const cont=b.querySelector(`[data-avvars="${ta.dataset.avtxt}"]`);
+    const btn=attachVarPicker(ta,{ supa, channelId:st.channelId });
+    if(cont && btn) cont.appendChild(btn);
+  });
+  const foto=b.querySelector("[data-avfoto]");
+  if(foto) foto.onclick=()=>{
+    const a=p.avisos.despachado=p.avisos.despachado||{};
+    a.foto_guia=!a.foto_guia;
+    foto.querySelector("[data-avfotosw]").classList.toggle("on",!!a.foto_guia);
+  };
   $("pedSave").onclick=async(e)=>{
     p.digital.tolerancia=Math.max(0,Number($("pDigTol").value)||0);
     if($("huDesde")) p.humano.horario.desde=$("huDesde").value||"09:00";
@@ -419,13 +434,20 @@ function render(b){
     if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
-    // Plantilla por momento del pedido. Vacío = ninguna (al despachar te
-    // ofreceremos "no avisar" o el mensaje normal si la ventana está abierta).
+    // Avisos de pedido: el mensaje que se manda dentro de la ventana y la
+    // plantilla para cuando está cerrada. El toggle de la foto ya se fue
+    // guardando en p.avisos al tocarlo, así que se conserva.
+    const fotoGuia=!!(p.avisos.despachado||{}).foto_guia;
     p.avisos={};
+    b.querySelectorAll("[data-avtxt]").forEach(ta=>{
+      const k=ta.dataset.avtxt, t=ta.value.trim();
+      if(t) (p.avisos[k]=p.avisos[k]||{}).texto=t;
+    });
     b.querySelectorAll("[data-aviso]").forEach(sel=>{
       const [name,language]=(sel.value||"").split("|");
-      if(name) p.avisos[sel.dataset.aviso]={ template:name, language:language||"es" };
+      if(name){ const a=p.avisos[sel.dataset.aviso]=p.avisos[sel.dataset.aviso]||{}; a.template=name; a.language=language||"es"; }
     });
+    if(fotoGuia) (p.avisos.despachado=p.avisos.despachado||{}).foto_guia=true;
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
     p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
     p.adelanto.nudge.mensaje=$("pnMsg").value.trim();

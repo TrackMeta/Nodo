@@ -357,7 +357,7 @@ function injectDespachoCss() {
 // `momento` = "despachado" | "en_agencia" | "adelanto_validado" (la plantilla
 // por defecto de cada uno se configura en Pagos y atención).
 export async function cargarAviso(supa, channelId, contactId, momento) {
-  const info = { abierta: false, restante: "", tpls: [], preferida: null, flujo: null, flujoId: null };
+  const info = { abierta: false, restante: "", tpls: [], preferida: null, flujo: null, flujoId: null, texto: "" };
   try {
     const { data: conv } = await supa.from("conversations").select("expira_at").eq("contact_id", contactId).maybeSingle();
     const t = conv?.expira_at ? new Date(conv.expira_at).getTime() : 0;
@@ -376,10 +376,13 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
     const { data: ch } = await supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
     const a = ch?.pedidos_config?.avisos?.[momento];
     if (a && a.template) info.preferida = a;
+    if (a && a.texto) info.texto = String(a.texto);
   } catch (_) { /* sin config */ }
-  // ¿QUÉ flujo va a salir? Decir "el aviso que tienes armado en Flujos" sin
-  // nombrarlo no ayuda: hay varios y no se sabe cuál escucha este estado. Y si
-  // no hay ninguno, hay que decirlo ANTES de guardar, no después.
+  // Si el negocio no escribió su mensaje en Pagos y atención, todavía puede
+  // haber un FLUJO viejo escuchando este estado. Se nombra para que se sepa qué
+  // va a salir; y si no hay ni una cosa ni la otra, hay que decirlo ANTES de
+  // guardar, no después.
+  if (info.texto) return info;
   try {
     const { data: trigs } = await supa.from("flow_triggers")
       .select("flow_id, config, flows!inner(id,nombre,estado)")
@@ -393,7 +396,7 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
 
 export function avisoBlockHtml(info) {
   const hayTpl = info.tpls.length > 0;
-  const hayFlujo = !!info.flujo;
+  const hayFlujo = !!info.flujo || !!info.texto;
   // Por defecto: lo que de verdad va a llegar. Ventana abierta CON aviso armado
   // → mensaje normal; si no, plantilla (si hay). Nunca proponemos algo que
   // sabemos que no va a llegar.
@@ -410,11 +413,16 @@ export function avisoBlockHtml(info) {
       : "● Ventana cerrada — WhatsApp solo acepta una plantilla aprobada"}</div>
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
-      hayFlujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu aviso de siempre",
-      !hayFlujo ? "No tienes ningún flujo activo escuchando este estado, así que no se enviaría nada. Ármalo en Flujos con el disparador “Estado de pedido”."
-        : info.abierta ? "Es el flujo que se dispara con este estado. Puedes editar su texto en Flujos."
-        : "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada.",
-      hayFlujo ? `<a href="editor.html?flow=${encodeURIComponent(info.flujoId)}" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Ver o editar este aviso →</a>` : "",
+      info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
+      !hayFlujo ? "Todavía no escribiste el mensaje de este momento, así que no se enviaría nada. Escríbelo en Pagos y atención → Avisos de pedido."
+        : !info.abierta ? "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada."
+        : info.texto ? `“${esc(info.texto.length > 120 ? info.texto.slice(0, 120) + "…" : info.texto)}”`
+        : "Es el flujo que se dispara con este estado.",
+      info.texto
+        ? `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Editar este mensaje →</a>`
+        : info.flujo
+        ? `<a href="editor.html?flow=${encodeURIComponent(info.flujoId)}" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Ver este aviso →</a>`
+        : `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Escribirlo ahora →</a>`,
       !info.abierta || !hayFlujo)}
     ${op("plantilla", "Una plantilla aprobada",
       hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas y activas — créalas en Plantillas.",

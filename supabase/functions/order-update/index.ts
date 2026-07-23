@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -183,6 +183,31 @@ Deno.serve(async (req) => {
   const aviso = (body.aviso ?? {}) as { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
   const avisoModo = String(aviso.modo ?? "mensaje");
 
+  // Mensaje escrito en Pagos y atención → Avisos de pedido. Se manda DIRECTO,
+  // sin flujo: nadie debería tener que armar un flujo para escribir "tu pedido
+  // va en camino". Si el negocio no escribió nada ahí, cae al flujo de siempre
+  // (compat con los avisos que ya existían).
+  if (avisoModo === "mensaje" && newEstado && (order as any).contact_id) {
+    try {
+      const { data: chA } = await db.from("channels").select("pedidos_config")
+        .eq("id", (order as any).channel_id).maybeSingle();
+      const cfg = (chA as any)?.pedidos_config?.avisos?.[newEstado] ?? {};
+      const texto = String(cfg.texto ?? "").trim();
+      if (texto) {
+        // Con la foto de la guía: UNA burbuja de imagen con el texto de pie.
+        // Si el pedido no tiene foto, emit() manda el pie como texto solo.
+        const bubbles = cfg.foto_guia
+          ? [{ media_kind: "image", media_url: "{{pedido_guia_foto}}", caption: texto, text: texto }]
+          : [{ text: texto }];
+        await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles });
+        avisoEnviado = "mensaje";
+      }
+    } catch (e) {
+      avisoError = String((e as any)?.message ?? e);
+      console.error("[order-update] aviso propio:", avisoError);
+    }
+  }
+
   if (avisoModo === "plantilla" && aviso.template?.name && (order as any).contact_id) {
     try {
       await sendTemplateToContact(db, (order as any).channel_id, (order as any).contact_id, {
@@ -198,7 +223,9 @@ Deno.serve(async (req) => {
   // El aviso por plantilla YA le habló al cliente: disparar además el flujo de
   // ese estado le mandaría el mismo aviso dos veces (y el segundo fallaría por
   // ventana cerrada, que es justo por lo que se eligió plantilla).
-  const saltarFlujo = avisoModo === "plantilla" || avisoModo === "ninguno";
+  // El flujo solo entra si NADIE le habló ya al cliente: si salió el mensaje
+  // propio o la plantilla, dispararlo además mandaría el aviso dos veces.
+  const saltarFlujo = avisoModo === "plantilla" || avisoModo === "ninguno" || avisoEnviado === "mensaje";
 
   if (newEstado && (order as any).contact_id) {
     try {
