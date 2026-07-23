@@ -51,6 +51,19 @@
   .funnel .fbar span{display:block;height:100%;border-radius:8px;min-width:2px;transition:width .4s}
   .funnel .fval{width:64px;flex:none;text-align:right;font-weight:650;font-size:14px}
   .funnel .frow[data-stage]:hover .fbar{outline:1px solid var(--border-strong,#2b3644)}
+  /* Gastos extra */
+  .expbtn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:12.5px;font-weight:700;flex:none;white-space:nowrap}
+  .expbtn:hover{border-color:var(--brand)}
+  .expbtn.primary{background:var(--brand);border-color:transparent;color:#fff} .expbtn.primary:hover{background:var(--brand-2)}
+  .expbtn.ghost{background:transparent}
+  .expform{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:13px;margin:12px 0;display:flex;flex-direction:column;gap:9px}
+  .expform .ef-row{display:flex;gap:9px} .expform .ef-row .ef-in{flex:1}
+  .ef-in{height:38px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13.5px;outline:none;font-family:inherit;width:100%}
+  .ef-in:focus{border-color:var(--brand)}
+  .ef-acts{display:flex;justify-content:flex-end;gap:8px}
+  .expdel{background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px}
+  .expdel:hover{color:var(--red);background:var(--red-bg,#2c1615)}
+  .hidden{display:none}
   .conv{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
   .convpill{font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:5px 11px;color:var(--muted)}
   .convpill b{color:var(--text)}
@@ -140,15 +153,25 @@
       <div id="productPerf"></div>
     </div>
 
-    <div class="panel">
-      <h3>Ventas extra</h3><p class="ps">Productos vendidos junto al principal</p>
-      <div id="bumps"></div>
+    <div class="cols">
+      <div class="panel">
+        <h3>Ventas extra</h3><p class="ps">Productos vendidos junto al principal</p>
+        <div id="bumps"></div>
+      </div>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div><h3>Gastos extra</h3><p class="ps">Gastos operativos que registras tú (empaques, sueldos, local…) · se restan de tu ganancia</p></div>
+          <button class="expbtn primary" id="addExpBtn">+ Registrar</button>
+        </div>
+        <div id="expForm" class="hidden"></div>
+        <div id="expenses"></div>
+      </div>
     </div>
   </div>
 </div>
 
 <script type="module">
-import { supa, mountShell } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
@@ -253,6 +276,7 @@ async function boot(){
     load();
   });
   $("dfBtn").onclick=(e)=>{ e.stopPropagation(); $("dfPop").classList.toggle("open"); };
+  $("addExpBtn").onclick=toggleExpForm;
   renderDatePop();
   load();
 }
@@ -275,13 +299,14 @@ async function load(){
   // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
   // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
-  const [stats, evR, ordR, prodR, contR, insR] = await Promise.all([
+  const [stats, evR, ordR, prodR, contR, insR, expR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("products").select("id,nombre,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
     supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
     supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)),
+    supa.from("manual_expenses").select("id,fecha,monto,descripcion,categoria").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)).order("fecha",{ascending:false}),
   ]);
   const s=stats.data||{};
   if(typeof contR?.count==="number") s.contactos=contR.count;
@@ -345,7 +370,11 @@ async function load(){
     const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(m==null) sinCostoF++; else bruta+=m;
   });
-  const neta = bruta - gastoAds;
+  // Gastos extra (operativos, registrados a mano). Son overhead del negocio,
+  // así que solo se restan en la vista general ("Todo"), no por segmento.
+  const expenses = expR.error ? [] : (expR.data||[]);
+  const gastosExtra = tipo==="todo" ? expenses.reduce((a,e)=>a+Number(e.monto||0),0) : 0;
+  const neta = bruta - gastoAds - gastosExtra;
   const roas = gastoAds>0 ? cobrado/gastoAds : 0;
   const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
 
@@ -358,6 +387,8 @@ async function load(){
     if(m!=null){ const pid=o.product_id||"_none"; margenPorProd[pid]=(margenPorProd[pid]||0)+m; dailyMargin[k]=(dailyMargin[k]||0)+m; }
   });
   ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0); } });
+  const dailyExpense={};
+  if(tipo==="todo") expenses.forEach(e=>{ dailyExpense[e.fecha]=(dailyExpense[e.fecha]||0)+Number(e.monto||0); });
 
   const K=[
     kpi("money","#22c079","Cobrado", money(cobrado), `plata que ya entró, de ${money(vendido)} vendidos`),
@@ -396,12 +427,55 @@ async function load(){
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
-  renderBand({ bruta, gastoAds, neta, roas, pctAds, hasAds, sinCostoF, tipo });
+  renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, tipo });
 
   renderFunnel(s.por_stage||{});
-  renderSales(orders, r, dailyMargin, dailySpend, hasAds);
+  renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds);
   renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
+  renderExpenses(expenses);
+}
+
+// ── Gastos extra (manuales) ────────────────────────────────────────
+function renderExpenses(list){
+  const box=$("expenses"); if(!box) return;
+  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:14px 0">Sin gastos extra en el periodo. Toca “+ Registrar” para agregar uno.</div>`; return; }
+  const total=list.reduce((a,e)=>a+Number(e.monto||0),0);
+  const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short"});
+  let rows=list.map(e=>`<tr><td style="white-space:nowrap">${fmt.format(new Date(e.fecha+"T00:00:00"))}</td><td class="pname">${esc(e.descripcion)}${e.categoria?` <span style="color:var(--faint);font-size:11px">· ${esc(e.categoria)}</span>`:""}</td><td class="r money">${money(e.monto)}</td><td class="r"><button class="expdel" data-id="${e.id}" title="Eliminar">✕</button></td></tr>`).join("");
+  rows+=`<tr class="total"><td colspan="2">Total</td><td class="r money">${money(total)}</td><td></td></tr>`;
+  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Fecha</th><th>Descripción</th><th class="r">Monto</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  box.querySelectorAll(".expdel").forEach(b=> b.onclick=()=>delExpense(b.dataset.id));
+}
+function toggleExpForm(){
+  const f=$("expForm");
+  if(!f.classList.contains("hidden")){ f.classList.add("hidden"); f.innerHTML=""; $("addExpBtn").textContent="+ Registrar"; return; }
+  const today=new Date().toISOString().slice(0,10);
+  f.innerHTML=`<div class="expform">
+    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto (S/)"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
+    <input class="ef-in" id="ef_desc" placeholder="Descripción (ej. Empaques, Sueldo asistente)"/>
+    <select class="ef-in" id="ef_cat"><option value="">Categoría (opcional)</option><option>Operativo</option><option>Personal</option><option>Local</option><option>Marketing</option><option>Otro</option></select>
+    <div class="ef-acts"><button class="expbtn ghost" id="ef_cancel">Cancelar</button><button class="expbtn primary" id="ef_save">Guardar gasto</button></div>
+  </div>`;
+  f.classList.remove("hidden"); $("addExpBtn").textContent="Cerrar";
+  $("ef_cancel").onclick=toggleExpForm;
+  $("ef_save").onclick=saveExpense;
+  $("ef_desc").addEventListener("keydown",(e)=>{ if(e.key==="Enter") saveExpense(); });
+  setTimeout(()=>$("ef_monto").focus(),30);
+}
+async function saveExpense(){
+  const monto=Number($("ef_monto").value), desc=$("ef_desc").value.trim();
+  if(!(monto>0)){ toast("Escribe un monto mayor a 0",true); $("ef_monto").focus(); return; }
+  if(!desc){ toast("Escribe una descripción",true); $("ef_desc").focus(); return; }
+  const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto, descripcion:desc, categoria:$("ef_cat").value||null, fecha:$("ef_fecha").value||undefined });
+  if(error){ toast(error.message,true); return; }
+  toast("Gasto registrado ✓"); toggleExpForm(); load();
+}
+async function delExpense(id){
+  if(!await confirmDialog({ title:"Eliminar gasto", message:"¿Quitar este gasto? Volverá a sumar a tu ganancia.", confirmText:"Eliminar", danger:true })) return;
+  const { error }=await supa.from("manual_expenses").delete().eq("id",id);
+  if(error){ toast(error.message,true); return; }
+  toast("Gasto eliminado ✓"); load();
 }
 
 function renderBand(b){
@@ -410,20 +484,20 @@ function renderBand(b){
     ? ""
     : (b.sinCostoF?`tras mercadería y envío · faltan costos en ${b.sinCostoF} pedido${b.sinCostoF>1?"s":""}`:"tras mercadería y envío");
   const brutaSub = brutaS?`<span class="pb-s">${brutaS}</span>`:"";
-  if(!b.hasAds){
+  const hasExtra = b.gastosExtra>0;
+  if(!b.hasAds && !hasExtra){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v green">${money(b.bruta)}</span>${brutaSub}</div>
-      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> y aquí verás tu <b>ganancia NETA</b> (después de publicidad), tu ROAS y cuánto se te va en ads.</div></div>`;
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";
   const roasTxt = b.roas>0?`ROAS ${b.roas.toFixed(1)}× · `:"";
-  box.innerHTML=`
-    <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${money(b.bruta)}</span>${brutaSub}</div>
-    <span class="pb-op">−</span>
-    <div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>
-    <span class="pb-op">=</span>
-    <div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${netaCls}">${money(b.neta)}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`;
+  const steps=[`<div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${money(b.bruta)}</span>${brutaSub}</div>`];
+  if(b.hasAds) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>`);
+  if(hasExtra) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Gastos extra</span><span class="pb-v amber">${money(b.gastosExtra)}</span><span class="pb-s">operativos que registraste</span></div>`);
+  steps.push(`<span class="pb-op">=</span><div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${netaCls}">${money(b.neta)}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`);
+  box.innerHTML=steps.join("");
 }
 // Embudo de contactos por etapa (mismo que la sección Embudos): foto EN VIVO,
 // no filtrada por fecha. Sale de dashboard_stats.por_stage.
@@ -443,14 +517,14 @@ function renderFunnel(porStage){
   $("conv").innerHTML=`<span class="convpill">Conversión a compra: <b>${pct(c.comprado)}%</b></span><span class="convpill">Mostraron interés: <b>${pct(interes)}%</b></span><span class="convpill">Se perdieron: <b>${pct(c.perdido)}%</b></span>`;
 }
 
-function renderSales(orders, r, dailyMargin, dailySpend, hasAds){
+function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds){
   const days=[]; const ingMap={};
   const spanDays=Math.min(31,Math.max(1,Math.ceil((r.to-r.from)/864e5)));
   const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"2-digit"});
   for(let i=spanDays-1;i>=0;i--){ const d=startOfDay(new Date(r.to.getTime()-i*864e5)); const k=ymd(d); ingMap[k]=0; days.push({k,label:fmt.format(d)}); }
   let totalIng=0;
   orders.forEach(o=>{ const k=ymd(new Date(o.created_at)); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in ingMap) ingMap[k]+=v; totalIng+=v; });
-  const data=days.map(d=>({ label:d.label, ing:ingMap[d.k]||0, gan:(dailyMargin[d.k]||0)-(dailySpend[d.k]||0) }));
+  const data=days.map(d=>({ label:d.label, ing:ingMap[d.k]||0, gan:(dailyMargin[d.k]||0)-(dailySpend[d.k]||0)-(dailyExpense[d.k]||0) }));
   const totalGan=data.reduce((a,d)=>a+d.gan,0);
   const gl=hasAds?"ganancia neta":"ganancia";
   $("salesSum").innerHTML = totalIng>0
