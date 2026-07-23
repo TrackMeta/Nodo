@@ -91,7 +91,7 @@ const money=(v)=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigit
 const fFecha=(d)=>d?new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(d):"—";
 
 const st={ channelId:null, desde:null, hasta:null, archivo:null, rep:null,
-           ventas:[], res:null, sinVenta:null, cubeta:"cuadradas", decisiones:new Map() };
+           ventas:[], res:null, sinVenta:null, cubeta:"cuadradas", decisiones:new Map(), verAjenos:false };
 
 // El pago SIEMPRE ocurre antes del comprobante, y el comprobante antes de que
 // apruebes. Por eso los movimientos se leen con holgura hacia atrás: si cortara
@@ -212,7 +212,8 @@ function renderResultado(){
     ["cuadradas","Cuadradas",r.cuadradas.length,"var(--green)","venta y pago que calzan"],
     ["revisar","Por revisar",r.revisar.length,"var(--amber)","tú decides cuál es"],
     ["sinpago","Ventas sin pago",r.sinPago.length,"var(--red)","el banco no las respalda"],
-    ["sinventa","Pagos sin venta",st.sinVenta.conSeñal.length,"var(--violet)","entró plata no registrada"],
+    ["sinventa","Pagos sin venta",st.sinVenta.conSeñal.length,"var(--violet)",
+      st.sinVenta.ajenos.length?`+ ${st.sinVenta.ajenos.length} ajenos, ignorados`:"entró plata no registrada"],
   ];
   $("view").innerHTML=`
     <div class="card" style="padding:14px 16px;margin-bottom:14px">
@@ -304,11 +305,22 @@ function renderLista(){
   }
   // Pagos sin venta
   const sv=st.sinVenta;
-  if(!sv.conSeñal.length) return vacio(box,"No hay pagos huérfanos que parezcan de Nodo.",
-    `${sv.ajenos.length} movimientos del archivo no calzaron con ninguna venta, pero tampoco hay señal de que fueran del bot (ningún cliente escribió cerca de esa hora). Se ignoran.`);
+  // Los "ajenos" son plata de OTRO negocio que entra al mismo número: no se
+  // listan para que el reporte sea usable. Pero con Nodo recién arrancando no
+  // hay ningún comprobante en la Bandeja, así que TODO cae ahí y la pantalla se
+  // ve vacía como si estuviera rota. Por eso se pueden abrir a mano.
+  const verTodos=st.verAjenos;
+  const lista=verTodos ? [...sv.conSeñal, ...sv.ajenos.map(m=>({mov:m,pistas:[]}))] : sv.conSeñal;
+  const botonAjenos=sv.ajenos.length?`<button class="btn sm" id="verAjenos" style="margin-left:8px">${verTodos?"Ocultarlos":`Ver los ${sv.ajenos.length} ignorados`}</button>`:"";
+  if(!lista.length) { vacio(box,"No hay pagos huérfanos que parezcan de Nodo.",
+      `${sv.ajenos.length} movimientos del archivo no calzaron con ninguna venta, pero tampoco hay señal de que fueran del bot (ningún cliente mandó un comprobante cerca de esa hora). Se ignoran.`);
+    if(sv.ajenos.length) box.insertAdjacentHTML("beforeend",`<div style="text-align:center;margin-top:-10px">${botonAjenos}</div>`);
+    const ba=$("verAjenos"); if(ba) ba.onclick=()=>{ st.verAjenos=!st.verAjenos; renderLista(); };
+    return; }
   box.insertAdjacentHTML("beforeend",`<div class="muted" style="margin-bottom:10px">Entró esta plata y Nodo no la tiene registrada. Puede que el bot no leyera bien el comprobante o que no llegara a pasarlo.
-    <b>${sv.ajenos.length}</b> movimientos más no calzaron con nada y no parecen de Nodo — se ignoran.</div>`);
-  sv.conSeñal.slice(0,200).forEach(x=>{
+    ${sv.ajenos.length?`<b>${sv.ajenos.length}</b> movimientos más no calzaron con nada y no parecen de Nodo.`:""}${botonAjenos}</div>`);
+  const ba=$("verAjenos"); if(ba) ba.onclick=()=>{ st.verAjenos=!st.verAjenos; renderLista(); };
+  lista.slice(0,300).forEach(x=>{
     // Quién pudo ser: los clientes que mandaron un comprobante cerca de esa
     // hora, del más pegado al más lejano. Sin esto la cubeta te dejaba con un
     // pago suelto y a buscarlo tú a mano por toda la Bandeja.
@@ -318,12 +330,15 @@ function renderLista(){
       return `<a class="btn sm" href="index.html?c=${encodeURIComponent(p.id||"")}" target="_blank" style="text-decoration:none">
         ${esc(p.nombre||"Sin nombre")} <span style="color:var(--faint);font-weight:400">· ${cuando}</span></a>`;
     }).join("");
+    const hayPistas=x.pistas.length>0;
     box.appendChild(fila(`<div class="top"><span class="nm">${esc(x.mov.quien||"—")}</span>
-      <span class="amt" style="color:var(--violet)">${money(x.mov.monto)}</span></div>
+      <span class="amt" style="color:${hayPistas?"var(--violet)":"var(--muted)"}">${money(x.mov.monto)}</span></div>
       <div class="hint">${fFecha(x.mov.fecha)}${x.mov.nota?` · “${esc(x.mov.nota)}”`:""}</div>
-      <div class="hint" style="margin-top:6px"><span class="pill mon">SIN REGISTRAR</span> te pagaron y Nodo no lo tiene</div>
-      <div class="hint" style="margin-top:8px;color:var(--muted)">¿Es alguno de estos?</div>
-      <div class="acts">${quienes}</div>`));
+      ${hayPistas
+        ? `<div class="hint" style="margin-top:6px"><span class="pill mon">SIN REGISTRAR</span> te pagaron y Nodo no lo tiene</div>
+           <div class="hint" style="margin-top:8px;color:var(--muted)">¿Es alguno de estos?</div>
+           <div class="acts">${quienes}</div>`
+        : `<div class="hint" style="margin-top:6px">Ningún cliente de Nodo mandó un comprobante cerca de esa hora — no parece del bot.</div>`}`));
   });
 }
 function vacio(box,t,s){ box.innerHTML=`<div class="nodo-empty" style="border:none"><h3>${esc(t)}</h3><p>${esc(s)}</p></div>`; }
