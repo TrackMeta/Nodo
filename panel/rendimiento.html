@@ -167,8 +167,8 @@
 import { supa, mountShell, icon } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
-function visibleRows(){ return st.tipo==="all" ? st.rows : st.rows.filter(r=>r.tag===st.tipo); }
+const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
+function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)); }
 
 const money=(v)=>{ const s=v<0?"-":""; return s+"S/ "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
 const money0=(v)=>"S/ "+Math.round(v).toLocaleString("es-PE");
@@ -195,7 +195,7 @@ async function loadData(){
   ]); }catch(_){ st.loaded=true; return; }
   const meta=Object.fromEntries((metaR.data||[]).map(m=>[m.ad_id,m]));
   const byAd={};
-  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; byAd[adId]={ ad_id:adId, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, daily:{} }; } return byAd[adId]; };
+  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
   (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=+i.gasto||0; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=+i.gasto||0; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
   (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=(o.created_at||"").slice(0,10); const d=day(row,f);
@@ -259,6 +259,7 @@ function boot(){
 async function loadAccount(){
   st.adAccounts=[]; st.syncError=null;
   try{ const { data }=await supa.from("ad_accounts").select("account_id,nombre").eq("channel_id",st.channelId).eq("activo",true); st.adAccounts=data||[]; }catch(_){}
+  if(st.account!=="all" && !st.adAccounts.some(a=>a.account_id===st.account)) st.account="all";
   try{ const { data }=await supa.from("channels").select("ads_sync_error").eq("id",st.channelId).maybeSingle(); st.syncError=data?.ads_sync_error||null; }catch(_){}
   renderStatus(); await reload();
 }
@@ -294,6 +295,8 @@ function render(){
       </div>
       <span class="tlabel">Tipo</span>
       <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["lima","Lima"],["provincia","Provincia"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
+      ${st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
+      <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
       <div class="seg" id="vista">
         <button class="${st.vista==='anuncio'?'on':''}" data-v="anuncio">${icon("megaphone")} Por anuncio</button>
         <button class="${st.vista==='producto'?'on':''}" data-v="producto">${icon("box")} Por producto</button>
@@ -359,6 +362,7 @@ function renderProducto(){
 function wireToolbar(){
   $("vista").querySelectorAll("button").forEach(b=>b.onclick=()=>{ st.vista=b.dataset.v; render(); });
   $("tipoChips").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; render(); });
+  const acct=$("acctChips"); if(acct) acct.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{ st.account=b.dataset.a; render(); });
   // Selector de fechas
   $("drTrigger").onclick=(e)=>{ e.stopPropagation(); const p=$("drPop"); if(p.classList.contains("show")) p.classList.remove("show"); else openPicker(); };
   if(!window.__drWired){ window.__drWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".drpicker")){ const p=document.getElementById("drPop"); if(p) p.classList.remove("show"); } }); }
