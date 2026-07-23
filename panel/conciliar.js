@@ -349,7 +349,16 @@ export function pagosSinVenta(libres, señales, { minutos = 45 } = {}) {
     const cerca = señales.filter((s) => Math.abs(s.fecha - m.fecha) / 60000 <= minutos);
     if (cerca.length) {
       cerca.sort((a, b) => Math.abs(a.fecha - m.fecha) - Math.abs(b.fecha - m.fecha));
-      conSeñal.push({ mov: m, pistas: cerca.slice(0, 3) });
+      // Un mismo cliente puede haber mandado varias fotos: se queda la más
+      // pegada al pago. Si no, las tres pistas serían la misma persona.
+      const vistos = new Set(), unicas = [];
+      for (const s of cerca) {
+        const k = s.id ?? s.contacto ?? s.nombre;
+        if (vistos.has(k)) continue;
+        vistos.add(k); unicas.push(s);
+        if (unicas.length === 3) break;
+      }
+      conSeñal.push({ mov: m, pistas: unicas });
     } else ajenos.push(m);
   }
   return { conSeñal, ajenos };

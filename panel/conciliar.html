@@ -163,14 +163,21 @@ async function conciliar(){
   // Cuándo llegó el comprobante: es la referencia horaria buena. La aprobación
   // puede ser horas después (validación manual), y el pago ocurrió antes de la
   // captura, no antes del clic.
-  const ids=[...new Set(cerradas.map(o=>o.contact_id).filter(Boolean))];
-  let imgs=[];
-  if(ids.length){
-    const { data:ms }=await supa.from("messages").select("contact_id,ts")
-      .eq("channel_id",st.channelId).in("contact_id",ids).eq("direction","in").eq("type","image")
-      .gte("ts",new Date(desde.getTime()-MARGEN_HORAS*3600000).toISOString())
-      .lte("ts",hasta.toISOString()).order("ts",{ascending:false}).limit(6000);
-    imgs=(ms||[]).map(m=>({ contact_id:m.contact_id, fecha:new Date(m.ts) }));
+  // OJO: se traen los comprobantes de TODOS los contactos del rango, no solo de
+  // los que tienen venta cerrada. La cubeta "pagos sin venta" existe justamente
+  // para encontrar a quien pagó y cuya venta NO se registró: filtrando por los
+  // que ya tienen venta, esos clientes se quedaban sin señal y no aparecían.
+  const { data:ms }=await supa.from("messages").select("contact_id,ts")
+    .eq("channel_id",st.channelId).eq("direction","in").eq("type","image")
+    .gte("ts",new Date(desde.getTime()-MARGEN_HORAS*3600000).toISOString())
+    .lte("ts",hasta.toISOString()).order("ts",{ascending:false}).limit(8000);
+  const imgs=(ms||[]).map(m=>({ contact_id:m.contact_id, fecha:new Date(m.ts) }));
+  // Nombres, para poder decir DE QUIÉN podría ser cada pago huérfano.
+  const nombres=new Map();
+  const cids=[...new Set(imgs.map(m=>m.contact_id).filter(Boolean))];
+  for(let i=0;i<cids.length;i+=300){
+    const { data:cs }=await supa.from("contacts").select("id,nombre,wa_id").in("id",cids.slice(i,i+300));
+    (cs||[]).forEach(c=>nombres.set(c.id,c.nombre||c.wa_id||""));
   }
   const ultimaImg=new Map();
   for(const m of imgs) if(!ultimaImg.has(m.contact_id)) ultimaImg.set(m.contact_id,m.fecha);
@@ -188,8 +195,9 @@ async function conciliar(){
   const movs=st.rep.movs.filter(m=>m.fecha>=desdeMov && m.fecha<=hasta);
   st.res=emparejar(pendientes,movs,{modo:"prudente"});
   st.res.yaConciliadas=st.ventas.filter(v=>v._yaConciliado);
-  // Señales para el ruido: los comprobantes que sí entraron por WhatsApp.
-  const señales=imgs.map(m=>({ fecha:m.fecha, contacto:m.contact_id }));
+  // Señales para el ruido: los comprobantes que sí entraron por WhatsApp, con
+  // nombre para poder decir de quién podría ser cada pago huérfano.
+  const señales=imgs.map(m=>({ fecha:m.fecha, id:m.contact_id, nombre:nombres.get(m.contact_id)||"" }));
   st.sinVenta=pagosSinVenta(st.res.libres,señales);
   st.movsEnRango=movs.length;
   st.decisiones=new Map();
@@ -301,10 +309,21 @@ function renderLista(){
   box.insertAdjacentHTML("beforeend",`<div class="muted" style="margin-bottom:10px">Entró esta plata y Nodo no la tiene registrada. Puede que el bot no leyera bien el comprobante o que no llegara a pasarlo.
     <b>${sv.ajenos.length}</b> movimientos más no calzaron con nada y no parecen de Nodo — se ignoran.</div>`);
   sv.conSeñal.slice(0,200).forEach(x=>{
+    // Quién pudo ser: los clientes que mandaron un comprobante cerca de esa
+    // hora, del más pegado al más lejano. Sin esto la cubeta te dejaba con un
+    // pago suelto y a buscarlo tú a mano por toda la Bandeja.
+    const quienes=x.pistas.map(p=>{
+      const min=Math.round(Math.abs(p.fecha-x.mov.fecha)/60000);
+      const cuando=p.fecha>=x.mov.fecha?`mandó su comprobante ${min} min después`:`mandó su comprobante ${min} min antes`;
+      return `<a class="btn sm" href="index.html?c=${encodeURIComponent(p.id||"")}" target="_blank" style="text-decoration:none">
+        ${esc(p.nombre||"Sin nombre")} <span style="color:var(--faint);font-weight:400">· ${cuando}</span></a>`;
+    }).join("");
     box.appendChild(fila(`<div class="top"><span class="nm">${esc(x.mov.quien||"—")}</span>
       <span class="amt" style="color:var(--violet)">${money(x.mov.monto)}</span></div>
       <div class="hint">${fFecha(x.mov.fecha)}${x.mov.nota?` · “${esc(x.mov.nota)}”`:""}</div>
-      <div class="hint" style="margin-top:6px"><span class="pill mon">SIN REGISTRAR</span> un cliente mandó un comprobante cerca de esa hora</div>`));
+      <div class="hint" style="margin-top:6px"><span class="pill mon">SIN REGISTRAR</span> te pagaron y Nodo no lo tiene</div>
+      <div class="hint" style="margin-top:8px;color:var(--muted)">¿Es alguno de estos?</div>
+      <div class="acts">${quienes}</div>`));
   });
 }
 function vacio(box,t,s){ box.innerHTML=`<div class="nodo-empty" style="border:none"><h3>${esc(t)}</h3><p>${esc(s)}</p></div>`; }
