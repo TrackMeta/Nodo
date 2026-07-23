@@ -114,7 +114,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askText } from "./shell.js";
 import * as O from "./orders.js";
-import { openDespachoModal } from "./contact-extras.js";
+import { openDespachoModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -266,7 +266,7 @@ function primaryAction(o){
       : { label:"Salió a reparto", estado:"en_reparto" };
     case "adelanto_validado":
     case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
-    case "despachado": return { label:"Llegó a agencia", estado:"en_agencia" };
+    case "despachado": return { label:"Llegó a agencia", estado:"en_agencia", modal:"llegada" };
     case "saldo_pagado": return { label:"Recogido", estado:"recogido" };
     case "en_reparto": return { label:"Entregado y cobrado", estado:"entregado_cobrado", co:true };
     case "reprogramado": return { label:"Salió a reparto", estado:"en_reparto" };
@@ -319,7 +319,11 @@ function kcard(o){
     </div>
     <div class="kc-when">${rel(o.updated_at||o.created_at)}</div>`;
   const mb=el.querySelector("[data-main]");
-  if(mb&&act) mb.onclick=()=>{ if(act.modal==="despacho") openDespacho(o); else confirmSet(o,act.estado,act.label); };
+  if(mb&&act) mb.onclick=()=>{
+    if(act.modal==="despacho") openDespacho(o);
+    else if(act.modal==="llegada") avisarLlegada(o);
+    else confirmSet(o,act.estado,act.label);
+  };
   el.querySelector(".rot").onclick=(ev)=>{ ev.stopPropagation(); printRotulo(o); };
   el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
   const wb=el.querySelector("[data-cfsede]");
@@ -518,8 +522,20 @@ function openConfirmSede(o){
 // distintos. Acá solo aportamos el costo sugerido, que sale de los pedidos que
 // este tablero ya tiene cargados.
 async function openDespacho(o){
-  const ok=await openDespachoModal(o,{ updateOrder, toast, sugerido:o.shipping?.flete ?? ultimoFlete(o) });
+  const ok=await openDespachoModal(o,{ updateOrder, toast, supa, channelId:st.channelId,
+    contactId:o.contact_id, sugerido:o.shipping?.flete ?? ultimoFlete(o) });
   if(ok) await load();
+}
+
+// "Llegó a agencia" pregunta cómo avisar, igual que en el chat: es el aviso que
+// más cae fuera de la ventana de 24h (pasan días desde que el cliente escribió).
+async function avisarLlegada(o){
+  const aviso=await pedirAviso(o,{ supa, channelId:st.channelId, contactId:o.contact_id },"en_agencia",
+    "Avisar que llegó",
+    `${esc((o.contact||{}).nombre||"cliente")} — el pedido pasa a "en agencia" y se le pide el saldo para darle la clave.`);
+  if(!aviso) return;
+  const r=await updateOrder({ order_id:o.id, estado:"en_agencia", aviso });
+  if(r){ toast(avisoMsg(r,aviso,"Listo ✓")); await load(); }
 }
 
 // ── Costo del envío ────────────────────────────────────────────────

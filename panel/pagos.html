@@ -73,7 +73,7 @@ const IC={
   agent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M18 14h3v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M20 17v2a4 4 0 0 1-4 4h-4"/></svg>',
   support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.9" y1="4.9" x2="9.2" y2="9.2"/><line x1="14.8" y1="14.8" x2="19.1" y2="19.1"/><line x1="14.8" y1="9.2" x2="19.1" y2="4.9"/><line x1="4.9" y1="19.1" x2="9.2" y2="14.8"/></svg>',
 };
-const st={ channelId:null, channel:{}, pedidos:null };
+const st={ channelId:null, channel:{}, pedidos:null, tpls:[] };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 // Config GLOBAL del canal (channels.pedidos_config). Los embudos y mensajes por
@@ -109,8 +109,24 @@ async function boot(){
 async function load(){
   const { data:ch }=await supa.from("channels").select("nombre,pedidos_config").eq("id",st.channelId).maybeSingle();
   st.channel=ch||{};
+  // Plantillas aprobadas del canal: son las únicas que WhatsApp acepta fuera de
+  // la ventana de 24h, y los avisos de pedido (despacho, llegada) casi siempre
+  // caen fuera. Acá se elige cuál usar en cada momento.
+  try{
+    const { data:t }=await supa.from("wa_templates").select("name,language,estado_meta,activa,body_preview")
+      .eq("channel_id",st.channelId).order("name");
+    st.tpls=(t||[]).filter(x=>x.activa!==false && (x.estado_meta??"aprobada")==="aprobada");
+  }catch(_){ st.tpls=[]; }
   render($("body"));
 }
+
+// Los momentos del pedido físico en que el bot le escribe al cliente por su
+// cuenta. La clave es el `estado` del pedido: es lo que manda order-update.
+const MOMENTOS=[
+  ["adelanto_validado","Adelanto aprobado","Le confirmas que recibiste su adelanto."],
+  ["despachado","Pedido despachado","Le mandas la guía cuando lo dejas en la agencia."],
+  ["en_agencia","Llegó a la agencia","Le avisas que ya puede recogerlo y le pides el saldo."],
+];
 
 function render(b){
   const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
@@ -130,6 +146,7 @@ function render(b){
       nudge:{ ...D.adelanto.nudge, ...((src.adelanto||{}).nudge||{}) },
       vencimiento:{ ...D.adelanto.vencimiento, ...((src.adelanto||{}).vencimiento||{}) },
     },
+    avisos:{ ...(src.avisos||{}) },
   };
   st.pedidos = p;
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
@@ -250,6 +267,22 @@ function render(b){
     </div>
 
     <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Avisos de pedido fuera de la ventana</span></div>
+      <div class="desc">WhatsApp solo te deja escribir libremente durante <b>24 horas</b> desde el último mensaje del cliente. Un pedido físico se despacha días después, así que ese aviso casi siempre cae fuera y Meta lo rechaza: a ti te llega el error y <b>el cliente no recibe nada</b>. Elige qué <b>plantilla aprobada</b> usar en cada momento; al mover el pedido te la vamos a proponer sola cuando la ventana esté cerrada.</div>
+      ${st.tpls.length ? `<div id="avisosBox">${MOMENTOS.map(([k,t,d])=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px">
+          <span style="flex:1;min-width:190px"><span style="font-weight:600;font-size:13px">${t}</span>
+          <div style="font-size:11.5px;color:var(--faint);margin-top:2px">${d}</div></span>
+          <select class="in" data-aviso="${k}" style="width:auto;min-width:190px;flex:none">
+            <option value="">— Sin plantilla —</option>
+            ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${((p.avisos[k]||{}).template===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
+          </select>
+        </div>`).join("")}</div>
+      <div class="snote"><span class="si">${IC.shield}</span><span>Las variables de la plantilla se rellenan con los datos del cliente y de su pedido (<b>{{pedido_guia}}</b>, <b>{{pedido_sede}}</b>, <b>{{pedido_saldo}}</b>…).</span></div>`
+      : `<div class="snote"><span class="si">${IC.shield}</span><span>Todavía no tienes plantillas aprobadas y activas. Créalas en <b>Plantillas</b> y vuelve acá para asignarlas. Mientras tanto, al despachar podrás elegir “no avisar” o mandar el mensaje normal si la ventana sigue abierta.</span></div>`}
+    </div>
+
+    <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
       <div class="desc">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
 
@@ -362,6 +395,13 @@ function render(b){
     if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
+    // Plantilla por momento del pedido. Vacío = ninguna (al despachar te
+    // ofreceremos "no avisar" o el mensaje normal si la ventana está abierta).
+    p.avisos={};
+    b.querySelectorAll("[data-aviso]").forEach(sel=>{
+      const [name,language]=(sel.value||"").split("|");
+      if(name) p.avisos[sel.dataset.aviso]={ template:name, language:language||"es" };
+    });
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
     p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
     p.adelanto.nudge.mensaje=$("pnMsg").value.trim();

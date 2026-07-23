@@ -10,6 +10,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
+import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -44,7 +45,12 @@ Deno.serve(async (req) => {
     if (!member) return json({ error: "not_member" }, 403);
   }
 
-  let body: { order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number; resume?: boolean };
+  let body: {
+    order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number; resume?: boolean;
+    reject?: string; reject_motivo?: string;
+    // Cómo avisarle al cliente este cambio (lo elige el humano al mover el pedido).
+    aviso?: { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
+  };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
 
@@ -165,6 +171,35 @@ Deno.serve(async (req) => {
 
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
   let flowStarted: string | null = null;
+  let avisoEnviado: string | null = null;
+  let avisoError: string | null = null;
+  // Cómo avisarle al cliente, elegido por el humano al mover el pedido:
+  //   { modo:"mensaje" }  → el flujo de siempre (solo llega si la ventana de
+  //                          24h sigue abierta; si no, Meta lo rechaza)
+  //   { modo:"plantilla", template:{name,language,params} } → la única vía que
+  //                          Meta acepta fuera de ventana
+  //   { modo:"ninguno" }  → no avisar (lo hace él por su cuenta)
+  // Sin el campo, se comporta como siempre ("mensaje").
+  const aviso = (body.aviso ?? {}) as { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
+  const avisoModo = String(aviso.modo ?? "mensaje");
+
+  if (avisoModo === "plantilla" && aviso.template?.name && (order as any).contact_id) {
+    try {
+      await sendTemplateToContact(db, (order as any).channel_id, (order as any).contact_id, {
+        name: aviso.template.name, language: aviso.template.language, params: aviso.template.params ?? [],
+      });
+      avisoEnviado = aviso.template.name;
+    } catch (e) {
+      avisoError = String((e as any)?.message ?? e);
+      console.error("[order-update] plantilla:", avisoError);
+    }
+  }
+
+  // El aviso por plantilla YA le habló al cliente: disparar además el flujo de
+  // ese estado le mandaría el mismo aviso dos veces (y el segundo fallaría por
+  // ventana cerrada, que es justo por lo que se eligió plantilla).
+  const saltarFlujo = avisoModo === "plantilla" || avisoModo === "ninguno";
+
   if (newEstado && (order as any).contact_id) {
     try {
       await db.from("contact_events").insert({
@@ -173,7 +208,7 @@ Deno.serve(async (req) => {
       });
     } catch (_) { /* best-effort */ }
 
-    const { data: trigs } = extrasOfrecidos ? { data: [] } : await db.from("flow_triggers")
+    const { data: trigs } = (extrasOfrecidos || saltarFlujo) ? { data: [] } : await db.from("flow_triggers")
       .select("flow_id, config, interrumpe, flows!inner(id, estado)")
       .eq("channel_id", (order as any).channel_id)
       .eq("tipo", "pedido_estado").eq("activo", true);
@@ -191,5 +226,6 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected });
+  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected,
+    aviso_enviado: avisoEnviado, aviso_error: avisoError });
 });

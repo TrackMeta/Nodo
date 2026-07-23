@@ -1069,7 +1069,7 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
 // (el panel lo ve por Realtime). Siempre queda registro en messages.
 async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   await ensureDelivery(db, run);
-  const text = resolve(bubble.text ?? "", ctx);
+  let text = resolve(bubble.text ?? "", ctx);
   const d = run._delivery;
 
   // ── Burbuja de MEDIA (imagen/video/audio/documento) ──
@@ -1077,7 +1077,15 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   // por Graph; en webchat basta con insertar (el panel la renderiza).
   const mediaUrl = bubble.media_url ? resolve(String(bubble.media_url), ctx) : "";
   const mediaKind = bubble.media_kind as ("image" | "video" | "audio" | "document" | undefined);
-  if (mediaUrl && mediaKind) {
+  // El archivo puede venir de una VARIABLE ({{pedido_guia_foto}}), y esa variable
+  // puede estar vacía —despachaste sin subir la foto—. Sin esto se caía al ramo
+  // de texto y se insertaba un mensaje vacío: el cliente recibía una burbuja en
+  // blanco. Si la burbuja era de archivo y el archivo no existe, se manda el pie
+  // de foto como texto (si lo hay) o no se manda nada.
+  if (bubble.media_url && !mediaUrl) {
+    text = (text || resolve(bubble.caption ?? "", ctx)).trim();
+    if (!text) return;
+  } else if (mediaUrl && mediaKind) {
     const caption = resolve(bubble.caption ?? bubble.text ?? "", ctx);
     let wamid = ""; let status = "sent"; let error: any = null;
     if (d?.mode === "whatsapp" && d.token && ctx.wa_id) {
@@ -4327,6 +4335,9 @@ async function buildContext(db: SupabaseClient, run: Run) {
 
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de
   // notificación de físicos (guía, saldo, clave de recojo…). Best-effort.
+  // OJO: TODO lo que se guarde en shipping se vuelve {{pedido_<campo>}} solo.
+  // Por eso la foto de la guía que sube el formulario de despacho queda
+  // disponible como {{pedido_guia_foto}} sin tocar nada de acá.
   try {
     const { data: o } = await db.from("orders")
       .select("estado, amount, currency, shipping").eq("contact_id", run.contact_id)
@@ -4337,6 +4348,16 @@ async function buildContext(db: SupabaseClient, run: Run) {
       for (const [k, v] of Object.entries((o as any).shipping ?? {})) ctx["pedido_" + k] = v;
     }
   } catch (_) { /* columna/tabla pendiente */ }
+
+  // {{logistica_modo}} — "auto" | "manual", lo que eligió el negocio en
+  // Pagos y atención → Agente de logística. Lo usan los flujos de cobro de
+  // saldo para NO soltar la clave de recojo por su cuenta cuando el negocio
+  // pidió aprobar cada pago a mano. Sin esta variable, un flujo con su propio
+  // OCR se saltaba el ajuste en silencio.
+  try {
+    const { data: chL } = await db.from("channels").select("pedidos_config").eq("id", run.channel_id).maybeSingle();
+    ctx.logistica_modo = String((chL as any)?.pedidos_config?.log?.modo ?? "manual");
+  } catch (_) { ctx.logistica_modo = "manual"; }
   return ctx;
 }
 function resolve(text: string, ctx: any): string {

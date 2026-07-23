@@ -318,6 +318,26 @@ const DESPACHO_CSS = `
   .modal .m-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
   .modal .m-foot .save{background:var(--brand);border:none;color:#fff}
   .modal .row2{display:flex;gap:10px}.modal .row2>*{flex:1}
+  /* Foto de la guía */
+  .dsp-foto{display:flex;gap:10px;align-items:center;margin-top:6px}
+  .dsp-foto img{width:56px;height:56px;object-fit:cover;border-radius:9px;border:1px solid var(--border);cursor:zoom-in}
+  .dsp-foto .dsp-doc{width:56px;height:56px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);
+    display:flex;align-items:center;justify-content:center;font-size:20px}
+  .dsp-foto button{height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:transparent;
+    color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  /* Bloque "¿cómo le aviso?" */
+  .avz{margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
+  .avz-win{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 11px;border-radius:10px;margin-bottom:10px}
+  .avz-win.ok{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
+  .avz-win.no{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
+  .avz-op{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--border);border-radius:11px;
+    margin-bottom:7px;cursor:pointer}
+  .avz-op.on{border-color:var(--brand);background:var(--brand-bg,rgba(43,127,255,.10))}
+  .avz-op.off{opacity:.55}
+  .avz-op input{margin-top:2px;flex:none;width:auto;height:auto}
+  .avz-op b{display:block;font-size:13px;margin-bottom:2px}
+  .avz-op span{color:var(--muted);font-size:11.5px;line-height:1.45;display:block}
+  .avz-op select{margin-top:7px}
 `;
 let despachoCssInjected = false;
 function injectDespachoCss() {
@@ -328,16 +348,128 @@ function injectDespachoCss() {
   document.head.insertAdjacentHTML("beforeend", `<style data-despacho-css>${DESPACHO_CSS}</style>`);
 }
 
+// ── Cómo avisarle al cliente ───────────────────────────────────────
+// WhatsApp solo deja escribir libre dentro de las 24h desde el último mensaje
+// del cliente. Un pedido físico se despacha DÍAS después, así que la ventana
+// casi siempre está cerrada y el aviso normal lo rechaza Meta: te llegaba el
+// error y el cliente no recibía nada. Por eso cada aviso se elige a mano, con
+// el estado de la ventana a la vista.
+// `momento` = "despachado" | "en_agencia" | "adelanto_validado" (la plantilla
+// por defecto de cada uno se configura en Pagos y atención).
+export async function cargarAviso(supa, channelId, contactId, momento) {
+  const info = { abierta: false, restante: "", tpls: [], preferida: null };
+  try {
+    const { data: conv } = await supa.from("conversations").select("expira_at").eq("contact_id", contactId).maybeSingle();
+    const t = conv?.expira_at ? new Date(conv.expira_at).getTime() : 0;
+    info.abierta = t > Date.now();
+    if (info.abierta) {
+      const m = Math.floor((t - Date.now()) / 60000);
+      info.restante = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+    }
+  } catch (_) { /* sin conversación aún */ }
+  try {
+    const { data } = await supa.from("wa_templates").select("name,language,estado_meta,activa,body_preview")
+      .eq("channel_id", channelId).order("name");
+    info.tpls = (data || []).filter((t) => t.activa !== false && (t.estado_meta ?? "aprobada") === "aprobada");
+  } catch (_) { /* sin plantillas */ }
+  try {
+    const { data: ch } = await supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+    const a = ch?.pedidos_config?.avisos?.[momento];
+    if (a && a.template) info.preferida = a;
+  } catch (_) { /* sin config */ }
+  return info;
+}
+
+export function avisoBlockHtml(info) {
+  const hayTpl = info.tpls.length > 0;
+  // Por defecto: lo que de verdad va a llegar. Ventana abierta → mensaje normal;
+  // cerrada → plantilla (si hay). Nunca proponemos algo que sabemos que fallará.
+  const def = info.abierta ? "mensaje" : (hayTpl ? "plantilla" : "ninguno");
+  const sel = info.preferida?.template;
+  const op = (v, titulo, desc, extra, off) => `
+    <label class="avz-op ${v === def ? "on" : ""} ${off ? "off" : ""}" data-op="${v}">
+      <input type="radio" name="avzmodo" value="${v}" ${v === def ? "checked" : ""}/>
+      <div style="flex:1;min-width:0"><b>${titulo}</b><span>${desc}</span>${extra || ""}</div>
+    </label>`;
+  return `<div class="avz">
+    <div class="avz-win ${info.abierta ? "ok" : "no"}">${info.abierta
+      ? `● Ventana abierta — le quedan ${esc(info.restante)} para escribirle libremente`
+      : "● Ventana cerrada — WhatsApp solo acepta una plantilla aprobada"}</div>
+    <label style="margin:0 0 8px">¿Cómo le aviso?</label>
+    ${op("mensaje", "Mi mensaje de siempre",
+      info.abierta ? "Sale el aviso que tienes armado en Flujos." : "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada.",
+      "", !info.abierta)}
+    ${op("plantilla", "Una plantilla aprobada",
+      hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas y activas — créalas en Plantillas.",
+      hayTpl ? `<select data-avz="tpl">${info.tpls.map((t) =>
+        `<option value="${esc(t.name)}|${esc(t.language || "es")}" ${sel === t.name ? "selected" : ""}>${esc(t.name)}${t.language ? " · " + esc(t.language) : ""}</option>`).join("")}</select>` : "",
+      !hayTpl)}
+    ${op("ninguno", "No avisarle", "Guardo el cambio en silencio; le escribes tú.")}
+  </div>`;
+}
+
+// Lee la elección. Devuelve { modo, template? } listo para order-update.
+export function avisoValor(root) {
+  const m = root.querySelector('input[name="avzmodo"]:checked')?.value || "mensaje";
+  if (m !== "plantilla") return { modo: m };
+  const v = root.querySelector('[data-avz="tpl"]')?.value || "";
+  const [name, language] = v.split("|");
+  if (!name) return { modo: "ninguno" };
+  return { modo: "plantilla", template: { name, language: language || "es" } };
+}
+
+function wireAviso(root) {
+  root.querySelectorAll(".avz-op").forEach((el) => {
+    el.onclick = () => {
+      root.querySelectorAll(".avz-op").forEach((x) => x.classList.remove("on"));
+      el.classList.add("on");
+      el.querySelector("input").checked = true;
+    };
+  });
+}
+
+// Modal chico solo para elegir el aviso (lo usa "Avisar que llegó", que no
+// tiene formulario propio). Devuelve el aviso, o null si canceló.
+export async function pedirAviso(o, deps, momento, titulo, detalle) {
+  const { supa, channelId, contactId } = deps;
+  injectDespachoCss();
+  const info = await cargarAviso(supa, channelId, contactId, momento);
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "overlay";
+    ov.innerHTML = `<div class="modal">
+      <h3>${esc(titulo)}</h3>
+      <div class="m-sub">${esc(detalle)}</div>
+      ${avisoBlockHtml(info)}
+      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Confirmar</button></div>
+    </div>`;
+    const cerrar = (v) => { ov.remove(); resolve(v); };
+    ov.onclick = (e) => { if (e.target === ov) cerrar(null); };
+    ov.querySelector(".cancel").onclick = () => cerrar(null);
+    ov.querySelector(".save").onclick = () => cerrar(avisoValor(ov));
+    document.body.appendChild(ov);
+    wireAviso(ov);
+  });
+}
+
 // Abre el formulario de despacho. `deps`:
 //   updateOrder(body) -> respuesta de la Edge Function order-update (o null)
 //   toast(msg, err?)
+//   supa, channelId, contactId — para subir la foto, leer la ventana de 24h y
+//     las plantillas aprobadas
 //   sugerido: costo de envío a proponer (Pedidos lo saca del último flete a esa
 //     misma ciudad; desde la ficha va null y se escribe a mano)
 // Devuelve true si se guardó.
-export function openDespachoModal(o, deps) {
-  const { updateOrder, toast, sugerido = null } = deps;
+export async function openDespachoModal(o, deps) {
+  const { updateOrder, toast, supa, channelId, contactId, sugerido = null } = deps;
   const s = o.shipping || {};
   injectDespachoCss();
+  const info = await cargarAviso(supa, channelId, contactId || o.contact_id, "despachado");
+  // La foto vive en shipping.guia_foto → el motor la publica sola como
+  // {{pedido_guia_foto}} (buildContext vuelca TODO shipping a variables), así
+  // que el aviso puede mandarla sin que haya que tocar el motor.
+  let foto = s.guia_foto || "";
+  let fotoKind = s.guia_foto_kind || "image";
   return new Promise((resolve) => {
     const ov = document.createElement("div");
     ov.className = "overlay";
@@ -360,6 +492,10 @@ export function openDespachoModal(o, deps) {
         <button type="button" data-d="flete0" class="cancel" style="height:38px;white-space:nowrap;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:10px;padding:0 12px;font-weight:600;cursor:pointer">No pagué nada</button>
       </div>
       <div style="font-size:11px;color:var(--faint);margin-top:5px">Lo que te costó mandarlo (lo tienes en el recibo). Se usa para tu ganancia real; el cliente nunca lo ve.</div>
+      <label>Foto de la guía <span style="font-weight:400;color:var(--faint)">· opcional</span></label>
+      <div class="dsp-foto" data-d="fotobox"></div>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">Se la puedes mandar al cliente en el aviso con <b>{{pedido_guia_foto}}</b>. Sirve de respaldo si reclama.</div>
+      ${avisoBlockHtml(info)}
       <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Guardar</button></div>
     </div>`;
     const q = (k) => ov.querySelector(`[data-d="${k}"]`);
@@ -367,22 +503,71 @@ export function openDespachoModal(o, deps) {
     ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
     ov.querySelector(".cancel").onclick = () => cerrar(false);
     q("flete0").onclick = () => { q("flete").value = "0"; };
+
+    // ── Foto de la guía ──
+    const pintaFoto = () => {
+      const box = q("fotobox");
+      box.innerHTML = foto
+        ? `${fotoKind === "image" ? `<img src="${esc(foto)}" data-ver/>` : `<div class="dsp-doc">📄</div>`}
+           <button type="button" data-f="cambiar">Cambiar</button><button type="button" data-f="quitar">Quitar</button>`
+        : `<button type="button" data-f="subir">📷 Subir foto o PDF de la guía</button>`;
+      const sub = box.querySelector('[data-f="subir"]') || box.querySelector('[data-f="cambiar"]');
+      if (sub) sub.onclick = elegirFoto;
+      const qui = box.querySelector('[data-f="quitar"]');
+      if (qui) qui.onclick = () => { foto = ""; pintaFoto(); };
+      const ver = box.querySelector("[data-ver]");
+      if (ver) ver.onclick = () => window.open(foto, "_blank");
+    };
+    const elegirFoto = () => {
+      const inp = document.createElement("input");
+      inp.type = "file"; inp.accept = "image/*,application/pdf";
+      inp.onchange = async () => {
+        const file = inp.files && inp.files[0]; if (!file) return;
+        if (file.size > 16 * 1024 * 1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+        toast("Subiendo…");
+        try {
+          const dataURL = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+          const { data, error } = await supa.functions.invoke("media-upload", {
+            body: { channel_id: channelId, filename: file.name, content_type: file.type, data: dataURL },
+          });
+          if (error || !data?.url) { toast("No se pudo subir el archivo", true); return; }
+          foto = data.url; fotoKind = data.kind || (file.type.startsWith("image/") ? "image" : "document");
+          pintaFoto(); toast("Foto lista ✓");
+        } catch (_) { toast("Error al subir", true); }
+      };
+      inp.click();
+    };
+
     ov.querySelector(".save").onclick = async () => {
       const guia = q("guia").value.trim();
       if (!guia) { toast("Falta el número de guía", true); return; }
       const flete = q("flete").value;
-      const r = await updateOrder({ order_id: o.id, estado: "despachado", shipping: {
+      const aviso = avisoValor(ov);
+      const r = await updateOrder({ order_id: o.id, estado: "despachado", aviso, shipping: {
         agencia: q("agencia").value, sede: q("sede").value.trim(), guia,
         clave_recojo: q("clave").value.trim(), sede_por_confirmar: null,
+        guia_foto: foto || null, guia_foto_kind: foto ? fotoKind : null,
         ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
       } });
       if (!r) return; // el toast de error lo pone updateOrder
-      toast(r.flow_started ? "Despacho registrado · el bot está avisando al cliente" : "Despacho registrado");
+      toast(avisoMsg(r, aviso, "Despacho registrado"));
       cerrar(true);
     };
     document.body.appendChild(ov);
+    wireAviso(ov);
+    pintaFoto();
     q("guia").focus();
   });
+}
+
+// Qué decirle al humano según lo que REALMENTE pasó con el aviso. Sin esto,
+// "Despacho registrado" se leía igual cuando el cliente recibió el aviso y
+// cuando no le llegó nada.
+export function avisoMsg(r, aviso, base) {
+  if (r.aviso_error) return `${base} · ⚠ la plantilla no salió: ${r.aviso_error}`;
+  if (r.aviso_enviado) return `${base} · plantilla enviada`;
+  if (aviso.modo === "ninguno") return `${base} · sin avisar al cliente`;
+  return r.flow_started ? `${base} · el bot está avisando al cliente` : `${base} · no hay aviso armado para este estado`;
 }
 
 // ── Pagos por validar (y acciones del pedido) dentro de la ficha ───
@@ -461,7 +646,7 @@ export function copilotoCardHtml(o, et, fallbackImg) {
 // askChoice, reload } (los provee cada página: la Bandeja y Probar).
 export function wireCopiloto(root, o, et, deps) {
   const el = root.querySelector(".cx-copiloto"); if (!el) return;
-  const { supa, toast, confirmDialog, askChoice, reload } = deps;
+  const { supa, toast, confirmDialog, askChoice, reload, channelId } = deps;
   const c = o.contact || {};
   const img = el.querySelector(".cx-cop2-img[data-full]");
   if (img) img.onclick = () => window.open(img.dataset.full, "_blank");
@@ -503,8 +688,20 @@ export function wireCopiloto(root, o, et, deps) {
   // El despacho NO se rehace acá: abre el formulario compartido, el mismo que
   // usa el tablero de Pedidos, para que guarde exactamente los mismos campos.
   const despachar = async () => {
-    const ok = await openDespachoModal(o, { updateOrder: update, toast, sugerido: null });
+    const ok = await openDespachoModal(o, {
+      updateOrder: update, toast, supa, channelId, contactId: o.contact_id, sugerido: null,
+    });
     if (ok) reload && reload();
+  };
+  // "Llegó a la agencia" también pregunta cómo avisar: es el aviso que MÁS cae
+  // fuera de la ventana de 24h (pasan días desde que el cliente escribió).
+  const avisarLlegada = async () => {
+    const aviso = await pedirAviso(o, { supa, channelId, contactId: o.contact_id }, "en_agencia",
+      "Avisar que llegó",
+      `${c.nombre || "Cliente"} — el pedido pasa a "en agencia" y se le pide el saldo para darle la clave.`);
+    if (!aviso) return;
+    const r = await update({ order_id: o.id, estado: "en_agencia", aviso });
+    if (r) { toast(avisoMsg(r, aviso, "Listo ✓")); reload && reload(); }
   };
   const b = (a) => el.querySelector(`[data-a="${a}"]`);
   if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }
@@ -512,7 +709,7 @@ export function wireCopiloto(root, o, et, deps) {
   else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para despachar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
   else if (et.id === "saldo") { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
   else if (et.id === "despachar") { b("desp").onclick = despachar; }
-  else { b("lleg").onclick = () => aprobar("en_agencia", "Avisar que llegó", "El bot le avisa que ya puede recogerlo y le pide el saldo."); }
+  else { b("lleg").onclick = avisarLlegada; }
 }
 
 let cssInjected = false;

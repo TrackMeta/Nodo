@@ -980,7 +980,7 @@ function renderContactPanel(){
     rot.disabled=true; const rem=await remitenteDe(supa, state.channelId);
     printRotulo({...order, contact}, rem); rot.disabled=false;
   };
-  if(cet) wireCopiloto(p, {...order, contact, contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText,
+  if(cet) wireCopiloto(p, {...order, contact, contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText, channelId:state.channelId,
     reload:()=>{ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); } });
 }
 // ── Eventos / Timeline ──

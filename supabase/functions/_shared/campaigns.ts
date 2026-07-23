@@ -145,6 +145,20 @@ async function contactCtx(db: SupabaseClient, contactId: string): Promise<any> {
     .select("value, custom_fields!inner(key)").eq("contact_id", contactId);
   const ctx: any = { nombre: (c as any)?.nombre ?? "", wa_id: (c as any)?.wa_id ?? "", telefono: (c as any)?.wa_id ?? "", stage: (c as any)?.stage ?? "" };
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
+  // Datos del último pedido, con los mismos nombres que usan los flujos
+  // ({{pedido_guia}}, {{pedido_sede}}, {{pedido_saldo}}…). Sin esto una
+  // plantilla de "tu pedido va en camino" no podía decir el número de guía:
+  // el parámetro se resolvía vacío y el aviso salía manco.
+  try {
+    const { data: o } = await db.from("orders")
+      .select("estado, amount, shipping").eq("contact_id", contactId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (o) {
+      ctx.pedido_estado = (o as any).estado ?? "";
+      ctx.pedido_monto = (o as any).amount ?? "";
+      for (const [k, v] of Object.entries((o as any).shipping ?? {})) ctx["pedido_" + k] = v;
+    }
+  } catch (_) { /* best-effort */ }
   return ctx;
 }
 function resolveP(text: string, ctx: any): string {

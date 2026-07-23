@@ -556,7 +556,7 @@ function renderContactPanel(){
   if(!window.__tagPopWired){ window.__tagPopWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".tagadd-wrap")) document.querySelectorAll(".tagpop").forEach(x=>{ x.hidden=true; }); }); }
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{ await supa.from("contact_field_values").upsert({ contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },{ onConflict:"contact_id,field_id" }); vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓"); });
   const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{ rot.disabled=true; const rem=await remitenteDe(supa,st.channelId); printRotulo({...order,contact}, rem); rot.disabled=false; };
-  if(cet) wireCopiloto(p, {...order,contact,contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText, reload:refreshPanel });
+  if(cet) wireCopiloto(p, {...order,contact,contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText, channelId:st.channelId, reload:refreshPanel });
 }
 async function logEvent(contactId,tipo,titulo,detalle){ try{ await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){} }
 // ── Acciones ──
