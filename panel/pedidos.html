@@ -51,7 +51,7 @@
   .zona.lima{background:var(--brand-bg);color:var(--brand)}
   .zona.prov{background:var(--amber-bg);color:var(--amber)}
   .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-block;background:var(--surface-2);color:var(--muted)}
-  /* Chip "Tu turno": para ver de un vistazo cuáles tarjetas te están esperando,
+  /* Chip "Pago por validar": para ver de un vistazo cuáles tarjetas te esperan,
      sin tener que leer el botón de cada una. Sólido (no tinte) para que gane a
      los badges de estado, que son grises a propósito. */
   .kc-turno{font-size:10px;font-weight:800;padding:2px 8px;border-radius:12px;letter-spacing:.3px;
@@ -92,7 +92,8 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Pedidos</h1>
-        <p class="nodo-lead">Tu tablero de pedidos físicos en marcha. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso. Las decisiones de pago te esperan en <a href="copiloto.html" style="color:var(--brand)">Tu turno</a>; las ventas ya cobradas, en <a href="compras.html" style="color:var(--brand)">Compras</a>.</p>
+        <p class="nodo-lead">Acá <b>mueves el pedido</b>: confirmar, despachar, avisar que llegó, entregar. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso.<br>
+        <span style="color:var(--faint)">Aprobar o rechazar un comprobante es de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions">
         <a href="pagos.html" class="nodo-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y atención</a>
@@ -111,7 +112,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askText } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
@@ -136,7 +137,7 @@ const KB_PROV=[
 ];
 const FIS_STATES=new Set([...KB_LIMA,...KB_PROV].flatMap(c=>c[2]));
 
-// Estados que se resuelven con TU decisión en "Tu turno" (validar un pago):
+// Estados que se resuelven con TU decisión en "Pagos por validar" (validar un pago):
 // en el tablero mostramos un salto en vez de un avance directo, para que las
 // dos pantallas se complementen y no compitan por el mismo click.
 const TURNO_STATES=new Set(["esperando_adelanto","en_agencia"]);
@@ -163,7 +164,7 @@ async function boot(){
 
 // ── En vivo ────────────────────────────────────────────────────────
 // El tablero cambia solo cuando el bot cierra una venta o la IA valida un pago;
-// sin esto te enterabas recién al recargar. Mismo cuidado que en "Tu turno":
+// sin esto te enterabas recién al recargar. Mismo cuidado que en "Pagos por validar":
 // debounce, y no re-renderizar con un modal o el menú abierto (te movería la
 // tarjeta bajo el dedo). Si está ocupado, reintenta hasta que cierre.
 function ocupado(){ return !!document.querySelector(".overlay, .nodo-modal-back, #ctxMenu"); }
@@ -223,14 +224,15 @@ function render(){
   const cols = st.kbZona==="lima" ? KB_LIMA : KB_PROV;
   const zList = list.filter(o=>zonaDe(o)===st.kbZona);
 
-  // Cuántos pedidos de este tablero están frenados esperándote. Va acá arriba
-  // para no tener que recorrer las columnas (ni la otra pantalla) para saberlo.
-  // Cuenta solo lo del tablero físico; los pagos digitales no viven acá.
+  // Cuántos pedidos de este tablero tienen un comprobante esperando tu visto
+  // bueno. Va acá arriba para no recorrer las columnas (ni la otra pantalla)
+  // para saberlo. Cuenta solo lo del tablero físico; los pagos digitales no
+  // viven acá, pero sí en la sección de destino.
   const nTurno=st.list.filter(o=>isFisico(o) && TURNO_STATES.has(o.estado)).length;
   const zbar=$("kbzona");
   zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv)
     +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
-       ${nTurno===1?"1 pedido espera tu decisión":`${nTurno} pedidos esperan tu decisión`}</a>`:"");
+       ${nTurno===1?"1 pago por validar":`${nTurno} pagos por validar`}</a>`:"");
   zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; render(); });
 
   box.innerHTML="";
@@ -287,7 +289,7 @@ function kcard(o){
   const act=primaryAction(o);
   const enTurno=TURNO_STATES.has(o.estado);
 
-  // Botón principal: si el estado se resuelve en "Tu turno" (validar pago),
+  // Botón principal: si el estado se resuelve en "Pagos por validar" (validar pago),
   // el botón salta allá; si no, avanza el pedido en el mismo tablero.
   let mainBtn="";
   if(enTurno){
@@ -305,7 +307,7 @@ function kcard(o){
       <span>${p.emoji?esc(p.emoji):icon("box")} ${esc(p.nombre||"—")}</span>
       ${zona?`<span class="zona ${zona==="lima"?"lima":"prov"}">${zona==="lima"?"LIMA":"PROVINCIA"}</span>`:""}
       <span class="badge ${badgeClass(o.estado)}">${esc(O.label(o.estado))}</span>
-      ${enTurno?`<span class="kc-turno">TU TURNO</span>`:""}
+      ${enTurno?`<span class="kc-turno">PAGO POR VALIDAR</span>`:""}
     </div>
     <div class="kc-money">${moneyLine}</div>
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
@@ -441,7 +443,12 @@ function openMenu(ev,o){
     : [["esperando_adelanto"],["adelanto_validado"],["por_despachar"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
   trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${O.label(e)}`,()=>confirmSet(o,e,O.label(e))]); });
   ops.push(["sep"]);
-  ops.push([`${icon("ban")} Cancelar pedido`,()=>confirmSet(o,"cancelado","Cancelar pedido"),"danger"]);
+  // Si la plata YA entró, tumbar el pedido no es cancelar: es anular una venta,
+  // y eso pide motivo (misma puerta que Compras). Sin esto se podía borrar una
+  // venta cobrada desde acá sin dejar rastro, justo lo que hay que auditar.
+  ops.push(esCobrada(o)
+    ? [`${icon("ban")} Anular venta…`,()=>anularVenta(o),"danger"]
+    : [`${icon("ban")} Cancelar pedido`,()=>confirmSet(o,"cancelado","Cancelar pedido"),"danger"]);
   m.innerHTML=ops.map(([l,_,cls],i)=>l==="sep"?`<div class="sep"></div>`:`<button data-i="${i}" class="${cls||""}">${l}</button>`).join("");
   m.querySelectorAll("button[data-i]").forEach(b=>b.onclick=()=>{ closeMenu(); ops[Number(b.dataset.i)][1](); });
   document.body.appendChild(m);
@@ -451,6 +458,28 @@ function openMenu(ev,o){
   setTimeout(()=>document.addEventListener("click",closeMenu,{ once:true }),0);
 }
 function closeMenu(){ const m=$("ctxMenu"); if(m) m.remove(); }
+
+// ── Anular una venta ya cobrada ────────────────────────────────────
+// Misma vía y mismo criterio que Compras (que es donde vive el archivo de
+// ventas cerradas): NO se borra, se marca anulada/cancelado con el motivo
+// guardado en shipping, así sale de todas las métricas de plata pero queda
+// el registro para auditar el fraude. Digital → "anulada"; físico →
+// "cancelado" (ambos = no-venta en orders.js).
+const esCobrada=(o)=> !!(O.EST[o.estado] && O.EST[o.estado].cobro==="todo");
+async function anularVenta(o){
+  const motivo=await askText({
+    title:"Anular esta venta",
+    message:"Sale del Dashboard, de Compras y de las métricas (no se borra: queda registrada como anulada). Úsalo para pagos falsos o ventas que no eran reales.",
+    label:"Motivo (para tu registro)",
+    placeholder:"Ej: pago falso, comprobante montado, no llegó la plata…",
+    confirmText:"Anular venta", cancelText:"No, dejarla",
+  });
+  if(!motivo) return;
+  const estado=(o.product&&o.product.tipo==="digital") ? "anulada" : "cancelado";
+  const r=await updateOrder({ order_id:o.id, estado,
+    shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } });
+  if(r){ toast("Venta anulada ✓"); await load(); }
+}
 
 // ── Modales ────────────────────────────────────────────────────────
 function modal(html,onSave){

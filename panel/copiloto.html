@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Tu turno</title>
+<title>Nodo · Pagos por validar</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -28,7 +28,6 @@
   .btn.main{height:44px;padding:0 22px;font-size:14px;font-weight:700;border:none;color:#04140c;background:var(--green)}
   .btn.main:hover{filter:brightness(1.07)}
   .btn.main.blue{background:var(--brand);color:#fff}
-  .btn.main.amber{background:var(--amber);color:#231a05}
   .btn.danger{color:var(--red);border-color:transparent}.btn.danger:hover{background:var(--red-bg)}
   .btn svg{width:15px;height:15px}
   .pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid transparent}
@@ -36,8 +35,6 @@
   .pill.saldo{background:var(--brand-bg);color:var(--brand)}
   .pill.dig{background:var(--violet-bg,#1e1633);color:var(--violet,#8b5cf6)}
   .pill.ext{background:var(--green-bg);color:var(--green)}
-  .pill.desp{background:var(--green-bg);color:var(--green)}
-  .pill.camino{background:var(--surface-2);color:var(--muted)}
   .acard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}
   .thumb{width:120px;height:120px;border-radius:12px;object-fit:cover;flex:none;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in}
   .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;text-align:center;padding:6px;cursor:default}
@@ -64,8 +61,9 @@
   <div class="nodo-wrap">
     <div class="nodo-head">
       <div class="grow">
-        <h1 class="nodo-title">Tu turno</h1>
-        <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú resuelves con un toque. Se actualiza sola: si entra un pago mientras miras, aparece acá. Lo que no necesita decisión no aparece: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
+        <h1 class="nodo-title">Pagos por validar</h1>
+        <p class="nodo-lead">Acá decides <b>una sola cosa: si aceptas un pago</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú apruebas o rechazas con un toque. Se actualiza sola: si entra un pago mientras miras, aparece acá.<br>
+        <span style="color:var(--faint)">Mover el pedido (despachar, avisar que llegó, entregar) es de <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions"><button class="btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
     </div>
@@ -75,7 +73,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -110,9 +108,11 @@ function wireRealtime(){
     .subscribe();
 }
 
-// Las 4 etapas donde el sistema TE NECESITA. Cada una es un momento real de tu
-// día (aprobar un pago, volver de la agencia, avisar que llegó), no un estado
-// de base de datos.
+// Esta pantalla decide UNA sola cosa: ¿acepto este pago? Cada bloque es un
+// comprobante esperando tu sí o tu no, con la lectura de la IA ya hecha.
+// Lo que es MOVER el pedido (despachar, avisar que llegó, entregar) vive en
+// Pedidos: es su oficio, y tener el despacho en dos sitios guardaba datos
+// distintos según por dónde entraras.
 const ETAPAS=[
   { id:"digital", estados:["pendiente"], titulo:"Pago digital por validar",
     sub:"El cliente pagó un producto digital. La IA leyó el comprobante; al aprobar, el bot le entrega al instante y sigue vendiendo." },
@@ -122,10 +122,6 @@ const ETAPAS=[
     sub:"El cliente pagó el adelanto. La IA ya lo leyó; falta tu visto bueno." },
   { id:"saldo", estados:["en_agencia"], titulo:"Saldo por validar",
     sub:"Pagaron el saldo en la agencia. Al aprobar, el bot suelta la clave de recojo." },
-  { id:"despachar", estados:["adelanto_validado","por_despachar"], titulo:"Listo para despachar",
-    sub:"Ya cobraste el adelanto. Cuando lo lleves a la agencia, carga la guía y las fotos." },
-  { id:"camino", estados:["despachado"], titulo:"En camino a la agencia",
-    sub:"Cuando llegue a destino, avísale al cliente para que lo recoja." },
 ];
 const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
@@ -170,7 +166,8 @@ function render(){
   const box=$("list");
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty"><div class="e-ic">${icon("check")}</div><h3>Nada que decidir</h3>
-      <p>Cuando entre un pago para validar, un pedido para despachar o uno que llegó a la agencia, aparece acá.</p></div>`;
+      <p>Cuando entre un comprobante que necesite tu visto bueno, aparece acá solo.
+      Para mover tus pedidos —despachar, avisar, entregar— anda a <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p></div>`;
     return;
   }
   box.innerHTML="";
@@ -252,14 +249,14 @@ function card(o,et){
         :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <span class="pill ${et.id==="digital"?"dig":et.id==="extra"?"ext":et.id==="adelanto"?"adel":et.id==="saldo"?"saldo":et.id==="despachar"?"desp":"camino"}">${esc(et.titulo)}</span>
+        <span class="pill ${et.id==="digital"?"dig":et.id==="extra"?"ext":et.id==="adelanto"?"adel":"saldo"}">${esc(et.titulo)}</span>
         <span style="font-weight:700;font-size:15px">${p.emoji?esc(p.emoji)+" ":""}${esc(c.nombre||"Cliente")}</span>
         <span style="font-size:12px;color:var(--faint)">${esc(c.wa_id||"")}</span>
       </div>
       <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
         <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="saldo"?"Saldo a cobrar":et.id==="extra"?esc(s.extra_label||"Venta extra"):"Total"}</div>
           <div class="amt">${monto!=null&&monto!==""?`${sym(o)} ${esc(monto)}`:'<span style="color:var(--faint);font-size:14px;font-weight:600">—</span>'}</div></div>
-        ${et.id!=="despachar"&&et.id!=="digital"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
+        ${et.id!=="digital"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
         ${s.guia?`<div><div class="klbl">Guía</div><div style="font-weight:700;padding-top:4px">${esc(s.guia)}</div></div>`:""}
         ${s.clave_recojo?`<div><div class="klbl">Clave de recojo</div><div style="font-weight:800;padding-top:4px;color:var(--green)">${esc(s.clave_recojo)}</div></div>`:""}
       </div>
@@ -318,17 +315,7 @@ function botones(o,et){
         "El bot le envía la clave de recojo al cliente.");
       el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"saldo");
     }};
-  if(et.id==="despachar") return {
-    html:`<button class="btn main amber" data-a="desp">${icon("box")} Ya lo envié</button>
-          <a class="btn" href="pedidos.html">Ver en Pedidos</a>`,
-    wire:(el,o)=>{ el.querySelector('[data-a="desp"]').onclick=()=>despachar(o); }};
-  return {
-    html:`<button class="btn main" data-a="lleg">${icon("pin")} Avisar que ya llegó</button>
-          <a class="btn" href="pedidos.html">Ver en Pedidos</a>`,
-    wire:(el,o)=>{
-      el.querySelector('[data-a="lleg"]').onclick=()=>aprobar(o,"en_agencia","Avisar que llegó",
-        "El bot le avisa que ya puede recogerlo y le pide el saldo.");
-    }};
+  return { html:"", wire:()=>{} };
 }
 
 async function updateOrder(body){
@@ -392,38 +379,6 @@ async function rechazar(o,tipo){
                     :(r.rejected?"Rechazado · el bot le está pidiendo otro comprobante":"Marcado como rechazado")); await load(); }
 }
 
-// El momento más móvil de todos: estás en la agencia con la boleta en la mano.
-// Por eso pide lo mínimo — la guía — y las fotos son opcionales. El costo del
-// envío se pide JUSTO acá porque es el único momento en que lo tienes delante;
-// un campo suelto en otra pantalla no se llenaría nunca.
-async function despachar(o){
-  const guia=await askText({ title:"Ya lo envié", label:"Número de guía de la agencia", placeholder:"Ej. 0012345678", confirmText:"Siguiente" });
-  if(!guia) return;
-  const clave=await askText({ title:"Clave de recojo", label:"La clave que le vas a pedir al cliente al recoger (opcional ahora)", placeholder:"Ej. 4821" });
-  // Sugerido = lo último que pagaste a esa misma ciudad. La 2ª vez que despachas
-  // a Trujillo ya viene puesto: aprende de tu uso, sin tabla que mantener.
-  const sug=ultimoFlete(o);
-  const costo=await askText({ title:"¿Cuánto te costó enviarlo?",
-    message:"Es para calcular tu ganancia real. El cliente nunca lo ve.",
-    label:sug!=null?`Lo tienes en el recibo — la última vez a ${(o.shipping||{}).ciudad||"ese destino"} pagaste S/ ${sug}`:"Lo tienes en el recibo de la agencia",
-    placeholder:"Ej. 18", value:sug!=null?String(sug):"", confirmText:"Guardar" });
-  const flete=(costo??"").trim();
-  const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{
-    guia, ...(clave?{ clave_recojo:clave }:{}), ...(flete===""?{}:{ flete:Number(flete)||0 }),
-  }});
-  if(r){ toast(r.flow_started?"Despachado ✓ · el bot le está mandando la guía":"Despachado ✓"); await load(); }
-}
-
-// Último flete a esa ciudad+agencia, entre los pedidos ya cargados.
-function ultimoFlete(o){
-  const s=o.shipping||{};
-  const ciudad=String(s.ciudad||"").trim().toLowerCase();
-  if(!ciudad) return null;
-  const prev=(st.list||[]).find(x=>x.id!==o.id && x.shipping?.flete!=null
-    && String(x.shipping?.ciudad||"").trim().toLowerCase()===ciudad
-    && (!s.agencia || x.shipping?.agencia===s.agencia));
-  return prev? Number(prev.shipping.flete) : null;
-}
 boot();
 </script>
 </body>
