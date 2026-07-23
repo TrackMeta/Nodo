@@ -69,7 +69,7 @@
   .fclear:hover{border-color:var(--brand-border);color:var(--brand);background:var(--brand-bg)}
 
   /* Lista de conversaciones */
-  .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column}
+  .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface-1)}
   .list .top{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
   .searchwrap{position:relative;padding:10px 12px;border-bottom:1px solid var(--border);flex:none}
   .searchwrap .si{position:absolute;left:23px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--faint);pointer-events:none}
@@ -84,8 +84,11 @@
   .conv.active:hover{background:var(--brand-bg)}
   .conv.active .nm{color:var(--brand)}
   /* Comprado (dorado): su box-shadow lo usa la animación, así que el
-     seleccionado se marca con un anillo de marca en vez de la barra. */
-  .conv.bought.active{outline:2px solid var(--brand);outline-offset:-2px}
+     seleccionado se marca con un anillo DORADO (no azul) para no romper el
+     boleto, y el nombre conserva el color de texto en vez de volverse azul. */
+  .conv.bought.active{outline:2px solid #f0a92b;outline-offset:-2px;
+    background:linear-gradient(135deg,rgba(255,210,74,.5),rgba(240,169,43,.26) 55%,rgba(255,236,179,.4))}
+  .conv.bought.active .nm{color:var(--text)}
   /* Compra destacada — tono dorado elegante */
   /* Venta cerrada = boleto dorado brillante (estilo Willy Wonka) */
   .conv.bought{overflow:hidden;
@@ -103,7 +106,8 @@
     transform:translateX(-180%) skewX(-16deg);animation:wonkaShine 4.2s ease-in-out infinite}
   @keyframes wonkaShine{0%{transform:translateX(-180%) skewX(-16deg)}52%,100%{transform:translateX(330%) skewX(-16deg)}}
   @media (prefers-reduced-motion: reduce){ .conv.bought::after{display:none} .conv.bought{animation:none} }
-  .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 14px rgba(255,190,50,.85)}
+  .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 14px rgba(255,190,50,.85);
+    background:linear-gradient(135deg,#ffe8a3,#f0a92b);color:#5a3a00}
   .avwrap{position:relative;flex:none}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
   /* Badge del producto: círculo limpio con aro y sombra (se ve intencional) */
@@ -129,7 +133,7 @@
   .badge{background:var(--green);color:#04120b;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px}
 
   /* Chat */
-  .chat{flex:1;min-width:0;display:flex;flex-direction:column}
+  .chat{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
   .chat .hd{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
   .chat .hd .nm{font-weight:600}
   .chat .hd .ph{font-size:12px;color:var(--muted)}
@@ -910,15 +914,18 @@ function renderActionsMenu(){
   const m=$("actionsMenu");
   const cv=(state.convs||[]).find(c=>c.contact_id===state.contactId);
   const arch=!!cv?.archivada;
+  const blocked=!!cv?.contact?.bloqueado;
+  const following=!!cv?.requiere_humano;
   m.innerHTML=`
     <button class="actitem" data-a="tag">${icon("etiquetas")} Agregar etiqueta</button>
-    <button class="actitem" data-a="rebot">${icon("play")} Reactivar bot</button>
-    <button class="actitem" data-a="follow">${icon("bookmark")} Marcar como seguimiento</button>
+    <button class="actitem" data-a="follow">${icon("bookmark")} ${following?"Quitar seguimiento":"Marcar como seguimiento"}</button>
     <button class="actitem" data-a="unread">${icon("mail")} Marcar como no leído</button>
     <button class="actitem" data-a="${arch?"unarchive":"archive"}">${icon("archive")} ${arch?"Desarchivar":"Archivar"}</button>
     <button class="actitem" data-a="export">${icon("download")} Exportar mensajes</button>
     <div class="actsep"></div>
-    <button class="actitem danger" data-a="block">${icon("ban")} Bloquear contacto</button>
+    ${blocked
+      ? `<button class="actitem" data-a="unblock">${icon("shield")} Desbloquear contacto</button>`
+      : `<button class="actitem danger" data-a="block">${icon("ban")} Bloquear contacto</button>`}
     <button class="actitem danger" data-a="clearinfo">${icon("eraser")} Borrar información</button>
     <button class="actitem danger" data-a="delchat">${icon("trash")} Eliminar chat</button>`;
   m.querySelectorAll(".actitem").forEach(b=> b.onclick=()=>{ m.classList.add("hidden"); actionHandler(b.dataset.a); });
@@ -927,9 +934,9 @@ function backToList(){ state.contactId=null; $("chatView").classList.add("hidden
 async function actionHandler(a){
   const cid=state.contactId; if(!cid) return;
   const conv=()=>supa.from("conversations");
-  if(a==="tag"){ const btn=$("pAddBtn"); if(btn){ btn.scrollIntoView({block:"center"}); setTimeout(()=>btn.click(),150); } else toast("Crea etiquetas en la sección Etiquetas",true); return; }
-  if(a==="rebot"){ await supa.from("contacts").update({ bot_activo:true }).eq("id",cid); setBotPill(true); if(panelData.contact) panelData.contact.bot_activo=true; logEvent(cid,"bot_reactiva","Bot reactivado"); toast("Bot reactivado ✓"); loadConversations(); return; }
-  if(a==="follow"){ await conv().update({ requiere_humano:true }).eq("contact_id",cid); logEvent(cid,"nota","Marcado para seguimiento"); toast("Marcado para seguimiento ✓"); loadConversations(); return; }
+  if(a==="tag"){ const btn=$("pAddBtn"); if(btn){ const d=btn.closest("details"); if(d) d.open=true; btn.scrollIntoView({block:"center"}); setTimeout(()=>btn.click(),160); } else toast("Crea etiquetas en la sección Etiquetas para poder asignarlas",true); return; }
+  if(a==="follow"){ const cvc=(state.convs||[]).find(c=>c.contact_id===cid); const now=!cvc?.requiere_humano;
+    await conv().update({ requiere_humano:now }).eq("contact_id",cid); logEvent(cid,"nota",now?"Marcado para seguimiento":"Seguimiento quitado"); toast(now?"Marcado para seguimiento ✓":"Seguimiento quitado ✓"); loadConversations(); return; }
   if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído ✓"); backToList(); loadConversations(); return; }
   if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado ✓"); backToList(); loadConversations(); return; }
   if(a==="unarchive"){ await conv().update({ archivada:false }).eq("contact_id",cid); logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado ✓"); await loadConversations(); renderActionsMenu(); return; }
@@ -938,6 +945,10 @@ async function actionHandler(a){
     let { error }=await supa.from("contacts").update({ bloqueado:true }).eq("id",cid);
     if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
     logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado ✓"); backToList(); loadConversations(); return; }
+  if(a==="unblock"){ let { error }=await supa.from("contacts").update({ bloqueado:false }).eq("id",cid);
+    if(error){ toast("No se pudo desbloquear",true); return; }
+    if(panelData.contact) panelData.contact.bloqueado=false; if(cv?.contact) cv.contact.bloqueado=false;
+    logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado ✓"); renderActionsMenu(); loadConversations(); return; }
   if(a==="clearinfo"){ if(!await confirmDialog({title:"Borrar información",message:"¿Borrar todos los campos personalizados de este contacto?",confirmText:"Borrar",danger:true})) return;
     await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
     loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }

@@ -232,7 +232,7 @@ html{overflow:hidden}
    <style> propio y otras no (secuencias/etiquetas). Como el router SPA
    intercambia esos <style> al navegar, el sidebar se corría 8px (margen UA)
    al entrar en las páginas sin reset. Lo fijamos aquí, compartido por todas. */
-body.nodo-shelled{display:flex;height:100vh;overflow:hidden;margin:0}
+body.nodo-shelled{display:flex;height:100vh;overflow:hidden;margin:0;color:var(--text);font-family:var(--font)}
 /* Todos los contenedores de scroll reservan el hueco de la barra, para que el
    contenido no se corra al cambiar entre páginas cortas y largas. */
 body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
@@ -247,14 +247,28 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 :is(html[data-nfx="suave"],html[data-nfx="full"]) .nodo-nav{
   backdrop-filter:blur(12px) saturate(1.3); -webkit-backdrop-filter:blur(12px) saturate(1.3);
 }
-.nodo-nav.collapsed{width:72px}
+.nodo-nav.collapsed{width:72px;overflow:visible}
 
 /* Marca = cabecera con el selector de bot */
 .nodo-brand{position:relative;display:flex;align-items:center;gap:6px;padding:8px 6px 6px;min-height:48px}
 .nodo-brand img{width:32px;height:32px;border-radius:8px;flex:none;object-fit:cover;background:var(--surface-2)}
 .nodo-brand .bt{flex:1;min-width:0;font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nodo-nav.collapsed .nodo-brand{flex-direction:column;gap:8px;padding:8px 0 6px}
+.nodo-nav.collapsed .nodo-brand{flex-direction:column;gap:8px;padding:8px 0 6px;position:static}
 .nodo-nav.collapsed .nodo-brand .bt{display:none}
+/* Comprimido: el botón de desplegar se ancla a la LÍNEA DIVISORIA del sidebar,
+   a la altura del logo del bot, en el mismo lugar siempre (círculo sobre el borde). */
+.nodo-nav.collapsed #nodoCollapse{
+  position:absolute;top:16px;right:-13px;z-index:40;
+  width:26px;height:26px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--border-strong);
+  color:var(--muted);box-shadow:var(--shadow-2);transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast)}
+.nodo-nav.collapsed #nodoCollapse:hover{background:var(--brand-bg);border-color:var(--brand-border);color:var(--brand)}
+.nodo-nav.collapsed #nodoCollapse svg{width:14px;height:14px}
+/* Icono direccional: rectángulo al expandir, flecha » al comprimir */
+#nodoCollapse .cl-shrink,#nodoCollapse .cl-grow{display:grid;place-items:center}
+#nodoCollapse .cl-grow{display:none}
+.nodo-nav.collapsed #nodoCollapse .cl-shrink{display:none}
+.nodo-nav.collapsed #nodoCollapse .cl-grow{display:grid}
 
 /* Selector de bot = la propia cabecera (logo + nombre, abre el popover) */
 .nodo-botsel{flex:1;min-width:0;display:flex;align-items:center;gap:10px;height:44px;padding:0 8px;

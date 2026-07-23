@@ -120,26 +120,30 @@ export function icon(n, cls = "ico") {
 const NAV_GROUPS = [
   { key:"top", items:[
     { id:"inbox",       label:"Bandeja",              href:"index.html",      icon:"inbox", cta:true },
+  ]},
+  { key:"resumen", sec:"Resumen", items:[
     { id:"dashboard",   label:"Dashboard",            href:"dashboard.html",  icon:"dashboard" },
     { id:"embudo",      label:"Embudo",               href:"embudo.html",     icon:"embudo" },
-    { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"compass" },
+    { id:"rendimiento", label:"Rendimiento",          href:"rendimiento.html",icon:"rendimiento" },
+  ]},
+  { key:"ventas", sec:"Ventas", items:[
     { id:"pedidos",     label:"Pedidos",              href:"pedidos.html",    icon:"kanban" },
     { id:"compras",     label:"Compras",              href:"compras.html",    icon:"pedidos" },
-    { id:"rendimiento", label:"Rendimiento",          href:"rendimiento.html",icon:"rendimiento" },
+    { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"compass" },
   ]},
   { key:"negocio", sec:"Tu negocio", items:[
     { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
     { id:"negocio",     label:"Negocio",              href:"negocio.html",    icon:"building" },
     { id:"ia",          label:"IA",                   href:"ia.html",         icon:"robot", special:"ia" },
   ]},
-  { key:"conv", sec:"Conversaciones", items:[
+  { key:"marketing", sec:"Marketing", items:[
     { id:"contactos",   label:"Contactos",            href:"contactos.html",  icon:"contactos" },
-    { id:"respuestas",  label:"Respuestas rápidas",   href:"respuestas.html", icon:"respuestas" },
     { id:"campanas",    label:"Campañas",             href:"campanas.html",   icon:"campanas" },
-  ]},
-  { key:"adv", sec:"Avanzado", items:[
-    { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
+    { id:"respuestas",  label:"Respuestas rápidas",   href:"respuestas.html", icon:"respuestas" },
     { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
+  ]},
+  { key:"auto", sec:"Automatización", items:[
+    { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
     { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
     { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
@@ -159,7 +163,7 @@ function closedGroups() {
   // para no abrumar. Si el usuario ya tocó grupos, se respeta su elección.
   try {
     const raw = localStorage.getItem("nodo.navClosed");
-    if (raw == null) return ["adv"];
+    if (raw == null) return ["auto"];
     return JSON.parse(raw);
   } catch { return []; }
 }
@@ -659,7 +663,7 @@ export async function mountShell({ active } = {}) {
         <span class="nb-name" id="nodoBotName">${initName}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
-      <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú">${svg("panel")}</button>
+      <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú"><span class="cl-shrink">${svg("panel")}</span><span class="cl-grow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></button>
     </div>
     <nav class="nodo-primary">${primaryHTML}</nav>
     <nav class="nodo-links">${groupsHTML}</nav>
