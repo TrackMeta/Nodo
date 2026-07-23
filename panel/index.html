@@ -1044,7 +1044,7 @@ async function exportMessages(){
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`chat_${(state.contactName||state.contactId).toString().replace(/\W+/g,"_")}.txt`; a.click(); URL.revokeObjectURL(a.href);
   toast("Mensajes exportados ✓");
 }
-$("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.contactId) return; $("actionsMenu").classList.toggle("hidden"); });
+$("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.contactId) return; const m=$("actionsMenu"); if(m.classList.contains("hidden")) renderActionsMenu(); m.classList.toggle("hidden"); });
 function onDocClickActions(e){ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); }
 document.addEventListener("click",onDocClickActions);
 
