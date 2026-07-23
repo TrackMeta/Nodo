@@ -859,7 +859,7 @@ async function loadContactPanel(c){
       <div class="cph">${isT ? "Contacto de prueba (Web Chat)" : "+"+esc(c.wa_id||"")}</div>
     </div>
     <div class="cx-skel"><div class="cx-skrow sm"></div><div class="cx-skrow"></div><div class="cx-skrow sm"></div><div class="cx-skrow"></div></div>`;
-  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
+  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
   const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes, orderRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
@@ -995,7 +995,11 @@ function renderActionsMenu(){
   const m=$("actionsMenu");
   const cv=(state.convs||[]).find(c=>c.contact_id===state.contactId);
   const arch=!!cv?.archivada;
-  const blocked=!!cv?.contact?.bloqueado;
+  // Los bloqueados NO están en state.convs (se filtran de la Bandeja); si el chat
+  // abierto es uno bloqueado (p. ej. entrando desde Contactos), lo sabemos por la
+  // ficha cargada (panelData) del contacto actual.
+  const cur = (panelData.contact && panelData.contact.id===state.contactId) ? panelData.contact : null;
+  const blocked=!!(cur?.bloqueado ?? cv?.contact?.bloqueado);
   const following=!!cv?.requiere_humano;
   m.innerHTML=`
     <button class="actitem" data-a="tag">${icon("etiquetas")} Agregar etiqueta</button>
@@ -1028,8 +1032,8 @@ async function actionHandler(a){
     logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado ✓"); backToList(); loadConversations(); return; }
   if(a==="unblock"){ let { error }=await supa.from("contacts").update({ bloqueado:false }).eq("id",cid);
     if(error){ toast("No se pudo desbloquear",true); return; }
-    if(panelData.contact) panelData.contact.bloqueado=false; if(cv?.contact) cv.contact.bloqueado=false;
-    logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado ✓"); renderActionsMenu(); loadConversations(); return; }
+    if(panelData.contact && panelData.contact.id===cid) panelData.contact.bloqueado=false;
+    logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado ✓"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="clearinfo"){ if(!await confirmDialog({title:"Borrar información",message:"¿Borrar todos los campos personalizados de este contacto?",confirmText:"Borrar",danger:true})) return;
     await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
     loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }
