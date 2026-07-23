@@ -132,7 +132,6 @@
     </div>
     <div class="tabs">
       <button class="tab active" data-t="vendedor" id="tabVend"></button>
-      <button class="tab" data-t="campos" id="tabCampos"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
@@ -240,7 +239,6 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
   $("tabVend").innerHTML=IC.robot+"<span>Vendedor IA</span>";
-  $("tabCampos").innerHTML=IC.bot+"<span>Campos del Bot</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
@@ -264,7 +262,6 @@ async function loadCfg(){
 function render(){
   const b=$("body");
   if(st.tab==="vendedor") renderVendedor(b);
-  else if(st.tab==="campos") renderCampos(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
   else renderProveedores(b);
