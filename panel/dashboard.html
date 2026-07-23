@@ -109,6 +109,39 @@
   .df-custom input{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;font-family:inherit}
   .df-custom input:focus{border-color:var(--brand)}
   .df-apply{width:100%;height:36px;margin-top:10px;border-radius:9px;border:none;background:var(--brand);color:#fff;font-weight:700;font-size:13px}
+  /* ── Toggle Dashboard / Bitácora ── */
+  .viewseg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:3px;gap:2px;margin:2px 0 20px}
+  .viewseg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;padding:8px 20px;border-radius:9px;cursor:pointer}
+  .viewseg button.on{background:var(--brand);color:#fff}
+  /* ── Bitácora ── */
+  .bita-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .bita-nav{display:inline-flex;align-items:center;gap:8px}
+  .bita-nav button{width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:16px;line-height:1;cursor:pointer}
+  .bita-nav button:hover{border-color:var(--brand);color:var(--brand)}
+  .bita-nav .m{font-weight:700;font-size:14px;min-width:132px;text-align:center;text-transform:capitalize}
+  .bita-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+  .bita-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+  .bita-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+  .bita-dow{font-size:11px;font-weight:700;color:var(--faint);text-align:center;padding:2px 0;text-transform:uppercase;letter-spacing:.5px}
+  .bita-cell{border:1px solid var(--border);border-radius:12px;padding:8px 9px 9px;min-height:84px;position:relative;cursor:pointer;transition:transform .1s,box-shadow .1s;background:var(--surface)}
+  .bita-cell:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(0,0,0,.14)}
+  .bita-cell.void{background:transparent;border:none;cursor:default;pointer-events:none}
+  .bita-cell .dn{position:absolute;top:7px;left:9px;font-size:11px;font-weight:700;color:var(--muted)}
+  .bita-cell .flag{position:absolute;top:6px;right:8px;font-size:12px;line-height:1}
+  .bita-cell .amt{text-align:center;font-size:16px;font-weight:750;margin-top:17px;letter-spacing:-.3px}
+  .bita-cell .sub{text-align:center;font-size:10px;color:var(--faint);margin-top:1px}
+  .bita-cell .mt{display:flex;justify-content:center;gap:9px;font-size:9.5px;margin-top:5px;font-variant-numeric:tabular-nums}
+  .bita-cell .up{color:var(--green)} .bita-cell .dn2{color:var(--red)}
+  .bita-cell .roas{text-align:center;font-size:9.5px;color:var(--faint);margin-top:2px}
+  .bita-cell.alto{background:rgba(16,185,129,.17);border-color:rgba(16,185,129,.55)}
+  .bita-cell.alto .amt{color:#0e9f6e}
+  .bita-cell.pos{background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.3)}
+  .bita-cell.pos .amt{color:#12b981}
+  .bita-cell.loss{background:rgba(239,68,68,.09);border-color:rgba(239,68,68,.5)}
+  .bita-cell.loss .amt{color:var(--red)}
+  .bita-cell.nodata{background:var(--surface-2);opacity:.55}
+  .bita-cell.nodata .amt{color:var(--faint);font-size:13px;font-weight:600}
+  .bita-cell.prov{border-style:dashed}
 </style>
 </head>
 <body>
@@ -136,6 +169,26 @@
 
     <div class="kpis" id="kpis"></div>
 
+    <div class="viewseg" id="viewSeg">
+      <button data-v="dash" class="on">Dashboard</button>
+      <button data-v="bita">Bitácora</button>
+    </div>
+
+    <div id="bitaView" class="hidden">
+      <div class="panel">
+        <div class="bita-hd">
+          <h3 id="bitaTitle">Profit diario</h3>
+          <div class="bita-nav"><button id="bitaPrev" title="Mes anterior">‹</button><span class="m" id="bitaMonth">—</span><button id="bitaNext" title="Mes siguiente">›</button></div>
+        </div>
+        <div id="bitaChart"></div>
+      </div>
+      <div class="panel">
+        <div class="bita-hd"><h3>Calendario de profit</h3><div class="bita-legend" id="bitaLegend"></div></div>
+        <div class="bita-cal" id="bitaCal"></div>
+      </div>
+    </div>
+
+    <div id="dashView">
     <div class="cols">
       <div class="panel">
         <h3>Ventas cerradas</h3><p class="ps" id="salesSum">—</p>
@@ -167,6 +220,7 @@
         <div id="expenses"></div>
       </div>
     </div>
+    </div><!-- /#dashView -->
   </div>
 </div>
 
@@ -175,7 +229,14 @@ import { supa, mountShell, toast, confirmDialog } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
-const money=(n)=>"S/ "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Moneda del canal (se carga de channels.moneda; símbolo por código ISO).
+const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
+let CUR="PEN";
+const curSym=()=>CUR_SYM[CUR]||CUR;
+async function loadCurrency(){ try{ const { data }=await supa.from("channels").select("moneda").eq("id",channelId).maybeSingle(); CUR=(data&&data.moneda)||"PEN"; }catch(_){ CUR="PEN"; } }
+const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Versión corta (sin decimales) para el calendario de la Bitácora.
+const moneyShort=(n)=>curSym()+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
 // Anima los números de los KPIs (0 → valor) al cargar. Genérico: separa prefijo
 // ("S/ "), número y sufijo, y re-formatea cada frame conservando los decimales.
 function animateNums(scope){
@@ -216,6 +277,8 @@ const PRESETS=[["hoy","Hoy"],["ayer","Ayer"],["7d","Últimos 7 días"],["30d","�
 const range={ preset:"7d", from:null, to:null };
 // Qué operación estás mirando: todo | digital | fisico.
 let tipo="todo";
+// Bitácora: mes que se muestra en el calendario (arranca en el mes actual).
+let bitaMonth=(()=>{ const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1); })();
 function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
 function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; }
 function computeRange(){
@@ -277,6 +340,16 @@ async function boot(){
   });
   $("dfBtn").onclick=(e)=>{ e.stopPropagation(); $("dfPop").classList.toggle("open"); };
   $("addExpBtn").onclick=toggleExpForm;
+  // Toggle Dashboard / Bitácora
+  $("viewSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
+    const v=b.dataset.v;
+    $("viewSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+    $("dashView").classList.toggle("hidden", v!=="dash");
+    $("bitaView").classList.toggle("hidden", v!=="bita");
+    if(v==="bita") renderBitacora();
+  });
+  $("bitaPrev").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()-1,1); renderBitacora(); };
+  $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
   renderDatePop();
   load();
 }
@@ -287,6 +360,7 @@ function kpi(icon, color, label, value, sub){
 }
 
 async function load(){
+  await loadCurrency();
   const r=computeRange();
   const fromISO=r.from.toISOString(), toISO=r.to.toISOString();
   // Live totals + eventos + órdenes en paralelo.
@@ -452,7 +526,7 @@ function toggleExpForm(){
   if(!f.classList.contains("hidden")){ f.classList.add("hidden"); f.innerHTML=""; $("addExpBtn").textContent="+ Registrar"; return; }
   const today=new Date().toISOString().slice(0,10);
   f.innerHTML=`<div class="expform">
-    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto (S/)"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
+    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto (${curSym()})"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
     <input class="ef-in" id="ef_desc" placeholder="Descripción (ej. Empaques, Sueldo asistente)"/>
     <select class="ef-in" id="ef_cat"><option value="">Categoría (opcional)</option><option>Operativo</option><option>Personal</option><option>Local</option><option>Marketing</option><option>Otro</option></select>
     <div class="ef-acts"><button class="expbtn ghost" id="ef_cancel">Cancelar</button><button class="expbtn primary" id="ef_save">Guardar gasto</button></div>
@@ -556,6 +630,97 @@ function renderSalesChart(data, hasAds){
     <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-top:6px"><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#22c079;vertical-align:-1px;margin-right:5px"></i>Vendido</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f0a92b;vertical-align:-1px;margin-right:5px"></i>${hasAds?'Ganancia neta':'Ganancia'}</span></div>`;
 }
 
+// ── BITÁCORA: profit diario del mes (chart + calendario) ─────────────
+// Reusa el mismo criterio de profit que el Dashboard: margen (digital=cobrado,
+// físico=margen) − gasto de Meta − gastos extra, agregado por día.
+async function loadBitacora(monthStart){
+  const from=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
+  const to=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1); // exclusivo
+  const [ordR,prodR,insR,expR]=await Promise.all([
+    supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",from.toISOString()).lt("created_at",to.toISOString()),
+    supa.from("products").select("id,config,product_versions(id,cantidad)").eq("channel_id",channelId),
+    supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)),
+    supa.from("manual_expenses").select("fecha,monto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)),
+  ]);
+  const prods=prodR.error?[]:(prodR.data||[]);
+  const prodPorId={},cantPorVersion={};
+  prods.forEach(p=>{ prodPorId[p.id]=p; (p.product_versions||[]).forEach(v=>{ cantPorVersion[v.id]=v.cantidad??1; }); });
+  const delTipo=(o)=> tipo==="todo"||(tipo==="fisico"?O.esFisico(o):!O.esFisico(o));
+  const allOrd=ordR.error?[]:(ordR.data||[]);
+  const orders=allOrd.filter(delTipo).filter(O.esVenta);
+  const adTipo={}; allOrd.forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(a&&!adTipo[a]) adTipo[a]=O.esFisico(o)?"fisico":"digital"; });
+  const day={}; const D=(k)=> day[k]||(day[k]={margin:0,rev:0,spend:0,exp:0,sales:0});
+  orders.forEach(o=>{
+    const k=ymd(new Date(o.created_at));
+    const m=!O.esFisico(o)?O.cobrado(o):O.margen(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1);
+    const d=D(k); if(m!=null) d.margin+=m; d.rev+=O.cobrado(o); d.sales++;
+  });
+  (insR.error?[]:(insR.data||[])).forEach(i=>{ if(tipo==="todo"||adTipo[i.ad_id]===tipo){ D(i.fecha).spend+=Number(i.gasto||0); } });
+  if(tipo==="todo") (expR.error?[]:(expR.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); });
+  return day;
+}
+async function renderBitacora(){
+  const cal=$("bitaCal");
+  cal.innerHTML=`<div style="grid-column:1/-1;text-align:center;color:var(--faint);padding:24px">Cargando…</div>`;
+  $("bitaMonth").textContent=new Intl.DateTimeFormat("es-PE",{month:"long",year:"numeric"}).format(bitaMonth);
+  $("bitaTitle").textContent=`Profit diario (${CUR})`;
+  const day=await loadBitacora(bitaMonth);
+  const profitOf=(k)=>{ const d=day[k]; return d?(d.margin-d.spend-d.exp):null; };
+  const y=bitaMonth.getFullYear(), mo=bitaMonth.getMonth();
+  const daysInMonth=new Date(y,mo+1,0).getDate();
+  const todayK=ymd(new Date());
+  const series=[];
+  for(let dd=1;dd<=daysInMonth;dd++){ const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(dd).padStart(2,"0")}`; series.push({dd,k,profit:profitOf(k)}); }
+  renderBitaChart(series);
+  $("bitaLegend").innerHTML=`<span><i style="background:rgba(16,185,129,.7)"></i>alto</span><span><i style="background:rgba(16,185,129,.3)"></i>positivo</span><span><i style="background:rgba(239,68,68,.55)"></i>pérdida</span><span><i style="background:var(--surface-2);border:1px solid var(--border)"></i>sin datos</span><span>⏳ provisional</span>`;
+  const maxP=Math.max(1,...series.map(s=>s.profit>0?s.profit:0));
+  const dows=["L","M","X","J","V","S","D"];
+  let html=dows.map(d=>`<div class="bita-dow">${d}</div>`).join("");
+  const firstDow=(new Date(y,mo,1).getDay()+6)%7; // L=0 … D=6
+  for(let i=0;i<firstDow;i++) html+=`<div class="bita-cell void"></div>`;
+  series.forEach(s=>{
+    const p=s.profit, d=day[s.k];
+    const isToday=s.k===todayK, isFuture=s.k>todayK;
+    let cls, body;
+    if(p==null){ cls="nodata"+(isToday?" prov":""); body=`<div class="amt">${isFuture?"—":"sin datos"}</div>`; }
+    else{
+      cls = p<0 ? "loss" : (p>=maxP*0.66 ? "alto" : "pos");
+      if(isToday) cls+=" prov";
+      const roas=d.spend>0?(d.rev/d.spend):0;
+      body=`<div class="amt">${moneyShort(p)}</div>`
+        +`<div class="mt"><span class="up">▲${Math.round(d.rev)}</span><span class="dn2">▼${Math.round(d.spend)}</span></div>`
+        +`<div class="roas">${roas>0?roas.toFixed(2)+"x · ":""}${d.sales}v</div>`;
+    }
+    const flag=isToday?`<span class="flag" title="Provisional — el día no terminó">⏳</span>`:(p!=null&&p<0?`<span class="flag">⚠️</span>`:"");
+    html+=`<div class="bita-cell ${cls}" data-day="${s.k}" title="${s.k}"><span class="dn">${s.dd}</span>${flag}${body}</div>`;
+  });
+  cal.innerHTML=html;
+  cal.querySelectorAll("[data-day]").forEach(c=> c.onclick=()=>{
+    range.preset="dia"; range.from=new Date(c.dataset.day+"T00:00:00");
+    $("viewSeg").querySelector('[data-v="dash"]').click(); // volver al Dashboard
+    renderDatePop(); applyRange();
+  });
+}
+function renderBitaChart(series){
+  const box=$("bitaChart");
+  const vals=series.map(s=>s.profit==null?0:s.profit);
+  const W=760,H=200,padL=30,padR=10,padT=14,padB=24;
+  const vMax=Math.max(1,...vals), vMin=Math.min(0,...vals);
+  const plotT=padT, plotB=H-padB;
+  const yf=(v)=> plotB-(v-vMin)/(vMax-vMin)*(plotB-plotT);
+  const n=series.length, dx=(W-padL-padR)/Math.max(1,n-1), xf=(i)=>padL+i*dx, y0=yf(0);
+  const linePts=series.map((s,i)=>`${xf(i).toFixed(1)},${yf(s.profit==null?0:s.profit).toFixed(1)}`).join(" ");
+  const areaPts=`${padL.toFixed(1)},${y0.toFixed(1)} `+linePts+` ${xf(n-1).toFixed(1)},${y0.toFixed(1)}`;
+  const step=Math.ceil(n/12);
+  const labels=series.map((s,i)=> i%step===0?`<text x="${xf(i).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="9" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
+  const dots=series.map((s,i)=> s.profit==null?"":`<circle cx="${xf(i).toFixed(1)}" cy="${yf(s.profit).toFixed(1)}" r="2.4" fill="${s.profit<0?'var(--red)':'var(--brand)'}"><title>${s.k} · ${money(s.profit)}</title></circle>`).join("");
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
+    <defs><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--brand)" stop-opacity=".28"/><stop offset="1" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
+    <line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-padR}" y2="${y0.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>
+    <polygon points="${areaPts}" fill="url(#bgrad)"/>
+    <polyline points="${linePts}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}${labels}</svg>`;
+}
 function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   const box=$("productPerf");
   if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }

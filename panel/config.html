@@ -138,7 +138,7 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
@@ -184,27 +184,45 @@ function renderApariencia(b){
   b.querySelectorAll("#fxFps .btn").forEach(x=> x.onclick=()=>{ setEffects({ fps:+x.dataset.f }); renderApariencia(b); });
 }
 
-// ── General: zona horaria ───────────────────────────────────────────
+// Monedas frecuentes (código ISO + símbolo + país). Igual que en Productos.
+const CURRENCIES=[
+  ["PEN","S/","Perú — Sol"],["USD","$","EE. UU. — Dólar"],["MXN","$","México — Peso"],
+  ["COP","$","Colombia — Peso"],["ARS","$","Argentina — Peso"],["CLP","$","Chile — Peso"],
+  ["BOB","Bs","Bolivia — Boliviano"],["EUR","€","Europa — Euro"],["BRL","R$","Brasil — Real"],
+  ["UYU","$U","Uruguay — Peso"],["PYG","₲","Paraguay — Guaraní"],["VES","Bs","Venezuela — Bolívar"],
+  ["GTQ","Q","Guatemala — Quetzal"],["CRC","₡","Costa Rica — Colón"],["DOP","RD$","Rep. Dominicana — Peso"],
+  ["HNL","L","Honduras — Lempira"],["NIO","C$","Nicaragua — Córdoba"],["PAB","B/.","Panamá — Balboa"],
+  ["GBP","£","Reino Unido — Libra"],["CAD","$","Canadá — Dólar"],
+];
+// ── General: zona horaria + moneda ──────────────────────────────────
 // El "Retraso de respuesta del bot" se movió a IA › Vendedor IA.
 function renderGeneral(b){
   const c=st.channel||{};
   const tz = c.timezone || "America/Lima";
+  const mon = c.moneda || "PEN";
   b.innerHTML=`
-    <h2>Ajustes generales</h2><p class="sub">Zona horaria de este canal.</p>
+    <h2>Ajustes generales</h2><p class="sub">Zona horaria y moneda de este canal.</p>
     <div class="card">
       <div class="chd"><span class="ico">${IC.target}</span><span class="nm">Zona horaria</span></div>
       <div class="desc">Define cuándo empieza y termina el día para <b>todas las métricas</b>: leads por día, resúmenes, reportes, campañas programadas, automatizaciones y conversiones.</div>
       <label>País / zona horaria</label>
       <select class="in" id="g_tz" style="max-width:340px">${TIMEZONES.map(([v,l])=>`<option value="${v}" ${v===tz?"selected":""}>${l}</option>`).join("")}</select>
     </div>
+    <div class="card">
+      <div class="chd"><span class="ico">${IC.dollar||IC.target}</span><span class="nm">Moneda</span></div>
+      <div class="desc">La moneda en la que ves los importes del <b>Dashboard</b> (ventas, ganancia, ticket…) y la Bitácora. Elige la moneda con la que operas tu negocio.</div>
+      <label>Moneda del negocio</label>
+      <select class="in" id="g_moneda" style="max-width:340px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cd===mon?"selected":""}>${sy} · ${nm} (${cd})</option>`).join("")}</select>
+    </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const patch={ timezone:$("g_tz").value };
-    const { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value };
+    let { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    if(error && /moneda|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ timezone:patch.timezone }).eq("id",st.channelId)); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.timezone=patch.timezone; toast("Guardado ✓");
+    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; toast("Guardado ✓");
   };
 }
 
