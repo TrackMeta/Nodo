@@ -129,7 +129,7 @@ const NAV_GROUPS = [
   { key:"ventas", sec:"Ventas", items:[
     { id:"pedidos",     label:"Pedidos",              href:"pedidos.html",    icon:"kanban" },
     { id:"compras",     label:"Compras",              href:"compras.html",    icon:"pedidos" },
-    { id:"copiloto",    label:"Copiloto",             href:"copiloto.html",   icon:"compass" },
+    { id:"copiloto",    label:"Tu turno",             href:"copiloto.html",   icon:"compass" },
   ]},
   { key:"negocio", sec:"Tu negocio", items:[
     { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },

@@ -301,7 +301,7 @@ function renderTG(){
   $("tgCard").innerHTML=`
     <div class="card">
       <div class="chd"><span class="ico"><img src="${LOGO.tg}" alt="Telegram"/></span>
-        <div><div class="nm">Telegram</div><div class="sub2">Avisos y Copiloto en el celular</div></div>
+        <div><div class="nm">Telegram</div><div class="sub2">Avisos y aprobaciones en el celular</div></div>
         <span class="st ${s.telegram_bot_token?'on':''}">${s.telegram_bot_token?'Conectado':'Sin conectar'}</span></div>
       <div class="desc">Bot que te avisa y por el que puedes <b>aprobar pagos desde el celular</b>. Crea el bot con @BotFather.</div>
       <div style="font-weight:700;font-size:13px;margin-top:14px">1 · El bot</div>
@@ -312,11 +312,11 @@ function renderTG(){
       <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:220px">
-          <div style="font-weight:700;font-size:13px">2 · Copiloto en Telegram ${copiloto?'<span class="st on" style="margin-left:6px">Activo</span>':''}</div>
+          <div style="font-weight:700;font-size:13px">2 · Aprobar desde Telegram ${copiloto?'<span class="st on" style="margin-left:6px">Activo</span>':''}</div>
           <div class="desc" style="margin:4px 0 0">Agrega botones a los avisos para que apruebes el adelanto o sueltes la clave sin abrir el panel.
           ${copiloto?'':'Necesita el bot token de arriba.'}</div>
         </div>
-        <button class="btn" id="tgHook" ${s.telegram_bot_token?'':'disabled'}>${copiloto?'Reconectar':'Activar Copiloto'}</button>
+        <button class="btn" id="tgHook" ${s.telegram_bot_token?'':'disabled'}>${copiloto?'Reconectar':'Activar los botones'}</button>
       </div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
@@ -353,7 +353,7 @@ function renderTG(){
   if(hk) hk.onclick=async(e)=>{
     const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Conectando…";
     try{ await callFn("channel-config",{ action:"telegram_connect", channel_id:st.channelId });
-      toast("Copiloto de Telegram activo ✓"); await load(); }
+      toast("Botones de aprobar activos ✓"); await load(); }
     catch(err){ toast(err.message||"No se pudo conectar",true); b.disabled=false; b.textContent=old; }
   };
   const pr=$("tgPair");
@@ -383,9 +383,9 @@ function pintarDiag(r){
     : fila(false, "El bot token no sirve", esc(r.bot_error||"Telegram lo rechazó. Genera uno nuevo con @BotFather y guárdalo arriba.")));
   if(r.bot){
     filas.push(w.registrado && w.apunta_bien
-      ? fila(true, "El Copiloto está bien conectado", w.pendientes?`Hay ${w.pendientes} actualizaciones en cola.`:"")
-      : fila(false, w.registrado?"El Copiloto apunta a otro lado":"El Copiloto no está conectado",
-             "Toca <b>Activar Copiloto</b> arriba. Sin esto los botones de aprobar no funcionan."));
+      ? fila(true, "Los botones de aprobar están bien conectados", w.pendientes?`Hay ${w.pendientes} actualizaciones en cola.`:"")
+      : fila(false, w.registrado?"Telegram apunta a otro lado":"Los botones de aprobar no están conectados",
+             "Toca <b>Activar los botones</b> arriba. Sin esto los botones de aprobar no funcionan."));
     if(w.ultimo_error) filas.push(fila(false, "Telegram reportó un error reciente", esc(w.ultimo_error)));
     filas.push(r.chats===0
       ? fila(false, "No hay nadie vinculado", "Los avisos no le llegan a nadie. Usa <b>Detectar mi chat ID</b>.")

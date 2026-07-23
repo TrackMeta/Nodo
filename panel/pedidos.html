@@ -51,6 +51,17 @@
   .zona.lima{background:var(--brand-bg);color:var(--brand)}
   .zona.prov{background:var(--amber-bg);color:var(--amber)}
   .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-block;background:var(--surface-2);color:var(--muted)}
+  /* Chip "Tu turno": para ver de un vistazo cuáles tarjetas te están esperando,
+     sin tener que leer el botón de cada una. Sólido (no tinte) para que gane a
+     los badges de estado, que son grises a propósito. */
+  .kc-turno{font-size:10px;font-weight:800;padding:2px 8px;border-radius:12px;letter-spacing:.3px;
+    background:var(--brand);color:#fff;white-space:nowrap}
+  /* Contador arriba del tablero: el atajo para saber si hay algo pendiente sin
+     recorrer las columnas. */
+  .turnobar{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:12.5px;font-weight:700;
+    padding:7px 13px;border-radius:11px;border:1px solid var(--brand);background:var(--brand-bg);color:var(--brand)}
+  .turnobar:hover{background:var(--brand);color:#fff}
+  .turnobar svg{width:15px;height:15px}
   .badge.ok{background:var(--green-bg);color:var(--green)}
   .badge.warn{background:var(--amber-bg);color:var(--amber)}
   .badge.bad{background:var(--red-bg);color:var(--red)}
@@ -81,7 +92,7 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Pedidos</h1>
-        <p class="nodo-lead">Tu tablero de pedidos físicos en marcha. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso. Las decisiones de pago te esperan en el <a href="copiloto.html" style="color:var(--brand)">Copiloto</a>; las ventas ya cobradas, en <a href="compras.html" style="color:var(--brand)">Compras</a>.</p>
+        <p class="nodo-lead">Tu tablero de pedidos físicos en marcha. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso. Las decisiones de pago te esperan en <a href="copiloto.html" style="color:var(--brand)">Tu turno</a>; las ventas ya cobradas, en <a href="compras.html" style="color:var(--brand)">Compras</a>.</p>
       </div>
       <div class="nodo-actions">
         <a href="pagos.html" class="nodo-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y atención</a>
@@ -103,7 +114,7 @@
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null };
+const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 // ── Ciclo de vida del pedido físico ────────────────────────────────
@@ -125,10 +136,10 @@ const KB_PROV=[
 ];
 const FIS_STATES=new Set([...KB_LIMA,...KB_PROV].flatMap(c=>c[2]));
 
-// Estados que se resuelven con TU decisión en el Copiloto (validar un pago):
+// Estados que se resuelven con TU decisión en "Tu turno" (validar un pago):
 // en el tablero mostramos un salto en vez de un avance directo, para que las
 // dos pantallas se complementen y no compitan por el mismo click.
-const COPILOTO_STATES=new Set(["esperando_adelanto","en_agencia"]);
+const TURNO_STATES=new Set(["esperando_adelanto","en_agencia"]);
 
 // La zona la decide orders.js (ahí vive la tabla de estados). Acá había una
 // copia con la lista de estados Lima escrita a mano.
@@ -144,9 +155,26 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"pedidos" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; load(); });
+  shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
   await load();
+  wireRealtime();
+}
+
+// ── En vivo ────────────────────────────────────────────────────────
+// El tablero cambia solo cuando el bot cierra una venta o la IA valida un pago;
+// sin esto te enterabas recién al recargar. Mismo cuidado que en "Tu turno":
+// debounce, y no re-renderizar con un modal o el menú abierto (te movería la
+// tarjeta bajo el dedo). Si está ocupado, reintenta hasta que cierre.
+function ocupado(){ return !!document.querySelector(".overlay, .nodo-modal-back, #ctxMenu"); }
+function wireRealtime(){
+  if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; }
+  if(!st.channelId) return;
+  let t=null;
+  const refrescar=()=>{ clearTimeout(t); t=setTimeout(()=>{ if(ocupado()){ refrescar(); return; } load(); }, 700); };
+  st.rt=supa.channel("nodo-pedidos-"+st.channelId)
+    .on("postgres_changes",{ event:"*", schema:"public", table:"orders", filter:"channel_id=eq."+st.channelId }, refrescar)
+    .subscribe();
 }
 
 async function load(){
@@ -195,8 +223,14 @@ function render(){
   const cols = st.kbZona==="lima" ? KB_LIMA : KB_PROV;
   const zList = list.filter(o=>zonaDe(o)===st.kbZona);
 
+  // Cuántos pedidos de este tablero están frenados esperándote. Va acá arriba
+  // para no tener que recorrer las columnas (ni la otra pantalla) para saberlo.
+  // Cuenta solo lo del tablero físico; los pagos digitales no viven acá.
+  const nTurno=st.list.filter(o=>isFisico(o) && TURNO_STATES.has(o.estado)).length;
   const zbar=$("kbzona");
-  zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv);
+  zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv)
+    +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
+       ${nTurno===1?"1 pedido espera tu decisión":`${nTurno} pedidos esperan tu decisión`}</a>`:"");
   zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; render(); });
 
   box.innerHTML="";
@@ -251,13 +285,13 @@ function kcard(o){
     ? `${adel?`Adelanto <b>${money(adel,o.currency)}</b>`:""}${adel&&saldo?" · ":""}${saldo?`Saldo <b>${money(saldo,o.currency)}</b>`:""}`
     : `Total <b>${money(total(o),o.currency)}</b>`;
   const act=primaryAction(o);
-  const enCopiloto=COPILOTO_STATES.has(o.estado);
+  const enTurno=TURNO_STATES.has(o.estado);
 
-  // Botón principal: si el estado se resuelve en el Copiloto (validar pago),
+  // Botón principal: si el estado se resuelve en "Tu turno" (validar pago),
   // el botón salta allá; si no, avanza el pedido en el mismo tablero.
   let mainBtn="";
-  if(enCopiloto){
-    mainBtn=`<a class="go" href="copiloto.html">${icon("robot")} Validar en Copiloto</a>`;
+  if(enTurno){
+    mainBtn=`<a class="go" href="copiloto.html">${icon("robot")} Validar el pago</a>`;
   } else if(act){
     mainBtn=`<button class="go ${act.co?"co":""}" data-main>${esc(act.label)}</button>`;
   }
@@ -271,6 +305,7 @@ function kcard(o){
       <span>${p.emoji?esc(p.emoji):icon("box")} ${esc(p.nombre||"—")}</span>
       ${zona?`<span class="zona ${zona==="lima"?"lima":"prov"}">${zona==="lima"?"LIMA":"PROVINCIA"}</span>`:""}
       <span class="badge ${badgeClass(o.estado)}">${esc(O.label(o.estado))}</span>
+      ${enTurno?`<span class="kc-turno">TU TURNO</span>`:""}
     </div>
     <div class="kc-money">${moneyLine}</div>
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}

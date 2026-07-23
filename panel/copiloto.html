@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Copiloto</title>
+<title>Nodo · Tu turno</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -64,8 +64,8 @@
   <div class="nodo-wrap">
     <div class="nodo-head">
       <div class="grow">
-        <h1 class="nodo-title">Copiloto</h1>
-        <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú resuelves con un toque. Lo que no necesita decisión no aparece aquí: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
+        <h1 class="nodo-title">Tu turno</h1>
+        <p class="nodo-lead">Lo que necesita <b>tu decisión</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú resuelves con un toque. Se actualiza sola: si entra un pago mientras miras, aparece acá. Lo que no necesita decisión no aparece: eso vive en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
       </div>
       <div class="nodo-actions"><button class="btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
     </div>
@@ -77,7 +77,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, list:[], imgs:{}, dudas:{} };
+const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const sym=(o)=>o.currency==="USD"?"$":"S/";
 
@@ -85,10 +85,29 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"copiloto" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; load(); });
+  shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
   await load();
+  wireRealtime();
+}
+
+// ── En vivo ────────────────────────────────────────────────────────
+// Los pagos entran MIENTRAS miras la pantalla; tener que apretar "Actualizar"
+// para enterarte es lo contrario de lo que promete esta sección.
+// Dos cuidados: (1) debounce, porque un solo pago toca la fila varias veces
+// seguidas; (2) no re-renderizar con un modal o el lightbox abierto — le
+// movería la tarjeta bajo el dedo justo cuando iba a aprobar. Si está ocupado,
+// reintenta hasta que cierre.
+function ocupado(){ return !!document.querySelector(".nodo-modal-back") || $("lightbox").classList.contains("show"); }
+function wireRealtime(){
+  if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; }
+  if(!st.channelId) return;
+  let t=null;
+  const refrescar=()=>{ clearTimeout(t); t=setTimeout(()=>{ if(ocupado()){ refrescar(); return; } load(); }, 700); };
+  st.rt=supa.channel("nodo-turno-"+st.channelId)
+    .on("postgres_changes",{ event:"*", schema:"public", table:"orders", filter:"channel_id=eq."+st.channelId }, refrescar)
+    .subscribe();
 }
 
 // Las 4 etapas donde el sistema TE NECESITA. Cada una es un momento real de tu
