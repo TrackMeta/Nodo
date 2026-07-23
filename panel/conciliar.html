@@ -85,12 +85,13 @@
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
 import { leerReporte, emparejar, pagosSinVenta } from "./conciliar.js";
+import { mountDateRange, computePreset, rangeLabel } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const money=(v)=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fFecha=(d)=>d?new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(d):"—";
 
-const st={ channelId:null, desde:null, hasta:null, archivo:null, rep:null,
+const st={ channelId:null, rango:null, archivo:null, rep:null,
            ventas:[], res:null, sinVenta:null, cubeta:"cuadradas", decisiones:new Map(), verAjenos:false };
 
 // El pago SIEMPRE ocurre antes del comprobante, y el comprobante antes de que
@@ -104,8 +105,7 @@ async function boot(){
   const shell=await mountShell({ active:"compras" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.rep=null; st.res=null; render(); });
-  const hoy=new Date(); const antes=new Date(hoy.getTime()-30*86400000);
-  st.hasta=hoy.toISOString().slice(0,10); st.desde=antes.toISOString().slice(0,10);
+  st.rango=computePreset("30d");
   render();
 }
 
@@ -114,9 +114,8 @@ function render(){
   if(st.res) return renderResultado();
   $("view").innerHTML=`
     <div class="card">
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
-        <div><label>Desde</label><input class="in" type="date" id="fDesde" value="${st.desde}"/></div>
-        <div><label>Hasta</label><input class="in" type="date" id="fHasta" value="${st.hasta}"/></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <div><label>Periodo</label><div id="dr"></div></div>
         <div class="hint" style="flex:1;min-width:220px;margin:0">Se revisan las ventas <b>cobradas al 100%</b> de estas fechas. Del archivo leo también unas horas antes, porque el pago siempre entra antes del comprobante.</div>
       </div>
       <div class="drop" id="drop">
@@ -134,8 +133,7 @@ function render(){
   ["dragenter","dragover"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("over");}));
   ["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("over");}));
   drop.addEventListener("drop",ev=>{ const f=ev.dataTransfer.files[0]; if(f) setArchivo(f); });
-  $("fDesde").onchange=(e)=>st.desde=e.target.value;
-  $("fHasta").onchange=(e)=>st.hasta=e.target.value;
+  mountDateRange($("dr"), { valor:st.rango, onChange:(r)=>{ st.rango=r; } });
   $("go").onclick=conciliar;
 }
 function setArchivo(f){
@@ -152,7 +150,9 @@ async function conciliar(){
   }catch(e){ toast(e.message||"No pude leer el archivo",true); b.disabled=false; b.textContent="Conciliar"; return; }
 
   b.textContent="Cruzando…";
-  const desde=new Date(st.desde+"T00:00:00"), hasta=new Date(st.hasta+"T23:59:59");
+  const r0=st.rango||computePreset("30d");
+  const desde=new Date(r0.from.getFullYear(),r0.from.getMonth(),r0.from.getDate(),0,0,0);
+  const hasta=new Date(r0.to.getFullYear(),r0.to.getMonth(),r0.to.getDate(),23,59,59);
   // Ventas cobradas al 100% del rango (mismo criterio que Compras).
   const { data:ords }=await supa.from("orders")
     .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
@@ -217,7 +217,7 @@ function renderResultado(){
   ];
   $("view").innerHTML=`
     <div class="card" style="padding:14px 16px;margin-bottom:14px">
-      <div class="muted"><b>${esc(st.archivo.name)}</b> · formato ${esc(st.rep.formato)} · ${st.movsEnRango} movimientos en el rango
+      <div class="muted"><b>${esc(st.archivo.name)}</b> · formato ${esc(st.rep.formato)} · <b>${esc(rangeLabel(st.rango))}</b> · ${st.movsEnRango} movimientos en el rango
       ${st.rep.salientes?` · ${st.rep.salientes} salidas ignoradas`:""}
       ${r.yaConciliadas.length?` · ${r.yaConciliadas.length} ventas ya conciliadas antes (no se tocan)`:""}
       <button class="btn sm" id="otro" style="margin-left:10px">Otro archivo</button></div>
