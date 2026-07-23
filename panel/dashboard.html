@@ -407,18 +407,19 @@ async function load(){
 function renderBand(b){
   const box=$("pband"); if(!box) return;
   const brutaS = b.tipo==="digital"
-    ? "sin costo de mercadería ni envío (digital)"
+    ? ""
     : (b.sinCostoF?`tras mercadería y envío · faltan costos en ${b.sinCostoF} pedido${b.sinCostoF>1?"s":""}`:"tras mercadería y envío");
+  const brutaSub = brutaS?`<span class="pb-s">${brutaS}</span>`:"";
   if(!b.hasAds){
     box.innerHTML=`
-      <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v green">${money(b.bruta)}</span><span class="pb-s">${brutaS}</span></div>
+      <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v green">${money(b.bruta)}</span>${brutaSub}</div>
       <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> y aquí verás tu <b>ganancia NETA</b> (después de publicidad), tu ROAS y cuánto se te va en ads.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";
   const roasTxt = b.roas>0?`ROAS ${b.roas.toFixed(1)}× · `:"";
   box.innerHTML=`
-    <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${money(b.bruta)}</span><span class="pb-s">${brutaS}</span></div>
+    <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${money(b.bruta)}</span>${brutaSub}</div>
     <span class="pb-op">−</span>
     <div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>
     <span class="pb-op">=</span>
