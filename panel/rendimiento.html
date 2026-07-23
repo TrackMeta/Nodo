@@ -201,7 +201,9 @@ async function loadData(){
   (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=(o.created_at||"").slice(0,10); const d=day(row,f);
     if(esConf){ row.conf++; d.conf++; }
     if(esVenta){ row.ventas++; row.ingresos+=tot; row._margen+=(mg==null?tot:mg); d.ventas++; d.ingresos+=tot; }
-    if(!row.tag){ const z=O.zonaDe(o); row.tag=z==="lima"?"lima":z==="provincia"?"provincia":"digital"; }
+    // Un anuncio vende UN producto, y ese producto o es digital o es fisico -> etiqueta sin ambiguedad.
+    // (La zona no sirve: un mismo anuncio fisico vende a Lima y a provincia.) Zona solo como respaldo si el pedido no trae producto.
+    if(!row.tag){ const t=o.product&&o.product.tipo; row.tag = t==="fisico"?"fisico" : t==="digital"?"digital" : (O.zonaDe(o)==="digital"?"digital":"fisico"); }
     if(!row.prod && o.product){ row.prod=(o.product.emoji?o.product.emoji+" ":"")+(o.product.nombre||""); row.prodTag=o.product.tipo==="fisico"?"fisico":"digital"; }
   });
   Object.values(byAd).forEach(row=>{ row.neta=row._margen-row.gasto; });   // ganancia neta = margen − gasto de ads
@@ -294,7 +296,7 @@ function render(){
         <div class="drpop" id="drPop"></div>
       </div>
       <span class="tlabel">Tipo</span>
-      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["lima","Lima"],["provincia","Provincia"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
+      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["fisico","Físico"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
       ${st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
       <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
       <div class="seg" id="vista">
