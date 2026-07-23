@@ -88,6 +88,7 @@
     <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Deja todo vacío para enviar a <b>todos</b> los contactos del canal.</div>
     <label>Con estas etiquetas</label><div class="tagpick" id="m_tags"></div>
     <label>En estas etapas del embudo</label><div class="stagepick" id="m_stages"></div>
+    <label>En estas etapas de logística <span style="color:var(--faint);font-weight:400">(según el Kanban de Pedidos)</span></label><div class="stagepick" id="m_ostates"></div>
     <label>Cómo combinar los filtros</label>
     <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera — contactos que cumplan al menos un filtro</option><option value="todas">Todas — contactos que cumplan todos los filtros</option></select>
   </div>
@@ -103,7 +104,9 @@ const $=(id)=>document.getElementById(id);
 // Etapas reales del ciclo de vida del contacto (contacts.stage). Se quitaron
 // los placeholders p1–p4 que no correspondían a ninguna etapa del negocio.
 const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
-const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set() };
+// Estados del Kanban de Pedidos (orders.estado) para segmentar por logística.
+const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirmado (Lima)"],["en_reparto","En reparto"],["reprogramado","Reprogramado"],["entregado_cobrado","Entregado y cobrado"],["esperando_adelanto","Esperando adelanto"],["adelanto_validado","Adelanto validado"],["por_despachar","Por despachar"],["despachado","Despachado"],["en_agencia","En agencia"],["saldo_pagado","Saldo pagado"],["recogido","Recogido"],["no_recogido","No recogido"],["rechazado","Rechazado"]];
+const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
@@ -154,7 +157,7 @@ function renderGrid(){
     el.innerHTML=`
       <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${(c.estado||"").replace(/^./,c=>c.toUpperCase())}</span></div>
       <div class="meta">Plantilla: <b>${tpl?esc(tpl.name):"—"}</b><br>
-        Segmento: <b>${(seg.tags||[]).length?esc((seg.tags||[]).join(", ")):"todos"}</b>${(seg.stage||[]).length?` · ${esc((seg.stage||[]).join(", "))}`:""}<br>
+        Segmento: <b>${(seg.tags||[]).length?esc((seg.tags||[]).join(", ")):"todos"}</b>${(seg.stage||[]).length?` · ${esc((seg.stage||[]).join(", "))}`:""}${(seg.order_estados||[]).length?` · 📦 ${esc((seg.order_estados||[]).join(", "))}`:""}<br>
         ${c.programada_at?`Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:"Envío inmediato al activar"}</div>
       ${c.estado!=="borrador"?`<div class="bars"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div>
         <div class="meta">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
@@ -187,11 +190,13 @@ function openModal(c){
   $("m_tpl").innerHTML=`<option value="">— elige —</option>`+st.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.language)})</option>`).join("");
   $("m_tpl").value=c?.template_id||"";
   const seg=c?.segmento||{};
-  st.pickTags=new Set(seg.tags||[]); st.pickStages=new Set(seg.stage||[]);
+  st.pickTags=new Set(seg.tags||[]); st.pickStages=new Set(seg.stage||[]); st.pickOStates=new Set(seg.order_estados||[]);
   $("m_tags").innerHTML=st.tags.length?st.tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}" style="${st.pickTags.has(t.nombre)?`background:${h}22;color:${h}`:''}">${esc(t.nombre)}</span>`;}).join(""):'<span style="color:var(--faint);font-size:12px">Sin etiquetas (crea en Etiquetas)</span>';
   $("m_stages").innerHTML=STAGES.map(([s,l])=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}" style="${st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
   $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const n=el.dataset.t; if(st.pickTags.has(n))st.pickTags.delete(n); else st.pickTags.add(n); const t=st.tags.find(x=>x.nombre===n),h=tagHex(t?.color); el.classList.toggle("on"); el.style.cssText=st.pickTags.has(n)?`background:${h}22;color:${h}`:''; });
   $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.s; if(st.pickStages.has(s))st.pickStages.delete(s); else st.pickStages.add(s); el.classList.toggle("on"); el.style.cssText=st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
+  $("m_ostates").innerHTML=ORDER_STATES.map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}" style="${st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
+  $("m_ostates").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.o; if(st.pickOStates.has(s))st.pickOStates.delete(s); else st.pickOStates.add(s); el.classList.toggle("on"); el.style.cssText=st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
   $("m_modo").value=seg.modo||"cualquiera";
   $("m_prog").value=c?.programada_at?new Date(c.programada_at).toISOString().slice(0,16):"";
   $("modal").classList.add("show");
@@ -199,7 +204,7 @@ function openModal(c){
 async function saveCampaign(){
   const nombre=$("m_nombre").value.trim();
   if(!nombre){ toast("Escribe un nombre",true); return; }
-  const segmento={ tags:[...st.pickTags], stage:[...st.pickStages], modo:$("m_modo").value };
+  const segmento={ tags:[...st.pickTags], stage:[...st.pickStages], order_estados:[...st.pickOStates], modo:$("m_modo").value };
   const row={ channel_id:st.channelId, nombre, folder:$("m_folder").value||null, template_id:$("m_tpl").value||null,
     segmento, programada_at:$("m_prog").value?new Date($("m_prog").value).toISOString():null };
   let error;

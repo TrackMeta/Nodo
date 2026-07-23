@@ -61,6 +61,17 @@ async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Pr
       return modo === "todas" ? tags.every((t) => s.has(t)) : tags.some((t) => s.has(t));
     });
   }
+
+  // Segmento por estado del ÚLTIMO pedido (embudo de logística = Kanban de Pedidos).
+  const orderStates: string[] = seg.order_estados ?? [];
+  if (orderStates.length && ids.length) {
+    const { data: ords } = await db.from("orders")
+      .select("contact_id, estado, created_at").in("contact_id", ids)
+      .order("created_at", { ascending: false });
+    const latest: Record<string, string> = {};
+    (ords ?? []).forEach((o: any) => { if (o.contact_id && !(o.contact_id in latest)) latest[o.contact_id] = o.estado; });
+    ids = ids.filter((id) => orderStates.includes(latest[id]));
+  }
   return ids;
 }
 

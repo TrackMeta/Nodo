@@ -308,7 +308,12 @@ function renderEntregas(b){
     r.querySelector("[data-sw]").classList.toggle("on", E[k]===true);
   });
   paintEnvio();
-  b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{ const k=x.dataset.dia; E.dias[k]=!(E.dias[k]!==false); renderEntregas(b); });
+  b.querySelectorAll(".dbtn").forEach(x=> x.onclick=()=>{
+    const k=x.dataset.dia; const on=!(E.dias[k]!==false); E.dias[k]=on; // flip y persiste en E (no re-render: eso re-clona y pierde el cambio)
+    x.style.border="1.5px solid "+(on?"var(--brand)":"var(--border)");
+    x.style.background=on?"var(--brand)":"transparent";
+    x.style.color=on?"#fff":"var(--muted)";
+  });
   $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
   $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
   $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
