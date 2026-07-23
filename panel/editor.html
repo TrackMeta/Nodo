@@ -213,6 +213,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
+import { attachVarPicker } from "./var-picker.js";
 const $ = (id) => document.getElementById(id);
 
 // Salidas (handles) por defecto de cada tipo de nodo. El aspecto visual
@@ -345,7 +346,16 @@ function contentCard(m, i, ia){
   return el;
 }
 function mkLabel(t){ const l=document.createElement("label"); l.textContent=t; l.style.cssText="font-size:11px;color:var(--muted);display:block;margin:12px 0 5px"; return l; }
-function mkTextarea(v, oninput, min){ const t=document.createElement("textarea"); t.className="ta"; if(min)t.style.minHeight=min; t.value=v||""; t.oninput=()=>oninput(t.value); return t; }
+// `vars:false` para las cajas donde un {{dato}} no tiene sentido (notas internas).
+// En el resto va el botón "Insertar dato": los mensajes siempre aceptaron
+// variables, pero había que saberse el nombre exacto de memoria, y uno mal
+// escrito no da error — sale vacío en el mensaje del cliente.
+function mkTextarea(v, oninput, min, opts){
+  const t=document.createElement("textarea"); t.className="ta"; if(min)t.style.minHeight=min; t.value=v||"";
+  t.oninput=()=>oninput(t.value);
+  if(!opts || opts.vars!==false) queueMicrotask(()=>{ if(t.isConnected) attachVarPicker(t,{ supa, channelId:st.channelId, onChange:oninput }); });
+  return t;
+}
 function mkInput(v, oninput){ const i=document.createElement("input"); i.className="in"; i.value=v||""; i.oninput=()=>oninput(i.value); return i; }
 
 // ── Multimedia: subir/vista previa (compartido por Mensaje/Pregunta) ──
@@ -1058,7 +1068,7 @@ function buildAccionBody(a, b){
     case "add_tag": case "remove_tag": L("Etiqueta"); V("valor","nombre de la etiqueta"); break;
     case "set_field": L("Campo"); b.appendChild(mkInput(a.key,(v)=>a.key=v)); L("Valor"); V("valor","texto o {{variable}}"); break;
     case "clear_field": L("Campo a limpiar"); b.appendChild(mkInput(a.key,(v)=>a.key=v)); break;
-    case "nota": L("Texto de la nota (queda en el Timeline)"); b.appendChild(mkTextarea(a.valor,(v)=>a.valor=v,"56px")); break;
+    case "nota": L("Texto de la nota (queda en el Timeline)"); b.appendChild(mkTextarea(a.valor,(v)=>a.valor=v,"56px",{vars:false})); break;
     case "transfer_human": L("Mensaje al equipo (opcional)"); V("mensaje","{{nombre}} necesita ayuda"); break;
     case "notify_admin": L("Mensaje para administradores"); V("mensaje","texto o {{variable}}"); L("Foto adjunta (opcional)"); V("foto","{{ultima_imagen}}"); break;
     case "subscribe_seq": case "unsubscribe_seq": L("Secuencia"); buildSeqSelect(a, b); break;

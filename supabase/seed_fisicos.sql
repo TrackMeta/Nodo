@@ -27,6 +27,7 @@ declare
   m1 uuid := gen_random_uuid(); m2 uuid := gen_random_uuid(); m3 uuid := gen_random_uuid();
   m4 uuid := gen_random_uuid(); m5 uuid := gen_random_uuid(); m6 uuid := gen_random_uuid();
   m7 uuid := gen_random_uuid(); m8 uuid := gen_random_uuid(); mfin uuid := gen_random_uuid();
+  m9 uuid := gen_random_uuid(); m10 uuid := gen_random_uuid();
   f3 uuid := gen_random_uuid(); s1 uuid := gen_random_uuid(); sfin uuid := gen_random_uuid();
   f4 uuid := gen_random_uuid(); r1 uuid := gen_random_uuid(); rfin uuid := gen_random_uuid();
 begin
@@ -128,6 +129,13 @@ begin
       '{"bubbles":[{"text":"✅ ¡Pago confirmado!\n\n🔑 Tu clave de recojo: *{{pedido_clave_recojo}}*\n📄 Guía: {{pedido_guia}}\n\nRecoge tu pedido en {{pedido_agencia}} {{pedido_sede}} presentando tu DNI. ¡Gracias por tu compra, {{nombre}}! 🙌"}]}'::jsonb, false, 1480, 120),
     (m7, f2, 'evento_fb', 'Purchase',
       '{"event_name":"Purchase","currency":"PEN","value":"{{pedido_monto}}","order_id":"{{pedido_guia}}"}'::jsonb, false, 1760, 120),
+    -- El negocio decide en Pagos y atención → Agente de logística si la clave
+    -- sale sola o la aprueba él. Sin esta bifurcación este flujo soltaba la
+    -- clave con su propio OCR, saltándose ese ajuste en silencio.
+    (m9, f2, 'condicion', '¿Logística automática?',
+      '{"rutas":[{"handle":"ruta:auto","nombre":"Automática","match":"todas","condiciones":[{"op":"campo_igual","campo":"logistica_modo","valor":"auto"}]}]}'::jsonb, false, 1090, 120),
+    (m10, f2, 'mensaje', 'Lo estoy verificando',
+      '{"bubbles":[{"text":"¡Gracias! Ya recibí tu comprobante 🙌\n\nLo estoy verificando y te mando tu clave de recojo apenas confirme el pago."}]}'::jsonb, false, 1200, 250),
     (m8, f2, 'mensaje', 'Comprobante no válido',
       '{"bubbles":[{"text":"No pude validar ese comprobante 🤔\n\n¿Me reenvías la captura nítida del pago de *S/ {{pedido_saldo}}*? Si necesitas ayuda escribe \"ayuda\" 🙌"}]}'::jsonb, false, 1200, 360),
     (mfin, f2, 'fin', 'Fin', '{}'::jsonb, false, 2040, 220);
@@ -138,8 +146,11 @@ begin
     (f2, m2, 'si_no_cumple', m8),
     (f2, m3, 'exito', m4),
     (f2, m3, 'fallo', m8),
-    (f2, m4, 'ruta:pago_ok', m5),
+    (f2, m4, 'ruta:pago_ok', m9),
     (f2, m4, 'si_no_cumple', m8),
+    (f2, m9, 'ruta:auto', m5),
+    (f2, m9, 'si_no_cumple', m10),
+    (f2, m10, 'continuar', mfin),
     (f2, m5, 'continuar', m6),
     (f2, m6, 'continuar', m7),
     (f2, m7, 'exito', mfin),
