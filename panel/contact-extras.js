@@ -198,7 +198,7 @@ export function printRotulo(o, remitente) {
   w.document.open(); w.document.write(html); w.document.close();
 }
 
-// Estilos de las tarjetas nuevas de la ficha (Copiloto, Pedido, acciones,
+// Estilos de las tarjetas nuevas de la ficha (pago por validar, Pedido, acciones,
 // campos técnicos). Se inyectan una vez por página con injectExtrasCss().
 export const EXTRAS_CSS = `
   /* Secciones desplegables (acordeón) */
@@ -225,7 +225,7 @@ export const EXTRAS_CSS = `
   /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */
   .cpanel .cx-sec:not([open])>.cx-sec-body{display:none}
   .cpanel .cf-tech:not([open])>*:not(summary){display:none}
-  /* Copiloto en la ficha (validación de pagos in-situ) */
+  /* Pagos por validar, dentro de la ficha */
   .cpanel .cx-copiloto{border:1.5px solid var(--brand);border-radius:14px;padding:12px;margin:12px 0 4px;background:var(--surface-2);display:flex;flex-direction:column;gap:9px}
   .cpanel .cx-cop2-hd{display:flex;align-items:center;gap:8px;color:var(--brand)}
   .cpanel .cx-cop2-pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;border-radius:999px}
@@ -233,8 +233,6 @@ export const EXTRAS_CSS = `
   .cpanel .cx-cop2-pill.ext{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
   .cpanel .cx-cop2-pill.adel{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
   .cpanel .cx-cop2-pill.saldo{background:var(--brand-bg);color:var(--brand)}
-  .cpanel .cx-cop2-pill.desp{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
-  .cpanel .cx-cop2-pill.camino{background:var(--surface);color:var(--muted)}
   .cpanel .cx-cop2-img{width:100%;max-height:190px;object-fit:cover;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;background:var(--surface)}
   .cpanel .cx-cop2-noimg{width:100%;height:74px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px}
   .cpanel .cx-cop2-amt{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
@@ -248,7 +246,6 @@ export const EXTRAS_CSS = `
   .cpanel .cx-cop2-btn{flex:1;min-width:120px;height:38px;border-radius:10px;border:none;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
   .cpanel .cx-cop2-btn.main{background:var(--green);color:#04140c}
   .cpanel .cx-cop2-btn.main.blue{background:var(--brand);color:#fff}
-  .cpanel .cx-cop2-btn.main.amber{background:var(--amber);color:#231a05}
   .cpanel .cx-cop2-btn.main:hover{filter:brightness(1.07)}
   .cpanel .cx-cop2-btn.danger{flex:none;min-width:0;padding:0 14px;background:transparent;color:var(--red);border:1px solid var(--border)}
   .cpanel .cx-cop2-btn.danger:hover{background:var(--red-bg,rgba(239,68,68,.12))}
@@ -261,7 +258,7 @@ export const EXTRAS_CSS = `
   .cpanel .cx-btn.ia{background:linear-gradient(135deg,#a855f7,#ec4899);border:none;color:#fff;box-shadow:0 3px 10px rgba(168,85,247,.32)}
   .cpanel .cx-btn.ia:hover{background:linear-gradient(135deg,#9333ea,#db2777)}
   .cpanel .cx-btn:disabled{opacity:.5;cursor:not-allowed}
-  /* Copiloto en la ficha */
+  /* Sugerencias de la IA en la ficha (bloque aparte del pago por validar) */
   .cx-cop{margin-top:8px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface-2)}
   .cx-cop-hd{display:flex;align-items:center;gap:8px;padding:9px 11px;font-size:11px;font-weight:700;
     letter-spacing:.4px;text-transform:uppercase;color:#a855f7;background:linear-gradient(135deg,rgba(168,85,247,.10),rgba(236,72,153,.08))}
@@ -294,10 +291,13 @@ export const EXTRAS_CSS = `
   .cf-tech .cf-trow .v{color:var(--muted);text-align:right;word-break:break-word;max-width:45%}
 `;
 
-// ── Copiloto en la ficha ───────────────────────────────────────────
-// El mismo cockpit de decisión de copiloto.html, pero adaptado al panel
-// angosto y enfocado en UN pedido (el del contacto abierto). Solo aparece
-// cuando ese pedido necesita TU decisión (validar un pago, despachar, avisar).
+// ── Pagos por validar, dentro de la ficha ──────────────────────────
+// La misma decisión de copiloto.html pero adaptada al panel angosto y enfocada
+// en UN pedido (el del contacto abierto). Aparece solo cuando ese pedido tiene
+// un comprobante esperando tu visto bueno.
+// MOVER el pedido (despachar, avisar que llegó) NO va acá: vive en Pedidos.
+// Tenerlo también en la ficha guardaba un despacho a medias —sin agencia ni
+// sede, y sin limpiar la alerta de sede Shalom— según por dónde entraras.
 const ROBOT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="7" r="4"/><path d="M12 11v0M8 16h.01M16 16h.01"/></svg>';
 
 // La etapa de decisión de un pedido (subconjunto de las ETAPAS de copiloto.html).
@@ -309,8 +309,6 @@ export function copilotoEtapa(o) {
   if (s.extra_pendiente) return { id: "extra", titulo: "Venta extra por validar", pill: "ext" };
   if (o.estado === "esperando_adelanto") return { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" };
   if (o.estado === "en_agencia") return { id: "saldo", titulo: "Saldo por validar", pill: "saldo" };
-  if (o.estado === "adelanto_validado" || o.estado === "por_despachar") return { id: "despachar", titulo: "Listo para despachar", pill: "desp" };
-  if (o.estado === "despachado") return { id: "camino", titulo: "En camino a la agencia", pill: "camino" };
   return null;
 }
 
@@ -330,12 +328,10 @@ function copilotoBtns(et) {
   if (et.id === "digital") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
   if (et.id === "extra") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
   if (et.id === "adelanto") return B("ok", "✓ Aprobar y avisar") + B("no", "Rechazar", "danger");
-  if (et.id === "saldo") return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
-  if (et.id === "despachar") return B("desp", "📦 Ya lo envié", "main amber");
-  return B("lleg", "📍 Avisar que llegó");
+  return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
 }
 
-// La tarjeta compacta del Copiloto para la ficha (imagen, monto, veredicto,
+// La tarjeta compacta de pago por validar para la ficha (imagen, monto, veredicto,
 // botones). `fallbackImg` = último comprobante entrante, por si el pedido no lo
 // guardó en shipping.
 export function copilotoCardHtml(o, et, fallbackImg) {
@@ -364,10 +360,10 @@ export function copilotoCardHtml(o, et, fallbackImg) {
 }
 
 // Engancha los botones de la tarjeta. deps = { supa, toast, confirmDialog,
-// askChoice, askText, reload } (los provee cada página: la Bandeja y Probar).
+// askChoice, reload } (los provee cada página: la Bandeja y Probar).
 export function wireCopiloto(root, o, et, deps) {
   const el = root.querySelector(".cx-copiloto"); if (!el) return;
-  const { supa, toast, confirmDialog, askChoice, askText, reload } = deps;
+  const { supa, toast, confirmDialog, askChoice, reload } = deps;
   const c = o.contact || {};
   const img = el.querySelector(".cx-cop2-img[data-full]");
   if (img) img.onclick = () => window.open(img.dataset.full, "_blank");
@@ -406,22 +402,11 @@ export function wireCopiloto(root, o, et, deps) {
     if (r && pausa) { try { await supa.from("contacts").update({ bot_activo: false }).eq("id", o.contact_id); } catch (_) { /* */ } }
     if (r) { toast(pausa ? "Rechazado · el bot quedó en pausa" : (r.rejected ? "Rechazado · el bot le pide otro comprobante" : "Marcado como rechazado")); reload && reload(); }
   };
-  const despachar = async () => {
-    const guia = await askText({ title: "Ya lo envié", label: "Número de guía de la agencia", placeholder: "Ej. 0012345678", confirmText: "Siguiente" });
-    if (!guia) return;
-    const clave = await askText({ title: "Clave de recojo", label: "La clave que le pedirás al cliente al recoger (opcional ahora)", placeholder: "Ej. 4821" });
-    const costo = await askText({ title: "¿Cuánto te costó enviarlo?", message: "Es para calcular tu ganancia real. El cliente nunca lo ve.", label: "Lo tienes en el recibo de la agencia", placeholder: "Ej. 18", confirmText: "Guardar" });
-    const flete = (costo ?? "").trim();
-    const r = await update({ order_id: o.id, estado: "despachado", shipping: { guia, ...(clave ? { clave_recojo: clave } : {}), ...(flete === "" ? {} : { flete: Number(flete) || 0 }) } });
-    if (r) { toast(r.flow_started ? "Despachado ✓ · el bot le manda la guía" : "Despachado ✓"); reload && reload(); }
-  };
   const b = (a) => el.querySelector(`[data-a="${a}"]`);
   if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }
   else if (et.id === "extra") { b("ok").onclick = aprobarExtra; b("no").onclick = () => rechazar("extra"); }
   else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para despachar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
-  else if (et.id === "saldo") { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
-  else if (et.id === "despachar") { b("desp").onclick = despachar; }
-  else if (et.id === "camino") { b("lleg").onclick = () => aprobar("en_agencia", "Avisar que llegó", "El bot le avisa que ya puede recogerlo y le pide el saldo."); }
+  else { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
 }
 
 let cssInjected = false;
