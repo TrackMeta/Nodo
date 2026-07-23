@@ -49,7 +49,11 @@
   .funnel .flabel{width:120px;flex:none;font-size:13px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
   .funnel .fbar{flex:1;height:28px;background:var(--surface-2);border-radius:8px;overflow:hidden}
   .funnel .fbar span{display:block;height:100%;border-radius:8px;min-width:2px;transition:width .4s}
-  .funnel .fval{width:56px;flex:none;text-align:right;font-weight:650;font-size:14px}
+  .funnel .fval{width:64px;flex:none;text-align:right;font-weight:650;font-size:14px}
+  .funnel .frow[data-stage]:hover .fbar{outline:1px solid var(--border-strong,#2b3644)}
+  .conv{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .convpill{font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:5px 11px;color:var(--muted)}
+  .convpill b{color:var(--text)}
   .stages{display:flex;flex-direction:column;gap:10px}
   .srow{display:flex;align-items:center;gap:12px}
   .srow .sl{width:100px;flex:none;font-size:12.5px;color:var(--muted);text-transform:capitalize;font-weight:500}
@@ -125,8 +129,9 @@
         <div id="salesChart"></div>
       </div>
       <div class="panel">
-        <h3>Embudo de conversión</h3><p class="ps">Eventos enviados a Meta en el periodo</p>
+        <h3>Embudo</h3><p class="ps">Dónde está cada contacto en el camino de compra · en vivo · <a href="embudo.html" style="color:var(--brand)">ver detalle</a></p>
         <div class="funnel" id="funnel"></div>
+        <div class="conv" id="conv"></div>
       </div>
     </div>
 
@@ -135,15 +140,9 @@
       <div id="productPerf"></div>
     </div>
 
-    <div class="cols">
-      <div class="panel">
-        <h3>Ventas extra</h3><p class="ps">Productos vendidos junto al principal</p>
-        <div id="bumps"></div>
-      </div>
-      <div class="panel">
-        <h3>Contactos por etapa</h3><p class="ps">Distribución actual del embudo (en vivo)</p>
-        <div class="stages" id="stages"></div>
-      </div>
+    <div class="panel">
+      <h3>Ventas extra</h3><p class="ps">Productos vendidos junto al principal</p>
+      <div id="bumps"></div>
     </div>
   </div>
 </div>
@@ -151,6 +150,7 @@
 <script type="module">
 import { supa, mountShell } from "./shell.js";
 import * as O from "./orders.js";
+import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
 const money=(n)=>"S/ "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Anima los números de los KPIs (0 → valor) al cargar. Genérico: separa prefijo
@@ -398,11 +398,10 @@ async function load(){
   animateNums($("kpis"));
   renderBand({ bruta, gastoAds, neta, roas, pctAds, hasAds, sinCostoF });
 
-  renderFunnel(ev);
+  renderFunnel(s.por_stage||{});
   renderSales(orders, r, dailyMargin, dailySpend, hasAds);
   renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
-  renderStages(s.por_stage||{});
 }
 
 function renderBand(b){
@@ -423,12 +422,22 @@ function renderBand(b){
     <span class="pb-op">=</span>
     <div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${netaCls}">${money(b.neta)}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`;
 }
-function renderFunnel(ev){
-  const c={ Lead:0, InitiateCheckout:0, Purchase:0 };
-  ev.forEach(e=>{ if(c[e.event_name]!==undefined) c[e.event_name]++; });
-  const rows=[["Leads","#2b7fff",c.Lead],["Checkout","#f0a92b",c.InitiateCheckout],["Compras","#22c079",c.Purchase]];
-  const max=Math.max(1,c.Lead,c.InitiateCheckout,c.Purchase);
-  $("funnel").innerHTML=rows.map(([l,col,v])=>`<div class="frow"><div class="flabel"><span style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block"></span>${l}</div><div class="fbar"><span style="width:${Math.round(v/max*100)}%;background:${col}"></span></div><div class="fval">${v}</div></div>`).join("");
+// Embudo de contactos por etapa (mismo que la sección Embudos): foto EN VIVO,
+// no filtrada por fecha. Sale de dashboard_stats.por_stage.
+function renderFunnel(porStage){
+  const c={}; STAGES.forEach(s=>c[s.k]=Number(porStage[s.k]||0));
+  if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
+  const total=STAGES.reduce((a,s)=>a+c[s.k],0);
+  const pct=(n)=> total?Math.round(n/total*100):0;
+  if(!total){ $("funnel").innerHTML=`<div class="empty">Aún no hay contactos en este canal.</div>`; $("conv").innerHTML=""; return; }
+  const max=Math.max(1,...STAGES.map(s=>c[s.k]));
+  $("funnel").innerHTML=STAGES.map(s=>{
+    const n=c[s.k];
+    return `<div class="frow" data-stage="${s.k}" style="cursor:pointer" title="Ver «${s.label}» en la Bandeja"><div class="flabel"><span style="width:9px;height:9px;border-radius:50%;background:${s.color};display:inline-block;flex:none"></span>${s.label}</div><div class="fbar"><span style="width:${Math.round(n/max*100)}%;background:${s.color}"></span></div><div class="fval">${n}<span style="color:var(--faint);font-weight:400;font-size:11px"> · ${pct(n)}%</span></div></div>`;
+  }).join("");
+  $("funnel").querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=> location.href="index.html?stage="+b.dataset.stage);
+  const interes=c.interesado+c.confirmado+c.comprado;
+  $("conv").innerHTML=`<span class="convpill">Conversión a compra: <b>${pct(c.comprado)}%</b></span><span class="convpill">Mostraron interés: <b>${pct(interes)}%</b></span><span class="convpill">Se perdieron: <b>${pct(c.perdido)}%</b></span>`;
 }
 
 function renderSales(orders, r, dailyMargin, dailySpend, hasAds){
@@ -519,12 +528,6 @@ function renderBumps(bumpMap, ingBump, unavailable){
   box.innerHTML=`<table class="ptable"><thead><tr><th>Venta extra</th><th class="r">Vendidos</th><th class="r">Ingresos</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function renderStages(st){
-  const box=$("stages"); const entries=Object.entries(st);
-  if(!entries.length){ box.innerHTML=`<div class="empty">Sin datos de etapas aún</div>`; return; }
-  const max=Math.max(1,...entries.map(([,v])=>v));
-  box.innerHTML=entries.map(([k,v])=>`<div class="srow"><div class="sl">${esc(k)}</div><div class="sbar"><span style="width:${Math.round(v/max*100)}%"></span></div><div class="sv">${v}</div></div>`).join("");
-}
 boot();
 </script>
 </body>
