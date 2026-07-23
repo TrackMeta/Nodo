@@ -19,7 +19,21 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   /* KPIs */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin:22px 0 22px}
+  /* Banda de rentabilidad: ganancia bruta − publicidad = ganancia neta */
+  .pband{display:flex;align-items:stretch;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 6px;margin:22px 0 0}
+  .pband:empty{display:none}
+  .pb-step{flex:1;min-width:150px;padding:6px 18px;display:flex;flex-direction:column;gap:3px;justify-content:center}
+  .pb-l{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .pb-v{font-size:24px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+  .pb-v.big{font-size:30px}
+  .pb-v.amber{color:var(--amber)} .pb-v.green{color:var(--green)} .pb-v.red{color:var(--red)}
+  .pb-s{font-size:11.5px;color:var(--faint);line-height:1.4}
+  .pb-op{display:flex;align-items:center;font-size:22px;color:var(--faint);font-weight:300;padding:0 2px}
+  .pb-step.net{background:var(--surface-2);border-radius:14px}
+  .pb-cta{flex:1.4;min-width:230px;display:flex;align-items:center;padding:6px 18px;font-size:12.5px;color:var(--muted);line-height:1.55;border-left:1px solid var(--border)}
+  .pb-cta a{color:var(--brand);font-weight:700;text-decoration:none} .pb-cta b{color:var(--text)}
+  @media(max-width:640px){ .pband{flex-direction:column} .pb-op{display:none;transform:rotate(90deg)} .pb-step.net{margin-top:8px} .pb-cta{border-left:none;border-top:1px solid var(--border)} }
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin:16px 0 22px}
   .kpi{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px}
   .kpi .h{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;font-weight:600}
   .kpi .ic{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
@@ -100,6 +114,8 @@
         </div>
       </div>
     </div>
+
+    <div class="pband" id="pband"></div>
 
     <div class="kpis" id="kpis"></div>
 
@@ -259,12 +275,13 @@ async function load(){
   // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
   // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
-  const [stats, evR, ordR, prodR, contR] = await Promise.all([
+  const [stats, evR, ordR, prodR, contR, insR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("products").select("id,nombre,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
     supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
+    supa.from("ads_insights").select("ad_id,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)),
   ]);
   const s=stats.data||{};
   if(typeof contR?.count==="number") s.contactos=contR.count;
@@ -311,6 +328,27 @@ async function load(){
     if(m==null) sinDatos++; else ganancia+=m;
   });
 
+  // ── Banda de rentabilidad: cuánto GANASTE de verdad (con el gasto de Meta) ──
+  const ins = insR.error ? [] : (insR.data||[]);
+  const hasAds = ins.length>0;
+  // Mapa ad_id → tipo (dominante) desde TODOS los pedidos con ad_id del rango,
+  // para atribuir el gasto por tipo cuando el filtro Digital/Físico está activo.
+  const adTipo={};
+  (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(a&&!adTipo[a]) adTipo[a]=O.esFisico(o)?"fisico":"digital"; });
+  let gastoAds=0;
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo) gastoAds+=Number(i.gasto||0); });
+  // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
+  // físico = margen (los que tienen costo registrado).
+  let bruta=0, sinCostoF=0;
+  orders.forEach(o=>{
+    if(!O.esFisico(o)){ bruta+=O.cobrado(o); return; }
+    const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    if(m==null) sinCostoF++; else bruta+=m;
+  });
+  const neta = bruta - gastoAds;
+  const roas = gastoAds>0 ? cobrado/gastoAds : 0;
+  const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
+
   const K=[
     kpi("money","#22c079","Cobrado", money(cobrado), `plata que ya entró, de ${money(vendido)} vendidos`),
   ];
@@ -332,12 +370,8 @@ async function load(){
     K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
       "saldo a favor de clientes que pagaron de más"));
   }
-  // "Ganancia real" no va en Digital: un infoproducto no tiene costo de mercadería
-  // ni envío, así que la ganancia = lo cobrado y duplicaría el KPI "Cobrado".
-  if(tipo!=="digital"){
-    K.push(kpi("chart","#22c079","Ganancia bruta (antes de anuncios)", money(ganancia),
-      sinDatos?`faltan el costo o el envío en ${sinDatos} pedido${sinDatos>1?"s":""}`:"lo cobrado menos el producto y el envío · no incluye la publicidad"));
-  }
+  // La ganancia (bruta y neta) ahora vive en la BANDA DE RENTABILIDAD de arriba,
+  // que sí incluye el gasto de publicidad. Ver renderBand.
   // Logística: en digital no existe nada de esto.
   if(tipo!=="digital"){
     K.push(kpi("alert","#e2564a","Esperando adelanto", espAdel.length,
@@ -352,6 +386,7 @@ async function load(){
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
+  renderBand({ bruta, gastoAds, neta, roas, pctAds, hasAds, sinCostoF });
 
   renderFunnel(ev);
   renderSales(orders, r);
@@ -360,6 +395,24 @@ async function load(){
   renderStages(s.por_stage||{});
 }
 
+function renderBand(b){
+  const box=$("pband"); if(!box) return;
+  const brutaS = b.sinCostoF?`tras mercadería y envío · faltan costos en ${b.sinCostoF} pedido${b.sinCostoF>1?"s":""}`:"tras mercadería y envío";
+  if(!b.hasAds){
+    box.innerHTML=`
+      <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v green">${money(b.bruta)}</span><span class="pb-s">${brutaS}</span></div>
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> y aquí verás tu <b>ganancia NETA</b> (después de publicidad), tu ROAS y cuánto se te va en ads.</div></div>`;
+    return;
+  }
+  const netaCls = b.neta<0?"red":"green";
+  const roasTxt = b.roas>0?`ROAS ${b.roas.toFixed(1)}× · `:"";
+  box.innerHTML=`
+    <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${money(b.bruta)}</span><span class="pb-s">${brutaS}</span></div>
+    <span class="pb-op">−</span>
+    <div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>
+    <span class="pb-op">=</span>
+    <div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${netaCls}">${money(b.neta)}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`;
+}
 function renderFunnel(ev){
   const c={ Lead:0, InitiateCheckout:0, Purchase:0 };
   ev.forEach(e=>{ if(c[e.event_name]!==undefined) c[e.event_name]++; });
