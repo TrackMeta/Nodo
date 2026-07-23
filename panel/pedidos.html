@@ -114,6 +114,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askText } from "./shell.js";
 import * as O from "./orders.js";
+import { openDespachoModal } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -511,32 +512,14 @@ function openConfirmSede(o){
       return !!r;
     });
 }
-function openDespacho(o){
-  const s=o.shipping||{};
-  modal(`
-    <h3>${icon("box")} Registrar despacho</h3>
-    <div class="m-sub">${esc((o.contact||{}).nombre||"")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
-    ${s.sede_por_confirmar?`<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg);color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">⚠ La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina Shalom exacta antes de despachar.</div>`:""}
-    <div class="row2">
-      <div><label>Agencia</label>
-        <select id="mAgencia"><option value="shalom" ${s.agencia==="shalom"?"selected":""}>Shalom</option><option value="olva" ${s.agencia==="olva"?"selected":""}>Olva Courier</option><option value="otra" ${s.agencia&&!["shalom","olva"].includes(s.agencia)?"selected":""}>Otra</option></select></div>
-      <div><label>Sede / destino</label><input id="mSede" value="${esc(s.sede||"")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
-    </div>
-    <div class="row2">
-      <div><label>Nº de guía</label><input id="mGuia" value="${esc(s.guia||"")}" placeholder="Ej. 034-123456"/></div>
-      <div><label>Clave de recojo</label><input id="mClave" value="${esc(s.clave_recojo||"")}" placeholder="La entrega el remitente"/></div>
-    </div>
-    ${fleteHtml(s.flete ?? ultimoFlete(o), "Lo que te costó mandarlo (lo tienes en el recibo)")}`,
-    async(ov)=>{
-      const guia=ov.querySelector("#mGuia").value.trim();
-      if(!guia){ toast("Falta el número de guía",true); return false; }
-      const r=await updateOrder({ order_id:o.id, estado:"despachado", shipping:{
-        agencia:ov.querySelector("#mAgencia").value, sede:ov.querySelector("#mSede").value.trim(),
-        guia, clave_recojo:ov.querySelector("#mClave").value.trim(), sede_por_confirmar:null, ...fleteDe(ov),
-      }});
-      if(r){ toast(r.flow_started?"Despacho registrado · el bot está avisando al cliente":"Despacho registrado"); await load(); }
-      return !!r;
-    });
+// El formulario vive en contact-extras.js porque lo abren DOS sitios: este
+// tablero y la ficha del contacto (desde el chat, que es donde estás cuando
+// vuelves de la agencia). Antes cada uno tenía el suyo y guardaban campos
+// distintos. Acá solo aportamos el costo sugerido, que sale de los pedidos que
+// este tablero ya tiene cargados.
+async function openDespacho(o){
+  const ok=await openDespachoModal(o,{ updateOrder, toast, sugerido:o.shipping?.flete ?? ultimoFlete(o) });
+  if(ok) await load();
 }
 
 // ── Costo del envío ────────────────────────────────────────────────

@@ -9,6 +9,8 @@
 //  · latestOrder      — el pedido más reciente del contacto (para resumen + rótulo)
 //  · pedidoResumenHtml— tarjeta compacta del pedido en la ficha
 //  · printRotulo      — el rótulo imprimible (portado de pedidos.html, misma plantilla)
+//  · openDespachoModal— el formulario de despacho, ÚNICO para toda la app: lo
+//                       abren el tablero de Pedidos y la ficha del contacto
 //  · EXTRAS_CSS       — estilos de las tarjetas nuevas (una sola fuente)
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
@@ -232,6 +234,8 @@ export const EXTRAS_CSS = `
   .cpanel .cx-cop2-pill.dig{background:rgba(139,92,246,.16);color:#8b5cf6}
   .cpanel .cx-cop2-pill.ext{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
   .cpanel .cx-cop2-pill.adel{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
+  .cpanel .cx-cop2-pill.desp{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
+  .cpanel .cx-cop2-pill.camino{background:var(--surface);color:var(--muted)}
   .cpanel .cx-cop2-pill.saldo{background:var(--brand-bg);color:var(--brand)}
   .cpanel .cx-cop2-img{width:100%;max-height:190px;object-fit:cover;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;background:var(--surface)}
   .cpanel .cx-cop2-noimg{width:100%;height:74px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px}
@@ -246,6 +250,7 @@ export const EXTRAS_CSS = `
   .cpanel .cx-cop2-btn{flex:1;min-width:120px;height:38px;border-radius:10px;border:none;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
   .cpanel .cx-cop2-btn.main{background:var(--green);color:#04140c}
   .cpanel .cx-cop2-btn.main.blue{background:var(--brand);color:#fff}
+  .cpanel .cx-cop2-btn.main.amber{background:var(--amber);color:#231a05}
   .cpanel .cx-cop2-btn.main:hover{filter:brightness(1.07)}
   .cpanel .cx-cop2-btn.danger{flex:none;min-width:0;padding:0 14px;background:transparent;color:var(--red);border:1px solid var(--border)}
   .cpanel .cx-cop2-btn.danger:hover{background:var(--red-bg,rgba(239,68,68,.12))}
@@ -291,13 +296,102 @@ export const EXTRAS_CSS = `
   .cf-tech .cf-trow .v{color:var(--muted);text-align:right;word-break:break-word;max-width:45%}
 `;
 
-// ── Pagos por validar, dentro de la ficha ──────────────────────────
+// ── Registrar despacho: UN solo formulario para toda la app ────────
+// Vive acá porque lo abren dos sitios: el tablero de Pedidos y la ficha del
+// contacto (desde el chat, que es donde estás cuando vuelves de la agencia).
+// Antes cada uno tenía el suyo y guardaban campos DISTINTOS: el del chat no
+// guardaba agencia ni sede y dejaba la alerta de sede Shalom puesta, así que el
+// pedido quedaba distinto según por dónde lo despacharas. Un formulario, dos
+// puertas. Si se le agrega un campo, lo heredan las dos.
+// Las clases son las mismas que ya usa pedidos.html (ahí el CSS ya existe; en
+// la Bandeja y Probar lo pone injectDespachoCss).
+const DESPACHO_CSS = `
+  .overlay{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:460px;max-height:90vh;overflow:auto}
+  .modal h3{margin:0 0 4px;font-size:16.5px}
+  .modal .m-sub{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+  .modal label{display:block;font-size:11.5px;color:var(--muted);margin:12px 0 5px;font-weight:700}
+  .modal input,.modal select{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);height:38px;padding:0 11px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .modal input:focus,.modal select:focus{border-color:var(--brand)}
+  .modal .m-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+  .modal .m-foot button{height:38px;padding:0 16px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .modal .m-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .modal .m-foot .save{background:var(--brand);border:none;color:#fff}
+  .modal .row2{display:flex;gap:10px}.modal .row2>*{flex:1}
+`;
+let despachoCssInjected = false;
+function injectDespachoCss() {
+  // pedidos.html ya trae estas reglas en su <style>; volver a ponerlas sería
+  // inofensivo (son idénticas) pero innecesario.
+  if (despachoCssInjected || document.querySelector("[data-despacho-css]")) return;
+  despachoCssInjected = true;
+  document.head.insertAdjacentHTML("beforeend", `<style data-despacho-css>${DESPACHO_CSS}</style>`);
+}
+
+// Abre el formulario de despacho. `deps`:
+//   updateOrder(body) -> respuesta de la Edge Function order-update (o null)
+//   toast(msg, err?)
+//   sugerido: costo de envío a proponer (Pedidos lo saca del último flete a esa
+//     misma ciudad; desde la ficha va null y se escribe a mano)
+// Devuelve true si se guardó.
+export function openDespachoModal(o, deps) {
+  const { updateOrder, toast, sugerido = null } = deps;
+  const s = o.shipping || {};
+  injectDespachoCss();
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "overlay";
+    ov.innerHTML = `<div class="modal">
+      <h3>📦 Registrar despacho</h3>
+      <div class="m-sub">${esc((o.contact || {}).nombre || "")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
+      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">⚠ La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
+      <div class="row2">
+        <div><label>Agencia</label>
+          <select data-d="agencia"><option value="shalom" ${s.agencia === "shalom" ? "selected" : ""}>Shalom</option><option value="olva" ${s.agencia === "olva" ? "selected" : ""}>Olva Courier</option><option value="otra" ${s.agencia && !["shalom", "olva"].includes(s.agencia) ? "selected" : ""}>Otra</option></select></div>
+        <div><label>Sede / destino</label><input data-d="sede" value="${esc(s.sede || "")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
+      </div>
+      <div class="row2">
+        <div><label>Nº de guía</label><input data-d="guia" value="${esc(s.guia || "")}" placeholder="Ej. 034-123456"/></div>
+        <div><label>Clave de recojo</label><input data-d="clave" value="${esc(s.clave_recojo || "")}" placeholder="La entrega el remitente"/></div>
+      </div>
+      <label>Costo del envío ${sugerido != null ? `<span style="font-weight:400;color:var(--faint)">· sugerido S/ ${esc(sugerido)}</span>` : ""}</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input data-d="flete" type="number" min="0" step="0.5" value="${s.flete ?? sugerido ?? ""}" placeholder="0.00" style="flex:1"/>
+        <button type="button" data-d="flete0" class="cancel" style="height:38px;white-space:nowrap;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:10px;padding:0 12px;font-weight:600;cursor:pointer">No pagué nada</button>
+      </div>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">Lo que te costó mandarlo (lo tienes en el recibo). Se usa para tu ganancia real; el cliente nunca lo ve.</div>
+      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Guardar</button></div>
+    </div>`;
+    const q = (k) => ov.querySelector(`[data-d="${k}"]`);
+    const cerrar = (v) => { ov.remove(); resolve(v); };
+    ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
+    ov.querySelector(".cancel").onclick = () => cerrar(false);
+    q("flete0").onclick = () => { q("flete").value = "0"; };
+    ov.querySelector(".save").onclick = async () => {
+      const guia = q("guia").value.trim();
+      if (!guia) { toast("Falta el número de guía", true); return; }
+      const flete = q("flete").value;
+      const r = await updateOrder({ order_id: o.id, estado: "despachado", shipping: {
+        agencia: q("agencia").value, sede: q("sede").value.trim(), guia,
+        clave_recojo: q("clave").value.trim(), sede_por_confirmar: null,
+        ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
+      } });
+      if (!r) return; // el toast de error lo pone updateOrder
+      toast(r.flow_started ? "Despacho registrado · el bot está avisando al cliente" : "Despacho registrado");
+      cerrar(true);
+    };
+    document.body.appendChild(ov);
+    q("guia").focus();
+  });
+}
+
+// ── Pagos por validar (y acciones del pedido) dentro de la ficha ───
 // La misma decisión de copiloto.html pero adaptada al panel angosto y enfocada
-// en UN pedido (el del contacto abierto). Aparece solo cuando ese pedido tiene
-// un comprobante esperando tu visto bueno.
-// MOVER el pedido (despachar, avisar que llegó) NO va acá: vive en Pedidos.
-// Tenerlo también en la ficha guardaba un despacho a medias —sin agencia ni
-// sede, y sin limpiar la alerta de sede Shalom— según por dónde entraras.
+// en UN pedido (el del contacto abierto).
+// La SECCIÓN "Pagos por validar" es una cola de pagos y solo tiene pagos; acá,
+// en cambio, estás viendo a UN cliente y quieres resolverlo sin salir del chat,
+// así que también están las dos acciones de logística que le corresponden —
+// pero el despacho abre el formulario COMPARTIDO, no una versión recortada.
 const ROBOT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="7" r="4"/><path d="M12 11v0M8 16h.01M16 16h.01"/></svg>';
 
 // La etapa de decisión de un pedido (subconjunto de las ETAPAS de copiloto.html).
@@ -309,6 +403,8 @@ export function copilotoEtapa(o) {
   if (s.extra_pendiente) return { id: "extra", titulo: "Venta extra por validar", pill: "ext" };
   if (o.estado === "esperando_adelanto") return { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" };
   if (o.estado === "en_agencia") return { id: "saldo", titulo: "Saldo por validar", pill: "saldo" };
+  if (o.estado === "adelanto_validado" || o.estado === "por_despachar") return { id: "despachar", titulo: "Listo para despachar", pill: "desp" };
+  if (o.estado === "despachado") return { id: "camino", titulo: "En camino a la agencia", pill: "camino" };
   return null;
 }
 
@@ -328,7 +424,9 @@ function copilotoBtns(et) {
   if (et.id === "digital") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
   if (et.id === "extra") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
   if (et.id === "adelanto") return B("ok", "✓ Aprobar y avisar") + B("no", "Rechazar", "danger");
-  return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
+  if (et.id === "saldo") return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
+  if (et.id === "despachar") return B("desp", "📦 Ya lo envié", "main amber");
+  return B("lleg", "📍 Avisar que llegó");
 }
 
 // La tarjeta compacta de pago por validar para la ficha (imagen, monto, veredicto,
@@ -402,11 +500,19 @@ export function wireCopiloto(root, o, et, deps) {
     if (r && pausa) { try { await supa.from("contacts").update({ bot_activo: false }).eq("id", o.contact_id); } catch (_) { /* */ } }
     if (r) { toast(pausa ? "Rechazado · el bot quedó en pausa" : (r.rejected ? "Rechazado · el bot le pide otro comprobante" : "Marcado como rechazado")); reload && reload(); }
   };
+  // El despacho NO se rehace acá: abre el formulario compartido, el mismo que
+  // usa el tablero de Pedidos, para que guarde exactamente los mismos campos.
+  const despachar = async () => {
+    const ok = await openDespachoModal(o, { updateOrder: update, toast, sugerido: null });
+    if (ok) reload && reload();
+  };
   const b = (a) => el.querySelector(`[data-a="${a}"]`);
   if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }
   else if (et.id === "extra") { b("ok").onclick = aprobarExtra; b("no").onclick = () => rechazar("extra"); }
   else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para despachar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
-  else { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
+  else if (et.id === "saldo") { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
+  else if (et.id === "despachar") { b("desp").onclick = despachar; }
+  else { b("lleg").onclick = () => aprobar("en_agencia", "Avisar que llegó", "El bot le avisa que ya puede recogerlo y le pide el saldo."); }
 }
 
 let cssInjected = false;
