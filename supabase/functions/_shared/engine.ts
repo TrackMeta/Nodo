@@ -2547,6 +2547,8 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     `- Si pregunta por el estado o el seguimiento de su pedido, dile en qué va (${estadoLegible}) con naturalidad.\n` +
     "- Si necesita ayuda para usar el producto, oriéntalo con lo que sabes de él.\n" +
     "- Si hay un problema real, un cambio o una devolución que no puedes resolver, escribe `[[humano]]`.\n" +
+    "- Si el cliente SOLO agradece o se despide y no pide nada más (ya recibió lo suyo), CIERRA corto y cálido: NO ofrezcas más, NO preguntes «¿algo más?», NO re-vendas. Una despedida amable y listo." +
+    (pv.cierre && String(pv.cierre).trim() ? ` Cuando toque cerrar así, usa este cierre: "${String(pv.cierre).trim()}".` : "") + "\n" +
     "NO le ofrezcas comprar lo mismo otra vez como si no te conociera, ni le repitas el pitch de venta.\n" +
     "PERO si el cliente QUIERE COMPRAR de nuevo, más unidades u otro producto, con gusto: dile con calidez que se lo preparas y escribe el marcador `[[recompra]]` (el cliente NO lo ve). No lo trates como desconocido." +
     (pv.instrucciones && String(pv.instrucciones).trim() ? "\n\nIndicaciones del negocio para la post-venta:\n" + String(pv.instrucciones).trim() : "")

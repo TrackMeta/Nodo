@@ -95,7 +95,7 @@ function defaultPedidos(){
     // (nunca lo deja en el aire). reclamos = escalar ante enojo/disputa.
     humano:{ reclamos:true, horario:{ activo:false, desde:"09:00", hasta:"20:00", dias:{lun:true,mar:true,mie:true,jue:true,vie:true,sab:true,dom:false} }, aviso_dentro:"", aviso_fuera:"" },
     // Tras la compra, el bot atiende como soporte (no re-vende) y maneja la recompra.
-    postventa:{ activo:true, instrucciones:"" },
+    postventa:{ activo:true, instrucciones:"", cierre:"" },
   };
 }
 
@@ -299,6 +299,10 @@ function render(b){
       <label style="margin-top:14px">Indicaciones para la post-venta <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
       ${ta(p.postventa.instrucciones,"Ej. Si preguntan por la garantía, son 30 días por defecto de fábrica. Para cambios de talla, dentro de 7 días y sin uso.",3).replace('class="in"','class="in" id="pvInstr"')}
       <div style="font-size:11px;color:var(--faint);margin-top:6px">Lo que quieras que el bot tenga presente al atender a un comprador (garantía, cambios, cómo usar el producto…).</div>
+
+      <label style="margin-top:16px">Mensaje de cierre <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.postventa.cierre,"Ej. ¡Gracias a ti! 🙌 Que lo disfrutes, aquí estaré si necesitas algo.",2).replace('class="in"','class="in" id="pvCierre"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Cuando el cliente <b>solo agradece o se despide</b> (ya no pide nada), el bot cierra la conversación <b>corto y cálido</b> con esto — sin ofrecer más ni preguntar "¿algo más?". Vacío = la IA lo redacta con tu tono. No lo mutea: si el cliente vuelve con una duda, el bot responde igual.</div>
     </div>
 
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
@@ -355,6 +359,7 @@ function render(b){
     if($("huDentro")) p.humano.aviso_dentro=$("huDentro").value.trim();
     if($("huFuera")) p.humano.aviso_fuera=$("huFuera").value.trim();
     if($("pvInstr")) p.postventa.instrucciones=$("pvInstr").value.trim();
+    if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
