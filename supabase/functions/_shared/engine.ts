@@ -2158,11 +2158,26 @@ const SALDO_SCHEMA = {
     valido: { type: "boolean", description: "true si el pago es legítimo según las reglas del negocio" },
     monto: { type: ["number", "null"], description: "monto pagado (número), o null si no se lee" },
     operacion: { type: ["string", "null"], description: "número de operación/constancia, o null" },
+    // Con qué app/banco pagó. Lo usa el conciliador: si subes el reporte de Yape
+    // y esta venta se pagó por BCP, no tiene sentido marcarla como sospechosa
+    // por no aparecer ahí.
+    metodo: { type: ["string", "null"], description: "app o banco del pago tal como se ve en el comprobante (Yape, Plin, BCP, Interbank, BBVA…), o null" },
     motivo: { type: "string", description: "explicación breve" },
   },
   required: ["es_pago", "valido", "motivo"],
   additionalProperties: false,
 } as const;
+
+// Con qué app/banco pagó, tal como se ve en el comprobante. Se guarda para el
+// CONCILIADOR: si subes el reporte de Yape y esta venta se pagó por BCP, no
+// tiene sentido marcarla como sospechosa por no aparecer en ese archivo.
+// Se normaliza lo justo (las apps se escriben de mil formas) y se acota, porque
+// es texto que decide un modelo.
+function metodoLeido(parsed: any): string | null {
+  const t = String(parsed?.metodo ?? "").trim();
+  if (!t || /^(null|none|n\/a|ninguno|desconocid)/i.test(t)) return null;
+  return t.slice(0, 40);
+}
 
 // Comprobante del ADELANTO (provincia). Mismo patrón que el saldo, porque es
 // la misma decisión: ¿la IA aprueba sola o te consulta?
@@ -2213,6 +2228,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
 
   const monto = Number(parsed?.monto);
   const oper = parsed?.operacion ? String(parsed.operacion).trim() : null;
+  const metodo = metodoLeido(parsed);
   let reuse = false;
   if (oper) {
     const { data: dup } = await db.from("orders").select("id")
@@ -2226,7 +2242,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (puedeAuto) {
     await db.from("orders").update({
       estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...ship, adelanto_operacion: oper, adelanto_validado_auto: true, adelanto_comprobante: url },
+      shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await syncPedidoSheet(db, (order as any).id);
@@ -2250,7 +2266,8 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     shipping: {
       ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
       adelanto_revisar: motivo, adelanto_monto_leido: Number.isFinite(monto) ? monto : null,
-      adelanto_operacion_leida: oper, adelanto_ok_ia: !!parsed?.valido && montoOk && !reuse,
+      adelanto_operacion_leida: oper, adelanto_metodo: metodo,
+      adelanto_ok_ia: !!parsed?.valido && montoOk && !reuse,
     },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Adelanto por aprobar", motivo);
@@ -2316,6 +2333,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 
   const monto = Number(parsed.monto);
   const oper = parsed.operacion ? String(parsed.operacion).trim() : null;
+  const metodo = metodoLeido(parsed);
 
   // 5) Anti-reúso: la misma operación no puede validar dos pedidos.
   let reuse = false;
@@ -2331,7 +2349,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     // ✅ Todo cuadra → saldo_pagado (guarda la operación) + dispara la entrega de clave.
     await db.from("orders").update({
       estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...ship, saldo_operacion: oper, saldo_validado_auto: true, saldo_comprobante: url },
+      shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await moverEtapa(db, channelId, contactId, "comprado");
@@ -2364,7 +2382,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     : (parsed.motivo || "requiere revisión manual");
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
-    shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo },
+    shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo, saldo_metodo: metodo },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
   await avisar(db, channelId, contactId, "saldo_validar", {
@@ -3460,6 +3478,9 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
     // Ilegible ≠ inválido: no acusar de fraude a quien mandó una foto movida.
     "Si la imagen está borrosa, cortada, con reflejos o no se lee bien, NO la declares inválida ni acuses fraude: marca legible=false y pide amablemente una foto más clara. Un comprobante ilegible es distinto de un comprobante falso.",
     "Ante un pago legítimo con algún detalle menor (una fecha difícil de leer, un nombre parcial), inclínate por ACEPTAR si lo esencial coincide. Rechazar un pago verdadero es peor que revisar uno dudoso.",
+    // Se guarda para el conciliador: al cruzar el reporte de UNA app, hay que
+    // poder distinguir "esta venta no aparece" de "esta venta se cobró por otra".
+    "Di SIEMPRE con qué app o banco se hizo el pago (Yape, Plin, BCP, Interbank, BBVA, Scotiabank, agente…), tal como se ve en el comprobante. Si no se puede saber, déjalo vacío en vez de adivinar.",
   ];
   p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
@@ -3859,7 +3880,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ctx[k] = s;
             await setField(db, run.channel_id, run.contact_id, k, s);
           };
-          await guarda("pago_metodo", p.banco ?? p.app);
+          await guarda("pago_metodo", p.metodo ?? p.banco ?? p.app);
           await guarda("pago_operacion", p.operacion);
           await guarda("pago_monto", p.monto);
           await guarda("pago_titular", p.titular);
@@ -3926,6 +3947,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 digital_pendiente: true, digital_comprobante: url,
                 digital_monto_leido: run.vars.pago_monto ?? null,
                 digital_operacion: run.vars.pago_operacion ?? null,
+                // Con qué app pagó → lo usa el conciliador para no marcar como
+                // sospechosa una venta que se cobró por otro banco.
+                digital_metodo: run.vars.pago_metodo ?? null,
                 digital_ok_ia: true,
               };
               // Atribución congelada desde que nace el pedido (ver crearPedido):

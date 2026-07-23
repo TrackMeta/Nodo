@@ -402,7 +402,7 @@
     </div>
     <div class="searchwrap" id="searchWrap">
       <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-      <input id="convSearch" placeholder="Buscar por nombre o número…" autocomplete="off"/>
+      <input id="convSearch" placeholder="Nombre, teléfono o nº de operación…" autocomplete="off"/>
       <button class="sx" id="convSearchX" title="Limpiar" hidden>×</button>
     </div>
     <!-- El Web Chat de prueba se movió a la sección "Probar Flujos" -->
@@ -491,7 +491,7 @@ injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
-const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", threadCache: {},
+const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {},
   filters: { sinResponder:false, anuncio:false, archivado:false, producto:"", tags:new Set(), stages:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
 const $ = (id) => document.getElementById(id);
 
@@ -758,7 +758,13 @@ function onDocClickComposer(e){ if(!e.target.closest(".composer")){ $("qrPop")?.
 document.addEventListener("click",onDocClickComposer);
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
-  if (state.search){ const q=state.search, qd=q.replace(/\D/g,""); const nameHit=(c.nombre||"").toLowerCase().includes(q); const phoneHit=qd && (c.wa_id||"").includes(qd); if(!nameHit && !phoneHit) return false; }
+  if (state.search){ const q=state.search, qd=q.replace(/\D/g,"");
+    const nameHit=(c.nombre||"").toLowerCase().includes(q);
+    const phoneHit=qd && (c.wa_id||"").includes(qd);
+    // …o el nº de operación de alguno de sus pagos (lo resuelve buscarOperacion
+    // contra la tabla de pedidos: acá solo vive la conversación, no sus ventas).
+    const opHit=state.searchOps.has(c.id);
+    if(!nameHit && !phoneHit && !opHit) return false; }
   if (f.archivado){ if(!cv.archivada) return false; } else if (cv.archivada) return false;
   if (f.sinResponder && !(cv.no_leidos>0)) return false;
   if (f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
@@ -1078,10 +1084,40 @@ document.querySelectorAll("#modeToggle .modebtn").forEach(b=> b.onclick = () => 
   renderConversations();
 });
 $("chBot").addEventListener("click", ()=>{ if(state.contactId && !state.isTest) toggleBot(); });
+// Buscar por Nº DE OPERACIÓN en la Bandeja. Acá no hay pedidos cargados —la
+// lista es de conversaciones—, así que el número se busca contra `orders` y se
+// traduce a los contactos dueños de esos pagos. Es el dato que tienes a mano
+// cuando un cliente reclama ("pagué, mi constancia es 33574508") y el que te
+// deja saltar del reporte del banco al chat.
+const OPS_BUSCA=["digital_operacion","adelanto_operacion","adelanto_operacion_leida","saldo_operacion","extra_operacion"];
+async function buscarOperacion(q){
+  const limpio=q.replace(/[^0-9a-z]/gi,"");
+  // Menos de 4 caracteres o sin ningún dígito no es un nº de operación: sería
+  // una consulta a la base por cada letra que escribes.
+  if(limpio.length<4 || !/[0-9]/.test(limpio)){ state.searchOps=new Set(); return false; }
+  try{
+    const cond=OPS_BUSCA.map(k=>`shipping->>${k}.ilike.*${limpio}*`).join(",");
+    const { data }=await supa.from("orders").select("contact_id")
+      .eq("channel_id",state.channelId).or(cond).limit(200);
+    const antes=state.searchOps.size;
+    state.searchOps=new Set((data||[]).map(o=>o.contact_id).filter(Boolean));
+    return state.searchOps.size>0 || antes>0;
+  }catch(_){ state.searchOps=new Set(); return false; }
+}
 (()=>{ const inp=$("convSearch"), x=$("convSearchX"); if(!inp) return;
-  inp.addEventListener("input", ()=>{ state.search=inp.value.trim().toLowerCase(); x.hidden=!inp.value; renderConversations(); });
-  inp.addEventListener("keydown", (e)=>{ if(e.key==="Escape"){ inp.value=""; state.search=""; x.hidden=true; renderConversations(); } });
-  x.addEventListener("click", ()=>{ inp.value=""; state.search=""; x.hidden=true; inp.focus(); renderConversations(); });
+  let t=null;
+  const limpiar=()=>{ inp.value=""; state.search=""; state.searchOps=new Set(); x.hidden=true; renderConversations(); };
+  inp.addEventListener("input", ()=>{
+    state.search=inp.value.trim().toLowerCase(); x.hidden=!inp.value;
+    renderConversations();
+    // La consulta a pedidos va aparte y con retraso: el filtro por nombre debe
+    // responder en cada tecla sin esperar a la red.
+    clearTimeout(t);
+    const q=state.search;
+    t=setTimeout(async()=>{ if(state.search!==q) return; if(await buscarOperacion(q)) renderConversations(); }, 320);
+  });
+  inp.addEventListener("keydown", (e)=>{ if(e.key==="Escape") limpiar(); });
+  x.addEventListener("click", ()=>{ limpiar(); inp.focus(); });
 })();
 
 function renderThread(msgs, evs){

@@ -87,7 +87,7 @@
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="q" placeholder="Buscar por cliente o teléfono…" /></div>
+        <input id="q" placeholder="Buscar por cliente, teléfono o nº de operación…" /></div>
       <div class="chips" id="tipoChips"></div>
       <div class="chips" id="rangeChips"></div>
     </div>
@@ -167,11 +167,32 @@ function enRango(o){
   return (Date.now()-t) <= dias*86400000;
 }
 
+// Buscar por nombre, teléfono o Nº DE OPERACIÓN. Lo último es lo que se tiene a
+// mano cuando un cliente reclama ("pagué, acá está mi constancia 33574508") o
+// cuando estás cuadrando contra el reporte del banco: es el único dato que
+// identifica un pago sin ambigüedad. El nº vive en shipping según el tipo de
+// pago (digital / adelanto / saldo / venta extra), así que se buscan todos.
+const OPS=["digital_operacion","adelanto_operacion","adelanto_operacion_leida","saldo_operacion","extra_operacion"];
+function operacionesDe(o){
+  const s=o.shipping||{};
+  return OPS.map(k=>s[k]).filter(Boolean).map(v=>String(v).toLowerCase());
+}
+function matchBusqueda(o,q){
+  const c=o.contact||{}, s=o.shipping||{};
+  if((c.nombre||"").toLowerCase().includes(q)) return true;
+  if((c.wa_id||"").includes(q)) return true;
+  if((s.cliente||"").toLowerCase().includes(q)) return true;
+  // Solo dígitos: se compara ignorando guiones y espacios del comprobante.
+  const qd=q.replace(/[^0-9a-z]/gi,"");
+  if(qd && operacionesDe(o).some(v=>v.replace(/[^0-9a-z]/gi,"").includes(qd))) return true;
+  return false;
+}
+
 function filtered(){
   return st.list.filter(o=>{
     if(st.tipo!=="all" && tipoDe(o)!==st.tipo) return false;
     if(!enRango(o)) return false;
-    if(st.q){ const c=o.contact||{}; if(!(c.nombre||"").toLowerCase().includes(st.q) && !(c.wa_id||"").includes(st.q)) return false; }
+    if(st.q && !matchBusqueda(o,st.q)) return false;
     return true;
   });
 }
