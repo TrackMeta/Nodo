@@ -135,12 +135,17 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function load(){
-  const [{ data:seqs },{ data:flows },{ data:tpl }]=await Promise.all([
+  const [{ data:seqs },{ data:flows },{ data:tpl },{ data:prods }]=await Promise.all([
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
     supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre"),
     supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
+    supa.from("products").select("id,nombre,emoji,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
   ]);
   st.seqs=seqs||[]; st.flows=flows||[]; st.templates=tpl||[];
+  // Productos con sus opciones de compra (para el descuento por paso).
+  st.products=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji,
+    opciones:(p.product_versions||[]).filter(v=>v.activo!==false && v.precio!=null && v.precio!=="").map(v=>({ id:v.id, nombre:v.nombre, precio:v.precio })) }))
+    .filter(p=>p.opciones.length);
   renderFolders(); renderCards();
 }
 function allFolders(){ const s=new Set(st.localFolders); st.seqs.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
@@ -237,6 +242,42 @@ function renderDetail(){
   s.pasos.forEach((p,i)=>steps.appendChild(stepCard(p,i)));
   $("addStep").onclick=()=>{ s.pasos.push({ umbral_silencio_seg:3600, variantes:[newVariant(0)], rotacion:false }); renderDetail(); };
 }
+// Descuento del paso: fija una oferta (opción + precio + vencimiento) al contacto.
+// El motor la lee → {{precio}} sale rebajado y el OCR valida contra ese precio.
+const OF_DOLLAR='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+function stepOferta(box, paso){
+  const prods=st.products||[];
+  const on=!!paso.oferta;
+  const pid = paso.oferta?.product_id || prods[0]?.id || "";
+  const prod = prods.find(p=>p.id===pid);
+  const ops = prod?.opciones||[];
+  box.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="sw ${on?'on':''}" data-oftog></span>
+      <span style="font-size:12.5px;font-weight:600">${OF_DOLLAR} Incluir un descuento (el sistema lo valida al pagar)</span>
+    </div>
+    ${on?(prods.length?`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:11px">
+      <select class="sel" data-ofprod style="min-width:150px">${prods.map(p=>`<option value="${p.id}" ${pid===p.id?"selected":""}>${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
+      <select class="sel" data-ofopt style="min-width:140px">${ops.length?ops.map(o=>`<option value="${o.id}" ${paso.oferta?.version_id===o.id?"selected":""}>${esc(o.nombre)} (S/ ${esc(o.precio)})</option>`).join(""):`<option value="">— sin opciones —</option>`}</select>
+      <span style="font-size:12px;color:var(--muted)">a S/</span>
+      <input class="in" data-ofprecio type="number" min="0" step="0.5" value="${esc(paso.oferta.precio??"")}" style="width:100px" placeholder="precio"/>
+      <span style="font-size:12px;color:var(--muted)">· vence en</span>
+      <input class="in" data-ofvence type="number" min="0" step="1" value="${esc(paso.oferta.vence_horas??48)}" style="width:70px"/>
+      <span style="font-size:12px;color:var(--muted)">horas</span>
+    </div>
+    <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. 0 horas = sin caducidad. Al pagar, el bot valida contra este precio (no el de lista).</div>`
+    :`<div style="font-size:11.5px;color:var(--amber);margin-top:9px">Primero crea un producto con opciones de compra con precio para poder ofrecer un descuento.</div>`):""}`;
+  box.querySelector("[data-oftog]").onclick=()=>{
+    if(paso.oferta){ delete paso.oferta; }
+    else { const p0=prods[0], o0=p0?.opciones?.[0]; paso.oferta={ product_id:p0?.id||"", version_id:o0?.id||"", precio:o0?.precio??"", vence_horas:48 }; }
+    stepOferta(box,paso);
+  };
+  const pp=box.querySelector("[data-ofprod]"); if(pp) pp.onchange=(e)=>{ paso.oferta.product_id=e.target.value; const np=prods.find(p=>p.id===e.target.value), o0=np?.opciones?.[0]; paso.oferta.version_id=o0?.id||""; paso.oferta.precio=o0?.precio??""; stepOferta(box,paso); };
+  const so=box.querySelector("[data-ofopt]"); if(so) so.onchange=(e)=>{ paso.oferta.version_id=e.target.value; };
+  const sp=box.querySelector("[data-ofprecio]"); if(sp) sp.oninput=(e)=>{ paso.oferta.precio=e.target.value===""?"":Number(e.target.value); };
+  const sv=box.querySelector("[data-ofvence]"); if(sv) sv.oninput=(e)=>{ paso.oferta.vence_horas=Math.max(0,Number(e.target.value)||0); };
+}
 function stepCard(paso,i){
   const wrap=document.createElement("div"); wrap.className="step";
   const {val,u}=splitDur(paso.umbral_silencio_seg);
@@ -256,14 +297,18 @@ function stepCard(paso,i){
         <option value="flow" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
       </select>
       <div class="body"></div>
+      <div class="ofbox" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px"></div>
     </div>`;
   const num=wrap.querySelector(".num"), unit=wrap.querySelector(".unit");
   const upd=()=>paso.umbral_silencio_seg=Math.max(1,Number(num.value||1))*Number(unit.value);
   num.oninput=upd; unit.onchange=upd;
   wrap.querySelector(".del").onclick=()=>{ st.seq.pasos.splice(i,1); renderDetail(); };
-  const as=wrap.querySelector(".act"), body=wrap.querySelector(".body");
+  const as=wrap.querySelector(".act"), body=wrap.querySelector(".body"), ofbox=wrap.querySelector(".ofbox");
   const renderAction=()=>{
     body.innerHTML="";
+    // El descuento aplica cuando el paso escribe al cliente (mensaje/plantilla).
+    if(as.value==="flow"){ ofbox.style.display="none"; if(paso.oferta) delete paso.oferta; }
+    else { ofbox.style.display="block"; stepOferta(ofbox,paso); }
     if(as.value==="flow"){
       delete paso.mensaje; delete paso.template_name; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
       body.innerHTML=`<label>Flujo a iniciar</label><select class="sel fs" style="width:100%"><option value="">— elige —</option>${st.flows.map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}</option>`).join("")}</select>`;
