@@ -74,6 +74,20 @@
   .btn.ia{background:linear-gradient(90deg,var(--ia),var(--ia-2));border:none;color:#fff}
   .btn.ia:hover{filter:brightness(1.07)}
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
+  /* Métodos de pago por país (picker) */
+  .paysearch input{margin-bottom:10px}
+  .paylist{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto}
+  .paycard{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface-2)}
+  .payhead{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:none;color:var(--text);font-size:13.5px;font-weight:600;padding:11px 13px;cursor:pointer;font-family:inherit}
+  .payhead:hover{background:var(--surface)}
+  .payhead .paycnt{font-size:11px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 8px}
+  .paybody{padding:2px 13px 13px;display:flex;flex-direction:column;gap:7px}
+  .paylbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);margin-top:6px}
+  .paychips{display:flex;flex-wrap:wrap;gap:6px}
+  .paychip{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:border-color .12s,color .12s}
+  .paychip:hover{border-color:var(--ia);color:var(--ia)}
+  .paychip.custom{border-style:dashed;color:var(--muted);align-self:flex-start;margin-top:4px}
+  .paygrouphd{font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 6px;display:flex;align-items:center;gap:6px}
   /* Validador de comprobantes */
   .ia-hero2{border:1px solid var(--ia-border);border-radius:14px;padding:14px 16px;margin:0 0 18px;
     background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.14),transparent 60%),var(--surface)}
@@ -515,6 +529,28 @@ function genDatosPago(mets){
   }).filter(Boolean).join("\n");
 }
 const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
+// Catálogo de billeteras y bancos por país (para agregar métodos de pago).
+const PAY_CATALOG=[
+  {pais:"Perú", flag:"🇵🇪", wallets:["Yape","Plin"], banks:["BCP","BBVA","Interbank","Scotiabank","BanBif","Banco de la Nación"]},
+  {pais:"Colombia", flag:"🇨🇴", wallets:["Nequi","Daviplata"], banks:["Bancolombia","Davivienda","BBVA","Banco de Bogotá","Banco de Occidente"]},
+  {pais:"México", flag:"🇲🇽", wallets:["Mercado Pago","Spin by OXXO"], banks:["BBVA","Banorte","Santander","Citibanamex","HSBC","Banco Azteca"]},
+  {pais:"Chile", flag:"🇨🇱", wallets:["MACH","Mercado Pago","Tenpo"], banks:["BancoEstado","Banco de Chile","Santander","BCI","Scotiabank"]},
+  {pais:"Argentina", flag:"🇦🇷", wallets:["Mercado Pago","Ualá","Naranja X"], banks:["Banco Nación","Banco Galicia","Santander","BBVA","Banco Provincia"]},
+  {pais:"Ecuador", flag:"🇪🇨", wallets:["DeUna","Peigo"], banks:["Banco Pichincha","Banco Guayaquil","Produbanco","Banco del Pacífico","Banco Bolivariano"]},
+  {pais:"Bolivia", flag:"🇧🇴", wallets:["Tigo Money","Yolo"], banks:["Banco Unión","BNB","Banco Mercantil Santa Cruz","BCP Bolivia","Banco FIE"]},
+  {pais:"Venezuela", flag:"🇻🇪", wallets:["Pago Móvil","Zelle"], banks:["Banesco","Mercantil","BBVA Provincial","Banco de Venezuela","Bancamiga"]},
+  {pais:"Paraguay", flag:"🇵🇾", wallets:["Tigo Money","Billetera Personal"], banks:["Banco Continental","Itaú","Ueno Bank","Banco Nacional de Fomento"]},
+  {pais:"Uruguay", flag:"🇺🇾", wallets:["Mercado Pago","Prex"], banks:["BROU","Itaú","Santander","Scotiabank"]},
+  {pais:"Costa Rica", flag:"🇨🇷", wallets:["SINPE Móvil"], banks:["BAC","Banco Nacional","BCR","Scotiabank","Banco Popular"]},
+  {pais:"Panamá", flag:"🇵🇦", wallets:["Yappy","Nequi"], banks:["Banco General","Banistmo","BAC","Global Bank"]},
+  {pais:"Guatemala", flag:"🇬🇹", wallets:["Zigi"], banks:["Banco Industrial","Banrural","BAC","G&T Continental"]},
+  {pais:"El Salvador", flag:"🇸🇻", wallets:["Wompi","N1CO"], banks:["Banco Agrícola","Davivienda","BAC","Banco Cuscatlán"]},
+  {pais:"Honduras", flag:"🇭🇳", wallets:["Tengo","Tigo Money"], banks:["Banco Atlántida","BAC","Banpaís","Ficohsa"]},
+  {pais:"Rep. Dominicana", flag:"🇩🇴", wallets:["tPago","Azul"], banks:["Banreservas","Banco Popular","BHD","Scotiabank"]},
+  {pais:"España", flag:"🇪🇸", wallets:["Bizum"], banks:["BBVA","Santander","CaixaBank","Sabadell"]},
+  {pais:"Estados Unidos", flag:"🇺🇸", wallets:["Zelle","Cash App","Venmo","PayPal"], banks:["Bank of America","Chase","Wells Fargo","Citibank"]},
+];
+const payNorm=(s)=>(s??"").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
 function ocrPreview(o){
   if(o.activo===false) return "";
   const r=o.reglas||{}; const L=[];
@@ -558,9 +594,9 @@ function renderValidador(b){
     </div>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${icon("dollar")}</span><span class="nm">Métodos de pago aceptados</span></div>
-      <div class="desc">A qué cuentas/números debe llegar el pago. Si el comprobante va a otro destinatario, la IA lo marca inválido.</div>
+      <div class="desc">A qué cuentas/números debe llegar el pago. Si el comprobante va a otro destinatario, la IA lo marca inválido. Busca tu <b>país</b> y agrega las billeteras y bancos que usas.</div>
       <div id="ocrMet" style="margin-top:8px"></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${OCR_PRESETS.map(v=>`<button class="btn ocrpre" data-app="${v}" style="height:32px;padding:0 12px;font-size:12px;border:1px solid var(--border)">+ ${v}</button>`).join("")}</div>
+      <div id="payPick" style="margin-top:12px"></div>
     </div>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${icon("message")}</span><span class="nm">Mensaje de cobro (lo que el bot le pide al cliente)</span>
@@ -613,29 +649,66 @@ function renderValidador(b){
       : `<textarea class="in" id="dpManual" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="Ej. Yápeame al 900 000 000 a nombre de Juan Pérez">${esc(o.datos_pago||"")}</textarea>`;
     const tm=$("dpManual"); if(tm) tm.oninput=(e)=>o.datos_pago=e.target.value;
   };
+  const metRow=(m,i)=>{
+    const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+    el.innerHTML=`<div class="row">
+      <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Yape"/></div>
+      <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Juan Pérez"/></div>
+      <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="900 000 000 / CCI"/></div>
+      <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
+    </div>
+    <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo soles, no aceptar de terceros" style="margin-top:8px"/>`;
+    el.querySelector(".mApp").oninput=(e)=>{ m.app=e.target.value; paintDp(); };
+    el.querySelector(".mTit").oninput=(e)=>{ m.titular=e.target.value; paintDp(); };
+    el.querySelector(".mNum").oninput=(e)=>{ m.numero=e.target.value; paintDp(); };
+    el.querySelector(".mNot").oninput=(e)=>m.notas=e.target.value;
+    el.querySelector("button.danger").onclick=()=>{ o.metodos.splice(i,1); paintMet(); paintDp(); paintPayPick(); };
+    return el;
+  };
   const paintMet=()=>{
     const box=$("ocrMet"); box.innerHTML="";
-    if(!o.metodos.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Agrega al menos un método de pago (usa los botones de abajo).</div>`; }
-    o.metodos.forEach((m,i)=>{
-      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
-      el.innerHTML=`<div class="row">
-        <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Yape"/></div>
-        <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Juan Pérez"/></div>
-        <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="900 000 000 / CCI"/></div>
-        <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
-      </div>
-      <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo soles, no aceptar de terceros" style="margin-top:8px"/>`;
-      el.querySelector(".mApp").oninput=(e)=>{ m.app=e.target.value; paintDp(); };
-      el.querySelector(".mTit").oninput=(e)=>{ m.titular=e.target.value; paintDp(); };
-      el.querySelector(".mNum").oninput=(e)=>{ m.numero=e.target.value; paintDp(); };
-      el.querySelector(".mNot").oninput=(e)=>m.notas=e.target.value;
-      el.querySelector("button.danger").onclick=()=>{ o.metodos.splice(i,1); paintMet(); paintDp(); };
-      box.appendChild(el);
+    if(!o.metodos.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Aún no agregas métodos. Busca tu país abajo y toca las billeteras/bancos que usas.</div>`; return; }
+    const groups={};
+    o.metodos.forEach((m,i)=>{ const k=m.pais||"Otros"; (groups[k]=groups[k]||[]).push(i); });
+    Object.entries(groups).forEach(([pais,idxs])=>{
+      const cat=PAY_CATALOG.find(c=>c.pais===pais);
+      const hd=document.createElement("div"); hd.className="paygrouphd"; hd.textContent=(cat?cat.flag+" ":"")+pais;
+      box.appendChild(hd);
+      idxs.forEach(i=> box.appendChild(metRow(o.metodos[i],i)));
     });
   };
-  paintMet(); paintDp();
+  function addMet(app,pais){ o.metodos.push({ app, pais, titular:"", numero:"", notas:"" }); paintMet(); paintDp(); paintPayPick(); toast(app+" agregado ✓"); }
+  const paintPayPick=()=>{
+    const box=$("payPick"); if(!box) return;
+    const q=payNorm(st.paySearch);
+    const list=PAY_CATALOG.filter(c=> !q || payNorm(c.pais).includes(q) || c.wallets.concat(c.banks).some(m=>payNorm(m).includes(q)));
+    const chip=(m,pais)=>`<button class="paychip" data-add="${esc(m)}" data-pais="${esc(pais)}">+ ${esc(m)}</button>`;
+    box.innerHTML=`
+      <div class="paysearch"><input class="in" id="paySearchIn" placeholder="Busca tu país o método (Yape, Nequi, BBVA…)" value="${esc(st.paySearch||"")}"/></div>
+      <div class="paylist">${
+        list.length ? list.map(c=>{
+          const open = st.payOpen===c.pais || !!q;
+          const wl = q ? c.wallets.filter(m=>payNorm(m).includes(q)||payNorm(c.pais).includes(q)) : c.wallets;
+          const bk = q ? c.banks.filter(m=>payNorm(m).includes(q)||payNorm(c.pais).includes(q)) : c.banks;
+          return `<div class="paycard">
+            <button class="payhead" data-pais="${esc(c.pais)}"><span>${c.flag} ${esc(c.pais)}</span><span class="paycnt">${c.wallets.length+c.banks.length}</span></button>
+            ${open?`<div class="paybody">
+              ${wl.length?`<div class="paylbl">Billeteras</div><div class="paychips">${wl.map(m=>chip(m,c.pais)).join("")}</div>`:""}
+              ${bk.length?`<div class="paylbl">Bancos</div><div class="paychips">${bk.map(m=>chip(m,c.pais)).join("")}</div>`:""}
+              <button class="paychip custom" data-custom="${esc(c.pais)}">+ Otro (banco o billetera)</button>
+            </div>`:""}
+          </div>`;
+        }).join("")
+        : `<div class="desc" style="padding:8px 2px">Sin coincidencias. Elige un país y usa <b>+ Otro</b>, o escribe el método a mano en la tarjeta de arriba.</div>`
+      }</div>`;
+    const si=$("paySearchIn");
+    if(si){ si.oninput=(e)=>{ const p=e.target.selectionStart; st.paySearch=e.target.value; paintPayPick(); const n=$("paySearchIn"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } }; }
+    box.querySelectorAll(".payhead").forEach(h=> h.onclick=()=>{ st.payOpen = st.payOpen===h.dataset.pais?null:h.dataset.pais; paintPayPick(); });
+    box.querySelectorAll("[data-add]").forEach(bt=> bt.onclick=()=> addMet(bt.dataset.add,bt.dataset.pais));
+    box.querySelectorAll("[data-custom]").forEach(bt=> bt.onclick=async()=>{ const nm=await askText({title:"Agregar método", message:`Banco o billetera de ${bt.dataset.custom} que no está en la lista`, placeholder:"Ej. Banco XYZ / MiBilletera", confirmText:"Agregar"}); if(nm && nm.trim()) addMet(nm.trim(), bt.dataset.custom); });
+  };
+  paintMet(); paintDp(); paintPayPick();
   $("dpSw").onclick=()=>{ o.gen_datos=!(o.gen_datos!==false); $("dpSw").classList.toggle("on",o.gen_datos!==false); paintDp(); };
-  b.querySelectorAll(".ocrpre").forEach(btn=> btn.onclick=()=>{ o.metodos.push({ app:btn.dataset.app, titular:"", numero:"", notas:"" }); paintMet(); paintDp(); });
   const paintEj=()=>{
     const box=$("ocrEj"); box.innerHTML="";
     if(!o.ejemplos.length){ box.innerHTML=`<div class="desc" style="padding:2px 0">Sin imágenes de referencia.</div>`; }
