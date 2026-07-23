@@ -919,12 +919,25 @@ async function execute(db: SupabaseClient, run: Run) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial", chosen.nombre ?? "");
           }
         }
-        // "Y después": continuar a otro flujo (venta o IA) o terminar. Se guarda
-        // dentro del rotador, así el flujo Bienvenida es un solo nodo.
+        // "Y después": tras el saludo, el bot CONTINÚA SOLO a vender. Ya no se le
+        // pide al usuario que elija el flujo (era confuso para quien no sabe de
+        // flujos). Orden: 1) el flujo configurado en `despues` (compat, por si lo
+        // dejaron a mano); 2) automático → el flujo de VENTA activo del producto.
         const des = node.config?.despues ?? {};
-        if (des.modo === "flujo" && des.flow_id) {
+        let nextFlowId: string | null = (des.modo === "flujo" && des.flow_id) ? String(des.flow_id) : null;
+        if (!nextFlowId) {
+          const { data: cur } = await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle();
+          const pid = (cur as any)?.product_id;
+          if (pid) {
+            const { data: vf } = await db.from("flows").select("id")
+              .eq("channel_id", run.channel_id).eq("product_id", pid).eq("role", "venta").eq("estado", "activo")
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (vf) nextFlowId = (vf as any).id;
+          }
+        }
+        if (nextFlowId) {
           const { data: tf } = await db.from("flows")
-            .select("id, nombre, product_id, estado").eq("id", des.flow_id).eq("channel_id", run.channel_id).maybeSingle();
+            .select("id, nombre, product_id, estado").eq("id", nextFlowId).eq("channel_id", run.channel_id).maybeSingle();
           if (tf && (tf as any).estado === "activo") {
             run.flow_id = (tf as any).id;
             const init = await initialNode(db, run.flow_id);

@@ -2381,9 +2381,7 @@ function harvest(){
       const cp=bc.querySelector(".bcap"); if(cp) bub.caption=cp.value;
     });
   });
-  const des=st.act.node.config.despues;
-  const dm=$("actDespues"); if(dm) des.modo=dm.value;
-  const df=$("actFlow"); if(df) des.flow_id=df.value||null;
+  // El "y después" ya no se pregunta: el motor continúa solo al flujo de venta.
 }
 
 function renderComposer(){
@@ -2424,19 +2422,9 @@ function renderComposer(){
       <button class="btn" id="addVar" style="margin-top:14px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar versión</button>
     </div>
 
-    <div class="card">
-      <h4>${icon("secuencias")}Y después de los mensajes iniciales</h4>
-      <div class="row" style="margin-top:8px">
-        <select class="sel" id="actDespues" style="flex:0 0 220px">
-          <option value="nada"${des.modo==="nada"?" selected":""}>Nada (solo los mensajes)</option>
-          <option value="flujo"${des.modo==="flujo"?" selected":""}>Continuar a un flujo</option>
-        </select>
-        <select class="sel" id="actFlow" style="flex:1;min-width:180px;${des.modo==="flujo"?"":"display:none"}">
-          <option value="">— Elige el flujo (venta / IA) —</option>
-          ${st.act.others.filter(f=>f.estado==="activo").map(f=>`<option value="${f.id}"${des.flow_id===f.id?" selected":""}>${esc(f.nombre)}</option>`).join("")}
-        </select>
-      </div>
-      <div style="font-size:11.5px;color:var(--faint);margin-top:8px">Para "responda la IA", elegí un flujo cuyo primer nodo sea de IA. Los flujos se clonan en la pestaña <b>Flujos</b>.</div>
+    <div class="card" style="display:flex;align-items:flex-start;gap:10px;background:var(--ia-bg,rgba(139,92,246,.08));border-color:var(--ia-brd,rgba(139,92,246,.3))">
+      <span style="color:var(--ia1,#8b5cf6);flex:0 0 auto;display:inline-flex;margin-top:1px">${icon("secuencias")}</span>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.55">Después del saludo, <b>el bot continúa solo a vender</b> con la IA de este producto. No tienes que configurar nada — se conecta automáticamente al flujo de venta.</div>
     </div>
 
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
@@ -2447,7 +2435,6 @@ function renderComposer(){
   // Rotación toggle
   $("rotSw").onclick=()=>{ harvest(); cfg.activo=cfg.activo===false?true:false; renderComposer(); };
   $("addVar").onclick=()=>{ harvest(); cfg.variantes.push(newVariant(cfg.variantes.length)); renderComposer(); };
-  $("actDespues").onchange=(e)=>{ harvest(); cfg.despues.modo=e.target.value; renderComposer(); };
   $("saveWelcome").onclick=saveWelcome;
   $("actKw").oninput=avisarKeywords;
   $("actMatch").onchange=avisarKeywords;
@@ -2576,7 +2563,6 @@ async function saveWelcome(){
   cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
   cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
   if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
-  if(cfg.despues.modo==="flujo" && !cfg.despues.flow_id){ toast("Elige a qué flujo continuar",true); return; }
   const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
   if(eN){ toast(eN.message,true); return; }
   // Disparadores
