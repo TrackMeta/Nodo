@@ -104,6 +104,7 @@
           <button class="nodo-btn primary" id="addProduct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo producto</button>
         </div>
       </div>
+      <div id="claseSeg" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 14px"></div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
     </div>
@@ -125,7 +126,7 @@
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const $ = (id) => document.getElementById(id);
-const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", localFolders:new Set() };
+const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set() };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
 function prodFolder(){ return ((st.prod?.emoji?st.prod.emoji+" ":"")+(st.prod?.nombre||"")).slice(0,60); }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -159,7 +160,7 @@ function showDetail(){ $("gridView").style.display="none"; $("detailView").style
 async function loadProducts(){
   // Las opciones de compra son la verdad: si un producto tiene más de una, ES
   // multi-opción. Ya no hace falta un checkbox aparte que lo declare.
-  const full="id,nombre,config,folder,emoji,tipo,product_versions(id,precio,activo)";
+  const full="id,nombre,config,folder,emoji,tipo,clase,product_versions(id,precio,activo)";
   let { data, error } = await supa.from("products").select(full).eq("channel_id",st.channelId).order("created_at");
   if(error){ ({ data, error } = await supa.from("products").select("id,nombre,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at")); }
   if(error){ ({ data } = await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).order("created_at")); }
@@ -187,7 +188,18 @@ async function deleteFolder(){
   st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await loadProducts();
 }
 function renderCards(){
+  // Control Todos / Principales / Extras (los extras son complementos de ventas extra).
+  const esEx=(p)=>p.clase==="extra";
+  const counts={ todos:st.list.length, principal:st.list.filter(p=>!esEx(p)).length, extra:st.list.filter(esEx).length };
+  const segEl=$("claseSeg");
+  if(segEl){
+    const seg=(v,l)=>`<button data-clase="${v}" style="border:none;background:${st.claseFilter===v?'var(--brand)':'transparent'};color:${st.claseFilter===v?'#fff':'var(--muted)'};font:inherit;font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer">${l} <span style="opacity:.7">${counts[v]}</span></button>`;
+    segEl.innerHTML=seg("todos","Todos")+seg("principal","Principales")+seg("extra","Extras");
+    segEl.querySelectorAll("[data-clase]").forEach(b=> b.onclick=()=>{ st.claseFilter=b.dataset.clase; renderCards(); });
+  }
   let list=st.list;
+  if(st.claseFilter==="principal") list=list.filter(p=>!esEx(p));
+  else if(st.claseFilter==="extra") list=list.filter(esEx);
   if(st.folder==="__none") list=list.filter(p=>!p.folder); else if(st.folder!=="__all") list=list.filter(p=>p.folder===st.folder);
   const box=$("cards");
   if(!st.list.length){
@@ -209,8 +221,8 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
-      <div class="c-sub">${p.tipo==="fisico"?"Producto físico · envíos":"Producto digital"}</div>
-      <div class="c-foot"><span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
+      <div class="c-sub">${esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico · envíos":"Producto digital")}</div>
+      <div class="c-foot">${esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">🟩 Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -221,7 +233,7 @@ function renderCards(){
 // decide cómo se ve toda la ficha —, luego el nombre. Devuelve {tipo,nombre} o null.
 function nuevoProductoModal(){
   return new Promise((resolve)=>{
-    let tipo=null;
+    let tipo=null, clase="principal";
     const ov=document.createElement("div");
     ov.style.cssText="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px";
     const card=(t,ic,tt,d)=>`<button class="npt" data-t="${t}" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s,background .15s;display:flex;flex-direction:column;gap:8px">
@@ -230,7 +242,16 @@ function nuevoProductoModal(){
       <span style="font-size:12px;color:var(--muted);line-height:1.5">${d}</span></button>`;
     ov.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:24px;width:100%;max-width:560px">
       <div style="font-size:19px;font-weight:800;letter-spacing:-.3px">Nuevo producto</div>
-      <div style="font-size:13px;color:var(--muted);margin:4px 0 18px">¿Qué vas a vender? Esto adapta toda la ficha.</div>
+      <div style="font-size:13px;color:var(--muted);margin:4px 0 14px">Primero, ¿es un producto que vendes de frente o un complemento?</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+        <button class="npc" data-c="principal" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--brand);background:var(--brand-bg,rgba(43,127,255,.12));border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
+          <span style="font-weight:800;font-size:14px;color:var(--text)">🟦 Principal</span>
+          <span style="font-size:11.5px;color:var(--muted);line-height:1.45">Se vende solo: tiene su gancho (palabra clave / anuncio) y su conversación de venta con IA.</span></button>
+        <button class="npc" data-c="extra" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
+          <span style="font-weight:800;font-size:14px;color:var(--text)">🟩 Extra (complemento)</span>
+          <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende solo — se engancha como <b>venta extra</b> a un principal. Formulario mínimo.</span></button>
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin:0 0 18px">¿Cómo se entrega? Esto adapta la ficha.</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         ${card("fisico","📦","Producto físico","Se envía: Lima contraentrega o provincia por agencia con adelanto. La logística la hereda de Negocio.")}
         ${card("digital","💻","Producto digital","Se entrega al instante por un link o archivo al confirmar el pago.")}
@@ -250,11 +271,16 @@ function nuevoProductoModal(){
       ov.querySelectorAll(".npt").forEach(x=>{ const on=x===btn; x.style.borderColor=on?"var(--brand)":"var(--border)"; x.style.background=on?"var(--brand-bg,rgba(43,127,255,.12))":"var(--surface-2)"; });
       refresh(); ov.querySelector("#nptName").focus();
     });
+    ov.querySelectorAll(".npc").forEach(btn=> btn.onclick=()=>{
+      clase=btn.dataset.c;
+      ov.querySelectorAll(".npc").forEach(x=>{ const on=x===btn; x.style.borderColor=on?"var(--brand)":"var(--border)"; x.style.background=on?"var(--brand-bg,rgba(43,127,255,.12))":"var(--surface-2)"; });
+    });
+    const done=()=>close({ tipo, clase, nombre:ov.querySelector("#nptName").value.trim() });
     ov.querySelector("#nptName").oninput=refresh;
-    ov.querySelector("#nptName").onkeydown=(e)=>{ if(e.key==="Enter"&&!okBtn().disabled) close({ tipo, nombre:ov.querySelector("#nptName").value.trim() }); };
+    ov.querySelector("#nptName").onkeydown=(e)=>{ if(e.key==="Enter"&&!okBtn().disabled) done(); };
     ov.querySelector("#nptCancel").onclick=()=>close(null);
     ov.onclick=(e)=>{ if(e.target===ov) close(null); };
-    okBtn().onclick=()=>close({ tipo, nombre:ov.querySelector("#nptName").value.trim() });
+    okBtn().onclick=done;
     document.body.appendChild(ov);
     ov.querySelector("#nptName").focus();
   });
@@ -262,9 +288,10 @@ function nuevoProductoModal(){
 
 async function createProduct(){
   const r=await nuevoProductoModal(); if(!r) return;
-  const { tipo, nombre }=r;
+  const { tipo, nombre, clase }=r;
   const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
-  let { data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, tipo, folder }).select("id").single();
+  let { data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, tipo, clase, folder }).select("id").single();
+  if(error && /clase|column/.test(error.message)){ ({ data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, tipo, folder }).select("id").single()); }
   if(error && /tipo|folder|column/.test(error.message)){ ({ data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre, tipo }).select("id").single()); }
   if(error && /tipo|column/.test(error.message)){ ({ data,error } = await supa.from("products").insert({ channel_id:st.channelId, nombre }).select("id").single()); }
   if(error){ toast(error.message,true); return; }
@@ -297,18 +324,25 @@ async function deleteProduct(){
 
 function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
+  // Un producto EXTRA (complemento) no se vende solo: solo se engancha como venta
+  // extra. Por eso muestra un set reducido de pestañas (sin IA/Activación/Receta…).
+  const esExtra = st.prod.clase==="extra";
+  const EXTRA_TABS=["producto","opciones","entrega"];
+  if(esExtra && !EXTRA_TABS.includes(st.tab)) st.tab="producto";
+  const IA_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+  const tb=(t,label,adv)=> (esExtra && !EXTRA_TABS.includes(t)) ? "" : `<button class="tab ${adv?'tab-adv ':''}${st.tab===t?'active':''}" data-t="${t}">${label}</button>`;
   d.innerHTML=`
-    <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(st.prod.nombre)}</h1>
+    <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px">${esc(st.prod.nombre)}${esExtra?`<span style="font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px">Extra · complemento</span>`:""}</h1>
     <div class="tabs">
-      <button class="tab ${st.tab==='producto'?'active':''}" data-t="producto">Producto</button>
-      <button class="tab ${st.tab==='opciones'?'active':''}" data-t="opciones">Opciones de compra</button>
-      <button class="tab ${st.tab==='entrega'?'active':''}" data-t="entrega">Entrega</button>
-      <button class="tab ${st.tab==='ia'?'active':''}" data-t="ia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Cómo lo vende la IA</button>
-      <button class="tab ${st.tab==='activacion'?'active':''}" data-t="activacion">Activación</button>
-      <button class="tab ${st.tab==='extras'?'active':''}" data-t="extras">Ventas extra</button>
-      <button class="tab ${st.tab==='remarketing'?'active':''}" data-t="remarketing">Remarketing</button>
-      <button class="tab tab-adv ${st.tab==='receta'?'active':''}" data-t="receta">Receta</button>
-      <button class="tab tab-adv ${st.tab==='flujos'?'active':''}" data-t="flujos">Flujos</button>
+      ${tb("producto","Producto")}
+      ${tb("opciones","Opciones de compra")}
+      ${tb("entrega","Entrega")}
+      ${tb("ia",IA_SVG+"Cómo lo vende la IA")}
+      ${tb("activacion","Activación")}
+      ${tb("extras","Ventas extra")}
+      ${tb("remarketing","Remarketing")}
+      ${tb("receta","Receta",true)}
+      ${tb("flujos","Flujos",true)}
     </div>
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
@@ -1194,13 +1228,14 @@ function renderEnvio(){
 // PRECIO del bot (de este producto o de cualquier otro). Lo usan la pestaña de
 // Ventas extra y el generador de flujo (que puede correr sin haberla abierto).
 async function cargarCatalogoExtras(){
-  const { data:prods } = await supa.from("products")
-    .select("id,nombre,emoji,tipo,product_versions(id,nombre,precio,activo)")
+  let { data:prods, error } = await supa.from("products")
+    .select("id,nombre,emoji,tipo,clase,product_versions(id,nombre,precio,activo)")
     .eq("channel_id",st.channelId).order("nombre");
+  if(error){ ({ data:prods } = await supa.from("products").select("id,nombre,emoji,tipo,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre")); }
   const cat=[];
   (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{
     if(v.activo!==false && v.precio!=null && v.precio!=="")
-      cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio, tipo:p.tipo||"digital" });
+      cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio, tipo:p.tipo||"digital", esExtra:p.clase==="extra" });
   }));
   st.extraCat=cat;
   return cat;
@@ -1353,7 +1388,10 @@ function paintExtras(){
         <div style="flex:0 0 auto;font-size:12px;color:var(--faint);font-weight:800;margin-bottom:10px">${i+1}º</div>
         <div style="flex:1"><label style="margin-top:0">Qué ofrecer</label>
           <select class="sel exv" style="width:100%">
-            ${cat.map(c=>`<option value="${c.id}" ${x.version_id===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}
+            ${(()=>{ const opt=c=>`<option value="${c.id}" ${x.version_id===c.id?"selected":""}>${esc(c.label)}</option>`;
+              const ex=cat.filter(c=>c.esExtra), pr=cat.filter(c=>!c.esExtra);
+              return (ex.length?`<optgroup label="🟩 Complementos (extras)">${ex.map(opt).join("")}</optgroup>`:"")
+                   + (pr.length?`<optgroup label="Productos principales">${pr.map(opt).join("")}</optgroup>`:""); })()}
           </select></div>
         <button class="iconbtn exu" style="flex:0 0 auto;margin-bottom:6px" title="Subir">▲</button>
         <button class="iconbtn exd" style="flex:0 0 auto;margin-bottom:6px" title="Bajar">▼</button>

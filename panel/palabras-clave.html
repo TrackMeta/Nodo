@@ -296,8 +296,10 @@ async function loadAll(){
   // Config del router + intenciones por producto
   const { data:ch }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
   st.router=ch?.ia_router||{};
-  const { data:prods }=await supa.from("products").select("id,nombre,emoji,config").eq("channel_id",st.channelId).order("nombre");
-  st.prodList=prods||[];
+  let { data:prods, error:pe }=await supa.from("products").select("id,nombre,emoji,config,clase").eq("channel_id",st.channelId).order("nombre");
+  if(pe){ ({ data:prods }=await supa.from("products").select("id,nombre,emoji,config").eq("channel_id",st.channelId).order("nombre")); }
+  // Los productos EXTRA (complementos) no se venden solos → no van en palabras clave.
+  st.prodList=(prods||[]).filter(p=>p.clase!=="extra");
   st.intents={}; for(const p of st.prodList) st.intents[p.id]=p.config?.intencion||"";
   renderFlowSelects(); renderKeywords(); renderRouter(); renderIntents();
 }
