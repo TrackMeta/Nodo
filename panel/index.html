@@ -65,8 +65,18 @@
   .tagf{display:flex;flex-direction:column;gap:3px;max-height:230px;overflow-y:auto;margin-top:1px}
   .tagf .cmuted{font-size:12px;color:var(--faint);padding:4px 8px;display:block}
   .tagdot{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.12) inset}
-  .fclear{margin:20px 6px 0;width:calc(100% - 12px);height:38px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+  .fclear{margin:14px 6px 0;width:calc(100% - 12px);height:38px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
   .fclear:hover{border-color:var(--brand-border);color:var(--brand);background:var(--brand-bg)}
+  /* Mis filtros (guardados) */
+  .myfilters{display:flex;flex-direction:column;gap:4px;margin:0 6px 4px}
+  .mfchip{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 8px 8px 11px;border-radius:9px;border:1px solid var(--brand-border);background:var(--brand-bg);color:var(--brand-2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:filter .12s}
+  .mfchip:hover{filter:brightness(1.08)}
+  .mfchip .ftg-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mfchip .mfx{flex:none;width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;color:var(--muted);background:var(--surface)}
+  .mfchip .mfx:hover{color:var(--red);background:var(--red-bg)}
+  .fcreate{width:calc(100% - 12px);margin:2px 6px 0;height:36px;border:1px dashed var(--border-strong);background:transparent;color:var(--muted);border-radius:10px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:inherit;transition:background .12s,color .12s,border-color .12s}
+  .fcreate:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-bg)}
+  .fcreate svg{width:14px;height:14px}
 
   /* Lista de conversaciones */
   .list{width:300px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface-1)}
@@ -258,6 +268,12 @@
   .cpanel .bigav{width:60px;height:60px;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}
   .cpanel .cnm{font-weight:600;font-size:15px}
   .cpanel .cph{font-size:12px;color:var(--muted)}
+  /* Esqueleto de carga de la ficha (evita el flash "incompleto") */
+  .cx-skel{display:flex;flex-direction:column;gap:12px;padding-top:16px}
+  .cx-skrow{height:52px;border-radius:12px;background:linear-gradient(100deg,var(--surface-2) 30%,var(--surface) 50%,var(--surface-2) 70%);background-size:200% 100%;animation:cxShimmer 1.2s linear infinite}
+  .cx-skrow.sm{height:34px}
+  @keyframes cxShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  @media (prefers-reduced-motion:reduce){.cx-skrow{animation:none}}
   .tagrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
   .tagchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:20px;padding:4px 7px 4px 10px;font-size:12px;font-weight:600;line-height:1}
   .tagchip .tdot{width:7px;height:7px;border-radius:50%;flex:none}
@@ -530,26 +546,32 @@ async function loadFilters(){
   ]);
   state.products = pr.error ? [] : (pr.data||[]);
   state.tags = tg.data||[];
+  state.savedFilters = loadSavedFilters();
   renderFilters();
 }
 function renderFilters(){
   const f = state.filters;
   const box = $("filters");
+  const saved = state.savedFilters || [];
   box.innerHTML = `
     <div class="ft">${svgFilter()} FILTROS</div>
+    ${saved.length ? `<h4>Mis filtros</h4><div class="myfilters">${
+      saved.map((s,i)=>`<button class="mfchip" data-mf="${i}" type="button" title="Aplicar este filtro"><span class="ftg-nm">${esc(s.name)}</span><span class="mfx" data-mfdel="${i}" title="Eliminar filtro">×</span></button>`).join("")
+    }</div>`:""}
     <h4>Estado</h4>
     <button class="ftog ${f.sinResponder?"on":""}" id="fSin" type="button"><span class="ftg-nm">Sin responder</span><span class="fcount" id="cSin"></span></button>
     <button class="ftog ${f.anuncio?"on":""}" id="fAds" type="button"><span class="ftg-nm">${icon("megaphone")} Llegó por anuncio</span><span class="fcount" id="cAds"></span></button>
     <button class="ftog ${f.archivado?"on":""}" id="fArch" type="button"><span class="ftg-nm">${icon("archive")} Archivados</span><span class="fcount" id="cArch"></span></button>
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
-    <h4>Producto</h4>
-    <select class="fsel" id="fProd"><option value="">Todos</option>${state.products.map(p=>`<option value="${p.id}" ${f.producto===p.id?"selected":""}>${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
     <h4>Etiquetas</h4>
     <div class="tagf" id="fTags">${
       state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<button class="ftog tagtog ${f.tags.has(t.id)?"on":""}" data-tag="${t.id}" type="button"><span class="tagdot" style="background:${c}"></span><span class="ftg-nm">${esc(t.nombre)}</span><span class="fcount" data-tagcount="${t.id}"></span></button>`; }).join("")
         : '<span class="cmuted">Sin etiquetas en este canal</span>'
     }</div>
+    <h4>Producto</h4>
+    <select class="fsel" id="fProd"><option value="">Todos</option>${state.products.map(p=>`<option value="${p.id}" ${f.producto===p.id?"selected":""}>${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
+    <button class="fcreate" id="fCreate" type="button">${icon("bookmark")} Guardar como filtro</button>
     <button class="fclear" id="fClear">Limpiar filtros</button>`;
   $("fSin").onclick=()=>{ f.sinResponder=!f.sinResponder; $("fSin").classList.toggle("on",f.sinResponder); renderConversations(); };
   $("fAds").onclick=()=>{ f.anuncio=!f.anuncio; $("fAds").classList.toggle("on",f.anuncio); renderConversations(); };
@@ -557,8 +579,34 @@ function renderFilters(){
   box.querySelectorAll("[data-stage]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); btn.classList.toggle("on"); renderConversations(); });
   $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
+  box.querySelectorAll(".mfchip").forEach(btn=> btn.onclick=(e)=>{ if(e.target.closest("[data-mfdel]")){ delSavedFilter(+e.target.closest("[data-mfdel]").dataset.mfdel); return; } applySavedFilter(+btn.dataset.mf); });
+  $("fCreate").onclick=saveCurrentFilter;
   $("fClear").onclick=()=>{ state.filters={ sinResponder:false, anuncio:false, archivado:false, producto:"", tags:new Set(), stages:new Set() }; renderFilters(); renderConversations(); };
   updateFilterCounts();
+}
+// ── Filtros guardados (presets por canal, en localStorage) ──
+function savedFiltersKey(){ return "nodo.savedFilters."+(state.channelId||"x"); }
+function loadSavedFilters(){ try{ return JSON.parse(localStorage.getItem(savedFiltersKey())||"[]"); }catch{ return []; } }
+function persistSavedFilters(){ try{ localStorage.setItem(savedFiltersKey(), JSON.stringify(state.savedFilters||[])); }catch(_){}}
+async function saveCurrentFilter(){
+  const f=state.filters;
+  const active=f.sinResponder||f.anuncio||f.archivado||f.producto||f.tags.size||f.stages.size;
+  if(!active){ toast("Selecciona al menos un filtro para guardarlo",true); return; }
+  const name=await askText({ title:"Guardar filtro", message:"Ponle un nombre a esta combinación de filtros para reusarla con un toque.", placeholder:"Ej. Interesados por anuncio", confirmText:"Guardar" });
+  if(!name) return;
+  state.savedFilters=state.savedFilters||[];
+  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, anuncio:f.anuncio, archivado:f.archivado, producto:f.producto, tags:[...f.tags], stages:[...f.stages] } });
+  persistSavedFilters(); renderFilters(); toast("Filtro guardado ✓");
+}
+function applySavedFilter(i){
+  const s=(state.savedFilters||[])[i]; if(!s) return; const g=s.f||{};
+  state.filters={ sinResponder:!!g.sinResponder, anuncio:!!g.anuncio, archivado:!!g.archivado, producto:g.producto||"", tags:new Set(g.tags||[]), stages:new Set(g.stages||[]) };
+  renderFilters(); renderConversations();
+}
+async function delSavedFilter(i){
+  const s=(state.savedFilters||[])[i]; if(!s) return;
+  if(!await confirmDialog({ title:"Eliminar filtro", message:`¿Eliminar el filtro guardado “${s.name}”?`, confirmText:"Eliminar", danger:true })) return;
+  state.savedFilters.splice(i,1); persistSavedFilters(); renderFilters();
 }
 // Conteo por filtro dentro del modo actual (Bot/Humano).
 function updateFilterCounts(){
@@ -777,7 +825,14 @@ function mediaThumb(m){ const u=esc(m.content.media_url);
 
 async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
-  p.innerHTML = `<div class="cmuted" style="padding:20px 0;text-align:center">Cargando…</div>`;
+  const isT = c.wa_id === "webchat-test";
+  p.innerHTML = `
+    <div class="chd">
+      <div class="bigav">${initials(c.nombre, c.wa_id)}</div>
+      <div class="cnm">${esc(c.nombre || c.wa_id || "")}</div>
+      <div class="cph">${isT ? "Contacto de prueba (Web Chat)" : "+"+esc(c.wa_id||"")}</div>
+    </div>
+    <div class="cx-skel"><div class="cx-skrow sm"></div><div class="cx-skrow"></div><div class="cx-skrow sm"></div><div class="cx-skrow"></div></div>`;
   const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
   const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes, orderRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),

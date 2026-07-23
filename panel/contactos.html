@@ -166,6 +166,7 @@
       <button class="bbtn" data-act="stage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg> Etapa</button>
       <button class="bbtn" data-act="seq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg> Agregar a secuencia</button>
       <button class="bbtn" data-act="block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Bloquear</button>
+      <button class="bbtn" data-act="unblock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear</button>
       <button class="bbtn" data-act="arch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg> Archivar</button>
       <button class="bbtn" data-act="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Exportar</button>
       <button class="bbtn danger" data-act="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg> Eliminar</button>
@@ -476,12 +477,12 @@ async function bulk(act){
     if(error){ toast(error.message,true); return; }
     toast(`${ids.length} movido(s) a ${STAGE[k].label} ✓`); await load(); return;
   }
-  if(act==="block"){
-    const mode=await askChoice({ title:`${ids.length} contacto(s)`, options:[{label:"Bloquear",value:"block",desc:"El bot deja de responderles"},{label:"Desbloquear",value:"unblock",desc:"Vuelven a la normalidad"}] });
-    if(!mode) return;
-    const { error }=await supa.from("contacts").update({ bloqueado:mode==="block" }).in("id",ids);
+  if(act==="block"||act==="unblock"){
+    const on=act==="block";
+    if(on && !await confirmDialog({ title:`Bloquear ${ids.length} contacto(s)`, message:"El bot dejará de responderles y saldrán de la bandeja.", confirmText:"Bloquear", danger:true })) return;
+    const { error }=await supa.from("contacts").update({ bloqueado:on }).in("id",ids);
     if(error){ toast(error.message,true); return; }
-    toast(mode==="block"?`${ids.length} bloqueado(s) ✓`:`${ids.length} desbloqueado(s) ✓`); await load(); return;
+    toast(on?`${ids.length} bloqueado(s) ✓`:`${ids.length} desbloqueado(s) ✓`); await load(); return;
   }
   if(act==="seq"){
     const { data:seqs }=await supa.from("sequences").select("id,nombre,activo").eq("channel_id",st.channelId).order("nombre");
