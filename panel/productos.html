@@ -2049,16 +2049,16 @@ function renderOpciones(){
     <div id="opWarn"></div>
     <button class="btn" id="opAdd">+ Opción de compra</button>
     <div class="card" style="margin-top:18px">
-      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Atributos <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Detalles a preguntar <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
-        Detalles que la IA debe <b>preguntar y registrar</b> antes de cerrar la venta, pero que
+        Datos que la IA le <b>pregunta al cliente</b> y registra antes de cerrar la venta, pero que
         <b>no cambian el precio</b> (${fisico?"talla, color, modelo…":"nombre para el certificado, idioma…"}).
-        La IA los pesca de la conversación sin interrogar, y quedan guardados en el pedido${fisico?" y en el <b>rótulo de envío</b>":""}.
-        <br>Si algo cambia el precio o lo que se entrega, no es un atributo: es una
-        <a href="#" id="atGoOp" style="color:var(--brand)">opción de compra ↑</a>.
+        Ella los pesca de la conversación sin interrogar, y quedan guardados en el pedido${fisico?" y en el <b>rótulo de envío</b>":""} para que salga completo.
+        <br><b>¿Cambia el precio o lo que entregas?</b> Entonces no es un detalle: es una
+        <a href="#" id="atGoOp" style="color:var(--brand)">opción de compra ↑</a> (ej. Básico vs Premium, 1 unidad vs pack).
       </div>
       <div id="atList"></div>
-      <button class="btn" id="atAdd" style="margin-top:8px">+ Atributo</button>
+      <button class="btn" id="atAdd" style="margin-top:8px">+ Detalle</button>
     </div>`;
   paintOpciones(fisico);
   paintAtributos();
@@ -2217,7 +2217,7 @@ const EJ_ATRIBUTO = {
 function paintAtributos(){
   const cfg=st.prod.config; const box=$("atList"); box.innerHTML="";
   const EJ = EJ_ATRIBUTO[(st.prod.tipo||"digital")==="fisico" ? "fisico" : "digital"];
-  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin atributos todavía. Agrega uno si la IA debe preguntar ${EJ.vacio}</div>`; }
+  if(!cfg.atributos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin detalles todavía. Agrega uno si la IA debe preguntar ${EJ.vacio}</div>`; }
   cfg.atributos.forEach((a,i)=>{
     if(!Array.isArray(a.media)) a.media=[];
     if(!a.clave) a.clave=slugAttr(a.nombre)||("atributo"+(i+1));
