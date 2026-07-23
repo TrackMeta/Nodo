@@ -131,7 +131,7 @@
     </div>
 
     <div class="panel">
-      <h3>Rendimiento por producto</h3><p class="ps">Unidades e ingresos por producto y variante · periodo seleccionado</p>
+      <h3>Rendimiento por producto</h3><p class="ps">Unidades, ingresos y <b>ganancia</b> (antes de publicidad) por producto y variante · qué se vende vs. qué deja</p>
       <div id="productPerf"></div>
     </div>
 
@@ -281,7 +281,7 @@ async function load(){
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("products").select("id,nombre,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
     supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
-    supa.from("ads_insights").select("ad_id,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)),
+    supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)),
   ]);
   const s=stats.data||{};
   if(typeof contR?.count==="number") s.contactos=contR.count;
@@ -349,6 +349,16 @@ async function load(){
   const roas = gastoAds>0 ? cobrado/gastoAds : 0;
   const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
 
+  // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
+  // Mismo criterio que la banda: digital = cobrado (sin COGS), físico = margen.
+  const margenPorProd={}, dailyMargin={}, dailySpend={};
+  orders.forEach(o=>{
+    const k=ymd(new Date(o.created_at));
+    const m = !O.esFisico(o) ? O.cobrado(o) : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    if(m!=null){ const pid=o.product_id||"_none"; margenPorProd[pid]=(margenPorProd[pid]||0)+m; dailyMargin[k]=(dailyMargin[k]||0)+m; }
+  });
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0); } });
+
   const K=[
     kpi("money","#22c079","Cobrado", money(cobrado), `plata que ya entró, de ${money(vendido)} vendidos`),
   ];
@@ -389,8 +399,8 @@ async function load(){
   renderBand({ bruta, gastoAds, neta, roas, pctAds, hasAds, sinCostoF });
 
   renderFunnel(ev);
-  renderSales(orders, r);
-  renderProducts(prods, orders, vendido, ordersUnavailable);
+  renderSales(orders, r, dailyMargin, dailySpend, hasAds);
+  renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
   renderStages(s.por_stage||{});
 }
@@ -421,38 +431,51 @@ function renderFunnel(ev){
   $("funnel").innerHTML=rows.map(([l,col,v])=>`<div class="frow"><div class="flabel"><span style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block"></span>${l}</div><div class="fbar"><span style="width:${Math.round(v/max*100)}%;background:${col}"></span></div><div class="fval">${v}</div></div>`).join("");
 }
 
-function renderSales(orders, r){
-  // Agrupar por día dentro del rango (máx 31 barras).
-  const days=[]; const map={};
+function renderSales(orders, r, dailyMargin, dailySpend, hasAds){
+  const days=[]; const ingMap={};
   const spanDays=Math.min(31,Math.max(1,Math.ceil((r.to-r.from)/864e5)));
   const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"2-digit"});
-  for(let i=spanDays-1;i>=0;i--){ const d=startOfDay(new Date(r.to.getTime()-i*864e5)); const k=ymd(d); map[k]=0; days.push({k,label:fmt.format(d)}); }
-  let total=0;
-  orders.forEach(o=>{ const k=ymd(new Date(o.created_at)); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in map){ map[k]+=v; } total+=v; });
-  $("salesSum").textContent = total>0 ? `${money(total)} en el periodo` : "Sin ventas registradas en el periodo";
-  renderBars(days.map(d=>({label:d.label, value:map[d.k]})));
+  for(let i=spanDays-1;i>=0;i--){ const d=startOfDay(new Date(r.to.getTime()-i*864e5)); const k=ymd(d); ingMap[k]=0; days.push({k,label:fmt.format(d)}); }
+  let totalIng=0;
+  orders.forEach(o=>{ const k=ymd(new Date(o.created_at)); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in ingMap) ingMap[k]+=v; totalIng+=v; });
+  const data=days.map(d=>({ label:d.label, ing:ingMap[d.k]||0, gan:(dailyMargin[d.k]||0)-(dailySpend[d.k]||0) }));
+  const totalGan=data.reduce((a,d)=>a+d.gan,0);
+  const gl=hasAds?"ganancia neta":"ganancia";
+  $("salesSum").innerHTML = totalIng>0
+    ? `<b>${money(totalIng)}</b> vendido · <b style="color:${totalGan<0?'var(--red)':'var(--green)'}">${money(totalGan)}</b> de ${gl} en el periodo`
+    : "Sin ventas registradas en el periodo";
+  renderSalesChart(data, hasAds);
 }
-function renderBars(data){
-  const W=560,H=170,pad=24,bw=(W-pad*2)/data.length;
-  const max=Math.max(1,...data.map(d=>d.value));
-  let bars="", labels=""; const step=Math.ceil(data.length/8);
+// Barras = vendido por día · línea = ganancia (neta si hay ads). Eje con 0 fijo
+// para que los días SIN ganancia (gasto > margen) se vean bajar bajo la línea.
+function renderSalesChart(data, hasAds){
+  const W=560,H=180,padL=22,padR=8,padT=12,padB=26;
+  const ings=data.map(d=>d.ing), gans=data.map(d=>d.gan);
+  const vMax=Math.max(1,...ings,...gans), vMin=Math.min(0,...gans);
+  const plotT=padT, plotB=H-padB;
+  const y=(v)=> plotB - (v-vMin)/(vMax-vMin)*(plotB-plotT);
+  const y0=y(0), bw=(W-padL-padR)/data.length, step=Math.ceil(data.length/8);
+  let bars="", labels="";
   data.forEach((d,i)=>{
-    const bh=Math.round((d.value/max)*(H-46));
-    const x=pad+i*bw, y=H-26-bh;
-    bars+=`<rect x="${x+bw*0.16}" y="${y}" width="${Math.max(2,bw*0.68)}" height="${bh}" rx="3" fill="url(#g)"><title>${esc(d.label)}: ${money(d.value)}</title></rect>`;
-    if(i%step===0) labels+=`<text x="${x+bw/2}" y="${H-8}" text-anchor="middle" font-size="9" fill="var(--faint)">${d.label}</text>`;
+    const x=padL+i*bw, top=y(d.ing);
+    bars+=`<rect x="${(x+bw*0.16).toFixed(1)}" y="${top.toFixed(1)}" width="${Math.max(2,bw*0.68).toFixed(1)}" height="${Math.max(0,y0-top).toFixed(1)}" rx="3" fill="url(#g)"><title>${esc(d.label)} · vendido ${money(d.ing)} · ${hasAds?'neta':'ganancia'} ${money(d.gan)}</title></rect>`;
+    if(i%step===0) labels+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="9" fill="var(--faint)">${d.label}</text>`;
   });
+  const pts=data.map((d,i)=>`${(padL+i*bw+bw/2).toFixed(1)},${y(d.gan).toFixed(1)}`).join(" ");
+  const dots=data.map((d,i)=>`<circle cx="${(padL+i*bw+bw/2).toFixed(1)}" cy="${y(d.gan).toFixed(1)}" r="2.3" fill="${d.gan<0?'var(--red)':'#f0a92b'}"/>`).join("");
+  const zero=vMin<0?`<line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-padR}" y2="${y0.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>`:"";
   $("salesChart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
     <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22c079"/><stop offset="1" stop-color="#22c07955"/></linearGradient></defs>
-    ${bars}${labels}</svg>`;
+    ${zero}${bars}<polyline points="${pts}" fill="none" stroke="#f0a92b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}${labels}</svg>
+    <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-top:6px"><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#22c079;vertical-align:-1px;margin-right:5px"></i>Vendido</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f0a92b;vertical-align:-1px;margin-right:5px"></i>${hasAds?'Ganancia neta':'Ganancia'}</span></div>`;
 }
 
-function renderProducts(prods, orders, vendido, unavailable){
+function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   const box=$("productPerf");
   if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }
   // Agregar por producto y versión.
   const pmap={};
-  prods.forEach(p=>{ pmap[p.id]={ nombre:p.nombre, units:0, ing:0, versions:{} };
+  prods.forEach(p=>{ pmap[p.id]={ id:p.id, nombre:p.nombre, units:0, ing:0, versions:{} };
     (p.product_versions||[]).forEach(v=> pmap[p.id].versions[v.id]={ nombre:v.nombre, units:0, ing:0 }); });
   let sinProd={ units:0, ing:0 };
   orders.forEach(o=>{
@@ -463,21 +486,27 @@ function renderProducts(prods, orders, vendido, unavailable){
     if(o.version_id&&p.versions[o.version_id]){ p.versions[o.version_id].units++; p.versions[o.version_id].ing+=v; }
   });
   const list=Object.values(pmap).filter(p=>p.units>0);
-  if(sinProd.units) list.push({ nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
+  if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
   if(!list.length){ box.innerHTML=`<div class="empty">Aún no hay ventas cerradas en este periodo.</div>`; return; }
+  const MG=margenPorProd||{};
+  list.forEach(p=>{ p.margen=MG[p.id]||0; });
   list.sort((a,b)=>b.ing-a.ing);
   const maxIng=Math.max(...list.map(p=>p.ing),1);
+  const mCol=(m,pct)=>{ const c=m<0?"var(--red)":m>0?"var(--green)":"var(--faint)"; return `<td class="r money" style="color:${c}">${money(m)}</td><td class="r" style="color:${c}">${pct}%</td>`; };
   let rows="";
   list.forEach(p=>{
     const share=vendido?Math.round(p.ing/vendido*100):0;
+    const mpct=p.ing>0?Math.round(p.margen/p.ing*100):0;
     rows+=`<tr><td class="pname"><span class="bar-mini" style="width:${Math.round(p.ing/maxIng*44)}px"></span>${esc(p.nombre)}</td>
-      <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td><td class="r">${share}%</td></tr>`;
+      <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td>${mCol(p.margen,mpct)}<td class="r">${share}%</td></tr>`;
     Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
-      rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td></tr>`;
+      rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>`;
     });
   });
-  rows+=`<tr class="total"><td>Total</td><td class="r">${list.reduce((a,p)=>a+p.units,0)}</td><td class="r money">${money(list.reduce((a,p)=>a+p.ing,0))}</td><td class="r">100%</td></tr>`;
-  box.innerHTML=`<table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const totU=list.reduce((a,p)=>a+p.units,0), totI=list.reduce((a,p)=>a+p.ing,0), totM=list.reduce((a,p)=>a+p.margen,0);
+  const totMpct=totI>0?Math.round(totM/totI*100):0;
+  rows+=`<tr class="total"><td>Total</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}<td class="r">100%</td></tr>`;
+  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia</th><th class="r">Margen</th><th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderBumps(bumpMap, ingBump, unavailable){
