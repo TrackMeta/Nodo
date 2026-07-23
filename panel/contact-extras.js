@@ -357,7 +357,7 @@ function injectDespachoCss() {
 // `momento` = "despachado" | "en_agencia" | "adelanto_validado" (la plantilla
 // por defecto de cada uno se configura en Pagos y atención).
 export async function cargarAviso(supa, channelId, contactId, momento) {
-  const info = { abierta: false, restante: "", tpls: [], preferida: null };
+  const info = { abierta: false, restante: "", tpls: [], preferida: null, flujo: null, flujoId: null };
   try {
     const { data: conv } = await supa.from("conversations").select("expira_at").eq("contact_id", contactId).maybeSingle();
     const t = conv?.expira_at ? new Date(conv.expira_at).getTime() : 0;
@@ -377,14 +377,27 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
     const a = ch?.pedidos_config?.avisos?.[momento];
     if (a && a.template) info.preferida = a;
   } catch (_) { /* sin config */ }
+  // ¿QUÉ flujo va a salir? Decir "el aviso que tienes armado en Flujos" sin
+  // nombrarlo no ayuda: hay varios y no se sabe cuál escucha este estado. Y si
+  // no hay ninguno, hay que decirlo ANTES de guardar, no después.
+  try {
+    const { data: trigs } = await supa.from("flow_triggers")
+      .select("flow_id, config, flows!inner(id,nombre,estado)")
+      .eq("channel_id", channelId).eq("tipo", "pedido_estado").eq("activo", true);
+    const t = (trigs || []).find((x) =>
+      ((x.config?.estados) || []).map(String).includes(momento) && x.flows?.estado === "activo");
+    if (t) { info.flujo = t.flows?.nombre || "Aviso"; info.flujoId = t.flow_id; }
+  } catch (_) { /* sin disparadores */ }
   return info;
 }
 
 export function avisoBlockHtml(info) {
   const hayTpl = info.tpls.length > 0;
-  // Por defecto: lo que de verdad va a llegar. Ventana abierta → mensaje normal;
-  // cerrada → plantilla (si hay). Nunca proponemos algo que sabemos que fallará.
-  const def = info.abierta ? "mensaje" : (hayTpl ? "plantilla" : "ninguno");
+  const hayFlujo = !!info.flujo;
+  // Por defecto: lo que de verdad va a llegar. Ventana abierta CON aviso armado
+  // → mensaje normal; si no, plantilla (si hay). Nunca proponemos algo que
+  // sabemos que no va a llegar.
+  const def = (info.abierta && hayFlujo) ? "mensaje" : (hayTpl ? "plantilla" : "ninguno");
   const sel = info.preferida?.template;
   const op = (v, titulo, desc, extra, off) => `
     <label class="avz-op ${v === def ? "on" : ""} ${off ? "off" : ""}" data-op="${v}">
@@ -396,9 +409,13 @@ export function avisoBlockHtml(info) {
       ? `● Ventana abierta — le quedan ${esc(info.restante)} para escribirle libremente`
       : "● Ventana cerrada — WhatsApp solo acepta una plantilla aprobada"}</div>
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
-    ${op("mensaje", "Mi mensaje de siempre",
-      info.abierta ? "Sale el aviso que tienes armado en Flujos." : "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada.",
-      "", !info.abierta)}
+    ${op("mensaje",
+      hayFlujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu aviso de siempre",
+      !hayFlujo ? "No tienes ningún flujo activo escuchando este estado, así que no se enviaría nada. Ármalo en Flujos con el disparador “Estado de pedido”."
+        : info.abierta ? "Es el flujo que se dispara con este estado. Puedes editar su texto en Flujos."
+        : "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada.",
+      hayFlujo ? `<a href="editor.html?flow=${encodeURIComponent(info.flujoId)}" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Ver o editar este aviso →</a>` : "",
+      !info.abierta || !hayFlujo)}
     ${op("plantilla", "Una plantilla aprobada",
       hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas y activas — créalas en Plantillas.",
       hayTpl ? `<select data-avz="tpl">${info.tpls.map((t) =>
@@ -420,7 +437,10 @@ export function avisoValor(root) {
 
 function wireAviso(root) {
   root.querySelectorAll(".avz-op").forEach((el) => {
-    el.onclick = () => {
+    el.onclick = (e) => {
+      // El enlace "ver este aviso" vive DENTRO de la opción: al tocarlo no se
+      // debe elegir esa opción de paso (vas a mirar el flujo, no a decidir).
+      if (e.target.closest("a")) { e.stopPropagation(); return; }
       root.querySelectorAll(".avz-op").forEach((x) => x.classList.remove("on"));
       el.classList.add("on");
       el.querySelector("input").checked = true;

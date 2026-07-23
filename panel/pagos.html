@@ -73,7 +73,7 @@ const IC={
   agent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M18 14h3v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M20 17v2a4 4 0 0 1-4 4h-4"/></svg>',
   support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.9" y1="4.9" x2="9.2" y2="9.2"/><line x1="14.8" y1="14.8" x2="19.1" y2="19.1"/><line x1="14.8" y1="9.2" x2="19.1" y2="4.9"/><line x1="4.9" y1="19.1" x2="9.2" y2="14.8"/></svg>',
 };
-const st={ channelId:null, channel:{}, pedidos:null, tpls:[] };
+const st={ channelId:null, channel:{}, pedidos:null, tpls:[], flujos:{} };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 // Config GLOBAL del canal (channels.pedidos_config). Los embudos y mensajes por
@@ -117,6 +117,18 @@ async function load(){
       .eq("channel_id",st.channelId).order("name");
     st.tpls=(t||[]).filter(x=>x.activa!==false && (x.estado_meta??"aprobada")==="aprobada");
   }catch(_){ st.tpls=[]; }
+  // Qué flujo escucha cada estado. Es "el mensaje de siempre": el texto no vive
+  // en un campo, vive en un flujo, y sin decir CUÁL no hay forma de encontrarlo.
+  st.flujos={};
+  try{
+    const { data:tr }=await supa.from("flow_triggers")
+      .select("flow_id, config, flows!inner(id,nombre,estado)")
+      .eq("channel_id",st.channelId).eq("tipo","pedido_estado").eq("activo",true);
+    (tr||[]).forEach(t=>{
+      if(t.flows?.estado!=="activo") return;
+      ((t.config?.estados)||[]).map(String).forEach(e=>{ if(!st.flujos[e]) st.flujos[e]={ id:t.flow_id, nombre:t.flows?.nombre||"Aviso" }; });
+    });
+  }catch(_){ /* sin disparadores */ }
   render($("body"));
 }
 
@@ -267,19 +279,31 @@ function render(b){
     </div>
 
     <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Avisos de pedido fuera de la ventana</span></div>
-      <div class="desc">WhatsApp solo te deja escribir libremente durante <b>24 horas</b> desde el último mensaje del cliente. Un pedido físico se despacha días después, así que ese aviso casi siempre cae fuera y Meta lo rechaza: a ti te llega el error y <b>el cliente no recibe nada</b>. Elige qué <b>plantilla aprobada</b> usar en cada momento; al mover el pedido te la vamos a proponer sola cuando la ventana esté cerrada.</div>
-      ${st.tpls.length ? `<div id="avisosBox">${MOMENTOS.map(([k,t,d])=>`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px">
-          <span style="flex:1;min-width:190px"><span style="font-weight:600;font-size:13px">${t}</span>
-          <div style="font-size:11.5px;color:var(--faint);margin-top:2px">${d}</div></span>
-          <select class="in" data-aviso="${k}" style="width:auto;min-width:190px;flex:none">
-            <option value="">— Sin plantilla —</option>
-            ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${((p.avisos[k]||{}).template===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
-          </select>
-        </div>`).join("")}</div>
-      <div class="snote"><span class="si">${IC.shield}</span><span>Las variables de la plantilla se rellenan con los datos del cliente y de su pedido (<b>{{pedido_guia}}</b>, <b>{{pedido_sede}}</b>, <b>{{pedido_saldo}}</b>…).</span></div>`
-      : `<div class="snote"><span class="si">${IC.shield}</span><span>Todavía no tienes plantillas aprobadas y activas. Créalas en <b>Plantillas</b> y vuelve acá para asignarlas. Mientras tanto, al despachar podrás elegir “no avisar” o mandar el mensaje normal si la ventana sigue abierta.</span></div>`}
+      <div class="chd"><span class="ico iaic">${IC.truck}</span><span class="nm">Avisos de pedido</span></div>
+      <div class="desc">Cuando mueves un pedido físico, el bot le escribe al cliente. <b>Ese texto vive en un flujo</b>, no acá: abajo ves cuál se dispara en cada momento y puedes ir a editarlo.<br><br>
+      Ojo con la <b>ventana de 24 horas</b>: WhatsApp solo te deja escribir libremente durante ese rato desde el último mensaje del cliente, y un pedido físico se despacha días después. Fuera de la ventana Meta rechaza el mensaje —a ti te llega el error y <b>el cliente no recibe nada</b>—, así que elige también qué <b>plantilla aprobada</b> usar en cada momento. Al mover el pedido te proponemos sola la que corresponda.</div>
+      <div id="avisosBox">${MOMENTOS.map(([k,t,d])=>{
+        const fl=st.flujos[k];
+        return `<div style="margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px">
+          <div style="font-weight:600;font-size:13px">${t}</div>
+          <div style="font-size:11.5px;color:var(--faint);margin-top:2px">${d}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px">
+            <span style="font-size:11.5px;color:var(--muted);font-weight:700;min-width:118px">Dentro de la ventana</span>
+            ${fl ? `<span style="font-size:12.5px">${esc(fl.nombre)}</span>
+                   <a href="editor.html?flow=${encodeURIComponent(fl.id)}" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none">editar →</a>`
+                 : `<span style="font-size:12px;color:var(--amber);font-weight:600">Sin aviso armado — no se enviará nada</span>`}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px">
+            <span style="font-size:11.5px;color:var(--muted);font-weight:700;min-width:118px">Fuera de la ventana</span>
+            ${st.tpls.length ? `<select class="in" data-aviso="${k}" style="width:auto;min-width:190px;flex:none">
+              <option value="">— Sin plantilla —</option>
+              ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${((p.avisos[k]||{}).template===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
+            </select>` : `<span style="font-size:12px;color:var(--faint)">Necesitas una plantilla aprobada (sección <b>Plantillas</b>)</span>`}
+          </div>
+        </div>`;}).join("")}</div>
+      <div class="snote"><span class="si">${IC.shield}</span><span>${st.tpls.length
+        ? "Las variables de la plantilla se rellenan con los datos del cliente y de su pedido (<b>{{pedido_guia}}</b>, <b>{{pedido_sede}}</b>, <b>{{pedido_saldo}}</b>…)."
+        : "Sin plantillas aprobadas, fuera de la ventana solo podrás elegir “no avisar”. Créalas en <b>Plantillas</b> y vuelve acá para asignarlas."}</span></div>
     </div>
 
     <div class="card ia">
