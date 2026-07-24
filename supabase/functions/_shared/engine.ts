@@ -2740,6 +2740,61 @@ export async function armarProducto(
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
 }
 
+// ── Asistente "Armar con IA": brief → borrador del CONOCIMIENTO DEL NEGOCIO ──
+// Llena identidad, qué vende, público, propuesta, horario, políticas, FAQ y el
+// TONO del vendedor. 🔒 No inventa datos duros (Yape/cuentas → van al Validador;
+// horario real si no lo dice → `faltan`). Escribe la voz del negocio, en peruano.
+export async function armarNegocio(
+  db: SupabaseClient, channelId: string, brief: string,
+): Promise<any> {
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+
+  const system =
+    "Eres un asistente que ARMA el conocimiento de un negocio para su bot de ventas por WhatsApp (negocio peruano). " +
+    "A partir del brief del dueño, rellenas los campos en BORRADOR para que él los revise. Escribes en español peruano (de tú).\n\n" +
+    "## Reglas duras (MUY IMPORTANTE)\n" +
+    "- NUNCA inventes datos que no puedes saber: número de Yape/Plin/cuenta, horarios exactos si no los da, direcciones, links, precios. Los métodos de pago exactos NO van aquí (se ponen en IA → Validador de comprobantes): en `pagos` describe solo la modalidad general (ej. \"contraentrega en Lima, adelanto para provincia\"). Lo que no sepas, anótalo en `faltan` (ej. \"Horario de atención real\", \"Tu Yape / cuentas (van en el Validador)\").\n" +
+    "- `tono` debe ser uno de: cercano, formal, directo, divertido, ventas.\n" +
+    "- `faq`: 3 a 6 preguntas frecuentes reales del negocio con su respuesta ideal.\n" +
+    "- Redacta cada campo claro y útil, como lo diría el propio dueño, sin relleno.\n" +
+    "- `resumen_cambios`: una sola frase de qué llenaste.\n" +
+    "Responde SOLO con el JSON del esquema, sin texto extra.";
+
+  const content = `## Brief del negocio (lo que dijo el dueño)\n"${brief}"\n\nArma el borrador del conocimiento del negocio.`;
+
+  const schema = {
+    type: "object",
+    properties: {
+      nombre: { type: "string" },
+      rubro: { type: "string" },
+      publico: { type: "string" },
+      propuesta: { type: "string" },
+      horario: { type: "string" },
+      transferir: { type: "string" },
+      pagos: { type: "string" },
+      entrega: { type: "string" },
+      politicas: { type: "string" },
+      no_hacer: { type: "string" },
+      tono: { type: "string", enum: ["cercano", "formal", "directo", "divertido", "ventas"] },
+      faq: { type: "array", items: { type: "object", properties: { q: { type: "string" }, a: { type: "string" } }, required: ["q", "a"], additionalProperties: false } },
+      faltan: { type: "array", items: { type: "string" } },
+      resumen_cambios: { type: "string" },
+    },
+    required: ["rubro"], additionalProperties: false,
+  };
+
+  const raw = await runAI({
+    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    system, content, maxTokens: 2400,
+    jsonSchema: schema as unknown as Record<string, unknown>,
+  });
+  const m = /\{[\s\S]*\}/.exec(raw);
+  try { return m ? JSON.parse(m[0]) : JSON.parse(raw); }
+  catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
+}
+
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
 async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {

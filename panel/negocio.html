@@ -51,6 +51,23 @@
   .ent-sw.on::after{transform:translateX(17px)}
   .ent-chk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;color:var(--muted)}
   .ent-chk input{accent-color:var(--brand);cursor:pointer;margin:0}
+  /* Asistente "Armar con IA": botón flotante + drawer lateral */
+  .armfab{position:fixed;right:22px;bottom:22px;z-index:80;display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 18px;border:none;border-radius:26px;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 8px 24px rgba(168,85,247,.35)}
+  .armfab svg{width:19px;height:19px}
+  .armfab:hover{filter:brightness(1.06)}
+  .armov{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:none}
+  .armov.on{display:block}
+  .armdr{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:100%;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-12px 0 40px rgba(0,0,0,.3)}
+  .armhd{padding:15px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px}
+  .armhd .gl{width:32px;height:32px;flex:none;border-radius:9px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
+  .armhd .gl svg{width:18px;height:18px}
+  .armbody{flex:1;overflow-y:auto;padding:16px 18px}
+  .armft{padding:12px 18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+  .armchip{font-size:12px;border:1px solid var(--border);border-radius:20px;padding:6px 11px;color:var(--muted);cursor:pointer;background:transparent}
+  .armchip:hover{border-color:#a855f7;color:#a855f7}
+  .armhero{border:1px solid rgba(168,85,247,.4);background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.12),transparent 60%),var(--surface);border-radius:14px;padding:15px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center}
+  .armhero .hg{width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
+  .armhero .hg svg{width:20px;height:20px}
 </style>
 </head>
 <body>
@@ -67,6 +84,22 @@
       <button class="tab" data-t="entrega" id="tabEnt"></button>
     </div>
     <div id="body"></div>
+  </div>
+</div>
+
+<button class="armfab" id="armFab">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+  Armar con IA
+</button>
+<div class="armov" id="armOv">
+  <div class="armdr">
+    <div class="armhd">
+      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">Armar con IA</div><div style="font-size:12px;color:var(--muted)">Describe tu negocio y la IA lo arma</div></div>
+      <button id="armClose" title="Cerrar" style="flex:none;background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <div class="armbody" id="armBody"></div>
+    <div class="armft" id="armFt"></div>
   </div>
 </div>
 
@@ -174,9 +207,15 @@ function renderConocimiento(b){
     ${type==="ta"
       ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
       : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
+  const vacioNeg = !(form.rubro && String(form.rubro).trim());
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
     <p class="sub">Completa este formulario: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en <b>IA → Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
+    ${vacioNeg?`<div class="armhero">
+      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Describe tu negocio en una frase y la IA rellena el formulario (tú revisas y guardas).</div></div>
+      <button id="armHeroBtn" style="flex:none;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13px;padding:10px 15px">Armar con IA ✨</button>
+    </div>`:""}
     <div class="card">
       <div class="chd"><span class="ico">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
       ${NEG_FIELDS.map(field).join("")}
@@ -211,6 +250,7 @@ function renderConocimiento(b){
   };
   $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado ✓"); };
+  const hbN=$("armHeroBtn"); if(hbN) hbN.onclick=armOpen;
 }
 
 // ════════ ENTREGA Y LOGÍSTICA (movido de Ajustes → Entregas Lima) ════════
@@ -463,6 +503,83 @@ async function guardarEntregas(){
   st.channel.entregas=JSON.parse(JSON.stringify(E));
   toast("Entrega guardada ✓");
 }
+
+// ════════════════════════════════════════════════════════════════════
+// ASISTENTE "Armar con IA" (capa Crea) para el CONOCIMIENTO DEL NEGOCIO.
+// Llama a armar-negocio (Claude u OpenAI, el activo del canal), muestra el
+// borrador y lo aplica al formulario en memoria. No guarda: el dueño revisa
+// y Guarda.
+// ════════════════════════════════════════════════════════════════════
+let armDraft=null;
+const ARM_CHK='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const ARM_ALERT='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+function armGoConocimiento(){ if(st.tab!=="conocimiento"){ st.tab="conocimiento"; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento")); render(); } }
+function armOpen(){ armDraft=null; armGoConocimiento(); armRenderBrief(); $("armOv").classList.add("on"); setTimeout(()=>{ const t=$("armBrief"); if(t) t.focus(); },80); }
+function armClose(){ const o=$("armOv"); if(o) o.classList.remove("on"); }
+function armRenderBrief(){
+  $("armBody").innerHTML=`
+    <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 12px">Cuéntame de tu negocio en tus palabras (o pega tu bio de Instagram / catálogo). La IA arma un <b>borrador</b> del conocimiento: qué vendes, a quién, tu propuesta, políticas, tono y FAQ. Tú lo revisas y guardas. <b>No inventa</b> tu Yape ni horarios que no sepa — los marca para completar.</p>
+    <textarea class="in" id="armBrief" rows="6" style="min-height:130px;line-height:1.55;resize:vertical" placeholder="Ej. Soy Mi Negocio, vendo ropa deportiva y suplementos. Le vendo a chicos de 20-35 que van al gym. Atiendo lun-sáb. Envío por Shalom a provincia, contraentrega en Lima. Trato cercano y motivador."></textarea>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <button class="armchip" data-ins="Trato cercano y motivador.">+ tono cercano</button>
+      <button class="armchip" data-ins="Cambios dentro de 7 días con boleta.">+ política</button>
+      <button class="armchip" data-ins="Atiendo de lunes a sábado.">+ horario</button>
+    </div>`;
+  $("armFt").innerHTML=`<button id="armGo" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-size:14px;font-weight:700">Armar borrador ✨</button>`;
+  $("armGo").onclick=armGenerar;
+  $("armBody").querySelectorAll("[data-ins]").forEach(bt=> bt.onclick=()=>{ const t=$("armBrief"); t.value=(t.value.trim()?t.value.trim()+" ":"")+bt.dataset.ins; t.focus(); });
+}
+async function armGenerar(){
+  const brief=($("armBrief")?.value||"").trim();
+  if(brief.length<10){ toast("Escribe un poco más sobre tu negocio",true); return; }
+  $("armFt").innerHTML=`<button disabled style="width:100%;height:44px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--muted);font-weight:600">Armando… ✨</button>`;
+  let data,error;
+  try{ ({ data, error } = await supa.functions.invoke("armar-negocio",{ body:{ channel_id:st.channelId, brief } })); }
+  catch(e){ error=e; }
+  if(error || !data?.ok || !data?.draft){
+    const msg=data?.error||error?.message||"No se pudo armar. Intenta de nuevo.";
+    toast(msg,true); armRenderBrief(); const t=$("armBrief"); if(t) t.value=brief; return;
+  }
+  armDraft=data.draft; armRenderDraft();
+}
+function armRenderDraft(){
+  const d=armDraft||{};
+  const done=[];
+  if(d.rubro) done.push("Qué vendes");
+  if(d.publico) done.push("Cliente ideal");
+  if(d.propuesta) done.push("Propuesta de valor");
+  if(d.horario) done.push("Horario");
+  if(d.pagos||d.entrega) done.push("Pagos y entrega");
+  if(d.politicas||d.no_hacer) done.push("Políticas y límites");
+  if(d.tono) done.push("Tono del vendedor · "+esc(String(d.tono)));
+  if(Array.isArray(d.faq)&&d.faq.length) done.push(`Preguntas frecuentes · ${d.faq.length}`);
+  const faltan=Array.isArray(d.faltan)?d.faltan:[];
+  const chk=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="color:var(--green,#22c079);flex:none;display:inline-flex">${ARM_CHK}</span>${t}</div>`;
+  const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:#f0a92b;flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
+  $("armBody").innerHTML=`
+    <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">Borrador listo 🎉</div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:12px">${esc(String(d.resumen_cambios||"Revisa lo que llené y ajústalo. Nada se guarda hasta que toques Guardar conocimiento."))}</div>
+    <div style="border:1px solid var(--border);border-radius:11px;padding:12px">${done.map(chk).join("")||"<div style='font-size:12px;color:var(--faint)'>Sin campos</div>"}</div>
+    ${faltan.length?`<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:#f0a92b">Te toca completar (no lo invento):</div><div style="border:1px solid rgba(240,169,43,.4);background:rgba(240,169,43,.06);border-radius:11px;padding:12px">${faltan.map(amb).join("")}</div>`:""}`;
+  $("armFt").innerHTML=`
+    <button id="armApply" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-size:14px;font-weight:700">Aplicar borrador</button>
+    <button class="btn" id="armBack" style="width:100%">Volver a escribir</button>`;
+  $("armApply").onclick=()=>armAplicar(armDraft);
+  $("armBack").onclick=armRenderBrief;
+}
+function armAplicar(d){
+  if(!d) return;
+  const f = st.channel.negocio_form = (st.channel.negocio_form && typeof st.channel.negocio_form==="object") ? st.channel.negocio_form : {};
+  ["nombre","rubro","publico","propuesta","horario","transferir","pagos","entrega","politicas","no_hacer","tono"].forEach(k=>{ if(d[k]) f[k]=String(d[k]); });
+  if(Array.isArray(d.faq)&&d.faq.length){ f.faq=d.faq.filter(x=>x&&x.q&&x.a).map(x=>({q:String(x.q),a:String(x.a)})); }
+  st.tab="conocimiento";
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento"));
+  render(); armClose();
+  toast("Borrador aplicado ✓ — revisa y Guarda el conocimiento");
+}
+if($("armFab")) $("armFab").onclick=armOpen;
+if($("armClose")) $("armClose").onclick=armClose;
+if($("armOv")) $("armOv").onclick=(e)=>{ if(e.target===$("armOv")) armClose(); };
 
 boot();
 </script>
