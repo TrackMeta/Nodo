@@ -561,6 +561,11 @@ async function boot(){
     load();
   });
   $("dfBtn").onclick=(e)=>{ e.stopPropagation(); if($("dfPop").classList.contains("open")) closePop(); else openPop(); };
+  // Los clics DENTRO del picker no deben llegar al detector de "clic afuera":
+  // al re-dibujarse, el elemento tocado queda desprendido del DOM y closest()
+  // daría null → se cerraría solo. Frenar la propagación en el contenedor
+  // (que sí persiste entre re-render) lo evita de raíz.
+  $("dfPop").addEventListener("click", (e)=> e.stopPropagation());
   $("addExpBtn").onclick=toggleExpForm;
   // Toggle Dashboard / Bitácora
   $("viewSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{

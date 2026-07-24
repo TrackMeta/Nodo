@@ -100,6 +100,12 @@ export function mountDateRange(host, { valor = null, onChange = null, nota = "La
   const trigger = host.querySelector(".drtrigger");
   const label = host.querySelector(".drlabel");
   const pop = host.querySelector(".drpop");
+  // Los clics DENTRO del popover no deben llegar al detector global de "clic
+  // afuera": al re-dibujarse (pinta()), el elemento tocado queda desprendido del
+  // DOM y su closest(".drpicker") daría null → el picker se cerraría en cada
+  // toque. El contenedor `pop` SÍ persiste entre re-renders, así que frenar la
+  // propagación acá lo evita de raíz (sin esto no se podía elegir nada).
+  pop.addEventListener("click", (e) => e.stopPropagation());
   const pintaLabel = () => { label.textContent = rangeLabel(rango); };
 
   const celdas = (y, m) => {
