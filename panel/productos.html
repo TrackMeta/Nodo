@@ -649,7 +649,9 @@ function renderEntrega(){
   // productos. Acá solo el ADELANTO override, por si ESTE producto necesita otro.
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a> y vale para todos tus productos.</p>
-    ${st.prod.clase==="extra"?`<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:11px 12px;margin:0 0 14px;font-size:12.5px;color:var(--muted);line-height:1.5"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se despacha <b>junto con el pedido principal</b>, en el mismo envío. Normalmente no necesita adelanto ni envío propios — los de abajo son solo por si este complemento fuera una excepción.</div></div>`:""}
+    ${st.prod.clase==="extra"
+      ? `<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:12px 13px;font-size:12.5px;color:var(--muted);line-height:1.55"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se despacha <b>junto con el pedido principal</b>, en el mismo envío. No lleva adelanto ni envío propios — usa los del pedido al que se sume.</div></div>`
+      : `
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Adelanto de este producto</h4>
       <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Solo si <b>este</b> producto pide una seña distinta a la de tu negocio. Si lo dejas <b>vacío</b>, usa el adelanto por defecto de Negocio.</div>
@@ -670,7 +672,7 @@ function renderEntrega(){
       </select>
       <div id="pEnvMontos"></div>
       <div id="envHint" style="font-size:11.5px;color:var(--faint);margin-top:10px"></div>
-    </div>`;
+    </div>`}`;
   const ov=$("pAdelOv"); if(ov) ov.onchange=(e)=>prodSetC("adelanto_override", e.target.value.trim()===""?undefined:Number(e.target.value));
   const pintarEnvMontos=()=>{
     const box=$("pEnvMontos"); if(!box) return;
