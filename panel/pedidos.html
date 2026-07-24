@@ -279,6 +279,7 @@ function kcard(o){
   const zona=zonaDe(o);
   const el=document.createElement("div"); el.className="kcard";
   const shipBits=[];
+  if(s.aereo) shipBits.push(`✈ <b>Aéreo</b>`);
   if(s.agencia) shipBits.push(`${esc(cap(s.agencia))}${s.sede?" · "+esc(s.sede):""}`);
   if(s.guia) shipBits.push(`Guía <b>${esc(s.guia)}</b>`);
   if(s.clave_recojo) shipBits.push(`Clave <b>${esc(s.clave_recojo)}</b>`);
@@ -351,6 +352,7 @@ function printRotulo(o){
       row("DNI", s.dni||"", true)+
       row("Teléfono", tel)+
       row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
+      row("Envío", s.aereo?"✈ AÉREO — despachar por avión":"", true)+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       // Sin Guía a propósito: el rótulo se imprime ANTES de despachar, cuando la
@@ -388,7 +390,7 @@ function printRotulo(o){
     <div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(remitente)}</b></div>
-        <div class="zn">${zona==="provincia"?"AGENCIA":"CONTRAENTREGA"}</div>
+        <div class="zn">${zona==="provincia"?(s.aereo?"AGENCIA · ✈ AÉREO":"AGENCIA"):"CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>

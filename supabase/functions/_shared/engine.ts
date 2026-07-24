@@ -1874,6 +1874,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     if (zonaShip === "provincia") {
       const motivo = sedeImprecisa(String(ship.sede ?? ""), String(ship.ciudad ?? ctx.ciudad ?? ""));
       if (motivo) ship.sede_por_confirmar = motivo;
+      // Beneficio aéreo: marca el pedido para que el rótulo/Compras/Kanban digan
+      // "AÉREO" y lo despaches por avión en la oficina de Shalom.
+      try {
+        const entAer = await loadEntregas(db, run);
+        if (esDestinoAereo((entAer as any)?.entregas, String(ship.ciudad ?? ctx.ciudad ?? ""))) ship.aereo = true;
+      } catch { /* sin config → sin marca aérea */ }
     }
 
     // Atribución CONGELADA en el pedido: el ctwa_clid del contacto se sobrescribe
@@ -2868,6 +2874,32 @@ async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
 
 const limpiaZona = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 
+// ── Envío aéreo (beneficio por zona) ────────────────────────────────
+// Destinos alejados donde el negocio despacha por Shalom AÉREO (llega mucho
+// más rápido). Mismo precio que el terrestre: es un beneficio, no un recargo.
+// La lista la define el negocio en Negocio → Entrega y logística
+// (entregas.aereo.destinos). El motor lo detecta contra la ciudad del cliente.
+function destinosAereo(entregas: any): string[] {
+  const a = entregas?.aereo;
+  if (!a || a.activo === false) return [];
+  const raw = a.destinos;
+  const arr = Array.isArray(raw) ? raw : String(raw ?? "").split(/[\n,;]+/);
+  return arr.map((s: any) => limpiaZona(String(s))).filter((s: string) => s.length >= 3);
+}
+function esDestinoAereo(entregas: any, ciudad: string): boolean {
+  const dests = destinosAereo(entregas);
+  if (!dests.length) return false;
+  const c = limpiaZona(String(ciudad ?? ""));
+  if (c.length < 3) return false;
+  // Coincide si la ciudad del cliente contiene el destino (o al revés, con un
+  // mínimo para no casar por ruido). El negocio controla la lista.
+  return dests.some((d) => c === d || c.includes(d) || (d.length >= 4 && d.includes(c)));
+}
+function mensajeAereo(entregas: any): string {
+  const m = String(entregas?.aereo?.mensaje ?? "").trim();
+  return m || "¡Buena noticia! 🙌 Para tu zona el envío lo hacemos aéreo con Shalom, así te llega mucho más rápido. 😊";
+}
+
 // "Lima" a secas = la ciudad, no un distrito. El cliente que dice "soy de Lima"
 // SÍ es zona Lima (contraentrega), pero todavía no sabemos su distrito. Esto lo
 // distingue de nombrar un lugar específico fuera de la lista (→ provincia).
@@ -3720,6 +3752,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       } else {
         L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);
         L.push("Mencionamos **Shalom** como nuestra agencia; solo ofrece otra si el cliente la pide.");
+        // Beneficio aéreo: si su ciudad está en la lista del negocio, el envío va
+        // por Shalom AÉREO (llega más rápido). Se presenta como un BENEFICIO, mismo
+        // precio, sin recargo y sin hacerlo sentir culpable.
+        try {
+          const entAer = await loadEntregas(db, run);
+          if (esDestinoAereo((entAer as any)?.entregas, String(ctx.ciudad ?? ""))) {
+            L.push(`🎁 BENEFICIO para su zona: el envío va por Shalom **AÉREO**, así le llega mucho más rápido que lo normal. Cuéntaselo con calidez como un beneficio especial para él (guíate por esto, sin repetirlo textual si ya lo dijiste): "${mensajeAereo((entAer as any)?.entregas)}". REGLAS: NUNCA digas que cuesta más ni que el envío es más caro, NO lo compares con el terrestre ni lo hagas sentir que paga un extra —es SIN costo adicional—, y NO le des a elegir terrestre: para su zona el aéreo es lo que ofrecemos.`);
+          }
+        } catch { /* sin config de entregas → sin beneficio aéreo */ }
         // Pedir la sede nombrando la ciudad: "Av. España" a secas no sirve para
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.

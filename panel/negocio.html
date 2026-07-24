@@ -232,6 +232,8 @@ function renderEntregas(b){
   E.dias=E.dias||{}; E.horario=E.horario||{};
   if(!Array.isArray(E.feriados_fechas)) E.feriados_fechas=[];
   E.costos=E.costos||{}; E.costos.grupos=E.costos.grupos||{}; E.costos.zonas=E.costos.zonas||{};
+  E.aereo=(E.aereo&&typeof E.aereo==="object")?E.aereo:{};
+  if(!Array.isArray(E.aereo.destinos)) E.aereo.destinos=String(E.aereo.destinos||"").split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
 
   const sw=(on,id)=>`<span class="ent-sw ${on?'on':''}" data-sw="${id}"></span>`;
   const rowSw=(txt,sub,on,id)=>`<div class="erow" data-row="${id}" style="display:flex;align-items:center;justify-content:space-between;
@@ -287,6 +289,15 @@ function renderEntregas(b){
       </div>
     </div>
     <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Envío aéreo (Shalom)</h3>
+      <p class="sub">Para destinos muy alejados, Shalom despacha por <b>vía aérea</b> y llega mucho más rápido que el terrestre. Escribe acá esas zonas: cuando un cliente sea de una de ellas, el bot le ofrece el aéreo <b>como un beneficio</b> (mismo precio, sin recargo). En el pedido y el rótulo verás <b>“AÉREO”</b> para despacharlo por avión.</p>
+      <label style="margin-top:4px">Destinos con envío aéreo <span style="color:var(--faint);font-weight:400">(uno por línea)</span></label>
+      <textarea class="in" id="aerDest" rows="4" placeholder="Iquitos&#10;Pucallpa&#10;Puerto Maldonado&#10;Tarapoto" style="min-height:96px;line-height:1.5;font-family:var(--font);resize:vertical">${esc((E.aereo.destinos||[]).join("\n"))}</textarea>
+      <label style="margin-top:14px">Cómo lo presenta el bot <span style="color:var(--faint);font-weight:400">(mensaje de beneficio, opcional)</span></label>
+      <textarea class="in" id="aerMsg" rows="3" placeholder="¡Buena noticia! 🙌 Para tu zona el envío lo hacemos aéreo con Shalom, así te llega mucho más rápido. 😊" style="min-height:74px;line-height:1.5;font-family:var(--font);resize:vertical">${esc(E.aereo.mensaje||"")}</textarea>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Preséntalo siempre como algo <b>bueno</b> para el cliente (llega más rápido), nunca como un costo extra. Vacío = el bot usa un mensaje cálido por defecto.</div>
+    </div>
+    <div class="card">
       <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Costo de reparto</h3>
       <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -316,6 +327,8 @@ function renderEntregas(b){
   });
   $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
   $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
+  $("aerDest").oninput=(ev)=>{ E.aereo.destinos = ev.target.value.split("\n").map(s=>s.trim()).filter(Boolean); };
+  $("aerMsg").oninput=(ev)=>{ E.aereo.mensaje = ev.target.value.trim(); };
   $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
   $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
   $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };

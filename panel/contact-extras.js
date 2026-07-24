@@ -113,6 +113,7 @@ export function pedidoResumenHtml(o) {
     ? `${adel ? `Adelanto <b>${money(adel, o.currency)}</b>` : ""}${adel && saldo ? " · " : ""}${saldo ? `Saldo <b>${money(saldo, o.currency)}</b>` : ""}`
     : `Total <b>${money(O.total(o), o.currency)}</b>`;
   const bits = [];
+  if (s.aereo) bits.push('✈ <b>Envío aéreo</b> (Shalom)');
   if (s.agencia || s.ciudad) bits.push(esc([s.agencia && cap(s.agencia), s.ciudad && cap(s.ciudad), s.sede].filter(Boolean).join(" · ")));
   if (s.distrito || s.direccion) bits.push(esc([s.distrito, s.direccion].filter(Boolean).join(" · ")));
   if (s.guia) bits.push(`Guía <b>${esc(s.guia)}</b>`);
@@ -153,6 +154,7 @@ export function printRotulo(o, remitente) {
       row("DNI", s.dni || "", true) +
       row("Teléfono", tel) +
       row("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
+      row("Envío", s.aereo ? "✈ AÉREO — despachar por avión" : "", true) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("N° pedido", nro);
@@ -187,7 +189,7 @@ export function printRotulo(o, remitente) {
     <div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(rem)}</b></div>
-        <div class="zn">${zona === "provincia" ? "AGENCIA" : "CONTRAENTREGA"}</div>
+        <div class="zn">${zona === "provincia" ? (s.aereo ? "AGENCIA · ✈ AÉREO" : "AGENCIA") : "CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>

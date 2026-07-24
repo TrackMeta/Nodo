@@ -253,6 +253,7 @@ function card(o){
   if(tipo==="provincia"){
     if(s.cliente||s.dni) meta.push(`<b>${esc(s.cliente||c.nombre||"")}</b>${s.dni?" · DNI "+esc(s.dni):""}`);
     if(s.sede||s.ciudad) meta.push(`Agencia: ${esc([s.ciudad&&("Shalom "+cap(s.ciudad)),s.sede].filter(Boolean).join(" · ")||"—")}`);
+    if(s.aereo) meta.push("✈ <b>Envío aéreo</b>");
   } else if(tipo==="lima"){
     if(s.direccion||s.distrito) meta.push(esc([s.distrito,s.direccion].filter(Boolean).join(" · ")));
     if(s.referencia) meta.push("Ref: "+esc(s.referencia));
