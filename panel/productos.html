@@ -1521,11 +1521,11 @@ async function renderInicio(){
   const IC={ producto:icon("box"), opciones:icon("productos"), entrega:fisico?icon("truck"):icon("link"),
     ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos") };
   const PH = esExtra
-    ? [["①","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
-       ["②","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
-    : [["①","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
-       ["②","La venta","Cómo lo vende la IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
-       ["③","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
+    ? [["1","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
+       ["2","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
+    : [["1","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
+       ["2","La venta","Cómo lo vende la IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
+       ["3","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
   const item=(t)=>{ const e=est(t); return `<button class="ini-item" data-t="${t}">
     <span class="ini-ico ${e.ok?'done':''}">${IC[t]||''}</span>
     <span class="ini-item-nm">${NM[t]}</span><span class="ini-item-msg">${e.msg}</span><span class="ini-chev">›</span></button>`; };
