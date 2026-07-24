@@ -2863,6 +2863,83 @@ export async function asesorIa(
   } catch { throw new Error("La IA no devolvió recomendaciones válidas. Intenta de nuevo."); }
 }
 
+// ── Opera (copiloto que ejecuta): interpreta un comando y devuelve UNA acción ──
+// La IA SOLO interpreta el comando en lenguaje natural y lo mapea a un producto
+// de la lista (por índice, para no alucinar ids). El motor RESUELVE a ids reales,
+// VALIDA y arma el resumen. NO ejecuta nada: el panel confirma y ejecuta (con RLS)
+// y ofrece deshacer. Acciones soportadas: precio, estado_venta, adelanto.
+export async function operaParse(
+  db: SupabaseClient, channelId: string, comando: string,
+): Promise<any> {
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+
+  const { data: prods } = await db.from("products").select("id,nombre,clase,config,product_versions(id,nombre,precio,activo)").eq("channel_id", channelId);
+  const { data: flows } = await db.from("flows").select("id,product_id,role,estado").eq("channel_id", channelId);
+  const ventaFlow: Record<string, any> = {};
+  (flows ?? []).forEach((f: any) => { if (f.role === "venta") ventaFlow[f.product_id] = f; });
+
+  const cat = (prods ?? []).filter((p: any) => p.clase !== "extra").map((p: any, i: number) => {
+    const pres = (p.product_versions ?? []).filter((v: any) => v.activo !== false);
+    return {
+      i, _id: p.id, _venta_id: ventaFlow[p.id]?.id ?? null, _pres_ids: pres.map((v: any) => v.id),
+      nombre: p.nombre, vende: ventaFlow[p.id]?.estado === "activo",
+      adelanto: (p.config ?? {}).adelanto_override ?? null,
+      presentaciones: pres.map((v: any, j: number) => ({ j, nombre: v.nombre, precio: v.precio })),
+    };
+  });
+  if (!cat.length) return { tipo: "none", mensaje: "Todavía no tienes productos para operar." };
+
+  const catForAI = cat.map((p) => ({ i: p.i, nombre: p.nombre, vende: p.vende, adelanto: p.adelanto, presentaciones: p.presentaciones }));
+  const system =
+    "Interpretas UN comando del dueño de un negocio y lo mapeas a UNA acción sobre uno de sus productos (lista abajo, por índice). Español peruano.\n" +
+    "Tipos de acción:\n" +
+    "- \"precio\": cambiar el precio de una presentación → devuelve prod_i, pres_j y valor_num (el nuevo precio).\n" +
+    "- \"estado_venta\": poner a vender (valor_bool=true) o pausar (valor_bool=false) un producto → devuelve prod_i y valor_bool.\n" +
+    "- \"adelanto\": cambiar el adelanto de provincia de un producto → devuelve prod_i y valor_num.\n" +
+    "Reglas: usa SOLO índices que existan en la lista. Si no puedes mapear el comando a un producto de la lista con seguridad, o pide algo no soportado (borrar, campañas, pagos), devuelve tipo \"none\" con un `mensaje` corto explicando. NO inventes productos, precios ni índices.\n" +
+    "Responde SOLO con el JSON del esquema.";
+  const content = "## Productos (por índice)\n" + JSON.stringify(catForAI) + "\n\n## Comando del dueño\n\"" + comando + "\"";
+  const schema = {
+    type: "object",
+    properties: {
+      tipo: { type: "string", enum: ["precio", "estado_venta", "adelanto", "none"] },
+      prod_i: { type: "number" }, pres_j: { type: "number" },
+      valor_num: { type: "number" }, valor_bool: { type: "boolean" },
+      mensaje: { type: "string" },
+    },
+    required: ["tipo"], additionalProperties: false,
+  };
+  const raw = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, content, maxTokens: 500, jsonSchema: schema as unknown as Record<string, unknown> });
+  let a: any = {};
+  try { const m = /\{[\s\S]*\}/.exec(raw); a = m ? JSON.parse(m[0]) : JSON.parse(raw); } catch { return { tipo: "none", mensaje: "No entendí el comando. Intenta de otra forma." }; }
+
+  if (a.tipo === "none" || !Number.isInteger(a.prod_i) || !cat[a.prod_i]) return { tipo: "none", mensaje: a.mensaje || "No identifiqué a qué producto te refieres." };
+  const p = cat[a.prod_i];
+  if (a.tipo === "precio") {
+    if (!Number.isInteger(a.pres_j) || !p.presentaciones[a.pres_j]) return { tipo: "none", mensaje: `No identifiqué la presentación de "${p.nombre}".` };
+    const pres = p.presentaciones[a.pres_j]; const nuevo = Number(a.valor_num);
+    if (!(nuevo > 0)) return { tipo: "none", mensaje: "Ese precio no es válido." };
+    return { tipo: "precio", version_id: p._pres_ids[a.pres_j], producto: p.nombre, presentacion: pres.nombre, actual: pres.precio, valor: nuevo,
+      resumen: `Cambiar el precio de "${pres.nombre}" (${p.nombre}) de S/ ${pres.precio ?? "—"} a S/ ${nuevo}.` };
+  }
+  if (a.tipo === "estado_venta") {
+    if (!p._venta_id) return { tipo: "none", mensaje: `"${p.nombre}" todavía no tiene flujo de venta. Genéralo en su Inicio → Poner a vender.` };
+    const activar = a.valor_bool === true;
+    if (activar === p.vende) return { tipo: "none", mensaje: `"${p.nombre}" ya está ${activar ? "vendiendo" : "pausado"}.` };
+    return { tipo: "estado_venta", flow_id: p._venta_id, producto: p.nombre, actual: p.vende, valor: activar,
+      resumen: `${activar ? "Poner a vender" : "Pausar"} "${p.nombre}".` };
+  }
+  if (a.tipo === "adelanto") {
+    const nuevo = Number(a.valor_num);
+    if (!(nuevo >= 0)) return { tipo: "none", mensaje: "Ese adelanto no es válido." };
+    return { tipo: "adelanto", product_id: p._id, producto: p.nombre, actual: p.adelanto, valor: nuevo,
+      resumen: `Cambiar el adelanto de provincia de "${p.nombre}" ${p.adelanto != null ? `de S/ ${p.adelanto} ` : ""}a S/ ${nuevo}.` };
+  }
+  return { tipo: "none", mensaje: "No pude convertir eso en una acción soportada." };
+}
+
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
 async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {

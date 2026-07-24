@@ -295,8 +295,58 @@ function renderAsesor(){
         <button class="aibtn" id="aiGo">Pedir consejo ✨</button>
       </div>
       <div id="aiRecs"></div>
+      <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:7px">O dime qué hacer y lo hago (siempre te pido confirmar): <span style="color:var(--faint)">"sube el Premium a 160" · "pon a vender el curso" · "baja el adelanto de X a 15"</span></div>
+        <div style="display:flex;gap:8px">
+          <input id="opCmd" placeholder="Escribe una orden…" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:inherit"/>
+          <button class="aibtn" id="opGo" style="flex:none">Hacer</button>
+        </div>
+        <div id="opMsg" style="margin-top:9px"></div>
+      </div>
     </div>`;
   $("aiGo").onclick=pedirConsejo;
+  $("opGo").onclick=operaComando;
+  $("opCmd").onkeydown=(e)=>{ if(e.key==="Enter") operaComando(); };
+}
+async function operaComando(){
+  const cmd=($("opCmd")?$("opCmd").value:"").trim();
+  if(cmd.length<3){ return; }
+  const btn=$("opGo"); if(btn){ btn.disabled=true; btn.textContent="…"; }
+  let data,error;
+  try{ ({ data, error } = await supa.functions.invoke("opera-parse",{ body:{ channel_id:channelId, comando:cmd } })); }
+  catch(e){ error=e; }
+  if(btn){ btn.disabled=false; btn.textContent="Hacer"; }
+  const msg=$("opMsg"); if(!msg) return;
+  if(error || !data || !data.ok || !data.action){ msg.innerHTML=`<span style="color:#e2564a;font-size:12.5px">${esc((data&&data.error)||(error&&error.message)||"No se pudo procesar.")}</span>`; return; }
+  const act=data.action;
+  if(act.tipo==="none"){ msg.innerHTML=`<span style="color:var(--muted);font-size:12.5px">${esc(act.mensaje||"No pude convertir eso en una acción.")}</span>`; return; }
+  msg.innerHTML="";
+  if(!await confirmDialog({ title:"Confirmar", message:act.resumen+" ¿Lo hago?", confirmText:"Sí, hazlo" })) return;
+  try{
+    const undo=await operaExec(act);
+    if($("opCmd")) $("opCmd").value="";
+    msg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;font-size:12.5px"><span style="color:var(--green,#22c079);font-weight:700">✓ Hecho.</span><a href="#" id="opUndo" style="color:var(--brand)">Deshacer</a></div>`;
+    const un=$("opUndo"); if(un) un.onclick=async(e)=>{ e.preventDefault(); un.textContent="Deshaciendo…"; try{ await undo(); toast("Deshecho ✓"); msg.innerHTML=""; load(); }catch(_){ toast("No se pudo deshacer",true); } };
+    load();
+  }catch(e){ msg.innerHTML=`<span style="color:#e2564a;font-size:12.5px">No se pudo ejecutar: ${esc(String((e&&e.message)||e))}</span>`; }
+}
+async function operaExec(a){
+  if(a.tipo==="precio"){
+    const { error }=await supa.from("product_versions").update({ precio:a.valor }).eq("id",a.version_id); if(error) throw error;
+    return async()=>{ await supa.from("product_versions").update({ precio:a.actual }).eq("id",a.version_id); };
+  }
+  if(a.tipo==="estado_venta"){
+    const nuevo=a.valor?"activo":"borrador", viejo=a.actual?"activo":"borrador";
+    const { error }=await supa.from("flows").update({ estado:nuevo }).eq("id",a.flow_id); if(error) throw error;
+    return async()=>{ await supa.from("flows").update({ estado:viejo }).eq("id",a.flow_id); };
+  }
+  if(a.tipo==="adelanto"){
+    const { data }=await supa.from("products").select("config").eq("id",a.product_id).maybeSingle();
+    const cfg=(data&&data.config)||{}; const viejo=cfg.adelanto_override;
+    const { error }=await supa.from("products").update({ config:{...cfg, adelanto_override:a.valor} }).eq("id",a.product_id); if(error) throw error;
+    return async()=>{ const c2={...cfg}; if(viejo==null) delete c2.adelanto_override; else c2.adelanto_override=viejo; await supa.from("products").update({ config:c2 }).eq("id",a.product_id); };
+  }
+  throw new Error("acción no soportada");
 }
 async function pedirConsejo(){
   const btn=$("aiGo"); if(btn){ btn.disabled=true; btn.textContent="Analizando…"; }

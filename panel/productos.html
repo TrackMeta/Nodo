@@ -1647,9 +1647,12 @@ async function renderInicio(){
           ${fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(fVenta.nombre)}". Regenerar lo reescribe por completo (aplica lo que cambiaste arriba).</div>`:""}
           ${fVenta && fVenta.estado!=="activo" ? `
           <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55">
-            <b style="color:var(--red,#e2564a)">El flujo está en borrador: este producto NO vende.</b> El bot manda el saludo y se queda callado.
-            <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Activarlo ahora</button></div>
-          </div>` : (fVenta?`<div style="font-size:12.5px;color:var(--green,#22c079);margin-top:10px;font-weight:600">● Activo — este producto ya vende.</div>`:"")}
+            <b style="color:var(--red,#e2564a)">En pausa (borrador): este producto NO vende.</b> El bot manda el saludo y se queda callado.
+            <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Poner a vender</button></div>
+          </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px">
+            <span style="font-size:12.5px;color:var(--green,#22c079);font-weight:600">● Activo — este producto ya vende.</span>
+            <button class="btn" id="pausarVenta" style="height:30px;padding:0 12px;font-size:12.5px">Pausar</button>
+          </div>`:"")}
         </div>`}`;
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
@@ -1662,7 +1665,15 @@ async function renderInicio(){
       e.target.disabled=true;
       const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
-      toast("Flujo activado ✓ · el producto ya vende"); st.tab="inicio"; renderDetail();
+      toast("Puesto a vender ✓ · el producto ya vende"); st.tab="inicio"; renderDetail();
+    };
+    const pv=$("pausarVenta");
+    if(pv) pv.onclick=async(e)=>{
+      if(!await confirmDialog({title:"Pausar producto",message:`¿Pausar "${esc(st.prod.nombre)}"? El bot dejará de venderlo (sigue saludando). Lo reactivas cuando quieras.`,confirmText:"Pausar"})) return;
+      e.target.disabled=true;
+      const { error }=await supa.from("flows").update({ estado:"borrador" }).eq("id",st.receta.fVenta.id);
+      if(error){ toast(error.message,true); e.target.disabled=false; return; }
+      toast("Producto pausado ✓ · ya no vende"); st.tab="inicio"; renderDetail();
     };
   }
 }
