@@ -49,6 +49,27 @@
   .ini-item-nm{font-size:13.5px;font-weight:600;flex:none}
   .ini-item-msg{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ini-chev{flex:none;color:var(--faint);font-size:18px;line-height:1}
+  .ini-ico{flex:none;width:34px;height:34px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .ini-ico svg{width:17px;height:17px}
+  .ini-ico.done{background:rgba(34,192,121,.14);border-color:rgba(34,192,121,.32);color:var(--green,#22c079)}
+  .ini-item{transition:background .12s}
+  .ini-item:hover .ini-chev{color:var(--brand)}
+  /* Cabecera de sección (sin barra de pestañas) */
+  .pdet-h1{margin:0 0 18px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px}
+  .pdet-xbadge{font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px}
+  .pdet-secbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+  .pdet-back{display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:13px;font-weight:600;padding:8px 13px 8px 10px;border-radius:10px;cursor:pointer;transition:border-color .12s,color .12s}
+  .pdet-back:hover{border-color:var(--brand);color:var(--brand)}
+  .pdet-back svg{width:16px;height:16px}
+  .pdet-crumb{font-size:13.5px;color:var(--muted);font-weight:600}
+  .pdet-crumb-sep{color:var(--faint)}
+  .pdet-crumb-cur{font-size:17px;font-weight:700;letter-spacing:-.2px}
+  /* Poner a vender: tarjeta destacada */
+  .sell-card{border:1.5px solid var(--brand-border,rgba(43,127,255,.35))!important;background:linear-gradient(180deg,rgba(43,127,255,.05),transparent 60%),var(--surface)}
+  .sell-hd{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+  .sell-ico{flex:none;width:34px;height:34px;border-radius:10px;background:var(--brand-bg,rgba(43,127,255,.12));color:var(--brand);display:flex;align-items:center;justify-content:center}
+  .sell-ico svg{width:19px;height:19px}
+  .sell-tt{font-weight:700;font-size:16px;letter-spacing:-.1px}
   .hint{color:var(--muted);font-size:12.5px;line-height:1.55}
   label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
@@ -347,36 +368,25 @@ async function deleteProduct(){
 
 function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
-  // Un producto EXTRA (complemento) no se vende solo: solo se engancha como venta
-  // extra. Por eso muestra un set reducido de pestañas (sin IA/Activación/Receta…).
   const esExtra = st.prod.clase==="extra";
   const EXTRA_TABS=["inicio","producto","opciones","entrega","ia"];
   if(esExtra && !EXTRA_TABS.includes(st.tab)) st.tab="inicio";
-  const IA_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
-  const HOME_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/></svg>';
-  // Nombres simples (sin jerga) + agrupados en fases. Los ids internos no cambian.
-  const LABELS={ inicio:HOME_SVG+"Inicio", producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
-    ia:IA_SVG+"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
+  // Sin barra de pestañas: el producto vive en el hub "Inicio" y cada sección se
+  // abre a pantalla completa con un botón para volver (navegación hub ↔ sección).
+  const SEC={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
+    ia:"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
     remarketing:"Remarketing", flujos:"Flujos" };
-  const PHASES = esExtra
-    ? [["① El producto",["producto","opciones","entrega"]], ["② La venta",["ia"]]]
-    : [["① El producto",["producto","opciones","entrega"]],
-       ["② La venta",["ia","activacion","extras","remarketing"]],
-       ["③ Avanzado",["flujos"]]];
-  const advTab=(t)=> t==="flujos";
-  const dot=(t)=>{ const dn=tabDone(t); return dn===null?"":`<span class="tdot ${dn?'on':''}" title="${dn?'Listo':'Falta completar'}"></span>`; };
-  const tb=(t)=> `<button class="tab ${advTab(t)?'tab-adv ':''}${st.tab===t?'active':''}" data-t="${t}">${dot(t)}${LABELS[t]}</button>`;
-  // El hub "Inicio" va primero (portada clickeable); luego las fases.
-  const phaseHtml=PHASES.map(([ph,ids])=>`<div class="tabgrp"><div class="tabgrp-lbl">${ph}</div><div class="tabgrp-tabs">${ids.map(tb).join("")}</div></div>`).join('<div class="tabgrp-sep"></div>');
-  d.innerHTML=`
-    <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px">${esc(st.prod.nombre)}${esExtra?`<span style="font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px">Extra · complemento</span>`:""}</h1>
-    <div class="tabs2">
-      <div class="tabgrp"><div class="tabgrp-lbl">&nbsp;</div><div class="tabgrp-tabs">${tb("inicio")}</div></div>
-      <div class="tabgrp-sep"></div>
-      ${phaseHtml}
-    </div>
-    <div id="tabBody"></div>`;
-  d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
+  const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+  const onHub = st.tab==="inicio";
+  d.innerHTML = onHub
+    ? `<h1 class="pdet-h1">${esc(st.prod.nombre)}${esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:""}</h1>
+       <div id="tabBody"></div>`
+    : `<div class="pdet-secbar">
+         <button class="pdet-back" id="backHub">${CHEV}Inicio</button>
+         <span class="pdet-crumb">${esc(st.prod.nombre)}</span><span class="pdet-crumb-sep">›</span><span class="pdet-crumb-cur">${SEC[st.tab]||""}</span>
+       </div>
+       <div id="tabBody"></div>`;
+  const bh=$("backHub"); if(bh) bh.onclick=()=>{ st.tab="inicio"; renderDetail(); };
   if(st.tab==="inicio") renderInicio();
   else if(st.tab==="producto") renderProducto();
   else if(st.tab==="entrega") renderEntrega();
@@ -387,19 +397,6 @@ function renderDetail(){
   else if(st.tab==="flujos") renderFlujos();
   else renderActivacion();
 }
-// Indicador de progreso de la pestaña (puntito lleno = tiene lo mínimo).
-// Solo para las pestañas cuyo "listo" se puede saber sin ir a la base:
-// Producto, Presentaciones, Entrega y Venta con IA. El resto: null (sin punto).
-function tabDone(t){
-  const c=st.prod.config||{}; const tipo=st.prod.tipo||"digital";
-  const hayPrecio=(c.precio!=null&&String(c.precio).trim()!=="")||(st.versions||[]).some(v=>Number(v.precio)>0);
-  if(t==="producto") return hayPrecio;
-  if(t==="opciones") return (st.versions||[]).some(v=>Number(v.precio)>0);
-  if(t==="entrega") return tipo==="fisico" ? true : !!(c.link_entrega&&String(c.link_entrega).trim());
-  if(t==="ia") return !!(c.contexto_producto || (c.ia&&(c.ia.detalle||c.ia.resumen||c.ia.proceso)) || (Array.isArray(c.faq_items)&&c.faq_items.length));
-  return null;
-}
-
 // FAQ del producto: editor de pares P/R que compila a config.faq (texto que
 // lee el motor). Se conserva config.faq_items para poder re-editarlo.
 function parseFaq(txt){
@@ -1544,6 +1541,9 @@ async function renderInicio(){
   };
   const NM={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega", ia:"Venta con IA",
     activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)" };
+  const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+  const IC={ producto:icon("box"), opciones:icon("productos"), entrega:fisico?icon("truck"):icon("link"),
+    ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos") };
   const PH = esExtra
     ? [["①","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
        ["②","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
@@ -1551,7 +1551,7 @@ async function renderInicio(){
        ["②","La venta","Cómo lo vende la IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
        ["③","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
   const item=(t)=>{ const e=est(t); return `<button class="ini-item" data-t="${t}">
-    <span class="tdot ${e.ok?'on':''}" ${(e.opt&&!e.ok)?'style="border-style:dashed"':''}></span>
+    <span class="ini-ico ${e.ok?'done':''}">${IC[t]||''}</span>
     <span class="ini-item-nm">${NM[t]}</span><span class="ini-item-msg">${e.msg}</span><span class="ini-chev">›</span></button>`; };
   const phCard=([num,tt,sub,ids])=>{ const done=ids.filter(t=>est(t).ok).length;
     return `<div class="ini-ph">
@@ -1561,22 +1561,22 @@ async function renderInicio(){
       <div class="ini-items">${ids.map(item).join("")}</div></div>`; };
 
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">Arma tu producto por partes. Toca una sección para completarla; los puntos verdes te dicen qué ya está listo.</p>
+    <p class="hint" style="margin:0 0 16px">Arma tu producto por partes. Toca una sección para completarla; las que aparecen en <b style="color:var(--green,#22c079)">verde</b> ya están listas.</p>
     ${PH.map(phCard).join("")}
     ${esExtra
       ? `<div class="card" style="border-color:var(--brand-border)">
           <h4 style="margin-top:0">Este es un complemento</h4>
           <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende solo: se ofrece <b>enganchado a un producto principal</b> (en la pestaña <b>Ventas extra</b> de ese principal). No necesita su propio flujo — con completar lo de arriba basta.</div>
         </div>`
-      : `<div class="card" style="border-color:var(--brand-border)">
-          <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("node")} Poner a vender</h4>
-          <div id="saludBox"></div>
+      : `<div class="card sell-card">
+          <div class="sell-hd"><span class="sell-ico">${icon("node")}</span><span class="sell-tt">Poner a vender</span></div>
+          <div id="saludBox" style="margin-top:12px"></div>
           <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
             ${fisico
               ? `Genera el flujo: la IA vende, detecta la zona sin botones, toma los datos conversando, crea el pedido y (en provincia) pide y valida el adelanto. Despachar, guía, saldo y clave los operas tú desde Pedidos.`
               : `Genera el flujo: la IA vende y responde, detecta el comprobante, lo valida contra el precio exacto y entrega solo. Si el pago no cuadra, lo vuelve a pedir.`}
           </div>
-          <button class="btn primary" id="genFlow">${fVenta?"Regenerar flujo de venta":"Generar flujo y poner a vender"}</button>
+          <button class="btn primary" id="genFlow" style="height:46px;font-size:14.5px;padding:0 22px">${fVenta?"Regenerar flujo de venta":"Generar flujo y poner a vender"}</button>
           ${fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(fVenta.nombre)}". Regenerar lo reescribe por completo (aplica lo que cambiaste arriba).</div>`:""}
           ${fVenta && fVenta.estado!=="activo" ? `
           <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55">
