@@ -269,7 +269,7 @@ function nuevoProductoModal(){
           <span style="font-size:11.5px;color:var(--muted);line-height:1.45">Se vende solo: tiene su gancho (palabra clave / anuncio) y su conversación de venta con IA.</span></button>
         <button class="npc" data-c="extra" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
           <span style="font-weight:800;font-size:14px;color:var(--text)">🟩 Extra (complemento)</span>
-          <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende solo — se engancha como <b>venta extra</b> a un principal. Formulario mínimo.</span></button>
+          <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende solo — se engancha como <b>venta extra</b> a un principal. Solo lo esencial: precio, entrega y cómo lo vende la IA.</span></button>
       </div>
       <div style="font-size:13px;color:var(--muted);margin:0 0 18px">¿Cómo se entrega? Esto adapta la ficha.</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -501,7 +501,7 @@ function prodSync(){
 }
 function prodSetC(k,v){ const c=st.prod.config; if(v==null||v==="") delete c[k]; else c[k]=v; prodSync(); }
 
-// ── Pestaña PRODUCTO: lo básico (identidad + precio + costo) ────────
+// ── Pestaña PRODUCTO: lo básico (identidad + tu costo + detalles a preguntar) ──
 function renderProducto(){
   const b=$("tabBody");
   const folders=allFolders();
@@ -509,7 +509,7 @@ function renderProducto(){
   if(!Array.isArray(c.atributos)) c.atributos=[];
   const tipo=st.prod.tipo||"digital";
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">Lo básico de lo que vendes: nombre, precio y cuánto te cuesta. Las <b>opciones</b> (${tipo==="fisico"?"1 par / 2 pares, pack familiar":"Básico / Premium, con o sin plantillas"}) van en su pestaña; cómo se <b>entrega</b> y cómo lo <b>vende la IA</b>, también.</p>
+    <p class="hint" style="margin:0 0 14px">Lo básico: nombre, <b>tu costo</b> y los detalles que la IA pregunta. El <b>precio</b> y las <b>presentaciones</b> (${tipo==="fisico"?"1 par / 2 pares, pack familiar":"Básico / Premium, con o sin plantillas"}) van en <b>Presentaciones y precios</b>; la <b>entrega</b> y cómo lo <b>vende la IA</b>, en sus pestañas.</p>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
       <div class="row" style="align-items:flex-start;margin-top:10px">
@@ -649,6 +649,7 @@ function renderEntrega(){
   // productos. Acá solo el ADELANTO override, por si ESTE producto necesita otro.
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a> y vale para todos tus productos.</p>
+    ${st.prod.clase==="extra"?`<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:11px 12px;margin:0 0 14px;font-size:12.5px;color:var(--muted);line-height:1.5"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se despacha <b>junto con el pedido principal</b>, en el mismo envío. Normalmente no necesita adelanto ni envío propios — los de abajo son solo por si este complemento fuera una excepción.</div></div>`:""}
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Adelanto de este producto</h4>
       <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Solo si <b>este</b> producto pide una seña distinta a la de tu negocio. Si lo dejas <b>vacío</b>, usa el adelanto por defecto de Negocio.</div>
@@ -1547,7 +1548,7 @@ async function renderInicio(){
   // Estado por sección (para los puntitos y el X/Y de cada fase).
   const est=(t)=>{
     if(t==="producto"){ return {ok:true,msg:"Nombre y tipo listos"}; }
-    if(t==="opciones"){ const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} opción(es), ${cp} con precio`:"Ninguna opción tiene precio"}; }
+    if(t==="opciones"){ const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} presentación(es), ${cp} con precio`:"Ninguna presentación tiene precio"}; }
     if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
@@ -1632,7 +1633,7 @@ function renderSalud(){
   const conPrecio=ops.filter(v=>v.precio!=null&&v.precio!=="");
   const errs=[], warns=[];
   if(!ops.length) errs.push("El producto no tiene ninguna presentación activa.");
-  if(!conPrecio.length) errs.push("Ninguna opción tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
+  if(!conPrecio.length) errs.push("Ninguna presentación tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
   if(!fisico){
     // Cuenta solo los items con URL: una fila de entrega vacía no entrega nada.
     const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim())));
@@ -1873,7 +1874,7 @@ async function generarFlujoFisico(flowId, N, E){
 
 async function generarFlujoVenta(){
   const ops=st.versions.filter(v=>v.activo!==false && v.precio!=null && v.precio!=="");
-  if(!ops.length){ toast("Primero cargá al menos una opción con precio",true); return; }
+  if(!ops.length){ toast("Primero carga al menos una presentación con precio",true); return; }
   const ya=st.receta.fVenta;
   if(!await confirmDialog({
     title: ya?"Regenerar flujo de venta":"Generar flujo de venta",
