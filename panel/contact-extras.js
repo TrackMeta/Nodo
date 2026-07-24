@@ -355,7 +355,7 @@ function injectDespachoCss() {
 // error y el cliente no recibía nada. Por eso cada aviso se elige a mano, con
 // el estado de la ventana a la vista.
 // `momento` = "despachado" | "en_agencia" | "adelanto_validado" (la plantilla
-// por defecto de cada uno se configura en Pagos y atención).
+// por defecto de cada uno se configura en Pagos y avisos).
 export async function cargarAviso(supa, channelId, contactId, momento) {
   const info = { abierta: false, restante: "", tpls: [], preferida: null, flujo: null, flujoId: null, texto: "" };
   try {
@@ -378,7 +378,7 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
     if (a && a.template) info.preferida = a;
     if (a && a.texto) info.texto = String(a.texto);
   } catch (_) { /* sin config */ }
-  // Si el negocio no escribió su mensaje en Pagos y atención, todavía puede
+  // Si el negocio no escribió su mensaje en Pagos y avisos, todavía puede
   // haber un FLUJO viejo escuchando este estado. Se nombra para que se sepa qué
   // va a salir; y si no hay ni una cosa ni la otra, hay que decirlo ANTES de
   // guardar, no después.
@@ -414,7 +414,7 @@ export function avisoBlockHtml(info) {
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
       info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
-      !hayFlujo ? "Todavía no escribiste el mensaje de este momento, así que no se enviaría nada. Escríbelo en Pagos y atención → Avisos de pedido."
+      !hayFlujo ? "Todavía no escribiste el mensaje de este momento, así que no se enviaría nada. Escríbelo en Pagos y avisos → Avisos de pedido."
         : !info.abierta ? "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada."
         : info.texto ? `“${esc(info.texto.length > 120 ? info.texto.slice(0, 120) + "…" : info.texto)}”`
         : "Es el flujo que se dispara con este estado.",

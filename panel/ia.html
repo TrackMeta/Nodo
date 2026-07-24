@@ -132,6 +132,7 @@
     </div>
     <div class="tabs">
       <button class="tab active" data-t="vendedor" id="tabVend"></button>
+      <button class="tab" data-t="atencion" id="tabAten"></button>
       <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
@@ -208,6 +209,8 @@ const IC={
   doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  agent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M18 14h3v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M20 17v2a4 4 0 0 1-4 4h-4"/></svg>',
+  support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.9" y1="4.9" x2="9.2" y2="9.2"/><line x1="14.8" y1="14.8" x2="19.1" y2="19.1"/><line x1="14.8" y1="9.2" x2="19.1" y2="4.9"/><line x1="4.9" y1="19.1" x2="9.2" y2="14.8"/></svg>',
 };
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
 const PROVIDERS = [
@@ -239,6 +242,7 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
   $("tabVend").innerHTML=IC.robot+"<span>Vendedor IA</span>";
+  $("tabAten").innerHTML=IC.agent+"<span>Atención</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
@@ -262,11 +266,113 @@ async function loadCfg(){
 function render(){
   const b=$("body");
   if(st.tab==="vendedor") renderVendedor(b);
+  else if(st.tab==="atencion") renderAtencion(b);
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
   else renderProveedores(b);
 }
 function goTab(name){ st.tab=name; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
+
+// ── Atención al cliente ──────────────────────────────────────────────
+// Cómo CONVERSA el bot: cuándo pasa el chat a un asesor y el modo soporte
+// post-venta. Vive en channels.pedidos_config (humano/postventa), lo mismo
+// que lee el motor; "Pagos y avisos" maneja el resto de esa config. Al
+// guardar hacemos merge para no pisar las otras claves.
+function renderAtencion(b){
+  const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
+  const Dh={ reclamos:true, horario:{ activo:false, desde:"09:00", hasta:"20:00", dias:{lun:true,mar:true,mie:true,jue:true,vie:true,sab:true,dom:false} }, aviso_dentro:"", aviso_fuera:"" };
+  const Dp={ activo:true, instrucciones:"", cierre:"" };
+  const p={
+    humano:{ ...Dh, ...(src.humano||{}),
+      horario:{ ...Dh.horario, ...((src.humano||{}).horario||{}),
+        dias:{ ...Dh.horario.dias, ...(((src.humano||{}).horario||{}).dias||{}) } } },
+    postventa:{ ...Dp, ...(src.postventa||{}) },
+  };
+  const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
+  b.innerHTML=`
+    <h2>Atención al cliente</h2>
+    <p class="sub">Cómo atiende tu bot la conversación: cuándo le pasa el chat a un asesor y cómo trata a quien <b>ya compró</b>. La validación de pagos y los avisos del pedido están en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>.</p>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
+      <div class="desc">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
+
+      <div id="huRecRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Pasar a un asesor si el cliente reclama o está molesto</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Ante enojo o disputa fuerte (estafa, denuncia, exige devolución) el bot deja de responder y te lo pasa, para que no discuta por su cuenta. Lo sutil lo sigue detectando la IA.</div></span>
+        <span class="sw ${p.humano.reclamos!==false?'on':''}" id="huRecSw" style="flex:none"></span>
+      </div>
+
+      <div id="huHorRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Definir un horario de atención</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Dentro del horario el bot dice “en un momento te atiende un asesor”. Fuera, le dice cuándo vuelves (ej. “mañana a las 9:00 a.m.”), sin dejarlo esperando en silencio. Apagado = siempre “en un momento”.</div></span>
+        <span class="sw ${p.humano.horario.activo?'on':''}" id="huHorSw" style="flex:none"></span>
+      </div>
+
+      <div id="huHorBox" style="display:${p.humano.horario.activo?'block':'none'}">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
+          <label style="margin:0;font-size:12.5px;font-weight:700">Atiendo de</label>
+          <input class="in" id="huDesde" type="time" value="${esc(p.humano.horario.desde||'09:00')}" style="width:120px"/>
+          <span style="font-size:12.5px;color:var(--muted)">a</span>
+          <input class="in" id="huHasta" type="time" value="${esc(p.humano.horario.hasta||'20:00')}" style="width:120px"/>
+          <span style="font-size:12px;color:var(--faint)">hora de Perú</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <label style="margin:0;font-size:12.5px;font-weight:700;margin-right:4px">Días</label>
+          ${[["lun","L"],["mar","M"],["mie","X"],["jue","J"],["vie","V"],["sab","S"],["dom","D"]].map(([k,l])=>`<button class="hudia" data-dia="${k}" style="width:34px;height:34px;border-radius:9px;border:1.5px solid ${p.humano.horario.dias[k]!==false?'var(--ia)':'var(--border)'};background:${p.humano.horario.dias[k]!==false?'var(--ia)':'transparent'};color:${p.humano.horario.dias[k]!==false?'#fff':'var(--muted)'};font-weight:700;font-size:12px;cursor:pointer">${l}</button>`).join("")}
+        </div>
+        <label style="margin-top:14px">Mensaje FUERA de horario <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+        ${ta(p.humano.aviso_fuera,"¡Gracias por escribir! 🙌 Ahora no hay un asesor en línea, pero te responde apenas volvamos. Déjame tu consulta por aquí. 🙏",3).replace('class="in"','class="in" id="huFuera"')}
+        <div style="font-size:11px;color:var(--faint);margin-top:6px">Si lo dejas vacío, el bot arma uno solo y le dice la hora exacta en que vuelves.</div>
+      </div>
+
+      <label style="margin-top:14px">Mensaje al pasar a un asesor (en horario) <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.humano.aviso_dentro,"¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂",3).replace('class="in"','class="in" id="huDentro"')}
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.support}</span><span class="nm">Atención post-venta</span></div>
+      <div class="desc">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
+
+      <div id="pvRow2" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Activar el modo soporte post-venta</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apagado = tras la compra el bot vuelve a su modo normal (puede re-ofrecer el producto).</div></span>
+        <span class="sw ${p.postventa.activo!==false?'on':''}" id="pvSw2" style="flex:none"></span>
+      </div>
+
+      <label style="margin-top:14px">Indicaciones para la post-venta <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.postventa.instrucciones,"Ej. Si preguntan por la garantía, son 30 días por defecto de fábrica. Para cambios de talla, dentro de 7 días y sin uso.",3).replace('class="in"','class="in" id="pvInstr"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Lo que quieras que el bot tenga presente al atender a un comprador (garantía, cambios, cómo usar el producto…).</div>
+
+      <label style="margin-top:16px">Mensaje de cierre <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.postventa.cierre,"Ej. ¡Gracias a ti! 🙌 Que lo disfrutes, aquí estaré si necesitas algo.",2).replace('class="in"','class="in" id="pvCierre"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Cuando el cliente <b>solo agradece o se despide</b> (ya no pide nada), el bot cierra la conversación <b>corto y cálido</b> con esto — sin ofrecer más ni preguntar "¿algo más?". Vacío = la IA lo redacta con tu tono. No lo mutea: si el cliente vuelve con una duda, el bot responde igual.</div>
+    </div>
+
+    <div class="acts"><button class="btn ia" id="atSave">Guardar cambios</button></div>`;
+  $("huRecRow").onclick=()=>{ p.humano.reclamos=!(p.humano.reclamos!==false); $("huRecSw").classList.toggle("on",p.humano.reclamos!==false); };
+  $("huHorRow").onclick=()=>{ p.humano.horario.activo=!p.humano.horario.activo; $("huHorSw").classList.toggle("on",p.humano.horario.activo); const box=$("huHorBox"); if(box) box.style.display=p.humano.horario.activo?"block":"none"; };
+  b.querySelectorAll(".hudia").forEach(x=> x.onclick=()=>{
+    const k=x.dataset.dia; const on=!(p.humano.horario.dias[k]!==false); p.humano.horario.dias[k]=on;
+    x.style.borderColor=on?"var(--ia)":"var(--border)"; x.style.background=on?"var(--ia)":"transparent"; x.style.color=on?"#fff":"var(--muted)";
+  });
+  $("pvRow2").onclick=()=>{ p.postventa.activo=!(p.postventa.activo!==false); $("pvSw2").classList.toggle("on",p.postventa.activo!==false); };
+  $("atSave").onclick=async(e)=>{
+    if($("huDesde")) p.humano.horario.desde=$("huDesde").value||"09:00";
+    if($("huHasta")) p.humano.horario.hasta=$("huHasta").value||"20:00";
+    if($("huDentro")) p.humano.aviso_dentro=$("huDentro").value.trim();
+    if($("huFuera")) p.humano.aviso_fuera=$("huFuera").value.trim();
+    if($("pvInstr")) p.postventa.instrucciones=$("pvInstr").value.trim();
+    if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
+    // Merge: no pisar las claves de pago/avisos que maneja "Pagos y avisos".
+    const full={ ...src, humano:p.humano, postventa:p.postventa };
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const { error }=await supa.from("channels").update({ pedidos_config:full }).eq("id",st.channelId);
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
+    st.channel.pedidos_config=full; toast("Atención guardada ✓");
+  };
+}
 
 // ── Campos del Bot (variables globales fijas que la IA usa) ─────────
 async function renderCampos(b){

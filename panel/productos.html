@@ -580,7 +580,7 @@ function renderEntrega(){
       </div>
       <div class="card">
         <h4 style="display:flex;align-items:center;gap:7px">${icon("shield")} Validación del pago</h4>
-        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega este producto tras el pago. Por defecto sigue lo que elegiste para todo el canal en <a href="pagos.html" style="color:var(--brand)">Pagos y atención</a>; acá puedes cambiarlo <b>solo para este producto</b>.</div>
+        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega este producto tras el pago. Por defecto sigue lo que elegiste para todo el canal en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>; acá puedes cambiarlo <b>solo para este producto</b>.</div>
         <select class="in" id="pValPago" style="max-width:320px">
           <option value="" ${!c.validacion_pago?"selected":""}>Usar el default del canal</option>
           <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>⚡ Automático — entrega al toque si el monto cuadra</option>

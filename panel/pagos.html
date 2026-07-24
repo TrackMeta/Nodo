@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Pagos y atención</title>
+<title>Nodo · Pagos y avisos</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -53,8 +53,8 @@
     <div class="nodo-head">
       <div class="grow">
         <a href="pedidos.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;text-decoration:none;margin-bottom:6px">← Volver a Pedidos</a>
-        <h1 class="nodo-title">Pagos y atención</h1>
-        <p class="nodo-lead">Cómo el bot valida los pagos, maneja adelantos y saldos, y cómo atiende al cliente: cuándo pasa a un asesor y el modo post-venta.</p>
+        <h1 class="nodo-title">Pagos y avisos</h1>
+        <p class="nodo-lead">Cómo el bot valida los pagos (digitales, adelantos y saldos) y qué le avisa al cliente cuando su pedido avanza. La atención al cliente (cuándo pasa a un asesor y el post-venta) ahora vive en <a href="ia.html" style="color:var(--brand)">IA → Atención</a>.</p>
       </div>
     </div>
     <div id="body"></div>
@@ -309,62 +309,6 @@ function render(b){
         : "Sin plantillas aprobadas, fuera de la ventana solo podrás elegir “no avisar”."}</span></div>
     </div>
 
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
-      <div class="desc">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
-
-      <div id="huRecRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
-        <span><span style="font-weight:600;font-size:13px">Pasar a un asesor si el cliente reclama o está molesto</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Ante enojo o disputa fuerte (estafa, denuncia, exige devolución) el bot deja de responder y te lo pasa, para que no discuta por su cuenta. Lo sutil lo sigue detectando la IA.</div></span>
-        <span class="sw ${p.humano.reclamos!==false?'on':''}" id="huRecSw" style="flex:none"></span>
-      </div>
-
-      <div id="huHorRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
-        <span><span style="font-weight:600;font-size:13px">Definir un horario de atención</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Dentro del horario el bot dice “en un momento te atiende un asesor”. Fuera, le dice cuándo vuelves (ej. “mañana a las 9:00 a.m.”), sin dejarlo esperando en silencio. Apagado = siempre “en un momento”.</div></span>
-        <span class="sw ${p.humano.horario.activo?'on':''}" id="huHorSw" style="flex:none"></span>
-      </div>
-
-      <div id="huHorBox" style="display:${p.humano.horario.activo?'block':'none'}">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
-          <label style="margin:0;font-size:12.5px;font-weight:700">Atiendo de</label>
-          <input class="in" id="huDesde" type="time" value="${esc(p.humano.horario.desde||'09:00')}" style="width:120px"/>
-          <span style="font-size:12.5px;color:var(--muted)">a</span>
-          <input class="in" id="huHasta" type="time" value="${esc(p.humano.horario.hasta||'20:00')}" style="width:120px"/>
-          <span style="font-size:12px;color:var(--faint)">hora de Perú</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">
-          <label style="margin:0;font-size:12.5px;font-weight:700;margin-right:4px">Días</label>
-          ${[["lun","L"],["mar","M"],["mie","X"],["jue","J"],["vie","V"],["sab","S"],["dom","D"]].map(([k,l])=>`<button class="hudia" data-dia="${k}" style="width:34px;height:34px;border-radius:9px;border:1.5px solid ${p.humano.horario.dias[k]!==false?'var(--ia)':'var(--border)'};background:${p.humano.horario.dias[k]!==false?'var(--ia)':'transparent'};color:${p.humano.horario.dias[k]!==false?'#fff':'var(--muted)'};font-weight:700;font-size:12px;cursor:pointer">${l}</button>`).join("")}
-        </div>
-        <label style="margin-top:14px">Mensaje FUERA de horario <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-        ${ta(p.humano.aviso_fuera,"¡Gracias por escribir! 🙌 Ahora no hay un asesor en línea, pero te responde apenas volvamos. Déjame tu consulta por aquí. 🙏",3).replace('class="in"','class="in" id="huFuera"')}
-        <div style="font-size:11px;color:var(--faint);margin-top:6px">Si lo dejas vacío, el bot arma uno solo y le dice la hora exacta en que vuelves.</div>
-      </div>
-
-      <label style="margin-top:14px">Mensaje al pasar a un asesor (en horario) <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-      ${ta(p.humano.aviso_dentro,"¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂",3).replace('class="in"','class="in" id="huDentro"')}
-    </div>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.support}</span><span class="nm">Atención post-venta</span></div>
-      <div class="desc">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
-
-      <div id="pvRow2" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
-        <span><span style="font-weight:600;font-size:13px">Activar el modo soporte post-venta</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apagado = tras la compra el bot vuelve a su modo normal (puede re-ofrecer el producto).</div></span>
-        <span class="sw ${p.postventa.activo!==false?'on':''}" id="pvSw2" style="flex:none"></span>
-      </div>
-
-      <label style="margin-top:14px">Indicaciones para la post-venta <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-      ${ta(p.postventa.instrucciones,"Ej. Si preguntan por la garantía, son 30 días por defecto de fábrica. Para cambios de talla, dentro de 7 días y sin uso.",3).replace('class="in"','class="in" id="pvInstr"')}
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Lo que quieras que el bot tenga presente al atender a un comprador (garantía, cambios, cómo usar el producto…).</div>
-
-      <label style="margin-top:16px">Mensaje de cierre <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-      ${ta(p.postventa.cierre,"Ej. ¡Gracias a ti! 🙌 Que lo disfrutes, aquí estaré si necesitas algo.",2).replace('class="in"','class="in" id="pvCierre"')}
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Cuando el cliente <b>solo agradece o se despide</b> (ya no pide nada), el bot cierra la conversación <b>corto y cálido</b> con esto — sin ofrecer más ni preguntar "¿algo más?". Vacío = la IA lo redacta con tu tono. No lo mutea: si el cliente vuelve con una duda, el bot responde igual.</div>
-    </div>
-
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
   b.querySelectorAll(".digopt").forEach(opt=> opt.onclick=()=>{
     p.digital.validacion=opt.dataset.modo;
@@ -405,13 +349,6 @@ function render(b){
       const dot=o.querySelector(".logdot"); if(dot){ dot.style.borderColor=on?"var(--ia)":"var(--border)"; dot.firstElementChild.style.display=on?"block":"none"; }
     });
   });
-  $("huRecRow").onclick=()=>{ p.humano.reclamos=!(p.humano.reclamos!==false); $("huRecSw").classList.toggle("on",p.humano.reclamos!==false); };
-  $("huHorRow").onclick=()=>{ p.humano.horario.activo=!p.humano.horario.activo; $("huHorSw").classList.toggle("on",p.humano.horario.activo); const box=$("huHorBox"); if(box) box.style.display=p.humano.horario.activo?"block":"none"; };
-  b.querySelectorAll(".hudia").forEach(x=> x.onclick=()=>{
-    const k=x.dataset.dia; const on=!(p.humano.horario.dias[k]!==false); p.humano.horario.dias[k]=on;
-    x.style.borderColor=on?"var(--ia)":"var(--border)"; x.style.background=on?"var(--ia)":"transparent"; x.style.color=on?"#fff":"var(--muted)";
-  });
-  $("pvRow2").onclick=()=>{ p.postventa.activo=!(p.postventa.activo!==false); $("pvSw2").classList.toggle("on",p.postventa.activo!==false); };
   // Avisos de pedido: botón "Insertar dato" en cada mensaje + el toggle de la foto.
   b.querySelectorAll("[data-avtxt]").forEach(ta=>{
     const cont=b.querySelector(`[data-avvars="${ta.dataset.avtxt}"]`);
@@ -426,12 +363,6 @@ function render(b){
   };
   $("pedSave").onclick=async(e)=>{
     p.digital.tolerancia=Math.max(0,Number($("pDigTol").value)||0);
-    if($("huDesde")) p.humano.horario.desde=$("huDesde").value||"09:00";
-    if($("huHasta")) p.humano.horario.hasta=$("huHasta").value||"20:00";
-    if($("huDentro")) p.humano.aviso_dentro=$("huDentro").value.trim();
-    if($("huFuera")) p.humano.aviso_fuera=$("huFuera").value.trim();
-    if($("pvInstr")) p.postventa.instrucciones=$("pvInstr").value.trim();
-    if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     // Avisos de pedido: el mensaje que se manda dentro de la ventana y la
@@ -460,7 +391,7 @@ function render(b){
     const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=p; toast("Pagos y atención guardado ✓");
+    st.channel.pedidos_config=p; toast("Pagos y avisos guardado ✓");
   };
 }
 
