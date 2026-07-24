@@ -150,6 +150,13 @@ function render(){
         <input type="time" class="tin" id="rNocHora" value="${esc(st.resumen.noche.hora)}"/>
         <span class="sw ${st.resumen.noche.on?'on':''}" id="rNocSw"></span>
       </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--faint);line-height:1.6">
+        💬 <b style="color:var(--muted)">También a pedido:</b> escríbele a tu bot de Telegram
+        <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/hoy</code>
+        <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/ayer</code>
+        <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/fecha 2026-07-20</code>
+        y te manda el resumen de ese día al instante.
+      </div>
     </div>
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:240px">

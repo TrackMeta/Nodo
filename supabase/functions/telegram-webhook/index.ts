@@ -16,6 +16,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { answerCallback, editButtons, sendTelegram } from "../_shared/telegram.ts";
+import { construirResumen, parseFecha, localParts, localDayStartUTC, ymd, type Cual } from "../_shared/resumen.ts";
 
 const db = serviceClient();
 
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
   if (!channelId) return json({ error: "falta_canal" }, 400);
 
   const { data: ch } = await db.from("channels")
-    .select("telegram_chat_ids, telegram_webhook_secret, telegram_pair").eq("id", channelId).maybeSingle();
+    .select("id, nombre, timezone, moneda, telegram_chat_ids, telegram_webhook_secret, telegram_pair").eq("id", channelId).maybeSingle();
   if (!ch) return json({ error: "canal_desconocido" }, 404);
 
   // 1) ¿Viene de Telegram?
@@ -80,10 +81,56 @@ Deno.serve(async (req) => {
       await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null }).eq("id", channelId);
       await sendTelegram(token, [quienEs],
         "✅ <b>Listo, quedaste vinculado.</b>\nDesde aquí vas a poder aprobar los pagos con un toque.");
-    } else if (texto === "/start") {
-      await sendTelegram(token, [String(msg.chat?.id ?? "")],
-        "👋 Soy el bot de tu Nodo.\nPara vincularte, entra a <b>Canales → Telegram</b> en el panel, toca " +
-        "<b>Detectar mi chat ID</b> y mándame el código que te muestre.");
+    } else if (/^\/(hoy|ayer|fecha|resumen|start|help|ayuda)\b/i.test(texto)) {
+      // Comandos. Los de resumen exponen KPIs del negocio → solo admins del
+      // canal (los que están en telegram_chat_ids), igual que aprobar un pago.
+      const esAdmin = ((ch as any).telegram_chat_ids ?? []).map(String).includes(quienEs);
+      const chatId = String(msg.chat?.id ?? quienEs);
+      // /start y ayuda no exponen datos: se contestan a cualquiera.
+      const cmd = texto.replace(/^\//, "").split(/[\s@]/)[0].toLowerCase();
+      if (cmd === "start" || cmd === "help" || cmd === "ayuda") {
+        await sendTelegram(token, [chatId],
+          "👋 <b>Bot de tu Nodo.</b>\n\n" +
+          "Comandos:\n" +
+          "• <b>/hoy</b> — resumen de cómo va hoy\n" +
+          "• <b>/ayer</b> — resumen de ayer\n" +
+          "• <b>/fecha 2026-07-20</b> — resumen de un día\n\n" +
+          (esAdmin ? "" : "Para usarlos, vincúlate primero: <b>Canales → Telegram</b> en el panel, " +
+            "toca <b>Detectar mi chat ID</b> y mándame el código."));
+        return json({ ok: true });
+      }
+      if (!esAdmin) {
+        await sendTelegram(token, [chatId],
+          "🔒 Para ver los resúmenes tienes que estar vinculado. Entra a <b>Canales → Telegram</b> en el panel y sigue el paso de vinculación.");
+        return json({ ok: true });
+      }
+      const tz = (ch as any).timezone || "America/Lima";
+      const lp = localParts(new Date(), tz);
+      let diaYmd: string | null = null;
+      let cual: Cual = "hoy";
+      if (cmd === "hoy" || cmd === "resumen") { diaYmd = ymd(lp.y, lp.mo, lp.d); cual = "hoy"; }
+      else if (cmd === "ayer") {
+        const inicioHoy = localDayStartUTC(lp.y, lp.mo, lp.d, tz);
+        const ay = localParts(new Date(inicioHoy.getTime() - 12 * 3600 * 1000), tz);
+        diaYmd = ymd(ay.y, ay.mo, ay.d); cual = "ayer";
+      } else if (cmd === "fecha") {
+        const arg = texto.split(/\s+/).slice(1).join(" ");
+        diaYmd = parseFecha(arg, lp.y); cual = "fecha";
+        if (!diaYmd) {
+          await sendTelegram(token, [chatId],
+            "📅 Dime la fecha así: <b>/fecha 2026-07-20</b> (o <b>/fecha 20/07</b>).");
+          return json({ ok: true });
+        }
+      }
+      if (diaYmd) {
+        try {
+          const resumen = await construirResumen(db, ch, diaYmd, cual);
+          await sendTelegram(token, [chatId], resumen);
+        } catch (e) {
+          console.error("[telegram cmd]", (e as any)?.message ?? e);
+          await sendTelegram(token, [chatId], "No pude armar el resumen. Inténtalo de nuevo en un momento.");
+        }
+      }
     }
     return json({ ok: true });
   }
