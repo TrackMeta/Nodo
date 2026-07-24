@@ -54,6 +54,23 @@
   .sell-ico{flex:none;width:34px;height:34px;border-radius:10px;background:var(--brand-bg,rgba(43,127,255,.12));color:var(--brand);display:flex;align-items:center;justify-content:center}
   .sell-ico svg{width:19px;height:19px}
   .sell-tt{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  /* Asistente "Armar con IA": botón flotante + drawer lateral */
+  .armfab{position:fixed;right:22px;bottom:22px;z-index:80;display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 18px;border:none;border-radius:26px;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 8px 24px rgba(168,85,247,.35)}
+  .armfab svg{width:19px;height:19px}
+  .armfab:hover{filter:brightness(1.06)}
+  .armov{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:none}
+  .armov.on{display:block}
+  .armdr{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:100%;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-12px 0 40px rgba(0,0,0,.3)}
+  .armhd{padding:15px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px}
+  .armhd .gl{width:32px;height:32px;flex:none;border-radius:9px;background:linear-gradient(135deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;display:flex;align-items:center;justify-content:center}
+  .armhd .gl svg{width:18px;height:18px}
+  .armbody{flex:1;overflow-y:auto;padding:16px 18px}
+  .armft{padding:12px 18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+  .armchip{font-size:12px;border:1px solid var(--border);border-radius:20px;padding:6px 11px;color:var(--muted);cursor:pointer;background:transparent}
+  .armchip:hover{border-color:var(--ia1,#a855f7);color:var(--ia1,#a855f7)}
+  .armhero{border:1px solid var(--ia-brd,rgba(168,85,247,.4));background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.12),transparent 60%),var(--surface);border-radius:14px;padding:15px 16px;margin-bottom:14px;display:flex;gap:12px;align-items:center}
+  .armhero .hg{width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;display:flex;align-items:center;justify-content:center}
+  .armhero .hg svg{width:20px;height:20px}
   .hint{color:var(--muted);font-size:12.5px;line-height:1.55}
   label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
@@ -142,6 +159,22 @@
   </div>
 </div>
 
+<button class="armfab" id="armFab" style="display:none">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+  Armar con IA
+</button>
+<div class="armov" id="armOv">
+  <div class="armdr">
+    <div class="armhd">
+      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">Armar con IA</div><div style="font-size:12px;color:var(--muted)" id="armSub">Describe tu producto y la IA lo arma</div></div>
+      <button class="iconbtn" id="armClose" title="Cerrar" style="flex:none">✕</button>
+    </div>
+    <div class="armbody" id="armBody"></div>
+    <div class="armft" id="armFt"></div>
+  </div>
+</div>
+
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
@@ -174,8 +207,8 @@ async function boot(){
   $("backBtn").onclick = ()=>{ st.prod=null; showGrid(); loadProducts(); };
   await loadProducts();
 }
-function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
-function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
+function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; const f=$("armFab"); if(f) f.style.display="none"; armClose(); }
+function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); const f=$("armFab"); if(f) f.style.display="inline-flex"; }
 
 async function loadProducts(){
   // Las opciones de compra son la verdad: si un producto tiene más de una, ES
@@ -1587,7 +1620,14 @@ async function renderInicio(){
         <span class="ini-ph-prog" style="${prog};border-color:transparent">${done}/${ids.length}</span></div>
       <div class="ini-items">${ids.map(t=>item(t,col)).join("")}</div></div>`; };
 
+  // Producto "vacío" (sin conocimiento IA ni precio) → hero para armarlo con IA.
+  const vacio = !est("ia").ok && !est("opciones").ok;
   b.innerHTML=`
+    ${vacio?`<div class="armhero">
+      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Descríbelo en una frase y la IA rellena las fases por ti (tú revisas y guardas).</div></div>
+      <button id="armHeroBtn" style="flex:none;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-weight:700;font-size:13px;padding:10px 15px">Armar con IA ✨</button>
+    </div>`:""}
     <p class="hint" style="margin:0 0 16px">Arma tu producto por partes. Toca una sección para completarla; las que aparecen en <b style="color:var(--green,#22c079)">verde</b> ya están listas.</p>
     ${PH.map(phCard).join("")}
     ${esExtra
@@ -1611,6 +1651,7 @@ async function renderInicio(){
             <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Activarlo ahora</button></div>
           </div>` : (fVenta?`<div style="font-size:12.5px;color:var(--green,#22c079);margin-top:10px;font-weight:600">● Activo — este producto ya vende.</div>`:"")}
         </div>`}`;
+  const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
   b.querySelectorAll(".ini-ph-hd").forEach(h=> h.onclick=(ev)=>{ if(ev.target.closest(".ini-item"))return; st.tab=h.dataset.first; renderDetail(); });
   if(!esExtra){
@@ -2807,6 +2848,107 @@ async function saveProduct(){
   }
   toast("Guardado ✓"); loadProducts();
 }
+// ════════════════════════════════════════════════════════════════════
+// ASISTENTE "Armar con IA" (capa Crea): brief → borrador del producto.
+// Llama a la función armar-producto (Claude u OpenAI, el activo del canal),
+// muestra el borrador (verde = lo que llenó, ámbar = lo que falta) y lo
+// aplica a los formularios EN MEMORIA. No guarda: el dueño revisa y Guarda.
+// ════════════════════════════════════════════════════════════════════
+let armDraft=null;
+const ARM_CHK='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const ARM_ALERT='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+function armOpen(){
+  if(!st.prod) return;
+  armDraft=null;
+  const sub=$("armSub"); if(sub) sub.textContent=`Producto · ${st.prod.nombre||"nuevo"}`;
+  armRenderBrief();
+  $("armOv").classList.add("on");
+  setTimeout(()=>{ const t=$("armBrief"); if(t) t.focus(); },80);
+}
+function armClose(){ const o=$("armOv"); if(o) o.classList.remove("on"); }
+function armRenderBrief(){
+  const tipo=st.prod?.tipo||"digital";
+  const ej = tipo==="fisico"
+    ? "Ej. Vendo zapatillas Runner para correr, físicas. Envío por Shalom a todo el Perú, tallas 38 al 44, varios colores. Hago pack de 2 pares con descuento."
+    : "Ej. Vendo un curso de Excel en video (digital), acceso por Drive de por vida, con plantillas y certificado. Tengo versión Básica y Premium.";
+  $("armBody").innerHTML=`
+    <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 12px">Cuéntame de tu producto en tus palabras (o pega una descripción). La IA arma un <b>borrador</b> de toda la ficha; tú lo revisas y guardas. <b>No inventa</b> precios ni tu Yape — esos los marca para que los completes.</p>
+    <textarea class="in" id="armBrief" rows="6" style="min-height:130px;line-height:1.55;font-family:var(--font);resize:vertical" placeholder="${esc(ej)}"></textarea>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <button class="armchip" data-ins="Es un producto físico, lo envío por agencia a provincia.">+ físico / envío</button>
+      <button class="armchip" data-ins="Tengo variantes con distinto precio (básico y premium).">+ variantes</button>
+      <button class="armchip" data-ins="Ofrezco un descuento si compran 2 o más.">+ oferta</button>
+    </div>`;
+  $("armFt").innerHTML=`<button id="armGo" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-size:14px;font-weight:700">Armar borrador ✨</button>`;
+  $("armGo").onclick=armGenerar;
+  $("armBody").querySelectorAll("[data-ins]").forEach(bt=> bt.onclick=()=>{ const t=$("armBrief"); t.value=(t.value.trim()?t.value.trim()+" ":"")+bt.dataset.ins; t.focus(); });
+}
+async function armGenerar(){
+  const brief=($("armBrief")?.value||"").trim();
+  if(brief.length<10){ toast("Escribe un poco más sobre tu producto",true); return; }
+  $("armFt").innerHTML=`<button disabled style="width:100%;height:44px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--muted);font-weight:600">Armando… ✨</button>`;
+  let data,error;
+  try{ ({ data, error } = await supa.functions.invoke("armar-producto",{ body:{ channel_id:st.channelId, brief, tipo:st.prod?.tipo } })); }
+  catch(e){ error=e; }
+  if(error || !data?.ok || !data?.draft){
+    const msg=data?.error||error?.message||"No se pudo armar. Intenta de nuevo.";
+    toast(msg,true); armRenderBrief(); const t=$("armBrief"); if(t) t.value=brief; return;
+  }
+  armDraft=data.draft; armRenderDraft();
+}
+function armRenderDraft(){
+  const d=armDraft||{};
+  const done=[];
+  if(d.nombre) done.push("Producto · "+esc(String(d.nombre))+(d.tipo?` (${esc(String(d.tipo))})`:""));
+  if(Array.isArray(d.presentaciones)&&d.presentaciones.length) done.push(`Presentaciones · ${d.presentaciones.length}`);
+  if(d.ia&&(d.ia.resumen||d.ia.detalle)) done.push("Venta con IA · pitch y detalle");
+  if(Array.isArray(d.atributos)&&d.atributos.length) done.push(`Detalles a preguntar · ${d.atributos.length}`);
+  if(Array.isArray(d.faq)&&d.faq.length) done.push(`Preguntas frecuentes · ${d.faq.length}`);
+  const faltan=Array.isArray(d.faltan)?d.faltan:[];
+  const chk=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="color:var(--green,#22c079);flex:none;display:inline-flex">${ARM_CHK}</span>${t}</div>`;
+  const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:#f0a92b;flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
+  $("armBody").innerHTML=`
+    <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">Borrador listo 🎉</div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:12px">${esc(String(d.resumen_cambios||"Revisa lo que llené y ajústalo. Nada se guarda hasta que toques Guardar cambios."))}</div>
+    <div style="border:1px solid var(--border);border-radius:11px;padding:12px">${done.map(chk).join("")||"<div style='font-size:12px;color:var(--faint)'>Sin campos</div>"}</div>
+    ${faltan.length?`<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:#f0a92b">Te toca completar (no lo invento):</div><div style="border:1px solid rgba(240,169,43,.4);background:rgba(240,169,43,.06);border-radius:11px;padding:12px">${faltan.map(amb).join("")}</div>`:""}`;
+  $("armFt").innerHTML=`
+    <button id="armApply" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-size:14px;font-weight:700">Aplicar borrador</button>
+    <button class="btn" id="armBack" style="width:100%">Volver a escribir</button>`;
+  $("armApply").onclick=()=>armAplicar(armDraft);
+  $("armBack").onclick=armRenderBrief;
+}
+function armAplicar(d){
+  if(!d||!st.prod) return;
+  const p=st.prod; const c=p.config=p.config||{};
+  if(d.nombre) p.nombre=String(d.nombre);
+  if(d.emoji) p.emoji=String(d.emoji);
+  if(d.tipo==="fisico"||d.tipo==="digital") p.tipo=d.tipo;
+  if(Array.isArray(d.atributos)&&d.atributos.length){
+    c.atributos=d.atributos.filter(a=>a&&a.nombre).map(a=>({ nombre:String(a.nombre), clave:slugAttr(a.nombre), obligatorio:true, valores:a.valores?String(a.valores):"", ayuda:"", media:[] }));
+  }
+  const dia=d.ia||{}; c.ia=c.ia||{};
+  ["resumen","detalle","reglas_producto","limites","estilo_venta","proceso","tecnicas"].forEach(k=>{ if(dia[k]) c.ia[k]=String(dia[k]); });
+  if(Array.isArray(d.faq)&&d.faq.length){
+    c.faq_items=d.faq.filter(f=>f&&f.q&&f.a).map(f=>({q:String(f.q),a:String(f.a)}));
+    c.faq=compileFaq(c.faq_items);
+  }
+  // Presentaciones: solo si aún no hay precios (no pisar lo que ya pusiste).
+  if(Array.isArray(d.presentaciones)&&d.presentaciones.length){
+    const tienePrecio=(st.versions||[]).some(v=>Number(v.precio)>0);
+    if(!tienePrecio){
+      (st.versions||[]).forEach(v=>{ if(v.id) st.delVersions.push(v.id); });
+      st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:"", cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
+    }
+  }
+  prodSync(); st.tab="inicio"; renderDetail(); armClose();
+  toast("Borrador aplicado ✓ — revisa y Guarda cambios");
+}
+// Wiring del asistente (los elementos son HTML estático, ya existen).
+if($("armFab")) $("armFab").onclick=armOpen;
+if($("armClose")) $("armClose").onclick=armClose;
+if($("armOv")) $("armOv").onclick=(e)=>{ if(e.target===$("armOv")) armClose(); };
+
 boot();
 </script>
 </body>

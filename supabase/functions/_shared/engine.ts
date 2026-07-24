@@ -2681,6 +2681,65 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
   return arr.slice(0, 3);
 }
 
+// ── Asistente "Armar con IA" (capa Crea): brief → borrador del producto ──
+// Del brief del dueño arma la ficha en BORRADOR (para que él revise). Respeta la
+// voz del negocio. 🔒 NUNCA inventa datos duros (precios reales, Yape, links,
+// zonas, DNI): los deja vacíos y los lista en `faltan`. Usa el proveedor activo
+// del canal (Claude u OpenAI, el que esté configurado).
+export async function armarProducto(
+  db: SupabaseClient, channelId: string, brief: string, tipoHint?: string,
+): Promise<any> {
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const { data: ch } = await db.from("channels").select("negocio").eq("id", channelId).maybeSingle();
+  const negocio = String((ch as any)?.negocio ?? "").trim();
+
+  const system =
+    "Eres un asistente que ARMA la ficha de un producto para un bot de ventas por WhatsApp (negocio peruano). " +
+    "A partir del brief del dueño, rellenas los campos en BORRADOR para que él los revise. Escribes en español peruano (de tú), cálido y vendedor.\n\n" +
+    (negocio ? `## Voz y datos del negocio (respeta el mismo tono/estilo)\n${negocio}\n\n` : "") +
+    "## Reglas duras (MUY IMPORTANTE)\n" +
+    "- NUNCA inventes datos que no puedes saber: precios/montos reales, número de Yape/Plin/cuenta, links de entrega, direcciones, zonas de envío, DNI. Deja esos campos vacíos y anótalos en `faltan` (ej. \"Precio real de cada presentación\", \"Tu Yape / datos de pago\", \"Link de entrega\").\n" +
+    "- El precio de cada presentación va SIEMPRE vacío: lo pone el dueño.\n" +
+    "- Si el brief no dice si es físico o digital, decídelo por sentido común.\n" +
+    "- `atributos` = detalles que la IA PREGUNTA y que NO cambian el precio (talla, color, modelo, nombre para el certificado…). `presentaciones` = lo comprable con distinto precio (1 par / 2 pares, Básico / Premium, packs). Si el producto es simple, deja UNA presentación llamada \"Única\".\n" +
+    "- `ia.estilo_venta` debe ser uno de: consultivo, directo, educativo, urgencia, objeciones (o vacío).\n" +
+    "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, en la voz del negocio.\n" +
+    "- `resumen_cambios`: una sola frase de qué llenaste.\n" +
+    "Responde SOLO con el JSON del esquema, sin texto extra.";
+
+  const content =
+    `## Brief del producto (lo que dijo el dueño)\n"${brief}"\n\n` +
+    `Tipo sugerido: ${tipoHint === "fisico" || tipoHint === "digital" ? tipoHint : "decídelo tú (fisico o digital)"}.\n` +
+    "Arma el borrador completo del producto.";
+
+  const schema = {
+    type: "object",
+    properties: {
+      nombre: { type: "string" },
+      emoji: { type: "string" },
+      tipo: { type: "string", enum: ["fisico", "digital"] },
+      atributos: { type: "array", items: { type: "object", properties: { nombre: { type: "string" }, valores: { type: "string" } }, required: ["nombre"], additionalProperties: false } },
+      presentaciones: { type: "array", items: { type: "object", properties: { nombre: { type: "string" }, descripcion: { type: "string" }, cantidad: { type: "number" } }, required: ["nombre"], additionalProperties: false } },
+      ia: { type: "object", properties: { resumen: { type: "string" }, detalle: { type: "string" }, reglas_producto: { type: "string" }, limites: { type: "string" }, estilo_venta: { type: "string" }, proceso: { type: "string" }, tecnicas: { type: "string" } }, additionalProperties: false },
+      faq: { type: "array", items: { type: "object", properties: { q: { type: "string" }, a: { type: "string" } }, required: ["q", "a"], additionalProperties: false } },
+      faltan: { type: "array", items: { type: "string" } },
+      resumen_cambios: { type: "string" },
+    },
+    required: ["nombre", "tipo", "ia"], additionalProperties: false,
+  };
+
+  const raw = await runAI({
+    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    system, content, maxTokens: 2400,
+    jsonSchema: schema as unknown as Record<string, unknown>,
+  });
+  const m = /\{[\s\S]*\}/.exec(raw);
+  try { return m ? JSON.parse(m[0]) : JSON.parse(raw); }
+  catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
+}
+
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
 async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {
