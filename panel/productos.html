@@ -723,7 +723,7 @@ function renderProductoIA(){
     <div class="ia-hd">
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div>
-        <div class="tt">Cómo lo vende la IA</div>
+        <div class="tt">Venta con IA</div>
         <div class="ds">Lo que tu vendedor necesita saber de <b>este</b> producto para venderlo y responder dudas. Todo es opcional — cuanto más, mejor vende. (La personalidad general del vendedor va en <a href="ia.html">IA → Vendedor IA</a>.)</div>
       </div>
     </div>
@@ -753,7 +753,7 @@ function renderProductoIA(){
         ${taField("reglas_precio","Reglas del precio","Cuándo y cómo se cobra, qué incluye, negociación permitida…",2)}
         <div style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin:10px 0;font-size:12px;color:var(--muted);line-height:1.55">
           <span style="display:inline-flex;flex:none;color:var(--muted)">${icon("productos")}</span>
-          <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>versiones</b> se configuran en la pestaña <b>Opciones de compra</b> — ahí cada uno tiene su precio real, y es contra ese precio que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Opciones de compra →</a></div>
+          <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>variantes</b> se configuran en <b>Presentaciones y precios</b> — ahí cada una tiene su precio real, y es contra ese precio que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Presentaciones y precios →</a></div>
         </div>
         ${taField("descuentos","Precios con descuento","Cuándo aplicar un descuento para incentivar (ej. si deja en visto, si duda…) y cuánto.",2)}
         ${taField("metodos_pago","Métodos de pago del producto (opcional)","Si lo llenas, TIENE PRIORIDAD sobre los datos de pago generales de la sección IA.",2)}
@@ -1067,7 +1067,7 @@ function remOferta(box, paso, opciones){
       <span style="font-size:12px;color:var(--muted)">horas</span>
     </div>
     <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. 0 horas = sin caducidad. Al pagar, el bot valida contra este precio (no el de lista).</div>`
-    :`<div style="font-size:11.5px;color:var(--amber,#f0a92b);margin-top:9px">Primero crea al menos una opción de compra con precio para poder ofrecer un descuento.</div>`):""}`;
+    :`<div style="font-size:11.5px;color:var(--amber,#f0a92b);margin-top:9px">Primero crea al menos una presentación con precio para poder ofrecer un descuento.</div>`):""}`;
   box.querySelector("[data-oftog]").onclick=()=>{
     if(paso.oferta){ delete paso.oferta; }
     else { paso.oferta={ version_id:(opciones[0]?.id||""), precio:opciones[0]?.precio??"", vence_horas:48 }; }
@@ -1437,8 +1437,8 @@ async function renderExtras(){
       <h4 style="margin-top:0">Ventas extra</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
         ${esFisico
-          ? `Después de cerrar el pedido, ofrecerle algo más para <b>sumar al mismo envío</b>. El extra <b>no se paga aparte</b>: se cobra junto con el pedido (contraentrega en Lima, o al saldo en provincia). Cada extra es una <b>opción de compra</b> existente. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`
-          : `Después de que el cliente paga, ofrecerle algo más. Cada extra es una <b>opción de compra</b> ya existente (de este producto o de otro), así que se cobra, valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`}
+          ? `Después de cerrar el pedido, ofrecerle algo más para <b>sumar al mismo envío</b>. El extra <b>no se paga aparte</b>: se cobra junto con el pedido (contraentrega en Lima, o al saldo en provincia). Cada extra es una <b>presentación</b> existente. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`
+          : `Después de que el cliente paga, ofrecerle algo más. Cada extra es una <b>presentación</b> ya existente (de este producto o de otro), así que se cobra, valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`}
       </div>
     </div>
 
@@ -1477,7 +1477,7 @@ async function renderExtras(){
 
     <div id="exList"></div>
     <button class="btn" id="exAdd" ${cat.length?"":"disabled"}>+ Venta extra</button>
-    ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay opciones con precio en este bot. Crea primero una opción de compra con precio (en este producto o en otro).</div>`}`;
+    ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay presentaciones con precio en este bot. Crea primero una presentación con precio (en este producto o en otro).</div>`}`;
 
   b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(); });
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
@@ -1558,7 +1558,7 @@ async function renderInicio(){
     ? [["1","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
        ["2","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
     : [["1","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
-       ["2","La venta","Cómo lo vende la IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
+       ["2","La venta","La venta con IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
        ["3","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
   // Color por fase: ① azul (producto) · ② violeta IA (venta) · ③ gris (avanzado).
   const PHCOL={ "1":{c:"var(--brand,#2b7fff)",bg:"rgba(43,127,255,.12)"},
@@ -1624,7 +1624,7 @@ function renderSalud(){
   const ops=st.versions.filter(v=>v.activo!==false);
   const conPrecio=ops.filter(v=>v.precio!=null&&v.precio!=="");
   const errs=[], warns=[];
-  if(!ops.length) errs.push("El producto no tiene ninguna opción de compra activa.");
+  if(!ops.length) errs.push("El producto no tiene ninguna presentación activa.");
   if(!conPrecio.length) errs.push("Ninguna opción tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
   if(!fisico){
     // Cuenta solo los items con URL: una fila de entrega vacía no entrega nada.
