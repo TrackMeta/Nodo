@@ -88,13 +88,13 @@
 </div>
 
 <button class="armfab" id="armFab">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>
   Armar con IA
 </button>
 <div class="armov" id="armOv">
   <div class="armdr">
     <div class="armhd">
-      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">Armar con IA</div><div style="font-size:12px;color:var(--muted)">Describe tu negocio y la IA lo arma</div></div>
       <button id="armClose" title="Cerrar" style="flex:none;background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
     </div>
@@ -212,7 +212,7 @@ function renderConocimiento(b){
     <h2>Conocimiento del negocio</h2>
     <p class="sub">Completa este formulario: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en <b>IA → Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
     ${vacioNeg?`<div class="armhero">
-      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Describe tu negocio en una frase y la IA rellena el formulario (tú revisas y guardas).</div></div>
       <button id="armHeroBtn" style="flex:none;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13px;padding:10px 15px">Armar con IA ✨</button>
     </div>`:""}

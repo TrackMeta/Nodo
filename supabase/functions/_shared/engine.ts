@@ -2226,7 +2226,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
         ?? "Eres un validador experto de comprobantes de pago de Perú.") +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
       const raw = await runAI({
-        provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system: sys,
+        provider: A.provider, apiKey: A.apiKey, model: A.model, system: sys,
         content: [imageBlock(url), { type: "text", text: `El cliente debe pagar un ADELANTO de ${Number.isFinite(esperado) ? esperado : "?"} ${(order as any).currency ?? ""}. Analiza si este comprobante corresponde a ese pago.` }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
       });
@@ -2332,7 +2332,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   let parsed: any = null;
   try {
     const raw = await runAI({
-      provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+      provider: A.provider, apiKey: A.apiKey, model: A.model,
       system,
       content: [imageBlock(url), { type: "text", text: `El cliente debe pagar un SALDO de ${Number.isFinite(saldo) ? saldo : "?"} ${(order as any).currency ?? ""}. Analiza si este comprobante corresponde a ese pago.` }],
       maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
@@ -2499,7 +2499,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     const hist = await historial(db, run, 8);
     const content = `El cliente (con su pago en verificación) te escribe:\n"${event.text ?? ""}"` +
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
-    const result = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system: parts.join("\n\n"), content, maxTokens: 400 });
+    const result = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system: parts.join("\n\n"), content, maxTokens: 400 });
     await emitIaText(db, run, result || fallback, ctx);
   } catch (e) {
     console.error("[responderVerificando]", (e as any)?.message ?? e);
@@ -2568,7 +2568,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
     let result = "";
     try {
-      result = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system: parts.join("\n\n"), content, maxTokens: 400 });
+      result = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system: parts.join("\n\n"), content, maxTokens: 400 });
     } catch (e) { console.error("[postventa/saldo]", (e as any)?.message ?? e); return false; }
     await logEvent(db, channelId, contactId, "nota", "💵 Esperando saldo (recordatorio)", (event.text ?? "").slice(0, 80)).catch(() => {});
     await emitIaText(db, run, result || "¡Hola! 🙌 Para poder despachar y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
@@ -2599,7 +2599,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
 
   let result = "";
   try {
-    result = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, content, maxTokens: 500 });
+    result = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system, content, maxTokens: 500 });
   } catch (e) { console.error("[postventa]", (e as any)?.message ?? e); return false; }
 
   await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta", (event.text ?? "").slice(0, 80)).catch(() => {});
@@ -2664,7 +2664,7 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
     : "El cliente todavía no ha escrito nada en este chat. Sugiere 3 formas cálidas de iniciar o retomar la conversación.";
 
   const raw = await runAI({
-    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 700,
     jsonSchema: {
       type: "object",
@@ -2681,6 +2681,20 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
   return arr.slice(0, 3);
 }
 
+// Proveedor + modelo para las tareas del asistente (Armar/Aconseja/Opera). Lee
+// el perfil "asistente" de IA → Perfiles: si fija proveedor, usa ese (útil si
+// tienes 2 IAs cargadas); si no, el default del canal. Común a las 4 funciones.
+async function aiAsistente(db: SupabaseClient, channelId: string): Promise<{ provider: Provider; apiKey: string; model: string | undefined }> {
+  const { data: ch } = await db.from("channels").select("ia_perfiles").eq("id", channelId).maybeSingle();
+  const perfil = ((ch as any)?.ia_perfiles ?? {})["asistente"] ?? null;
+  const wantProvider = perfil?.proveedor && perfil.proveedor !== "auto" ? perfil.proveedor : null;
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: wantProvider });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const model = (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
+  return { provider: ai.provider as Provider, apiKey: ai.api_key, model };
+}
+
 // ── Asistente "Armar con IA" (capa Crea): brief → borrador del producto ──
 // Del brief del dueño arma la ficha en BORRADOR (para que él revise). Respeta la
 // voz del negocio. 🔒 NUNCA inventa datos duros (precios reales, Yape, links,
@@ -2689,9 +2703,7 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
 export async function armarProducto(
   db: SupabaseClient, channelId: string, brief: string, tipoHint?: string,
 ): Promise<any> {
-  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
-  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const A = await aiAsistente(db, channelId);
   const { data: ch } = await db.from("channels").select("negocio").eq("id", channelId).maybeSingle();
   const negocio = String((ch as any)?.negocio ?? "").trim();
 
@@ -2731,7 +2743,7 @@ export async function armarProducto(
   };
 
   const raw = await runAI({
-    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 2400,
     jsonSchema: schema as unknown as Record<string, unknown>,
   });
@@ -2747,9 +2759,7 @@ export async function armarProducto(
 export async function armarNegocio(
   db: SupabaseClient, channelId: string, brief: string,
 ): Promise<any> {
-  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
-  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const A = await aiAsistente(db, channelId);
 
   const system =
     "Eres un asistente que ARMA el conocimiento de un negocio para su bot de ventas por WhatsApp (negocio peruano). " +
@@ -2786,7 +2796,7 @@ export async function armarNegocio(
   };
 
   const raw = await runAI({
-    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 2400,
     jsonSchema: schema as unknown as Record<string, unknown>,
   });
@@ -2802,9 +2812,7 @@ export async function armarNegocio(
 export async function asesorIa(
   db: SupabaseClient, channelId: string, resumen: any,
 ): Promise<any> {
-  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
-  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const A = await aiAsistente(db, channelId);
   const { data: ch } = await db.from("channels").select("negocio").eq("id", channelId).maybeSingle();
   const negocio = String((ch as any)?.negocio ?? "").trim();
 
@@ -2852,7 +2860,7 @@ export async function asesorIa(
   };
 
   const raw = await runAI({
-    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 2000,
     jsonSchema: schema as unknown as Record<string, unknown>,
   });
@@ -2871,9 +2879,7 @@ export async function asesorIa(
 export async function operaParse(
   db: SupabaseClient, channelId: string, comando: string,
 ): Promise<any> {
-  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
-  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const A = await aiAsistente(db, channelId);
 
   const { data: prods } = await db.from("products").select("id,nombre,clase,config,product_versions(id,nombre,precio,activo)").eq("channel_id", channelId);
   const { data: flows } = await db.from("flows").select("id,product_id,role,estado").eq("channel_id", channelId);
@@ -2911,7 +2917,7 @@ export async function operaParse(
     },
     required: ["tipo"], additionalProperties: false,
   };
-  const raw = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, content, maxTokens: 500, jsonSchema: schema as unknown as Record<string, unknown> });
+  const raw = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system, content, maxTokens: 500, jsonSchema: schema as unknown as Record<string, unknown> });
   let a: any = {};
   try { const m = /\{[\s\S]*\}/.exec(raw); a = m ? JSON.parse(m[0]) : JSON.parse(raw); } catch { return { tipo: "none", mensaje: "No entendí el comando. Intenta de otra forma." }; }
 
@@ -3204,7 +3210,7 @@ async function extraerLugar(db: SupabaseClient, channelId: string, texto: string
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (!ai?.api_key) return null; // sin IA → solo match determinista
     const raw = await runAI({
-      provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+      provider: A.provider, apiKey: A.apiKey, model: A.model,
       system: "Extraes lugares del Perú de mensajes de clientes. Responde SOLO con un JSON, sin explicaciones.",
       content: `Mensaje del cliente:\n"${texto}"\n\n¿A qué distrito, ciudad o localidad del Perú se refiere para su entrega? ` +
         `Si solo menciona la ciudad de Lima de forma genérica (ej. "soy de Lima", "acá en la capital", "en Lima nomás") sin nombrar un distrito, responde exactamente "Lima". ` +
@@ -3517,7 +3523,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
       if (ai?.api_key) {
         const lista = faltan.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
         const raw = await runAI({
-          provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+          provider: A.provider, apiKey: A.apiKey, model: A.model,
           // Dos reglas aprendidas probando con el modelo real:
           // 1) Si NO le decimos que copie tal cual, "corrige" solo: un DNI de 7
           //    dígitos lo omitía en silencio, y entonces nuestra validación por

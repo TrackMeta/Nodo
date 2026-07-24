@@ -160,13 +160,13 @@
 </div>
 
 <button class="armfab" id="armFab" style="display:none">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>
   Armar con IA
 </button>
 <div class="armov" id="armOv">
   <div class="armdr">
     <div class="armhd">
-      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">Armar con IA</div><div style="font-size:12px;color:var(--muted)" id="armSub">Describe tu producto y la IA lo arma</div></div>
       <button class="iconbtn" id="armClose" title="Cerrar" style="flex:none">✕</button>
     </div>
@@ -1594,7 +1594,7 @@ async function renderInicio(){
   };
   const NM={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega", ia:"Venta con IA",
     activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)" };
-  const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+  const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>';
   const IC={ producto:icon("box"), opciones:icon("productos"), entrega:fisico?icon("truck"):icon("link"),
     ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos") };
   const PH = esExtra
@@ -1624,7 +1624,7 @@ async function renderInicio(){
   const vacio = !est("ia").ok && !est("opciones").ok;
   b.innerHTML=`
     ${vacio?`<div class="armhero">
-      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Descríbelo en una frase y la IA rellena las fases por ti (tú revisas y guardas).</div></div>
       <button id="armHeroBtn" style="flex:none;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-weight:700;font-size:13px;padding:10px 15px">Armar con IA ✨</button>
     </div>`:""}
@@ -2283,7 +2283,7 @@ function paintOpciones(fisico){
       </div>
       ${simple?"":`<div style="border:1px solid rgba(168,85,247,.32);background:rgba(168,85,247,.06);border-radius:12px;padding:12px 13px;margin-top:12px">
         <label style="margin:0;display:flex;align-items:center;gap:7px;color:var(--ia1,#a855f7);font-weight:700;text-transform:none">
-          <span style="display:inline-flex"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+          <span style="display:inline-flex"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
           Descripción para la IA <span style="color:var(--faint);font-weight:400">(para vender y reconocer ESTA presentación)</span>
         </label>
         <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}" style="margin-top:7px;border-color:rgba(168,85,247,.35)"/>
