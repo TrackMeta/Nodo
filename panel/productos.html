@@ -378,7 +378,6 @@ function renderDetail(){
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
   if(st.tab==="inicio") renderInicio();
-  else if(st.tab==="receta") renderInicio();
   else if(st.tab==="producto") renderProducto();
   else if(st.tab==="entrega") renderEntrega();
   else if(st.tab==="ia") renderProductoIA();
@@ -1598,124 +1597,6 @@ async function renderInicio(){
       toast("Flujo activado ✓ · el producto ya vende"); st.tab="inicio"; renderDetail();
     };
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// LA RECETA (SUPERSEDED por renderInicio — ya no se muestra como pestaña).
-// LA RECETA — las 9 etapas de una venta, en orden, con su estado.
-// Es lo que hace que configurar un producto sea "llenar un formulario" en vez
-// de "dibujar un flujo": desde acá se ve qué falta y se GENERA el flujo de
-// venta solo. El editor visual sigue existiendo para quien quiera meter mano
-// (sigue siendo el corazón de la app) — esto solo evita empezar de cero.
-// ═══════════════════════════════════════════════════════════════════
-async function renderReceta(){
-  const b=$("tabBody");
-  b.innerHTML=`<div class="empty">Cargando…</div>`;
-  const fisico=(st.prod.tipo||"digital")==="fisico";
-
-  // Estado real de cada etapa (se lee de la base, no se asume).
-  const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id);
-  const fIni=(flows||[]).find(f=>f.role==="mensajes_iniciales");
-  const fVenta=(flows||[]).find(f=>f.role==="venta");
-  let trigs=[];
-  if(fIni){ const { data:t } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=t||[]; }
-  const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets,entregas").eq("id",st.channelId).maybeSingle();
-  st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{} };
-
-  const ops=st.versions.filter(v=>v.activo!==false);
-  const conPrecio=ops.filter(v=>v.precio!=null&&v.precio!=="");
-  const conEntrega=ops.filter(v=>Array.isArray(v.entrega)&&v.entrega.length);
-  const metodos=(ch?.ocr_config?.metodos||[]).filter(m=>m&&(m.app||m.numero||m.titular));
-
-  const et=(n,titulo,desc,estado,accion)=>`
-    <div class="card" style="display:flex;gap:13px;align-items:flex-start">
-      <div style="flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-        font-size:12px;font-weight:800;background:${estado.ok?'rgba(34,192,121,.14)':estado.warn?'rgba(240,169,43,.14)':'var(--surface-2)'};
-        color:${estado.ok?'#22c079':estado.warn?'#f0a92b':'var(--faint)'}">${n}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13.5px">${titulo}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5">${desc}</div>
-        <div style="font-size:12px;margin-top:5px;color:${estado.ok?'#22c079':estado.warn?'#f0a92b':'var(--faint)'}">${estado.msg}</div>
-      </div>
-      ${accion?`<div style="flex:none">${accion}</div>`:""}
-    </div>`;
-  const go=(t,l)=>`<button class="btn" data-go="${t}" style="height:32px">${l}</button>`;
-
-  b.innerHTML=`
-    <div class="card" style="border-color:var(--brand-border)">
-      <h4 style="margin-top:0">Cómo se vende este producto</h4>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        Las etapas de una venta, en orden. Llena lo que falte y genera el flujo:
-        el sistema lo arma solo y puedes seguir editándolo en el editor visual.
-      </div>
-    </div>
-    ${et(1,"Activación","La palabra clave del anuncio (y la IA que entiende variaciones) que arranca el chat.",
-      trigs.length?{ok:1,msg:`${trigs.length} disparador(es) configurado(s)`}:{warn:1,msg:"Sin palabras clave: nadie puede iniciar el chat"},
-      go("activacion","Configurar"))}
-    ${et(2,"Secuencia inicial","Los mensajes con los que arranca el bot (texto, imagen, video, PDF).",
-      fIni?{ok:1,msg:"Mensajes iniciales creados"}:{warn:1,msg:"Sin mensajes iniciales"},
-      go("activacion","Configurar"))}
-    ${et(3,"IA de ventas","Lo que la IA sabe del producto para venderlo y responder dudas.",
-      (st.prod.config?.contexto_producto)?{ok:1,msg:"Conocimiento cargado"}:{warn:1,msg:"Sin conocimiento del producto: la IA no sabrá venderlo"},
-      go("datos","Configurar"))}
-    ${et(4,"Opciones de compra","Versiones, packs y ofertas por cantidad: cada una con su precio.",
-      conPrecio.length?{ok:1,msg:`${ops.length} opción(es), ${conPrecio.length} con precio`}:{err:1,msg:"Ninguna opción tiene precio: no se puede validar un pago"},
-      go("opciones","Configurar"))}
-    ${et(5,"Cobro y validación","Los métodos de pago válidos y las reglas anti-fraude del validador.",
-      metodos.length?{ok:1,msg:`${metodos.length} método(s) de pago válidos`}:{warn:1,msg:"Sin métodos de pago en el Validador (sección IA)"},
-      `<a class="btn" href="./ia.html" style="height:32px;display:inline-flex;align-items:center">Ir a IA</a>`)}
-    ${et(6,"Entrega",fisico?"En físico la entrega es el envío (se configura en Datos).":"Los links/archivos que recibe el cliente al pagar, por opción.",
-      fisico?{ok:1,msg:"Producto físico: se despacha, no se entrega por chat"}
-        :(conEntrega.length===conPrecio.length&&conPrecio.length?{ok:1,msg:"Todas las opciones tienen entrega"}
-          :{err:1,msg:`${conPrecio.length-conEntrega.length} opción(es) con precio pero SIN entrega`}),
-      go("opciones","Configurar"))}
-    ${et(7,"Ventas extra","Ofrecer algo más una vez que pagó, antes o después de entregar.",
-      (st.prod.config?.extras||[]).length
-        ? {ok:1,msg:`${st.prod.config.extras.length} extra(s) · se ofrecen ${((st.prod.config.extras_momento||"antes")==="antes")?"antes":"después"} de entregar`}
-        : {warn:1,msg:"Sin ventas extra (opcional)"},
-      go("extras","Configurar"))}
-    ${et(8,"Post-venta","Aviso por Telegram, y la hoja de cálculo que se escribe sola (una fila por pedido, que sigue su estado).",
-      st.receta.ch?.gsheets?.connected
-        ? {ok:1,msg:`Telegram + Google Sheets · hoja "${fisico?'Lima / Provincia':'Digital'}"`}
-        : {warn:1,msg:"Telegram sí; Google Sheets sin conectar (la venta se entrega igual)"},
-      `<a class="btn" href="./config.html" style="height:32px;display:inline-flex;align-items:center">Conectar hoja</a>`)}
-    ${et(9,"Remarketing","Recuperar al que no compró, con descuentos.",{warn:1,msg:"Fase 3 — todavía no construido"},"")}
-
-    <div class="card" style="margin-top:18px;border-color:var(--brand-border)">
-      <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("node")} Flujo de venta</h4>
-      <div id="saludBox"></div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
-        ${fisico
-          ? `Genera el flujo completo: la <b>IA vende</b>, detecta a dónde va el pedido <b>sin botones</b> (contra tus zonas
-             de Ajustes → Entregas Lima) y <b>toma los datos conversando</b>, sin interrogatorio. En <b>Lima</b> crea el
-             pedido apenas tiene los datos; en <b>provincia</b> lo crea, pide el adelanto y lo valida.
-             <b>Ahí termina el flujo</b>: despachar, mandar la guía, cobrar el saldo y soltar la clave los operas tú
-             desde Pedidos.`
-          : `Genera el flujo completo: la <b>IA vende y responde</b>, detecta el comprobante <b>en cualquier momento</b>,
-             lo <b>valida contra el precio exacto</b> de la opción elegida y <b>entrega solo</b>. Si el pago no cuadra,
-             lo pide de nuevo y la IA sigue atendiendo dudas.`}
-      </div>
-      <button class="btn primary" id="genFlow">${st.receta.fVenta?"Regenerar flujo de venta":"Generar flujo de venta"}</button>
-      ${st.receta.fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(st.receta.fVenta.nombre)}". Regenerar lo reescribe por completo.</div>`:""}
-      ${st.receta.fVenta && st.receta.fVenta.estado!=="activo" ? `
-      <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55">
-        <b style="color:var(--red,#e2564a)">El flujo de venta está en borrador: este producto NO vende.</b>
-        El bot manda los mensajes iniciales y se queda callado, porque solo salta a flujos activos.
-        <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Activarlo ahora</button></div>
-      </div>` : ""}
-    </div>`;
-
-  b.querySelectorAll("[data-go]").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.go; renderDetail(); });
-  renderSalud();
-  const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
-  const av=$("activarVenta");
-  if(av) av.onclick=async(e)=>{
-    e.target.disabled=true;
-    const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
-    if(error){ toast(error.message,true); e.target.disabled=false; return; }
-    toast("Flujo activado ✓ · el producto ya vende");
-    st.tab="inicio"; renderDetail();
-  };
 }
 
 // Salud del producto: lo que impediría vender bien. Se avisa ACÁ, antes de
