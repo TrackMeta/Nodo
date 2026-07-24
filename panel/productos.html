@@ -19,22 +19,6 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .pcard .c-tt{font-size:16.5px;font-weight:700;letter-spacing:-.2px}
-  .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
-  .tabs::-webkit-scrollbar{display:none}
-  .tab{background:transparent;border:none;color:var(--muted);font-size:14px;font-weight:600;padding:10px 16px;border-bottom:2px solid transparent;white-space:nowrap;flex:none;cursor:pointer}
-  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
-  /* Pestañas avanzadas (Receta, Flujos): existen pero se ven secundarias. */
-  .tab-adv{opacity:.6;font-size:13px}
-  .tab-adv.active{opacity:1}
-  /* Pestañas agrupadas en fases (① El producto · ② La venta · ③ Avanzado) */
-  .tabs2{display:flex;align-items:flex-end;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
-  .tabs2::-webkit-scrollbar{display:none}
-  .tabgrp{display:flex;flex-direction:column;gap:2px;flex:none}
-  .tabgrp-lbl{font-size:10px;color:var(--faint);font-weight:700;letter-spacing:.3px;text-transform:uppercase;padding:0 10px 1px;white-space:nowrap}
-  .tabgrp-tabs{display:flex;gap:2px}
-  .tabgrp-sep{width:1px;align-self:stretch;background:var(--border);margin:16px 12px 0;flex:none}
-  .tdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle;border:1.5px solid var(--border-strong);box-sizing:border-box}
-  .tdot.on{background:var(--green,#22c079);border-color:var(--green,#22c079)}
   /* Hub "Inicio": fases clickeables */
   .ini-ph{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;margin-bottom:14px}
   .ini-ph-hd{display:flex;align-items:center;gap:12px;padding:12px 12px 10px;cursor:pointer;border-radius:10px}
@@ -103,14 +87,6 @@
   /* ══ Identidad de la sección IA (violeta/fucsia) — pestaña "Cómo lo vende la IA" ══
      Mismo sello que la sección IA y el IA Router (gradiente a855f7→ec4899 + robot). */
   :root{ --ia1:#a855f7; --ia2:#ec4899; --ia-bg:rgba(168,85,247,.14); --ia-brd:rgba(168,85,247,.42); }
-  /* Pestaña IA: chispa violeta siempre; activa → texto en gradiente + subrayado fucsia */
-  .tab[data-t="ia"]{display:inline-flex;align-items:center;gap:7px}
-  .tab[data-t="ia"] svg{width:15px;height:15px;flex:none;color:var(--ia1)}
-  .tab[data-t="ia"].active{
-    color:transparent;border-bottom-color:var(--ia2);
-    background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;
-  }
-  .tab[data-t="ia"].active svg{color:var(--ia1)}
   /* Cabecera de identidad del panel (glyph robot en gradiente) */
   .ia-hd{display:flex;align-items:flex-start;gap:12px;margin:2px 0 16px}
   .ia-hd .glyph{width:36px;height:36px;flex:none;border-radius:11px;display:grid;place-items:center;
