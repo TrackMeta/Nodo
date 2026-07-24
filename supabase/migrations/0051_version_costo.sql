@@ -1,0 +1,14 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Nodo · 0051 — Costo opcional por presentación (product_versions.costo)
+--
+-- Hasta ahora el costo era uno solo a nivel producto (config.costo), que el
+-- motor multiplica por las unidades de la presentación. Eso funciona para packs
+-- por cantidad (1 par / 2 pares) pero no para variantes con costo REALMENTE
+-- distinto (Básico vs Premium) ni packs que combinan productos.
+--
+-- Con esta columna, cada presentación puede llevar su propio costo (ABSOLUTO).
+-- Si está seteado, el pedido lo usa tal cual; si es null, cae al costo unitario
+-- del producto × unidades (comportamiento anterior). El Dashboard usa este costo
+-- congelado en orders.shipping.costo_producto para la ganancia real.
+-- ═══════════════════════════════════════════════════════════════════
+alter table product_versions add column if not exists costo numeric;

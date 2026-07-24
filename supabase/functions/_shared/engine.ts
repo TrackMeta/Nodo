@@ -1855,14 +1855,20 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
 
     // Congela el costo de la mercadería EN el pedido, para que cambiar el costo
     // del producto después no altere los márgenes ya cerrados (snapshot).
+    // Prioridad: costo de la OPCIÓN elegida (absoluto — para variantes/packs con
+    // costo distinto); si no lo tiene, el costo UNITARIO del producto × unidades.
     try {
       const pid = (c as any)?.product_id;
       if (pid) {
-        const { data: p } = await db.from("products").select("config").eq("id", pid).maybeSingle();
-        const unit = (p as any)?.config?.costo;
-        if (unit != null && unit !== "") {
-          const cant = Number(ctx.cantidad) || 1;
-          ship.costo_producto = +(Number(unit) * cant).toFixed(2);
+        const cant = Number(ctx.cantidad) || 1;
+        const opc = await opcionElegida(db, run, ctx).catch(() => null);
+        const optCosto = (opc as any)?.costo;
+        if (optCosto != null && optCosto !== "" && Number.isFinite(Number(optCosto))) {
+          ship.costo_producto = +Number(optCosto).toFixed(2);
+        } else {
+          const { data: p } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+          const unit = (p as any)?.config?.costo;
+          if (unit != null && unit !== "") ship.costo_producto = +(Number(unit) * cant).toFixed(2);
         }
       }
     } catch { /* sin costo → el Dashboard lo marca como "faltan datos" */ }
@@ -2770,6 +2776,7 @@ type Opcion = {
   id: string;
   nombre: string;
   precio: number | null;
+  costo: number | null;
   entrega: any[];
   descripcion: string | null;
   cantidad: number;
@@ -2781,7 +2788,7 @@ async function loadOpciones(db: SupabaseClient, run: Run, productId: string): Pr
   let list: Opcion[] = [];
   try {
     const { data } = await db.from("product_versions")
-      .select("id, nombre, precio, entrega, descripcion, cantidad, entrega_mensaje")
+      .select("id, nombre, precio, costo, entrega, descripcion, cantidad, entrega_mensaje")
       .eq("product_id", productId).eq("activo", true).order("orden");
     list = (data ?? []) as Opcion[];
   } catch (_) { /* columnas pendientes (0029) → sin opciones */ }

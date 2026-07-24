@@ -2202,6 +2202,8 @@ function paintOpciones(fisico){
           <input class="in on" value="${esc(v.nombre||"")}" placeholder="${fisico?"Ej. 1 par · 2 pares · Pack familiar":"Ej. Básico · Premium · Pack completo"}"/></div>`}
         <div style="${simple?'flex:0 0 160px':'flex:0 0 110px'}"><label style="margin-top:0">Precio</label>
           <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}"/></div>
+        ${simple?"":`<div style="flex:0 0 115px"><label style="margin-top:0">Costo <span style="font-weight:400;color:var(--faint);text-transform:none">opcional</span></label>
+          <input class="in ocosto" type="number" step="0.01" min="0" value="${esc(v.costo??"")}" placeholder="del producto"/></div>`}
         ${fisico?`<div style="flex:0 0 95px"><label style="margin-top:0">Unidades</label>
           <input class="in oc" type="number" min="1" value="${esc(v.cantidad??1)}"/></div>`:""}
         ${simple?"":`<label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>
@@ -2226,6 +2228,7 @@ function paintOpciones(fisico){
       <input class="in oemsg" value="${esc(v.entrega_mensaje||"")}" placeholder="Ej. ¡Bienvenido al Premium! 🌟 Acá tienes todo:"/>`}`;
     const on=el.querySelector(".on"); if(on) on.oninput=(e)=>{ v.nombre=e.target.value; };
     el.querySelector(".op").oninput=(e)=>{ v.precio=e.target.value; warnColision(); };
+    const ocos=el.querySelector(".ocosto"); if(ocos) ocos.oninput=(e)=>{ v.costo=e.target.value; };
     const oc=el.querySelector(".oc"); if(oc) oc.oninput=(e)=>{ v.cantidad=parseInt(e.target.value,10)||1; };
     const oa=el.querySelector(".oa"); if(oa) oa.onchange=(e)=>{ v.activo=e.target.checked; warnColision(); };
     const odesc=el.querySelector(".odesc"); if(odesc) odesc.oninput=(e)=>{ v.descripcion=e.target.value; };
@@ -2745,6 +2748,7 @@ async function saveProduct(){
     const row={
       product_id:st.prod.id, nombre:v.nombre||"Única", orden:i,
       precio:(v.precio===""||v.precio==null)?null:Number(v.precio),
+      costo:(v.costo===""||v.costo==null)?null:Number(v.costo),
       cantidad:Number(v.cantidad)||1,
       descripcion:v.descripcion||null,
       // Se descartan las filas de entrega sin link: no entregan nada y harían
@@ -2756,7 +2760,7 @@ async function saveProduct(){
     };
     if(v.id) row.id=v.id;
     let { data, error } = await supa.from("product_versions").upsert(row).select("id").single();
-    if(error && /precio|entrega|descripcion|activo|cantidad|entrega_mensaje|column/.test(error.message)){
+    if(error && /precio|costo|entrega|descripcion|activo|cantidad|entrega_mensaje|column/.test(error.message)){
       // Resiliente: si 0029 no está aplicada, guarda al menos lo viejo.
       const legacy={ product_id:st.prod.id, nombre:v.nombre||"Única", price_list:v.price_list||[], drive_link:v.drive_link||null, orden:i };
       if(v.id) legacy.id=v.id;
