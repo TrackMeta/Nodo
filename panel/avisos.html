@@ -113,6 +113,7 @@ async function boot(){
 const encendido=(a)=> st.cfg.items[a.clave]?.on!==false;
 const textoDe=(a)=> (st.cfg.items[a.clave]?.texto ?? a.texto);
 const editado=(a)=> typeof st.cfg.items[a.clave]?.texto==="string" && st.cfg.items[a.clave].texto!==a.texto;
+const conFoto=(a)=> st.cfg.items[a.clave]?.foto===true;
 
 function render(){
   const b=$("body");
@@ -136,6 +137,13 @@ function render(){
     const a=st.catalogo.find(x=>x.clave===el.dataset.sw);
     const it=st.cfg.items[a.clave]||(st.cfg.items[a.clave]={});
     it.on=!encendido(a);
+    render();
+  });
+  b.querySelectorAll("[data-foto]").forEach(el=> el.onclick=(ev)=>{
+    ev.stopPropagation();
+    const a=st.catalogo.find(x=>x.clave===el.dataset.foto);
+    const it=st.cfg.items[a.clave]||(st.cfg.items[a.clave]={});
+    it.foto=!conFoto(a);
     render();
   });
   b.querySelectorAll("[data-open]").forEach(el=> el.onclick=()=>{
@@ -187,6 +195,14 @@ function fila(a){
           <div style="font-size:11.5px;color:var(--faint);margin-top:6px">
             Se escribe igual que en el bot: <b>*negrita*</b>, <i>_cursiva_</i> y las variables de abajo. Toca una para insertarla.</div>
           <div style="margin-top:8px">${a.vars.map(v=>`<span class="vr" data-var="${a.clave}|${v}">{{${v}}}</span>`).join("")}</div>
+          ${a.comprobante?`
+          <div style="display:flex;align-items:center;gap:12px;margin-top:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px">
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:13px">📎 Adjuntar el comprobante de pago</div>
+              <div style="color:var(--muted);font-size:11.5px;margin-top:3px;line-height:1.5">Manda también la captura que envió el cliente, como foto en el mismo aviso. Si no hay comprobante, el aviso sale igual (solo texto).</div>
+            </div>
+            <span class="sw ${conFoto(a)?'on':''}" data-foto="${a.clave}"></span>
+          </div>`:""}
           <span class="lab">Cómo se va a ver</span>
           <div class="tgprev" data-pv="${a.clave}">${previsualizar(textoDe(a), a)}</div>
           ${editado(a)?`<div style="margin-top:12px"><button class="btn" data-reset="${a.clave}">Volver al texto original</button></div>`:""}
@@ -219,7 +235,11 @@ function previsualizar(plantilla, a){
   if(a.clave==="adelanto_validar") botones.unshift("✅ Aprobar el adelanto");
   if(a.clave==="saldo_validar") botones.unshift("🔑 Aprobar y dar la clave");
   if(a.clave==="pago_digital_validar"||a.clave==="pago_extra_validar") botones.unshift("✅ Aprobar y entregar");
-  return `<b>[Prime Digital]</b>\n`+html+botones.map(t=>`<div class="tgbtn">${t}</div>`).join("");
+  // Los avisos "por validar" ya adjuntan la foto por código; los de venta
+  // confirmada, solo si el operador prendió "Adjuntar comprobante".
+  const llevaFoto = ["adelanto_validar","saldo_validar","pago_digital_validar","pago_extra_validar"].includes(a.clave) || conFoto(a);
+  const foto = llevaFoto ? `<div style="background:#0d1620;border:1px dashed #33465a;border-radius:8px;padding:14px;text-align:center;color:#6f8398;font-size:12px;margin-bottom:8px">🧾 Comprobante de pago (foto)</div>` : "";
+  return `<b>[Prime Digital]</b>\n`+foto+html+botones.map(t=>`<div class="tgbtn">${t}</div>`).join("");
 }
 
 async function guardar(e){

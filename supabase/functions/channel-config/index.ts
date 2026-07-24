@@ -94,14 +94,16 @@ Deno.serve(async (req) => {
     // entero: es chico y así borrar un texto (volver al default) es simplemente
     // no mandarlo, sin necesidad de un "borrar" aparte.
     if (action === "avisos_guardar") {
-      const items: Record<string, { on?: boolean; texto?: string }> = {};
+      const items: Record<string, { on?: boolean; texto?: string; foto?: boolean }> = {};
       for (const a of AVISOS) {
         const v = body.items?.[a.clave];
         if (!v) continue;
-        const fila: { on?: boolean; texto?: string } = {};
+        const fila: { on?: boolean; texto?: string; foto?: boolean } = {};
         if (v.on === false) fila.on = false;                       // solo se guarda lo apagado
         const t = typeof v.texto === "string" ? v.texto.trim() : "";
         if (t && t !== a.texto) fila.texto = t.slice(0, 3000);      // igual al default → no se guarda
+        // Adjuntar comprobante: solo tiene sentido en los avisos marcados como tal.
+        if (a.comprobante && v.foto === true) fila.foto = true;
         if (Object.keys(fila).length) items[a.clave] = fila;
       }
       const cfg: Record<string, unknown> = { items };

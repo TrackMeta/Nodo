@@ -8,7 +8,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent, maybePurchase } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
-import { renderAviso, avisoActivo, textoDeAviso, type AvisosConfig } from "./avisos.ts";
+import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
@@ -2101,6 +2101,22 @@ async function avisar(
     let texto = renderAviso(textoDeAviso(cfg, clave), datos);
     if (!texto) return;
 
+    // Adjuntar el comprobante de pago: si el operador lo pidió para este aviso
+    // (Canales → Avisos) y quien lo dispara no mandó ya una foto, se busca el
+    // último comprobante que subió el cliente ({{ultima_imagen}} = URL pública).
+    // Los avisos "por validar" ya traen su foto por código (opts.foto), así que
+    // este relleno solo aplica a los de venta confirmada.
+    let foto = opts.foto;
+    if (!foto && contactId && avisoConFoto(cfg, clave)) {
+      try {
+        const { data: img } = await db.from("contact_field_values")
+          .select("value, custom_fields!inner(key)")
+          .eq("contact_id", contactId).eq("custom_fields.key", "ultima_imagen").maybeSingle();
+        const url = String((img as any)?.value ?? "");
+        if (/^https?:\/\//.test(url)) foto = url;
+      } catch (_) { /* sin comprobante → el aviso sale igual, sin foto */ }
+    }
+
     // La hora del hecho, no la del mensaje: si Telegram se atrasa o lo lees a la
     // noche, "llegó 14:32" es lo que ubica. Se puede apagar desde el panel.
     if (cfg?.hora !== false) {
@@ -2117,7 +2133,7 @@ async function avisar(
     if (contactId) botones.push([{ text: "💬 Abrir el chat", url: `${PANEL_URL}/index.html?c=${contactId}` }]);
 
     const prefix = (channel as any)?.nombre ? `<b>[${(channel as any).nombre}]</b>\n` : "";
-    await sendTelegram(token, chatIds, prefix + texto, opts.foto, botones.length ? botones : undefined);
+    await sendTelegram(token, chatIds, prefix + texto, foto, botones.length ? botones : undefined);
   } catch (e) {
     console.error("[avisar]", (e as any)?.message ?? e);
   }

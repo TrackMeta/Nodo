@@ -18,6 +18,7 @@ export type AvisoDef = {
   desc: string;        // cuándo se dispara, en cristiano
   vars: string[];      // variables disponibles para ESTE aviso
   texto: string;       // el texto por defecto
+  comprobante?: boolean; // el operador puede pedir que adjunte la captura del pago
 };
 
 // El estilo de la casa: título con emoji, línea por dato, y un emoji por
@@ -28,6 +29,7 @@ export const AVISOS: AvisoDef[] = [
     clave: "venta_digital", grupo: "ventas",
     titulo: "Venta digital confirmada",
     desc: "Cuando alguien paga un producto digital y el bot ya le entregó el acceso.",
+    comprobante: true,
     vars: ["cliente", "telefono", "producto", "opcion", "monto", "pago_metodo", "origen"],
     texto:
       "💰 *VENTA CONFIRMADA*\n" +
@@ -78,6 +80,7 @@ export const AVISOS: AvisoDef[] = [
     clave: "venta_extra", grupo: "ventas",
     titulo: "Venta extra",
     desc: "Cuando el cliente suma un producto adicional al que ya estaba comprando.",
+    comprobante: true,
     vars: ["cliente", "telefono", "extra", "monto"],
     texto:
       "🎁 *VENTA EXTRA*\n" +
@@ -303,11 +306,18 @@ export function renderAviso(plantilla: string, datos: Record<string, unknown>): 
     .trim();
 }
 
-// Config guardada del canal → ¿está encendido? ¿con qué texto?
-export type AvisosConfig = { items?: Record<string, { on?: boolean; texto?: string }>; hora?: boolean };
+// Config guardada del canal → ¿está encendido? ¿con qué texto? ¿adjunta foto?
+export type AvisosConfig = { items?: Record<string, { on?: boolean; texto?: string; foto?: boolean }>; hora?: boolean };
 
 export function avisoActivo(cfg: AvisosConfig | null | undefined, clave: string): boolean {
   return cfg?.items?.[clave]?.on !== false; // por defecto, todos encendidos
+}
+
+// ¿El operador pidió adjuntar el comprobante de pago a este aviso? Por defecto NO
+// (solo si lo prendió en el panel). Los avisos de pago "por validar" ya mandan la
+// foto por código; esto es para los de venta confirmada (venta_digital/venta_extra).
+export function avisoConFoto(cfg: AvisosConfig | null | undefined, clave: string): boolean {
+  return cfg?.items?.[clave]?.foto === true;
 }
 
 export function textoDeAviso(cfg: AvisosConfig | null | undefined, clave: string): string {
