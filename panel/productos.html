@@ -2187,24 +2187,28 @@ function slugAttr(s){ return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"
 
 function paintOpciones(fisico){
   const box=$("opList"); box.innerHTML="";
+  // Producto simple (1 sola presentación): UI reducida — solo precio (+ unidades)
+  // y entrega. Sin nombre/activa/borrar ni descripción (la descripción por opción
+  // el motor solo la usa cuando hay 2+; con una sola, el contexto va en Venta con IA).
+  const simple = st.versions.length===1;
   if(!st.versions.length){
-    box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin opciones todavía. Agrega al menos una (si el producto es simple, alcanza con una llamada "Única").</div>`;
+    box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin presentaciones todavía. Agrega al menos una con su precio.</div>`;
   }
   st.versions.forEach((v,i)=>{
     const el=document.createElement("div"); el.className="card";
     el.innerHTML=`
       <div class="row" style="align-items:flex-end;gap:10px">
-        <div style="flex:1.4"><label style="margin-top:0">Nombre</label>
-          <input class="in on" value="${esc(v.nombre||"")}" placeholder="${fisico?"Ej. 1 par · 2 pares · Pack familiar":"Ej. Básico · Premium · Pack completo"}"/></div>
-        <div style="flex:0 0 110px"><label style="margin-top:0">Precio</label>
+        ${simple?"":`<div style="flex:1.4"><label style="margin-top:0">Nombre</label>
+          <input class="in on" value="${esc(v.nombre||"")}" placeholder="${fisico?"Ej. 1 par · 2 pares · Pack familiar":"Ej. Básico · Premium · Pack completo"}"/></div>`}
+        <div style="${simple?'flex:0 0 160px':'flex:0 0 110px'}"><label style="margin-top:0">Precio</label>
           <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}"/></div>
         ${fisico?`<div style="flex:0 0 95px"><label style="margin-top:0">Unidades</label>
           <input class="in oc" type="number" min="1" value="${esc(v.cantidad??1)}"/></div>`:""}
-        <label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>
-        <button class="iconbtn odel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
+        ${simple?"":`<label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>
+        <button class="iconbtn odel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>`}
       </div>
-      <label>Descripción <span style="color:var(--faint);font-weight:400">(para que la IA sepa venderla y reconocerla)</span></label>
-      <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}"/>
+      ${simple?"":`<label>Descripción <span style="color:var(--faint);font-weight:400">(la IA la usa para vender y reconocer ESTA presentación)</span></label>
+      <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}"/>`}
       ${fisico ? `
       <div style="margin-top:12px;font-size:11.5px;color:var(--faint);line-height:1.55">
         Este producto se <b>envía</b>, así que no entrega nada por el chat: la venta termina cuando se crea el pedido.
@@ -2220,13 +2224,13 @@ function paintOpciones(fisico){
       </div>
       <label style="margin-top:14px">Mensaje de apertura de esta opción <span style="color:var(--faint);font-weight:400">(opcional — vacío = usa el general del producto)</span></label>
       <input class="in oemsg" value="${esc(v.entrega_mensaje||"")}" placeholder="Ej. ¡Bienvenido al Premium! 🌟 Acá tienes todo:"/>`}`;
-    el.querySelector(".on").oninput=(e)=>{ v.nombre=e.target.value; };
+    const on=el.querySelector(".on"); if(on) on.oninput=(e)=>{ v.nombre=e.target.value; };
     el.querySelector(".op").oninput=(e)=>{ v.precio=e.target.value; warnColision(); };
     const oc=el.querySelector(".oc"); if(oc) oc.oninput=(e)=>{ v.cantidad=parseInt(e.target.value,10)||1; };
-    el.querySelector(".oa").onchange=(e)=>{ v.activo=e.target.checked; warnColision(); };
-    el.querySelector(".odesc").oninput=(e)=>{ v.descripcion=e.target.value; };
+    const oa=el.querySelector(".oa"); if(oa) oa.onchange=(e)=>{ v.activo=e.target.checked; warnColision(); };
+    const odesc=el.querySelector(".odesc"); if(odesc) odesc.oninput=(e)=>{ v.descripcion=e.target.value; };
     const oem=el.querySelector(".oemsg"); if(oem) oem.oninput=(e)=>{ v.entrega_mensaje=e.target.value; };
-    el.querySelector(".odel").onclick=async()=>{
+    const odel=el.querySelector(".odel"); if(odel) odel.onclick=async()=>{
       if(!await confirmDialog({title:"Eliminar opción",message:`¿Eliminar "${esc(v.nombre||"esta opción")}"? Los pedidos ya hechos con ella no se tocan.`,confirmText:"Eliminar",danger:true})) return;
       if(v.id) st.delVersions.push(v.id);
       st.versions.splice(i,1); paintOpciones(fisico);
