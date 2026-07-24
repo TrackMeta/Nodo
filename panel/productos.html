@@ -35,6 +35,20 @@
   .tabgrp-sep{width:1px;align-self:stretch;background:var(--border);margin:16px 12px 0;flex:none}
   .tdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle;border:1.5px solid var(--border-strong);box-sizing:border-box}
   .tdot.on{background:var(--green,#22c079);border-color:var(--green,#22c079)}
+  /* Hub "Inicio": fases clickeables */
+  .ini-ph{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;margin-bottom:14px}
+  .ini-ph-hd{display:flex;align-items:center;gap:12px;padding:12px 12px 10px;cursor:pointer;border-radius:10px}
+  .ini-ph-hd:hover{background:var(--surface-2)}
+  .ini-ph-num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--brand-bg,rgba(43,127,255,.12));color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
+  .ini-ph-tt{font-weight:700;font-size:15px}
+  .ini-ph-sub{font-size:12px;color:var(--muted);margin-top:1px;line-height:1.4}
+  .ini-ph-prog{flex:none;font-size:12px;font-weight:700;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 10px}
+  .ini-items{display:flex;flex-direction:column;gap:2px;padding:0 4px 4px}
+  .ini-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:transparent;border:none;border-radius:9px;padding:10px;cursor:pointer;font:inherit;color:var(--text)}
+  .ini-item:hover{background:var(--surface-2)}
+  .ini-item-nm{font-size:13.5px;font-weight:600;flex:none}
+  .ini-item-msg{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ini-chev{flex:none;color:var(--faint);font-size:18px;line-height:1}
   .hint{color:var(--muted);font-size:12.5px;line-height:1.55}
   label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
@@ -315,7 +329,7 @@ async function createProduct(){
 async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
-  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="producto";
+  st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
   // Con qué tipo se abrió: si lo cambia, el flujo YA GENERADO sigue vendiendo
   // como el tipo viejo (un digital pediría dirección, un físico entregaría un
   // link) y eso no se nota hasta que un cliente lo sufre.
@@ -336,29 +350,35 @@ function renderDetail(){
   // Un producto EXTRA (complemento) no se vende solo: solo se engancha como venta
   // extra. Por eso muestra un set reducido de pestañas (sin IA/Activación/Receta…).
   const esExtra = st.prod.clase==="extra";
-  const EXTRA_TABS=["producto","opciones","entrega","ia"];
-  if(esExtra && !EXTRA_TABS.includes(st.tab)) st.tab="producto";
+  const EXTRA_TABS=["inicio","producto","opciones","entrega","ia"];
+  if(esExtra && !EXTRA_TABS.includes(st.tab)) st.tab="inicio";
   const IA_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+  const HOME_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/></svg>';
   // Nombres simples (sin jerga) + agrupados en fases. Los ids internos no cambian.
-  const LABELS={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
+  const LABELS={ inicio:HOME_SVG+"Inicio", producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
     ia:IA_SVG+"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
-    remarketing:"Remarketing", receta:"Flujo de venta", flujos:"Flujos" };
+    remarketing:"Remarketing", flujos:"Flujos" };
   const PHASES = esExtra
     ? [["① El producto",["producto","opciones","entrega"]], ["② La venta",["ia"]]]
     : [["① El producto",["producto","opciones","entrega"]],
        ["② La venta",["ia","activacion","extras","remarketing"]],
-       ["③ Avanzado",["receta","flujos"]]];
-  const advTab=(t)=> t==="receta"||t==="flujos";
+       ["③ Avanzado",["flujos"]]];
+  const advTab=(t)=> t==="flujos";
   const dot=(t)=>{ const dn=tabDone(t); return dn===null?"":`<span class="tdot ${dn?'on':''}" title="${dn?'Listo':'Falta completar'}"></span>`; };
   const tb=(t)=> `<button class="tab ${advTab(t)?'tab-adv ':''}${st.tab===t?'active':''}" data-t="${t}">${dot(t)}${LABELS[t]}</button>`;
+  // El hub "Inicio" va primero (portada clickeable); luego las fases.
+  const phaseHtml=PHASES.map(([ph,ids])=>`<div class="tabgrp"><div class="tabgrp-lbl">${ph}</div><div class="tabgrp-tabs">${ids.map(tb).join("")}</div></div>`).join('<div class="tabgrp-sep"></div>');
   d.innerHTML=`
     <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px">${esc(st.prod.nombre)}${esExtra?`<span style="font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px">Extra · complemento</span>`:""}</h1>
     <div class="tabs2">
-      ${PHASES.map(([ph,ids])=>`<div class="tabgrp"><div class="tabgrp-lbl">${ph}</div><div class="tabgrp-tabs">${ids.map(tb).join("")}</div></div>`).join('<div class="tabgrp-sep"></div>')}
+      <div class="tabgrp"><div class="tabgrp-lbl">&nbsp;</div><div class="tabgrp-tabs">${tb("inicio")}</div></div>
+      <div class="tabgrp-sep"></div>
+      ${phaseHtml}
     </div>
     <div id="tabBody"></div>`;
   d.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; renderDetail(); });
-  if(st.tab==="receta") renderReceta();
+  if(st.tab==="inicio") renderInicio();
+  else if(st.tab==="receta") renderInicio();
   else if(st.tab==="producto") renderProducto();
   else if(st.tab==="entrega") renderEntrega();
   else if(st.tab==="ia") renderProductoIA();
@@ -702,17 +722,19 @@ function renderProductoIA(){
       </div>
     </div>
     <div class="card ia-card">
-      <div style="border:1px solid var(--border);border-radius:12px;padding:13px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Cómo vender este producto</div>
-        <label>Estilo de venta</label>
-        <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
-          <option value="" ${!ia.estilo_venta?"selected":""}>— Sin definir —</option>
-          ${Object.entries(ESTILOS_VENTA).map(([k,v])=>`<option value="${k}" ${ia.estilo_venta===k?"selected":""}>${esc(v)}</option>`).join("")}
-        </select>
-        <div style="font-size:11px;color:var(--faint);margin-top:4px">Distinto al <b>tono</b> (sección IA): esto es la estrategia de venta.</div>
-        ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
-        ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
-      </div>
+      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Cómo vender este producto <span style="font-weight:400;color:var(--faint)">— avanzado, opcional</span></summary>
+        <div style="padding-bottom:13px">
+          <label style="margin-top:0">Estilo de venta</label>
+          <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
+            <option value="" ${!ia.estilo_venta?"selected":""}>— Sin definir —</option>
+            ${Object.entries(ESTILOS_VENTA).map(([k,v])=>`<option value="${k}" ${ia.estilo_venta===k?"selected":""}>${esc(v)}</option>`).join("")}
+          </select>
+          <div style="font-size:11px;color:var(--faint);margin-top:4px">Distinto al <b>tono</b> (sección IA): esto es la estrategia de venta.</div>
+          ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
+          ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
+        </div>
+      </details>
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Qué es el producto</div>
         ${taField("resumen","Información resumida (pitch corto)","En 1-2 frases: qué es y por qué conviene.",2)}
@@ -731,28 +753,32 @@ function renderProductoIA(){
         ${taField("metodos_pago","Métodos de pago del producto (opcional)","Si lo llenas, TIENE PRIORIDAD sobre los datos de pago generales de la sección IA.",2)}
       </div>
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Ayudas para responder</div>
-        <label>Preguntas frecuentes / objeciones</label>
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Preguntas frecuentes / objeciones</div>
         <div style="font-size:11px;color:var(--faint);margin-bottom:6px">La duda y su respuesta ideal. La IA responderá con estas.</div>
         <div id="faqList"></div>
         <button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar pregunta</button>
-        <label>Ejemplos de respuesta</label>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Situación del cliente → cómo responder. Le dan estilo y criterio a la IA.</div>
-        <div id="ejList"></div>
-        <button class="btn" id="ejAdd" style="margin-top:6px;height:34px">+ Agregar ejemplo</button>
-        <div class="row" style="margin-top:14px;align-items:flex-start">
-          <div><label style="margin-top:0">Emojis permitidos</label><input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡"/></div>
-          <div><label style="margin-top:0">Emojis prohibidos</label><input class="in ia-f" data-k="emojis_prohibidos" value="${esc(ia.emojis_prohibidos||"")}" placeholder="💀🤡 o 'ninguno serio'"/></div>
-        </div>
-        <label>Multimedia que la IA puede enviar</label>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Sube imágenes, videos o archivos y explica <b>cuándo</b> usarlos. La IA los enviará sola cuando la conversación lo pida (vía <b style="color:${P}">[[media:tag]]</b>).</div>
-        <div id="mmList"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-          <button class="btn mmAdd" data-k="image" style="height:34px">+ Imagen</button>
-          <button class="btn mmAdd" data-k="video" style="height:34px">+ Video</button>
-          <button class="btn mmAdd" data-k="document" style="height:34px">+ Archivo</button>
-        </div>
       </div>
+      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:12px">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Más ayudas para la IA <span style="font-weight:400;color:var(--faint)">— ejemplos, emojis, multimedia (opcional)</span></summary>
+        <div style="padding-bottom:13px">
+          <label style="margin-top:0">Ejemplos de respuesta</label>
+          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Situación del cliente → cómo responder. Le dan estilo y criterio a la IA.</div>
+          <div id="ejList"></div>
+          <button class="btn" id="ejAdd" style="margin-top:6px;height:34px">+ Agregar ejemplo</button>
+          <div class="row" style="margin-top:14px;align-items:flex-start">
+            <div><label style="margin-top:0">Emojis permitidos</label><input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡"/></div>
+            <div><label style="margin-top:0">Emojis prohibidos</label><input class="in ia-f" data-k="emojis_prohibidos" value="${esc(ia.emojis_prohibidos||"")}" placeholder="💀🤡 o 'ninguno serio'"/></div>
+          </div>
+          <label>Multimedia que la IA puede enviar</label>
+          <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Sube imágenes, videos o archivos y explica <b>cuándo</b> usarlos. La IA los enviará sola cuando la conversación lo pida (vía <b style="color:${P}">[[media:tag]]</b>).</div>
+          <div id="mmList"></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn mmAdd" data-k="image" style="height:34px">+ Imagen</button>
+            <button class="btn mmAdd" data-k="video" style="height:34px">+ Video</button>
+            <button class="btn mmAdd" data-k="document" style="height:34px">+ Archivo</button>
+          </div>
+        </div>
+      </details>
     </div>`;
   const setC=(k,v)=>prodSetC(k,v);
   const g=$("pEmojis"); if(g) g.oninput=(e)=>setC("emojis", e.target.value.trim());
@@ -1487,6 +1513,95 @@ function paintExtras(){
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// INICIO — la portada del producto: las 3 fases como tarjetas clickeables
+// (cada una con su progreso) + "Poner a vender" (generar/activar el flujo).
+// Reemplaza a la vieja "Receta": ahora es lo primero que ve el usuario.
+// ═══════════════════════════════════════════════════════════════════
+async function renderInicio(){
+  const b=$("tabBody");
+  b.innerHTML=`<div class="empty">Cargando…</div>`;
+  const fisico=(st.prod.tipo||"digital")==="fisico";
+  const esExtra=st.prod.clase==="extra";
+  const c=st.prod.config||{};
+  const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id);
+  const fIni=(flows||[]).find(f=>f.role==="mensajes_iniciales");
+  const fVenta=(flows||[]).find(f=>f.role==="venta");
+  let trigs=[];
+  if(fIni){ const { data:t } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=t||[]; }
+  const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets,entregas").eq("id",st.channelId).maybeSingle();
+  st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{} };
+
+  // Estado por sección (para los puntitos y el X/Y de cada fase).
+  const est=(t)=>{
+    if(t==="producto"){ const ok=(c.precio!=null&&String(c.precio).trim()!=="")||(st.versions||[]).some(v=>Number(v.precio)>0); return {ok,msg:ok?"Nombre y precio listos":"Falta el precio"}; }
+    if(t==="opciones"){ const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} opción(es), ${cp} con precio`:"Ninguna opción tiene precio"}; }
+    if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
+    if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
+    if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
+    if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
+    if(t==="remarketing"){ const ok=!!c.remarketing_seq_id; return {ok,opt:true,msg:ok?"Secuencia enlazada":"Sin remarketing (opcional)"}; }
+    if(t==="flujos") return {ok:true,opt:true,msg:"Editor visual (avanzado)"};
+    return {ok:false,msg:""};
+  };
+  const NM={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega", ia:"Venta con IA",
+    activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)" };
+  const PH = esExtra
+    ? [["①","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
+       ["②","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
+    : [["①","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
+       ["②","La venta","Cómo lo vende la IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
+       ["③","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
+  const item=(t)=>{ const e=est(t); return `<button class="ini-item" data-t="${t}">
+    <span class="tdot ${e.ok?'on':''}" ${(e.opt&&!e.ok)?'style="border-style:dashed"':''}></span>
+    <span class="ini-item-nm">${NM[t]}</span><span class="ini-item-msg">${e.msg}</span><span class="ini-chev">›</span></button>`; };
+  const phCard=([num,tt,sub,ids])=>{ const done=ids.filter(t=>est(t).ok).length;
+    return `<div class="ini-ph">
+      <div class="ini-ph-hd" data-first="${ids[0]}"><span class="ini-ph-num">${num}</span>
+        <div style="flex:1;min-width:0"><div class="ini-ph-tt">${tt}</div><div class="ini-ph-sub">${sub}</div></div>
+        <span class="ini-ph-prog">${done}/${ids.length}</span></div>
+      <div class="ini-items">${ids.map(item).join("")}</div></div>`; };
+
+  b.innerHTML=`
+    <p class="hint" style="margin:0 0 14px">Arma tu producto por partes. Toca una sección para completarla; los puntos verdes te dicen qué ya está listo.</p>
+    ${PH.map(phCard).join("")}
+    ${esExtra
+      ? `<div class="card" style="border-color:var(--brand-border)">
+          <h4 style="margin-top:0">Este es un complemento</h4>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende solo: se ofrece <b>enganchado a un producto principal</b> (en la pestaña <b>Ventas extra</b> de ese principal). No necesita su propio flujo — con completar lo de arriba basta.</div>
+        </div>`
+      : `<div class="card" style="border-color:var(--brand-border)">
+          <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("node")} Poner a vender</h4>
+          <div id="saludBox"></div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
+            ${fisico
+              ? `Genera el flujo: la IA vende, detecta la zona sin botones, toma los datos conversando, crea el pedido y (en provincia) pide y valida el adelanto. Despachar, guía, saldo y clave los operas tú desde Pedidos.`
+              : `Genera el flujo: la IA vende y responde, detecta el comprobante, lo valida contra el precio exacto y entrega solo. Si el pago no cuadra, lo vuelve a pedir.`}
+          </div>
+          <button class="btn primary" id="genFlow">${fVenta?"Regenerar flujo de venta":"Generar flujo y poner a vender"}</button>
+          ${fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(fVenta.nombre)}". Regenerar lo reescribe por completo (aplica lo que cambiaste arriba).</div>`:""}
+          ${fVenta && fVenta.estado!=="activo" ? `
+          <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55">
+            <b style="color:var(--red,#e2564a)">El flujo está en borrador: este producto NO vende.</b> El bot manda el saludo y se queda callado.
+            <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Activarlo ahora</button></div>
+          </div>` : (fVenta?`<div style="font-size:12.5px;color:var(--green,#22c079);margin-top:10px;font-weight:600">● Activo — este producto ya vende.</div>`:"")}
+        </div>`}`;
+  b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
+  b.querySelectorAll(".ini-ph-hd").forEach(h=> h.onclick=(ev)=>{ if(ev.target.closest(".ini-item"))return; st.tab=h.dataset.first; renderDetail(); });
+  if(!esExtra){
+    renderSalud();
+    const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
+    const av=$("activarVenta");
+    if(av) av.onclick=async(e)=>{
+      e.target.disabled=true;
+      const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
+      if(error){ toast(error.message,true); e.target.disabled=false; return; }
+      toast("Flujo activado ✓ · el producto ya vende"); st.tab="inicio"; renderDetail();
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LA RECETA (SUPERSEDED por renderInicio — ya no se muestra como pestaña).
 // LA RECETA — las 9 etapas de una venta, en orden, con su estado.
 // Es lo que hace que configurar un producto sea "llenar un formulario" en vez
 // de "dibujar un flujo": desde acá se ve qué falta y se GENERA el flujo de
@@ -1599,7 +1714,7 @@ async function renderReceta(){
     const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
     if(error){ toast(error.message,true); e.target.disabled=false; return; }
     toast("Flujo activado ✓ · el producto ya vende");
-    st.tab="receta"; renderDetail();
+    st.tab="inicio"; renderDetail();
   };
 }
 
@@ -1905,7 +2020,7 @@ async function generarFlujoVenta(){
       await generarFlujoFisico(flowId, N, E);
       await enlazarInicialesConVenta(flowId);
       toast("Flujo de venta generado ✓");
-      st.tab="receta"; renderDetail();
+      st.tab="inicio"; renderDetail();
       return;
     }
 
@@ -2113,7 +2228,7 @@ async function generarFlujoVenta(){
 
     await enlazarInicialesConVenta(flowId);
     toast("Flujo de venta generado ✓");
-    st.tab="receta"; renderDetail();
+    st.tab="inicio"; renderDetail();
   }catch(e){ toast("Error al generar: "+(e.message||e),true); }
 }
 
@@ -2534,13 +2649,13 @@ function renderComposer(){
     <div class="card">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="flex:1"><h4 style="margin:0">${icon("message")}Mensajes iniciales</h4>
-          <div style="font-size:12px;color:var(--faint);margin-top:3px">Varias versiones que el bot rota por peso. Cada versión puede tener uno o varios mensajes.</div></div>
-        <div style="text-align:right"><div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px">Rotación</div>
-          <div class="sw ${cfg.activo!==false?'on':''}" id="rotSw" title="Activar/desactivar rotación"></div></div>
+          <div style="font-size:12px;color:var(--faint);margin-top:3px">El saludo con el que arranca el chat. ${cfg.variantes.length>1?"El bot rota entre versiones por peso.":"Puedes agregar otra versión para variar el copy (ayuda contra el baneo)."}</div></div>
+        ${cfg.variantes.length>1?`<div style="text-align:right"><div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px">Rotación</div>
+          <div class="sw ${cfg.activo!==false?'on':''}" id="rotSw" title="Activar/desactivar rotación"></div></div>`:``}
       </div>
-      ${cfg.activo===false?`<div style="font-size:11.5px;color:var(--amber);margin-top:10px">Rotación apagada: se envía siempre la primera versión activa.</div>`:``}
+      ${cfg.variantes.length>1&&cfg.activo===false?`<div style="font-size:11.5px;color:var(--amber);margin-top:10px">Rotación apagada: se envía siempre la primera versión activa.</div>`:``}
       <div id="varList" style="margin-top:14px;display:flex;flex-direction:column;gap:14px"></div>
-      <button class="btn" id="addVar" style="margin-top:14px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar versión</button>
+      <button class="btn" id="addVar" style="margin-top:14px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar otra versión</button>
     </div>
 
     <div class="card" style="display:flex;align-items:flex-start;gap:10px;background:var(--ia-bg,rgba(139,92,246,.08));border-color:var(--ia-brd,rgba(139,92,246,.3))">
@@ -2554,7 +2669,7 @@ function renderComposer(){
     </div>`;
 
   // Rotación toggle
-  $("rotSw").onclick=()=>{ harvest(); cfg.activo=cfg.activo===false?true:false; renderComposer(); };
+  const rs=$("rotSw"); if(rs) rs.onclick=()=>{ harvest(); cfg.activo=cfg.activo===false?true:false; renderComposer(); };
   $("addVar").onclick=()=>{ harvest(); cfg.variantes.push(newVariant(cfg.variantes.length)); renderComposer(); };
   $("saveWelcome").onclick=saveWelcome;
   $("actKw").oninput=avisarKeywords;
