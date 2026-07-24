@@ -88,6 +88,8 @@ export async function construirResumen(
   const gastosExtra = (expR.data ?? []).reduce((a: number, r: any) => a + Number(r?.monto || 0), 0);
   // Ganancia neta = bruta − anuncios − gastos extra (igual que la banda del Dashboard).
   const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra : null;
+  // ROAS = lo cobrado por cada S/ 1 gastado en anuncios (mismo que el Dashboard).
+  const roas = gastoAds > 0 ? dg.ingresos / gastoAds : 0;
 
   const fechaLbl = new Intl.DateTimeFormat("es-PE", {
     timeZone: tz, weekday: "long", day: "numeric", month: "long",
@@ -106,7 +108,7 @@ export async function construirResumen(
   if (dg.ganancia != null) {
     L.push(`📈 Ganancia bruta: ${money(dg.ganancia, sym)}${dg.gananciaSinDatos ? ` <i>(${dg.gananciaSinDatos} sin costo)</i>` : ""}`);
   }
-  if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}`);
+  if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}${roas > 0 ? ` · <b>ROAS ${roas.toFixed(1)}×</b>` : ""}`);
   if (gastosExtra > 0) L.push(`📋 Gastos extra: ${money(gastosExtra, sym)}`);
   if (neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`💚 Ganancia neta: <b>${money(neta, sym)}</b>`);
   if (dg.ganancia != null || gastoAds > 0 || gastosExtra > 0) L.push("");
