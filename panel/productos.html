@@ -1526,15 +1526,22 @@ async function renderInicio(){
     : [["1","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
        ["2","La venta","Cómo lo vende la IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
        ["3","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
-  const item=(t)=>{ const e=est(t); return `<button class="ini-item" data-t="${t}">
-    <span class="ini-ico ${e.ok?'done':''}">${IC[t]||''}</span>
+  // Color por fase: ① azul (producto) · ② violeta IA (venta) · ③ gris (avanzado).
+  const PHCOL={ "1":{c:"var(--brand,#2b7fff)",bg:"rgba(43,127,255,.12)"},
+    "2":{c:"var(--ia1,#a855f7)",bg:"rgba(168,85,247,.14)"},
+    "3":{c:"var(--muted)",bg:"var(--surface-2)"} };
+  const item=(t,col)=>{ const e=est(t);
+    const ico=e.ok?'':`style="background:${col.bg};border-color:transparent;color:${col.c}"`;
+    return `<button class="ini-item" data-t="${t}">
+    <span class="ini-ico ${e.ok?'done':''}" ${ico}>${IC[t]||''}</span>
     <span class="ini-item-nm">${NM[t]}</span><span class="ini-item-msg">${e.msg}</span><span class="ini-chev">›</span></button>`; };
-  const phCard=([num,tt,sub,ids])=>{ const done=ids.filter(t=>est(t).ok).length;
+  const phCard=([num,tt,sub,ids])=>{ const done=ids.filter(t=>est(t).ok).length; const col=PHCOL[num]||PHCOL["1"]; const full=done===ids.length;
+    const prog=full?"background:rgba(34,192,121,.14);color:var(--green,#22c079)":"background:rgba(240,169,43,.14);color:#f0a92b";
     return `<div class="ini-ph">
-      <div class="ini-ph-hd" data-first="${ids[0]}"><span class="ini-ph-num">${num}</span>
+      <div class="ini-ph-hd" data-first="${ids[0]}"><span class="ini-ph-num" style="background:${col.bg};color:${col.c}">${num}</span>
         <div style="flex:1;min-width:0"><div class="ini-ph-tt">${tt}</div><div class="ini-ph-sub">${sub}</div></div>
-        <span class="ini-ph-prog">${done}/${ids.length}</span></div>
-      <div class="ini-items">${ids.map(item).join("")}</div></div>`; };
+        <span class="ini-ph-prog" style="${prog};border-color:transparent">${done}/${ids.length}</span></div>
+      <div class="ini-items">${ids.map(t=>item(t,col)).join("")}</div></div>`; };
 
   b.innerHTML=`
     <p class="hint" style="margin:0 0 16px">Arma tu producto por partes. Toca una sección para completarla; las que aparecen en <b style="color:var(--green,#22c079)">verde</b> ya están listas.</p>
