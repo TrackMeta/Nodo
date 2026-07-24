@@ -67,7 +67,7 @@ export async function construirResumen(
   const fromISO = from.toISOString(), toISO = to.toISOString();
   const chId = ch.id;
 
-  const [ordR, contR, leadR, adsR] = await Promise.all([
+  const [ordR, contR, leadR, adsR, expR] = await Promise.all([
     db.from("orders").select("amount, order_bumps, estado, shipping, created_at")
       .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO),
     db.from("contacts").select("id", { count: "exact", head: true })
@@ -77,6 +77,7 @@ export async function construirResumen(
       .eq("channel_id", chId).eq("event_name", "Lead")
       .gte("created_at", fromISO).lt("created_at", toISO),
     db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd),
+    db.from("manual_expenses").select("monto").eq("channel_id", chId).eq("fecha", diaYmd),
   ]);
 
   const orders = (ordR.data ?? []) as Order[];
@@ -84,7 +85,9 @@ export async function construirResumen(
   const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
   const leads = (leadR.data ?? []).length;
   const gastoAds = (adsR.data ?? []).reduce((a: number, r: any) => a + Number(r?.gasto || 0), 0);
-  const neta = dg.ganancia != null ? dg.ganancia - gastoAds : null;
+  const gastosExtra = (expR.data ?? []).reduce((a: number, r: any) => a + Number(r?.monto || 0), 0);
+  // Ganancia neta = bruta − anuncios − gastos extra (igual que la banda del Dashboard).
+  const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra : null;
 
   const fechaLbl = new Intl.DateTimeFormat("es-PE", {
     timeZone: tz, weekday: "long", day: "numeric", month: "long",
@@ -99,13 +102,14 @@ export async function construirResumen(
   if (dg.ventas > 0) L.push(`🎟 Ticket promedio: ${money(dg.ticket, sym)}`);
   if (dg.porCobrar > 0) L.push(`⏳ Por cobrar: ${money(dg.porCobrar, sym)}`);
   L.push("");
-  // Rentabilidad: ganancia bruta − publicidad = neta (como la banda del Dashboard).
+  // Rentabilidad: ganancia bruta − publicidad − gastos extra = neta (como la banda del Dashboard).
   if (dg.ganancia != null) {
     L.push(`📈 Ganancia bruta: ${money(dg.ganancia, sym)}${dg.gananciaSinDatos ? ` <i>(${dg.gananciaSinDatos} sin costo)</i>` : ""}`);
   }
   if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}`);
-  if (neta != null && gastoAds > 0) L.push(`💚 Ganancia neta: <b>${money(neta, sym)}</b>`);
-  if (dg.ganancia != null || gastoAds > 0) L.push("");
+  if (gastosExtra > 0) L.push(`📋 Gastos extra: ${money(gastosExtra, sym)}`);
+  if (neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`💚 Ganancia neta: <b>${money(neta, sym)}</b>`);
+  if (dg.ganancia != null || gastoAds > 0 || gastosExtra > 0) L.push("");
   const desglose = (dg.digital || dg.fisico) ? ` <i>(${dg.digital} digital · ${dg.fisico} físico)</i>` : "";
   L.push(`📦 Pedidos nuevos: ${dg.pedidosNuevos}${desglose}`);
   L.push(`👥 Nuevos contactos: ${nuevosContactos}`);
@@ -113,7 +117,7 @@ export async function construirResumen(
   if (dg.perdidos > 0) L.push(`❌ Perdidos: ${dg.perdidos}`);
 
   // Sin ninguna venta ni movimiento, un mensaje honesto en vez de puros ceros.
-  if (dg.pedidosNuevos === 0 && nuevosContactos === 0 && gastoAds === 0) {
+  if (dg.pedidosNuevos === 0 && nuevosContactos === 0 && gastoAds === 0 && gastosExtra === 0) {
     return prefix + `${TITULO[cual]} · <i>${fechaLbl}</i>\n\n😴 Sin movimiento este día.`;
   }
   return prefix + L.join("\n");
