@@ -327,6 +327,17 @@ async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
+  // Migración: el "precio base" viejo (config.precio) pasa a la 1ª presentación
+  // si esta no tiene precio, para que el precio viva en un solo lugar
+  // (Presentaciones y precios). Al guardar se persiste; config.precio se queda
+  // como respaldo inofensivo (la presentación manda).
+  try{
+    const bp=st.prod&&st.prod.config&&st.prod.config.precio;
+    if(bp!=null && String(bp).trim()!=="" && st.versions.length){
+      const v0=st.versions[0];
+      if(v0 && (v0.precio==null || String(v0.precio).trim()==="")) v0.precio=bp;
+    }
+  }catch(_){}
   // Con qué tipo se abrió: si lo cambia, el flujo YA GENERADO sigue vendiendo
   // como el tipo viejo (un digital pediría dirección, un físico entregaría un
   // link) y eso no se nota hasta que un cliente lo sufre.
@@ -482,6 +493,7 @@ function renderProducto(){
   const b=$("tabBody");
   const folders=allFolders();
   const c=st.prod.config=st.prod.config||{};
+  if(!Array.isArray(c.atributos)) c.atributos=[];
   const tipo=st.prod.tipo||"digital";
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">Lo básico de lo que vendes: nombre, precio y cuánto te cuesta. Las <b>opciones</b> (${tipo==="fisico"?"1 par / 2 pares, pack familiar":"Básico / Premium, con o sin plantillas"}) van en su pestaña; cómo se <b>entrega</b> y cómo lo <b>vende la IA</b>, también.</p>
@@ -516,27 +528,35 @@ function renderProducto(){
         Después de guardar, <b>regenera el flujo</b> en la pestaña Receta.
       </div>` : ""}
     </div>
-    <div class="card" style="border-color:rgba(34,192,121,.4);box-shadow:0 0 0 1px rgba(34,192,121,.12) inset">
-      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio</h4>
-      <div class="row" style="margin-top:10px">
-        <div><label style="margin-top:0">Precio base</label><input class="in" id="pPrecio" value="${esc(c.precio??"")}" placeholder="Ej. 120"/></div>
-        <div><label style="margin-top:0">Moneda</label>
-          <select class="sel" id="pMoneda" style="width:100%">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${(c.moneda||"PEN")===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select></div>
-      </div>
-      <label>Costo (lo que te cuesta a ti)${tipo==="digital"?` <span style="font-weight:400;color:var(--faint);text-transform:none">— opcional</span>`:""}</label>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Tu costo</h4>
+      <label style="margin-top:6px">Costo (lo que te cuesta a ti)${tipo==="digital"?` <span style="font-weight:400;color:var(--faint);text-transform:none">— opcional</span>`:""}</label>
       <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="${tipo==="fisico"?"Ej. 60":"Ej. 0"}"/>
       <div style="font-size:11px;color:var(--faint);margin-top:5px">${tipo==="fisico"
-        ? `Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real (precio − costo − envío); en una opción de 2 unidades se multiplica solo.`
-        : `Lo que te cuesta cada venta (comisión de la pasarela, licencias…). El Dashboard lo usa para tu ganancia real (precio − costo). En un digital suele ser 0.`} El cliente nunca lo ve. Si lo dejas vacío, el Dashboard te muestra el ingreso pero no el margen.</div>
-      <div style="font-size:11px;color:var(--faint);margin-top:8px">Si vendes varias presentaciones con distinto precio, configúralas en <a href="#" id="goOpc2" style="color:var(--brand)">Opciones de compra →</a>. El precio está disponible en tus flujos como <b style="color:var(--brand)">{{precio}}</b>.</div>
+        ? `Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real (precio − costo − envío); en una presentación de 2 unidades se multiplica solo.`
+        : `Lo que te cuesta cada venta (comisión de la pasarela, licencias…). El Dashboard lo usa para tu ganancia real (precio − costo). En un digital suele ser 0.`} El cliente nunca lo ve.</div>
+      <div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.55">
+        <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("dollar")}</span>
+        <div>El <b>precio de venta</b> vive en <a href="#" id="goOpc2" style="color:var(--brand)">Presentaciones y precios →</a> — ahí pones el precio, sea una sola presentación o varias. Queda disponible en tus flujos como <b style="color:var(--brand)">{{precio}}</b>.</div>
+      </div>
+    </div>
+    <div class="card">
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Detalles a preguntar <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
+        Datos que la IA le <b>pregunta al cliente</b> y registra antes de cerrar la venta, pero que
+        <b>no cambian el precio</b> (${tipo==="fisico"?"talla, color, modelo…":"nombre para el certificado, idioma…"}).
+        Ella los pesca de la conversación sin interrogar, y quedan guardados en el pedido${tipo==="fisico"?" y en el <b>rótulo de envío</b>":""} para que salga completo.
+        <br><b>¿Cambia el precio o lo que entregas?</b> Entonces no es un detalle: es una
+        <a href="#" id="atGoOp" style="color:var(--brand)">presentación →</a> (ej. Básico vs Premium, 1 unidad vs pack).
+      </div>
+      <div id="atList"></div>
+      <button class="btn" id="atAdd" style="margin-top:8px">+ Detalle</button>
     </div>
     <details style="margin-bottom:12px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
       <label style="margin-top:6px">Config del producto (se genera desde los formularios)</label>
       <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
     </details>`;
-  $("pPrecio").onchange=(e)=>prodSetC("precio", e.target.value.trim());
-  $("pMoneda").onchange=(e)=>prodSetC("moneda", e.target.value.trim());
   $("pCosto").onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
@@ -544,6 +564,10 @@ function renderProducto(){
   const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(); }catch(_){ toast("JSON inválido",true); } };
   $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
   wireEmojiPicker();
+  // Detalles a preguntar (tallas/colores) — movidos aquí desde Presentaciones.
+  paintAtributos();
+  $("atAdd").onclick=()=>{ c.atributos.push({ nombre:"", clave:"", obligatorio:true, valores:"", ayuda:"", media:[] }); paintAtributos(); };
+  const gA=$("atGoOp"); if(gA) gA.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
 }
 
 // Selector de emoji del producto (compartido). Requiere #emojiBtn y #emojiPop.
@@ -1505,7 +1529,7 @@ async function renderInicio(){
 
   // Estado por sección (para los puntitos y el X/Y de cada fase).
   const est=(t)=>{
-    if(t==="producto"){ const ok=(c.precio!=null&&String(c.precio).trim()!=="")||(st.versions||[]).some(v=>Number(v.precio)>0); return {ok,msg:ok?"Nombre y precio listos":"Falta el precio"}; }
+    if(t==="producto"){ return {ok:true,msg:"Nombre y tipo listos"}; }
     if(t==="opciones"){ const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} opción(es), ${cp} con precio`:"Ninguna opción tiene precio"}; }
     if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
@@ -2134,37 +2158,27 @@ function renderOpciones(){
   if(!Array.isArray(cfg.atributos)) cfg.atributos=[];
   b.innerHTML=`
     <div class="card" style="border-color:var(--brand-border)">
-      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("productos")} Opciones de compra</h4>
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("productos")} Presentaciones y precios</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        Todo lo que el cliente puede comprar de este producto. Las <b>versiones</b> (Básico/Premium),
-        los <b>packs</b> y las <b>ofertas por cantidad</b> son lo mismo: una opción con su precio${fisico?"":" y lo que entrega"}.
-        La IA detecta cuál eligió aunque lo escriba a su manera, y el validador de pagos usa ese precio
-        como <b>monto esperado</b>.
+        Aquí vive <b>el precio</b>. Si vendes <b>una sola cosa</b>, deja una presentación con su precio.
+        Si vendes <b>variantes con distinto precio</b> (1 par / 2 pares, Básico / Premium, packs), agrega más.
+        La IA detecta cuál eligió el cliente aunque lo escriba a su manera, y el validador de pagos usa ese precio como <b>monto esperado</b>.
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Moneda</label>
+        <select class="sel" id="opMoneda" style="width:auto;min-width:230px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${(cfg.moneda||"PEN")===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>
+        <span style="font-size:11.5px;color:var(--faint)">Aplica a todas las presentaciones.</span>
       </div>
     </div>
     <div id="opList"></div>
     <div id="opWarn"></div>
-    <button class="btn" id="opAdd">+ Opción de compra</button>
-    <div class="card" style="margin-top:18px">
-      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} Detalles a preguntar <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
-        Datos que la IA le <b>pregunta al cliente</b> y registra antes de cerrar la venta, pero que
-        <b>no cambian el precio</b> (${fisico?"talla, color, modelo…":"nombre para el certificado, idioma…"}).
-        Ella los pesca de la conversación sin interrogar, y quedan guardados en el pedido${fisico?" y en el <b>rótulo de envío</b>":""} para que salga completo.
-        <br><b>¿Cambia el precio o lo que entregas?</b> Entonces no es un detalle: es una
-        <a href="#" id="atGoOp" style="color:var(--brand)">opción de compra ↑</a> (ej. Básico vs Premium, 1 unidad vs pack).
-      </div>
-      <div id="atList"></div>
-      <button class="btn" id="atAdd" style="margin-top:8px">+ Detalle</button>
-    </div>`;
+    <button class="btn" id="opAdd">+ Presentación</button>`;
   paintOpciones(fisico);
-  paintAtributos();
+  $("opMoneda").onchange=(e)=>prodSetC("moneda", e.target.value);
   $("opAdd").onclick=()=>{
     st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length });
     paintOpciones(fisico);
   };
-  $("atAdd").onclick=()=>{ cfg.atributos.push({ nombre:"", clave:"", obligatorio:true, valores:"", ayuda:"", media:[] }); paintAtributos(); };
-  const gA=$("atGoOp"); if(gA) gA.onclick=(e)=>{ e.preventDefault(); $("opAdd").scrollIntoView({behavior:"smooth",block:"center"}); };
 }
 
 // Slug estable para la clave de un atributo → {{clave}}, campo del contacto y
