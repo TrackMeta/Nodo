@@ -142,6 +142,21 @@
   .bita-cell.nodata{background:var(--surface-2);opacity:.55}
   .bita-cell.nodata .amt{color:var(--faint);font-size:13px;font-weight:600}
   .bita-cell.prov{border-style:dashed}
+  /* Asesor IA (Mide + Aconseja) */
+  .aiadv{border:1px solid rgba(168,85,247,.4);background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.1),transparent 60%),var(--surface);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+  .aiadv-hd{display:flex;align-items:center;gap:10px}
+  .aiadv-hd .g{width:30px;height:30px;flex:none;border-radius:8px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
+  .aiadv-hd .g svg{width:17px;height:17px}
+  .aiadv-tt{font-weight:700;font-size:15px}
+  .aibtn{border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13px;padding:9px 15px}
+  .aibtn:hover{filter:brightness(1.06)}
+  .airec{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:10px;display:flex;gap:10px;align-items:flex-start}
+  .aipri{font-size:10.5px;font-weight:700;border-radius:20px;padding:3px 9px;flex:none;text-transform:uppercase;letter-spacing:.3px;margin-top:1px}
+  .aipri.alta{color:#e2564a;background:rgba(226,86,74,.13)}
+  .aipri.media{color:#c8891a;background:rgba(240,169,43,.15)}
+  .aipri.idea{color:var(--muted);background:var(--surface-2)}
+  .aiact{margin-top:9px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+  .aiact:hover{border-color:var(--brand)}
 </style>
 </head>
 <body>
@@ -164,6 +179,8 @@
         </div>
       </div>
     </div>
+
+    <div id="asesorPanel"></div>
 
     <div class="pband" id="pband"></div>
 
@@ -256,6 +273,58 @@ function animateNums(scope){
 }
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let channelId=null;
+let asesorResumen=null;
+// ── Asesor IA (Mide + Aconseja): panel arriba del Dashboard ──
+const ASECC={ campanas:"campanas.html", productos:"productos.html", remarketing:"productos.html", pedidos:"pedidos.html", negocio:"negocio.html", ia:"ia.html", rendimiento:"rendimiento.html" };
+const AI_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+function renderAsesor(){
+  const box=$("asesorPanel"); if(!box) return;
+  const R=asesorResumen||{};
+  const oport=[];
+  if(R.interesados_sin_comprar>0) oport.push(`${R.interesados_sin_comprar} interesados sin comprar`);
+  const h=R.huecos||{};
+  const nMudo=(h.flujo_en_borrador_o_sin_flujo||[]).length, nRem=(h.sin_remarketing||[]).length;
+  if(nMudo) oport.push(`${nMudo} producto(s) sin vender aún`);
+  if(nRem) oport.push(`${nRem} sin remarketing`);
+  const teaser = oport.length ? `Detecté <b>${oport.join(" · ")}</b>.` : "Revisemos tus números y busquemos oportunidades.";
+  box.innerHTML=`
+    <div class="aiadv">
+      <div class="aiadv-hd">
+        <span class="g">${AI_SPARK}</span>
+        <div style="flex:1;min-width:0"><div class="aiadv-tt">Asesor IA</div><div style="font-size:12.5px;color:var(--muted);margin-top:1px">${teaser}</div></div>
+        <button class="aibtn" id="aiGo">Pedir consejo ✨</button>
+      </div>
+      <div id="aiRecs"></div>
+    </div>`;
+  $("aiGo").onclick=pedirConsejo;
+}
+async function pedirConsejo(){
+  const btn=$("aiGo"); if(btn){ btn.disabled=true; btn.textContent="Analizando…"; }
+  let data,error;
+  try{ ({ data, error } = await supa.functions.invoke("asesor-ia",{ body:{ channel_id:channelId, resumen:asesorResumen } })); }
+  catch(e){ error=e; }
+  if(btn){ btn.disabled=false; btn.textContent="Pedir consejo ✨"; }
+  if(error || !data?.ok || !Array.isArray(data?.recomendaciones)){
+    toast(data?.error||error?.message||"No se pudo generar el consejo. Intenta de nuevo.",true); return;
+  }
+  const recs=data.recomendaciones;
+  const box=$("aiRecs"); if(!box) return;
+  if(!recs.length){ box.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-top:10px">Todo se ve bien por ahora — no encontré nada urgente. 🎉</div>`; return; }
+  box.innerHTML=recs.map(r=>{
+    const pri=(r.prioridad==="alta"||r.prioridad==="media"||r.prioridad==="idea")?r.prioridad:"idea";
+    const priTx={alta:"Prioridad alta",media:"Media",idea:"Idea"}[pri];
+    const a=r.accion||{}; const href=ASECC[a.seccion]||null;
+    const btn=(a.texto&&href)?`<a class="aiact" href="${href}">${esc(a.texto)} →</a>`:"";
+    return `<div class="airec">
+      <span class="aipri ${pri}">${priTx}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700">${esc(r.titulo||"")}</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.55;margin-top:3px">${esc(r.por_que||"")}</div>
+        ${btn}
+      </div>
+    </div>`;
+  }).join("");
+}
 const IC={
   users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
@@ -373,14 +442,15 @@ async function load(){
   // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
   // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
-  const [stats, evR, ordR, prodR, contR, insR, expR] = await Promise.all([
+  const [stats, evR, ordR, prodR, contR, insR, expR, flowR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
-    supa.from("products").select("id,nombre,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
+    supa.from("products").select("id,nombre,clase,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
     supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
     supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)),
     supa.from("manual_expenses").select("id,fecha,monto,descripcion,categoria").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.to)).order("fecha",{ascending:false}),
+    supa.from("flows").select("product_id,role,estado").eq("channel_id",channelId),
   ]);
   const s=stats.data||{};
   if(typeof contR?.count==="number") s.contactos=contR.count;
@@ -508,6 +578,38 @@ async function load(){
   renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
   renderExpenses(expenses);
+
+  // ── Asesor IA (Mide + Aconseja): resumen de los números reales para la IA ──
+  const flows = flowR&&!flowR.error ? (flowR.data||[]) : [];
+  const ventaFlow={}; flows.forEach(f=>{ if(f.role==="venta") ventaFlow[f.product_id]=f.estado; });
+  const sinRem=[], sinCon=[], mudo=[];
+  prods.forEach(p=>{
+    if(p.clase==="extra") return; // los extra se venden enganchados a un principal
+    const cfg=p.config||{};
+    if(!cfg.remarketing_seq_id) sinRem.push(p.nombre);
+    if(!cfg.contexto_producto) sinCon.push(p.nombre);
+    const vf=ventaFlow[p.id]; if(!vf || vf!=="activo") mudo.push(p.nombre);
+  });
+  const rank=Object.entries(margenPorProd).map(([pid,g])=>({nombre:prodPorId[pid]?prodPorId[pid].nombre:"—", ganancia:Math.round(Number(g)||0)})).filter(x=>x.nombre!=="—");
+  rank.sort((a,b)=>b.ganancia-a.ganancia);
+  const ps=s.por_stage||{};
+  const comprado=Number(ps.comprado)||0;
+  const interesadosTot=(Number(ps.interesado)||0)+(Number(ps.confirmado)||0)+comprado;
+  asesorResumen={
+    periodo: ($("dfLabel")?$("dfLabel").textContent:"")||"el periodo",
+    tipo_filtro: tipo,
+    ganancia: Math.round(ganancia), ingresos: Math.round(vendido), ventas: compras,
+    ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidos,
+    embudo_por_etapa: ps,
+    interesados_sin_comprar: (Number(ps.interesado)||0)+(Number(ps.confirmado)||0),
+    conversion_pct: interesadosTot>0 ? Math.round(comprado/interesadosTot*100) : null,
+    producto_estrella: rank[0]||null,
+    producto_mas_flojo: rank.length>1?rank[rank.length-1]:null,
+    productos_por_ganancia: rank.slice(0,6),
+    huecos: { sin_remarketing:sinRem, sin_conocimiento_ia:sinCon, flujo_en_borrador_o_sin_flujo:mudo },
+    en_remarketing_ahora: s.subs_activas??0,
+  };
+  renderAsesor();
 }
 
 // ── Gastos extra (manuales) ────────────────────────────────────────

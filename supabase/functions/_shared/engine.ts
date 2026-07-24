@@ -2795,6 +2795,74 @@ export async function armarNegocio(
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
 }
 
+// ── Asesor IA (capas Mide + Aconseja): razona sobre los números REALES del ──
+// negocio (que arma el panel) y devuelve recomendaciones priorizadas y
+// accionables. 🔒 NO inventa números: solo usa los del resumen. Solo PROPONE
+// (no ejecuta — eso sería la capa Opera). accion.seccion enruta a la sección.
+export async function asesorIa(
+  db: SupabaseClient, channelId: string, resumen: any,
+): Promise<any> {
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Proveedores).");
+  const { data: ch } = await db.from("channels").select("negocio").eq("id", channelId).maybeSingle();
+  const negocio = String((ch as any)?.negocio ?? "").trim();
+
+  const system =
+    "Eres un asesor de crecimiento para un negocio que vende por WhatsApp con un bot (Perú). " +
+    "Con base EXCLUSIVAMENTE en los números y el estado del catálogo que te doy (NO inventes otros datos ni cifras), " +
+    "dale al dueño 3 a 5 recomendaciones CONCRETAS, priorizadas y accionables para vender más o ganar más. Escribes en español peruano (de tú), claro y directo.\n\n" +
+    (negocio ? `## Contexto del negocio\n${negocio}\n\n` : "") +
+    "## Reglas\n" +
+    "- Cada recomendación debe apoyarse en un DATO del resumen (cítalo en `por_que`).\n" +
+    "- `prioridad`: \"alta\" (impacto grande y claro), \"media\", o \"idea\".\n" +
+    "- `accion.seccion` es a dónde ir a hacerlo: una de [campanas, productos, remarketing, pedidos, negocio, ia, rendimiento]. Si aplica a un producto puntual, pon su nombre en `accion.producto`.\n" +
+    "- Ordena de mayor a menor prioridad. Prioriza lo que recupera ventas casi hechas (interesados sin comprar) y lo que está roto (productos mudos / flujo en borrador).\n" +
+    "- NO ejecutes nada ni prometas ejecutarlo: solo recomiendas y el dueño decide.\n" +
+    "Responde SOLO con el JSON del esquema.";
+
+  const content = "## Números y estado del negocio (úsalos tal cual)\n" + JSON.stringify(resumen ?? {}, null, 2) + "\n\nDame las recomendaciones.";
+
+  const schema = {
+    type: "object",
+    properties: {
+      recomendaciones: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            prioridad: { type: "string", enum: ["alta", "media", "idea"] },
+            titulo: { type: "string" },
+            por_que: { type: "string" },
+            accion: {
+              type: "object",
+              properties: {
+                texto: { type: "string" },
+                seccion: { type: "string", enum: ["campanas", "productos", "remarketing", "pedidos", "negocio", "ia", "rendimiento"] },
+                producto: { type: "string" },
+              },
+              required: ["texto", "seccion"], additionalProperties: false,
+            },
+          },
+          required: ["prioridad", "titulo", "por_que", "accion"], additionalProperties: false,
+        },
+      },
+    },
+    required: ["recomendaciones"], additionalProperties: false,
+  };
+
+  const raw = await runAI({
+    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
+    system, content, maxTokens: 2000,
+    jsonSchema: schema as unknown as Record<string, unknown>,
+  });
+  const m = /\{[\s\S]*\}/.exec(raw);
+  try {
+    const parsed = m ? JSON.parse(m[0]) : JSON.parse(raw);
+    return { recomendaciones: Array.isArray(parsed?.recomendaciones) ? parsed.recomendaciones : [] };
+  } catch { throw new Error("La IA no devolvió recomendaciones válidas. Intenta de nuevo."); }
+}
+
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
 async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {
