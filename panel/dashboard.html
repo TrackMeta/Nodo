@@ -392,6 +392,7 @@ const IC={
   megaphone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>',
   receipt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
   wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/><path d="M21 12a2 2 0 0 0-2-2h-4a2 2 0 0 0 0 4h4a2 2 0 0 0 2-2Z"/></svg>',
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
 };
 
 // ── Filtro de fechas ────────────────────────────────────────────────
@@ -603,6 +604,16 @@ async function load(){
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
   );
+  // Costos de la mercadería y de los envíos (informativos; ya están restados
+  // dentro de la ganancia bruta). Se muestran para ver a dónde se va la plata.
+  let costoProdTotal=0, fleteTotal=0;
+  orders.forEach(o=>{
+    const cp=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    if(cp!=null) costoProdTotal+=cp;
+    if(O.esFisico(o)){ const f=O.flete(o); if(f!=null) fleteTotal+=f; }
+  });
+  K.push(kpi("box","#f0a92b","Costo de productos", money(costoProdTotal), "mercadería de lo vendido"));
+  if(tipo!=="digital") K.push(kpi("truck","#f0a92b","Gasto de envíos", money(fleteTotal), "fletes que registraste"));
   // Ganancia como tarjetas KPI (además de la banda de arriba). Mismos números:
   // bruta − anuncios − gastos extra = neta. Pedido de Rodrigo para tenerlas a la vista.
   const brutaSub = tipo==="digital" ? "ingresos digitales (sin costo)"

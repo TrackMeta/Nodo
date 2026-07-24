@@ -104,7 +104,9 @@ export async function construirResumen(
   if (dg.ventas > 0) L.push(`🎟 Ticket promedio: ${money(dg.ticket, sym)}`);
   if (dg.porCobrar > 0) L.push(`⏳ Por cobrar: ${money(dg.porCobrar, sym)}`);
   L.push("");
-  // Rentabilidad: ganancia bruta − publicidad − gastos extra = neta (como la banda del Dashboard).
+  // Rentabilidad: ingresos − costos − publicidad − gastos extra = neta (como el Dashboard).
+  if (dg.costoProd > 0) L.push(`📦 Costo de productos: ${money(dg.costoProd, sym)}`);
+  if (dg.envio > 0) L.push(`🚚 Gasto de envíos: ${money(dg.envio, sym)}`);
   if (dg.ganancia != null) {
     L.push(`📈 Ganancia bruta: ${money(dg.ganancia, sym)}${dg.gananciaSinDatos ? ` <i>(${dg.gananciaSinDatos} sin costo)</i>` : ""}`);
   }

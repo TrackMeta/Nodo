@@ -83,13 +83,15 @@ export type Digest = {
   pedidosNuevos: number;   // todos los creados (incluye no-venta)
   digital: number; fisico: number;  // desglose de los pedidos nuevos
   perdidos: number;
-  ganancia: number | null; // por snapshot; null si NINGUNO tenía datos
-  gananciaSinDatos: number;
+  costoProd: number;       // suma de costos de mercadería vendida
+  envio: number;           // suma de fletes registrados
+  ganancia: number | null; // bruta; null si NINGÚN pedido tenía datos
+  gananciaSinDatos: number; // pedidos físicos sin costo/flete → no cuentan
 };
 
 export function resumirPedidos(orders: Order[]): Digest {
   let ingresos = 0, pc = 0, vendido = 0, ventas = 0, digital = 0, fisico = 0, perdidos = 0;
-  let ganancia = 0, conMargen = 0, sinDatos = 0;
+  let ganancia = 0, conMargen = 0, sinDatos = 0, costoProd = 0, envio = 0;
   for (const o of orders) {
     if (esFisico(o)) fisico++; else digital++;
     if (esVenta(o)) {
@@ -97,8 +99,24 @@ export function resumirPedidos(orders: Order[]): Digest {
       ingresos += cobrado(o);
       pc += porCobrar(o);
       vendido += total(o);
-      const m = margenSnap(o);
-      if (m == null) sinDatos++; else { ganancia += m; conMargen++; }
+      const cp = (o?.shipping as any)?.costo_producto;
+      const cpN = (cp == null || cp === "") ? null : Number(cp);
+      if (!esFisico(o)) {
+        // Digital: sin costo de mercadería → la ganancia bruta es lo cobrado
+        // (mismo criterio que la banda del Dashboard). Si el producto digital
+        // igual tiene un costo cargado, se suma al COGS informativo.
+        ganancia += cobrado(o); conMargen++;
+        if (cpN != null) costoProd += cpN;
+      } else {
+        const f = (o?.shipping as any)?.flete;
+        const fN = (f == null || f === "") ? null : Number(f);
+        if (cpN == null || fN == null) {
+          sinDatos++; // físico sin costo o sin flete → no se afirma margen
+        } else {
+          costoProd += cpN; envio += fN;
+          ganancia += cobrado(o) - cpN - fN; conMargen++;
+        }
+      }
     }
     if (esPerdido(o)) perdidos++;
   }
@@ -106,6 +124,7 @@ export function resumirPedidos(orders: Order[]): Digest {
     ventas, ingresos, porCobrar: pc,
     ticket: ventas ? vendido / ventas : 0,
     pedidosNuevos: orders.length, digital, fisico, perdidos,
+    costoProd, envio,
     ganancia: conMargen ? ganancia : null, gananciaSinDatos: sinDatos,
   };
 }
