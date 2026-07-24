@@ -2209,8 +2209,13 @@ function paintOpciones(fisico){
         ${simple?"":`<label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>
         <button class="iconbtn odel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>`}
       </div>
-      ${simple?"":`<label>Descripción <span style="color:var(--faint);font-weight:400">(la IA la usa para vender y reconocer ESTA presentación)</span></label>
-      <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}"/>`}
+      ${simple?"":`<div style="border:1px solid rgba(168,85,247,.32);background:rgba(168,85,247,.06);border-radius:12px;padding:12px 13px;margin-top:12px">
+        <label style="margin:0;display:flex;align-items:center;gap:7px;color:var(--ia1,#a855f7);font-weight:700;text-transform:none">
+          <span style="display:inline-flex"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span>
+          Descripción para la IA <span style="color:var(--faint);font-weight:400">(para vender y reconocer ESTA presentación)</span>
+        </label>
+        <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}" style="margin-top:7px;border-color:rgba(168,85,247,.35)"/>
+      </div>`}
       ${fisico ? `
       <div style="margin-top:12px;font-size:11.5px;color:var(--faint);line-height:1.55">
         Este producto se <b>envía</b>, así que no entrega nada por el chat: la venta termina cuando se crea el pedido.
