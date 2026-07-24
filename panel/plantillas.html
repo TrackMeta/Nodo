@@ -57,6 +57,34 @@
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
+  /* Secciones numeradas del detalle */
+  .dsec{margin-top:6px}
+  .dsec-h{display:flex;align-items:center;gap:9px}
+  .dsec-h .n{width:24px;height:24px;border-radius:8px;background:var(--brand-bg);color:var(--brand);font-size:12.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .dsec-h h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.2px}
+  .dsec-sub{font-size:12px;color:var(--faint);margin:6px 0 0 33px;line-height:1.6}
+  .dsec-sub code{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--brand);font-size:11.5px}
+  .dsec-body{margin-top:12px}
+  .divis{height:1px;background:var(--border);margin:22px 0;opacity:.6}
+  /* Barra bajo el cuerpo */
+  .bodybar{display:flex;justify-content:flex-end;margin-top:8px}
+  .mini{height:31px;padding:0 12px;border-radius:9px;border:1px dashed var(--border);background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .mini:hover{border-color:var(--brand);color:var(--brand)}
+  .mini svg{width:14px;height:14px}
+  /* Casilleros de variables */
+  .vslots{display:flex;flex-direction:column;gap:10px}
+  .vslot{display:flex;align-items:center;gap:11px}
+  .vnum{flex:none;min-width:46px;height:42px;border-radius:10px;background:var(--brand-bg);border:1px solid var(--border);color:var(--brand);font-weight:800;font-size:12.5px;display:flex;align-items:center;justify-content:center}
+  .vslot .in{flex:1}
+  .vnone{background:var(--surface-2);border:1px dashed var(--border);border-radius:12px;padding:16px 18px;color:var(--muted);font-size:12.5px;line-height:1.65;text-align:center}
+  .vnone b{color:var(--text)} .vnone code{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)}
+  /* Chips de variables sugeridas */
+  .vchips-lbl{font-size:11px;color:var(--faint);margin:14px 0 7px}
+  .vchips{display:flex;flex-wrap:wrap;gap:7px}
+  .vchip{font-size:11.5px;padding:6px 11px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font-weight:600;font-family:var(--font)}
+  .vchip:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-bg)}
+  /* Variable pendiente (sin llenar) en la vista previa */
+  .wa-out .v.pend{background:rgba(240,169,43,.2);color:#9a6b06}
 </style>
 </head>
 <body>
@@ -76,7 +104,7 @@
       <div class="info">
         <span class="i-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
         <div><h4>¿Cómo funcionan las plantillas?</h4>
-          <p>Se <b>crean y aprueban en Meta</b> (WhatsApp Manager); la revisión la hace Meta, no Nodo. Aquí <b>registras</b> el nombre exacto, idioma y variables para usarlas en <b>Campañas</b> y <b>Secuencias</b>. Las variables son posicionales: <b>{{1}}</b>, <b>{{2}}</b>…</p></div>
+          <p>Son el único mensaje que WhatsApp permite enviar <b>fuera de la ventana de 24 h</b> (en Campañas y Secuencias). <b>1)</b> Creas y apruebas el texto en <b>Meta</b> (WhatsApp Manager). <b>2)</b> Aquí registras su nombre exacto, idioma y el texto con huecos <b>{{1}}, {{2}}…</b> <b>3)</b> Le dices con qué llenar cada hueco: el nombre del cliente, su nº de guía, etc.</p></div>
       </div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
@@ -167,45 +195,129 @@ async function createTpl(){
 }
 async function openTpl(id){ const { data }=await supa.from("wa_templates").select("*").eq("id",id).maybeSingle(); st.tpl=data; renderDetail(); showDetail(); }
 
+// Variables del contacto que la IA puede resolver en el envío (ver contactCtx en campaigns.ts).
+const VARSUG=[["nombre","su nombre"],["telefono","su teléfono"],["pedido_estado","estado del pedido"],["pedido_monto","monto"],["pedido_guia","nº de guía"],["pedido_sede","sede/agencia"],["pedido_saldo","saldo a pagar"],["pedido_clave_recojo","clave de recojo"]];
 function renderDetail(){
   const d=$("detail"); if(!st.tpl) return;
   const t=st.tpl, estado=t.estado_meta||"aprobada";
+  // st.vars: mapa posición(1..N) -> texto con que se llena ese hueco. Se siembra del arreglo params (posicional).
+  st.vars={}; (t.params||[]).forEach((p,i)=>{ st.vars[i+1]=p; });
+  st.focused=null; st.slotN=null;
   d.innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span>
     </div>
     <div class="dcard">
-      <div class="row">
-        <div class="f"><label>Nombre (exacto en Meta)</label><input class="in" id="f_name" value="${esc(t.name)}"/></div>
-        <div class="f"><label>Idioma</label><input class="in" id="f_lang" value="${esc(t.language||'es')}" placeholder="es / es_MX / en"/></div>
+      <!-- 1 · Identidad -->
+      <div class="dsec">
+        <div class="dsec-h"><span class="n">1</span><h3>Identidad</h3></div>
+        <div class="dsec-body">
+          <div class="row">
+            <div class="f"><label>Nombre (exacto en Meta)</label><input class="in" id="f_name" value="${esc(t.name)}"/></div>
+            <div class="f"><label>Idioma</label><input class="in" id="f_lang" value="${esc(t.language||'es')}" placeholder="es / es_MX / en"/></div>
+          </div>
+          <div class="row">
+            <div class="f"><label>Categoría</label><select class="sel" id="f_cat">${CATS.map(x=>`<option value="${x}" ${t.categoria===x?"selected":""}>${CATLABEL[x]}</option>`).join("")}</select></div>
+            <div class="f"><label>Estado en Meta</label><select class="sel" id="f_estado">${ESTADOS.map(([v,l])=>`<option value="${v}" ${estado===v?"selected":""}>${l}</option>`).join("")}</select></div>
+            <div class="f"><label>Carpeta</label><select class="sel" id="f_folder"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${t.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+          </div>
+        </div>
       </div>
-      <div class="row">
-        <div class="f"><label>Categoría</label><select class="sel" id="f_cat">${CATS.map(x=>`<option value="${x}" ${t.categoria===x?"selected":""}>${CATLABEL[x]}</option>`).join("")}</select></div>
-        <div class="f"><label>Estado en Meta</label><select class="sel" id="f_estado">${ESTADOS.map(([v,l])=>`<option value="${v}" ${estado===v?"selected":""}>${l}</option>`).join("")}</select></div>
-        <div class="f"><label>Carpeta</label><select class="sel" id="f_folder"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${t.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+      <div class="divis"></div>
+      <!-- 2 · Mensaje -->
+      <div class="dsec">
+        <div class="dsec-h"><span class="n">2</span><h3>Mensaje</h3></div>
+        <div class="dsec-sub">Escribe el texto tal como lo aprobaste en Meta. Donde quieras un dato que cambia por cliente, deja un hueco <code>{{1}}</code>, <code>{{2}}</code>…</div>
+        <div class="dsec-body">
+          <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu pedido {{2}} ya está en camino 🚚">${esc(t.body_preview)}</textarea>
+          <div class="bodybar"><button class="mini" id="addVar" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Añadir hueco</button></div>
+          <label>Vista previa (como la ve el cliente)</label>
+          <div class="wa-chat"><div class="wa-out"><span id="prev"></span><span class="wa-time">12:30 ${WACHECK}</span></div></div>
+        </div>
       </div>
-      <label>Texto del cuerpo (con {{1}}, {{2}}…)</label>
-      <textarea class="ta" id="f_body" placeholder="Hola {{1}}, tu {{2}} sigue disponible.">${esc(t.body_preview)}</textarea>
-      <label>Vista previa (como se ve en WhatsApp)</label>
-      <div class="wa-chat"><div class="wa-out"><span id="prev"></span><span class="wa-time">12:30 ${WACHECK}</span></div></div>
-      <label>Variables — una por línea, en orden</label>
-      <textarea class="ta" id="f_params" placeholder="{{nombre}}&#10;{{producto}}">${esc((t.params||[]).join("\n"))}</textarea>
-      <div class="hint">La 1ª línea llena {{1}}, la 2ª {{2}}, etc. Usa variables del contacto (p. ej. {{nombre}}) o texto fijo.</div>
+      <div class="divis"></div>
+      <!-- 3 · Variables -->
+      <div class="dsec">
+        <div class="dsec-h"><span class="n">3</span><h3>Con qué se llena cada hueco</h3></div>
+        <div class="dsec-sub">Cada hueco del mensaje se llena solo al enviar. Escribe una <b>variable del contacto</b> (p. ej. <code>{{nombre}}</code>) y Nodo pone el dato real de cada cliente — o <b>texto fijo</b> si es igual para todos.</div>
+        <div class="dsec-body">
+          <div class="vslots" id="vslots"></div>
+          <div class="vnone" id="vnone" style="display:none">Este mensaje aún no tiene huecos. Agrega <code>{{1}}</code>, <code>{{2}}</code>… en el texto de arriba (o toca <b>“Añadir hueco”</b>) y aquí aparecerá un campo por cada uno.</div>
+          <div id="vchipsWrap">
+            <div class="vchips-lbl">Toca un campo de arriba y luego una variable para insertarla:</div>
+            <div class="vchips">${VARSUG.map(([k,desc])=>`<button class="vchip" type="button" data-v="${k}" title="${desc}">{{${k}}}</button>`).join("")}</div>
+          </div>
+        </div>
+      </div>
       <label class="chk"><input type="checkbox" id="f_activa" ${t.activa!==false?"checked":""}/> Plantilla activa (disponible para campañas)</label>
       <div style="display:flex;gap:8px;margin-top:22px">
         <button class="btn primary" id="saveBtn">Guardar</button>
         <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
       </div>
     </div>`;
-  $("f_body").oninput=()=>renderPreview($("f_body").value); renderPreview(t.body_preview||"");
+  $("f_body").oninput=onBodyInput;
+  $("addVar").onclick=addBodyVar;
+  d.querySelectorAll(".vchip").forEach(b=> b.onclick=()=>insertVar(`{{${b.dataset.v}}}`));
+  st.slotN=bodyMaxN(); buildSlots();
   $("saveBtn").onclick=saveTpl; $("delBtn").onclick=deleteTpl;
 }
-function renderPreview(body){
-  $("prev").innerHTML=waHighlight(body);
+// Nº más alto de hueco {{N}} presente en el cuerpo → cuántos casilleros mostrar.
+function bodyMaxN(){
+  let max=0; (($("f_body").value||"").match(/\{\{(\d+)\}\}/g)||[]).forEach(m=>{ const n=+m.replace(/\D/g,""); if(n>max) max=n; });
+  return max;
+}
+function readSlots(){ document.querySelectorAll("#vslots .in").forEach(i=>{ st.vars[i.dataset.n]=i.value; }); }
+function buildSlots(){
+  readSlots();
+  const N=bodyMaxN(), box=$("vslots"), none=$("vnone"), chips=$("vchipsWrap");
+  if(!N){ box.innerHTML=""; box.style.display="none"; none.style.display=""; chips.style.display="none"; renderPreview(); return; }
+  none.style.display="none"; box.style.display=""; chips.style.display="";
+  let h=""; for(let n=1;n<=N;n++){ h+=`<div class="vslot"><span class="vnum">{{${n}}}</span><input class="in" data-n="${n}" value="${esc(st.vars[n]||"")}" placeholder="{{nombre}} o texto fijo"/></div>`; }
+  box.innerHTML=h;
+  box.querySelectorAll(".in").forEach(i=>{
+    i.onfocus=()=>{ st.focused=i; };
+    i.oninput=()=>{ st.vars[i.dataset.n]=i.value; renderPreview(); };
+  });
+  renderPreview();
+}
+function onBodyInput(){
+  const N=bodyMaxN();
+  if(N!==st.slotN){ st.slotN=N; buildSlots(); } else renderPreview();
+}
+// Inserta un token de variable en el casillero enfocado (en la posición del cursor).
+function insertVar(txt){
+  const el=st.focused;
+  if(!el||!el.dataset||!el.dataset.n){ toast("Toca primero el campo de un hueco",true); return; }
+  const s=el.selectionStart??el.value.length, e=el.selectionEnd??el.value.length;
+  el.value=el.value.slice(0,s)+txt+el.value.slice(e);
+  st.vars[el.dataset.n]=el.value; el.focus();
+  const pos=s+txt.length; try{ el.setSelectionRange(pos,pos); }catch(_){}
+  renderPreview();
+}
+// Añade el siguiente hueco {{N+1}} al final del cuerpo.
+function addBodyVar(){
+  const el=$("f_body"), tok=`{{${bodyMaxN()+1}}}`;
+  const s=el.selectionStart??el.value.length, e=el.selectionEnd??el.value.length;
+  el.value=el.value.slice(0,s)+tok+el.value.slice(e);
+  el.focus(); const pos=s+tok.length; try{ el.setSelectionRange(pos,pos); }catch(_){}
+  onBodyInput();
+}
+// Vista previa: sustituye cada {{n}} por el valor de su casillero (verde) o lo deja marcado como pendiente (ámbar).
+function renderPreview(){
+  const body=$("f_body").value||"";
+  const html=esc(body).replace(/\{\{(\d+)\}\}/g,(m,n)=>{
+    const val=(st.vars[n]||"").trim();
+    return val?`<span class="v">${esc(val)}</span>`:`<span class="v pend">{{${n}}}</span>`;
+  });
+  $("prev").innerHTML=html||'<span style="opacity:.5">(mensaje vacío)</span>';
 }
 async function saveTpl(){
   if(!st.tpl) return;
-  const params=$("f_params").value.split("\n").map(x=>x.trim()).filter(Boolean);
+  readSlots();
+  // params es POSICIONAL: params[0]→{{1}}, params[1]→{{2}}… Guardamos exactamente N entradas
+  // (una por hueco del cuerpo) para que las posiciones nunca se desalineen.
+  const N=bodyMaxN(); const params=[];
+  for(let n=1;n<=N;n++) params.push((st.vars[n]||"").trim());
   const patch={ name:$("f_name").value.trim(), language:$("f_lang").value.trim()||"es",
     categoria:$("f_cat").value, body_preview:$("f_body").value, params, activa:$("f_activa").checked };
   const estado=$("f_estado").value, folder=$("f_folder").value||null;
