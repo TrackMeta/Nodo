@@ -86,8 +86,28 @@ Deno.serve(async (req) => {
     // tiene su propia copia de la lista a propósito: dos listas se separan al
     // primer cambio y nadie se entera hasta que un aviso sale mal.
     if (action === "avisos_catalogo") {
-      const { data: c } = await db.from("channels").select("telegram_avisos").eq("id", channel_id).maybeSingle();
-      return json({ ok: true, catalogo: AVISOS, config: (c as any)?.telegram_avisos ?? null });
+      const { data: c } = await db.from("channels").select("telegram_avisos, resumenes").eq("id", channel_id).maybeSingle();
+      return json({ ok: true, catalogo: AVISOS, config: (c as any)?.telegram_avisos ?? null, resumenes: (c as any)?.resumenes ?? null });
+    }
+
+    // Resúmenes diarios (mañana/noche) a Telegram. Solo config; el estado
+    // anti-duplicado (resumen_estado) lo maneja el scheduler.
+    if (action === "resumen_guardar") {
+      const norm = (x: any) => {
+        if (!x || typeof x !== "object") return { on: false, hora: "08:00" };
+        let hora = typeof x.hora === "string" ? x.hora.trim() : "";
+        if (!/^\d{2}:\d{2}$/.test(hora)) hora = "08:00";
+        const [h, m] = hora.split(":").map((n: string) => parseInt(n, 10));
+        if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) hora = "08:00";
+        return { on: x.on === true, hora };
+      };
+      const resumenes = {
+        manana: norm(body.resumenes?.manana),
+        noche: norm(body.resumenes?.noche),
+      };
+      const { error } = await db.from("channels").update({ resumenes }).eq("id", channel_id);
+      if (error) return json({ error: "guardar_resumenes", detalle: error.message }, 400);
+      return json({ ok: true });
     }
 
     // Guarda el on/off y el texto propio de cada aviso. Se manda el objeto

@@ -7,9 +7,11 @@
 //   Se protege con un secreto compartido (header x-scheduler-secret).
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient } from "../_shared/db.ts";
+import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { deliverStep, runEngine, startFlowRun } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
+import { sendTelegram } from "../_shared/telegram.ts";
+import { resumirPedidos, type Order } from "../_shared/order-stats.ts";
 
 const db = serviceClient();
 
@@ -70,8 +72,167 @@ Deno.serve(async (req) => {
   try { ({ recordados, vencidos } = await processAdelantos(now)); }
   catch (e) { console.error("[scheduler] adelantos:", (e as any)?.message ?? e); }
 
-  return json({ ok: true, woke, fired, nudged, recordados, vencidos });
+  // ── 6) Resúmenes diarios a Telegram (mañana / noche) ──────────────
+  let resumenes = 0;
+  try { resumenes = await processResumenes(); }
+  catch (e) { console.error("[scheduler] resumenes:", (e as any)?.message ?? e); }
+
+  return json({ ok: true, woke, fired, nudged, recordados, vencidos, resumenes });
 });
+
+// ── Resúmenes diarios ───────────────────────────────────────────────
+// Dos avisos que el operador programa (Canales → Avisos): mañana = cómo fue
+// AYER, noche = cómo va HOY. Cada tick (por minuto) revisa si toca mandarlos.
+const CUR_SYM: Record<string, string> = {
+  PEN: "S/", USD: "$", MXN: "$", COP: "$", ARS: "$", CLP: "$", BOB: "Bs", EUR: "€",
+  BRL: "R$", UYU: "$U", PYG: "₲", VES: "Bs", GTQ: "Q", CRC: "₡", DOP: "RD$", GBP: "£",
+};
+
+// Milisegundos que la zona `tz` va por delante/detrás de UTC en ese instante.
+// Con formatToParts es correcto incluso con horario de verano (otros países).
+function tzOffsetMs(instant: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  });
+  const m: Record<string, string> = {};
+  for (const p of dtf.formatToParts(instant)) m[p.type] = p.value;
+  const asUTC = Date.UTC(+m.year, +m.month - 1, +m.day, (+m.hour) % 24, +m.minute, +m.second);
+  return asUTC - instant.getTime();
+}
+// Instante UTC del inicio (00:00 local) del día Y-M-D en la zona tz.
+function localDayStartUTC(y: number, mo: number, d: number, tz: string): Date {
+  const guess = Date.UTC(y, mo - 1, d, 0, 0, 0);
+  const off = tzOffsetMs(new Date(guess), tz);
+  return new Date(guess - off);
+}
+// Partes de la fecha local (año/mes/día/hh/mm) en la zona tz.
+function localParts(instant: Date, tz: string) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const m: Record<string, string> = {};
+  for (const p of dtf.formatToParts(instant)) m[p.type] = p.value;
+  return { y: +m.year, mo: +m.month, d: +m.day, hh: (+m.hour) % 24, mm: +m.minute };
+}
+const ymd = (y: number, mo: number, d: number) =>
+  `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const money = (n: number, sym: string) =>
+  `${sym} ${Math.round(Number(n) || 0).toLocaleString("es-PE")}`;
+
+async function processResumenes(): Promise<number> {
+  const now = new Date();
+  let sent = 0;
+  const { data: chans } = await db.from("channels")
+    .select("id, nombre, timezone, moneda, resumenes, resumen_estado, telegram_chat_ids")
+    .not("resumenes", "is", null).limit(100);
+  for (const ch of chans ?? []) {
+    try {
+      const cfg = (ch as any).resumenes ?? {};
+      const chatIds = (ch as any).telegram_chat_ids ?? [];
+      if (!chatIds.length) continue;
+      const tz = (ch as any).timezone || "America/Lima";
+      const lp = localParts(now, tz);
+      const hoy = ymd(lp.y, lp.mo, lp.d);
+      const nowMin = lp.hh * 60 + lp.mm;
+      const estado = (ch as any).resumen_estado ?? {};
+      let dirty = false;
+
+      for (const tipo of ["manana", "noche"] as const) {
+        const t = cfg[tipo];
+        if (!t || t.on !== true || typeof t.hora !== "string") continue;
+        const [hh, mm] = t.hora.split(":").map((x: string) => parseInt(x, 10));
+        if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+        const horaMin = hh * 60 + mm;
+        // Ventana de 60 min desde la hora fijada: tolera atrasos del cron sin
+        // que activarlo a media tarde dispare el de la mañana al toque.
+        if (nowMin < horaMin || nowMin >= horaMin + 60) continue;
+        if (estado[tipo] === hoy) continue; // ya se mandó hoy
+
+        // Rango en hora local → UTC. Mañana = AYER; noche = HOY.
+        const inicioHoy = localDayStartUTC(lp.y, lp.mo, lp.d, tz);
+        let from: Date, to: Date, cual: "ayer" | "hoy";
+        if (tipo === "manana") {
+          to = inicioHoy;
+          from = new Date(inicioHoy.getTime() - 24 * 3600 * 1000); // ~ayer (ok sin DST en Perú)
+          // Recalcular con precisión por si hubo cambio de hora:
+          const ay = localParts(new Date(inicioHoy.getTime() - 12 * 3600 * 1000), tz);
+          from = localDayStartUTC(ay.y, ay.mo, ay.d, tz);
+          cual = "ayer";
+        } else {
+          from = inicioHoy;
+          to = now;
+          cual = "hoy";
+        }
+
+        const texto = await armarResumen(ch, from, to, cual, tz);
+        const secrets = await getChannelSecrets(db, (ch as any).id);
+        const token = secrets?.telegram_bot_token;
+        if (token) {
+          await sendTelegram(token, chatIds, texto);
+          sent++;
+        }
+        estado[tipo] = hoy; // marcar aunque falte token (no reintentar en bucle)
+        dirty = true;
+      }
+      if (dirty) await db.from("channels").update({ resumen_estado: estado }).eq("id", (ch as any).id);
+    } catch (e) { console.error("[processResumenes]", (e as any)?.message ?? e); }
+  }
+  return sent;
+}
+
+async function armarResumen(ch: any, from: Date, to: Date, cual: "ayer" | "hoy", tz: string): Promise<string> {
+  const sym = CUR_SYM[(ch as any).moneda] || (ch as any).moneda || "S/";
+  const fromISO = from.toISOString(), toISO = to.toISOString();
+  const chId = (ch as any).id;
+
+  const [ordR, contR, leadR] = await Promise.all([
+    db.from("orders").select("amount, order_bumps, estado, shipping, created_at")
+      .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO),
+    db.from("contacts").select("id", { count: "exact", head: true })
+      .eq("channel_id", chId).neq("wa_id", "webchat-test")
+      .gte("created_at", fromISO).lt("created_at", toISO),
+    db.from("capi_events").select("event_name")
+      .eq("channel_id", chId).eq("event_name", "Lead")
+      .gte("created_at", fromISO).lt("created_at", toISO),
+  ]);
+
+  const orders = (ordR.data ?? []) as Order[];
+  const d = resumirPedidos(orders);
+  const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
+  const leads = (leadR.data ?? []).length;
+
+  // Etiqueta de fecha bonita (día de la semana + fecha) en la zona del negocio.
+  const refInstant = cual === "ayer" ? new Date(to.getTime() - 3600 * 1000) : new Date(from.getTime() + 3600 * 1000);
+  const fechaLbl = new Intl.DateTimeFormat("es-PE", {
+    timeZone: tz, weekday: "long", day: "numeric", month: "long",
+  }).format(refInstant);
+
+  const titulo = cual === "ayer"
+    ? `🌅 <b>RESUMEN DE AYER</b>`
+    : `🌙 <b>CÓMO VA HOY</b>`;
+  const prefix = (ch as any)?.nombre ? `<b>[${(ch as any).nombre}]</b>\n` : "";
+
+  const L: string[] = [];
+  L.push(`${titulo} · <i>${fechaLbl}</i>`);
+  L.push("");
+  L.push(`💰 Ventas cerradas: <b>${d.ventas}</b>`);
+  L.push(`💵 Ingresos: <b>${money(d.ingresos, sym)}</b>`);
+  if (d.ventas > 0) L.push(`🎟 Ticket promedio: ${money(d.ticket, sym)}`);
+  if (d.porCobrar > 0) L.push(`⏳ Por cobrar: ${money(d.porCobrar, sym)}`);
+  if (d.ganancia != null) {
+    L.push(`📈 Ganancia estimada: <b>${money(d.ganancia, sym)}</b>${d.gananciaSinDatos ? ` <i>(${d.gananciaSinDatos} sin costo)</i>` : ""}`);
+  }
+  L.push("");
+  const desglose = (d.digital || d.fisico) ? ` <i>(${d.digital} digital · ${d.fisico} físico)</i>` : "";
+  L.push(`📦 Pedidos nuevos: ${d.pedidosNuevos}${desglose}`);
+  L.push(`👥 Nuevos contactos: ${nuevosContactos}`);
+  if (leads > 0) L.push(`🎯 Leads (anuncios): ${leads}`);
+  if (d.perdidos > 0) L.push(`❌ Perdidos: ${d.perdidos}`);
+
+  return prefix + L.join("\n");
+}
 
 // Un pedido de provincia se crea apenas el cliente da sus datos (todavía sin
 // pagar), así que la columna "Esperando adelanto" se llenaría de gente que

@@ -41,6 +41,15 @@
       font-size:11px;font-weight:700;margin:0 4px 4px 0;cursor:pointer;border:1px solid transparent}
   .vr:hover{border-color:var(--brand)}
   .lab{font-size:11.5px;color:var(--muted);font-weight:700;margin:14px 0 6px;display:block}
+  .tin{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);
+       padding:8px 10px;font-size:13px;font-family:var(--font);outline:none;width:110px}
+  .tin:focus{border-color:var(--brand)}
+  .rrow{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid var(--border)}
+  .rrow:first-of-type{border-top:none}
+  .rrow .ri{font-size:22px;flex:none}
+  .rrow .rt{flex:1;min-width:0}
+  .rrow .rt .n{font-weight:700;font-size:13.5px}
+  .rrow .rt .d{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.5}
   /* Vista previa: se imita el chat de Telegram para juzgar cómo QUEDA, no cómo
      se escribe. Sin esto hay que mandarse un aviso real para ver el resultado. */
   .tgprev{background:#17212b;border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.55;
@@ -69,7 +78,8 @@ import { supa, mountShell, toast, confirmDialog } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-const st={ channelId:null, catalogo:[], cfg:{ items:{}, hora:true }, abierto:null };
+const st={ channelId:null, catalogo:[], cfg:{ items:{}, hora:true }, abierto:null,
+  resumen:{ manana:{on:false,hora:"08:00"}, noche:{on:false,hora:"21:00"} } };
 
 const GRUPOS=[
   ["ventas","Ventas y pedidos"],
@@ -104,6 +114,11 @@ async function boot(){
     const r=await callFn("channel-config",{ action:"avisos_catalogo", channel_id:st.channelId });
     st.catalogo=r.catalogo||[];
     st.cfg={ items:{ ...(r.config?.items||{}) }, hora:r.config?.hora!==false };
+    const rr=r.resumenes||{};
+    st.resumen={
+      manana:{ on:rr.manana?.on===true, hora:rr.manana?.hora||"08:00" },
+      noche:{ on:rr.noche?.on===true, hora:rr.noche?.hora||"21:00" },
+    };
   }catch(e){ toast(e.message||"No pude cargar los avisos",true); return; }
   render();
   $("save").onclick=guardar;
@@ -118,6 +133,24 @@ const conFoto=(a)=> st.cfg.items[a.clave]?.foto===true;
 function render(){
   const b=$("body");
   b.innerHTML=`
+    <div class="card">
+      <div style="font-weight:700;font-size:14px;margin-bottom:2px">📊 Resúmenes diarios</div>
+      <div style="color:var(--muted);font-size:12px;line-height:1.55;margin-bottom:6px">Un mensaje automático a Telegram con tus números. Elige la hora de cada uno.</div>
+      <div class="rrow">
+        <span class="ri">🌅</span>
+        <div class="rt"><div class="n">En la mañana — cómo te fue ayer</div>
+          <div class="d">Ventas, ingresos, ticket, pedidos y contactos del día anterior.</div></div>
+        <input type="time" class="tin" id="rManHora" value="${esc(st.resumen.manana.hora)}"/>
+        <span class="sw ${st.resumen.manana.on?'on':''}" id="rManSw"></span>
+      </div>
+      <div class="rrow">
+        <span class="ri">🌙</span>
+        <div class="rt"><div class="n">En la noche — cómo te fue hoy</div>
+          <div class="d">El mismo resumen, pero del día que está terminando.</div></div>
+        <input type="time" class="tin" id="rNocHora" value="${esc(st.resumen.noche.hora)}"/>
+        <span class="sw ${st.resumen.noche.on?'on':''}" id="rNocSw"></span>
+      </div>
+    </div>
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:240px">
         <div style="font-weight:700;font-size:13.5px">Poner la hora en cada aviso</div>
@@ -132,6 +165,12 @@ function render(){
     `).join("")}`;
 
   $("swHora").onclick=()=>{ st.cfg.hora=!st.cfg.hora; render(); };
+  // Resúmenes diarios: las horas se leen del input SIN re-render (perdería foco);
+  // los toggles sí re-renderizan (el input conserva su valor desde st.resumen).
+  $("rManSw").onclick=()=>{ st.resumen.manana.on=!st.resumen.manana.on; render(); };
+  $("rNocSw").onclick=()=>{ st.resumen.noche.on=!st.resumen.noche.on; render(); };
+  $("rManHora").oninput=(e)=>{ st.resumen.manana.hora=e.target.value||"08:00"; };
+  $("rNocHora").oninput=(e)=>{ st.resumen.noche.hora=e.target.value||"21:00"; };
   b.querySelectorAll("[data-sw]").forEach(el=> el.onclick=(ev)=>{
     ev.stopPropagation();
     const a=st.catalogo.find(x=>x.clave===el.dataset.sw);
@@ -247,6 +286,8 @@ async function guardar(e){
   try{
     await callFn("channel-config",{ action:"avisos_guardar", channel_id:st.channelId,
       items:st.cfg.items, hora:st.cfg.hora });
+    await callFn("channel-config",{ action:"resumen_guardar", channel_id:st.channelId,
+      resumenes:st.resumen });
     toast("Avisos guardados ✓");
   }catch(err){ toast(err.message||"No se pudo guardar",true); }
   b.disabled=false; b.textContent=old;
