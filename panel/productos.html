@@ -338,6 +338,19 @@ async function openProduct(id){
       if(v0 && (v0.precio==null || String(v0.precio).trim()==="")) v0.precio=bp;
     }
   }catch(_){}
+  // Migración de entrega digital: el link viejo (config.link_entrega) pasa a la
+  // 1ª presentación si esta no tiene entrega, para que el link viva en un solo
+  // lugar (Presentaciones → Qué entrega). config.link_entrega queda de respaldo.
+  try{
+    if((st.prod&&st.prod.tipo||"digital")==="digital"){
+      const lk=st.prod&&st.prod.config&&st.prod.config.link_entrega;
+      if(lk && String(lk).trim()!=="" && st.versions.length){
+        const v0=st.versions[0];
+        const tiene=v0&&Array.isArray(v0.entrega)&&v0.entrega.some(it=>it&&String(it.url||"").trim());
+        if(v0 && !tiene){ v0.entrega=Array.isArray(v0.entrega)?v0.entrega:[]; v0.entrega.push({ tipo:"link", url:String(lk), nombre:"" }); }
+      }
+    }
+  }catch(_){}
   // Con qué tipo se abrió: si lo cambia, el flujo YA GENERADO sigue vendiendo
   // como el tipo viejo (un digital pediría dirección, un físico entregaría un
   // link) y eso no se nota hasta que un cliente lo sufre.
@@ -602,32 +615,29 @@ function renderEntrega(){
     b.innerHTML=`
       <p class="hint" style="margin:0 0 14px">Cómo le llega al cliente lo que compró.</p>
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px">${icon("link")} Entrega digital</h4>
-        <label>Link o archivo de entrega</label>
-        <input class="in" id="pLink" value="${esc(c.link_entrega||"")}" placeholder="https://drive.google.com/…"/>
-        <div style="font-size:11px;color:var(--faint);margin-top:7px">Se entrega al confirmar el pago. Disponible en tus flujos como <b style="color:var(--brand)">{{link_entrega}}</b>. Si tienes varias opciones con distinta entrega, cada una lleva su propio link en <a href="#" id="goOpc3" style="color:var(--brand)">Opciones de compra →</a>.</div>
-      </div>
-      <div class="card">
         <h4 style="display:flex;align-items:center;gap:7px">${icon("message")} Cómo se envía</h4>
         <label style="margin-top:0">Mensaje de entrega</label>
         <input class="in" id="pEntMsg" value="${esc(c.entrega_mensaje||"")}" placeholder="¡Pago confirmado! 🎉 Acá tienes tu acceso:"/>
-        <div style="font-size:11px;color:var(--faint);margin-top:7px">El saludo que abre la entrega. Cada link puede además tener su propio mensajito (en <b>Opciones de compra</b>).</div>
+        <div style="font-size:11px;color:var(--faint);margin-top:7px">El saludo que abre la entrega (general). Cada presentación puede tener además su propio mensajito.</div>
         <label class="chk" style="margin-top:16px;justify-content:space-between">
           <span style="font-weight:600;font-size:13px">Entregar todo en una sola burbuja</span>
           <span class="sw ${c.entrega_burbuja_unica?'on':''}" id="pEntUna"></span>
         </label>
         <div style="font-size:11px;color:var(--faint);margin-top:7px">Junta el saludo + todos los links en un mismo mensaje. Los <b>archivos adjuntos</b> salen aparte (regla de WhatsApp). Si hay ventas extra “antes”, se entregan junto con el principal.</div>
+        <div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.5">
+          <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("link")}</span>
+          <div>Los <b>links y archivos</b> que recibe el cliente se ponen en <a href="#" id="goOpc3" style="color:var(--brand)">Presentaciones y precios → Qué entrega</a> — cada presentación entrega lo suyo. Disponibles en flujos como <b style="color:var(--brand)">{{link_entrega}}</b>.</div>
+        </div>
       </div>
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px">${icon("shield")} Validación del pago</h4>
-        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega este producto tras el pago. Por defecto sigue lo que elegiste para todo el canal en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>; acá puedes cambiarlo <b>solo para este producto</b>.</div>
+        <h4 style="display:flex;align-items:center;gap:7px">${icon("shield")} Validación del pago <span style="font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);padding:2px 8px;border-radius:20px">ajuste de pago</span></h4>
+        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Es un ajuste de <b>pago</b> (cuándo se entrega tras cobrar), no de entrega. Por defecto sigue lo del canal en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>; acá lo cambias <b>solo para este producto</b>.</div>
         <select class="in" id="pValPago" style="max-width:320px">
           <option value="" ${!c.validacion_pago?"selected":""}>Usar el default del canal</option>
           <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>⚡ Automático — entrega al toque si el monto cuadra</option>
           <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>👁 Manual — me avisa para aprobarlo yo</option>
         </select>
       </div>`;
-    const lk=$("pLink"); if(lk) lk.onchange=(e)=>prodSetC("link_entrega", e.target.value.trim());
     const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);
     const eu=$("pEntUna"); if(eu) eu.onclick=()=>{ const on=!c.entrega_burbuja_unica; c.entrega_burbuja_unica=on; prodSetC("entrega_burbuja_unica", on||undefined); eu.classList.toggle("on", on); };
     const vp=$("pValPago"); if(vp) vp.onchange=(e)=>prodSetC("validacion_pago", e.target.value||undefined);
@@ -1531,7 +1541,7 @@ async function renderInicio(){
   const est=(t)=>{
     if(t==="producto"){ return {ok:true,msg:"Nombre y tipo listos"}; }
     if(t==="opciones"){ const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} opción(es), ${cp} con precio`:"Ninguna opción tiene precio"}; }
-    if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
+    if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
     if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
