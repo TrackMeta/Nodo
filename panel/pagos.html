@@ -114,7 +114,7 @@ async function load(){
   // la ventana de 24h, y los avisos de pedido (despacho, llegada) casi siempre
   // caen fuera. Acá se elige cuál usar en cada momento.
   try{
-    const { data:t }=await supa.from("wa_templates").select("name,language,estado_meta,activa,body_preview")
+    const { data:t }=await supa.from("wa_templates").select("name,language,estado_meta,activa,body_preview,params")
       .eq("channel_id",st.channelId).order("name");
     st.tpls=(t||[]).filter(x=>x.activa!==false && (x.estado_meta??"aprobada")==="aprobada");
   }catch(_){ st.tpls=[]; }
@@ -244,6 +244,15 @@ function render(b){
       </div>
       <label style="margin-top:12px">Mensaje del recordatorio</label>
       ${ta(p.adelanto.nudge.mensaje,"¡Hola {{nombre}}! 👋 Tu pedido de {{producto_nombre}} sigue reservado.\n\nPara despacharlo solo falta el adelanto de S/ {{adelanto}}. ¿Te ayudo con algo?",4).replace('class="in"','class="in" id="pnMsg"')}
+
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:13px;padding-top:11px;border-top:1px solid var(--border)">
+        <label style="margin:0">Si la ventana de 24h está cerrada</label>
+        <div style="font-size:11.5px;color:var(--faint);line-height:1.5">El recordatorio se dispara horas después de creado el pedido, cuando el cliente casi siempre está <b>callado</b> — o sea, fuera de la ventana de 24h. Ahí el mensaje de arriba <b>no llega</b> (Meta lo rechaza) y solo pasa una <b>plantilla aprobada</b>. Sin plantilla, el recordatorio se <b>pospone</b> hasta que el cliente vuelva a escribir.</div>
+        ${st.tpls.length ? `<select class="in" id="pnTpl" style="width:auto;min-width:210px;flex:none;margin-top:4px">
+          <option value="">— Sin plantilla (posponer) —</option>
+          ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${(p.adelanto.nudge.template_name===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
+        </select>` : `<span style="font-size:12px;color:var(--faint);margin-top:4px">Necesitas una <b>plantilla aprobada</b> (sección Plantillas) para alcanzarlo fuera de la ventana.</span>`}
+      </div>
 
       <div id="pvRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Vencer el pedido si no paga</span>
@@ -382,6 +391,17 @@ function render(b){
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
     p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
     p.adelanto.nudge.mensaje=$("pnMsg").value.trim();
+    // Plantilla de respaldo: la usa el scheduler cuando el recordatorio cae
+    // fuera de la ventana de 24h (el motor lee nudge.template_name/lang/params).
+    // Los params se guardan de la plantilla elegida (posicionales, resueltos
+    // contra los datos del contacto al enviar: nombre, adelanto, pedido…).
+    const pnTplSel=$("pnTpl");
+    if(pnTplSel){
+      const [tn,tl]=(pnTplSel.value||"").split("|");
+      if(tn){ p.adelanto.nudge.template_name=tn; p.adelanto.nudge.template_lang=tl||"es";
+        p.adelanto.nudge.template_params=((st.tpls.find(x=>x.name===tn)||{}).params)||[]; }
+      else { delete p.adelanto.nudge.template_name; delete p.adelanto.nudge.template_lang; delete p.adelanto.nudge.template_params; }
+    }
     p.adelanto.vencimiento.horas=Math.max(1,parseInt($("pvHoras").value,10)||48);
     if(p.adelanto.nudge.activo && !p.adelanto.nudge.mensaje){ toast("El recordatorio necesita un mensaje",true); return; }
     if(p.adelanto.vencimiento.activo && p.adelanto.nudge.activo && p.adelanto.vencimiento.horas<=p.adelanto.nudge.horas){
