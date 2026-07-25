@@ -107,6 +107,7 @@ async function sendBatch(db: SupabaseClient, c: any) {
       await db.from("messages").insert({
         channel_id: c.channel_id, contact_id: s.contact_id, direction: "out",
         type: "template", content: { template: (tpl as any).name, params: bodyParams }, wamid: wamid || null, status: "sent",
+        sent_by: "bot",
       });
       ok++;
     } catch (e) {
@@ -121,6 +122,7 @@ async function sendBatch(db: SupabaseClient, c: any) {
 export async function sendTemplateToContact(
   db: SupabaseClient, channelId: string, contactId: string,
   tpl: { name: string; language?: string; params?: string[] },
+  sender?: { sentBy?: string; sentByUser?: string | null },
 ): Promise<string> {
   const { data: ch } = await db.from("channels").select("phone_number_id, channel_type").eq("id", channelId).maybeSingle();
   const secrets = await getChannelSecrets(db, channelId);
@@ -145,6 +147,7 @@ export async function sendTemplateToContact(
   await db.from("messages").insert({
     channel_id: channelId, contact_id: contactId, direction: "out",
     type: "template", content: { template: tpl.name, params: bodyParams }, wamid: wamid || null, status: "sent",
+    sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null,
   });
   return wamid;
 }

@@ -1101,7 +1101,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
       channel_id: run.channel_id, contact_id: run.contact_id,
       direction: "out", type: mediaKind,
       content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "" },
-      status, wamid: wamid || null, error,
+      status, wamid: wamid || null, error, sent_by: "bot",
     });
     return;
   }
@@ -1148,7 +1148,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
     direction: "out", type: isInteractive ? "interactive" : "text",
-    content, status, wamid: wamid || null, error,
+    content, status, wamid: wamid || null, error, sent_by: "bot",
   });
 }
 

@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
       const wamid = await sendTemplateToContact(db, channel_id, contact_id, {
         name: tpl.name, language: tpl.language || "es",
         params: ((tpl as any).params ?? []) as string[],
-      });
+      }, { sentBy: "human", sentByUser: uid });
       await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
       return json({ ok: true, wamid });
     } catch (e) {
@@ -107,6 +107,7 @@ Deno.serve(async (req) => {
     await db.from("messages").insert({
       channel_id, contact_id, direction: "out", type: msgType,
       content: outContent, wamid, status: "sent",
+      sent_by: "human", sent_by_user: uid,
     });
     // El operador está atendiendo → marcar leído.
     await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
@@ -118,6 +119,7 @@ Deno.serve(async (req) => {
     await db.from("messages").insert({
       channel_id, contact_id, direction: "out", type: msgType,
       content: outContent, status: "failed", error: meta,
+      sent_by: "human", sent_by_user: uid,
     });
     return json({ error: "meta_error", detalle: meta }, 502);
   }

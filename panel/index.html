@@ -228,6 +228,17 @@
   .in-m{align-self:flex-start;background:var(--surface-2);border-top-left-radius:4px}
   .out-m{align-self:flex-end;background:var(--brand-bg);border-top-right-radius:4px}
   .out-m .meta{text-align:right;color:#6f92c8}
+  /* Burbuja del BOT: mismos lados (derecha) pero con el color de la sección IA. */
+  .out-m.bot{background:var(--ia-bg,rgba(168,85,247,.12))}
+  .out-m.bot .meta{color:var(--muted)}
+  /* Cabecera "quién mandó": robot+IA para el bot, tu perfil (foto/inicial) para ti. */
+  .sender{align-self:flex-end;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--muted);margin:8px 2px 1px}
+  .sender .sav{width:19px;height:19px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;overflow:hidden;flex:none}
+  .sender .sav img{width:100%;height:100%;object-fit:cover}
+  .sender.bot{color:#a855f7}
+  .sender.bot .sav{background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff}
+  .sender.bot .sav svg{width:11px;height:11px}
+  .sender.human .sav{background:var(--brand-bg);color:var(--brand)}
   .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;position:relative}
   .composer input#msgInput{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
   .composer input#msgInput:focus{border-color:var(--brand)}
@@ -525,6 +536,8 @@ async function boot() {
   const { data: { session } } = await supa.auth.getSession();
   if (!session) { $("login").classList.remove("hidden"); $("app").classList.add("hidden"); return; }
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  state.uid = session.user.id;   // para saber qué mensajes salientes son míos (humano)
+  loadAgents();                  // perfiles (nombre/foto) para las burbujas humanas
   const shell = await mountShell({ active: "inbox" });
   state.channelId = shell.channelId;
   document.querySelector("#chatEmpty .emptyIc").innerHTML = icon("message");
@@ -718,7 +731,7 @@ async function sendStoredMedia(m){
   try{
     if(state.isTest){
       if(state.testAs==="bot"){
-        await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:m.caption||"", mime:media.mime, filename:media.filename }, status:"sent" });
+        await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:m.caption||"", mime:media.mime, filename:media.filename }, status:"sent", sent_by:"bot" });
       } else { await callFn("webchat", { channel_id:state.channelId, media }); }
     } else {
       const r=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, media });
@@ -1138,7 +1151,33 @@ async function buscarOperacion(q){
   x.addEventListener("click", ()=>{ limpiar(); inp.focus(); });
 })();
 
+// Perfiles de los asesores (para pintar quién mandó cada mensaje humano).
+async function loadAgents(){
+  try { const { data } = await supa.from("app_users").select("id,nombre,avatar_url");
+    state.agents = {}; (data||[]).forEach(u=> state.agents[u.id] = { nombre:u.nombre, avatar:u.avatar_url }); }
+  catch(_){ state.agents = state.agents || {}; }
+}
+// Quién envió un mensaje saliente: bot (automático) o un humano (con su perfil).
+// sent_by null (mensajes viejos) se trata como bot, que es lo más común.
+function senderInfo(m){
+  if (m.direction !== "out") return null;
+  if (m.sent_by === "human"){
+    const uid = m.sent_by_user, me = uid && uid === state.uid;
+    const prof = uid ? (state.agents||{})[uid] : null;
+    return { kind:"human", key:"h:"+(uid||"x"), name: me ? "Tú" : (prof?.nombre || "Asesor"), avatar: prof?.avatar || null };
+  }
+  return { kind:"bot", key:"bot", name:"Bot", avatar:null };
+}
+function senderInner(si){
+  const av = si.kind==="bot"
+    ? `<span class="sav">${icon("robot")}</span>`
+    : (si.avatar ? `<span class="sav"><img src="${esc(si.avatar)}" alt=""/></span>`
+                 : `<span class="sav">${esc((si.name||"?").trim().charAt(0).toUpperCase()||"?")}</span>`);
+  return `${av}<span>${esc(si.name)}</span>`;
+}
+let lastOutSender = null;   // remitente del último mensaje pintado (para agrupar cabeceras)
 function renderThread(msgs, evs){
+  lastOutSender = null;
   const items = [
     ...(msgs||[]).map(m=>({ kind:"msg", ts:m.ts, data:m })),
     ...((evs||[]).map(e=>({ kind:"ev", ts:e.created_at, data:e }))),
@@ -1187,8 +1226,19 @@ function renderEvent(e){
 }
 function renderMsg(m) {
   const t = $("thread");
+  const si = senderInfo(m);
+  const key = m.direction === "in" ? "in" : (si ? si.key : "bot");
+  // Cabecera de remitente, agrupada: solo aparece cuando cambia quién manda
+  // (varios mensajes seguidos del bot o tuyos no la repiten).
+  if (si && key !== lastOutSender) {
+    const sh = document.createElement("div");
+    sh.className = "sender " + si.kind;
+    sh.innerHTML = senderInner(si);
+    t.appendChild(sh);
+  }
+  lastOutSender = key;
   const el = document.createElement("div");
-  el.className = "msg " + (m.direction === "in" ? "in-m" : "out-m");
+  el.className = "msg " + (m.direction === "in" ? "in-m" : "out-m" + (si ? " " + si.kind : ""));
   el.dataset.id = m.id;
   const mh = mediaHtml(m);
   const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
@@ -1401,7 +1451,7 @@ async function sendMsg() {
         // Simular respuesta del bot: mensaje saliente directo (RLS admin).
         const { error } = await supa.from("messages").insert({
           channel_id: state.channelId, contact_id: state.contactId,
-          direction: "out", type: "text", content: { text }, status: "sent",
+          direction: "out", type: "text", content: { text }, status: "sent", sent_by: "bot",
         });
         if (error) { toast(error.message, true); } else { input.value = ""; }
       } else {
