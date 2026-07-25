@@ -4203,7 +4203,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const esperado = cfg.monto_esperado
       ? Number(resolve(String(cfg.monto_esperado), ctx))
       : Number(ctx.precio_esperado);
-    const vt = buildOcrSystem(info.ocr, Number.isFinite(esperado) ? esperado : null, ctx.moneda ?? null);
+    // Pago PRINCIPAL: el modelo NO juzga si el monto alcanza (de eso se encarga el
+    // código, para acumular pagos en cuotas — la "bolsa"); solo juzga fraude/
+    // legibilidad. La venta extra sí lleva su monto al modelo (pago aparte, sin cuotas).
+    const esExtraNode = String(cfg.guardar_en ?? "").startsWith("pago_extra");
+    const vt = buildOcrSystem(info.ocr, (esExtraNode && Number.isFinite(esperado)) ? esperado : null, ctx.moneda ?? null);
     if (vt) system = system ? (vt + "\n\n" + system) : vt;
   }
 
@@ -4320,8 +4324,41 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (opNum) {
           await registrarOperacion(db, run.channel_id, opNum, (run.vars._order_id as string) ?? null, esExtra ? "extra" : "digital").catch(() => {});
         }
+        // BOLSA de pagos en cuotas (solo pago PRINCIPAL). El modelo ya dio el pago
+        // por legítimo; acá el CÓDIGO suma los abonos. Si aún no cubre el precio, NO
+        // se entrega: se guarda la bolsa pegada al contacto (el pedido todavía no
+        // existe) y se avisa cuánto falta. Cuando la suma cubre, se limpia la bolsa
+        // y sigue el camino normal (auto entrega / manual va al Copiloto).
+        let esParcial = false;
+        if (!esExtra) {
+          const esperadoB = Number(ctx.precio_esperado);
+          const tolB = Number(cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 0) || 0;
+          const montoB = Number(run.vars.pago_monto);
+          if (Number.isFinite(esperadoB) && esperadoB > 0 && Number.isFinite(montoB) && montoB > 0) {
+            let bolsa: any = {};
+            try { bolsa = JSON.parse(String(ctx._bolsa_pago ?? "{}")); } catch (_) { bolsa = {}; }
+            const prevAb = Array.isArray(bolsa.abonos) ? bolsa.abonos : [];
+            const opB = String(run.vars.pago_operacion ?? "").trim() || null;
+            const dupB = opB ? prevAb.some((a: any) => a.op && String(a.op) === String(opB)) : false;
+            const abonos = dupB ? prevAb : [...prevAb, { op: opB, monto: montoB, at: new Date().toISOString() }];
+            const total = Math.round(abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0) * 100) / 100;
+            if (total < esperadoB - tolB) {
+              esParcial = true;
+              const falta = Math.round((esperadoB - total) * 100) / 100;
+              const sym = simboloMoneda(ctx.moneda as string);
+              await setField(db, run.channel_id, run.contact_id, "_bolsa_pago", JSON.stringify({ esperado: esperadoB, moneda: ctx.moneda ?? null, abonos }));
+              const msg = `PAGO_NO ¡Recibí tu abono de ${sym}${montoB}! 🙌 Van ${sym}${total} de ${sym}${esperadoB}, faltan ${sym}${falta}. Cuando completes el resto, mándame la captura y te lo entrego. 😊`;
+              if (cfg.guardar_en) { run.vars[cfg.guardar_en] = msg; await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, msg); }
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🪙 Abono parcial (bolsa)", `${total} de ${esperadoB} · falta ${falta}`).catch(() => {});
+            } else {
+              // Cubre (de una o acumulado) → limpia la bolsa y guarda las partes.
+              if (abonos.length > 1) run.vars._pago_abonos = abonos;
+              if (String(ctx._bolsa_pago ?? "")) await setField(db, run.channel_id, run.contact_id, "_bolsa_pago", "").catch(() => {});
+            }
+          }
+        }
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
-        if (!yaParque) {
+        if (!esParcial && !yaParque) {
           const modo = await digitalPagoModo(db, run, info);
           if (modo.digital && modo.manual) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
@@ -4359,6 +4396,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // sospechosa una venta que se cobró por otro banco.
                 digital_metodo: run.vars.pago_metodo ?? null,
                 digital_ok_ia: true,
+                ...(run.vars._pago_abonos ? { digital_abonos: run.vars._pago_abonos } : {}),
               };
               // Atribución congelada desde que nace el pedido (ver crearPedido):
               // el Purchase se manda al aprobarlo, cuando el ctwa del contacto
