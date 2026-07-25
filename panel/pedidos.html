@@ -266,7 +266,7 @@ function primaryAction(o){
       : { label:"Salió a reparto", estado:"en_reparto" };
     case "adelanto_validado":
     case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
-    case "despachado": return { label:"Llegó a agencia", estado:"en_agencia", modal:"llegada" };
+    case "despachado": return { label:"Avisar que llegó a agencia", estado:"en_agencia", modal:"llegada" };
     case "saldo_pagado": return { label:"Recogido", estado:"recogido" };
     case "en_reparto": return { label:"Entregado y cobrado", estado:"entregado_cobrado", co:true };
     case "reprogramado": return { label:"Salió a reparto", estado:"en_reparto" };

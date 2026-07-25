@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
@@ -188,12 +188,28 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
         if ((c as any)?.bot_activo === false) continue; // lo tomó un humano
         if (!await enHorario(chId)) continue;
         try {
-          await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje });
-          await db.from("orders").update({
-            shipping: { ...ship, _nudge_adelanto: new Date().toISOString() },
-            updated_at: new Date().toISOString(),
-          }).eq("id", (o as any).id);
-          recordados++;
+          // Fuera de la ventana de 24h el texto libre lo rechaza Meta (el cliente
+          // que no pagó el adelanto suele estar callado → ventana cerrada). Si el
+          // negocio configuró una plantilla de recordatorio, esa sí llega (y
+          // dentro del FEP, gratis); si no, se POSTERGA sin marcar → se reintenta
+          // cuando el cliente reabra la ventana, o el pedido vence solo (arriba).
+          let enviado = false;
+          if (await ventana24hAbierta(db, (o as any).contact_id)) {
+            await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje });
+            enviado = true;
+          } else if (nudge.template_name) {
+            await sendTemplateToContact(db, chId, (o as any).contact_id, {
+              name: nudge.template_name, language: nudge.template_lang, params: nudge.template_params,
+            });
+            enviado = true;
+          }
+          if (enviado) {
+            await db.from("orders").update({
+              shipping: { ...ship, _nudge_adelanto: new Date().toISOString() },
+              updated_at: new Date().toISOString(),
+            }).eq("id", (o as any).id);
+            recordados++;
+          }
         } catch (e) { console.error("[scheduler] nudge adelanto:", (e as any)?.message ?? e); }
       }
     }
@@ -222,6 +238,11 @@ async function processOrderReminders(now: number): Promise<number> {
       const mark = "_nudge_" + estado; // una sola vez por estado
       if (ship[mark]) continue;
       try {
+        // El flujo del recordatorio emite texto libre → fuera de la ventana de
+        // 24h Meta lo rechaza y el cliente no recibe nada. Si no se le puede
+        // alcanzar, se POSTERGA sin marcar (no se pierde: se reintenta cuando
+        // reabra la ventana, o el pedido cambia de estado y deja de aplicar).
+        if (!await ventana24hAbierta(db, (o as any).contact_id)) continue;
         const ok = await startFlowRun(db, (t as any).channel_id, (o as any).contact_id,
           (t as any).flow_id, { force: !!(t as any).interrumpe });
         if (ok) {
@@ -335,8 +356,17 @@ async function processSub(s: any, now: number): Promise<boolean> {
     });
   }
   // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
+  // Las secuencias se disparan por silencio → la ventana de 24h casi siempre
+  // está cerrada, y el texto libre lo rechaza Meta. Si el paso no tiene
+  // plantilla (rama de arriba), solo se envía dentro de la ventana; fuera, se
+  // avanza igual para no estancar la secuencia (para alcanzar a un silencioso
+  // hay que ponerle una plantilla a este paso).
   else if (paso.mensaje || paso.bubbles?.length || paso.variantes?.length) {
-    await deliverStep(db, s.channel_id, s.contact_id, paso);
+    if (await ventana24hAbierta(db, s.contact_id)) {
+      await deliverStep(db, s.channel_id, s.contact_id, paso);
+    } else {
+      console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);
+    }
   }
 
   const next = s.paso_actual + 1;

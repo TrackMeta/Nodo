@@ -332,6 +332,8 @@ const DESPACHO_CSS = `
   .avz-win{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 11px;border-radius:10px;margin-bottom:10px}
   .avz-win.ok{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
   .avz-win.no{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
+  .avz-fep{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;padding:7px 11px;border-radius:10px;margin:-4px 0 10px;
+    background:var(--green-bg,rgba(16,185,129,.13));color:var(--green);border:1px solid rgba(16,185,129,.35)}
   .avz-op{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--border);border-radius:11px;
     margin-bottom:7px;cursor:pointer}
   .avz-op.on{border-color:var(--brand);background:var(--brand-bg,rgba(43,127,255,.10))}
@@ -359,7 +361,7 @@ function injectDespachoCss() {
 // `momento` = "despachado" | "en_agencia" | "adelanto_validado" (la plantilla
 // por defecto de cada uno se configura en Pagos y avisos).
 export async function cargarAviso(supa, channelId, contactId, momento) {
-  const info = { abierta: false, restante: "", tpls: [], preferida: null, flujo: null, flujoId: null, texto: "" };
+  const info = { abierta: false, restante: "", fepActivo: false, fepRestante: "", tpls: [], preferida: null, flujo: null, flujoId: null, texto: "" };
   try {
     const { data: conv } = await supa.from("conversations").select("expira_at").eq("contact_id", contactId).maybeSingle();
     const t = conv?.expira_at ? new Date(conv.expira_at).getTime() : 0;
@@ -369,6 +371,18 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
       info.restante = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
     }
   } catch (_) { /* sin conversación aún */ }
+  // FEP (Free Entry Point): si el cliente llegó por un anuncio, tiene 72h en las
+  // que TODO —incluida la plantilla— es GRATIS. Se muestra para que, al despachar
+  // fuera de la ventana de 24h, se vea que mandar la plantilla no cuesta.
+  try {
+    const { data: ct } = await supa.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
+    const f = ct?.fep_hasta ? new Date(ct.fep_hasta).getTime() : 0;
+    if (f > Date.now()) {
+      info.fepActivo = true;
+      const m = Math.floor((f - Date.now()) / 60000);
+      info.fepRestante = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+    }
+  } catch (_) { /* sin FEP */ }
   try {
     const { data } = await supa.from("wa_templates").select("name,language,estado_meta,activa,body_preview")
       .eq("channel_id", channelId).order("name");
@@ -413,6 +427,7 @@ export function avisoBlockHtml(info) {
     <div class="avz-win ${info.abierta ? "ok" : "no"}">${info.abierta
       ? `● Ventana abierta — le quedan ${esc(info.restante)} para escribirle libremente`
       : "● Ventana cerrada — WhatsApp solo acepta una plantilla aprobada"}</div>
+    ${info.fepActivo ? `<div class="avz-fep">📣 Llegó por anuncio — aún gratis por ${esc(info.fepRestante)}: la plantilla no te cuesta</div>` : ""}
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
       info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
@@ -641,7 +656,7 @@ function copilotoBtns(et) {
   if (et.id === "adelanto") return B("ok", "✓ Aprobar y avisar") + B("no", "Rechazar", "danger");
   if (et.id === "saldo") return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
   if (et.id === "despachar") return B("desp", "📦 Ya lo envié", "main amber");
-  return B("lleg", "📍 Avisar que llegó");
+  return B("lleg", "📍 Avisar que llegó a agencia");
 }
 
 // La tarjeta compacta de pago por validar para la ficha (imagen, monto, veredicto,

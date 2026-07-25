@@ -1245,6 +1245,23 @@ export async function deliverStep(db: SupabaseClient, channelId: string, contact
   }
 }
 
+// ¿Sigue abierta la ventana de servicio de 24h? Solo dentro de ella WhatsApp
+// acepta texto libre; fuera, únicamente plantillas aprobadas. Se mide desde el
+// ÚLTIMO mensaje del CLIENTE (ultimo_mensaje_cliente_at). Sin ese dato → cerrada
+// (un contacto que nunca escribió no tiene ventana).
+//   OJO: los envíos AUTOMÁTICOS (recordatorios, secuencias de remarketing) se
+//   disparan justo cuando el cliente lleva rato callado, así que casi siempre
+//   la ventana está cerrada. Mandar texto libre ahí lo RECHAZA Meta y el cliente
+//   no recibe nada: por eso hay que chequear esto antes y caer a plantilla o
+//   postergar. Es el mismo problema que resolvió el modal de aviso del Kanban.
+export async function ventana24hAbierta(db: SupabaseClient, contactId: string): Promise<boolean> {
+  try {
+    const { data } = await db.from("contacts").select("ultimo_mensaje_cliente_at").eq("id", contactId).maybeSingle();
+    const t = (data as any)?.ultimo_mensaje_cliente_at ? new Date((data as any).ultimo_mensaje_cliente_at).getTime() : 0;
+    return t > 0 && (Date.now() - t) < 24 * 3600 * 1000;
+  } catch (_) { return false; }
+}
+
 // ── STT: descarga el audio entrante y lo transcribe (OpenAI Whisper) ─
 // mediaRef = "wa-media:<id>" (WhatsApp, se baja por Graph con el token del
 // canal) o una URL pública (webchat de pruebas).

@@ -182,13 +182,24 @@
   /* Chip de ventana de escritura (encabezado del chat): píldora con icono.
      Verde = FEP del anuncio viva (mensajes gratis) · neutro = ventana 24h ·
      ámbar = cerrada (solo plantillas). */
-  .win{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+  .winwrap{margin-left:auto;display:inline-flex;align-items:center;gap:7px;min-width:0}
+  .winwrap:empty{display:none}
+  .win{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
     padding:5px 11px;border-radius:20px;background:var(--surface-2);color:var(--muted);
     border:1px solid var(--border);white-space:nowrap}
   .win:empty{display:none}
   .win .ico{width:12px;height:12px}
+  .win.svc{background:var(--surface-2);color:var(--muted)}
+  /* FEP = la ventana GRATIS del anuncio: es la única señal de "no te cuesta",
+     así que va protagónica (verde con glow) y en las últimas horas grita
+     "aprovecha" con un pulso dorado. */
   .win.fep{background:var(--green-bg);color:var(--green);border-color:rgba(16,185,129,.35);
-    box-shadow:0 0 12px rgba(16,185,129,.18)}
+    box-shadow:0 0 12px rgba(16,185,129,.18);font-size:11.5px}
+  .win.fep.urge{background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(245,158,11,.20));
+    color:var(--green);border-color:rgba(16,185,129,.6);font-weight:800;
+    animation:fepPulse 1.8s ease-in-out infinite}
+  @keyframes fepPulse{0%,100%{box-shadow:0 0 8px rgba(16,185,129,.25)}50%{box-shadow:0 0 17px rgba(16,185,129,.6)}}
+  @media (prefers-reduced-motion:reduce){.win.fep.urge{animation:none}}
   .win.closed{background:var(--amber-bg);color:var(--amber);border-color:rgba(245,158,11,.35)}
   .idot.fep{background:var(--green-bg);color:var(--green)}
   .idot.ad{background:var(--brand-bg);color:var(--brand)}
@@ -372,7 +383,7 @@
       <div><h1>Nodo</h1><span>Tu WhatsApp con IA</span></div>
     </div>
     <div class="loginhead">
-      <h2>Bienvenido de vuelta</h2>
+      <h2>Bienvenido</h2>
       <p>Inicia sesión para gestionar tus ventas y conversaciones.</p>
     </div>
     <label>Correo</label>
@@ -429,7 +440,7 @@
         </div>
         <button class="botbtn on" id="chBot" type="button">Bot activo</button>
         <div class="hd-side hd-right">
-          <span class="win" id="chWin"></span>
+          <span class="winwrap" id="chWin"></span>
           <div class="hdtoggle" id="viewToggle">
             <button class="htb active" data-v="chat">Chat</button>
             <button class="htb" data-v="timeline">Actividad</button>
@@ -1220,22 +1231,36 @@ async function markRead() {
 //   · Las dos vencidas                        → cerrada; el compositor se
 //     bloquea y solo se puede iniciar con una plantilla aprobada.
 // En modo prueba (webchat) no hay ventanas: no se muestra ni bloquea nada.
+// Dos indicadores INDEPENDIENTES, porque responden preguntas distintas:
+//   · Servicio 24h → ¿puedo escribir libre o solo plantillas? (decide el candado)
+//   · FEP 72h      → ¿me cobran? (la única ventana gratis; protagónica)
+// Se reconstruyen de los timestamps crudos (ultimo_mensaje_cliente_at + fep_hasta),
+// no de conversations.expira_at, que colapsa las dos en un max y perdía el detalle.
+// OJO: el texto libre depende SOLO de las 24h — dentro del FEP pero fuera de las
+// 24h, WhatsApp igual solo acepta plantillas (por eso el candado mira svc, no fep).
 async function updateWindow() {
   const w = $("chWin");
-  if (state.isTest) { w.textContent = ""; w.className = "win"; setComposerLock(false); return; }
-  const { data } = await supa.from("conversations").select("expira_at,window_type").eq("contact_id", state.contactId).maybeSingle();
-  const ms = data?.expira_at ? new Date(data.expira_at) - new Date() : 0;
-  const h = Math.floor(ms/3.6e6), mm = Math.floor((ms%3.6e6)/6e4);
-  if (ms <= 0) {
-    w.innerHTML = `${icon("lock")} Ventana cerrada · solo plantillas`; w.className = "win closed";
-    setComposerLock(true); return;
+  if (state.isTest) { w.innerHTML = ""; setComposerLock(false); return; }
+  const { data } = await supa.from("contacts").select("ultimo_mensaje_cliente_at,fep_hasta").eq("id", state.contactId).maybeSingle();
+  const now = Date.now();
+  const svcEnd = data?.ultimo_mensaje_cliente_at ? new Date(data.ultimo_mensaje_cliente_at).getTime() + 24*3.6e6 : 0;
+  const fepEnd = data?.fep_hasta ? new Date(data.fep_hasta).getTime() : 0;
+  const svcOpen = svcEnd > now, fepOpen = fepEnd > now;
+  const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>0?`${h}h ${m}m`:`${m}m`; };
+  // Chip 1 — servicio 24h.
+  const svcChip = svcOpen
+    ? `<span class="win svc">${icon("clock")} Escribe libre · ${fmt(svcEnd-now)}</span>`
+    : `<span class="win closed">${icon("lock")} Solo plantillas</span>`;
+  // Chip 2 — FEP: solo si sigue vivo. En las últimas 6h → "aprovecha" con pulso.
+  let fepChip = "";
+  if (fepOpen) {
+    const rem = fepEnd - now, poco = rem < 6*3.6e6;
+    fepChip = poco
+      ? `<span class="win fep urge">${icon("megaphone")} ⚡ Aprovecha · ${fmt(rem)} gratis</span>`
+      : `<span class="win fep">${icon("megaphone")} Gratis por anuncio · ${fmt(rem)}</span>`;
   }
-  if (data.window_type === "fep_72h") {
-    w.innerHTML = `${icon("megaphone")} Anuncio · mensajes gratis ${h}h ${mm}m`; w.className = "win fep";
-  } else {
-    w.innerHTML = `${icon("clock")} Ventana 24h · ${h}h ${mm}m`; w.className = "win";
-  }
-  setComposerLock(false);
+  w.innerHTML = svcChip + fepChip;
+  setComposerLock(!svcOpen);
 }
 // Bloqueo del compositor: fuera de ventana WhatsApp rechaza texto/media, así
 // que se cambia la barra de escribir por la de "enviar plantilla".
@@ -1342,10 +1367,30 @@ async function openTplPicker() {
   }
   toast("Plantilla enviada ✓"); setBotPill(false);
 }
+// Salvaguarda del footgun: escribirle A MANO a un contacto cuyo pedido físico
+// tiene una acción pendiente del Kanban (adelanto/saldo/despacho/llegada) PAUSA
+// el bot y NO cambia el estado del pedido → el flujo se desincroniza (el Agente
+// de Logística deja de auto-validar el comprobante). La vía correcta es el botón
+// del Copiloto (panel derecho), que mueve el estado + avisa sin apagar el bot.
+// Devuelve false si el usuario cancela. Avisa una sola vez por chat.
+async function okManualEnvio() {
+  if (state.isTest) return true;
+  const cet = copilotoEtapa(panelData && panelData.order);
+  if (!cet || !["adelanto","saldo","despachar","camino"].includes(cet.id)) return true;
+  if (state.manualOk && state.manualOk.has(state.contactId)) return true;
+  const ok = await confirmDialog({
+    title: "Este cliente tiene un pedido en curso",
+    message: `El pedido está en "${cet.titulo}". Escribirle a mano PAUSA el bot y NO cambia el estado del pedido. Para avanzarlo usa el botón del panel derecho (Copiloto). ¿Enviar el mensaje igual?`,
+    confirmText: "Enviar igual", danger: true,
+  });
+  if (ok) { (state.manualOk = state.manualOk || new Set()).add(state.contactId); }
+  return ok;
+}
 async function sendMsg() {
   const input = $("msgInput"); const text = input.value.trim();
   if (!text || !state.contactId) return;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
+  if (!await okManualEnvio()) return;
   $("sendBtn").disabled = true;
   try {
     if (state.isTest) {
@@ -1377,6 +1422,7 @@ function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileRe
 async function sendAttachment(file){
   if (!state.contactId) return;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
+  if (!await okManualEnvio()) return;
   if (file.size > 16*1024*1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
   $("attachBtn").disabled = true; toast("Subiendo…");
   try {
