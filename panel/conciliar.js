@@ -149,7 +149,7 @@ const FORMATOS = [
            fecha: ["fecha de operac", "fecha y hora", "fecha"],
            nota: ["mensaje", "glosa", "detalle", "referencia", "descripción", "descripcion"] },
     // Sin columna de tipo, un monto positivo se toma como entrada.
-    entrante: (t, mov) => (t ? !/pagaste|envi|cargo|retiro|salida/i.test(t) : Number(mov.monto) > 0),
+    entrante: (t, mov) => (t ? !/pagaste|envi|cargo|retiro|salida/i.test(t) : Number(mov.montoRaw ?? mov.monto) > 0),
   },
 ];
 
@@ -191,7 +191,7 @@ function parseMonto(s) {
   // "1.234,56" (europeo) vs "1,234.56" (inglés)
   if (t.includes(",") && t.includes(".")) t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
   else if (t.includes(",")) t = t.replace(",", ".");
-  return Math.abs(Number(t));
+  return Number(t); // CON signo: el signo distingue abono vs cargo en bancos sin columna de tipo
 }
 
 // Lee el archivo → lista de movimientos ENTRANTES normalizados.
@@ -207,11 +207,12 @@ export async function leerReporte(file) {
   let salientes = 0, ilegibles = 0;
   for (let i = fila + 1; i < filas.length; i++) {
     const f = filas[i];
-    const monto = parseMonto(f[idx.monto]);
+    const montoRaw = parseMonto(f[idx.monto]);       // con signo (para distinguir cargo/abono)
+    const monto = Math.abs(montoRaw);                // el cruce trabaja con el monto positivo
     const fecha = parseFecha(f[idx.fecha]);
     if (!Number.isFinite(monto) || monto <= 0 || !fecha) { if (f.some((x) => x)) ilegibles++; continue; }
     const tipo = idx.tipo != null ? f[idx.tipo] : "";
-    const mov = { i: movs.length, tipo, quien: idx.quien != null ? f[idx.quien] : "", monto,
+    const mov = { i: movs.length, tipo, quien: idx.quien != null ? f[idx.quien] : "", monto, montoRaw,
                   fecha, nota: idx.nota != null ? f[idx.nota] : "", usado: false };
     if (!formato.entrante(tipo, mov)) { salientes++; continue; }
     movs.push(mov);
