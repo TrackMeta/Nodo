@@ -249,6 +249,74 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "templates_sync") {
+      // Trae las plantillas REALES de la WABA con su estado de aprobación de Meta
+      // (APPROVED/PENDING/REJECTED/…) y las refleja en wa_templates. Meta es la
+      // fuente de verdad: antes el estado se marcaba A MANO y podía mentir (nombre
+      // mal escrito, plantilla pausada por Meta, etc. → el envío se rechazaba).
+      const { data: c } = await db.from("channels").select("waba_id").eq("id", channel_id).maybeSingle();
+      const wabaId = (c as any)?.waba_id;
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.access_token;
+      if (!wabaId || !token) {
+        return json({ ok: true, sincronizado: false, falta: { waba: !wabaId, token: !token } });
+      }
+      const V = "v25.0";
+      let res: any;
+      try {
+        const r = await fetch(`https://graph.facebook.com/${V}/${wabaId}/message_templates?fields=name,language,status,category,components&limit=200`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        res = await r.json();
+      } catch (e) {
+        return json({ ok: false, error: String((e as any)?.message ?? e) });
+      }
+      if (res?.error) return json({ ok: false, error: res.error.message ?? "Meta rechazó la consulta" });
+      const metaTpls = Array.isArray(res?.data) ? res.data : [];
+
+      // Meta → los 3 estados que maneja el panel. Solo APPROVED puede enviarse;
+      // PAUSED/DISABLED/REJECTED se marcan "rechazada" para que Nodo no las ofrezca.
+      const mapEstado = (s: string) => {
+        const u = String(s || "").toUpperCase();
+        if (u === "APPROVED") return "aprobada";
+        if (u === "PENDING" || u === "IN_APPEAL" || u === "PENDING_DELETION") return "pendiente";
+        return "rechazada";
+      };
+      const bodyOf = (comps: any[]) => {
+        const b = (comps || []).find((x: any) => String(x?.type).toUpperCase() === "BODY");
+        return b?.text ?? "";
+      };
+
+      const { data: existentes } = await db.from("wa_templates")
+        .select("id, name, language").eq("channel_id", channel_id);
+      const idx = new Map<string, string>();
+      for (const r of existentes ?? []) idx.set(`${(r as any).name}::${(r as any).language ?? "es"}`, (r as any).id);
+
+      let creadas = 0, actualizadas = 0;
+      for (const t of metaTpls) {
+        const name = t?.name;
+        if (!name) continue;
+        const language = t?.language ?? "es";
+        const estado = mapEstado(t?.status);
+        const bodyTxt = bodyOf(t?.components);
+        const prevId = idx.get(`${name}::${language}`);
+        if (prevId) {
+          // params se PRESERVAN: es el mapeo de huecos {{1}},{{2}} que hizo el usuario.
+          await db.from("wa_templates").update({
+            estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null,
+          }).eq("id", prevId);
+          actualizadas++;
+        } else {
+          await db.from("wa_templates").insert({
+            channel_id, name, language, estado_meta: estado,
+            body_preview: bodyTxt, categoria: t?.category ?? null, params: [], activa: true,
+          });
+          creadas++;
+        }
+      }
+      return json({ ok: true, sincronizado: true, total: metaTpls.length, creadas, actualizadas });
+    }
+
     if (action === "save") {
       // ── Campos planos del canal ─────────────────────────────────
       const upd: Record<string, unknown> = {};

@@ -98,6 +98,7 @@
           <p class="nodo-lead">Mensajes aprobados por WhatsApp (HSM) para escribir fuera de la ventana de 24 h y en campañas masivas.</p>
         </div>
         <div class="nodo-actions">
+          <button class="nodo-btn" id="syncBtn" title="Trae de Meta tus plantillas y su estado real de aprobación"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg> Sincronizar con Meta</button>
           <button class="nodo-btn primary" id="addBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva plantilla</button>
         </div>
       </div>
@@ -135,8 +136,32 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.tpl=null; showGrid(); loadList(); });
   $("addBtn").onclick=createTpl;
+  $("syncBtn").onclick=syncTemplates;
   $("backBtn").onclick=()=>{ st.tpl=null; showGrid(); };
   await loadList();
+}
+
+// Llama a channel-config (con la sesión del usuario) igual que los demás paneles.
+async function callFn(fn, body){
+  const { data, error } = await supa.functions.invoke(fn, { body });
+  if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
+  return data;
+}
+// Sincroniza con Meta: trae las plantillas de la WABA + su estado REAL de
+// aprobación (así el estado deja de ser un dato manual que puede mentir).
+async function syncTemplates(){
+  const btn=$("syncBtn"); const old=btn.innerHTML; btn.disabled=true; btn.textContent="Sincronizando…";
+  try{
+    const r=await callFn("channel-config",{ action:"templates_sync", channel_id:st.channelId });
+    if(r?.error){ toast(r.error, true); }
+    else if(r?.falta){ toast(r.falta.token ? "Conecta WhatsApp primero — falta el token de Meta (Canales → WhatsApp)" : "Falta el WABA ID del canal (Canales → WhatsApp)", true); }
+    else if(r?.sincronizado){
+      const partes=[]; if(r.creadas) partes.push(`${r.creadas} nueva(s)`); if(r.actualizadas) partes.push(`${r.actualizadas} actualizada(s)`);
+      toast(`Sincronizado con Meta ✓ · ${r.total} plantilla(s)${partes.length?" ("+partes.join(", ")+")":""}`);
+      await loadList();
+    } else { toast("No se pudo sincronizar", true); }
+  }catch(e){ toast(e.message||"Error al sincronizar", true); }
+  btn.disabled=false; btn.innerHTML=old;
 }
 function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
