@@ -280,7 +280,7 @@ function card(o){
       <div class="pc-amt">${money(O.total(o),o.currency)}${bumps?`<span class="bump">+${bumps} extra${bumps>1?"s":""}</span>`:""}</div>
     </div>
     ${meta.length?`<div class="pc-meta">${meta.join("<br>")}</div>`:""}
-    ${Number(s.vuelto)>0?`<div class="pc-vuelto">💸 Pagó de más · vuelto <b>${money(s.vuelto,o.currency)}</b> a favor del cliente</div>`:""}
+    ${Number(s.vuelto)>0?`<div class="pc-vuelto">Pagó de más · vuelto <b>${money(s.vuelto,o.currency)}</b> a favor del cliente</div>`:""}
     ${shotsHtml}
     <div class="pc-foot">
       <a class="gobtn" href="index.html?c=${encodeURIComponent(o.contact_id||"")}">${icon("inbox")} Abrir chat</a>

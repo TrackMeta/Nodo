@@ -427,7 +427,7 @@ export function avisoBlockHtml(info) {
     <div class="avz-win ${info.abierta ? "ok" : "no"}">${info.abierta
       ? `● Ventana abierta — le quedan ${esc(info.restante)} para escribirle libremente`
       : "● Ventana cerrada — WhatsApp solo acepta una plantilla aprobada"}</div>
-    ${info.fepActivo ? `<div class="avz-fep">📣 Llegó por anuncio — aún gratis por ${esc(info.fepRestante)}: la plantilla no te cuesta</div>` : ""}
+    ${info.fepActivo ? `<div class="avz-fep">Llegó por anuncio — aún gratis por ${esc(info.fepRestante)}: la plantilla no te cuesta</div>` : ""}
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
       info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
@@ -656,7 +656,7 @@ function copilotoBtns(et) {
   if (et.id === "adelanto") return B("ok", "✓ Aprobar y avisar") + B("no", "Rechazar", "danger");
   if (et.id === "saldo") return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
   if (et.id === "despachar") return B("desp", "📦 Ya lo envié", "main amber");
-  return B("lleg", "📍 Avisar que llegó a agencia");
+  return B("lleg", "Avisar que llegó a agencia");
 }
 
 // La tarjeta compacta de pago por validar para la ficha (imagen, monto, veredicto,

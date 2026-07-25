@@ -314,7 +314,7 @@ function renderAsesor(){
       <div class="aiadv-hd">
         <span class="g">${AI_SPARK}</span>
         <div style="flex:1;min-width:0"><div class="aiadv-tt">Asesor IA</div><div style="font-size:12.5px;color:var(--muted);margin-top:1px">${teaser}</div></div>
-        <button class="aibtn" id="aiGo">Pedir consejo ✨</button>
+        <button class="aibtn" id="aiGo">Pedir consejo</button>
       </div>
       <div id="aiRecs"></div>
       <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
@@ -375,13 +375,13 @@ async function pedirConsejo(){
   let data,error;
   try{ ({ data, error } = await supa.functions.invoke("asesor-ia",{ body:{ channel_id:channelId, resumen:asesorResumen } })); }
   catch(e){ error=e; }
-  if(btn){ btn.disabled=false; btn.textContent="Pedir consejo ✨"; }
+  if(btn){ btn.disabled=false; btn.textContent="Pedir consejo"; }
   if(error || !data?.ok || !Array.isArray(data?.recomendaciones)){
     toast(data?.error||error?.message||"No se pudo generar el consejo. Intenta de nuevo.",true); return;
   }
   const recs=data.recomendaciones;
   const box=$("aiRecs"); if(!box) return;
-  if(!recs.length){ box.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-top:10px">Todo se ve bien por ahora — no encontré nada urgente. 🎉</div>`; return; }
+  if(!recs.length){ box.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-top:10px">Todo se ve bien por ahora — no encontré nada urgente.</div>`; return; }
   box.innerHTML=recs.map(r=>{
     const pri=(r.prioridad==="alta"||r.prioridad==="media"||r.prioridad==="idea")?r.prioridad:"idea";
     const priTx={alta:"Prioridad alta",media:"Media",idea:"Idea"}[pri];

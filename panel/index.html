@@ -1259,7 +1259,7 @@ async function updateWindow() {
   if (fepOpen) {
     const rem = fepEnd - now, poco = rem < 6*3.6e6;
     fepChip = poco
-      ? `<span class="win fep urge">${icon("megaphone")} ⚡ Aprovecha · ${fmt(rem)} gratis</span>`
+      ? `<span class="win fep urge">${icon("megaphone")} Aprovecha · ${fmt(rem)} gratis</span>`
       : `<span class="win fep">${icon("megaphone")} Gratis por anuncio · ${fmt(rem)}</span>`;
   }
   w.innerHTML = svcChip + fepChip;
