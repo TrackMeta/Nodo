@@ -317,6 +317,54 @@ Deno.serve(async (req) => {
       return json({ ok: true, sincronizado: true, total: metaTpls.length, creadas, actualizadas });
     }
 
+    if (action === "template_submit") {
+      // Crea la plantilla EN Meta y la manda a aprobación (POST message_templates).
+      // El estado real vuelve por el webhook message_template_status_update o por
+      // "Sincronizar". Necesita WABA + token con permiso whatsapp_business_management.
+      const t = (body.template ?? {}) as any;
+      const name = String(t.name || "").trim();
+      const language = String(t.language || "es");
+      const category = String(t.category || "UTILITY").toUpperCase();
+      const text = String(t.body || "");
+      const examples: string[] = Array.isArray(t.examples) ? t.examples.map((x: any) => String(x)) : [];
+      if (!name || !text) return json({ ok: false, error: "Falta el nombre o el cuerpo de la plantilla." });
+
+      const { data: c } = await db.from("channels").select("waba_id").eq("id", channel_id).maybeSingle();
+      const wabaId = (c as any)?.waba_id;
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.access_token;
+      if (!wabaId || !token) return json({ ok: true, enviado: false, falta: { waba: !wabaId, token: !token } });
+
+      // Meta exige un ejemplo por cada variable {{N}} del cuerpo.
+      const nVars = (text.match(/\{\{\s*\d+\s*\}\}/g) || []).length;
+      const components: any[] = [{ type: "BODY", text }];
+      if (nVars > 0) {
+        const ex: string[] = [];
+        for (let i = 0; i < nVars; i++) ex.push(examples[i] || "ejemplo");
+        components[0].example = { body_text: [ex] };
+      }
+      const V = "v25.0";
+      let res: any;
+      try {
+        const r = await fetch(`https://graph.facebook.com/${V}/${wabaId}/message_templates`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ name, language, category, components }),
+        });
+        res = await r.json();
+      } catch (e) {
+        return json({ ok: false, error: String((e as any)?.message ?? e) });
+      }
+      if (res?.error) {
+        return json({ ok: false, error: res.error.error_user_msg || res.error.message || "Meta rechazó la plantilla." });
+      }
+      // Meta arranca en PENDING; reflejarlo local (el webhook/sync trae el final).
+      const estado = String(res?.status || "PENDING").toUpperCase() === "APPROVED" ? "aprobada" : "pendiente";
+      await db.from("wa_templates").update({ estado_meta: estado, meta_id: res?.id ?? null })
+        .eq("channel_id", channel_id).eq("name", name).eq("language", language);
+      return json({ ok: true, enviado: true, estado, meta_id: res?.id ?? null });
+    }
+
     if (action === "save") {
       // ── Campos planos del canal ─────────────────────────────────
       const upd: Record<string, unknown> = {};

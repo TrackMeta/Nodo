@@ -23,6 +23,10 @@
   .tcard .c-tt{font-size:16px;font-weight:700;letter-spacing:-.2px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .chip{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
   .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
+  .reco-hd{margin:8px 2px 12px} .reco-hd h3{margin:0;font-size:15px;font-weight:700} .reco-hd p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+  .tcard.reco{border:1px solid rgba(168,85,247,.35)}
+  .chip.reco-badge{background:linear-gradient(135deg,rgba(168,85,247,.16),rgba(236,72,153,.13));color:#a855f7}
+  .reco-use{width:100%;margin-top:12px;justify-content:center}
   .cat{font-size:10px;padding:2px 9px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   /* Fondo de chat de WhatsApp (tema claro clásico: beige + doodle) + burbuja saliente */
   .wa-chat{background-color:#e5ddd5;
@@ -108,6 +112,7 @@
           <p>Son el único mensaje que WhatsApp permite enviar <b>fuera de la ventana de 24 h</b> (en Campañas y Secuencias). <b>1)</b> Creas y apruebas el texto en <b>Meta</b> (WhatsApp Manager). <b>2)</b> Aquí registras su nombre exacto, idioma y el texto con huecos <b>{{1}}, {{2}}…</b> <b>3)</b> Le dices con qué llenar cada hueco: el nombre del cliente, su nº de guía, etc.</p></div>
       </div>
       <div class="nodo-folders" id="folders"></div>
+      <div id="recoBox"></div>
       <div class="nodo-cards" id="cards"></div>
     </div>
     <!-- VISTA DETALLE -->
@@ -120,6 +125,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { CATALOGO } from "./plantillas-catalogo.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, tpl:null, list:[], folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -169,7 +175,40 @@ function showDetail(){ $("gridView").style.display="none"; $("detailView").style
 async function loadList(){
   const { data }=await supa.from("wa_templates").select("*").eq("channel_id",st.channelId).order("created_at");
   st.list=data||[];
-  renderFolders(); renderCards();
+  renderFolders(); renderCards(); renderReco();
+}
+// Sección "Recomendadas": catálogo curado (plantillas-catalogo.js) que ve TODA
+// cuenta por defecto. Muestra solo las que aún no agregaste; un clic las copia a
+// tus plantillas y las manda a aprobar a Meta.
+function renderReco(){
+  const box=$("recoBox"); if(!box) return;
+  const pend=CATALOGO.filter(c=> !st.list.some(t=>t.name===c.name));
+  if(!pend.length){ box.innerHTML=""; return; }
+  box.innerHTML=`
+    <div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Listas para tu negocio — un clic las agrega y las envía a Meta a aprobar. Ideales para arrancar rápido.</p></div>
+    <div class="nodo-cards">${pend.map((c,i)=>`
+      <div class="nodo-card tcard reco">
+        <div class="c-top"><span class="c-tt">${esc(c.titulo)}</span><span class="chip reco-badge">Recomendada</span></div>
+        <div class="wa-chat tprev"><div class="wa-out">${waHighlight(c.body)}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
+        <div class="c-meta"><span class="cat">${CATLABEL[c.categoria]||esc(c.categoria)}</span><span>${esc(c.language)}</span></div>
+        <button class="btn primary reco-use" data-i="${i}" type="button">Usar y enviar a Meta</button>
+      </div>`).join("")}</div>`;
+  box.querySelectorAll(".reco-use").forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); usarReco(pend[+b.dataset.i], b); });
+}
+async function usarReco(c, btn){
+  if(st.list.some(t=>t.name===c.name)){ toast("Ya la tienes en tus plantillas"); return; }
+  if(btn){ btn.disabled=true; btn.textContent="Agregando…"; }
+  const { error }=await supa.from("wa_templates").insert({
+    channel_id:st.channelId, name:c.name, language:c.language, categoria:c.categoria,
+    body_preview:c.body, params:c.params, ejemplos:c.ejemplos, folder:c.folder, estado_meta:"pendiente", activa:true });
+  if(error){ toast(error.message,true); if(btn){ btn.disabled=false; btn.textContent="Usar y enviar a Meta"; } return; }
+  let r=null; try{ r=await callFn("channel-config",{ action:"template_submit", channel_id:st.channelId,
+    template:{ name:c.name, language:c.language, category:c.categoria, body:c.body, examples:c.ejemplos } }); }
+  catch(e){ r={ error:e.message }; }
+  await loadList();
+  if(r?.enviado) toast(`"${c.titulo}" enviada a Meta ✓ — en revisión (24-48h)`);
+  else if(r?.falta) toast(`"${c.titulo}" agregada. Conecta WhatsApp para enviarla a aprobar.`, true);
+  else toast(r?.error ? `Agregada, pero Meta la rechazó: ${r.error}` : `"${c.titulo}" agregada`, r?.error?true:false);
 }
 function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
 function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(t=>!t.folder).length; return st.list.filter(t=>t.folder===v).length; }
@@ -277,6 +316,7 @@ function renderDetail(){
       <label class="chk"><input type="checkbox" id="f_activa" ${t.activa!==false?"checked":""}/> Plantilla activa (disponible para campañas)</label>
       <div style="display:flex;gap:8px;margin-top:22px">
         <button class="btn primary" id="saveBtn">Guardar</button>
+        <button class="btn" id="sendMetaBtn" title="Crea la plantilla en Meta y la manda a aprobación">Enviar a Meta</button>
         <button class="btn danger" id="delBtn" style="margin-left:auto">Eliminar</button>
       </div>
     </div>`;
@@ -284,7 +324,22 @@ function renderDetail(){
   $("addVar").onclick=addBodyVar;
   d.querySelectorAll(".vchip").forEach(b=> b.onclick=()=>insertVar(`{{${b.dataset.v}}}`));
   st.slotN=bodyMaxN(); buildSlots();
-  $("saveBtn").onclick=saveTpl; $("delBtn").onclick=deleteTpl;
+  $("saveBtn").onclick=saveTpl; $("delBtn").onclick=deleteTpl; $("sendMetaBtn").onclick=enviarMeta;
+}
+// Crea la plantilla EN Meta y la manda a aprobación (usa el cuerpo actual + los
+// ejemplos guardados). El estado vuelve por el webhook o por "Sincronizar".
+async function enviarMeta(){
+  const name=$("f_name").value.trim(), body=$("f_body").value.trim();
+  const language=$("f_lang").value.trim()||"es", category=$("f_cat").value;
+  if(!name||!body){ toast("Falta el nombre o el cuerpo de la plantilla",true); return; }
+  const btn=$("sendMetaBtn"), old=btn.textContent; btn.disabled=true; btn.textContent="Enviando…";
+  let r=null; try{ r=await callFn("channel-config",{ action:"template_submit", channel_id:st.channelId,
+    template:{ name, language, category, body, examples: st.tpl?.ejemplos||[] } }); }
+  catch(e){ r={ error:e.message }; }
+  btn.disabled=false; btn.textContent=old;
+  if(r?.enviado){ toast("Enviada a Meta ✓ — en revisión (24-48h)"); await loadList(); openTpl(st.tpl.id); }
+  else if(r?.falta) toast("Conecta WhatsApp primero (Canales → WhatsApp) para enviarla a aprobar.", true);
+  else toast(r?.error||"No se pudo enviar a Meta", true);
 }
 // Nº más alto de hueco {{N}} presente en el cuerpo → cuántos casilleros mostrar.
 function bodyMaxN(){

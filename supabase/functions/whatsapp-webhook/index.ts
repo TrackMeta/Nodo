@@ -50,17 +50,22 @@ Deno.serve(async (req) => {
     return new Response("Bad Request", { status: 400 });
   }
 
-  // Ruteo por phone_number_id del payload.
-  const phoneNumberId = payload?.entry?.[0]?.changes?.[0]?.value?.metadata
-    ?.phone_number_id as string | undefined;
-  if (!phoneNumberId) return new Response("OK", { status: 200 }); // eventos sin msgs
-
-  const { data: channel } = await db
-    .from("channels")
-    .select("id, buffer_default_seg")
-    .eq("phone_number_id", phoneNumberId)
-    .eq("activo", true)
-    .maybeSingle();
+  // Ruteo: por phone_number_id (mensajes) o por WABA id (estado de plantillas,
+  // que no trae phone_number_id — llega a nivel de la cuenta de WhatsApp).
+  const change0 = payload?.entry?.[0]?.changes?.[0];
+  const phoneNumberId = change0?.value?.metadata?.phone_number_id as string | undefined;
+  const esPlantilla = change0?.field === "message_template_status_update";
+  const wabaId = payload?.entry?.[0]?.id as string | undefined;
+  let channel: { id: string; buffer_default_seg?: number } | null = null;
+  if (phoneNumberId) {
+    ({ data: channel } = await db.from("channels").select("id, buffer_default_seg")
+      .eq("phone_number_id", phoneNumberId).eq("activo", true).maybeSingle());
+  } else if (esPlantilla && wabaId) {
+    ({ data: channel } = await db.from("channels").select("id, buffer_default_seg")
+      .eq("waba_id", wabaId).eq("activo", true).maybeSingle());
+  } else {
+    return new Response("OK", { status: 200 }); // eventos sin mensajes ni plantilla
+  }
   if (!channel) return new Response("OK", { status: 200 }); // canal desconocido
 
   // Validar firma con el App Secret del canal.
@@ -87,6 +92,12 @@ Deno.serve(async (req) => {
 async function processPayload(channel: { id: string; buffer_default_seg?: number }, payload: any) {
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      // Meta avisó que cambió el estado de una plantilla (aprobada/rechazada/…):
+      // se refleja solo en Nodo, sin que el usuario toque "Sincronizar".
+      if (change.field === "message_template_status_update") {
+        await processTemplateStatus(channel.id, change.value ?? {});
+        continue;
+      }
       const value = change.value ?? {};
       const profileName = value.contacts?.[0]?.profile?.name as string | undefined;
 
@@ -98,6 +109,20 @@ async function processPayload(channel: { id: string; buffer_default_seg?: number
       }
     }
   }
+}
+
+// Refleja en wa_templates el estado que Meta acaba de comunicar por webhook.
+// Se cruza por name + language dentro del canal dueño del WABA.
+async function processTemplateStatus(channelId: string, value: any) {
+  const name = value?.message_template_name;
+  const language = value?.message_template_language ?? "es";
+  const event = String(value?.event || "").toUpperCase();
+  if (!name) return;
+  const estado = event === "APPROVED" ? "aprobada"
+    : (event === "PENDING" || event === "IN_APPEAL" || event === "PENDING_DELETION") ? "pendiente"
+    : "rechazada"; // REJECTED, PAUSED, DISABLED, FLAGGED…
+  await db.from("wa_templates").update({ estado_meta: estado })
+    .eq("channel_id", channelId).eq("name", name).eq("language", language);
 }
 
 async function processInbound(
