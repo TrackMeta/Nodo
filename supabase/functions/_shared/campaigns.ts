@@ -126,7 +126,18 @@ export async function sendTemplateToContact(
   const secrets = await getChannelSecrets(db, channelId);
   const token = secrets?.access_token;
   const ctx = await contactCtx(db, contactId);
-  const bodyParams = (tpl.params ?? []).map((p) => resolveP(String(p), ctx));
+  // Params posicionales. Si el caller no los pasa (aviso del Kanban al mover la
+  // tarjeta, plantilla por defecto de un momento), se toman los que la plantilla
+  // tiene guardados en Plantillas (wa_templates.params). Sin esto, una plantilla
+  // con variables {{1}},{{2}} salía con los huecos VACÍOS → Meta la rechazaba y
+  // el cliente no recibía el aviso. Se resuelven contra los datos del contacto.
+  let rawParams = tpl.params;
+  if (!rawParams || rawParams.length === 0) {
+    const { data: tplRow } = await db.from("wa_templates")
+      .select("params").eq("channel_id", channelId).eq("name", tpl.name).maybeSingle();
+    rawParams = ((tplRow as any)?.params as string[]) ?? [];
+  }
+  const bodyParams = rawParams.map((p) => resolveP(String(p), ctx));
   let wamid = "";
   if ((ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id && token && ctx.wa_id) {
     wamid = await sendTemplate((ch as any).phone_number_id, token, ctx.wa_id, tpl.name, tpl.language || "es", bodyParams);
