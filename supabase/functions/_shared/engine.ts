@@ -2224,6 +2224,27 @@ function metodoLeido(parsed: any): string | null {
   return t.slice(0, 40);
 }
 
+// ── Pagos en cuotas (parciales) ────────────────────────────────────
+// El cliente paga en 2+ partes (S/5 ahora, S/2 después). Se acumulan los abonos
+// del mismo pago en shipping[prefix+"_abonos"], dedup por nº de operación, y se
+// cierra cuando la suma cubre el esperado. CLAVE de seguridad: el modelo juzga
+// SOLO fraude/legibilidad (no si el monto alcanza); la matemática del monto y la
+// acumulación las hace el código, así un abono corto legítimo NO se confunde con
+// un fraude.
+function evaluarAbono(
+  ship: Record<string, any>, prefix: string, esperado: number, monto: number, op: string | null, tol: number,
+): { key: string; abonos: any[]; total: number; cubre: boolean; falta: number; dup: boolean } {
+  const key = prefix + "_abonos";
+  const prev = Array.isArray(ship[key]) ? ship[key] : [];
+  const dup = op ? prev.some((a: any) => a.op && String(a.op) === String(op)) : false;
+  const abonos = dup ? prev : [...prev, { op: op ?? null, monto, at: new Date().toISOString() }];
+  const total = abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const cubre = Number.isFinite(esperado) && esperado > 0 && total >= (esperado - tol);
+  return { key, abonos, total: r2(total), cubre, falta: Math.max(0, r2(esperado - total)), dup };
+}
+function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }
+
 // Comprobante del ADELANTO (provincia). Mismo patrón que el saldo, porque es
 // la misma decisión: ¿la IA aprueba sola o te consulta?
 //   · manual (default): el OCR igual lo analiza —te ahorra leerlo— pero NO
@@ -2255,12 +2276,12 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
-      const sys = (buildOcrSystem((ch as any)?.ocr_config, Number.isFinite(esperado) ? esperado : null, (order as any).currency)
+      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency)
         ?? "Eres un validador experto de comprobantes de pago de Perú.") +
-        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
       const raw = await runAI({
         provider: A.provider, apiKey: A.apiKey, model: A.model, system: sys,
-        content: [imageBlock(url), { type: "text", text: `El cliente debe pagar un ADELANTO de ${Number.isFinite(esperado) ? esperado : "?"} ${(order as any).currency ?? ""}. Analiza si este comprobante corresponde a ese pago.` }],
+        content: [imageBlock(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
       });
       parsed = JSON.parse(raw);
@@ -2281,13 +2302,33 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     reuse = !!dup;
   }
   const tol = Math.max(0, Number(cfg.tolerancia ?? 1));
-  const montoOk = Number.isFinite(monto) && Number.isFinite(esperado) && esperado > 0 && monto >= (esperado - tol);
-  const puedeAuto = cfg.validacion === "auto" && !!parsed?.valido && montoOk && !reuse;
+  // Fraude/legibilidad lo juzgó el modelo (`valido`); la matemática del monto y la
+  // acumulación de pagos en cuotas las hace el código.
+  const legit = parsed?.es_pago !== false && !!parsed?.valido && !reuse && Number.isFinite(monto) && monto > 0;
+  const ab = legit ? evaluarAbono(ship, "adelanto", esperado, monto, oper, tol) : null;
+
+  // Abono legítimo que TODAVÍA no cubre → acumula, avisa cuánto falta y sigue
+  // esperando. No es "monto no coincide": es un pago en cuotas.
+  if (ab && !ab.cubre) {
+    await db.from("orders").update({
+      updated_at: new Date().toISOString(),
+      shipping: { ...ship, [ab.key]: ab.abonos, adelanto_abonado: ab.total, adelanto_parcial: true,
+        adelanto_comprobante: url, adelanto_metodo: metodo },
+    }).eq("id", (order as any).id);
+    await logEvent(db, channelId, contactId, "nota", "Abono parcial del adelanto", `${ab.total} de ${esperado} · falta ${ab.falta}`);
+    const sym = simboloMoneda((order as any).currency);
+    await deliverMessage(db, channelId, contactId,
+      `¡Recibí tu abono de ${sym}${monto}! 🙌 Van ${sym}${ab.total} de ${sym}${esperado}, faltan ${sym}${ab.falta}. Cuando completes el resto, mándame la captura y lo cierro. 😊`).catch(() => {});
+    return true;
+  }
+  const cubre = ab ? ab.cubre : false;
+  const puedeAuto = cfg.validacion === "auto" && cubre;
 
   if (puedeAuto) {
     await db.from("orders").update({
       estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url },
+      shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
+        ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos, adelanto_abonado: ab.total } : {}) },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await syncPedidoSheet(db, (order as any).id);
@@ -2303,16 +2344,18 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
 
   // Manual (o auto con dudas) → queda esperándote en el Copiloto, con la
   // opinión del OCR ya escrita. NO se aprueba nada a tus espaldas.
+  const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
   const motivo = reuse ? "operación ya usada"
-    : !montoOk ? `monto no coincide (pagó ${Number.isFinite(monto) ? monto : "?"}, adelanto ${Number.isFinite(esperado) ? esperado : "?"})`
-    : (parsed?.valido ? "listo para tu aprobación" : (parsed?.motivo || "requiere revisión"));
+    : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
+    : "listo para tu aprobación"; // legítimo y ya cubre, pero estás en modo manual
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
     shipping: {
       ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
-      adelanto_revisar: motivo, adelanto_monto_leido: Number.isFinite(monto) ? monto : null,
+      adelanto_revisar: motivo, adelanto_monto_leido: montoLeido,
       adelanto_operacion_leida: oper, adelanto_metodo: metodo,
-      adelanto_ok_ia: !!parsed?.valido && montoOk && !reuse,
+      adelanto_ok_ia: !!parsed?.valido && cubre && !reuse,
+      ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos, adelanto_abonado: ab.total } : {}),
     },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Adelanto por aprobar", motivo);
@@ -2356,18 +2399,18 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false; // sin IA → que lo tome un humano por el flujo normal
-  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, Number.isFinite(saldo) ? saldo : null, (order as any).currency)
+  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency)
     ?? "Eres un validador experto de comprobantes de pago de Perú.";
   const system = ocrSys +
     "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
-    "`valido` es true solo si el pago es legítimo, va al destinatario correcto y no hay señales de fraude/montaje.";
+    "`valido` juzga SOLO que el pago sea legítimo (destinatario correcto, sin fraude/montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
 
   let parsed: any = null;
   try {
     const raw = await runAI({
       provider: A.provider, apiKey: A.apiKey, model: A.model,
       system,
-      content: [imageBlock(url), { type: "text", text: `El cliente debe pagar un SALDO de ${Number.isFinite(saldo) ? saldo : "?"} ${(order as any).currency ?? ""}. Analiza si este comprobante corresponde a ese pago.` }],
+      content: [imageBlock(url), { type: "text", text: `Es el comprobante del SALDO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
       maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
     });
     parsed = JSON.parse(raw);
@@ -2387,14 +2430,31 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       .eq("channel_id", channelId).eq("shipping->>saldo_operacion", oper).limit(1).maybeSingle();
     reuse = !!dup;
   }
-  const montoOk = Number.isFinite(monto) && Number.isFinite(saldo) && saldo > 0 && monto >= (saldo - tol);
-  const puedeAuto = !!parsed.valido && montoOk && !reuse && !!clave;
+  const legit = parsed.es_pago !== false && !!parsed.valido && !reuse && Number.isFinite(monto) && monto > 0;
+  const ab = legit ? evaluarAbono(ship, "saldo", saldo, monto, oper, tol) : null;
+
+  // Abono parcial legítimo que aún no cubre el saldo → acumula, avisa y espera.
+  if (ab && !ab.cubre) {
+    await db.from("orders").update({
+      updated_at: new Date().toISOString(),
+      shipping: { ...ship, [ab.key]: ab.abonos, saldo_abonado: ab.total, saldo_parcial: true,
+        saldo_comprobante: url, saldo_metodo: metodo },
+    }).eq("id", (order as any).id);
+    await logEvent(db, channelId, contactId, "nota", "Abono parcial del saldo", `${ab.total} de ${saldo} · falta ${ab.falta}`);
+    const sym = simboloMoneda((order as any).currency);
+    await deliverMessage(db, channelId, contactId,
+      `¡Recibí tu abono de ${sym}${monto}! 🙌 Van ${sym}${ab.total} de ${sym}${saldo}, faltan ${sym}${ab.falta}. Cuando completes el resto, mándame la captura y te doy tu clave de recojo. 😊`).catch(() => {});
+    return true;
+  }
+  const cubre = ab ? ab.cubre : false;
+  const puedeAuto = cubre && !reuse && !!clave;
 
   if (puedeAuto) {
     // ✅ Todo cuadra → saldo_pagado (guarda la operación) + dispara la entrega de clave.
     await db.from("orders").update({
       estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url },
+      shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
+        ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await moverEtapa(db, channelId, contactId, "comprado");
@@ -2421,13 +2481,15 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   }
 
   // ⚠️ Ante cualquier duda → al Copiloto + aviso por Telegram.
+  const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
   const motivo = reuse ? "operación ya usada"
-    : !montoOk ? `monto no coincide (pagó ${Number.isFinite(monto) ? monto : "?"}, saldo ${Number.isFinite(saldo) ? saldo : "?"})`
+    : !parsed.valido ? (parsed.motivo || "comprobante a revisar")
     : !clave ? "el pedido no tiene clave de recojo cargada"
-    : (parsed.motivo || "requiere revisión manual");
+    : "listo para tu aprobación";
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
-    shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo, saldo_metodo: metodo },
+    shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo, saldo_metodo: metodo,
+      saldo_monto_leido: montoLeido, ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
   await avisar(db, channelId, contactId, "saldo_validar", {
