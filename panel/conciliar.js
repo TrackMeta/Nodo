@@ -178,6 +178,16 @@ function detectarFormato(filas) {
 function parseFecha(s) {
   const t = String(s ?? "").trim();
   if (!t) return null;
+  // Excel guarda fechas como NÚMERO DE SERIE (días desde 1899-12-30). Un .xlsx
+  // de banco puede traer la fecha así en vez de texto; Yape no, pero otros sí.
+  if (/^\d+(\.\d+)?$/.test(t)) {
+    const serial = Number(t);
+    if (serial >= 20000 && serial <= 80000) { // ~1954–2119: rango razonable de fecha
+      const days = Math.floor(serial), secs = Math.round((serial - days) * 86400);
+      const u = new Date((days - 25569) * 86400000 + secs * 1000); // 25569 = serie de 1970-01-01
+      return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(), u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds());
+    }
+  }
   let m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
   if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
@@ -259,6 +269,18 @@ export const OPCIONES = {
   centavos: 0.005,     // tolerancia de redondeo
 };
 
+// El titular del reporte a veces trae la billetera de origen ("PLIN - DAVID").
+// Si el comprobante dijo el método (OCR → shipping.*_metodo) y calza con esa
+// billetera, es una pista más. SUMA cuando calza; no descarta cuando no.
+export function metodoCalza(quien, metodo) {
+  const met = norm(metodo);
+  if (!met) return false;
+  const m = norm(quien).match(/^([a-z]{2,6})\s*-\s*/);
+  const pref = m && m[1];
+  if (!pref || pref.length < 2) return false;
+  return met.includes(pref) || pref.includes(met.split(" ")[0]);
+}
+
 // Puntaje de una pareja. Devuelve null si ni siquiera es candidata.
 export function puntuar(venta, mov, op = OPCIONES) {
   if (Math.abs(venta.monto - mov.monto) > op.centavos) return null;
@@ -268,9 +290,10 @@ export function puntuar(venta, mov, op = OPCIONES) {
   const cercania = 1 - Math.min(Math.abs(dif), op.minutosAntes) / op.minutosAntes;
   const nom = calzaNombre(mov.quien, venta.cliente);
   const notaOk = venta.producto && mov.nota && norm(mov.nota).includes(norm(venta.producto).split(" ")[0]) ? 0.15 : 0;
+  const metOk = metodoCalza(mov.quien, venta.metodo) ? 0.1 : 0;
   return {
-    total: cercania * 0.6 + nom * 0.4 + notaOk,
-    minutos: Math.round(dif), nombre: nom, nota: !!notaOk,
+    total: cercania * 0.6 + nom * 0.4 + notaOk + metOk,
+    minutos: Math.round(dif), nombre: nom, nota: !!notaOk, metodo: !!metOk,
   };
 }
 
@@ -334,6 +357,7 @@ function razones(c, v) {
   else if (c.p.nombre >= 0.5) out.push(`“${c.mov.quien}” se parece a ${v.cliente}`);
   else if (c.mov.quien) out.push(`pagó “${c.mov.quien}” (otro titular)`);
   if (c.p.nota) out.push("la nota menciona el producto");
+  if (c.p.metodo) out.push("el método de pago coincide");
   return out;
 }
 

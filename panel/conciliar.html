@@ -184,7 +184,7 @@ async function conciliar(){
 
   st.ventas=cerradas.map(o=>({
     id:o.id, monto:O.total(o), cliente:(o.shipping||{}).cliente || (o.contact||{}).nombre || "",
-    producto:(o.product||{}).nombre||"",
+    producto:(o.product||{}).nombre||"", metodo:metodoDe(o),   // del OCR, para cruzar con la billetera de origen
     fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
     _o:o, _yaConciliado:(o.shipping||{}).conciliacion||null,
   }));
@@ -274,9 +274,15 @@ function renderLista(){
         <div class="acts">
           <button class="btn sm" data-a="otro">Cobré por otro medio</button>
           <button class="btn sm" data-a="nada">Dejar sin decidir</button></div>`);
-      el.querySelectorAll(".opt").forEach(op=> op.onclick=()=>{
+      el.querySelectorAll(".opt").forEach(op=> op.onclick=async()=>{
+        const mov=x.opciones[+op.dataset.i].mov;
+        // Guarda: un mismo pago no debería acreditarse a dos ventas.
+        const dueno=movDuenoDe(mov.i, x.venta.id);
+        if(dueno && !await confirmDialog({ title:"Ese pago ya está asignado",
+          message:`El pago de ${money(mov.monto)} de “${esc(mov.quien||"—")}” ya quedó para <b>${esc(dueno.cliente||"otra venta")}</b>. Un mismo pago no debería ir a dos ventas. ¿Asignarlo igual?`,
+          confirmText:"Asignarlo igual", danger:true })) return;
         el.querySelectorAll(".opt").forEach(o=>o.classList.remove("on")); op.classList.add("on");
-        st.decisiones.set(x.venta.id,{tipo:"cuadrar",mov:x.opciones[+op.dataset.i].mov,por:x.opciones[+op.dataset.i].por});
+        st.decisiones.set(x.venta.id,{tipo:"cuadrar",mov,por:x.opciones[+op.dataset.i].por});
         actualizarCuenta();
       });
       el.querySelector('[data-a="otro"]').onclick=()=>marcarOtroMedio(x.venta,el);
@@ -343,6 +349,20 @@ function renderLista(){
 }
 function vacio(box,t,s){ box.innerHTML=`<div class="nodo-empty" style="border:none"><h3>${esc(t)}</h3><p>${esc(s)}</p></div>`; }
 function metodoDe(o){ const s=o.shipping||{}; return s.digital_metodo||s.adelanto_metodo||s.saldo_metodo||""; }
+// ¿Ese movimiento del banco ya está asignado a OTRA venta? (auto-cuadrada no
+// descartada, o una decisión manual). Evita acreditar un pago a dos ventas.
+function movDuenoDe(movI, exceptVentaId){
+  for(const c of (st.res&&st.res.cuadradas||[])){
+    const d=st.decisiones.get(c.venta.id);
+    if(d && d.tipo==="descartar") continue;
+    if(c.mov.i===movI && c.venta.id!==exceptVentaId) return c.venta;
+  }
+  for(const [id,d] of st.decisiones){
+    if(d.tipo==="cuadrar" && d.mov && d.mov.i===movI && id!==exceptVentaId)
+      return (st.ventas||[]).find(v=>v.id===id) || {cliente:"otra venta"};
+  }
+  return null;
+}
 
 async function marcarOtroMedio(v,el){
   const motivo=await askChoice({ title:"Cobré por otro medio",
