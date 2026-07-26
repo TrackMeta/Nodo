@@ -485,7 +485,8 @@ function kcard(o){
   const el=document.createElement("div"); el.className="kcard";
   const shipBits=[];
   if(s.aereo) shipBits.push(`✈ <b>Aéreo</b>`);
-  if(s.agencia) shipBits.push(`${esc(cap(s.agencia))}${s.sede?" · "+esc(s.sede):""}`);
+  const agTxt=[s.agencia&&cap(s.agencia), s.destino||s.sede].filter(Boolean).join(" · ");
+  if(agTxt) shipBits.push(esc(agTxt));
   if(s.guia) shipBits.push(`Guía <b>${esc(s.guia)}</b>`);
   if(s.clave_recojo) shipBits.push(`Clave <b>${esc(s.clave_recojo)}</b>`);
   if(s.distrito||s.direccion) shipBits.push(esc([s.distrito,s.direccion].filter(Boolean).join(" · ")));
@@ -558,7 +559,7 @@ function printRotulo(o){
       row("Destinatario", s.cliente||c.nombre||"", true)+
       row("DNI", s.dni||"", true)+
       row("Teléfono", tel)+
-      row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
+      row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.destino||s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
       row("Envío", s.aereo?"✈ AÉREO — despachar por avión":"", true)+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
@@ -826,7 +827,7 @@ async function openEnvio(o){
         <label>Agencia de destino (Shalom)</label>
         <input id="eDestino" list="dlDestino" value="${esc(destVal)}" placeholder="Escribe y elige la agencia de destino"/>
         <datalist id="dlDestino">${dl(SH.destino)}</datalist>
-        <div class="hint">${sug?`💡 <b>Sugerida por el bot</b> según lo que dijo el cliente${(s.sede||s.ciudad)?` (“${esc(s.sede||s.ciudad)}”)`:''} — confírmala o cámbiala.`:'La oficina Shalom donde recoge tu cliente. Va en el Excel y en el rótulo.'}</div>
+        <div class="hint">${sug&&!s.destino?`💡 <b>Sugerida por el bot</b> — la agencia oficial más parecida a lo que dijo el cliente. Confírmala o cámbiala.<br>`:''}${s.sede?`🗣 <b>El cliente escribió:</b> “${esc(s.sede)}”`:'La oficina Shalom donde recoge tu cliente. Va en el Excel y en el rótulo.'}</div>
         <label>Medida del paquete</label>
         <select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select>
         <label>Medidas y peso <span style="color:var(--faint);font-weight:400">(vacío = default del negocio)</span></label>
@@ -857,10 +858,10 @@ async function openEnvio(o){
     let amount;
     if(zona==="provincia"){
       const dst=g("#eDestino").value.trim();
-      // Un solo campo: la agencia de destino sirve para el Excel (destino) y para
-      // el rótulo/tarjeta (sede) — se escriben iguales para no duplicar en la UI.
+      // La agencia elegida va a `destino` (Excel + rótulo). NO se toca `sede`: ahí
+      // queda para siempre lo que el cliente dijo en el chat, visible como referencia.
       Object.assign(ship,{ dni:g("#eDni").value.trim(), ciudad:g("#eCiudad").value.trim(),
-        destino:dst, sede:dst, mercaderia:g("#eMerc").value,
+        destino:dst, mercaderia:g("#eMerc").value,
         alto:numU("#eAlto"), ancho:numU("#eAncho"), largo:numU("#eLargo"), peso:numU("#ePeso"),
         adelanto:g("#eAdel").value, saldo:g("#eSaldo").value });
     } else {
