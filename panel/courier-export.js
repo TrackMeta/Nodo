@@ -33,8 +33,8 @@ export const POR_DESPACHAR = {
 function filasEva(orders) {
   return orders.map((o) => {
     const c = o.contact || {}, s = o.shipping || {}, f = [];
-    f[1] = c.nombre || s.cliente || "";        // B DESTINATARIO
-    f[2] = tel9(c.wa_id);                       // C CELULAR
+    f[1] = s.cliente || c.nombre || "";        // B DESTINATARIO (editable: shipping.cliente manda)
+    f[2] = tel9(s.tel || c.wa_id);             // C CELULAR (9 díg; shipping.tel puede overridear)
     f[3] = (s.distrito || "").toUpperCase();    // D DISTRITO ENTREGA
     f[4] = s.direccion || "";                   // E DIRECCIÓN
     f[5] = s.referencia || "";                  // F REFERENCIA
@@ -58,19 +58,22 @@ function revisarEva(orders) {
 // ── SHALOM (provincia, agencia) — hoja "Hoja1" (sheet1) ─────────────
 // A doc destinatario · B telf destinatario · C/D contacto (opc) · E GRR (opc) ·
 // F origen · G destino · H mercadería · I-L alto/ancho/largo/peso · M cantidad.
+const num = (...xs) => { for (const x of xs) if (x !== undefined && x !== null && x !== "") return Number(x) || 0; return 0; };
 function filasShalom(orders, cfg) {
   const sh = (cfg && cfg.shalom) || {};
   return orders.map((o) => {
-    const c = o.contact || {}, s = o.shipping || {}, p = o.product || {}, f = [];
+    const c = o.contact || {}, s = o.shipping || {}, f = [];
     f[0] = s.dni || "";                                            // A DESTINATARIO (DOC)
-    f[1] = tel9(c.wa_id);                                          // B TELF. DESTINATARIO
-    f[5] = (sh.origen || "").toUpperCase();                        // F ORIGEN
-    f[6] = (s.ciudad || "").toUpperCase();                         // G DESTINO
-    f[7] = (sh.mercaderia || p.nombre || "ENCOMIENDA").toUpperCase(); // H MERCADERIA
-    f[8] = N(sh.alto || 0);                                        // I ALTO
-    f[9] = N(sh.ancho || 0);                                       // J ANCHO
-    f[10] = N(sh.largo || 0);                                      // K LARGO
-    f[11] = N(sh.peso || 0);                                       // L PESO
+    f[1] = tel9(s.tel || c.wa_id);                                 // B TELF. DESTINATARIO
+    f[5] = (sh.origen || "").toUpperCase();                        // F ORIGEN (agencia, de la config)
+    f[6] = (s.destino || s.ciudad || "").toUpperCase();           // G DESTINO (agencia elegida; cae a la ciudad)
+    // H MERCADERIA = medida interna de Shalom (SOBRE/PAQUETE XXS…L), NO el
+    // nombre del producto. Por pedido (shipping.mercaderia) o el default del negocio.
+    f[7] = (s.mercaderia || sh.mercaderia || "PAQUETE S").toUpperCase();
+    f[8] = N(num(s.alto, sh.alto));                                // I ALTO
+    f[9] = N(num(s.ancho, sh.ancho));                              // J ANCHO
+    f[10] = N(num(s.largo, sh.largo));                             // K LARGO
+    f[11] = N(num(s.peso, sh.peso));                              // L PESO
     f[12] = N(1);                                                  // M CANTIDAD
     return f;
   });
@@ -80,22 +83,37 @@ function revisarShalom(orders, cfg) {
   if (!sh.origen) p.push("Falta tu oficina de ORIGEN Shalom (Negocio → Entrega → Exportar a couriers).");
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || s.dni || "un pedido";
-    if (!s.dni) p.push(`${q}: falta DNI.`);
-    if (!s.ciudad) p.push(`${q}: falta la ciudad de destino.`);
+    if (!s.dni) p.push(`${q}: falta DNI. (Editar pedido)`);
+    if (!s.destino && !s.ciudad) p.push(`${q}: falta la agencia de DESTINO. (Editar pedido)`);
   });
   return p;
 }
 
 // ── Catálogo de couriers ───────────────────────────────────────────
 export const COURIERS = {
-  eva: { id: "eva", nombre: "Eva Courier", zona: "lima", ext: "xlsm",
+  eva: { id: "eva", nombre: "Eva Courier", zona: "lima", zonaLbl: "Solo Lima", color: "#1f6feb", inicial: "e", ext: "xlsm",
     plantilla: "courier/eva.xlsm", sheet: "xl/worksheets/sheet2.xml", tabla: "xl/tables/table2.xml",
     filas: filasEva, revisar: revisarEva },
-  shalom: { id: "shalom", nombre: "Shalom", zona: "provincia", ext: "xlsx",
+  shalom: { id: "shalom", nombre: "Shalom", zona: "provincia", zonaLbl: "Provincia", color: "#e2261c", inicial: "S", ext: "xlsx",
     plantilla: "courier/shalom.xlsx", sheet: "xl/worksheets/sheet1.xml",
     filas: filasShalom, revisar: revisarShalom },
 };
+// Couriers que vienen pronto (se muestran deshabilitados en el menú).
+export const COURIERS_PRONTO = [
+  { nombre: "Olva Courier", zonaLbl: "Provincia", inicial: "O" },
+  { nombre: "Otros couriers de Lima", zonaLbl: "Lima", inicial: "+" },
+];
 export const couriersDeZona = (zona) => Object.values(COURIERS).filter((c) => c.zona === zona);
+
+// Listas de los desplegables de los couriers (agencias, distritos, medidas),
+// extraídas de sus plantillas. Se cargan una vez y se cachean.
+let _listas = null;
+export async function cargarListas() {
+  if (_listas) return _listas;
+  try { const r = await fetch("courier/listas.json"); _listas = r.ok ? await r.json() : {}; }
+  catch { _listas = {}; }
+  return _listas;
+}
 
 // Devuelve los pedidos "por despachar" de una zona a partir de la lista viva.
 export function porDespachar(list, zona) {

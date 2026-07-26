@@ -46,6 +46,22 @@
   .kcard .kc-act .rot{flex:none;min-width:0;width:34px;background:transparent;border:1px solid var(--border);color:var(--muted)}
   .kcard .kc-act .rot:hover{background:var(--surface);color:var(--text)}
   .kcard .kc-act .rot svg{width:15px;height:15px}
+  /* Menú desplegable de exportar (elegir courier) */
+  .expwrap{position:relative;display:inline-block}
+  #exportBtn .caret{margin-left:-2px}
+  .expmenu{position:absolute;top:calc(100% + 6px);right:0;z-index:60;min-width:290px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.45);padding:8px;display:none}
+  .expmenu.show{display:block}
+  .expmenu .exphd{font-size:10.5px;font-weight:800;letter-spacing:.6px;color:var(--faint);padding:8px 10px 6px}
+  .expitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:none;border:none;border-radius:10px;padding:10px;cursor:pointer;font-family:inherit;color:var(--text)}
+  .expitem:hover{background:var(--surface-2)}
+  .expitem[disabled]{opacity:.45;cursor:default}
+  .expitem[disabled]:hover{background:none}
+  .expitem .exp-logo{width:38px;height:38px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;color:#fff}
+  .expitem .exp-logo.pronto{background:var(--surface-2);color:var(--faint);font-weight:700}
+  .expitem .exp-tx{flex:1;min-width:0}
+  .expitem .exp-nm{font-weight:700;font-size:13.5px}
+  .expitem .exp-sub{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .expitem .exp-cnt{font-size:12px;font-weight:800;flex:none;background:var(--surface-2);border-radius:999px;padding:2px 9px}
   .kcard .kc-when{font-size:10.5px;color:var(--faint);margin-top:7px;text-align:right}
   .zona{font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;letter-spacing:.3px}
   .zona.lima{background:var(--brand-bg);color:var(--brand)}
@@ -96,7 +112,10 @@
         <span style="color:var(--faint)">Aprobar o rechazar un comprobante es de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions">
-        <button class="nodo-btn" id="exportBtn" style="display:inline-flex;align-items:center;gap:8px" title="Descargar los pedidos por despachar en el Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> <span id="exportLbl">Exportar Excel</span></button>
+        <div class="expwrap">
+          <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por despachar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="expmenu" id="exportMenu"></div>
+        </div>
         <a href="pagos.html" class="nodo-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y avisos</a>
       </div>
     </div>
@@ -116,7 +135,7 @@
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
 import { openDespachoModal, pedirAviso, avisoMsg } from "./contact-extras.js";
-import { COURIERS, couriersDeZona, porDespachar, generar } from "./courier-export.js";
+import { COURIERS, COURIERS_PRONTO, couriersDeZona, porDespachar, generar, cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -161,41 +180,46 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
-  $("exportBtn").onclick=exportarCourier;
+  $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } });
+  cargarListas();  // precarga las listas de agencias/distritos para el editor
   await load();
   wireRealtime();
 }
 
-// ── Exportar los "por despachar" al Excel de carga masiva del courier ──
-// Actúa sobre la ZONA activa del tablero (Lima → Eva; Provincia → Shalom).
-// Rellena la plantilla real del courier (panel/courier/) conservando sus hojas
-// de validación y macros; ver courier-export.js / xlsx-fill.js.
-async function exportarCourier(){
-  const zona=st.kbZona;
-  const couriers=couriersDeZona(zona);
-  if(!couriers.length){ toast("Todavía no hay un courier configurado para esta zona",true); return; }
-  const pend=porDespachar(st.list,zona);
-  if(!pend.length){ toast(`No hay pedidos "por despachar" en ${zona==="lima"?"Lima":"provincia"}`,true); return; }
-  let courier=couriers[0];
-  if(couriers.length>1){
-    const id=await askChoice({title:"¿A qué courier?",message:`${pend.length} pedido(s) por despachar`,options:couriers.map(c=>({value:c.id,label:c.nombre}))});
-    if(!id) return; courier=COURIERS[id];
-  }
+// ── Exportar al Excel de carga masiva del courier ──────────────────
+// Menú desplegable para elegir el courier (cada uno rellena SU plantilla real
+// conservando hojas de validación y macros; ver courier-export.js).
+function toggleExportMenu(){
+  const menu=$("exportMenu");
+  if(menu.classList.contains("show")){ menu.classList.remove("show"); return; }
+  const activos=Object.values(COURIERS).map(c=>{
+    const n=porDespachar(st.list,c.zona).length;
+    return `<button class="expitem" data-c="${c.id}">
+      <span class="exp-logo" style="background:${c.color}">${esc(c.inicial)}</span>
+      <span class="exp-tx"><div class="exp-nm">${esc(c.nombre)}</div><div class="exp-sub">${esc(c.zonaLbl)} · Excel masivo</div></span>
+      ${n?`<span class="exp-cnt">${n}</span>`:""}</button>`;
+  }).join("");
+  const pronto=COURIERS_PRONTO.map(c=>`<button class="expitem" disabled>
+      <span class="exp-logo pronto">${esc(c.inicial)}</span>
+      <span class="exp-tx"><div class="exp-nm">${esc(c.nombre)}</div><div class="exp-sub">Próximamente</div></span></button>`).join("");
+  menu.innerHTML=`<div class="exphd">SELECCIONAR COURIER</div>${activos}${pronto}`;
+  menu.querySelectorAll("[data-c]").forEach(b=> b.onclick=()=>{ menu.classList.remove("show"); exportarDe(COURIERS[b.dataset.c]); });
+  menu.classList.add("show");
+}
+async function exportarDe(courier){
+  const pend=porDespachar(st.list,courier.zona);
+  if(!pend.length){ toast(`No hay pedidos "por despachar" para ${courier.nombre}`,true); return; }
   const cfg=(st.entregas&&st.entregas.courier)||{};
   const issues=courier.revisar(pend,cfg)||[];
   if(issues.length){
     const lista=issues.slice(0,8).map(x=>`• ${esc(x)}`).join("<br>");
     const extra=issues.length>8?`<br>…y ${issues.length-8} más`:"";
-    const ok=await confirmDialog({title:"Revisa antes de exportar",message:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Se exportarán igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
+    const ok=await confirmDialog({title:"Revisa antes de exportar",message:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Ábrelos con <b>Editar</b> y complétalos. Si continúas se exportan igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
     if(!ok) return;
   }
-  const lbl=$("exportLbl"), prev=lbl?lbl.textContent:"";
-  if(lbl) lbl.textContent="Generando…";
-  try{
-    const n=await generar(courier,pend,cfg);
-    toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}`);
-  }catch(e){ toast(e.message||"No pude generar el Excel",true); }
-  finally{ if(lbl) lbl.textContent=prev; }
+  try{ const n=await generar(courier,pend,cfg); toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}`); }
+  catch(e){ toast(e.message||"No pude generar el Excel",true); }
 }
 
 // ── En vivo ────────────────────────────────────────────────────────
@@ -270,10 +294,6 @@ function render(){
     +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
        ${nTurno===1?"1 pago por validar":`${nTurno} pagos por validar`}</a>`:"");
   zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; render(); });
-  // Etiqueta del botón de exportar según la zona activa y cuántos hay listos.
-  const eLbl=$("exportLbl");
-  if(eLbl){ const cs=couriersDeZona(st.kbZona), nPd=porDespachar(st.list,st.kbZona).length;
-    eLbl.textContent=(cs.length===1?`Exportar a ${cs[0].nombre}`:"Exportar Excel")+(nPd?` (${nPd})`:""); }
 
   box.innerHTML="";
   if(!zList.length){
@@ -355,6 +375,7 @@ function kcard(o){
     ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠ Confirmar sede Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
+      <button class="rot edit" title="Editar datos del pedido">${icon("edit")}</button>
       <button class="rot" title="Imprimir rótulo">${icon("printer")}</button>
     </div>
     <div class="kc-when">${rel(o.updated_at||o.created_at)}</div>`;
@@ -364,7 +385,8 @@ function kcard(o){
     else if(act.modal==="llegada") avisarLlegada(o);
     else confirmSet(o,act.estado,act.label);
   };
-  el.querySelector(".rot").onclick=(ev)=>{ ev.stopPropagation(); printRotulo(o); };
+  el.querySelector(".edit").onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
+  el.querySelector(".rot:not(.edit)").onclick=(ev)=>{ ev.stopPropagation(); printRotulo(o); };
   el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
   const wb=el.querySelector("[data-cfsede]");
   if(wb) wb.onclick=(ev)=>{ ev.stopPropagation(); openConfirmSede(o); };
@@ -601,34 +623,84 @@ function ultimoFlete(o){
     && (!s.agencia || x.shipping?.agencia===s.agencia));
   return prev? Number(prev.shipping.flete) : null;
 }
-function openEnvio(o){
-  const s=o.shipping||{};
-  modal(`
-    <h3>${icon("edit")} Datos de envío</h3>
-    <div class="m-sub">${esc((o.contact||{}).nombre||"")}</div>
+// Editor completo del pedido: todos los datos de entrega, con los DESPLEGABLES
+// reales de cada courier (agencia de destino Shalom, distrito Eva, medida de
+// mercadería Shalom). Los campos cambian según el tipo de envío. Guarda en
+// orders.shipping (order-update fusiona, no pisa lo demás) + amount.
+async function openEnvio(o){
+  const s=o.shipping||{}, c=o.contact||{}, p=o.product||{}, v=o.version||{};
+  const zona = s.zona || zonaDe(o);
+  const L = await cargarListas();
+  const SH=(L&&L.shalom)||{}, EV=(L&&L.eva)||{};
+  const dl=(arr)=>(arr||[]).map(x=>`<option value="${esc(x)}"></option>`).join("");
+  const optMerc=(arr,val)=>`<option value="">— usar la del negocio —</option>`+(arr||[]).map(x=>`<option value="${esc(x)}"${String(x)===String(val)?" selected":""}>${esc(x)}</option>`).join("");
+  const prov = zona==="provincia";
+  const atr = Object.entries(s.atributos||{}).map(([k,val])=>`${k}: ${val}`).join(" · ");
+  const ov=modal(`
+    <h3>${icon("edit")} Editar pedido</h3>
+    <div class="m-sub">${esc([p.emoji,p.nombre,v.nombre].filter(Boolean).join(" "))||"Pedido"}${atr?` · ${esc(atr)}`:""}</div>
     <div class="row2">
-      <div><label>Zona</label><select id="eZona"><option value="">—</option><option value="lima" ${s.zona==="lima"?"selected":""}>Lima</option><option value="provincia" ${s.zona==="provincia"?"selected":""}>Provincia</option></select></div>
-      <div><label>DNI</label><input id="eDni" value="${esc(s.dni||"")}"/></div>
+      <div><label>Destinatario</label><input id="eNom" value="${esc(s.cliente||c.nombre||"")}"/></div>
+      <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel||c.wa_id||"")}"/></div>
     </div>
-    <label>Dirección</label><input id="eDir" value="${esc(s.direccion||"")}"/>
     <div class="row2">
-      <div><label>Distrito / ciudad</label><input id="eDist" value="${esc(s.distrito||"")}"/></div>
-      <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia||"")}"/></div>
+      <div><label>Tipo de envío</label><select id="eZona"><option value="lima"${zona==="lima"?" selected":""}>Lima (contraentrega)</option><option value="provincia"${zona==="provincia"?" selected":""}>Provincia (agencia)</option></select></div>
+      <div><label>Importe a cobrar (S/)</label><input id="eAmount" type="number" step="0.1" value="${esc(o.amount??"")}"/></div>
     </div>
-    <div class="row2">
-      <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto||"")}"/></div>
-      <div><label>Saldo (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo||"")}"/></div>
+    <div id="eLima" ${prov?'style="display:none"':''}>
+      <label>Dirección</label><input id="eDir" value="${esc(s.direccion||"")}"/>
+      <div class="row2">
+        <div><label>Distrito</label><input id="eDist" list="dlDistrito" value="${esc(s.distrito||"")}"/><datalist id="dlDistrito">${dl(EV.distrito)}</datalist></div>
+        <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia||"")}"/></div>
+      </div>
+      <label>Link Maps / GPS <span style="color:var(--faint);font-weight:400">(opcional)</span></label><input id="eGps" value="${esc(s.gps||"")}" placeholder="URL de Google Maps o lat, long"/>
+    </div>
+    <div id="eProv" ${prov?'':'style="display:none"'}>
+      <div class="row2">
+        <div><label>DNI</label><input id="eDni" value="${esc(s.dni||"")}"/></div>
+        <div><label>Ciudad</label><input id="eCiudad" value="${esc(s.ciudad||"")}"/></div>
+      </div>
+      <label>Agencia de destino (Shalom)</label>
+      <input id="eDestino" list="dlDestino" value="${esc(s.destino||"")}" placeholder="Escribe y elige la agencia Shalom de destino"/>
+      <datalist id="dlDestino">${dl(SH.destino)}</datalist>
+      <div class="row2">
+        <div><label>Mercadería (medida Shalom)</label><select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select></div>
+        <div><label>Sede / oficina</label><input id="eSede" value="${esc(s.sede||"")}"/></div>
+      </div>
+      <label>Medidas del paquete <span style="color:var(--faint);font-weight:400">(vacío = default del negocio)</span></label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        <input id="eAlto" type="number" step="0.01" placeholder="alto m" value="${esc(s.alto??"")}" style="width:88px"/>
+        <input id="eAncho" type="number" step="0.01" placeholder="ancho m" value="${esc(s.ancho??"")}" style="width:88px"/>
+        <input id="eLargo" type="number" step="0.01" placeholder="largo m" value="${esc(s.largo??"")}" style="width:88px"/>
+        <input id="ePeso" type="number" step="0.1" placeholder="peso kg" value="${esc(s.peso??"")}" style="width:88px"/>
+      </div>
+      <div class="row2">
+        <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto||"")}"/></div>
+        <div><label>Saldo (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo||"")}"/></div>
+      </div>
     </div>`,
     async(ov)=>{
-      const r=await updateOrder({ order_id:o.id, shipping:{
-        zona:ov.querySelector("#eZona").value, dni:ov.querySelector("#eDni").value.trim(),
-        direccion:ov.querySelector("#eDir").value.trim(), distrito:ov.querySelector("#eDist").value.trim(),
-        referencia:ov.querySelector("#eRef").value.trim(),
-        adelanto:ov.querySelector("#eAdel").value, saldo:ov.querySelector("#eSaldo").value,
-      }});
-      if(r){ toast("Datos de envío guardados"); await load(); }
+      const g=(id)=>ov.querySelector(id);
+      const zonaV=g("#eZona").value;
+      const numU=(id)=>{ const x=g(id).value; return x===""?null:Number(x); };
+      const ship={ cliente:g("#eNom").value.trim(), tel:g("#eTel").value.trim(), zona:zonaV };
+      if(zonaV==="provincia"){
+        Object.assign(ship,{ dni:g("#eDni").value.trim(), ciudad:g("#eCiudad").value.trim(),
+          destino:g("#eDestino").value.trim(), mercaderia:g("#eMerc").value, sede:g("#eSede").value.trim(),
+          alto:numU("#eAlto"), ancho:numU("#eAncho"), largo:numU("#eLargo"), peso:numU("#ePeso"),
+          adelanto:g("#eAdel").value, saldo:g("#eSaldo").value });
+      } else {
+        Object.assign(ship,{ direccion:g("#eDir").value.trim(), distrito:g("#eDist").value.trim(),
+          referencia:g("#eRef").value.trim(), gps:g("#eGps").value.trim() });
+      }
+      const body={ order_id:o.id, shipping:ship };
+      const amt=g("#eAmount").value; if(amt!=="") body.amount=Number(amt);
+      const r=await updateOrder(body);
+      if(r){ toast("Pedido actualizado ✓"); await load(); }
       return !!r;
     });
+  const zsel=ov.querySelector("#eZona");
+  zsel.onchange=()=>{ const pv=zsel.value==="provincia"; ov.querySelector("#eProv").style.display=pv?"":"none"; ov.querySelector("#eLima").style.display=pv?"none":""; };
 }
 boot();
 </script>
