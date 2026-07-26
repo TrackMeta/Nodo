@@ -146,6 +146,10 @@
   .idot.paused{background:var(--amber-bg);color:var(--amber)}
   .idot.human{background:var(--brand-bg);color:var(--brand)}
   .idot.bought{background:linear-gradient(135deg,#ffe08a,#f0a92b);color:#5a3a00;font-weight:800;box-shadow:0 1px 5px rgba(240,169,43,.55)}
+  /* Recompra en proceso: comprador (dorado) con otro pedido vivo. Tono violeta
+     (el de IA) para que resalte SOBRE el dorado y lo ubiques al toque. */
+  .idot.recompra{background:linear-gradient(135deg,#a855f7,#6366f1);color:#fff;font-weight:800;box-shadow:0 1px 6px rgba(124,92,247,.5)}
+  .idot.recompra svg{width:11px;height:11px}
   .modewrap{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px;flex:1}
   .modebtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
   .modebtn.active{background:var(--brand);color:#fff}
@@ -579,6 +583,9 @@ async function loadInboxFlows(){
 }
 
 // ── Conversaciones ──
+// Estados de un pedido "en curso" (ni cerrado ni perdido). Si un contacto YA es
+// comprador (dorado) y tiene un pedido en uno de estos, es una RECOMPRA en curso.
+const RECOMPRA_ESTADOS = ["carrito","pendiente","esperando_adelanto","confirmado","en_reparto","reprogramado","adelanto_validado","por_despachar","despachado","en_agencia"];
 async function loadConversations() {
   const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source${p?",product_id,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   let { data, error } = await supa.from("conversations").select(sel(true))
@@ -588,6 +595,13 @@ async function loadConversations() {
   // Los archivados se conservan en state.convs (para contarlos y para el filtro
   // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.
   state.convs = (data||[]).filter(cv=>cv.contact && !cv.contact.bloqueado && cv.contact.wa_id!=="webchat-test");
+  // Recompra en curso: trae SOLO los pedidos vivos (pocos, una columna) y arma
+  // el set de contactos que tienen uno. En render, dorado + este set = recompra.
+  try {
+    const { data: ro } = await supa.from("orders").select("contact_id")
+      .eq("channel_id", state.channelId).in("estado", RECOMPRA_ESTADOS);
+    state.recompraSet = new Set((ro||[]).map(o=>o.contact_id));
+  } catch(_){ state.recompraSet = state.recompraSet || new Set(); }
   renderConversations();
 }
 
@@ -816,6 +830,7 @@ function renderConversations(){
     const c = cv.contact;
     const bot = c.bot_activo !== false;
     const bought = c.stage === "comprado";
+    const recomprando = bought && state.recompraSet && state.recompraSet.has(c.id);
     const el = document.createElement("div");
     el.className = "conv" + (state.contactId === c.id ? " active" : "") + (bought ? " bought" : "");
     // Origen anuncio (CTWA): verde si la ventana gratis de 72h sigue viva.
@@ -823,7 +838,8 @@ function renderConversations(){
     const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
       + (fepViva?`<span class="idot fep">${icon("megaphone")} Anuncio · gratis</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
       + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
-      + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'');
+      + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'')
+      + (recomprando?`<span class="idot recompra">${icon("refresh")} Recompra</span>`:'');
     const pEmoji = c.product && c.product.emoji ? `<span class="av-emoji">${esc(c.product.emoji)}</span>` : "";
     el.innerHTML = `
       <div class="avwrap"><div class="av">${initials(c.nombre, c.wa_id)}</div>${pEmoji}</div>
