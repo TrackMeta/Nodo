@@ -511,7 +511,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
@@ -978,7 +978,7 @@ function renderContactPanel(){
       <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
     </div>
-    ${!isTest && order && O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
+    ${!isTest && order && O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar los datos del pedido">${icon("edit")} Editar pedido</button><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${!isTest?sec("Datos", datosRows, {open:true}):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
@@ -1013,6 +1013,10 @@ function renderContactPanel(){
       { onConflict:"contact_id,field_id" });
     vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓");
   });
+  const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
+    const ok=await openEditarPedido({...order, contact}, { supa });
+    if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }
+  };
   const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{
     rot.disabled=true; const rem=await remitenteDe(supa, state.channelId);
     printRotulo({...order, contact}, rem); rot.disabled=false;

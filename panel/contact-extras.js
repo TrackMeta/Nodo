@@ -14,7 +14,8 @@
 //  · EXTRAS_CSS       — estilos de las tarjetas nuevas (una sola fuente)
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
-import { toast } from "./shell.js";
+import { toast, icon } from "./shell.js";
+import { cargarListas, sugerirAgencia } from "./courier-export.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 const cap = (s) => { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); };
@@ -397,6 +398,35 @@ const DESPACHO_CSS = `
   .sel-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
   .sel-foot .save{background:var(--brand);border:none;color:#fff}
   .sel-foot .save:disabled{opacity:.45;cursor:default}
+  /* Editar pedido (formulario por secciones, compartido Pedidos + ficha del chat) */
+  .modal:has(.pedmodal){max-width:580px;padding:0;overflow:hidden}
+  .pedmodal{display:flex;flex-direction:column;max-height:90vh}
+  .pedmodal .pm-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}
+  .pedmodal .pm-ic{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--brand),var(--brand-2,var(--brand)));color:#fff}
+  .pedmodal .pm-ic svg{width:20px;height:20px}
+  .pedmodal .pm-ttl{font-size:16px;font-weight:800;line-height:1.2}
+  .pedmodal .pm-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .pedmodal .pm-zona{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;padding:6px 11px;border-radius:999px;white-space:nowrap}
+  .pedmodal .pm-zona svg{width:14px;height:14px}
+  .pedmodal .pm-zona.lima{background:var(--brand-bg,rgba(43,127,255,.13));color:var(--brand)}
+  .pedmodal .pm-zona.prov{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
+  .pedmodal .pm-body{padding:16px 20px;overflow:auto;flex:1 1 auto;min-height:0}
+  .pedmodal .pm-sec{border:1px solid var(--border);border-radius:13px;padding:13px 14px;margin-top:14px;background:var(--surface-2)}
+  .pedmodal .pm-sec:first-child{margin-top:0}
+  .pedmodal .pm-sec-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin-bottom:2px}
+  .pedmodal .pm-sec-h svg{width:15px;height:15px;color:var(--brand)}
+  .pedmodal label{display:block;font-size:11px;color:var(--muted);margin:11px 0 5px;font-weight:700}
+  .pedmodal input,.pedmodal select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);height:40px;padding:0 12px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .pedmodal input:focus,.pedmodal select:focus{border-color:var(--brand)}
+  .pedmodal .row2{display:flex;gap:10px}.pedmodal .row2>*{flex:1;min-width:0}
+  .pedmodal .hint{font-size:11px;color:var(--faint,var(--muted));margin-top:6px;line-height:1.45}
+  .pedmodal .meds{display:flex;gap:8px;flex-wrap:wrap}
+  .pedmodal .meds .med{flex:1;min-width:70px}
+  .pedmodal .meds .med span{display:block;font-size:10px;color:var(--faint,var(--muted));font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
+  .pedmodal .pm-foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)}
+  .pedmodal .pm-foot button{height:40px;padding:0 20px;border-radius:11px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .pedmodal .pm-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .pedmodal .pm-foot .save{background:var(--brand);border:none;color:#fff}
 `;
 let despachoCssInjected = false;
 function injectDespachoCss() {
@@ -659,6 +689,114 @@ export async function openDespachoModal(o, deps) {
     wireAviso(ov);
     pintaFoto();
     q("guia").focus();
+  });
+}
+
+// Editar pedido: TODOS los datos de entrega, con los desplegables reales (agencia
+// de destino Shalom con sugerencia, distrito Eva, medida Shalom). ÚNICO para toda
+// la app: lo abren el tablero de Pedidos y la ficha del chat. deps = { supa }.
+// Devuelve true si guardó (el que llama recarga), false si canceló.
+export async function openEditarPedido(o, deps) {
+  const { supa } = deps;
+  injectDespachoCss();
+  const s = o.shipping || {}, c = o.contact || {}, p = o.product || {}, v = o.version || {};
+  const zona = s.zona || O.zonaDe(o);
+  const L = await cargarListas();
+  const SH = (L && L.shalom) || {}, EV = (L && L.eva) || {};
+  const dl = (arr) => (arr || []).map((x) => `<option value="${esc(x)}"></option>`).join("");
+  const optMerc = (arr, val) => `<option value="">— usar la del negocio —</option>` + (arr || []).map((x) => `<option value="${esc(x)}"${String(x) === String(val) ? " selected" : ""}>${esc(x)}</option>`).join("");
+  const atr = Object.entries(s.atributos || {}).map(([k, val]) => `${k}: ${val}`).join(" · ");
+  const sug = (zona === "provincia" && !s.destino) ? sugerirAgencia(s.sede || s.ciudad, SH.destino) : "";
+  const destVal = s.destino || sug || s.sede || "";
+  const zonaBadge = zona === "provincia"
+    ? `<span class="pm-zona prov">${icon("building")} Provincia · agencia</span>`
+    : `<span class="pm-zona lima">${icon("truck")} Lima · contraentrega</span>`;
+  return new Promise((resolve) => {
+    const ov = document.createElement("div"); ov.className = "overlay";
+    ov.innerHTML = `<div class="modal"><div class="pedmodal">
+      <div class="pm-head">
+        <div class="pm-ic">${icon("edit")}</div>
+        <div style="flex:1;min-width:0"><div class="pm-ttl">Editar pedido</div><div class="pm-sub">${esc([p.emoji, p.nombre, v.nombre].filter(Boolean).join(" ")) || "Pedido"}${atr ? ` · ${esc(atr)}` : ""}</div></div>
+        ${zonaBadge}
+      </div>
+      <div class="pm-body">
+        <div class="pm-sec">
+          <div class="pm-sec-h">${icon("user")} Destinatario</div>
+          <div class="row2">
+            <div><label>Nombre</label><input id="eNom" value="${esc(s.cliente || c.nombre || "")}"/></div>
+            <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel || c.wa_id || "")}"/></div>
+          </div>
+        </div>
+        <div class="pm-sec" id="eLima" ${zona === "provincia" ? 'style="display:none"' : ""}>
+          <div class="pm-sec-h">${icon("pin")} Entrega en Lima</div>
+          <label>Dirección</label><input id="eDir" value="${esc(s.direccion || "")}"/>
+          <div class="row2">
+            <div><label>Distrito</label><input id="eDist" list="dlDistrito" value="${esc(s.distrito || "")}"/><datalist id="dlDistrito">${dl(EV.distrito)}</datalist></div>
+            <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia || "")}"/></div>
+          </div>
+          <div class="row2">
+            <div><label>Maps / GPS <span style="color:var(--faint,var(--muted));font-weight:400">(opcional)</span></label><input id="eGps" value="${esc(s.gps || "")}" placeholder="URL de Maps o lat, long"/></div>
+            <div><label>Importe a cobrar (S/)</label><input id="eAmountL" type="number" step="0.1" value="${esc(o.amount ?? "")}"/></div>
+          </div>
+        </div>
+        <div class="pm-sec" id="eProv" ${zona === "provincia" ? "" : 'style="display:none"'}>
+          <div class="pm-sec-h">${icon("building")} Envío por agencia (Shalom)</div>
+          <div class="row2">
+            <div><label>DNI de quien recibe</label><input id="eDni" value="${esc(s.dni || "")}"/></div>
+            <div><label>Ciudad</label><input id="eCiudad" value="${esc(s.ciudad || "")}"/></div>
+          </div>
+          <label>Agencia de destino (Shalom)</label>
+          <input id="eDestino" list="dlDestino" value="${esc(destVal)}" placeholder="Escribe y elige la agencia de destino"/>
+          <datalist id="dlDestino">${dl(SH.destino)}</datalist>
+          <div class="hint">${sug && !s.destino ? `💡 <b>Sugerida por el bot</b> — la agencia oficial más parecida a lo que dijo el cliente. Confírmala o cámbiala.<br>` : ""}${s.sede ? `🗣 <b>El cliente escribió:</b> “${esc(s.sede)}”` : "La oficina Shalom donde recoge tu cliente. Va en el Excel y en el rótulo."}</div>
+          <label>Medida del paquete</label>
+          <select id="eMerc">${optMerc(SH.mercaderia, s.mercaderia)}</select>
+          <label>Medidas y peso <span style="color:var(--faint,var(--muted));font-weight:400">(vacío = default del negocio)</span></label>
+          <div class="meds">
+            <div class="med"><span>Alto m</span><input id="eAlto" type="number" step="0.01" value="${esc(s.alto ?? "")}"/></div>
+            <div class="med"><span>Ancho m</span><input id="eAncho" type="number" step="0.01" value="${esc(s.ancho ?? "")}"/></div>
+            <div class="med"><span>Largo m</span><input id="eLargo" type="number" step="0.01" value="${esc(s.largo ?? "")}"/></div>
+            <div class="med"><span>Peso kg</span><input id="ePeso" type="number" step="0.1" value="${esc(s.peso ?? "")}"/></div>
+          </div>
+          <div class="row2">
+            <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto || "")}"/></div>
+            <div><label>Saldo por cobrar (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo || "")}"/></div>
+          </div>
+        </div>
+      </div>
+      <div class="pm-foot">
+        <button type="button" class="cancel">Cancelar</button>
+        <button type="button" class="save">Guardar cambios</button>
+      </div>
+    </div></div>`;
+    const g = (id) => ov.querySelector(id);
+    const cerrar = (val) => { ov.remove(); resolve(val); };
+    ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
+    g(".cancel").onclick = () => cerrar(false);
+    g(".save").onclick = async () => {
+      const numU = (id) => { const x = g(id).value; return x === "" ? null : Number(x); };
+      const ship = { cliente: g("#eNom").value.trim(), tel: g("#eTel").value.trim(), zona };
+      let amount;
+      if (zona === "provincia") {
+        const dst = g("#eDestino").value.trim();
+        Object.assign(ship, { dni: g("#eDni").value.trim(), ciudad: g("#eCiudad").value.trim(),
+          destino: dst, mercaderia: g("#eMerc").value,
+          alto: numU("#eAlto"), ancho: numU("#eAncho"), largo: numU("#eLargo"), peso: numU("#ePeso"),
+          adelanto: g("#eAdel").value, saldo: g("#eSaldo").value });
+        if (dst) ship.sede_por_confirmar = null;
+      } else {
+        Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
+          referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim() });
+        const a = g("#eAmountL").value; if (a !== "") amount = Number(a);
+      }
+      const body = { order_id: o.id, shipping: ship };
+      if (amount !== undefined) body.amount = amount;
+      const btn = g(".save"); btn.disabled = true; btn.textContent = "Guardando…";
+      const { data, error } = await supa.functions.invoke("order-update", { body });
+      if (!error && !(data && data.error)) { toast("Pedido actualizado ✓"); cerrar(true); }
+      else { toast((error && error.message) || (data && data.error) || "No se pudo actualizar", true); btn.disabled = false; btn.textContent = "Guardar cambios"; }
+    };
+    document.body.appendChild(ov);
   });
 }
 
