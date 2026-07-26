@@ -519,7 +519,7 @@ function kcard(o){
     </div>
     <div class="kc-money">${moneyLine}</div>
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
-    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠ Confirmar sede Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
+    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠ Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
       <button class="rot edit" title="Editar datos del pedido">${icon("edit")}</button>
@@ -536,7 +536,7 @@ function kcard(o){
   el.querySelector(".rot:not(.edit)").onclick=(ev)=>{ ev.stopPropagation(); printRotulo(o); };
   el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
   const wb=el.querySelector("[data-cfsede]");
-  if(wb) wb.onclick=(ev)=>{ ev.stopPropagation(); openConfirmSede(o); };
+  if(wb) wb.onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
   return el;
 }
 
@@ -864,6 +864,8 @@ async function openEnvio(o){
         destino:dst, mercaderia:g("#eMerc").value,
         alto:numU("#eAlto"), ancho:numU("#eAncho"), largo:numU("#eLargo"), peso:numU("#ePeso"),
         adelanto:g("#eAdel").value, saldo:g("#eSaldo").value });
+      // Elegir la agencia = confirmarla: limpia el aviso ⚠ "confirmar agencia".
+      if(dst) ship.sede_por_confirmar=null;
     } else {
       Object.assign(ship,{ direccion:g("#eDir").value.trim(), distrito:g("#eDist").value.trim(),
         referencia:g("#eRef").value.trim(), gps:g("#eGps").value.trim() });
