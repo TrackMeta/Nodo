@@ -359,6 +359,9 @@ const DESPACHO_CSS = `
   .dl-tbl .dl-cli span{font-weight:500;color:var(--muted);font-size:11px}
   .dl-tbl input{height:32px;font-size:12.5px;padding:0 8px;border-radius:8px}
   .dl-tbl tr.bad input[data-k="guia"],.dl-tbl tr.bad input[data-k="codigo"]{border-color:var(--amber);background:var(--amber-bg,rgba(245,158,11,.08))}
+  .dl-foto{height:32px;min-width:38px;padding:0 9px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:14px;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
+  .dl-foto.has{border-color:var(--green);color:var(--green)}
+  .dl-lote-ocr{display:flex;align-items:center;gap:8px}
 `;
 let despachoCssInjected = false;
 function injectDespachoCss() {
@@ -636,6 +639,14 @@ export async function openDespachoLoteModal(orders, deps) {
   return new Promise((resolve) => {
     const ov = document.createElement("div");
     ov.className = "overlay";
+    const fotos = {};
+    orders.forEach((o) => { const s = o.shipping || {}; if (s.guia_foto) fotos[o.id] = { url: s.guia_foto, kind: s.guia_foto_kind || "image" }; });
+    const subirFoto = async (file) => {
+      const dataURL = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      const { data, error } = await supa.functions.invoke("media-upload", { body: { channel_id: channelId, filename: file.name, content_type: file.type, data: dataURL } });
+      if (error || !data?.url) return null;
+      return { url: data.url, kind: data.kind || (file.type.startsWith("image/") ? "image" : "document") };
+    };
     const fila = (o) => {
       const s = o.shipping || {}, c = o.contact || {};
       const dest = s.destino || s.sede || s.ciudad || "—";
@@ -645,6 +656,7 @@ export async function openDespachoLoteModal(orders, deps) {
         <td><input data-k="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Código"/></td>
         <td><input data-k="clave" value="${esc(s.clave_recojo || "")}" placeholder="Clave"/></td>
         <td><input data-k="flete" type="number" min="0" step="0.5" value="${s.flete ?? ""}" placeholder="0" style="width:64px"/></td>
+        <td><button type="button" class="dl-foto${s.guia_foto ? " has" : ""}" data-fid="${esc(o.id)}" title="Adjuntar foto del envío / guía">${s.guia_foto ? "✓" : "📷"}</button></td>
       </tr>`;
     };
     ov.innerHTML = `<div class="modal dl-modal">
@@ -656,7 +668,7 @@ export async function openDespachoLoteModal(orders, deps) {
         <div class="dl-pfoot"><button type="button" data-aplicar style="height:34px;padding:0 14px;border-radius:9px;border:none;background:var(--brand);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">Aplicar a la tabla</button></div>
       </div>
       <div class="dl-tblwrap"><table class="dl-tbl"><thead><tr>
-        <th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th></tr></thead>
+        <th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th><th>Foto</th></tr></thead>
         <tbody>${orders.map(fila).join("")}</tbody></table></div>
       ${avisoBlockHtml(info)}
       <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Registrar despachos</button></div>
@@ -665,6 +677,18 @@ export async function openDespachoLoteModal(orders, deps) {
     ov.onclick = (e) => { if (e.target === ov) cerrar(0); };
     ov.querySelector(".cancel").onclick = () => cerrar(0);
     wireAviso(ov);
+    ov.querySelectorAll(".dl-foto").forEach((btn) => {
+      btn.onclick = () => {
+        const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*,application/pdf";
+        inp.onchange = async () => {
+          const f = inp.files && inp.files[0]; if (!f) return;
+          if (f.size > 16 * 1024 * 1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+          toast("Subiendo…"); const up = await subirFoto(f); if (!up) { toast("No se pudo subir la foto", true); return; }
+          fotos[btn.dataset.fid] = up; btn.classList.add("has"); btn.textContent = "✓"; toast("Foto lista ✓");
+        };
+        inp.click();
+      };
+    });
     ov.querySelector("[data-pegar]").onclick = () => ov.querySelector("[data-pastebox]").classList.toggle("on");
     ov.querySelector("[data-aplicar]").onclick = () => {
       const txt = ov.querySelector("[data-paste]").value.trim();
@@ -699,6 +723,7 @@ export async function openDespachoLoteModal(orders, deps) {
         btn.textContent = `Registrando ${ok + fail + 1}/${listos.length}…`;
         const r = await updateOrder({ order_id: it.id, estado: "despachado", aviso, shipping: {
           guia: it.g, codigo_envio: it.cod, clave_recojo: it.clave, sede_por_confirmar: null,
+          ...(fotos[it.id] ? { guia_foto: fotos[it.id].url, guia_foto_kind: fotos[it.id].kind } : {}),
           ...(it.flete === "" || it.flete == null ? {} : { flete: Number(it.flete) || 0 }),
         } });
         r ? ok++ : fail++;
