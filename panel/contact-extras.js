@@ -366,6 +366,34 @@ const DESPACHO_CSS = `
   .dl-lote-ocr button{height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
   .dl-tbl .dl-chk{width:34px;text-align:center}
   .dl-tbl .dl-chk input{width:16px;height:16px;accent-color:var(--brand);cursor:pointer;padding:0}
+  /* Paso 1: elegir cuáles despachar (lista bonita) */
+  .modal.sel-modal{max-width:520px;padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:88vh}
+  .sel-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}
+  .sel-ic{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--brand);color:#fff;font-size:20px}
+  .sel-ttl{font-size:16px;font-weight:800}
+  .sel-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .sel-allbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border)}
+  .sel-allbar label{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;margin:0}
+  .sel-allbar label input{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
+  .sel-cnt{font-size:12px;font-weight:800;color:var(--brand)}
+  .sel-list{overflow:auto;padding:10px 14px;flex:1 1 auto;min-height:0}
+  .sel-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:border-color .12s,background .12s}
+  .sel-row:hover{border-color:var(--brand)}
+  .sel-row.on{border-color:var(--brand);background:var(--brand-bg,rgba(43,127,255,.08))}
+  .sel-check{width:22px;height:22px;border-radius:7px;border:2px solid var(--border);flex:none;display:flex;align-items:center;justify-content:center;color:transparent;font-size:13px;font-weight:800}
+  .sel-row.on .sel-check{background:var(--brand);border-color:var(--brand);color:#fff}
+  .sel-em{width:34px;height:34px;border-radius:9px;background:var(--surface-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:17px}
+  .sel-tx{flex:1;min-width:0}
+  .sel-nm{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sel-dest{font-size:11.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sel-mon{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap;flex:none;line-height:1.5}
+  .sel-mon b{color:var(--text);font-variant-numeric:tabular-nums}
+  .sel-foot{display:flex;gap:8px;align-items:center;padding:14px 20px;border-top:1px solid var(--border)}
+  .sel-foot .sel-hint{flex:1;font-size:12.5px;color:var(--muted);font-weight:600}
+  .sel-foot button{height:40px;padding:0 20px;border-radius:11px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .sel-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .sel-foot .save{background:var(--brand);border:none;color:#fff}
+  .sel-foot .save:disabled{opacity:.45;cursor:default}
 `;
 let despachoCssInjected = false;
 function injectDespachoCss() {
@@ -641,34 +669,44 @@ export function elegirPedidosDespacho(orders, deps) {
     const ov = document.createElement("div");
     ov.className = "overlay";
     const fila = (o) => {
-      const s = o.shipping || {}, c = o.contact || {};
+      const s = o.shipping || {}, c = o.contact || {}, p = o.product || {};
       const dest = s.destino || s.sede || s.ciudad || "—";
-      const montos = `Ad. S/ ${Number(s.adelanto || 0)} · Sd. S/ ${Number(s.saldo || 0)}`;
-      return `<tr data-id="${esc(o.id)}">
-        <td class="dl-chk"><input type="checkbox" class="dl-sel" checked/></td>
-        <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span></td>
-        <td style="text-align:right;font-size:12px;color:var(--muted);white-space:nowrap">${montos}</td></tr>`;
+      const adel = Number(s.adelanto || 0), saldo = Number(s.saldo || 0);
+      const mon = (adel || saldo)
+        ? `${adel ? `Adelanto <b>S/ ${adel}</b>` : ""}${adel && saldo ? "<br>" : ""}${saldo ? `Saldo <b>S/ ${saldo}</b>` : ""}`
+        : "";
+      return `<div class="sel-row on" data-id="${esc(o.id)}">
+        <span class="sel-check">✓</span>
+        <span class="sel-em">${p.emoji ? esc(p.emoji) : "📦"}</span>
+        <div class="sel-tx"><div class="sel-nm">${esc(c.nombre || s.cliente || "Sin nombre")}</div><div class="sel-dest">${esc(dest)}</div></div>
+        <div class="sel-mon">${mon}</div>
+      </div>`;
     };
-    ov.innerHTML = `<div class="modal dl-modal" style="max-width:540px">
-      <h3>📦 ¿Cuáles vas a despachar?</h3>
-      <div class="m-sub">Marca los pedidos que llevas a la agencia ahora. En el siguiente paso registras sus guías y códigos.</div>
-      <div class="dl-tblwrap"><table class="dl-tbl"><thead><tr>
-        <th class="dl-chk"><input type="checkbox" data-all checked/></th><th>Cliente</th><th style="text-align:right">Montos</th></tr></thead>
-        <tbody>${orders.map(fila).join("")}</tbody></table></div>
-      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Continuar</button></div>
+    ov.innerHTML = `<div class="modal sel-modal">
+      <div class="sel-head"><div class="sel-ic">📦</div>
+        <div><div class="sel-ttl">¿Cuáles vas a despachar?</div><div class="sel-sub">Marca los pedidos que llevas a la agencia ahora. Después registras sus guías.</div></div></div>
+      <div class="sel-allbar"><label><input type="checkbox" data-all checked/> Seleccionar todos</label><span class="sel-cnt" data-cnt></span></div>
+      <div class="sel-list">${orders.map(fila).join("")}</div>
+      <div class="sel-foot"><span class="sel-hint" data-hint></span><button class="cancel">Cancelar</button><button class="save">Continuar</button></div>
     </div>`;
     const cerrar = (v) => { ov.remove(); resolve(v); };
+    const sel = new Set(orders.map((o) => o.id));
+    const paint = () => {
+      ov.querySelectorAll(".sel-row").forEach((r) => r.classList.toggle("on", sel.has(r.dataset.id)));
+      const n = sel.size;
+      ov.querySelector("[data-cnt]").textContent = `${n} de ${orders.length}`;
+      ov.querySelector("[data-hint]").textContent = n ? `${n} pedido${n > 1 ? "s" : ""} seleccionado${n > 1 ? "s" : ""}` : "Marca al menos uno";
+      const all = ov.querySelector("[data-all]");
+      all.checked = n === orders.length; all.indeterminate = n > 0 && n < orders.length;
+      ov.querySelector(".save").disabled = !n;
+    };
     ov.onclick = (e) => { if (e.target === ov) cerrar(null); };
     ov.querySelector(".cancel").onclick = () => cerrar(null);
-    ov.querySelector("[data-all]").onchange = (e) => ov.querySelectorAll(".dl-sel").forEach((c) => { c.checked = e.target.checked; });
-    ov.querySelectorAll(".dl-tbl tbody tr").forEach((tr) => { tr.onclick = (e) => { if (e.target.classList.contains("dl-sel")) return; const ch = tr.querySelector(".dl-sel"); ch.checked = !ch.checked; }; });
-    ov.querySelector(".save").onclick = () => {
-      const ids = new Set([...ov.querySelectorAll(".dl-tbl tbody tr")].filter((tr) => tr.querySelector(".dl-sel").checked).map((tr) => tr.dataset.id));
-      const sel = orders.filter((o) => ids.has(o.id));
-      if (!sel.length) { toast && toast("Elige al menos un pedido", true); return; }
-      cerrar(sel);
-    };
+    ov.querySelectorAll(".sel-row").forEach((r) => { r.onclick = () => { const id = r.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); paint(); }; });
+    ov.querySelector("[data-all]").onchange = (e) => { orders.forEach((o) => e.target.checked ? sel.add(o.id) : sel.delete(o.id)); paint(); };
+    ov.querySelector(".save").onclick = () => { if (!sel.size) return; cerrar(orders.filter((o) => sel.has(o.id))); };
     document.body.appendChild(ov);
+    paint();
   });
 }
 
