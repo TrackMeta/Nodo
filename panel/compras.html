@@ -89,7 +89,7 @@
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por cliente, teléfono o nº de operación…" /></div>
       <div class="chips" id="tipoChips"></div>
-      <div class="chips" id="rangeChips"></div>
+      <div id="dr"></div>
     </div>
 
     <div class="grid" id="grid"></div>
@@ -100,8 +100,12 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText } from "./shell.js";
 import * as O from "./orders.js";
+import { mountDateRange, computePreset } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, list:[], imgs:{}, q:"", tipo:"all", range:"all" };
+// El rango arranca en "Máximo" (últimos 365 días) para no esconder ventas al
+// entrar — Compras es el archivo y el buscador por nº de operación no debe
+// quedar tapado por una ventana corta. El picker deja acotar cuando haga falta.
+const st={ channelId:null, list:[], imgs:{}, q:"", tipo:"all", rango:computePreset("max") };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
 function fecha(iso){ if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})+" · "+d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"}); }
@@ -125,6 +129,7 @@ async function boot(){
   $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
+  mountDateRange($("dr"), { valor:st.rango, onChange:(r)=>{ st.rango=r; render(); } });
   renderChips();
   await load();
 }
@@ -152,19 +157,17 @@ async function load(){
 }
 
 const TIPOS=[["all","Todas"],["digital","💻 Digital"],["lima","📦 Lima"],["provincia","📦 Provincia"]];
-const RANGOS=[["all","Todo"],["hoy","Hoy"],["semana","7 días"],["mes","30 días"]];
 function renderChips(){
   $("tipoChips").innerHTML=TIPOS.map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("");
   $("tipoChips").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; renderChips(); render(); });
-  $("rangeChips").innerHTML=RANGOS.map(([v,l])=>`<button class="chip ${st.range===v?'on':''}" data-r="${v}">${l}</button>`).join("");
-  $("rangeChips").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{ st.range=b.dataset.r; renderChips(); render(); });
 }
 
 function enRango(o){
-  if(st.range==="all") return true;
+  const r=st.rango; if(!r||!r.from||!r.to) return true;
   const t=new Date(cuando(o)).getTime(); if(!t) return true;
-  const dias=st.range==="hoy"?1:st.range==="semana"?7:30;
-  return (Date.now()-t) <= dias*86400000;
+  const desde=new Date(r.from.getFullYear(),r.from.getMonth(),r.from.getDate(),0,0,0).getTime();
+  const hasta=new Date(r.to.getFullYear(),r.to.getMonth(),r.to.getDate(),23,59,59,999).getTime();
+  return t>=desde && t<=hasta;
 }
 
 // Buscar por nombre, teléfono o Nº DE OPERACIÓN. Lo último es lo que se tiene a
