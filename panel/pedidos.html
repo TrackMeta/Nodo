@@ -268,8 +268,12 @@ async function boot(){
 // varios pedidos a la vez. Excluye los aéreos (van a mano, uno por uno).
 async function despachoLote(){
   if(st.kbZona!=="provincia"){ toast("El despacho en lote es para provincia (agencia con guía)",true); return; }
-  const pend=st.list.filter(o=>isFisico(o) && zonaDe(o)==="provincia" && POR_DESPACHAR.provincia.has(o.estado) && !(o.shipping&&o.shipping.aereo));
-  if(!pend.length){ toast("No hay pedidos de provincia por despachar",true); return; }
+  const base=st.list.filter(o=>isFisico(o) && zonaDe(o)==="provincia" && POR_DESPACHAR.provincia.has(o.estado));
+  const pend=base.filter(o=>!(o.shipping&&o.shipping.aereo));
+  if(!pend.length){
+    toast(base.length ? "Los pedidos por despachar son aéreos: se registran a mano, no en lote" : "No hay pedidos de provincia por despachar", true);
+    return;
+  }
   const n=await openDespachoLoteModal(pend,{ updateOrder, toast, supa, channelId:st.channelId });
   if(n) await load();
 }
