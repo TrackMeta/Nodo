@@ -274,6 +274,8 @@ function renderEntregas(b){
   E.costos=E.costos||{}; E.costos.grupos=E.costos.grupos||{}; E.costos.zonas=E.costos.zonas||{};
   E.aereo=(E.aereo&&typeof E.aereo==="object")?E.aereo:{};
   if(!Array.isArray(E.aereo.destinos)) E.aereo.destinos=String(E.aereo.destinos||"").split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
+  E.courier=(E.courier&&typeof E.courier==="object")?E.courier:{};
+  E.courier.shalom=(E.courier.shalom&&typeof E.courier.shalom==="object")?E.courier.shalom:{};
 
   const sw=(on,id)=>`<span class="ent-sw ${on?'on':''}" data-sw="${id}"></span>`;
   const rowSw=(txt,sub,on,id)=>`<div class="erow" data-row="${id}" style="display:flex;align-items:center;justify-content:space-between;
@@ -338,6 +340,25 @@ function renderEntregas(b){
       <div style="font-size:11px;color:var(--faint);margin-top:6px">Preséntalo siempre como algo <b>bueno</b> para el cliente (llega más rápido), nunca como un costo extra. Vacío = el bot usa un mensaje cálido por defecto.</div>
     </div>
     <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Exportar a couriers (Excel)</h3>
+      <p class="sub">Para bajar tus pedidos <b>por despachar</b> en el Excel de carga masiva de cada courier (botón <b>Exportar Excel</b> en <b>Pedidos</b>). <b>Eva Courier</b> (Lima) sale con lo que ya capturamos; <b>Shalom</b> (provincia) necesita estos datos tuyos:</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
+        <label style="margin:0;font-size:12.5px;font-weight:700;min-width:150px">Oficina de origen (Shalom)</label>
+        <input class="in" id="coOrigen" placeholder="Ej. ZAMACOLA" value="${esc(E.courier.shalom.origen||"")}" style="flex:1;min-width:200px;text-transform:uppercase"/>
+      </div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">La agencia Shalom <b>desde donde despachas</b>. Debe coincidir con el nombre de la lista de Shalom (columna ORIGEN).</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
+        <label style="margin:0;font-size:12.5px;font-weight:700;min-width:150px">Mercadería <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+        <input class="in" id="coMerc" placeholder="Por defecto: el nombre del producto" value="${esc(E.courier.shalom.mercaderia||"")}" style="flex:1;min-width:200px"/>
+      </div>
+      <label style="margin-top:14px;display:block">Medidas y peso por defecto <span style="color:var(--faint);font-weight:400">(por paquete)</span></label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center">
+        ${["alto","ancho","largo"].map(k=>`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--muted);text-transform:capitalize">${k}</span><input class="in co-med" data-k="${k}" type="number" min="0" step="0.01" value="${esc(E.courier.shalom[k]??"")}" placeholder="0" style="width:88px"/><span style="font-size:11px;color:var(--faint)">m</span></div>`).join("")}
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--muted)">Peso</span><input class="in co-med" data-k="peso" type="number" min="0" step="0.1" value="${esc(E.courier.shalom.peso??"")}" placeholder="0" style="width:88px"/><span style="font-size:11px;color:var(--faint)">kg</span></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">Si no las sabes, déjalas en 0 — Shalom las completa al pesar el paquete.</div>
+    </div>
+    <div class="card">
       <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Costo de reparto</h3>
       <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -369,6 +390,9 @@ function renderEntregas(b){
   $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
   $("aerDest").oninput=(ev)=>{ E.aereo.destinos = ev.target.value.split("\n").map(s=>s.trim()).filter(Boolean); };
   $("aerMsg").oninput=(ev)=>{ E.aereo.mensaje = ev.target.value.trim(); };
+  $("coOrigen").oninput=(ev)=>{ E.courier.shalom.origen = ev.target.value.trim(); };
+  $("coMerc").oninput=(ev)=>{ E.courier.shalom.mercaderia = ev.target.value.trim(); };
+  b.querySelectorAll(".co-med").forEach(inp=> inp.oninput=(ev)=>{ const k=ev.target.dataset.k, v=ev.target.value; E.courier.shalom[k]= v===""?undefined:Number(v); });
   $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
   $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
   $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };
