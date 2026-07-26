@@ -135,7 +135,7 @@
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
 import { openDespachoModal, pedirAviso, avisoMsg } from "./contact-extras.js";
-import { COURIERS, COURIERS_PRONTO, couriersDeZona, porDespachar, generar, cargarListas } from "./courier-export.js";
+import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, generar, cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -190,20 +190,23 @@ async function boot(){
 // ── Exportar al Excel de carga masiva del courier ──────────────────
 // Menú desplegable para elegir el courier (cada uno rellena SU plantilla real
 // conservando hojas de validación y macros; ver courier-export.js).
+// El menú muestra SOLO los couriers de la zona que estás viendo (Lima → Eva;
+// Provincia → Shalom), + los "próximamente" de esa zona.
 function toggleExportMenu(){
   const menu=$("exportMenu");
   if(menu.classList.contains("show")){ menu.classList.remove("show"); return; }
-  const activos=Object.values(COURIERS).map(c=>{
+  const zona=st.kbZona;
+  const activos=couriersDeZona(zona).map(c=>{
     const n=porDespachar(st.list,c.zona).length;
     return `<button class="expitem" data-c="${c.id}">
       <span class="exp-logo" style="background:${c.color}">${esc(c.inicial)}</span>
       <span class="exp-tx"><div class="exp-nm">${esc(c.nombre)}</div><div class="exp-sub">${esc(c.zonaLbl)} · Excel masivo</div></span>
       ${n?`<span class="exp-cnt">${n}</span>`:""}</button>`;
   }).join("");
-  const pronto=COURIERS_PRONTO.map(c=>`<button class="expitem" disabled>
+  const pronto=prontoDeZona(zona).map(c=>`<button class="expitem" disabled>
       <span class="exp-logo pronto">${esc(c.inicial)}</span>
       <span class="exp-tx"><div class="exp-nm">${esc(c.nombre)}</div><div class="exp-sub">Próximamente</div></span></button>`).join("");
-  menu.innerHTML=`<div class="exphd">SELECCIONAR COURIER</div>${activos}${pronto}`;
+  menu.innerHTML=`<div class="exphd">SELECCIONAR COURIER · ${zona==="lima"?"LIMA":"PROVINCIA"}</div>${activos}${pronto}`;
   menu.querySelectorAll("[data-c]").forEach(b=> b.onclick=()=>{ menu.classList.remove("show"); exportarDe(COURIERS[b.dataset.c]); });
   menu.classList.add("show");
 }
@@ -293,7 +296,7 @@ function render(){
   zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv)
     +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
        ${nTurno===1?"1 pago por validar":`${nTurno} pagos por validar`}</a>`:"");
-  zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; render(); });
+  zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; const em=$("exportMenu"); if(em) em.classList.remove("show"); render(); });
 
   box.innerHTML="";
   if(!zList.length){

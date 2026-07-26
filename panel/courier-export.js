@@ -98,11 +98,12 @@ export const COURIERS = {
     plantilla: "courier/shalom.xlsx", sheet: "xl/worksheets/sheet1.xml",
     filas: filasShalom, revisar: revisarShalom },
 };
-// Couriers que vienen pronto (se muestran deshabilitados en el menú).
+// Couriers que vienen pronto (deshabilitados en el menú), por zona.
 export const COURIERS_PRONTO = [
-  { nombre: "Olva Courier", zonaLbl: "Provincia", inicial: "O" },
-  { nombre: "Otros couriers de Lima", zonaLbl: "Lima", inicial: "+" },
+  { nombre: "Olva Courier", zona: "provincia", inicial: "O" },
+  { nombre: "Más couriers", zona: "lima", inicial: "+" },
 ];
+export const prontoDeZona = (zona) => COURIERS_PRONTO.filter((c) => c.zona === zona);
 export const couriersDeZona = (zona) => Object.values(COURIERS).filter((c) => c.zona === zona);
 
 // Listas de los desplegables de los couriers (agencias, distritos, medidas),
