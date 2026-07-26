@@ -13,6 +13,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
+import { sedeReconocida } from "./shalom-agencias.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -1792,15 +1793,10 @@ async function avisarVuelto(db: SupabaseClient, run: Run, amount: number, vuelto
 // para que un humano las confirme en Pedidos antes de despachar. Prefiere marcar
 // de más: en provincia, despachar a una sede vaga es mandar el paquete al aire.
 function sedeImprecisa(sede: string, ciudad: string): string | null {
-  const s = String(sede ?? "").trim();
-  if (!s) return null; // vacía → la maneja "faltan datos", no es "por confirmar"
-  const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  if (ciudad && norm(s) === norm(ciudad)) return "solo dice la ciudad, falta la oficina exacta";
-  if (s.length < 6) return "muy corta para ubicar la oficina";
-  // La mayoría de oficinas Shalom verificables traen una dirección con altura;
-  // "la de la calle Real" (sin número) no basta para que la agencia la ubique.
-  if (!/\d/.test(s)) return "sin dirección con número — confírmala con la oficina Shalom exacta";
-  return null;
+  // Se valida contra la lista REAL de agencias de Shalom (shalom-agencias.ts):
+  // si lo que dijo el cliente calza con UNA agencia oficial, no se pide confirmar;
+  // si no calza o hay varias que calzan, se marca para que un humano la confirme.
+  return sedeReconocida(sede, ciudad);
 }
 
 async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
