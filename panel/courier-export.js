@@ -120,20 +120,32 @@ export function sugerirAgencia(texto, agencias) {
   // 1) coincidencia exacta
   const exacta = agencias.find((a) => _norm(a) === t);
   if (exacta) return exacta;
-  // 2) una contiene a la otra (la agencia aparece en el texto o viceversa) → la más larga
-  const cont = agencias.filter((a) => { const na = _norm(a); return na && (t.includes(na) || na.includes(t)); })
-    .sort((a, b) => Math.abs(_norm(a).length - t.length) - Math.abs(_norm(b).length - t.length));
-  if (cont.length) return cont[0];
-  // 3) por palabras compartidas (>2 letras); solo si comparten al menos una
+  // 2) el nombre de la agencia oficial aparece DENTRO de lo que escribió el
+  //    cliente (nombró la sede completa, p. ej. "Cusco Urubamba") → la más
+  //    específica (la más larga si hay varias contenidas).
+  const dentro = agencias.filter((a) => { const na = _norm(a); return na && t.includes(na); })
+    .sort((a, b) => _norm(b).length - _norm(a).length);
+  if (dentro.length) return dentro[0];
+  // 3) lo que escribió el cliente es PARTE del nombre de una agencia (nombró
+  //    solo la ciudad, p. ej. "Cusco"). Solo sugerimos si hay UNA candidata:
+  //    si varias sedes de esa ciudad lo contienen es ambiguo (¿cuál?) y adivinar
+  //    manda el paquete a la oficina equivocada → mejor no sugerir y que el
+  //    dueño elija del desplegable.
+  const contienen = agencias.filter((a) => { const na = _norm(a); return na && na.includes(t); });
+  if (contienen.length === 1) return contienen[0];
+  if (contienen.length > 1) return "";
+  // 4) por palabras compartidas (>2 letras). Solo si UNA agencia tiene el
+  //    puntaje máximo; si empatan varias es ambiguo → no adivinar.
   const tk = new Set(t.split(" ").filter((w) => w.length > 2));
   if (!tk.size) return "";
-  let best = "", score = 0;
+  let best = "", score = 0, empate = false;
   for (const a of agencias) {
     const aw = _norm(a).split(" ").filter((w) => w.length > 2);
     let sc = 0; for (const w of aw) if (tk.has(w)) sc++;
-    if (sc > score) { score = sc; best = a; }
+    if (sc > score) { score = sc; best = a; empate = false; }
+    else if (sc === score && sc > 0) { empate = true; }
   }
-  return score > 0 ? best : "";
+  return (score > 0 && !empate) ? best : "";
 }
 
 // Listas de los desplegables de los couriers (agencias, distritos, medidas),
