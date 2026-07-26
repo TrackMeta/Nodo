@@ -91,6 +91,39 @@
   .pedmodal .pm-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
   .pedmodal .pm-foot .save{background:var(--brand);border:none;color:#fff}
   .pedmodal .pm-foot .save:hover{background:var(--brand-2)}
+  /* Modal de exportación con selección de pedidos */
+  .modal:has(.expmodal){max-width:760px;padding:0;overflow:hidden}
+  .expmodal{display:flex;flex-direction:column;max-height:88vh}
+  .expmodal .em-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border);position:relative}
+  .expmodal .em-logo{width:40px;height:40px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:#fff}
+  .expmodal .em-ttl{font-size:16px;font-weight:800}
+  .expmodal .em-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .expmodal .em-x{position:absolute;top:14px;right:16px;width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .expmodal .em-x:hover{color:var(--text)}
+  .expmodal .em-filters{display:flex;gap:12px;padding:14px 20px;flex-wrap:wrap}
+  .expmodal .em-f{flex:1;min-width:150px}
+  .expmodal .em-f label{display:block;font-size:10.5px;font-weight:800;letter-spacing:.5px;color:var(--faint);text-transform:uppercase;margin-bottom:5px}
+  .expmodal .em-f select,.expmodal .em-f input{width:100%;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 11px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .expmodal .em-f select:focus,.expmodal .em-f input:focus{border-color:var(--brand)}
+  .expmodal .em-body{flex:1 1 auto;min-height:120px;overflow:auto;padding:0 20px}
+  .expmodal .em-tbl{width:100%;border-collapse:collapse}
+  .expmodal .em-tbl th{position:sticky;top:0;background:var(--surface);font-size:10.5px;font-weight:800;letter-spacing:.4px;color:var(--faint);text-transform:uppercase;text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);z-index:1}
+  .expmodal .em-tbl td{padding:9px 8px;border-bottom:1px solid var(--border);font-size:13px}
+  .expmodal .em-tbl tbody tr{cursor:pointer}
+  .expmodal .em-tbl tbody tr:hover td{background:var(--surface-2)}
+  .expmodal .em-tbl .c-chk{width:36px}
+  .expmodal .em-tbl .c-chk input{width:17px;height:17px;accent-color:var(--brand);cursor:pointer}
+  .expmodal .em-tbl .c-amt{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .expmodal .em-badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;white-space:nowrap;display:inline-block}
+  .expmodal .em-empty{border:1px dashed var(--border);border-radius:12px;padding:30px;text-align:center;color:var(--muted);margin:6px 0 14px;font-size:13px}
+  .expmodal .em-foot{display:flex;align-items:center;gap:12px;padding:14px 20px;border-top:1px solid var(--border)}
+  .expmodal .em-foot .em-hint{flex:1;font-size:12.5px;color:var(--muted);font-weight:600}
+  .expmodal .em-foot button{height:40px;padding:0 18px;border-radius:11px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .expmodal .em-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .expmodal .em-foot .dl{background:var(--brand);border:none;color:#fff;display:inline-flex;align-items:center;gap:8px}
+  .expmodal .em-foot .dl:hover{background:var(--brand-2)}
+  .expmodal .em-foot .dl:disabled{opacity:.45;cursor:default}
+  .expmodal .em-foot .dl svg{width:16px;height:16px}
   .kcard .kc-when{font-size:10.5px;color:var(--faint);margin-top:7px;text-align:right}
   .zona{font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;letter-spacing:.3px}
   .zona.lima{background:var(--brand-bg);color:var(--brand)}
@@ -164,7 +197,7 @@
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
 import { openDespachoModal, pedirAviso, avisoMsg } from "./contact-extras.js";
-import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, generar, cargarListas } from "./courier-export.js";
+import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -236,22 +269,108 @@ function toggleExportMenu(){
       <span class="exp-logo pronto">${esc(c.inicial)}</span>
       <span class="exp-tx"><div class="exp-nm">${esc(c.nombre)}</div><div class="exp-sub">Próximamente</div></span></button>`).join("");
   menu.innerHTML=`<div class="exphd">SELECCIONAR COURIER · ${zona==="lima"?"LIMA":"PROVINCIA"}</div>${activos}${pronto}`;
-  menu.querySelectorAll("[data-c]").forEach(b=> b.onclick=()=>{ menu.classList.remove("show"); exportarDe(COURIERS[b.dataset.c]); });
+  menu.querySelectorAll("[data-c]").forEach(b=> b.onclick=()=>{ menu.classList.remove("show"); abrirExport(COURIERS[b.dataset.c]); });
   menu.classList.add("show");
 }
-async function exportarDe(courier){
-  const pend=porDespachar(st.list,courier.zona);
-  if(!pend.length){ toast(`No hay pedidos "por despachar" para ${courier.nombre}`,true); return; }
-  const cfg=(st.entregas&&st.entregas.courier)||{};
-  const issues=courier.revisar(pend,cfg)||[];
-  if(issues.length){
-    const lista=issues.slice(0,8).map(x=>`• ${esc(x)}`).join("<br>");
-    const extra=issues.length>8?`<br>…y ${issues.length-8} más`:"";
-    const ok=await confirmDialog({title:"Revisa antes de exportar",message:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Ábrelos con <b>Editar</b> y complétalos. Si continúas se exportan igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
-    if(!ok) return;
+
+// Modal de exportación: al elegir courier, se abre con selector de período +
+// estado + buscador y una TABLA para marcar exactamente qué pedidos exportar.
+const DL_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+function abrirExport(courier){
+  const zona=courier.zona;
+  const estZona = zona==="lima" ? KB_LIMA.flatMap(c=>c[2]) : KB_PROV.flatMap(c=>c[2]);
+  const estUnicos=[...new Set(estZona)];
+  const S={ periodo:"todos", estado:"pordespachar", q:"", sel:new Set() };
+  const cuandoT=(o)=> new Date(o.updated_at||o.created_at||0).getTime();
+  function filtrar(){
+    let arr=st.list.filter(o=>isFisico(o) && zonaDe(o)===zona);
+    if(S.periodo!=="todos"){
+      const now=new Date(), hoy0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+      if(S.periodo==="hoy") arr=arr.filter(o=>cuandoT(o)>=hoy0);
+      else if(S.periodo==="ayer") arr=arr.filter(o=>cuandoT(o)>=hoy0-86400000 && cuandoT(o)<hoy0);
+      else { const d=Number(S.periodo); arr=arr.filter(o=>(Date.now()-cuandoT(o))<=d*86400000); }
+    }
+    if(S.estado==="pordespachar") arr=arr.filter(o=>POR_DESPACHAR[zona].has(o.estado));
+    else if(S.estado!=="todos") arr=arr.filter(o=>o.estado===S.estado);
+    if(S.q){ const q=S.q.toLowerCase(); arr=arr.filter(o=>{ const c=o.contact||{},s=o.shipping||{};
+      return (c.nombre||"").toLowerCase().includes(q)||(c.wa_id||"").includes(q)||(s.cliente||"").toLowerCase().includes(q)
+        ||(s.distrito||"").toLowerCase().includes(q)||(s.ciudad||"").toLowerCase().includes(q)||(s.destino||"").toLowerCase().includes(q); }); }
+    return arr;
   }
-  try{ const n=await generar(courier,pend,cfg); toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}`); }
-  catch(e){ toast(e.message||"No pude generar el Excel",true); }
+  const ov=document.createElement("div"); ov.className="overlay";
+  ov.innerHTML=`<div class="modal"><div class="expmodal">
+    <div class="em-head">
+      <div class="em-logo" style="background:${courier.color}">${esc(courier.inicial)}</div>
+      <div><div class="em-ttl">Exportar a ${esc(courier.nombre)}</div><div class="em-sub">Selecciona los pedidos ${zona==="lima"?"de Lima":"de provincia"} que quieres exportar</div></div>
+      <button class="em-x" title="Cerrar">✕</button>
+    </div>
+    <div class="em-filters">
+      <div class="em-f"><label>Período</label><select id="emPer">
+        <option value="todos">Todos</option><option value="hoy">Hoy</option><option value="ayer">Ayer</option>
+        <option value="7">Últimos 7 días</option><option value="15">Últimos 15 días</option><option value="30">Últimos 30 días</option>
+      </select></div>
+      <div class="em-f"><label>Estado</label><select id="emEst">
+        <option value="pordespachar">Por despachar</option><option value="todos">Todos los estados</option>
+        ${estUnicos.map(e=>`<option value="${e}">${esc(O.label(e))}</option>`).join("")}
+      </select></div>
+      <div class="em-f"><label>Buscar</label><input id="emQ" placeholder="Cliente, celular, distrito…"/></div>
+    </div>
+    <div class="em-body" id="emBody"></div>
+    <div class="em-foot">
+      <div class="em-hint" id="emHint">Selecciona pedidos de la tabla</div>
+      <button class="cancel" type="button">Cancelar</button>
+      <button class="dl" id="emDl" type="button" disabled>${DL_ICO} Descargar Excel ${esc(courier.nombre.split(" ")[0])}</button>
+    </div>
+  </div></div>`;
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  const $q=(s)=>ov.querySelector(s);
+  const detalle=(o)=>{ const s=o.shipping||{}; return zona==="lima"?esc(s.distrito||"—"):esc(s.destino||s.sede||s.ciudad||"—"); };
+  function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
+    $q("#emHint").textContent = n?`${n} pedido${n>1?"s":""} seleccionado${n>1?"s":""}`:"Selecciona pedidos de la tabla";
+    $q("#emDl").disabled=!n; }
+  function render(){
+    const arr=filtrar();
+    const body=$q("#emBody");
+    if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} con esos filtros</div>`; foot(arr); return; }
+    body.innerHTML=`<table class="em-tbl"><thead><tr>
+      <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>Estado</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
+      ${arr.map(o=>`<tr data-id="${o.id}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${S.sel.has(o.id)?"checked":""}></td>
+        <td>${esc((o.contact||{}).nombre||(o.shipping||{}).cliente||"—")}</td>
+        <td><span class="em-badge ${badgeClass(o.estado)}">${esc(O.label(o.estado))}</span></td>
+        <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`).join("")}
+    </tbody></table>`;
+    const all=$q("#emAll");
+    const syncAll=()=>{ const vis=arr.filter(o=>S.sel.has(o.id)).length; all.checked=vis>0&&vis===arr.length; all.indeterminate=vis>0&&vis<arr.length; };
+    const toggle=(id,on)=>{ on?S.sel.add(id):S.sel.delete(id); };
+    body.querySelectorAll("tbody tr").forEach(tr=>{ tr.onclick=(e)=>{ if(e.target.classList.contains("emChk"))return; const ch=tr.querySelector(".emChk"); ch.checked=!ch.checked; toggle(tr.dataset.id,ch.checked); syncAll(); foot(arr); }; });
+    body.querySelectorAll(".emChk").forEach(ch=> ch.onchange=()=>{ toggle(ch.dataset.id,ch.checked); syncAll(); foot(arr); });
+    all.onchange=()=>{ arr.forEach(o=>toggle(o.id,all.checked)); render(); };
+    syncAll(); foot(arr);
+  }
+  // Preselección: todo lo "por despachar" (el filtro inicial).
+  filtrar().forEach(o=>S.sel.add(o.id));
+  $q("#emPer").onchange=(e)=>{ S.periodo=e.target.value; render(); };
+  $q("#emEst").onchange=(e)=>{ S.estado=e.target.value; render(); };
+  $q("#emQ").oninput=(e)=>{ S.q=e.target.value.trim(); render(); };
+  $q(".em-x").onclick=()=>ov.remove();
+  $q(".cancel").onclick=()=>ov.remove();
+  $q("#emDl").onclick=async()=>{
+    const sel=st.list.filter(o=>S.sel.has(o.id));
+    if(!sel.length) return;
+    const cfg=(st.entregas&&st.entregas.courier)||{};
+    const issues=courier.revisar(sel,cfg)||[];
+    if(issues.length){
+      const lista=issues.slice(0,8).map(x=>`• ${esc(x)}`).join("<br>");
+      const extra=issues.length>8?`<br>…y ${issues.length-8} más`:"";
+      const ok=await confirmDialog({title:"Revisa antes de exportar",message:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Ábrelos con <b>Editar</b> y complétalos. Si continúas se exportan igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
+      if(!ok) return;
+    }
+    const btn=$q("#emDl"); btn.disabled=true; btn.textContent="Generando…";
+    try{ const n=await generar(courier,sel,cfg); toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}`); ov.remove(); }
+    catch(e){ toast(e.message||"No pude generar el Excel",true); btn.disabled=false; btn.innerHTML=`${DL_ICO} Descargar Excel`; }
+  };
+  render();
 }
 
 // ── En vivo ────────────────────────────────────────────────────────
@@ -707,13 +826,11 @@ async function openEnvio(o){
           <div><label>Ciudad</label><input id="eCiudad" value="${esc(s.ciudad||"")}"/></div>
         </div>
         <label>Agencia de destino (Shalom)</label>
-        <input id="eDestino" list="dlDestino" value="${esc(s.destino||"")}" placeholder="Escribe y elige la agencia de destino"/>
+        <input id="eDestino" list="dlDestino" value="${esc(s.destino||s.sede||"")}" placeholder="Escribe y elige la agencia de destino"/>
         <datalist id="dlDestino">${dl(SH.destino)}</datalist>
-        <div class="hint">La oficina Shalom de la ciudad donde recoge tu cliente. Es lo que va en el Excel.</div>
-        <div class="row2">
-          <div><label>Medida del paquete</label><select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select></div>
-          <div><label>Oficina exacta <span style="color:var(--faint);font-weight:400">(opcional)</span></label><input id="eSede" value="${esc(s.sede||"")}" placeholder="si la ciudad tiene varias"/></div>
-        </div>
+        <div class="hint">La oficina Shalom donde recoge tu cliente. Es lo que va en el Excel y en el rótulo.</div>
+        <label>Medida del paquete</label>
+        <select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select>
         <label>Medidas y peso <span style="color:var(--faint);font-weight:400">(vacío = default del negocio)</span></label>
         <div class="meds">
           <div class="med"><span>Alto m</span><input id="eAlto" type="number" step="0.01" value="${esc(s.alto??"")}"/></div>
@@ -747,8 +864,11 @@ async function openEnvio(o){
     const ship={ cliente:g("#eNom").value.trim(), tel:g("#eTel").value.trim(), zona };
     let amount;
     if(zona==="provincia"){
+      const dst=g("#eDestino").value.trim();
+      // Un solo campo: la agencia de destino sirve para el Excel (destino) y para
+      // el rótulo/tarjeta (sede) — se escriben iguales para no duplicar en la UI.
       Object.assign(ship,{ dni:g("#eDni").value.trim(), ciudad:g("#eCiudad").value.trim(),
-        destino:g("#eDestino").value.trim(), mercaderia:g("#eMerc").value, sede:g("#eSede").value.trim(),
+        destino:dst, sede:dst, mercaderia:g("#eMerc").value,
         alto:numU("#eAlto"), ancho:numU("#eAncho"), largo:numU("#eLargo"), peso:numU("#ePeso"),
         adelanto:g("#eAdel").value, saldo:g("#eSaldo").value });
     } else {
