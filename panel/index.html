@@ -1511,7 +1511,7 @@ async function sendAttachment(file){
 // Los eventos de tiempo real pueden llegar en ráfaga (un flujo que envía varios
 // mensajes seguidos). Agrupamos las recargas de la lista para no re-consultar y
 // re-renderizar toda la bandeja en cada evento (evita picos de CPU con tráfico).
-let convReloadTimer = null, threadReloadTimer = null;
+let convReloadTimer = null, threadReloadTimer = null, panelReloadTimer = null;
 function loadConversationsSoon() {
   clearTimeout(convReloadTimer);
   convReloadTimer = setTimeout(() => loadConversations(), 400);
@@ -1541,6 +1541,19 @@ function subscribeRealtime() {
       }
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversationsSoon())
+    // El pedido del contacto abierto cambió (el bot capturó/movió algo mientras
+    // conversa) → refresca la ficha sola. No lo hace si hay un modal abierto
+    // (estás editando) para no pisar lo que escribes.
+    .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (p) => {
+      const cid = (p.new && p.new.contact_id) || (p.old && p.old.contact_id);
+      if (!cid || cid !== state.contactId) return;
+      if (document.querySelector(".overlay, .nodo-modal-back")) return;
+      clearTimeout(panelReloadTimer);
+      panelReloadTimer = setTimeout(() => {
+        const ct = (panelData && panelData.contact) || {};
+        loadContactPanel({ id: cid, nombre: ct.nombre || state.contactName, wa_id: ct.wa_id });
+      }, 500);
+    })
     .subscribe();
 }
 
