@@ -205,7 +205,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
-import { openDespachoModal, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
+import { openDespachoModal, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
@@ -274,7 +274,10 @@ async function despachoLote(){
     toast(base.length ? "Los pedidos por despachar son aéreos: se registran a mano, no en lote" : "No hay pedidos de provincia por despachar", true);
     return;
   }
-  const n=await openDespachoLoteModal(pend,{ updateOrder, toast, supa, channelId:st.channelId });
+  // Paso 1: elegir cuáles despachar. Paso 2: registrar sus guías/códigos.
+  const sel=await elegirPedidosDespacho(pend,{ toast });
+  if(!sel || !sel.length) return;
+  const n=await openDespachoLoteModal(sel,{ updateOrder, toast, supa, channelId:st.channelId });
   if(n) await load();
 }
 function toggleExportMenu(){

@@ -631,11 +631,50 @@ export async function openDespachoModal(o, deps) {
   });
 }
 
-// Registrar despacho de VARIOS pedidos de agencia a la vez. Misma lógica que el
-// individual (guía + código + clave + costo por pedido, un aviso para todos)
-// pero en tabla. Solo se despachan los que tengan N° de guía Y código de envío
-// (Shalom exige los dos). "Pegar desde Shalom" reparte guía+código por orden.
-// Devuelve cuántos se despacharon.
+// PASO 1 del despacho en lote: elegir CUÁLES pedidos se van a despachar ahora
+// (los que llevas a la agencia). Devuelve el subconjunto elegido, o null si
+// canceló. El registro de guías/códigos viene después con ese subconjunto.
+export function elegirPedidosDespacho(orders, deps) {
+  const { toast } = deps || {};
+  injectDespachoCss();
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "overlay";
+    const fila = (o) => {
+      const s = o.shipping || {}, c = o.contact || {};
+      const dest = s.destino || s.sede || s.ciudad || "—";
+      const montos = `Ad. S/ ${Number(s.adelanto || 0)} · Sd. S/ ${Number(s.saldo || 0)}`;
+      return `<tr data-id="${esc(o.id)}">
+        <td class="dl-chk"><input type="checkbox" class="dl-sel" checked/></td>
+        <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span></td>
+        <td style="text-align:right;font-size:12px;color:var(--muted);white-space:nowrap">${montos}</td></tr>`;
+    };
+    ov.innerHTML = `<div class="modal dl-modal" style="max-width:540px">
+      <h3>📦 ¿Cuáles vas a despachar?</h3>
+      <div class="m-sub">Marca los pedidos que llevas a la agencia ahora. En el siguiente paso registras sus guías y códigos.</div>
+      <div class="dl-tblwrap"><table class="dl-tbl"><thead><tr>
+        <th class="dl-chk"><input type="checkbox" data-all checked/></th><th>Cliente</th><th style="text-align:right">Montos</th></tr></thead>
+        <tbody>${orders.map(fila).join("")}</tbody></table></div>
+      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Continuar</button></div>
+    </div>`;
+    const cerrar = (v) => { ov.remove(); resolve(v); };
+    ov.onclick = (e) => { if (e.target === ov) cerrar(null); };
+    ov.querySelector(".cancel").onclick = () => cerrar(null);
+    ov.querySelector("[data-all]").onchange = (e) => ov.querySelectorAll(".dl-sel").forEach((c) => { c.checked = e.target.checked; });
+    ov.querySelectorAll(".dl-tbl tbody tr").forEach((tr) => { tr.onclick = (e) => { if (e.target.classList.contains("dl-sel")) return; const ch = tr.querySelector(".dl-sel"); ch.checked = !ch.checked; }; });
+    ov.querySelector(".save").onclick = () => {
+      const ids = new Set([...ov.querySelectorAll(".dl-tbl tbody tr")].filter((tr) => tr.querySelector(".dl-sel").checked).map((tr) => tr.dataset.id));
+      const sel = orders.filter((o) => ids.has(o.id));
+      if (!sel.length) { toast && toast("Elige al menos un pedido", true); return; }
+      cerrar(sel);
+    };
+    document.body.appendChild(ov);
+  });
+}
+
+// PASO 2 del despacho en lote: registrar guía + código + clave + costo de cada
+// pedido elegido (un aviso para todos). "Pegar desde Shalom" reparte por orden;
+// "Leer guías de fotos" hace OCR y empareja por DNI. Devuelve cuántos despachó.
 export async function openDespachoLoteModal(orders, deps) {
   const { updateOrder, toast, supa, channelId } = deps;
   injectDespachoCss();
@@ -655,7 +694,6 @@ export async function openDespachoLoteModal(orders, deps) {
       const s = o.shipping || {}, c = o.contact || {};
       const dest = s.destino || s.sede || s.ciudad || "—";
       return `<tr data-id="${esc(o.id)}">
-        <td class="dl-chk"><input type="checkbox" class="dl-sel" checked/></td>
         <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span></td>
         <td><input data-k="guia" value="${esc(s.guia || "")}" placeholder="N° de guía"/></td>
         <td><input data-k="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Código"/></td>
@@ -677,7 +715,7 @@ export async function openDespachoLoteModal(orders, deps) {
         <div class="dl-pfoot"><button type="button" data-aplicar style="height:34px;padding:0 14px;border-radius:9px;border:none;background:var(--brand);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">Aplicar a la tabla</button></div>
       </div>
       <div class="dl-tblwrap"><table class="dl-tbl"><thead><tr>
-        <th class="dl-chk"><input type="checkbox" data-all checked/></th><th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th><th>Foto</th></tr></thead>
+        <th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th><th>Foto</th></tr></thead>
         <tbody>${orders.map(fila).join("")}</tbody></table></div>
       ${avisoBlockHtml(info)}
       <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Registrar despachos</button></div>
@@ -713,8 +751,6 @@ export async function openDespachoLoteModal(orders, deps) {
       ov.querySelector("[data-pastebox]").classList.remove("on");
       toast(`Apliqué ${Math.min(lineas.length, filas.length)} línea(s)`);
     };
-    // Seleccionar todos
-    ov.querySelector("[data-all]").onchange = (e) => ov.querySelectorAll(".dl-sel").forEach((c) => { c.checked = e.target.checked; });
     // Clave para todos (cuando son iguales)
     ov.querySelector("[data-clavebtn]").onclick = () => {
       const v = ov.querySelector("[data-clavetodos]").value.trim();
@@ -762,7 +798,6 @@ export async function openDespachoLoteModal(orders, deps) {
       const filas = [...ov.querySelectorAll(".dl-tbl tbody tr")];
       const listos = [];
       filas.forEach((tr) => {
-        if (!tr.querySelector(".dl-sel")?.checked) return;   // solo los tildados
         const g = tr.querySelector('[data-k="guia"]').value.trim();
         const cod = tr.querySelector('[data-k="codigo"]').value.trim();
         tr.classList.toggle("bad", !!(g || cod) && !(g && cod));
