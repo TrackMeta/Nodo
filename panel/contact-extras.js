@@ -113,14 +113,29 @@ export function pedidoResumenHtml(o) {
   const moneyLine = adel || saldo
     ? `${adel ? `Adelanto <b>${money(adel, o.currency)}</b>` : ""}${adel && saldo ? " · " : ""}${saldo ? `Saldo <b>${money(saldo, o.currency)}</b>` : ""}`
     : `Total <b>${money(O.total(o), o.currency)}</b>`;
-  const bits = [];
-  if (s.aereo) bits.push('✈ <b>Envío aéreo</b> (Shalom)');
-  if (s.agencia || s.ciudad) bits.push(esc([s.agencia && cap(s.agencia), s.ciudad && cap(s.ciudad), s.sede].filter(Boolean).join(" · ")));
-  if (s.distrito || s.direccion) bits.push(esc([s.distrito, s.direccion].filter(Boolean).join(" · ")));
-  if (s.guia) bits.push(`Guía <b>${esc(s.guia)}</b>`);
-  if (s.clave_recojo) bits.push(`Clave <b>${esc(s.clave_recojo)}</b>`);
-  const atr = Object.entries(s.atributos || {}).map(([k, val]) => `${esc(k)}: ${esc(val)}`).join(" · ");
-  if (atr) bits.push(atr);
+  // Mini ficha con etiquetas: se ven TODOS los datos que editas (incluida la
+  // agencia CONFIRMADA `destino`, no solo lo que dijo el cliente). Si en
+  // provincia aún no confirmaste la sede, se muestra lo pedido con un aviso.
+  const lines = [];
+  const line = (k, valHtml) => { if (valHtml) lines.push(`<div class="pd-line"><span class="pd-k">${esc(k)}</span><span class="pd-v">${valHtml}</span></div>`); };
+  const air = s.aereo ? ` <span class="pd-chip air">✈ Aéreo</span>` : "";
+  const dest = (s.cliente || c.nombre || "").trim();
+  line("Destinatario", dest ? esc(dest) : "");
+  if (zona === "provincia") {
+    line("DNI", s.dni ? esc(s.dni) : "");
+    if (s.destino) line("Agencia", `${esc(s.destino)}${air}`);
+    else if (s.sede) line("Agencia", `${esc(s.sede)} <span class="pd-chip warn">sin confirmar</span>${air}`);
+    else if (s.ciudad) line("Agencia", `Shalom ${esc(cap(s.ciudad))}${air}`);
+    if (!s.destino && s.ciudad && s.sede) line("Ciudad", esc(cap(s.ciudad)));
+    if (s.mercaderia) line("Medida", esc(s.mercaderia));
+  } else if (zona === "lima") {
+    line("Dirección", s.direccion ? esc(s.direccion) : "");
+    line("Distrito", s.distrito ? esc(cap(s.distrito)) : "");
+    line("Referencia", s.referencia ? esc(s.referencia) : "");
+  }
+  for (const [k, val] of Object.entries(s.atributos || {})) line(k, esc(val));
+  if (s.guia) line("Guía", `<b class="mono">${esc(s.guia)}</b>`);
+  if (s.clave_recojo) line("Clave", `<b class="mono">${esc(s.clave_recojo)}</b>`);
   return `
     <div class="pd-card">
       <div class="pd-top">
@@ -131,7 +146,7 @@ export function pedidoResumenHtml(o) {
         <span class="pd-badge" style="color:${col};background:${col}1e;border-color:${col}55">${esc(O.label(o.estado))}</span>
         <span class="pd-money">${moneyLine}</span>
       </div>
-      ${bits.length ? `<div class="pd-ship">${bits.join("<br>")}</div>` : ""}
+      ${lines.length ? `<div class="pd-info">${lines.join("")}</div>` : ""}
     </div>`;
 }
 
@@ -287,7 +302,14 @@ export const EXTRAS_CSS = `
   .pd-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
   .pd-badge{font-size:11px;font-weight:700;border:1px solid;border-radius:999px;padding:2px 9px}
   .pd-money{font-size:12.5px;color:var(--muted)} .pd-money b{color:var(--text)}
-  .pd-ship{font-size:12px;color:var(--muted);line-height:1.5;border-top:1px dashed var(--border);padding-top:7px} .pd-ship b{color:var(--text)}
+  .pd-info{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--border);padding-top:8px}
+  .pd-line{display:grid;grid-template-columns:72px 1fr;gap:8px;font-size:12px;line-height:1.45;align-items:baseline}
+  .pd-k{color:var(--muted);font-size:11px}
+  .pd-v{color:var(--text);word-break:break-word} .pd-v b{color:var(--text)}
+  .pd-v .mono{font-variant-numeric:tabular-nums;letter-spacing:.4px}
+  .pd-chip{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;border:1px solid;border-radius:5px;padding:0 5px;vertical-align:middle;white-space:nowrap}
+  .pd-chip.air{color:#3b82f6;border-color:#3b82f6}
+  .pd-chip.warn{color:var(--amber);border-color:var(--amber)}
   /* Campos técnicos (colapsados) */
   .cf-tech{margin-top:10px;font-size:12px}
   .cf-tech summary{cursor:pointer;color:var(--faint);list-style:none;display:flex;align-items:center;gap:6px;padding:2px 0}
