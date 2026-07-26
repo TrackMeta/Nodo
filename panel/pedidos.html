@@ -62,6 +62,35 @@
   .expitem .exp-nm{font-weight:700;font-size:13.5px}
   .expitem .exp-sub{font-size:11.5px;color:var(--muted);margin-top:1px}
   .expitem .exp-cnt{font-size:12px;font-weight:800;flex:none;background:var(--surface-2);border-radius:999px;padding:2px 9px}
+  /* Editor de pedido — modal más bonito y por secciones */
+  .modal:has(.pedmodal){max-width:580px;padding:0;overflow:hidden}
+  .pedmodal{display:flex;flex-direction:column;max-height:90vh}
+  .pedmodal .pm-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}
+  .pedmodal .pm-ic{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff}
+  .pedmodal .pm-ic svg{width:20px;height:20px}
+  .pedmodal .pm-ttl{font-size:16px;font-weight:800;line-height:1.2}
+  .pedmodal .pm-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .pedmodal .pm-body{padding:16px 20px;overflow:auto;flex:1 1 auto;min-height:0}
+  .pedmodal .pm-seg{display:flex;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:5px}
+  .pedmodal .pm-seg button{flex:1;height:38px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:all .12s}
+  .pedmodal .pm-seg button svg{width:16px;height:16px}
+  .pedmodal .pm-seg button.on{background:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(43,127,255,.3)}
+  .pedmodal .pm-sec{border:1px solid var(--border);border-radius:13px;padding:13px 14px;margin-top:14px;background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+  .pedmodal .pm-sec-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin-bottom:2px}
+  .pedmodal .pm-sec-h svg{width:15px;height:15px;color:var(--brand)}
+  .pedmodal label{display:block;font-size:11px;color:var(--muted);margin:11px 0 5px;font-weight:700}
+  .pedmodal input,.pedmodal select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);height:40px;padding:0 12px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .pedmodal input:focus,.pedmodal select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+  .pedmodal .row2{display:flex;gap:10px}.pedmodal .row2>*{flex:1;min-width:0}
+  .pedmodal .hint{font-size:11px;color:var(--faint);margin-top:6px;line-height:1.45}
+  .pedmodal .meds{display:flex;gap:8px;flex-wrap:wrap}
+  .pedmodal .meds .med{flex:1;min-width:70px}
+  .pedmodal .meds .med span{display:block;font-size:10px;color:var(--faint);font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
+  .pedmodal .pm-foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)}
+  .pedmodal .pm-foot button{height:40px;padding:0 20px;border-radius:11px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .pedmodal .pm-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .pedmodal .pm-foot .save{background:var(--brand);border:none;color:#fff}
+  .pedmodal .pm-foot .save:hover{background:var(--brand-2)}
   .kcard .kc-when{font-size:10.5px;color:var(--faint);margin-top:7px;text-align:right}
   .zona{font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;letter-spacing:.3px}
   .zona.lima{background:var(--brand-bg);color:var(--brand)}
@@ -628,82 +657,112 @@ function ultimoFlete(o){
 }
 // Editor completo del pedido: todos los datos de entrega, con los DESPLEGABLES
 // reales de cada courier (agencia de destino Shalom, distrito Eva, medida de
-// mercadería Shalom). Los campos cambian según el tipo de envío. Guarda en
-// orders.shipping (order-update fusiona, no pisa lo demás) + amount.
+// mercadería Shalom). Diseño por secciones; los campos cambian según el tipo de
+// envío. Guarda en orders.shipping (order-update fusiona, no pisa lo demás).
 async function openEnvio(o){
   const s=o.shipping||{}, c=o.contact||{}, p=o.product||{}, v=o.version||{};
-  const zona = s.zona || zonaDe(o);
+  let zona = s.zona || zonaDe(o);
   const L = await cargarListas();
   const SH=(L&&L.shalom)||{}, EV=(L&&L.eva)||{};
   const dl=(arr)=>(arr||[]).map(x=>`<option value="${esc(x)}"></option>`).join("");
   const optMerc=(arr,val)=>`<option value="">— usar la del negocio —</option>`+(arr||[]).map(x=>`<option value="${esc(x)}"${String(x)===String(val)?" selected":""}>${esc(x)}</option>`).join("");
-  const prov = zona==="provincia";
   const atr = Object.entries(s.atributos||{}).map(([k,val])=>`${k}: ${val}`).join(" · ");
-  const ov=modal(`
-    <h3>${icon("edit")} Editar pedido</h3>
-    <div class="m-sub">${esc([p.emoji,p.nombre,v.nombre].filter(Boolean).join(" "))||"Pedido"}${atr?` · ${esc(atr)}`:""}</div>
-    <div class="row2">
-      <div><label>Destinatario</label><input id="eNom" value="${esc(s.cliente||c.nombre||"")}"/></div>
-      <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel||c.wa_id||"")}"/></div>
+  const ov=document.createElement("div"); ov.className="overlay";
+  ov.innerHTML=`<div class="modal"><div class="pedmodal">
+    <div class="pm-head">
+      <div class="pm-ic">${icon("edit")}</div>
+      <div><div class="pm-ttl">Editar pedido</div><div class="pm-sub">${esc([p.emoji,p.nombre,v.nombre].filter(Boolean).join(" "))||"Pedido"}${atr?` · ${esc(atr)}`:""}</div></div>
     </div>
-    <div class="row2">
-      <div><label>Tipo de envío</label><select id="eZona"><option value="lima"${zona==="lima"?" selected":""}>Lima (contraentrega)</option><option value="provincia"${zona==="provincia"?" selected":""}>Provincia (agencia)</option></select></div>
-      <div><label>Importe a cobrar (S/)</label><input id="eAmount" type="number" step="0.1" value="${esc(o.amount??"")}"/></div>
+    <div class="pm-body">
+      <div class="pm-seg" id="eZonaSeg">
+        <button type="button" data-z="lima" class="${zona==='lima'?'on':''}">${icon("truck")} Lima · contraentrega</button>
+        <button type="button" data-z="provincia" class="${zona==='provincia'?'on':''}">${icon("building")} Provincia · agencia</button>
+      </div>
+
+      <div class="pm-sec">
+        <div class="pm-sec-h">${icon("user")} Destinatario</div>
+        <div class="row2">
+          <div><label>Nombre</label><input id="eNom" value="${esc(s.cliente||c.nombre||"")}"/></div>
+          <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel||c.wa_id||"")}"/></div>
+        </div>
+      </div>
+
+      <div class="pm-sec" id="eLima" ${zona==='provincia'?'style="display:none"':''}>
+        <div class="pm-sec-h">${icon("pin")} Entrega en Lima</div>
+        <label>Dirección</label><input id="eDir" value="${esc(s.direccion||"")}"/>
+        <div class="row2">
+          <div><label>Distrito</label><input id="eDist" list="dlDistrito" value="${esc(s.distrito||"")}"/><datalist id="dlDistrito">${dl(EV.distrito)}</datalist></div>
+          <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia||"")}"/></div>
+        </div>
+        <div class="row2">
+          <div><label>Maps / GPS <span style="color:var(--faint);font-weight:400">(opcional)</span></label><input id="eGps" value="${esc(s.gps||"")}" placeholder="URL de Maps o lat, long"/></div>
+          <div><label>Importe a cobrar (S/)</label><input id="eAmountL" type="number" step="0.1" value="${esc(o.amount??"")}"/></div>
+        </div>
+      </div>
+
+      <div class="pm-sec" id="eProv" ${zona==='provincia'?'':'style="display:none"'}>
+        <div class="pm-sec-h">${icon("building")} Envío por agencia (Shalom)</div>
+        <div class="row2">
+          <div><label>DNI de quien recibe</label><input id="eDni" value="${esc(s.dni||"")}"/></div>
+          <div><label>Ciudad</label><input id="eCiudad" value="${esc(s.ciudad||"")}"/></div>
+        </div>
+        <label>Agencia de destino (Shalom)</label>
+        <input id="eDestino" list="dlDestino" value="${esc(s.destino||"")}" placeholder="Escribe y elige la agencia de destino"/>
+        <datalist id="dlDestino">${dl(SH.destino)}</datalist>
+        <div class="hint">La oficina Shalom de la ciudad donde recoge tu cliente. Es lo que va en el Excel.</div>
+        <div class="row2">
+          <div><label>Medida del paquete</label><select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select></div>
+          <div><label>Oficina exacta <span style="color:var(--faint);font-weight:400">(opcional)</span></label><input id="eSede" value="${esc(s.sede||"")}" placeholder="si la ciudad tiene varias"/></div>
+        </div>
+        <label>Medidas y peso <span style="color:var(--faint);font-weight:400">(vacío = default del negocio)</span></label>
+        <div class="meds">
+          <div class="med"><span>Alto m</span><input id="eAlto" type="number" step="0.01" value="${esc(s.alto??"")}"/></div>
+          <div class="med"><span>Ancho m</span><input id="eAncho" type="number" step="0.01" value="${esc(s.ancho??"")}"/></div>
+          <div class="med"><span>Largo m</span><input id="eLargo" type="number" step="0.01" value="${esc(s.largo??"")}"/></div>
+          <div class="med"><span>Peso kg</span><input id="ePeso" type="number" step="0.1" value="${esc(s.peso??"")}"/></div>
+        </div>
+        <div class="row2">
+          <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto||"")}"/></div>
+          <div><label>Saldo por cobrar (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo||"")}"/></div>
+        </div>
+      </div>
     </div>
-    <div id="eLima" ${prov?'style="display:none"':''}>
-      <label>Dirección</label><input id="eDir" value="${esc(s.direccion||"")}"/>
-      <div class="row2">
-        <div><label>Distrito</label><input id="eDist" list="dlDistrito" value="${esc(s.distrito||"")}"/><datalist id="dlDistrito">${dl(EV.distrito)}</datalist></div>
-        <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia||"")}"/></div>
-      </div>
-      <label>Link Maps / GPS <span style="color:var(--faint);font-weight:400">(opcional)</span></label><input id="eGps" value="${esc(s.gps||"")}" placeholder="URL de Google Maps o lat, long"/>
+    <div class="pm-foot">
+      <button type="button" class="cancel">Cancelar</button>
+      <button type="button" class="save">Guardar cambios</button>
     </div>
-    <div id="eProv" ${prov?'':'style="display:none"'}>
-      <div class="row2">
-        <div><label>DNI</label><input id="eDni" value="${esc(s.dni||"")}"/></div>
-        <div><label>Ciudad</label><input id="eCiudad" value="${esc(s.ciudad||"")}"/></div>
-      </div>
-      <label>Agencia de destino (Shalom)</label>
-      <input id="eDestino" list="dlDestino" value="${esc(s.destino||"")}" placeholder="Escribe y elige la agencia Shalom de destino"/>
-      <datalist id="dlDestino">${dl(SH.destino)}</datalist>
-      <div class="row2">
-        <div><label>Mercadería (medida Shalom)</label><select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select></div>
-        <div><label>Sede / oficina</label><input id="eSede" value="${esc(s.sede||"")}"/></div>
-      </div>
-      <label>Medidas del paquete <span style="color:var(--faint);font-weight:400">(vacío = default del negocio)</span></label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-        <input id="eAlto" type="number" step="0.01" placeholder="alto m" value="${esc(s.alto??"")}" style="width:88px"/>
-        <input id="eAncho" type="number" step="0.01" placeholder="ancho m" value="${esc(s.ancho??"")}" style="width:88px"/>
-        <input id="eLargo" type="number" step="0.01" placeholder="largo m" value="${esc(s.largo??"")}" style="width:88px"/>
-        <input id="ePeso" type="number" step="0.1" placeholder="peso kg" value="${esc(s.peso??"")}" style="width:88px"/>
-      </div>
-      <div class="row2">
-        <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto||"")}"/></div>
-        <div><label>Saldo (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo||"")}"/></div>
-      </div>
-    </div>`,
-    async(ov)=>{
-      const g=(id)=>ov.querySelector(id);
-      const zonaV=g("#eZona").value;
-      const numU=(id)=>{ const x=g(id).value; return x===""?null:Number(x); };
-      const ship={ cliente:g("#eNom").value.trim(), tel:g("#eTel").value.trim(), zona:zonaV };
-      if(zonaV==="provincia"){
-        Object.assign(ship,{ dni:g("#eDni").value.trim(), ciudad:g("#eCiudad").value.trim(),
-          destino:g("#eDestino").value.trim(), mercaderia:g("#eMerc").value, sede:g("#eSede").value.trim(),
-          alto:numU("#eAlto"), ancho:numU("#eAncho"), largo:numU("#eLargo"), peso:numU("#ePeso"),
-          adelanto:g("#eAdel").value, saldo:g("#eSaldo").value });
-      } else {
-        Object.assign(ship,{ direccion:g("#eDir").value.trim(), distrito:g("#eDist").value.trim(),
-          referencia:g("#eRef").value.trim(), gps:g("#eGps").value.trim() });
-      }
-      const body={ order_id:o.id, shipping:ship };
-      const amt=g("#eAmount").value; if(amt!=="") body.amount=Number(amt);
-      const r=await updateOrder(body);
-      if(r){ toast("Pedido actualizado ✓"); await load(); }
-      return !!r;
-    });
-  const zsel=ov.querySelector("#eZona");
-  zsel.onchange=()=>{ const pv=zsel.value==="provincia"; ov.querySelector("#eProv").style.display=pv?"":"none"; ov.querySelector("#eLima").style.display=pv?"none":""; };
+  </div></div>`;
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  const g=(id)=>ov.querySelector(id);
+  ov.querySelectorAll("#eZonaSeg button").forEach(b=> b.onclick=()=>{
+    zona=b.dataset.z;
+    ov.querySelectorAll("#eZonaSeg button").forEach(x=>x.classList.toggle("on",x===b));
+    g("#eProv").style.display = zona==="provincia"?"":"none";
+    g("#eLima").style.display = zona==="provincia"?"none":"";
+  });
+  g(".cancel").onclick=()=>ov.remove();
+  g(".save").onclick=async()=>{
+    const numU=(id)=>{ const x=g(id).value; return x===""?null:Number(x); };
+    const ship={ cliente:g("#eNom").value.trim(), tel:g("#eTel").value.trim(), zona };
+    let amount;
+    if(zona==="provincia"){
+      Object.assign(ship,{ dni:g("#eDni").value.trim(), ciudad:g("#eCiudad").value.trim(),
+        destino:g("#eDestino").value.trim(), mercaderia:g("#eMerc").value, sede:g("#eSede").value.trim(),
+        alto:numU("#eAlto"), ancho:numU("#eAncho"), largo:numU("#eLargo"), peso:numU("#ePeso"),
+        adelanto:g("#eAdel").value, saldo:g("#eSaldo").value });
+    } else {
+      Object.assign(ship,{ direccion:g("#eDir").value.trim(), distrito:g("#eDist").value.trim(),
+        referencia:g("#eRef").value.trim(), gps:g("#eGps").value.trim() });
+      const a=g("#eAmountL").value; if(a!=="") amount=Number(a);
+    }
+    const body={ order_id:o.id, shipping:ship };
+    if(amount!==undefined) body.amount=amount;
+    const btn=g(".save"); btn.disabled=true; btn.textContent="Guardando…";
+    const r=await updateOrder(body);
+    if(r){ toast("Pedido actualizado ✓"); ov.remove(); await load(); }
+    else { btn.disabled=false; btn.textContent="Guardar cambios"; }
+  };
 }
 boot();
 </script>
