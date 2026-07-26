@@ -490,11 +490,9 @@ export function avisoBlockHtml(info) {
         : !info.abierta ? "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada."
         : info.texto ? `“${esc(info.texto.length > 120 ? info.texto.slice(0, 120) + "…" : info.texto)}”`
         : "Es el flujo que se dispara con este estado.",
-      info.texto
-        ? `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Editar este mensaje →</a>`
-        : info.flujo
-        ? `<a href="editor.html?flow=${encodeURIComponent(info.flujoId)}" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Ver este aviso →</a>`
-        : `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">Escribirlo ahora →</a>`,
+      // Siempre a Pagos y avisos → Avisos de pedido (ahí se escribe/edita el
+      // mensaje de cada momento; si escribes uno, manda ese y el flujo no dispara).
+      `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">${info.texto ? "Editar este mensaje →" : info.flujo ? "Editarlo en Pagos y avisos →" : "Escribirlo ahora →"}</a>`,
       !info.abierta || !hayFlujo)}
     ${op("plantilla", "Una plantilla aprobada",
       hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas y activas — créalas en Plantillas.",
@@ -602,7 +600,9 @@ export async function openDespachoModal(o, deps) {
     const q = (k) => ov.querySelector(`[data-d="${k}"]`);
     const cerrar = (v) => { ov.remove(); resolve(v); };
     ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
-    ov.querySelector(".cancel").onclick = () => cerrar(false);
+    // OJO: "No pagué nada" también usa class="cancel" (por estilo); el Cancelar
+    // real es el del pie, hay que apuntarlo con .m-foot para no colgar el otro.
+    ov.querySelector(".m-foot .cancel").onclick = () => cerrar(false);
     q("flete0").onclick = () => { q("flete").value = "0"; };
 
     // ── Foto de la guía ──
