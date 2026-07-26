@@ -94,10 +94,10 @@ function revisarShalom(orders, cfg) {
 
 // ── Catálogo de couriers ───────────────────────────────────────────
 export const COURIERS = {
-  eva: { id: "eva", nombre: "Eva Courier", zona: "lima", zonaLbl: "Solo Lima", color: "#1f6feb", inicial: "e", ext: "xlsm",
+  eva: { id: "eva", nombre: "Eva Courier", zona: "lima", zonaLbl: "Solo Lima", color: "#1f6feb", inicial: "e", logo: "courier/eva-logo.png", ext: "xlsm",
     plantilla: "courier/eva.xlsm", sheet: "xl/worksheets/sheet2.xml", tabla: "xl/tables/table2.xml",
     filas: filasEva, revisar: revisarEva },
-  shalom: { id: "shalom", nombre: "Shalom", zona: "provincia", zonaLbl: "Provincia", color: "#e2261c", inicial: "S", ext: "xlsx",
+  shalom: { id: "shalom", nombre: "Shalom", zona: "provincia", zonaLbl: "Provincia", color: "#e2261c", inicial: "S", logo: "courier/shalom-logo.png", ext: "xlsx",
     plantilla: "courier/shalom.xlsx", sheet: "xl/worksheets/sheet1.xml",
     filas: filasShalom, revisar: revisarShalom },
 };

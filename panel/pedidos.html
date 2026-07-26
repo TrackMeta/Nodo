@@ -70,6 +70,10 @@
   .expitem[disabled]:hover{background:none}
   .expitem .exp-logo{width:38px;height:38px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;color:#fff}
   .expitem .exp-logo.pronto{background:var(--surface-2);color:var(--faint);font-weight:700}
+  .expitem .exp-logo.has-img{overflow:hidden;background:transparent}
+  .expitem .exp-logo img{width:100%;height:100%;object-fit:cover;display:block}
+  .expmodal .em-logo.has-img{overflow:hidden;background:transparent;padding:0}
+  .expmodal .em-logo img{width:100%;height:100%;object-fit:cover;display:block}
   .expitem .exp-tx{flex:1;min-width:0}
   .expitem .exp-nm{font-weight:700;font-size:13.5px}
   .expitem .exp-sub{font-size:11.5px;color:var(--muted);margin-top:1px}
@@ -297,7 +301,7 @@ function toggleExportMenu(){
   const activos=couriersDeZona(zona).map(c=>{
     const n=porDespachar(st.list,c.zona).length;
     return `<button class="expitem" data-c="${c.id}">
-      <span class="exp-logo" style="background:${c.color}">${esc(c.inicial)}</span>
+      ${c.logo?`<span class="exp-logo has-img"><img src="${c.logo}" alt="${esc(c.nombre)}"></span>`:`<span class="exp-logo" style="background:${c.color}">${esc(c.inicial)}</span>`}
       <span class="exp-tx"><div class="exp-nm">${esc(c.nombre)}</div><div class="exp-sub">${esc(c.zonaLbl)} · Excel masivo</div></span>
       ${n?`<span class="exp-cnt">${n}</span>`:""}</button>`;
   }).join("");
@@ -333,7 +337,7 @@ function abrirExport(courier){
   const ov=document.createElement("div"); ov.className="overlay";
   ov.innerHTML=`<div class="modal"><div class="expmodal">
     <div class="em-head">
-      <div class="em-logo" style="background:${courier.color}">${esc(courier.inicial)}</div>
+      ${courier.logo?`<div class="em-logo has-img"><img src="${courier.logo}" alt="${esc(courier.nombre)}"></div>`:`<div class="em-logo" style="background:${courier.color}">${esc(courier.inicial)}</div>`}
       <div><div class="em-ttl">Exportar a ${esc(courier.nombre)}</div><div class="em-sub">Selecciona los pedidos ${zona==="lima"?"de Lima":"de provincia"} que quieres exportar</div></div>
       <button class="em-x" title="Cerrar">✕</button>
     </div>
