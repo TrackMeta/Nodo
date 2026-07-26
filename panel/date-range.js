@@ -50,6 +50,9 @@ const CSS = `
 .drtrigger svg{width:14px;height:14px;color:var(--muted);flex:none}
 .drpop{position:absolute;top:calc(100% + 6px);left:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.45);display:none}
 .drpop.show{display:flex}
+/* Cuando el botón está pegado a la derecha, abrir hacia la izquierda para que
+   los dos meses no se salgan de la pantalla (lo decide medirlo al abrir). */
+.drpop.dr-right{left:auto;right:0}
 .drpresets{width:186px;border-right:1px solid var(--border);padding:8px;display:flex;flex-direction:column;gap:1px;max-height:392px;overflow:auto}
 .drpreset{display:flex;align-items:center;gap:10px;text-align:left;background:none;border:none;color:var(--text);font-size:12.5px;font-weight:600;padding:8px 10px;border-radius:8px;cursor:pointer;font-family:inherit}
 .drpreset:hover{background:var(--surface-2)}
@@ -165,6 +168,9 @@ export function mountDateRange(host, { valor = null, onChange = null, nota = "La
     pk = { from: rango.from, to: rango.to, preset: rango.preset || null,
            focus: new Date(rango.to.getFullYear(), rango.to.getMonth() - 1, 1) };
     pinta(); pop.classList.add("show");
+    // ¿Se sale por la derecha? Entonces anclarlo a la derecha (abre a la izq).
+    pop.classList.remove("dr-right");
+    if (pop.getBoundingClientRect().right > window.innerWidth - 8) pop.classList.add("dr-right");
   };
   // Un solo listener global para todos los selectores de la página.
   if (!window.__drDocWired) {
