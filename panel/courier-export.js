@@ -66,7 +66,7 @@ function filasShalom(orders, cfg) {
     f[0] = s.dni || "";                                            // A DESTINATARIO (DOC)
     f[1] = tel9(s.tel || c.wa_id);                                 // B TELF. DESTINATARIO
     f[5] = (sh.origen || "").toUpperCase();                        // F ORIGEN (agencia, de la config)
-    f[6] = (s.destino || s.ciudad || "").toUpperCase();           // G DESTINO (agencia elegida; cae a la ciudad)
+    f[6] = (s.destino || s.sede || s.ciudad || "").toUpperCase(); // G DESTINO (agencia elegida → sede que dijo el cliente → ciudad)
     // H MERCADERIA = medida interna de Shalom (SOBRE/PAQUETE XXS…L), NO el
     // nombre del producto. Por pedido (shipping.mercaderia) o el default del negocio.
     f[7] = (s.mercaderia || sh.mercaderia || "PAQUETE S").toUpperCase();
@@ -84,7 +84,7 @@ function revisarShalom(orders, cfg) {
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || s.dni || "un pedido";
     if (!s.dni) p.push(`${q}: falta DNI. (Editar pedido)`);
-    if (!s.destino && !s.ciudad) p.push(`${q}: falta la agencia de DESTINO. (Editar pedido)`);
+    if (!s.destino && !s.sede && !s.ciudad) p.push(`${q}: falta la agencia de DESTINO. (Editar pedido)`);
   });
   return p;
 }

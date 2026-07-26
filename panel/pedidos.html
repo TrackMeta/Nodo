@@ -278,9 +278,7 @@ function toggleExportMenu(){
 const DL_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 function abrirExport(courier){
   const zona=courier.zona;
-  const estZona = zona==="lima" ? KB_LIMA.flatMap(c=>c[2]) : KB_PROV.flatMap(c=>c[2]);
-  const estUnicos=[...new Set(estZona)];
-  const S={ periodo:"todos", estado:"pordespachar", q:"", sel:new Set() };
+  const S={ periodo:"todos", q:"", sel:new Set() };
   const cuandoT=(o)=> new Date(o.updated_at||o.created_at||0).getTime();
   function filtrar(){
     let arr=st.list.filter(o=>isFisico(o) && zonaDe(o)===zona);
@@ -290,8 +288,7 @@ function abrirExport(courier){
       else if(S.periodo==="ayer") arr=arr.filter(o=>cuandoT(o)>=hoy0-86400000 && cuandoT(o)<hoy0);
       else { const d=Number(S.periodo); arr=arr.filter(o=>(Date.now()-cuandoT(o))<=d*86400000); }
     }
-    if(S.estado==="pordespachar") arr=arr.filter(o=>POR_DESPACHAR[zona].has(o.estado));
-    else if(S.estado!=="todos") arr=arr.filter(o=>o.estado===S.estado);
+    arr=arr.filter(o=>POR_DESPACHAR[zona].has(o.estado));
     if(S.q){ const q=S.q.toLowerCase(); arr=arr.filter(o=>{ const c=o.contact||{},s=o.shipping||{};
       return (c.nombre||"").toLowerCase().includes(q)||(c.wa_id||"").includes(q)||(s.cliente||"").toLowerCase().includes(q)
         ||(s.distrito||"").toLowerCase().includes(q)||(s.ciudad||"").toLowerCase().includes(q)||(s.destino||"").toLowerCase().includes(q); }); }
@@ -308,10 +305,6 @@ function abrirExport(courier){
       <div class="em-f"><label>Período</label><select id="emPer">
         <option value="todos">Todos</option><option value="hoy">Hoy</option><option value="ayer">Ayer</option>
         <option value="7">Últimos 7 días</option><option value="15">Últimos 15 días</option><option value="30">Últimos 30 días</option>
-      </select></div>
-      <div class="em-f"><label>Estado</label><select id="emEst">
-        <option value="pordespachar">Por despachar</option><option value="todos">Todos los estados</option>
-        ${estUnicos.map(e=>`<option value="${e}">${esc(O.label(e))}</option>`).join("")}
       </select></div>
       <div class="em-f"><label>Buscar</label><input id="emQ" placeholder="Cliente, celular, distrito…"/></div>
     </div>
@@ -334,10 +327,9 @@ function abrirExport(courier){
     const body=$q("#emBody");
     if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} con esos filtros</div>`; foot(arr); return; }
     body.innerHTML=`<table class="em-tbl"><thead><tr>
-      <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>Estado</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
+      <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
       ${arr.map(o=>`<tr data-id="${o.id}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${S.sel.has(o.id)?"checked":""}></td>
         <td>${esc((o.contact||{}).nombre||(o.shipping||{}).cliente||"—")}</td>
-        <td><span class="em-badge ${badgeClass(o.estado)}">${esc(O.label(o.estado))}</span></td>
         <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`).join("")}
     </tbody></table>`;
     const all=$q("#emAll");
@@ -351,7 +343,6 @@ function abrirExport(courier){
   // Preselección: todo lo "por despachar" (el filtro inicial).
   filtrar().forEach(o=>S.sel.add(o.id));
   $q("#emPer").onchange=(e)=>{ S.periodo=e.target.value; render(); };
-  $q("#emEst").onchange=(e)=>{ S.estado=e.target.value; render(); };
   $q("#emQ").oninput=(e)=>{ S.q=e.target.value.trim(); render(); };
   $q(".em-x").onclick=()=>ov.remove();
   $q(".cancel").onclick=()=>ov.remove();
