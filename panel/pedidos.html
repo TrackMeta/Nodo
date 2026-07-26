@@ -499,7 +499,7 @@ function render(){
     // Acción "En lote" SOLO en la columna "Por despachar" de provincia (registrar
     // guías de varios a la vez) y cuando hay pedidos terrestres ahí.
     const esLote = st.kbZona==="provincia" && label==="Por despachar" && items.some(o=>!(o.shipping&&o.shipping.aereo));
-    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?'<button class="kh-lote" title="Registrar guías de varios pedidos a la vez">⚡ En lote</button>':""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
+    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?'<button class="kh-lote" title="Registrar guías de varios pedidos a la vez (despacho en lote)">⚡ Lote</button>':""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
     const lb=col.querySelector(".kh-lote"); if(lb) lb.onclick=(ev)=>{ ev.stopPropagation(); despachoLote(); };
     const body=col.querySelector(".kbody");
     items.forEach(o=>body.appendChild(kcard(o)));
