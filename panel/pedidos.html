@@ -28,12 +28,12 @@
   /* Cada columna tope su altura al viewport y hace scroll POR DENTRO: así el
      tablero cabe en pantalla aunque haya cientos de pedidos (no estira la página). */
   .kcol{background:var(--surface);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;min-height:120px;max-height:calc(100vh - 246px)}
-  .kcol .kh{display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:800;letter-spacing:.2px;flex:none}
-  .kcol .kh .khic{width:26px;height:26px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex:none}
+  .kcol .kh{display:flex;align-items:center;gap:6px;padding:11px 11px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:800;letter-spacing:.2px;flex:none}
+  .kcol .kh .khic{width:24px;height:24px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex:none}
   .kcol .kh .khic svg{width:15px;height:15px;color:var(--muted)}
   .kcol .kh .khtx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .kcol .kh .cnt{font-size:11px;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:2px 9px;font-weight:800;min-width:22px;text-align:center;flex:none}
-  .kcol .kh .kh-lote{flex:none;height:26px;padding:0 10px;border-radius:8px;border:none;background:var(--brand);color:#fff;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:.2px}
+  .kcol .kh .kh-lote{flex:none;height:26px;padding:0 8px;border-radius:8px;border:none;background:var(--brand);color:#fff;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:.2px;white-space:nowrap}
   .kcol .kh .kh-lote:hover{background:var(--brand-2)}
   .kcol .kbody{padding:10px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1 1 auto;min-height:0;scrollbar-gutter:stable}
   .kcol .kbody::-webkit-scrollbar{width:8px}
