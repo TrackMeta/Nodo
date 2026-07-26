@@ -120,6 +120,10 @@
   .expmodal .em-tbl .c-amt{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
   .expmodal .em-badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;white-space:nowrap;display:inline-block}
   .expmodal .em-empty{border:1px dashed var(--border);border-radius:12px;padding:30px;text-align:center;color:var(--muted);margin:6px 0 14px;font-size:13px}
+  .expmodal .em-tbl tr.aereo{cursor:default}
+  .expmodal .em-tbl tr.aereo td{color:var(--muted)}
+  .expmodal .em-aer{margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:var(--amber-bg);color:var(--amber);font-size:12.5px;font-weight:700;line-height:1.4}
+  .expmodal .em-tbl .aermark{font-size:9.5px;font-weight:800;color:var(--amber);background:var(--amber-bg);border-radius:6px;padding:1px 6px;margin-right:6px;white-space:nowrap}
   .expmodal .em-foot{display:flex;align-items:center;gap:12px;padding:14px 20px;border-top:1px solid var(--border)}
   .expmodal .em-foot .em-hint{flex:1;font-size:12.5px;color:var(--muted);font-weight:600}
   .expmodal .em-foot button{height:40px;padding:0 18px;border-radius:11px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
@@ -322,36 +326,45 @@ function abrirExport(courier){
   ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
   document.body.appendChild(ov);
   const $q=(s)=>ov.querySelector(s);
-  const detalle=(o)=>{ const s=o.shipping||{}; return zona==="lima"?esc(s.distrito||"—"):esc(s.destino||s.sede||s.ciudad||"—"); };
+  // Los envíos AÉREOS de Shalom NO van en el Excel masivo (es otro proceso: se
+  // registran a mano en la agencia). El bot ya los marca (shipping.aereo); acá se
+  // muestran pero no se pueden seleccionar, y se avisa.
+  const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
+  const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
+    return (esAer(o)?`<span class="aermark">✈ AÉREO</span>`:"")+esc(d); };
   function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
     $q("#emHint").textContent = n?`${n} pedido${n>1?"s":""} seleccionado${n>1?"s":""}`:"Selecciona pedidos de la tabla";
     $q("#emDl").disabled=!n; }
   function render(){
     const arr=filtrar();
     const body=$q("#emBody");
+    const aereos=arr.filter(esAer), seleccionables=arr.filter(o=>!esAer(o));
+    const nota=aereos.length?`<div class="em-aer">✈ ${aereos.length} pedido${aereos.length>1?"s":""} aéreo${aereos.length>1?"s":""}: se registra${aereos.length>1?"n":""} a mano en Shalom, no entra${aereos.length>1?"n":""} en el Excel masivo.</div>`:"";
     if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} con esos filtros</div>`; foot(arr); return; }
-    body.innerHTML=`<table class="em-tbl"><thead><tr>
+    body.innerHTML=`${nota}<table class="em-tbl"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
-      ${arr.map(o=>`<tr data-id="${o.id}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${S.sel.has(o.id)?"checked":""}></td>
+      ${arr.map(o=>{ const a=esAer(o); return `<tr data-id="${o.id}" class="${a?"aereo":""}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${a?'disabled title="Aéreo: se registra a mano"':(S.sel.has(o.id)?"checked":"")}></td>
         <td>${esc((o.contact||{}).nombre||(o.shipping||{}).cliente||"—")}</td>
-        <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`).join("")}
+        <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`; }).join("")}
     </tbody></table>`;
     const all=$q("#emAll");
-    const syncAll=()=>{ const vis=arr.filter(o=>S.sel.has(o.id)).length; all.checked=vis>0&&vis===arr.length; all.indeterminate=vis>0&&vis<arr.length; };
+    const syncAll=()=>{ const vis=seleccionables.filter(o=>S.sel.has(o.id)).length; all.checked=vis>0&&vis===seleccionables.length; all.indeterminate=vis>0&&vis<seleccionables.length; };
     const toggle=(id,on)=>{ on?S.sel.add(id):S.sel.delete(id); };
-    body.querySelectorAll("tbody tr").forEach(tr=>{ tr.onclick=(e)=>{ if(e.target.classList.contains("emChk"))return; const ch=tr.querySelector(".emChk"); ch.checked=!ch.checked; toggle(tr.dataset.id,ch.checked); syncAll(); foot(arr); }; });
-    body.querySelectorAll(".emChk").forEach(ch=> ch.onchange=()=>{ toggle(ch.dataset.id,ch.checked); syncAll(); foot(arr); });
-    all.onchange=()=>{ arr.forEach(o=>toggle(o.id,all.checked)); render(); };
+    body.querySelectorAll("tbody tr:not(.aereo)").forEach(tr=>{ tr.onclick=(e)=>{ if(e.target.classList.contains("emChk"))return; const ch=tr.querySelector(".emChk"); ch.checked=!ch.checked; toggle(tr.dataset.id,ch.checked); syncAll(); foot(arr); }; });
+    body.querySelectorAll(".emChk:not([disabled])").forEach(ch=> ch.onchange=()=>{ toggle(ch.dataset.id,ch.checked); syncAll(); foot(arr); });
+    all.onchange=()=>{ seleccionables.forEach(o=>toggle(o.id,all.checked)); render(); };
+    if(!seleccionables.length) all.disabled=true;
     syncAll(); foot(arr);
   }
-  // Preselección: todo lo "por despachar" (el filtro inicial).
-  filtrar().forEach(o=>S.sel.add(o.id));
+  // Preselección: todo lo "por despachar" EXCEPTO los aéreos (van a mano).
+  filtrar().filter(o=>!esAer(o)).forEach(o=>S.sel.add(o.id));
   $q("#emPer").onchange=(e)=>{ S.periodo=e.target.value; render(); };
   $q("#emQ").oninput=(e)=>{ S.q=e.target.value.trim(); render(); };
   $q(".em-x").onclick=()=>ov.remove();
   $q(".cancel").onclick=()=>ov.remove();
   $q("#emDl").onclick=async()=>{
-    const sel=st.list.filter(o=>S.sel.has(o.id));
+    // Nunca exportar aéreos, aunque por algún motivo quedaran marcados.
+    const sel=st.list.filter(o=>S.sel.has(o.id) && !esAer(o));
     if(!sel.length) return;
     const cfg=(st.entregas&&st.entregas.courier)||{};
     const issues=courier.revisar(sel,cfg)||[];
