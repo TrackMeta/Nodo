@@ -367,7 +367,7 @@ function abrirExport(courier){
     const sel=st.list.filter(o=>S.sel.has(o.id) && !esAer(o));
     if(!sel.length) return;
     const cfg=(st.entregas&&st.entregas.courier)||{};
-    const issues=courier.revisar(sel,cfg)||[];
+    const issues=(await courier.revisar(sel,cfg))||[];
     if(issues.length){
       const lista=issues.slice(0,8).map(x=>`• ${esc(x)}`).join("<br>");
       const extra=issues.length>8?`<br>…y ${issues.length-8} más`:"";

@@ -45,12 +45,18 @@ function filasEva(orders) {
     return f;
   });
 }
-function revisarEva(orders) {
+async function revisarEva(orders) {
+  const listas = await cargarListas();
+  const oficiales = new Set(((listas && listas.eva && listas.eva.distrito) || []).map(_norm).filter(Boolean));
   const p = [];
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || "un pedido";
     if (!s.direccion) p.push(`${q}: falta dirección.`);
     if (!s.distrito) p.push(`${q}: falta distrito.`);
+    // El distrito va al Excel tal cual; si no coincide con la lista oficial de
+    // Eva (mal escrito o distrito raro) avisamos para que lo corrijan en Editar.
+    else if (oficiales.size && !oficiales.has(_norm(s.distrito)))
+      p.push(`${q}: el distrito “${s.distrito}” no está en la lista de Eva — revísalo (Editar pedido).`);
   });
   return p;
 }
