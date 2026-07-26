@@ -372,6 +372,9 @@ const DESPACHO_CSS = `
   .sel-ic{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--brand);color:#fff;font-size:20px}
   .sel-ttl{font-size:16px;font-weight:800}
   .sel-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .sel-search-wrap{padding:12px 20px 2px}
+  .sel-search{width:100%;height:38px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .sel-search:focus{border-color:var(--brand)}
   .sel-allbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border)}
   .sel-allbar label{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;margin:0}
   .sel-allbar label input{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
@@ -675,7 +678,8 @@ export function elegirPedidosDespacho(orders, deps) {
       const mon = (adel || saldo)
         ? `${adel ? `Adelanto <b>S/ ${adel}</b>` : ""}${adel && saldo ? "<br>" : ""}${saldo ? `Saldo <b>S/ ${saldo}</b>` : ""}`
         : "";
-      return `<div class="sel-row on" data-id="${esc(o.id)}">
+      const q = `${c.nombre || s.cliente || ""} ${dest} ${s.ciudad || ""} ${s.dni || ""}`.toLowerCase();
+      return `<div class="sel-row on" data-id="${esc(o.id)}" data-q="${esc(q)}">
         <span class="sel-check">✓</span>
         <span class="sel-em">${p.emoji ? esc(p.emoji) : "📦"}</span>
         <div class="sel-tx"><div class="sel-nm">${esc(c.nombre || s.cliente || "Sin nombre")}</div><div class="sel-dest">${esc(dest)}</div></div>
@@ -685,25 +689,34 @@ export function elegirPedidosDespacho(orders, deps) {
     ov.innerHTML = `<div class="modal sel-modal">
       <div class="sel-head"><div class="sel-ic">📦</div>
         <div><div class="sel-ttl">¿Cuáles vas a despachar?</div><div class="sel-sub">Marca los pedidos que llevas a la agencia ahora. Después registras sus guías.</div></div></div>
+      <div class="sel-search-wrap"><input class="sel-search" data-search placeholder="Buscar cliente, ciudad o destino…"/></div>
       <div class="sel-allbar"><label><input type="checkbox" data-all checked/> Seleccionar todos</label><span class="sel-cnt" data-cnt></span></div>
       <div class="sel-list">${orders.map(fila).join("")}</div>
       <div class="sel-foot"><span class="sel-hint" data-hint></span><button class="cancel">Cancelar</button><button class="save">Continuar</button></div>
     </div>`;
     const cerrar = (v) => { ov.remove(); resolve(v); };
     const sel = new Set(orders.map((o) => o.id));
+    const visibles = () => [...ov.querySelectorAll(".sel-row")].filter((r) => r.style.display !== "none");
     const paint = () => {
       ov.querySelectorAll(".sel-row").forEach((r) => r.classList.toggle("on", sel.has(r.dataset.id)));
       const n = sel.size;
       ov.querySelector("[data-cnt]").textContent = `${n} de ${orders.length}`;
       ov.querySelector("[data-hint]").textContent = n ? `${n} pedido${n > 1 ? "s" : ""} seleccionado${n > 1 ? "s" : ""}` : "Marca al menos uno";
+      const vis = visibles(), vsel = vis.filter((r) => sel.has(r.dataset.id)).length;
       const all = ov.querySelector("[data-all]");
-      all.checked = n === orders.length; all.indeterminate = n > 0 && n < orders.length;
+      all.checked = vis.length > 0 && vsel === vis.length; all.indeterminate = vsel > 0 && vsel < vis.length;
       ov.querySelector(".save").disabled = !n;
+    };
+    const filtrar = () => {
+      const q = (ov.querySelector("[data-search]").value || "").trim().toLowerCase();
+      ov.querySelectorAll(".sel-row").forEach((r) => { r.style.display = (!q || r.dataset.q.includes(q)) ? "" : "none"; });
+      paint();
     };
     ov.onclick = (e) => { if (e.target === ov) cerrar(null); };
     ov.querySelector(".cancel").onclick = () => cerrar(null);
+    ov.querySelector("[data-search]").oninput = filtrar;
     ov.querySelectorAll(".sel-row").forEach((r) => { r.onclick = () => { const id = r.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); paint(); }; });
-    ov.querySelector("[data-all]").onchange = (e) => { orders.forEach((o) => e.target.checked ? sel.add(o.id) : sel.delete(o.id)); paint(); };
+    ov.querySelector("[data-all]").onchange = (e) => { visibles().forEach((r) => e.target.checked ? sel.add(r.dataset.id) : sel.delete(r.dataset.id)); paint(); };
     ov.querySelector(".save").onclick = () => { if (!sel.size) return; cerrar(orders.filter((o) => sel.has(o.id))); };
     document.body.appendChild(ov);
     paint();
