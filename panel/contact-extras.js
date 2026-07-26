@@ -361,7 +361,11 @@ const DESPACHO_CSS = `
   .dl-tbl tr.bad input[data-k="guia"],.dl-tbl tr.bad input[data-k="codigo"]{border-color:var(--amber);background:var(--amber-bg,rgba(245,158,11,.08))}
   .dl-foto{height:32px;min-width:38px;padding:0 9px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:14px;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
   .dl-foto.has{border-color:var(--green);color:var(--green)}
-  .dl-lote-ocr{display:flex;align-items:center;gap:8px}
+  .dl-lote-ocr{display:flex;align-items:center;gap:6px}
+  .dl-lote-ocr input{height:34px;width:150px;font-size:12.5px}
+  .dl-lote-ocr button{height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .dl-tbl .dl-chk{width:34px;text-align:center}
+  .dl-tbl .dl-chk input{width:16px;height:16px;accent-color:var(--brand);cursor:pointer;padding:0}
 `;
 let despachoCssInjected = false;
 function injectDespachoCss() {
@@ -651,6 +655,7 @@ export async function openDespachoLoteModal(orders, deps) {
       const s = o.shipping || {}, c = o.contact || {};
       const dest = s.destino || s.sede || s.ciudad || "—";
       return `<tr data-id="${esc(o.id)}">
+        <td class="dl-chk"><input type="checkbox" class="dl-sel" checked/></td>
         <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span></td>
         <td><input data-k="guia" value="${esc(s.guia || "")}" placeholder="N° de guía"/></td>
         <td><input data-k="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Código"/></td>
@@ -662,13 +667,17 @@ export async function openDespachoLoteModal(orders, deps) {
     ov.innerHTML = `<div class="modal dl-modal">
       <h3>📦 Registrar despacho en lote</h3>
       <div class="m-sub">${orders.length} pedido${orders.length > 1 ? "s" : ""} por despachar. Pon el <b>N° de guía</b> y el <b>código de envío</b> de cada uno (Shalom pide los dos) y la clave. Al guardar pasan a Despachado y el bot avisa.</div>
-      <div class="dl-tools"><button type="button" data-pegar>📋 Pegar guías desde Shalom</button></div>
+      <div class="dl-tools">
+        <button type="button" data-ocr>📷 Leer guías de fotos</button>
+        <button type="button" data-pegar>📋 Pegar (texto)</button>
+        <div class="dl-lote-ocr" style="margin-left:auto"><input data-clavetodos placeholder="Clave para todos"/><button type="button" data-clavebtn>Poner a todos</button></div>
+      </div>
       <div class="dl-paste" data-pastebox>
         <textarea data-paste placeholder="Una línea por pedido, en el MISMO orden de la tabla: N° de guía y código (separados por tab, coma o espacio). Ej.:&#10;034-882140  SH-77120&#10;034-882141  SH-77121"></textarea>
         <div class="dl-pfoot"><button type="button" data-aplicar style="height:34px;padding:0 14px;border-radius:9px;border:none;background:var(--brand);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">Aplicar a la tabla</button></div>
       </div>
       <div class="dl-tblwrap"><table class="dl-tbl"><thead><tr>
-        <th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th><th>Foto</th></tr></thead>
+        <th class="dl-chk"><input type="checkbox" data-all checked/></th><th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th><th>Foto</th></tr></thead>
         <tbody>${orders.map(fila).join("")}</tbody></table></div>
       ${avisoBlockHtml(info)}
       <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Registrar despachos</button></div>
@@ -704,11 +713,56 @@ export async function openDespachoLoteModal(orders, deps) {
       ov.querySelector("[data-pastebox]").classList.remove("on");
       toast(`Apliqué ${Math.min(lineas.length, filas.length)} línea(s)`);
     };
+    // Seleccionar todos
+    ov.querySelector("[data-all]").onchange = (e) => ov.querySelectorAll(".dl-sel").forEach((c) => { c.checked = e.target.checked; });
+    // Clave para todos (cuando son iguales)
+    ov.querySelector("[data-clavebtn]").onclick = () => {
+      const v = ov.querySelector("[data-clavetodos]").value.trim();
+      if (!v) { toast("Escribe la clave primero", true); return; }
+      ov.querySelectorAll(".dl-tbl tbody tr").forEach((tr) => { tr.querySelector('[data-k="clave"]').value = v; });
+      toast("Clave puesta en todos");
+    };
+    // Leer guías desde fotos: OCR + emparejar por DNI del destinatario
+    const dniMap = {};
+    orders.forEach((o) => { const d = String((o.shipping || {}).dni || "").replace(/\D/g, "").replace(/^0+/, ""); if (d) dniMap[d] = o.id; });
+    ov.querySelector("[data-ocr]").onclick = () => {
+      const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.multiple = true;
+      inp.onchange = async () => {
+        const files = [...(inp.files || [])]; if (!files.length) return;
+        const btn = ov.querySelector("[data-ocr]"); btn.disabled = true;
+        let asign = 0, sin = 0;
+        for (let i = 0; i < files.length; i++) {
+          btn.textContent = `Leyendo ${i + 1}/${files.length}…`;
+          const f = files[i]; if (f.size > 16 * 1024 * 1024) { sin++; continue; }
+          const up = await subirFoto(f); if (!up) { sin++; continue; }
+          let g = null;
+          try { const { data, error } = await supa.functions.invoke("guia-ocr", { body: { channel_id: channelId, image_url: up.url } }); if (!error) g = data && data.guia; } catch (_) { /* sigue */ }
+          if (!g) { sin++; continue; }
+          const dni = String(g.dni || "").replace(/\D/g, "").replace(/^0+/, "");
+          let id = dni ? dniMap[dni] : null;
+          if (!id && g.nombre) {
+            const nn = g.nombre.toLowerCase();
+            const o = orders.find((x) => { const nm = ((x.contact || {}).nombre || (x.shipping || {}).cliente || "").toLowerCase(); return nm && (nm.includes(nn) || nn.includes(nm)); });
+            if (o) id = o.id;
+          }
+          const tr = id && ov.querySelector(`.dl-tbl tbody tr[data-id="${id}"]`);
+          if (!tr) { sin++; continue; }
+          if (g.guia) tr.querySelector('[data-k="guia"]').value = g.guia;
+          if (g.codigo) tr.querySelector('[data-k="codigo"]').value = g.codigo;
+          fotos[id] = up; const fb = tr.querySelector(".dl-foto"); if (fb) { fb.classList.add("has"); fb.textContent = "✓"; }
+          tr.classList.remove("bad"); asign++;
+        }
+        btn.disabled = false; btn.textContent = "📷 Leer guías de fotos";
+        toast(`${asign} guía(s) leída(s) y asignada(s)${sin ? ` · ${sin} sin emparejar` : ""}`, sin > 0 && asign === 0);
+      };
+      inp.click();
+    };
     ov.querySelector(".m-foot .save").onclick = async () => {
       const aviso = avisoValor(ov);
       const filas = [...ov.querySelectorAll(".dl-tbl tbody tr")];
       const listos = [];
       filas.forEach((tr) => {
+        if (!tr.querySelector(".dl-sel")?.checked) return;   // solo los tildados
         const g = tr.querySelector('[data-k="guia"]').value.trim();
         const cod = tr.querySelector('[data-k="codigo"]').value.trim();
         tr.classList.toggle("bad", !!(g || cod) && !(g && cod));

@@ -2786,6 +2786,50 @@ async function aiAsistente(db: SupabaseClient, channelId: string): Promise<{ pro
   return { provider: ai.provider as Provider, apiKey: ai.api_key, model };
 }
 
+// Lee una GUÍA DE REMISIÓN ELECTRÓNICA de Shalom desde una foto: N° de guía,
+// código y DNI/nombre del DESTINATARIO (para emparejar la foto con el pedido).
+// Lo usa la Edge Function guia-ocr (registrar despacho en lote con foto).
+export async function leerGuiaShalom(db: SupabaseClient, channelId: string, imageUrl: string): Promise<any> {
+  const A = await aiAsistente(db, channelId);
+  const system =
+    "Eres un lector experto de GUÍAS DE REMISIÓN ELECTRÓNICAS de SHALOM (courier de Perú). " +
+    "De la foto de la guía extrae EXACTAMENTE estos datos, tal como aparecen impresos:\n" +
+    "- serie: el número junto a 'SERIE' (ej. \"349\").\n" +
+    "- nro_guia: el número junto a 'NRO. GUIA' (ej. \"8521523\").\n" +
+    "- codigo: el valor junto a 'CÓDIGO' (ej. \"TMHD\").\n" +
+    "- dest_dni: el 'DNI/RUC' de la sección 'DATOS DEL DESTINATARIO' (NO el del remitente).\n" +
+    "- dest_nombre: el 'Nombre/Raz. Social' de la sección 'DATOS DEL DESTINATARIO'.\n" +
+    "- destino: la ciudad/agencia de destino (arriba, ej. \"TACNA\").\n" +
+    "- es_guia: true si es realmente una guía de Shalom, false si la foto es otra cosa.\n" +
+    "CUIDADO: hay DOS secciones de datos, REMITENTE y DESTINATARIO — usa siempre el DESTINATARIO. " +
+    "Si un dato no se ve o no es legible, déjalo como cadena vacía. Responde SOLO con el JSON del esquema.";
+  const schema = {
+    type: "object",
+    properties: {
+      serie: { type: "string" }, nro_guia: { type: "string" }, codigo: { type: "string" },
+      dest_dni: { type: "string" }, dest_nombre: { type: "string" }, destino: { type: "string" },
+      es_guia: { type: "boolean" },
+    },
+    required: ["nro_guia", "codigo", "dest_dni"], additionalProperties: false,
+  };
+  const raw = await runAI({
+    provider: A.provider, apiKey: A.apiKey, model: A.model, system,
+    content: [imageBlock(imageUrl), { type: "text", text: "Extrae los datos de esta guía de Shalom. Usa SIEMPRE el DESTINATARIO, nunca el remitente." }],
+    maxTokens: 400, jsonSchema: schema as unknown as Record<string, unknown>,
+  });
+  const m = raw.match(/\{[\s\S]*\}/);
+  const p = m ? JSON.parse(m[0]) : JSON.parse(raw);
+  return {
+    guia: String(p.nro_guia ?? "").trim(),
+    serie: String(p.serie ?? "").trim(),
+    codigo: String(p.codigo ?? "").trim(),
+    dni: String(p.dest_dni ?? "").replace(/\D/g, ""),
+    nombre: String(p.dest_nombre ?? "").trim(),
+    destino: String(p.destino ?? "").trim(),
+    es_guia: p.es_guia !== false,
+  };
+}
+
 // ── Asistente "Armar con IA" (capa Crea): brief → borrador del producto ──
 // Del brief del dueño arma la ficha en BORRADOR (para que él revise). Respeta la
 // voz del negocio. 🔒 NUNCA inventa datos duros (precios reales, Yape, links,
