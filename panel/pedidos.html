@@ -24,12 +24,22 @@
   .search input:focus{border-color:var(--brand)}
   .search svg{position:absolute;left:11px;top:11px;width:17px;height:17px;color:var(--faint)}
   /* Tablero */
-  .kb{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(248px,290px);gap:12px;overflow-x:auto;padding-bottom:14px;align-items:start}
-  .kcol{background:var(--surface);border:1px solid var(--border);border-radius:14px;min-height:160px}
-  .kcol .kh{display:flex;align-items:center;gap:7px;padding:12px 14px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:800;letter-spacing:.2px}
-  .kcol .kh .cnt{margin-left:auto;font-size:11px;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:2px 8px;font-weight:700}
-  .kcol .kbody{padding:10px;display:flex;flex-direction:column;gap:10px}
-  .kcard{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .kb{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(258px,300px);gap:14px;overflow-x:auto;padding-bottom:14px;align-items:start}
+  /* Cada columna tope su altura al viewport y hace scroll POR DENTRO: así el
+     tablero cabe en pantalla aunque haya cientos de pedidos (no estira la página). */
+  .kcol{background:var(--surface);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;min-height:120px;max-height:calc(100vh - 246px)}
+  .kcol .kh{display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:800;letter-spacing:.2px;flex:none}
+  .kcol .kh .khic{width:26px;height:26px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex:none}
+  .kcol .kh .khic svg{width:15px;height:15px;color:var(--muted)}
+  .kcol .kh .khtx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kcol .kh .cnt{margin-left:auto;font-size:11px;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:2px 9px;font-weight:800;min-width:22px;text-align:center;flex:none}
+  .kcol .kbody{padding:10px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1 1 auto;min-height:0;scrollbar-gutter:stable}
+  .kcol .kbody::-webkit-scrollbar{width:8px}
+  .kcol .kbody::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}
+  .kcol .kbody::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+  .kb-empty{font-size:12px;color:var(--faint);text-align:center;padding:18px 8px;border:1px dashed var(--border);border-radius:11px}
+  .kcard{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;transition:border-color .12s,box-shadow .12s}
+  .kcard:hover{border-color:var(--muted)}
   .kcard .kc-top{display:flex;align-items:flex-start;gap:8px}
   .kcard .kc-nm{font-weight:700;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .kcard .kc-dots{border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
@@ -486,7 +496,7 @@ function render(){
   cols.forEach(([ic,label,estados])=>{
     const items=zList.filter(o=>estados.includes(o.estado));
     const col=document.createElement("div"); col.className="kcol";
-    col.innerHTML=`<div class="kh"><span>${icon(ic)}</span> ${esc(label)} <span class="cnt">${items.length}</span></div><div class="kbody"></div>`;
+    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span> <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
     const body=col.querySelector(".kbody");
     items.forEach(o=>body.appendChild(kcard(o)));
     box.appendChild(col);
