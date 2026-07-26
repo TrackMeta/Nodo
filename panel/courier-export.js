@@ -59,14 +59,17 @@ function revisarEva(orders) {
 // A doc destinatario · B telf destinatario · C/D contacto (opc) · E GRR (opc) ·
 // F origen · G destino · H mercadería · I-L alto/ancho/largo/peso · M cantidad.
 const num = (...xs) => { for (const x of xs) if (x !== undefined && x !== null && x !== "") return Number(x) || 0; return 0; };
-function filasShalom(orders, cfg) {
+function filasShalom(orders, cfg, listas) {
   const sh = (cfg && cfg.shalom) || {};
+  const ags = listas && listas.shalom && listas.shalom.destino;
   return orders.map((o) => {
     const c = o.contact || {}, s = o.shipping || {}, f = [];
     f[0] = s.dni || "";                                            // A DESTINATARIO (DOC)
     f[1] = tel9(s.tel || c.wa_id);                                 // B TELF. DESTINATARIO
     f[5] = (sh.origen || "").toUpperCase();                        // F ORIGEN (agencia, de la config)
-    f[6] = (s.destino || s.sede || s.ciudad || "").toUpperCase(); // G DESTINO (agencia elegida → sede que dijo el cliente → ciudad)
+    // G DESTINO: agencia elegida → SUGERIDA (match de la lista con lo que dijo el
+    // cliente) → sede/ciudad en crudo. Así el Excel sale con la agencia oficial.
+    f[6] = (s.destino || sugerirAgencia(s.sede || s.ciudad, ags) || s.sede || s.ciudad || "").toUpperCase();
     // H MERCADERIA = medida interna de Shalom (SOBRE/PAQUETE XXS…L), NO el
     // nombre del producto. Por pedido (shipping.mercaderia) o el default del negocio.
     f[7] = (s.mercaderia || sh.mercaderia || "PAQUETE S").toUpperCase();
@@ -106,6 +109,33 @@ export const COURIERS_PRONTO = [
 export const prontoDeZona = (zona) => COURIERS_PRONTO.filter((c) => c.zona === zona);
 export const couriersDeZona = (zona) => Object.values(COURIERS).filter((c) => c.zona === zona);
 
+// Sugerir la agencia de la lista oficial que más se parece a lo que dijo el
+// cliente (su `sede`/`ciudad`, texto libre). Es una SUGERENCIA para que el
+// pedido llegue casi listo y el dueño solo confirme — no reemplaza su elección.
+const _norm = (s) => String(s ?? "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/[^A-Z0-9 ]/g, " ").replace(/\bSHALOM\b/g, " ").replace(/\s+/g, " ").trim();
+export function sugerirAgencia(texto, agencias) {
+  const t = _norm(texto);
+  if (!t || !Array.isArray(agencias) || !agencias.length) return "";
+  // 1) coincidencia exacta
+  const exacta = agencias.find((a) => _norm(a) === t);
+  if (exacta) return exacta;
+  // 2) una contiene a la otra (la agencia aparece en el texto o viceversa) → la más larga
+  const cont = agencias.filter((a) => { const na = _norm(a); return na && (t.includes(na) || na.includes(t)); })
+    .sort((a, b) => Math.abs(_norm(a).length - t.length) - Math.abs(_norm(b).length - t.length));
+  if (cont.length) return cont[0];
+  // 3) por palabras compartidas (>2 letras); solo si comparten al menos una
+  const tk = new Set(t.split(" ").filter((w) => w.length > 2));
+  if (!tk.size) return "";
+  let best = "", score = 0;
+  for (const a of agencias) {
+    const aw = _norm(a).split(" ").filter((w) => w.length > 2);
+    let sc = 0; for (const w of aw) if (tk.has(w)) sc++;
+    if (sc > score) { score = sc; best = a; }
+  }
+  return score > 0 ? best : "";
+}
+
 // Listas de los desplegables de los couriers (agencias, distritos, medidas),
 // extraídas de sus plantillas. Se cargan una vez y se cachean.
 let _listas = null;
@@ -129,7 +159,8 @@ export async function generar(courier, orders, cfg) {
   const entries = leerZip(await resp.arrayBuffer());
   const hoja = entradaPorNombre(entries, courier.sheet);
   if (!hoja) throw new Error(`La plantilla de ${courier.nombre} cambió de estructura.`);
-  const filas = courier.filas(orders, cfg);
+  const listas = await cargarListas();
+  const filas = courier.filas(orders, cfg, listas);
   ponerTexto(hoja, rellenarSheet(await textoDe(hoja), filas, { headerRows: 1 }));
   if (courier.tabla) {
     const t = entradaPorNombre(entries, courier.tabla);

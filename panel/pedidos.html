@@ -70,6 +70,10 @@
   .pedmodal .pm-ic svg{width:20px;height:20px}
   .pedmodal .pm-ttl{font-size:16px;font-weight:800;line-height:1.2}
   .pedmodal .pm-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .pedmodal .pm-zona{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;padding:6px 11px;border-radius:999px;white-space:nowrap}
+  .pedmodal .pm-zona svg{width:14px;height:14px}
+  .pedmodal .pm-zona.lima{background:var(--brand-bg);color:var(--brand)}
+  .pedmodal .pm-zona.prov{background:var(--amber-bg);color:var(--amber)}
   .pedmodal .pm-body{padding:16px 20px;overflow:auto;flex:1 1 auto;min-height:0}
   .pedmodal .pm-seg{display:flex;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:5px}
   .pedmodal .pm-seg button{flex:1;height:38px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:all .12s}
@@ -197,7 +201,7 @@
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
 import { openDespachoModal, pedirAviso, avisoMsg } from "./contact-extras.js";
-import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas } from "./courier-export.js";
+import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -771,24 +775,27 @@ function ultimoFlete(o){
 // envío. Guarda en orders.shipping (order-update fusiona, no pisa lo demás).
 async function openEnvio(o){
   const s=o.shipping||{}, c=o.contact||{}, p=o.product||{}, v=o.version||{};
-  let zona = s.zona || zonaDe(o);
+  const zona = s.zona || zonaDe(o);
   const L = await cargarListas();
   const SH=(L&&L.shalom)||{}, EV=(L&&L.eva)||{};
   const dl=(arr)=>(arr||[]).map(x=>`<option value="${esc(x)}"></option>`).join("");
   const optMerc=(arr,val)=>`<option value="">— usar la del negocio —</option>`+(arr||[]).map(x=>`<option value="${esc(x)}"${String(x)===String(val)?" selected":""}>${esc(x)}</option>`).join("");
   const atr = Object.entries(s.atributos||{}).map(([k,val])=>`${k}: ${val}`).join(" · ");
+  // Sugerencia del bot: la agencia de la lista que más se parece a lo que dijo
+  // el cliente. Solo se propone si aún no hay una elegida (destino vacío).
+  const sug = (zona==="provincia" && !s.destino) ? sugerirAgencia(s.sede||s.ciudad, SH.destino) : "";
+  const destVal = s.destino || sug || s.sede || "";
+  const zonaBadge = zona==="provincia"
+    ? `<span class="pm-zona prov">${icon("building")} Provincia · agencia</span>`
+    : `<span class="pm-zona lima">${icon("truck")} Lima · contraentrega</span>`;
   const ov=document.createElement("div"); ov.className="overlay";
   ov.innerHTML=`<div class="modal"><div class="pedmodal">
     <div class="pm-head">
       <div class="pm-ic">${icon("edit")}</div>
-      <div><div class="pm-ttl">Editar pedido</div><div class="pm-sub">${esc([p.emoji,p.nombre,v.nombre].filter(Boolean).join(" "))||"Pedido"}${atr?` · ${esc(atr)}`:""}</div></div>
+      <div style="flex:1;min-width:0"><div class="pm-ttl">Editar pedido</div><div class="pm-sub">${esc([p.emoji,p.nombre,v.nombre].filter(Boolean).join(" "))||"Pedido"}${atr?` · ${esc(atr)}`:""}</div></div>
+      ${zonaBadge}
     </div>
     <div class="pm-body">
-      <div class="pm-seg" id="eZonaSeg">
-        <button type="button" data-z="lima" class="${zona==='lima'?'on':''}">${icon("truck")} Lima · contraentrega</button>
-        <button type="button" data-z="provincia" class="${zona==='provincia'?'on':''}">${icon("building")} Provincia · agencia</button>
-      </div>
-
       <div class="pm-sec">
         <div class="pm-sec-h">${icon("user")} Destinatario</div>
         <div class="row2">
@@ -817,9 +824,9 @@ async function openEnvio(o){
           <div><label>Ciudad</label><input id="eCiudad" value="${esc(s.ciudad||"")}"/></div>
         </div>
         <label>Agencia de destino (Shalom)</label>
-        <input id="eDestino" list="dlDestino" value="${esc(s.destino||s.sede||"")}" placeholder="Escribe y elige la agencia de destino"/>
+        <input id="eDestino" list="dlDestino" value="${esc(destVal)}" placeholder="Escribe y elige la agencia de destino"/>
         <datalist id="dlDestino">${dl(SH.destino)}</datalist>
-        <div class="hint">La oficina Shalom donde recoge tu cliente. Es lo que va en el Excel y en el rótulo.</div>
+        <div class="hint">${sug?`💡 <b>Sugerida por el bot</b> según lo que dijo el cliente${(s.sede||s.ciudad)?` (“${esc(s.sede||s.ciudad)}”)`:''} — confírmala o cámbiala.`:'La oficina Shalom donde recoge tu cliente. Va en el Excel y en el rótulo.'}</div>
         <label>Medida del paquete</label>
         <select id="eMerc">${optMerc(SH.mercaderia,s.mercaderia)}</select>
         <label>Medidas y peso <span style="color:var(--faint);font-weight:400">(vacío = default del negocio)</span></label>
@@ -843,12 +850,6 @@ async function openEnvio(o){
   ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
   document.body.appendChild(ov);
   const g=(id)=>ov.querySelector(id);
-  ov.querySelectorAll("#eZonaSeg button").forEach(b=> b.onclick=()=>{
-    zona=b.dataset.z;
-    ov.querySelectorAll("#eZonaSeg button").forEach(x=>x.classList.toggle("on",x===b));
-    g("#eProv").style.display = zona==="provincia"?"":"none";
-    g("#eLima").style.display = zona==="provincia"?"none":"";
-  });
   g(".cancel").onclick=()=>ov.remove();
   g(".save").onclick=async()=>{
     const numU=(id)=>{ const x=g(id).value; return x===""?null:Number(x); };
