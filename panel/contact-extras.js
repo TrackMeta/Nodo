@@ -342,6 +342,23 @@ const DESPACHO_CSS = `
   .avz-op b{display:block;font-size:13px;margin-bottom:2px}
   .avz-op span{color:var(--muted);font-size:11.5px;line-height:1.45;display:block}
   .avz-op select{margin-top:7px}
+  /* Registrar despacho en lote */
+  .modal.dl-modal{max-width:760px}
+  .dl-tools{display:flex;gap:8px;margin-bottom:10px}
+  .dl-tools button{height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  .dl-paste{margin-bottom:12px;display:none}
+  .dl-paste.on{display:block}
+  .dl-paste textarea{width:100%;min-height:64px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:8px 10px;font-size:12.5px;font-family:var(--font);resize:vertical}
+  .dl-paste .dl-pfoot{display:flex;gap:8px;margin-top:7px}
+  .dl-tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+  .dl-tbl{width:100%;border-collapse:collapse;min-width:600px}
+  .dl-tbl th{font-size:10.5px;font-weight:800;letter-spacing:.3px;color:var(--muted);text-transform:uppercase;text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .dl-tbl td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .dl-tbl tbody tr:last-child td{border-bottom:none}
+  .dl-tbl .dl-cli{font-size:12.5px;font-weight:600;white-space:nowrap}
+  .dl-tbl .dl-cli span{font-weight:500;color:var(--muted);font-size:11px}
+  .dl-tbl input{height:32px;font-size:12.5px;padding:0 8px;border-radius:8px}
+  .dl-tbl tr.bad input[data-k="guia"],.dl-tbl tr.bad input[data-k="codigo"]{border-color:var(--amber);background:var(--amber-bg,rgba(245,158,11,.08))}
 `;
 let despachoCssInjected = false;
 function injectDespachoCss() {
@@ -528,9 +545,10 @@ export async function openDespachoModal(o, deps) {
         <div><label>Sede / destino</label><input data-d="sede" value="${esc(s.sede || "")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
       </div>
       <div class="row2">
-        <div><label>Nº de guía</label><input data-d="guia" value="${esc(s.guia || "")}" placeholder="Ej. 034-123456"/></div>
-        <div><label>Clave de recojo</label><input data-d="clave" value="${esc(s.clave_recojo || "")}" placeholder="La entrega el remitente"/></div>
+        <div><label>N° de guía</label><input data-d="guia" value="${esc(s.guia || "")}" placeholder="Ej. 034-123456"/></div>
+        <div><label>Código de envío</label><input data-d="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Ej. SH-77120"/></div>
       </div>
+      <label>Clave de recojo</label><input data-d="clave" value="${esc(s.clave_recojo || "")}" placeholder="La pones tú, el cliente la usa para recoger"/>
       <label>Costo del envío ${sugerido != null ? `<span style="font-weight:400;color:var(--faint)">· sugerido S/ ${esc(sugerido)}</span>` : ""}</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input data-d="flete" type="number" min="0" step="0.5" value="${s.flete ?? sugerido ?? ""}" placeholder="0.00" style="flex:1"/>
@@ -585,11 +603,12 @@ export async function openDespachoModal(o, deps) {
 
     ov.querySelector(".save").onclick = async () => {
       const guia = q("guia").value.trim();
-      if (!guia) { toast("Falta el número de guía", true); return; }
+      const codigo = q("codigo").value.trim();
+      if (!guia || !codigo) { toast("Shalom necesita el N° de guía Y el código de envío", true); return; }
       const flete = q("flete").value;
       const aviso = avisoValor(ov);
       const r = await updateOrder({ order_id: o.id, estado: "despachado", aviso, shipping: {
-        agencia: q("agencia").value, sede: q("sede").value.trim(), guia,
+        agencia: q("agencia").value, sede: q("sede").value.trim(), guia, codigo_envio: codigo,
         clave_recojo: q("clave").value.trim(), sede_por_confirmar: null,
         guia_foto: foto || null, guia_foto_kind: foto ? fotoKind : null,
         ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
@@ -602,6 +621,92 @@ export async function openDespachoModal(o, deps) {
     wireAviso(ov);
     pintaFoto();
     q("guia").focus();
+  });
+}
+
+// Registrar despacho de VARIOS pedidos de agencia a la vez. Misma lógica que el
+// individual (guía + código + clave + costo por pedido, un aviso para todos)
+// pero en tabla. Solo se despachan los que tengan N° de guía Y código de envío
+// (Shalom exige los dos). "Pegar desde Shalom" reparte guía+código por orden.
+// Devuelve cuántos se despacharon.
+export async function openDespachoLoteModal(orders, deps) {
+  const { updateOrder, toast, supa, channelId } = deps;
+  injectDespachoCss();
+  const info = await cargarAviso(supa, channelId, orders[0] && orders[0].contact_id, "despachado");
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "overlay";
+    const fila = (o) => {
+      const s = o.shipping || {}, c = o.contact || {};
+      const dest = s.destino || s.sede || s.ciudad || "—";
+      return `<tr data-id="${esc(o.id)}">
+        <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span></td>
+        <td><input data-k="guia" value="${esc(s.guia || "")}" placeholder="N° de guía"/></td>
+        <td><input data-k="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Código"/></td>
+        <td><input data-k="clave" value="${esc(s.clave_recojo || "")}" placeholder="Clave"/></td>
+        <td><input data-k="flete" type="number" min="0" step="0.5" value="${s.flete ?? ""}" placeholder="0" style="width:64px"/></td>
+      </tr>`;
+    };
+    ov.innerHTML = `<div class="modal dl-modal">
+      <h3>📦 Registrar despacho en lote</h3>
+      <div class="m-sub">${orders.length} pedido${orders.length > 1 ? "s" : ""} por despachar. Pon el <b>N° de guía</b> y el <b>código de envío</b> de cada uno (Shalom pide los dos) y la clave. Al guardar pasan a Despachado y el bot avisa.</div>
+      <div class="dl-tools"><button type="button" data-pegar>📋 Pegar guías desde Shalom</button></div>
+      <div class="dl-paste" data-pastebox>
+        <textarea data-paste placeholder="Una línea por pedido, en el MISMO orden de la tabla: N° de guía y código (separados por tab, coma o espacio). Ej.:&#10;034-882140  SH-77120&#10;034-882141  SH-77121"></textarea>
+        <div class="dl-pfoot"><button type="button" data-aplicar style="height:34px;padding:0 14px;border-radius:9px;border:none;background:var(--brand);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">Aplicar a la tabla</button></div>
+      </div>
+      <div class="dl-tblwrap"><table class="dl-tbl"><thead><tr>
+        <th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th></tr></thead>
+        <tbody>${orders.map(fila).join("")}</tbody></table></div>
+      ${avisoBlockHtml(info)}
+      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Registrar despachos</button></div>
+    </div>`;
+    const cerrar = (v) => { ov.remove(); resolve(v); };
+    ov.onclick = (e) => { if (e.target === ov) cerrar(0); };
+    ov.querySelector(".cancel").onclick = () => cerrar(0);
+    wireAviso(ov);
+    ov.querySelector("[data-pegar]").onclick = () => ov.querySelector("[data-pastebox]").classList.toggle("on");
+    ov.querySelector("[data-aplicar]").onclick = () => {
+      const txt = ov.querySelector("[data-paste]").value.trim();
+      if (!txt) return;
+      const lineas = txt.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const filas = [...ov.querySelectorAll(".dl-tbl tbody tr")];
+      lineas.forEach((linea, i) => {
+        const tr = filas[i]; if (!tr) return;
+        const p = linea.split(/\t|,|;|\s{2,}|\s+/).filter(Boolean);
+        if (p[0]) tr.querySelector('[data-k="guia"]').value = p[0];
+        if (p[1]) tr.querySelector('[data-k="codigo"]').value = p[1];
+      });
+      ov.querySelector("[data-pastebox]").classList.remove("on");
+      toast(`Apliqué ${Math.min(lineas.length, filas.length)} línea(s)`);
+    };
+    ov.querySelector(".m-foot .save").onclick = async () => {
+      const aviso = avisoValor(ov);
+      const filas = [...ov.querySelectorAll(".dl-tbl tbody tr")];
+      const listos = [];
+      filas.forEach((tr) => {
+        const g = tr.querySelector('[data-k="guia"]').value.trim();
+        const cod = tr.querySelector('[data-k="codigo"]').value.trim();
+        tr.classList.toggle("bad", !!(g || cod) && !(g && cod));
+        if (g && cod) listos.push({ id: tr.dataset.id, g, cod,
+          clave: tr.querySelector('[data-k="clave"]').value.trim(),
+          flete: tr.querySelector('[data-k="flete"]').value });
+      });
+      if (!listos.length) { toast("Ningún pedido tiene N° de guía y código de envío", true); return; }
+      const btn = ov.querySelector(".m-foot .save"); btn.disabled = true;
+      let ok = 0, fail = 0;
+      for (const it of listos) {
+        btn.textContent = `Registrando ${ok + fail + 1}/${listos.length}…`;
+        const r = await updateOrder({ order_id: it.id, estado: "despachado", aviso, shipping: {
+          guia: it.g, codigo_envio: it.cod, clave_recojo: it.clave, sede_por_confirmar: null,
+          ...(it.flete === "" || it.flete == null ? {} : { flete: Number(it.flete) || 0 }),
+        } });
+        r ? ok++ : fail++;
+      }
+      toast(`${ok} despacho(s) registrado(s)${fail ? ` · ${fail} con error` : ""}`);
+      cerrar(ok);
+    };
+    document.body.appendChild(ov);
   });
 }
 

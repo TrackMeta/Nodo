@@ -186,6 +186,7 @@
           <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por despachar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="expmenu" id="exportMenu"></div>
         </div>
+        <button class="nodo-btn" id="loteBtn" title="Registrar la guía y clave de varios pedidos de provincia a la vez" style="display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg> Despacho en lote</button>
         <a href="pagos.html" class="nodo-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y avisos</a>
       </div>
     </div>
@@ -204,7 +205,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
-import { openDespachoModal, pedirAviso, avisoMsg } from "./contact-extras.js";
+import { openDespachoModal, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
@@ -251,6 +252,7 @@ async function boot(){
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
+  $("loteBtn").onclick=despachoLote;
   document.addEventListener("click",(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } });
   cargarListas();  // precarga las listas de agencias/distritos para el editor
   await load();
@@ -262,6 +264,15 @@ async function boot(){
 // conservando hojas de validación y macros; ver courier-export.js).
 // El menú muestra SOLO los couriers de la zona que estás viendo (Lima → Eva;
 // Provincia → Shalom), + los "próximamente" de esa zona.
+// Registrar despacho en lote (provincia/agencia): guía + código + clave de
+// varios pedidos a la vez. Excluye los aéreos (van a mano, uno por uno).
+async function despachoLote(){
+  if(st.kbZona!=="provincia"){ toast("El despacho en lote es para provincia (agencia con guía)",true); return; }
+  const pend=st.list.filter(o=>isFisico(o) && zonaDe(o)==="provincia" && POR_DESPACHAR.provincia.has(o.estado) && !(o.shipping&&o.shipping.aereo));
+  if(!pend.length){ toast("No hay pedidos de provincia por despachar",true); return; }
+  const n=await openDespachoLoteModal(pend,{ updateOrder, toast, supa, channelId:st.channelId });
+  if(n) await load();
+}
 function toggleExportMenu(){
   const menu=$("exportMenu");
   if(menu.classList.contains("show")){ menu.classList.remove("show"); return; }
