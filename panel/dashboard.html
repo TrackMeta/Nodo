@@ -41,9 +41,9 @@
   .kpi .v{font-size:27px;font-weight:650;margin-top:12px;letter-spacing:-.5px}
   .kpi .d{font-size:12px;color:var(--faint);margin-top:3px;font-weight:400}
   /* Métricas de conversión: Efectividad de venta + Conversión a compra */
-  .metricas{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:22px 0 0;align-items:stretch}
+  .metricas{display:flex;gap:14px;flex-wrap:wrap;margin:22px 0 0}
   #efecPanel:empty{display:none}
-  .metric{display:flex;gap:18px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px}
+  .metric{flex:1 1 280px;min-width:0;min-height:104px;box-sizing:border-box;display:flex;gap:18px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px}
   .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.conv{border-left-color:var(--brand)}
   .metric .num{font-size:42px;font-weight:750;letter-spacing:-1.5px;line-height:1;color:var(--green);flex:none;min-width:78px;text-align:center}
   .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.conv .num{color:var(--brand)}
@@ -588,6 +588,9 @@ async function boot(){
   $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");
   shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); });
   // Asesor IA flotante: el FAB lo abre; el ✕ del panel lo minimiza.
+  // Se mueve al <body> porque .nodo-wrap tiene un transform (animación de
+  // entrada) que atraparía el position:fixed y lo pegaría al fondo del documento.
+  const flo=$("aiFloat"); if(flo && flo.parentElement!==document.body) document.body.appendChild(flo);
   const fab=$("aiFab"); if(fab) fab.onclick=()=>$("aiFloat")?.classList.remove("collapsed");
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
     tipo=b.dataset.t;
