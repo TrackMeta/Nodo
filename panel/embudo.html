@@ -233,12 +233,12 @@ function renderMetricas(F){
       <div class="mlbl">Efectividad de venta</div>
       <div class="mdesc">De cada <b>conversación de venta</b> que atiende el bot (el cliente se interesó en un producto), cuántas terminan en compra. No cuenta a quien solo escribió y nunca entró a comprar.</div>
       <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} conversaciones de venta</div>
-    </div>
+    </div></div>
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
       <div class="mlbl">Conversión a compra</div>
       <div class="mdesc">De <b>todos los que te escriben</b> (incluidos los que solo saludaron), cuántos llegan a comprar. Es la conversión total del embudo: enganchar + cerrar.</div>
       <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos</div>
-    </div>`;
+    </div></div>`;
   igualarAlto(el);
 }
 
