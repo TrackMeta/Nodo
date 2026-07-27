@@ -226,7 +226,7 @@ function render(){
 
 function renderMetricas(F){
   const el=$("metPanel");
-  if(F.total===0){ el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">Aún sin contactos</div><div class="mdesc">Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión.</div></div></div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Ningún contacto coincide con el tipo, producto o rango de fechas elegido — ajusta los filtros de arriba.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
   const eCls = ef==null?"low":ef>=20?"":ef>=8?"mid":"low";
   el.innerHTML=`
@@ -282,7 +282,7 @@ function renderNeck(F){
 
 function renderFunnel(F){
   const el=$("fun");
-  if(F.total===0){ el.innerHTML=`<div class="empty">Aún no hay contactos en este canal.<br>Cuando lleguen mensajes, verás el embudo llenarse acá.</div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty">${filt?"No hay contactos que coincidan con los filtros elegidos.<br>Prueba con otro tipo, producto o rango de fechas.":"Aún no hay contactos en este canal.<br>Cuando lleguen mensajes, verás el embudo llenarse acá."}</div>`; return; }
   const N=F.niveles;
   const niveles=[
     { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
