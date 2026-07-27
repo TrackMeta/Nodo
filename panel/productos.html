@@ -1293,29 +1293,29 @@ function renderEnvio(){
         <div style="font-weight:700;font-size:13px;margin-bottom:8px">Precio aproximado del envío (para informar al cliente)</div>
         <div class="row" style="align-items:center;gap:10px">
           <span style="flex:0 0 auto;color:var(--muted);font-size:13px">Entre ${moneySym(a.adelanto_moneda)}</span>
-          <input class="in" id="ePmin" type="number" step="0.1" style="flex:0 0 110px" value="${esc(a.precio_min??"")}" placeholder="10"/>
+          <input class="in" id="ePmin" type="number" min="0" step="0.1" style="flex:0 0 110px" value="${esc(a.precio_min??"")}" placeholder="10"/>
           <span style="flex:0 0 auto;color:var(--muted);font-size:13px">a ${moneySym(a.adelanto_moneda)}</span>
-          <input class="in" id="ePmax" type="number" step="0.1" style="flex:0 0 110px" value="${esc(a.precio_max??"")}" placeholder="20"/>
+          <input class="in" id="ePmax" type="number" min="0" step="0.1" style="flex:0 0 110px" value="${esc(a.precio_max??"")}" placeholder="20"/>
           <span style="flex:0 0 auto;color:var(--muted);font-size:13px">soles</span>
         </div>
       </div>`:""}
       ${a.modo==="gratis_desde"?`
       <div class="row" style="margin-top:14px;align-items:center;gap:10px">
         <span style="flex:0 0 auto;color:var(--muted);font-size:13px">Envío gratis desde</span>
-        <input class="in" id="eDesde" type="number" step="0.1" style="flex:0 0 130px" value="${esc(a.gratis_desde??"")}" placeholder="Ej. 150"/>
+        <input class="in" id="eDesde" type="number" min="0" step="0.1" style="flex:0 0 130px" value="${esc(a.gratis_desde??"")}" placeholder="Ej. 150"/>
         <span style="flex:0 0 auto;color:var(--muted);font-size:13px">de pedido</span>
       </div>`:""}
       ${a.modo==="fijo"?`
       <div class="row" style="margin-top:14px;align-items:center;gap:10px">
         <span style="flex:0 0 auto;color:var(--muted);font-size:13px">Cobro fijo de envío</span>
-        <input class="in" id="eFijo" type="number" step="0.1" style="flex:0 0 130px" value="${esc(a.monto_fijo??"")}" placeholder="Ej. 15"/>
+        <input class="in" id="eFijo" type="number" min="0" step="0.1" style="flex:0 0 130px" value="${esc(a.monto_fijo??"")}" placeholder="Ej. 15"/>
       </div>`:""}
 
       <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">
         <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span>
           <div style="font-weight:700;font-size:14px">¿Cuánto cobras de adelanto para envíos por ${AGENCIAS.find(([k])=>k===act)[1]}?</div></div>
         <div class="row" style="margin-top:10px;align-items:center;gap:8px">
-          <input class="in" id="eAdel" type="number" step="0.1" style="flex:0 0 150px" value="${esc(a.adelanto_valor??"")}" placeholder="20"/>
+          <input class="in" id="eAdel" type="number" min="0" step="0.1" style="flex:0 0 150px" value="${esc(a.adelanto_valor??"")}" placeholder="20"/>
           <select class="sel" id="eMon" style="flex:0 0 90px"><option value="PEN" ${a.adelanto_moneda!=="USD"?"selected":""}>S/</option><option value="USD" ${a.adelanto_moneda==="USD"?"selected":""}>$</option></select>
           <span style="flex:1;color:var(--faint);font-size:11.5px">Variable: <b style="color:#a855f7">{{adelanto_${act}}}</b></span>
         </div>
@@ -1358,11 +1358,11 @@ function renderEnvio(){
       const last=i===a.rangos.length-1;
       const el=document.createElement("div"); el.className="row"; el.style.cssText="align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap";
       el.innerHTML=`<span style="flex:0 0 auto;color:var(--muted);font-size:12px">Si pedido desde ${moneySym(a.adelanto_moneda)}</span>
-        <input class="in rd" type="number" style="flex:0 0 90px" value="${esc(r.desde??"")}"/>
+        <input class="in rd" type="number" min="0" style="flex:0 0 90px" value="${esc(r.desde??"")}"/>
         <span style="flex:0 0 auto;color:var(--muted);font-size:12px">${last?"en adelante":"hasta "+moneySym(a.adelanto_moneda)}</span>
-        ${last?"":`<input class="in rh" type="number" style="flex:0 0 90px" value="${esc(r.hasta??"")}"/>`}
+        ${last?"":`<input class="in rh" type="number" min="0" style="flex:0 0 90px" value="${esc(r.hasta??"")}"/>`}
         <span style="flex:0 0 auto;color:var(--muted);font-size:12px">→ Adelanto:</span>
-        <input class="in rv" type="number" style="flex:0 0 100px" value="${esc(r.valor??"")}"/>
+        <input class="in rv" type="number" min="0" style="flex:0 0 100px" value="${esc(r.valor??"")}"/>
         <button class="iconbtn rdel" style="flex:0 0 auto;color:var(--red)">${icon("trash")}</button>`;
       el.querySelector(".rd").oninput=(ev)=>{ r.desde=ev.target.value; syncCfg(); };
       const rh=el.querySelector(".rh"); if(rh) rh.oninput=(ev)=>{ r.hasta=ev.target.value; syncCfg(); };
