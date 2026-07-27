@@ -827,12 +827,37 @@ function ensureVarsDatalist(){
   document.body.appendChild(dl);
 }
 function mkVarInput(v, oninput, ph){ ensureVarsDatalist(); const i=document.createElement("input"); i.className="in"; i.setAttribute("list","cfgVars"); i.value=v||""; if(ph)i.placeholder=ph; i.oninput=()=>oninput(i.value); return i; }
-// Sincroniza los outputs reales del nodo Drawflow con m.handles.
-function rebuildOutputs(m){
-  const el=document.getElementById("node-"+m.dfId); if(!el) return;
-  let cur=el.querySelectorAll(".outputs .output").length;
-  while(cur<m.handles.length){ editor.addNodeOutput(m.dfId); cur++; }
-  while(cur>m.handles.length){ editor.removeNodeOutput(m.dfId,"output_"+cur); cur--; }
+// Cambia las ramas del nodo a `nuevos` PRESERVANDO las conexiones por NOMBRE de
+// rama, no por posición. Antes se hacía por índice (quitar SIEMPRE el último
+// output) y borrar una rama del medio desplazaba las conexiones a la rama
+// equivocada: la conexión de "Ruta A" quedaba bajo "Ruta B", ruteo corrupto en
+// silencio. Ahora: (1) se fotografían las conexiones actuales indexadas por el
+// nombre de rama de HOY; (2) se reconstruyen los outputs desde cero; (3) cada
+// rama que sobrevive vuelve a su mismo destino por nombre.
+function resyncOutputs(m, nuevos){
+  // 1) Foto de las conexiones actuales por NOMBRE de la rama actual.
+  let outs={};
+  try{ outs=((editor.export().drawflow.Home.data||{})[m.dfId]||{}).outputs||{}; }catch(_){ outs={}; }
+  const porRama={};
+  for(const okey in outs){
+    const idx=parseInt(okey.split("_")[1],10)-1;
+    const h=m.handles[idx];
+    if(h==null) continue;
+    porRama[h]=(outs[okey].connections||[]).map(c=>({ node:c.node, input:c.output||"input_1" }));
+  }
+  // 2) Reconstruir los outputs desde cero (quitar desde el final es la dirección
+  //    segura y probada; addNodeOutput los repone limpios, sin conexiones).
+  m.handles=[...nuevos];
+  let cur=(document.getElementById("node-"+m.dfId)?.querySelectorAll(".outputs .output").length)||0;
+  while(cur>0){ editor.removeNodeOutput(m.dfId,"output_"+cur); cur--; }
+  for(let i=0;i<m.handles.length;i++) editor.addNodeOutput(m.dfId);
+  // 3) Restaurar cada rama a su destino por NOMBRE (solo si el destino sigue vivo).
+  m.handles.forEach((h,i)=>{
+    (porRama[h]||[]).forEach(c=>{
+      if(!st.dfToUuid[c.node]) return;
+      try{ editor.addConnection(m.dfId, c.node, "output_"+(i+1), c.input); }catch(_){}
+    });
+  });
 }
 
 // ── Mensaje (burbujas + botones que crean ramas) ──
@@ -876,8 +901,8 @@ function buildMensajeCfg(m, body){
 }
 function syncMensajeHandles(m){
   const b=(m.config.bubbles||[]).find(x=>x.buttons?.length);
-  m.handles = b ? b.buttons.map(x=>"boton:"+x.id) : ["continuar"];
-  rebuildOutputs(m); decorateNode(editor,m); updateNodeDom(m); canvas.schedule();
+  resyncOutputs(m, b ? b.buttons.map(x=>"boton:"+x.id) : ["continuar"]);
+  decorateNode(editor,m); updateNodeDom(m); canvas.schedule();
 }
 
 // ── Condición (rutas con reglas) ──
@@ -925,8 +950,8 @@ function buildCondicionCfg(m, body){
 }
 function syncCondHandles(m){
   const c=m.config; c.rutas.forEach((r,i)=>{ if(!r.handle) r.handle="ruta:"+(i+1); });
-  m.handles=[...c.rutas.map(r=>r.handle), "si_no_cumple"];
-  rebuildOutputs(m); decorateNode(editor,m); updateNodeDom(m); canvas.schedule();
+  resyncOutputs(m, [...c.rutas.map(r=>r.handle), "si_no_cumple"]);
+  decorateNode(editor,m); updateNodeDom(m); canvas.schedule();
 }
 
 // ── Esperar ──
@@ -1158,7 +1183,7 @@ function renderHandles(m){
     const row=document.createElement("div"); row.className="handle-row";
     row.innerHTML=`<input class="in" value="${esc(h)}"/><button class="hbtn">✕</button>`;
     row.querySelector("input").onchange=(e)=>{ m.handles[i]=e.target.value; decorateNode(editor, m); };
-    row.querySelector("button").onclick=()=>{ m.handles.splice(i,1); editor.removeNodeOutput(m.dfId,"output_"+(i+1)); renderHandles(m); decorateNode(editor, m); canvas.schedule(); };
+    row.querySelector("button").onclick=()=>{ const nuevos=m.handles.slice(); nuevos.splice(i,1); resyncOutputs(m, nuevos); renderHandles(m); decorateNode(editor, m); canvas.schedule(); };
     box.appendChild(row);
   });
 }
