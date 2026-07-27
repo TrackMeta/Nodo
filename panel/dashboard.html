@@ -46,9 +46,9 @@
   .metricas{display:flex;gap:14px;margin:22px 0 0}
   #efecPanel:empty{display:none}
   .metric{flex:1 1 0;min-width:0;box-sizing:border-box;display:flex;gap:18px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px}
-  .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.conv{border-left-color:var(--brand)}
+  .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.mconv{border-left-color:var(--brand)}
   .metric .num{font-size:42px;font-weight:750;letter-spacing:-1.5px;line-height:1;color:var(--green);flex:none;min-width:78px;text-align:center}
-  .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.conv .num{color:var(--brand)}
+  .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.mconv .num{color:var(--brand)}
   .metric .mtxt{flex:1;min-width:0}
   .metric .mlbl{font-size:15px;font-weight:700;color:var(--text)}
   .metric .mdesc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
@@ -990,7 +990,7 @@ function renderMetricas(porStage){
     `</div></div>`;
   // Conversión a compra (informativa, color marca)
   const cP = total? Math.round(comprado/total*100) : null;
-  const cCls = total ? "conv" : "low";
+  const cCls = total ? "mconv" : "low"; // OJO: no usar "conv" — colisiona con .conv (píldoras del embudo, margin-top:16px)
   const tConv="Compras ÷ TODOS los contactos, incluidos los que solo escribieron. Es la conversión total del embudo: engancha + cierra.";
   const convHtml=`<div class="metric ${cCls}" title="${tConv}"><div class="num">${cP==null?"—":cP+"%"}</div><div class="mtxt">`+
     `<div class="mlbl">Conversión a compra</div>`+
