@@ -98,7 +98,8 @@ function initials(n,e){ const s=(n||e||"?").trim(); const p=s.split(/\s+/); retu
 
 async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
-  await mountShell({ active:"perfil" });
+  const shell=await mountShell({ active:"perfil" });
+  st.channelId=shell.channelId;
   st.uid=session.user.id; st.email=session.user.email;
   $("vEmail").textContent=st.email;
   const authSince=session.user.created_at;
@@ -135,7 +136,17 @@ async function handleAvatar(file){
 async function saveProfile(e){
   const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
   const patch={ nombre:$("pNombre").value.trim()||null };
-  if(st.pendingAvatar) patch.avatar_url=st.pendingAvatar;
+  if(st.pendingAvatar){
+    // Sube el avatar al bucket y guarda la URL (no el base64 inline): mantiene
+    // liviana la fila de app_users, que se lee en cada carga (chip del sidebar,
+    // equipo, autores de mensajes). Si la subida falla, cae al data-URI inline
+    // (comportamiento anterior) para no quedarse sin guardar.
+    try{
+      const { data:up }=await supa.functions.invoke("media-upload", { body:{
+        channel_id:st.channelId, filename:"avatar.jpg", content_type:"image/jpeg", data:st.pendingAvatar } });
+      patch.avatar_url = up?.url || st.pendingAvatar;
+    }catch{ patch.avatar_url = st.pendingAvatar; }
+  }
   const { error }=await supa.from("app_users").update(patch).eq("id",st.uid);
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(/avatar_url|column/.test(error.message)?"Falta aplicar la migración 0014 (avatar_url)":error.message,true); return; }
@@ -146,7 +157,7 @@ async function saveProfile(e){
 async function changePassword(e){
   const cur=$("pwCur").value, nw=$("pwNew").value, nw2=$("pwNew2").value;
   if(!cur||!nw){ toast("Completa los campos",true); return; }
-  if(nw.length<6){ toast("La nueva contraseña debe tener 6+ caracteres",true); return; }
+  if(nw.length<8){ toast("La nueva contraseña debe tener al menos 8 caracteres",true); return; }
   if(nw!==nw2){ toast("Las contraseñas no coinciden",true); return; }
   const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Cambiando…";
   // Verificar la contraseña actual reautenticando.

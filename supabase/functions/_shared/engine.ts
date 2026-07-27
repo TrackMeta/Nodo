@@ -4644,6 +4644,12 @@ function normalizeAtributos(raw: any): Atributo[] {
 }
 
 // ── Contexto y resolución de variables {{ }} ───────────────────────
+// ESPEJO: las variables de cara al usuario que se arman acá están catalogadas en
+// panel/var-picker.js (VAR_GRUPOS) para el botón "Insertar dato". Si agregas o
+// renombras una variable {{ }} pensada para que el usuario la use en sus mensajes,
+// súmala/renómbrala en ese catálogo o no aparecerá para insertar (se podrá teclear
+// igual, pero deja de estar a un clic). Las {{pedido_*}} y los campos del canal se
+// listan solos y no hace falta tocarlos.
 async function buildContext(db: SupabaseClient, run: Run) {
   const { data: c } = await db.from("contacts")
     .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at")

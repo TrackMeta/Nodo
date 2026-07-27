@@ -282,6 +282,10 @@ function marcadoAHtml(t: string): string {
 // se borra — un aviso lleno de "🔎 Ref: —" es ruido. Pero si la línea tiene algo
 // que sí llegó ("mandó S/ 50 · esperado S/ —"), se conserva y el hueco va como
 // "—": ahí el dato que falta ES la información.
+// ESPEJO: la vista previa del panel (panel/avisos.html → previsualizar) replica
+// esta lógica (mismo orden de marcado, misma regla de líneas vacías) para mostrar
+// "cómo se va a ver". Si cambias esta función, actualiza previsualizar allá o la
+// vista previa mentirá (el envío real seguirá saliendo de acá, que es lo que vale).
 export function renderAviso(plantilla: string, datos: Record<string, unknown>): string {
   // Centinela imposible de teclear: marca "acá no había dato" sin chocar con
   // ningún texto real. Se construye en código para no dejar un byte nulo suelto
