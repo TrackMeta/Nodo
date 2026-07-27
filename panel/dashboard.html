@@ -41,17 +41,17 @@
   .kpi .v{font-size:27px;font-weight:650;margin-top:12px;letter-spacing:-.5px}
   .kpi .d{font-size:12px;color:var(--faint);margin-top:3px;font-weight:400}
   /* Métricas de conversión: Efectividad de venta + Conversión a compra */
-  .metricas{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:22px 0 0}
+  .metricas{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:22px 0 0;align-items:stretch}
   #efecPanel:empty{display:none}
-  .metric{display:flex;gap:16px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:18px 20px}
+  .metric{display:flex;gap:18px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px}
   .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.conv{border-left-color:var(--brand)}
-  .metric .num{font-size:40px;font-weight:750;letter-spacing:-1.5px;line-height:.92;color:var(--green);flex:none}
+  .metric .num{font-size:42px;font-weight:750;letter-spacing:-1.5px;line-height:1;color:var(--green);flex:none;min-width:78px;text-align:center}
   .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.conv .num{color:var(--brand)}
   .metric .mtxt{flex:1;min-width:0}
-  .metric .mlbl{font-size:14.5px;font-weight:700;color:var(--text)}
-  .metric .mdesc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.45}
-  .metric .mbrk{font-size:11px;color:var(--faint);margin-top:7px}
-  @media(max-width:640px){ .metricas{grid-template-columns:1fr} .metric .num{font-size:34px} }
+  .metric .mlbl{font-size:15px;font-weight:700;color:var(--text)}
+  .metric .mdesc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .metric .mbrk{font-size:11px;color:var(--faint);margin-top:8px}
+  @media(max-width:640px){ .metricas{grid-template-columns:1fr} .metric .num{font-size:36px;min-width:62px} }
   .cols{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
   @media(max-width:860px){.cols{grid-template-columns:1fr}}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
@@ -184,6 +184,18 @@
   .aiadv-tt{font-weight:700;font-size:15px}
   .aibtn{border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13px;padding:9px 15px}
   .aibtn:hover{filter:brightness(1.06)}
+  /* Asesor IA flotante (abajo a la derecha, colapsable) */
+  .aifloat{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+  .aipop{width:min(384px,92vw);max-height:72vh;overflow:auto}
+  .aipop .aiadv{margin:0;box-shadow:0 14px 44px rgba(0,0,0,.28)}
+  .aifloat.collapsed .aipop{display:none}
+  .aifab{position:relative;border:none;cursor:pointer;border-radius:24px;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13.5px;padding:12px 18px;display:inline-flex;align-items:center;gap:9px;box-shadow:0 8px 24px rgba(168,85,247,.4)}
+  .aifab:hover{filter:brightness(1.06)}
+  .aifab svg{width:18px;height:18px}
+  .aifloat:not(.collapsed) .aifab{display:none}
+  .fabdot{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:#22c079;border:2px solid var(--surface)}
+  .aiclose{border:none;background:var(--surface-2);color:var(--muted);border-radius:8px;width:26px;height:26px;cursor:pointer;font-size:14px;flex:none}
+  .aiclose:hover{color:var(--text)}
   .airec{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:10px;display:flex;gap:10px;align-items:flex-start}
   .aipri{font-size:10.5px;font-weight:700;border-radius:20px;padding:3px 9px;flex:none;text-transform:uppercase;letter-spacing:.3px;margin-top:1px}
   .aipri.alta{color:#e2564a;background:rgba(226,86,74,.13)}
@@ -216,9 +228,10 @@
 
     <div id="efecPanel"></div>
 
-    <div id="asesorPanel"></div>
-
-    <div id="onbPanel"></div>
+    <div id="aiFloat" class="aifloat collapsed">
+      <div id="asesorPanel" class="aipop"></div>
+      <button id="aiFab" class="aifab" title="Abrir el Asesor IA"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg><span>Asesor IA</span><span class="fabdot" id="aiDot" hidden></span></button>
+    </div>
 
     <div class="pband" id="pband"></div>
 
@@ -331,6 +344,7 @@ function renderAsesor(){
         <span class="g">${AI_SPARK}</span>
         <div style="flex:1;min-width:0"><div class="aiadv-tt">Asesor IA</div><div style="font-size:12.5px;color:var(--muted);margin-top:1px">${teaser}</div></div>
         <button class="aibtn" id="aiGo">Pedir consejo</button>
+        <button class="aiclose" id="aiClose" title="Minimizar">✕</button>
       </div>
       <div id="aiRecs"></div>
       <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
@@ -345,6 +359,8 @@ function renderAsesor(){
   $("aiGo").onclick=pedirConsejo;
   $("opGo").onclick=operaComando;
   $("opCmd").onkeydown=(e)=>{ if(e.key==="Enter") operaComando(); };
+  const cl=$("aiClose"); if(cl) cl.onclick=()=>$("aiFloat")?.classList.add("collapsed");
+  const dot=$("aiDot"); if(dot) dot.hidden=!oport.length; // punto verde en el FAB si hay oportunidades
 }
 async function operaComando(){
   const cmd=($("opCmd")?$("opCmd").value:"").trim();
@@ -570,7 +586,9 @@ async function boot(){
   channelId=shell.channelId;
   const c=shell.channels.find(x=>x.id===channelId);
   $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");
-  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); renderOnboarding(id); });
+  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); });
+  // Asesor IA flotante: el FAB lo abre; el ✕ del panel lo minimiza.
+  const fab=$("aiFab"); if(fab) fab.onclick=()=>$("aiFloat")?.classList.remove("collapsed");
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
     tipo=b.dataset.t;
     $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
@@ -595,7 +613,6 @@ async function boot(){
   $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
   renderDatePop();
   load();
-  renderOnboarding(channelId);
 }
 
 function kpi(icon, color, label, value, sub){
