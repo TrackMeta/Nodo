@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   if (body.shipping && typeof body.shipping === "object") {
     patch.shipping = { ...((order as any).shipping ?? {}), ...body.shipping };
   }
-  if (typeof body.amount === "number" && Number.isFinite(body.amount)) patch.amount = body.amount;
+  if (typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount >= 0) patch.amount = body.amount;
   const newEstado = body.estado && body.estado !== (order as any).estado ? body.estado : null;
   if (newEstado) {
     patch.estado = newEstado;

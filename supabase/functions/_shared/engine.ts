@@ -2276,7 +2276,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
         ?? "Eres un validador experto de comprobantes de pago de Perú.") +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
       const raw = await runAI({
-        provider: A.provider, apiKey: A.apiKey, model: A.model, system: sys,
+        provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [imageBlock(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
       });
@@ -2404,7 +2404,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   let parsed: any = null;
   try {
     const raw = await runAI({
-      provider: A.provider, apiKey: A.apiKey, model: A.model,
+      provider: ai.provider, apiKey: ai.api_key, model: ai.model,
       system,
       content: [imageBlock(url), { type: "text", text: `Es el comprobante del SALDO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
       maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,

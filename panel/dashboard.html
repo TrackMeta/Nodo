@@ -679,7 +679,13 @@ async function load(){
   // físico = margen (los que tienen costo registrado).
   let bruta=0, sinCostoF=0;
   orders.forEach(o=>{
-    if(!O.esFisico(o)){ bruta+=O.cobrado(o); return; }
+    if(!O.esFisico(o)){
+      // Digital = cobrado MENOS su costo si lo tiene (sin costo → solo cobrado).
+      // Antes sumaba solo cobrado y el costo digital salía en el COGS pero nunca
+      // se restaba → la neta quedaba inflada.
+      const cd=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+      bruta+=O.cobrado(o)-(cd||0); return;
+    }
     const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(m==null) sinCostoF++; else bruta+=m;
   });
@@ -696,7 +702,9 @@ async function load(){
   const margenPorProd={}, dailyMargin={}, dailySpend={};
   orders.forEach(o=>{
     const k=ymd(new Date(o.created_at));
-    const m = !O.esFisico(o) ? O.cobrado(o) : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    const m = !O.esFisico(o)
+      ? O.cobrado(o)-(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)||0)
+      : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(m!=null){ const pid=o.product_id||"_none"; margenPorProd[pid]=(margenPorProd[pid]||0)+m; dailyMargin[k]=(dailyMargin[k]||0)+m; }
   });
   ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0); } });
@@ -814,7 +822,10 @@ function renderExpenses(list){
 function toggleExpForm(){
   const f=$("expForm");
   if(!f.classList.contains("hidden")){ f.classList.add("hidden"); f.innerHTML=""; $("addExpBtn").textContent="+ Registrar"; return; }
-  const today=new Date().toISOString().slice(0,10);
+  // Fecha LOCAL (no toISOString, que da UTC → después de las 7pm en Lima proponía
+  // mañana). El gasto se atribuye al día en que lo registras.
+  const _n=new Date(), _p=x=>String(x).padStart(2,"0");
+  const today=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
   f.innerHTML=`<div class="expform">
     <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto (${curSym()})"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
     <input class="ef-in" id="ef_desc" placeholder="Descripción (ej. Empaques, Sueldo asistente)"/>

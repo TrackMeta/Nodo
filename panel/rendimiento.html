@@ -168,7 +168,13 @@ async function loadData(){
   (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=+i.gasto||0; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=+i.gasto||0; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
   (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=(o.created_at||"").slice(0,10); const d=day(row,f);
     if(esConf){ row.conf++; d.conf++; }
-    if(esVenta){ row.ventas++; row.ingresos+=tot; row._margen+=(mg==null?tot:mg); d.ventas++; d.ingresos+=tot; }
+    if(esVenta){ row.ventas++; row.ingresos+=tot; d.ventas++; d.ingresos+=tot;
+      // Margen con el MISMO criterio que el Dashboard: digital = cobrado − su costo
+      // (si lo tiene); físico = margen real. Si al físico le falta costo o flete, NO
+      // se afirma margen (antes usaba el total = costo cero → inflaba la ganancia).
+      const contrib = !O.esFisico(o) ? O.cobrado(o)-(O.costoProducto(o,o.product,1)||0) : mg;
+      if(contrib!=null) row._margen+=contrib;
+    }
     // Un anuncio vende UN producto, y ese producto o es digital o es fisico -> etiqueta sin ambiguedad.
     // (La zona no sirve: un mismo anuncio fisico vende a Lima y a provincia.) Zona solo como respaldo si el pedido no trae producto.
     if(!row.tag){ const t=o.product&&o.product.tipo; row.tag = t==="fisico"?"fisico" : t==="digital"?"digital" : (O.zonaDe(o)==="digital"?"digital":"fisico"); }

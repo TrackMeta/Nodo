@@ -198,7 +198,10 @@ function openModal(c){
   $("m_ostates").innerHTML=ORDER_STATES.map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}" style="${st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
   $("m_ostates").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.o; if(st.pickOStates.has(s))st.pickOStates.delete(s); else st.pickOStates.add(s); el.classList.toggle("on"); el.style.cssText=st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
   $("m_modo").value=seg.modo||"cualquiera";
-  $("m_prog").value=c?.programada_at?new Date(c.programada_at).toISOString().slice(0,16):"";
+  // datetime-local espera hora LOCAL. toISOString() daba dígitos UTC → mostraba la
+  // hora corrida (5h en Lima) y al re-guardar la volvía a correr. Se arma con los
+  // componentes locales. (El guardado ya convierte local→UTC con new Date(value).)
+  $("m_prog").value=c?.programada_at?(d=>{const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;})(new Date(c.programada_at)):"";
   $("modal").classList.add("show");
 }
 async function saveCampaign(){

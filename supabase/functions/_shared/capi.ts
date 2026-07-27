@@ -180,7 +180,16 @@ export interface OrderLike {
 export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promise<CapiResult | null> {
   if (!order?.estado || !PURCHASE_STATES.has(order.estado)) return null;
   const ship = (order.shipping ?? {}) as Record<string, unknown>;
-  const val = Number(order.amount);
+  // Valor de la conversión = precio del producto + ventas extra (order_bumps).
+  // `amount` es solo el precio base; sin sumar los bumps, Meta recibía un valor
+  // por debajo del real y subestimaba el ROAS. Los bumps se traen por id (el
+  // Purchase dispara una sola vez por pedido, así que el query extra no pesa).
+  let val = Number(order.amount) || 0;
+  try {
+    const { data: br } = await db.from("orders").select("order_bumps").eq("id", order.id).maybeSingle();
+    const bumps = Array.isArray((br as any)?.order_bumps) ? (br as any).order_bumps : [];
+    for (const b of bumps) val += Number((b as any)?.precio) || 0;
+  } catch (_) { /* si falla, cae al amount base */ }
   return await sendCapiEvent(db, order.channel_id, order.contact_id, {
     eventName: "Purchase",
     value: Number.isFinite(val) && val > 0 ? val : undefined,

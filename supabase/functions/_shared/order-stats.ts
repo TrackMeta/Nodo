@@ -102,18 +102,23 @@ export function resumirPedidos(orders: Order[]): Digest {
       const cp = (o?.shipping as any)?.costo_producto;
       const cpN = (cp == null || cp === "") ? null : Number(cp);
       if (!esFisico(o)) {
-        // Digital: sin costo de mercadería → la ganancia bruta es lo cobrado
-        // (mismo criterio que la banda del Dashboard). Si el producto digital
-        // igual tiene un costo cargado, se suma al COGS informativo.
-        ganancia += cobrado(o); conMargen++;
+        // Digital: la ganancia bruta es lo cobrado MENOS su costo si lo tiene
+        // (mismo criterio que la banda del Dashboard). Sin costo → solo cobrado.
+        // Antes sumaba solo `cobrado` y el costo digital aparecía en el COGS pero
+        // nunca se restaba → la ganancia neta salía inflada.
+        ganancia += cobrado(o) - (cpN ?? 0); conMargen++;
         if (cpN != null) costoProd += cpN;
       } else {
         const f = (o?.shipping as any)?.flete;
         const fN = (f == null || f === "") ? null : Number(f);
+        // COGS y envío son informativos: se suman apenas se conoce el dato,
+        // aunque falte el otro (así cuadran con el Dashboard). La GANANCIA en
+        // cambio exige los dos: un margen a medias es peor que ninguno.
+        if (cpN != null) costoProd += cpN;
+        if (fN != null) envio += fN;
         if (cpN == null || fN == null) {
           sinDatos++; // físico sin costo o sin flete → no se afirma margen
         } else {
-          costoProd += cpN; envio += fN;
           ganancia += cobrado(o) - cpN - fN; conMargen++;
         }
       }
