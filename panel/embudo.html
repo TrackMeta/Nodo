@@ -29,9 +29,9 @@
   /* KPIs grandes: Efectividad + Conversión (con explicación completa) */
   .mets{display:flex;gap:14px;margin:6px 0 18px;align-items:stretch}
   .met{flex:1 1 0;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px;display:flex;gap:20px;align-items:flex-start;align-self:stretch}
-  .met.mid{border-left-color:var(--amber)} .met.low{border-left-color:var(--border)} .met.mconv{border-left-color:var(--brand)}
+  .met.mid{border-left-color:var(--amber)} .met.low{border-left-color:var(--border)} .met.mconv{border-left-color:var(--brand)} .met.mia{border-left-color:#a855f7}
   .met .num{font-size:52px;font-weight:750;letter-spacing:-2px;line-height:.9;color:var(--green);flex:none;min-width:96px;text-align:center}
-  .met.mid .num{color:var(--amber)} .met.low .num{color:var(--muted)} .met.mconv .num{color:var(--brand)}
+  .met.mid .num{color:var(--amber)} .met.low .num{color:var(--muted)} .met.mconv .num{color:var(--brand)} .met.mia .num{color:#a855f7}
   .met .mtxt{flex:1;min-width:0}
   .met .mlbl{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .met .mtag{font-size:10px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;white-space:nowrap}
@@ -229,7 +229,7 @@ function renderMetricas(F){
   const el=$("metPanel");
   if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Ningún contacto coincide con el tipo, producto o rango de fechas elegido — ajusta los filtros de arriba.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
-  const eCls = ef==null?"low":ef>=20?"":ef>=8?"mid":"low";
+  const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
   el.innerHTML=`
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
       <div class="mlbl">Efectividad de cierre <span class="mtag">base: interesados</span></div>
