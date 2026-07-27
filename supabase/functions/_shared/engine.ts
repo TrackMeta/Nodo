@@ -2603,7 +2603,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     const hist = await historial(db, run, 8);
     const content = `El cliente (con su pago en verificación) te escribe:\n"${event.text ?? ""}"` +
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
-    const result = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system: parts.join("\n\n"), content, maxTokens: 400 });
+    const result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
     await emitIaText(db, run, result || fallback, ctx);
   } catch (e) {
     console.error("[responderVerificando]", (e as any)?.message ?? e);
@@ -2672,7 +2672,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
     let result = "";
     try {
-      result = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system: parts.join("\n\n"), content, maxTokens: 400 });
+      result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
     } catch (e) { console.error("[postventa/saldo]", (e as any)?.message ?? e); return false; }
     await logEvent(db, channelId, contactId, "nota", "💵 Esperando saldo (recordatorio)", (event.text ?? "").slice(0, 80)).catch(() => {});
     await emitIaText(db, run, result || "¡Hola! 🙌 Para poder despachar y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
@@ -2703,7 +2703,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
 
   let result = "";
   try {
-    result = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system, content, maxTokens: 500 });
+    result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system, content, maxTokens: 500 });
   } catch (e) { console.error("[postventa]", (e as any)?.message ?? e); return false; }
 
   await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta", (event.text ?? "").slice(0, 80)).catch(() => {});
@@ -2768,7 +2768,7 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
     : "El cliente todavía no ha escrito nada en este chat. Sugiere 3 formas cálidas de iniciar o retomar la conversación.";
 
   const raw = await runAI({
-    provider: A.provider, apiKey: A.apiKey, model: A.model,
+    provider: ai.provider, apiKey: ai.api_key, model: ai.model,
     system, content, maxTokens: 700,
     jsonSchema: {
       type: "object",
@@ -3358,7 +3358,7 @@ async function extraerLugar(db: SupabaseClient, channelId: string, texto: string
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (!ai?.api_key) return null; // sin IA → solo match determinista
     const raw = await runAI({
-      provider: A.provider, apiKey: A.apiKey, model: A.model,
+      provider: ai.provider, apiKey: ai.api_key, model: ai.model,
       system: "Extraes lugares del Perú de mensajes de clientes. Responde SOLO con un JSON, sin explicaciones.",
       content: `Mensaje del cliente:\n"${texto}"\n\n¿A qué distrito, ciudad o localidad del Perú se refiere para su entrega? ` +
         `Si solo menciona la ciudad de Lima de forma genérica (ej. "soy de Lima", "acá en la capital", "en Lima nomás") sin nombrar un distrito, responde exactamente "Lima". ` +
@@ -3671,7 +3671,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
       if (ai?.api_key) {
         const lista = faltan.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
         const raw = await runAI({
-          provider: A.provider, apiKey: A.apiKey, model: A.model,
+          provider: ai.provider, apiKey: ai.api_key, model: ai.model,
           // Dos reglas aprendidas probando con el modelo real:
           // 1) Si NO le decimos que copie tal cual, "corrige" solo: un DNI de 7
           //    dígitos lo omitía en silencio, y entonces nuestra validación por
