@@ -1847,7 +1847,8 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       try {
         await maybePurchase(db, {
           id: run.vars._order_id as string, channel_id: run.channel_id, contact_id: run.contact_id,
-          estado: patch.estado as string, amount: (patch.amount as number) ?? pr.amount, shipping: merged,
+          estado: patch.estado as string, amount: (patch.amount as number) ?? pr.amount,
+          currency: String(ctx.moneda || "PEN"), shipping: merged,
         });
       } catch (e) { console.error("[crearPedido] capi purchase (precreado):", (e as any)?.message ?? e); }
       return;
@@ -1916,7 +1917,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null,
-      amount, estado: a.estado || "carrito", shipping: ship,
+      amount, currency: String(ctx.moneda || "PEN"), estado: a.estado || "carrito", shipping: ship,
     }).select("id").single();
     if (error) throw new Error(error.message);
     run.vars._order_id = (ord as any).id;
@@ -1935,7 +1936,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     try {
       await maybePurchase(db, {
         id: (ord as any).id, channel_id: run.channel_id, contact_id: run.contact_id,
-        estado: a.estado || "carrito", amount, shipping: ship,
+        estado: a.estado || "carrito", amount, currency: String(ctx.moneda || "PEN"), shipping: ship,
       });
     } catch (e) { console.error("[crearPedido] capi purchase:", (e as any)?.message ?? e); }
   } catch (err) {
@@ -1996,8 +1997,15 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
       }
     }
     if (a.datos && Object.keys(a.datos).length) {
-      const { data: cur } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
-      const ship: Record<string, unknown> = { ...((cur as any)?.shipping ?? {}) };
+      // Parte del shipping ya calculado en este patch (ej. el saldo que subió un
+      // bump con `sube_saldo`); si no, del pedido en la BD. Antes releía SIEMPRE
+      // el original y pisaba el saldo del bump cuando la misma acción traía datos.
+      let previa = patch.shipping as Record<string, unknown> | undefined;
+      if (!previa) {
+        const { data: cur } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+        previa = ((cur as any)?.shipping ?? {}) as Record<string, unknown>;
+      }
+      const ship: Record<string, unknown> = { ...previa };
       for (const [k, v] of Object.entries(a.datos)) ship[k] = resolve(String(v ?? ""), ctx);
       patch.shipping = ship;
     }
@@ -4469,7 +4477,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   const { data: ord } = await db.from("orders").insert({
                     channel_id: run.channel_id, contact_id: run.contact_id,
                     product_id: (cc as any)?.product_id ?? null,
-                    amount, estado: "pendiente", shipping: ship,
+                    amount, currency: String(ctx.moneda || "PEN"), estado: "pendiente", shipping: ship,
                   }).select("id").single();
                   if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
                   // Pago digital sin validar aún → sigue Interesado (no es Confirmado).
@@ -4875,10 +4883,17 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // saldo para NO soltar la clave de recojo por su cuenta cuando el negocio
   // pidió aprobar cada pago a mano. Sin esta variable, un flujo con su propio
   // OCR se saltaba el ajuste en silencio.
+  // {{moneda}} — código ISO de la moneda del canal (PEN/USD…). El panel ya la
+  // respeta (Dashboard/Rendimiento/Embudo leen channels.moneda), pero el motor
+  // no la propagaba: los mensajes de abono/vuelto, el OCR y la "bolsa" de pagos
+  // caían siempre a "S/" y los pedidos nacían sin currency. Para una cuenta en
+  // USD el bot le decía "S/" al cliente aunque el tablero mostrara "$". Se lee
+  // junto con pedidos_config para no sumar una consulta por paso.
   try {
-    const { data: chL } = await db.from("channels").select("pedidos_config").eq("id", run.channel_id).maybeSingle();
+    const { data: chL } = await db.from("channels").select("pedidos_config, moneda").eq("id", run.channel_id).maybeSingle();
     ctx.logistica_modo = String((chL as any)?.pedidos_config?.log?.modo ?? "manual");
-  } catch (_) { ctx.logistica_modo = "manual"; }
+    ctx.moneda = String((chL as any)?.moneda || "PEN");
+  } catch (_) { ctx.logistica_modo = "manual"; ctx.moneda = "PEN"; }
   return ctx;
 }
 function resolve(text: string, ctx: any): string {
