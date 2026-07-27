@@ -1,0 +1,29 @@
+name: Sincronía de tablas EST
+
+# Corre SOLO (sin acción manual) en cada push y en cada pull request. Compara la
+# tabla EST del panel (panel/orders.js) con su espejo del backend
+# (supabase/functions/_shared/order-stats.ts). Si divergen en venta/cobro/
+# perdido/zona, este chequeo falla → GitHub marca el push en rojo y avisa por
+# correo. Si coinciden, pasa en verde. Ver tools/check-est-sync.ts.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  est-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Instalar Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Comparar las dos tablas EST
+        run: deno run --no-check tools/check-est-sync.ts
