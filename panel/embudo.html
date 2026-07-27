@@ -249,11 +249,14 @@ function renderNeck(F){
     { de:"confirmados", a:"comprar", arriba:F.niveles.confirmaron, paso:F.paso.comprar, tip:"el cierre: cobro, adelanto, entrega" },
   ].filter(s=> s.arriba>0 && s.paso!=null);
   if(!saltos.length){ el.innerHTML=""; return; }
-  const peor=saltos.reduce((a,b)=> (b.paso<a.paso?b:a));
-  const drop=100-peor.paso;
-  const seCae=Math.round(peor.arriba*drop/100);
-  if(drop<=25){
-    el.innerHTML=`<div class="neck ok">${icon("check")||"✓"}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`;
+  // Se elige la fuga por PERSONAS perdidas (absoluto), no por %: un salto con
+  // pocos arriba (ej. 3 confirmados sin pagar aún) da 100% engañoso; lo que de
+  // verdad duele es dónde pierdes más gente.
+  saltos.forEach(s=>{ s.drop=100-s.paso; s.seCae=Math.round(s.arriba*s.drop/100); });
+  const peor=saltos.reduce((a,b)=> (b.seCae>a.seCae?b:a));
+  const drop=peor.drop, seCae=peor.seCae;
+  if(drop<=25 || seCae<2){
+    el.innerHTML=`<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`;
     return;
   }
   el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`;
