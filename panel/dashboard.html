@@ -600,7 +600,7 @@ async function load(){
   // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
   // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
-  const [stats, evR, ordR, prodR, contR, insR, expR, flowR] = await Promise.all([
+  const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
@@ -609,9 +609,20 @@ async function load(){
     supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)),
     supa.from("manual_expenses").select("id,fecha,monto,descripcion,categoria").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}),
     supa.from("flows").select("product_id,role,estado").eq("channel_id",channelId),
+    // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test) también
+    // en por_stage, así que el embudo del Dashboard daba 1 de más que la sección
+    // Embudo (que lo excluye). Traemos su etapa para descontarlo del mismo bucket.
+    supa.from("contacts").select("stage").eq("channel_id",channelId).eq("wa_id","webchat-test").maybeSingle(),
   ]);
   const s=stats.data||{};
   if(typeof contR?.count==="number") s.contactos=contR.count;
+  // Copia de por_stage con el contacto de prueba descontado de su etapa cruda
+  // (la etapa null vive bajo la clave "null", que renderFunnel pliega a "nuevo").
+  const porStage={...(s.por_stage||{})};
+  if(wsR && wsR.data){
+    const wk = wsR.data.stage==null ? "null" : wsR.data.stage;
+    if(porStage[wk]!=null) porStage[wk]=Math.max(0, Number(porStage[wk])-1);
+  }
   const ev=evR.error?[]:(evR.data||[]);
   // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
   // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
@@ -750,7 +761,7 @@ async function load(){
   animateNums($("kpis"));
   renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, tipo });
 
-  renderFunnel(s.por_stage||{});
+  renderFunnel(porStage);
   renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds);
   renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
@@ -769,7 +780,7 @@ async function load(){
   });
   const rank=Object.entries(margenPorProd).map(([pid,g])=>({nombre:prodPorId[pid]?prodPorId[pid].nombre:"—", ganancia:Math.round(Number(g)||0)})).filter(x=>x.nombre!=="—");
   rank.sort((a,b)=>b.ganancia-a.ganancia);
-  const ps=s.por_stage||{};
+  const ps=porStage;
   const comprado=Number(ps.comprado)||0;
   const interesadosTot=(Number(ps.interesado)||0)+(Number(ps.confirmado)||0)+comprado;
   asesorResumen={

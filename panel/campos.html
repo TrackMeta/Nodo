@@ -75,6 +75,11 @@ const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all"
 const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"]];
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);}
+// Candados internos del motor (_once_*, _await, _duda_direccion…): no son datos
+// del cliente ni campos editables — se ocultan de "Capturados", igual que la ficha
+// (esCampoInterno en contact-extras.js). slug() ya evita que una clave del usuario
+// empiece con "_", así que solo caen acá los que crea el motor.
+const esInterno=(f)=> String((f&&f.key)||"").startsWith("_");
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
 const IC_VAR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>';
@@ -108,7 +113,7 @@ function renderTabs(){
 }
 function addField(){ const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null; st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"", folder }); render(); }
 function allFolders(){ const s=new Set(st.localFolders); st.fields.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
-function inTab(){ return st.fields.filter(f=>(f.modo||"dinamico")===st.tab); }
+function inTab(){ return st.fields.filter(f=>(f.modo||"dinamico")===st.tab && !esInterno(f)); }
 function countIn(v){ const t=inTab(); if(v==="__all") return t.length; if(v==="__none") return t.filter(f=>!f.folder).length; return t.filter(f=>f.folder===v).length; }
 function renderFolders(){
   const isReal=st.folder!=="__all"&&st.folder!=="__none";
@@ -135,7 +140,12 @@ function render(){
   let rows=inTab();
   if(st.folder==="__none") rows=rows.filter(f=>!f.folder); else if(st.folder!=="__all") rows=rows.filter(f=>f.folder===st.folder);
   const box=$("list");
-  if(!rows.length){ box.innerHTML=`<div class="empty">${st.tab==="fijo"?"Aún no hay campos fijos":"El bot todavía no capturó campos"}${st.folder!=="__all"?" en esta carpeta":""}. ${st.tab==="fijo"?"Crea uno con “Nuevo campo”.":"Aparecerán solos cuando el bot recoja datos, o crea uno con “Nuevo campo”."}</div>`; return; }
+  // Nota de transparencia: cuántos candados internos del motor se ocultaron (solo
+  // en Capturados y en la vista "Todos", donde el usuario los notaría).
+  const ocultos=(st.tab==="dinamico"&&st.folder==="__all")
+    ? st.fields.filter(f=>(f.modo||"dinamico")==="dinamico"&&esInterno(f)).length : 0;
+  const notaTec=ocultos?`<div class="empty" style="margin-top:12px;text-align:left;font-size:12px">🔧 ${ocultos} campo(s) técnico(s) del motor ocultos (candados internos como <code>_once_*</code> o <code>_await</code>). No son datos del cliente y no se editan aquí.</div>`:"";
+  if(!rows.length){ box.innerHTML=`<div class="empty">${st.tab==="fijo"?"Aún no hay campos fijos":"El bot todavía no capturó campos"}${st.folder!=="__all"?" en esta carpeta":""}. ${st.tab==="fijo"?"Crea uno con “Nuevo campo”.":"Aparecerán solos cuando el bot recoja datos, o crea uno con “Nuevo campo”."}</div>`+notaTec; return; }
   box.innerHTML="";
   rows.forEach(f=>{
     const el=document.createElement("div"); el.className="card";
@@ -171,6 +181,7 @@ function render(){
     el.querySelector(".del").onclick=()=>{ if(f.id) st.deleted.push(f.id); st.fields=st.fields.filter(x=>x!==f); render(); };
     box.appendChild(el);
   });
+  if(notaTec) box.insertAdjacentHTML("beforeend", notaTec);
 }
 async function save(){
   for(const f of st.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
