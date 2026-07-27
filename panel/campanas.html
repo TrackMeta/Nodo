@@ -172,11 +172,12 @@ function renderGrid(){
 }
 async function action(a, c){
   if(a==="edit") return openModal(c);
-  if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; await supa.from("campaigns").delete().eq("id",c.id); toast("Eliminada ✓"); return load(); }
-  if(a==="cancel"){ await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); toast("Cancelada"); return load(); }
+  if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("campaigns").delete().eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Eliminada ✓"); return load(); }
+  if(a==="cancel"){ const { error }=await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Cancelada"); return load(); }
   if(a==="activate"){
     if(!c.template_id){ toast("La campaña necesita una plantilla",true); return openModal(c); }
-    await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id);
+    const { error }=await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id);
+    if(error){ toast(error.message,true); return; }
     toast("Campaña activada — el envío empieza pronto"); return load();
   }
 }

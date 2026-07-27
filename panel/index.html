@@ -1013,7 +1013,7 @@ function renderContactPanel(){
     ${sec("Secuencias suscritas", subsBody, {count:subsA.length})}
     ${sec("Nodos ejecutados", nodosBody, {count:nodos.length})}
     ${sec("Registro de errores", errsBody, {count:errs.length})}`;
-  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; await supa.from("contacts").update({ stage:k }).eq("id",contact.id); contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada ✓"); renderContactPanel(); loadConversations(); });
+  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada ✓"); renderContactPanel(); loadConversations(); });
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{
     await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
     const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre);
@@ -1099,10 +1099,12 @@ async function actionHandler(a){
     if(panelData.contact && panelData.contact.id===cid) panelData.contact.bloqueado=false;
     logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado ✓"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="clearinfo"){ if(!await confirmDialog({title:"Borrar información",message:"¿Borrar todos los campos personalizados de este contacto?",confirmText:"Borrar",danger:true})) return;
-    await supa.from("contact_field_values").delete().eq("contact_id",cid); logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
+    const { error }=await supa.from("contact_field_values").delete().eq("contact_id",cid); if(error){ toast("No se pudo borrar: "+error.message,true); return; }
+    logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
     loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }
   if(a==="delchat"){ if(!await confirmDialog({title:"Eliminar chat",message:"¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
-    await supa.from("messages").delete().eq("contact_id",cid); await conv().delete().eq("contact_id",cid);
+    const { error:e1 }=await supa.from("messages").delete().eq("contact_id",cid); const { error:e2 }=await conv().delete().eq("contact_id",cid);
+    if(e1||e2){ toast("No se pudo eliminar el chat: "+((e1||e2).message),true); return; }
     toast("Chat eliminado ✓"); backToList(); loadConversations(); return; }
 }
 async function exportMessages(){
@@ -1121,7 +1123,10 @@ function setBotPill(on){ const b=$("chBot"); if(!b) return; b.className="botbtn 
 async function toggleBot(){
   const cid=state.contactId; if(!cid) return;
   const on=$("chBot").classList.contains("on"); // estado visible = fuente de verdad
-  await supa.from("contacts").update({ bot_activo:!on }).eq("id",cid);
+  // Sin chequear el error el botón mentía: mostraba "pausado ✓" aunque la
+  // escritura fallara y el bot seguía respondiendo al cliente.
+  const { error }=await supa.from("contacts").update({ bot_activo:!on }).eq("id",cid);
+  if(error){ toast("No se pudo cambiar el bot: "+error.message, true); return; }
   if(panelData.contact) panelData.contact.bot_activo=!on;
   setBotPill(!on);
   logEvent(cid, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
