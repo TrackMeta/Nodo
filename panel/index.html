@@ -1031,9 +1031,10 @@ function renderContactPanel(){
   }
   if(!window.__tagPopWired){ window.__tagPopWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".tagadd-wrap")) document.querySelectorAll(".tagpop").forEach(x=>{ x.hidden=true; }); }); }
   p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{
-    await supa.from("contact_field_values").upsert(
+    const { error }=await supa.from("contact_field_values").upsert(
       { contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },
       { onConflict:"contact_id,field_id" });
+    if(error){ toast("No se pudo guardar el campo: "+error.message,true); return; }
     vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓");
   });
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
