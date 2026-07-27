@@ -46,9 +46,13 @@
   .metricas{display:flex;gap:14px;margin:22px 0 0}
   #efecPanel:empty{display:none}
   .metric{flex:1 1 0;min-width:0;box-sizing:border-box;display:flex;gap:18px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px}
-  .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.mconv{border-left-color:var(--brand)} .metric.mia{border-left-color:#a855f7}
+  .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.mconv{border-left-color:var(--brand)}
+  .metric.mia{border-left-color:#a855f7;border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.13),transparent 55%),var(--surface);box-shadow:0 8px 26px -12px rgba(168,85,247,.5)}
   .metric .num{font-size:42px;font-weight:750;letter-spacing:-1.5px;line-height:1;color:var(--green);flex:none;min-width:78px;text-align:center}
-  .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.mconv .num{color:var(--brand)} .metric.mia .num{color:#a855f7}
+  .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.mconv .num{color:var(--brand)}
+  .metric.mia .num{background:linear-gradient(120deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  .metric .miabadge{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none;box-shadow:0 3px 9px rgba(168,85,247,.45)}
+  .metric .miabadge svg{width:14px;height:14px}
   .metric .mtxt{flex:1;min-width:0}
   .metric .mlbl{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .metric .mtag{font-size:9.5px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;white-space:nowrap}
@@ -985,7 +989,7 @@ function renderMetricas(porStage){
   const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
   const tEfec="Compras ÷ los que se interesaron de verdad (interesado, confirmado, comprado y perdido). No cuenta a los curiosos que solo escribieron. Mide qué tan bien cierra el bot.";
   const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
-    `<div class="mlbl">Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
+    `<div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
     `<div class="mdesc">De los que se interesaron, cuántos terminas cerrando.</div>`+
     `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · en vivo</div>`+
     `</div></div>`;
