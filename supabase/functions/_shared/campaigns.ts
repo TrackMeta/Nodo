@@ -44,8 +44,12 @@ async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Pr
     return q;
   };
   // Intenta filtrar bloqueados; si la columna no existe (0021 sin aplicar), reintenta sin ese filtro.
-  let res = await base().neq("bloqueado", true).limit(5000);
-  if (res.error) res = await base().limit(5000);
+  // Tope alto (20k) para no cortar audiencias grandes en silencio. Si algún día un
+  // canal supera esto, la solución de fondo es paginar con .range(); hoy 20k cubre
+  // de sobra (un negocio con más contactos que eso ya escaló a otro problema).
+  const CAP = 20000;
+  let res = await base().neq("bloqueado", true).limit(CAP);
+  if (res.error) res = await base().limit(CAP);
   const { data } = res;
   let ids = (data ?? []).map((r: any) => r.id);
 
@@ -99,6 +103,19 @@ async function sendBatch(db: SupabaseClient, c: any) {
     try {
       const ctx = await contactCtx(db, s.contact_id);
       const bodyParams = ((tpl as any).params ?? []).map((p: string) => resolveP(String(p), ctx));
+      // Meta rechaza una plantilla con un parámetro vacío. Si a ESTE contacto le
+      // falta un dato que la plantilla usa, se marca fallido con motivo claro y NO
+      // se llama a Meta (ahorra el envío condenado y le dice al operador por qué,
+      // en vez de un rechazo críptico de la API).
+      const faltaIdx = bodyParams.findIndex((v: string) => !String(v ?? "").trim());
+      if (canSend && faltaIdx >= 0) {
+        await db.from("campaign_sends").update({
+          estado: "fallido",
+          error: { message: `Falta el dato del parámetro {{${faltaIdx + 1}}} para este contacto` },
+        }).eq("id", s.id);
+        fail++;
+        continue;
+      }
       let wamid = "";
       if (canSend && ctx.wa_id) {
         wamid = await sendTemplate((ch as any).phone_number_id, token!, ctx.wa_id, (tpl as any).name, (tpl as any).language, bodyParams);

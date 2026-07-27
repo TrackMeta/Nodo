@@ -842,8 +842,8 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     if (aw.guardar_en) {
       await setField(db, run.channel_id, run.contact_id, aw.guardar_en, event.text);
       await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo capturado", `${aw.guardar_en}: ${event.text ?? ""}`.slice(0, 140));
+      run.vars[aw.guardar_en] = event.text; // solo si hay dónde guardar (si no, ensuciaba con una clave "undefined")
     }
-    run.vars[aw.guardar_en] = event.text;
     run.current_node_id = await nextNode(db, run.flow_id, aw.node_id, "continuar");
     delete run.vars._await;
     run.wake_at = null; // contestó a tiempo → cancelar el timeout pendiente
@@ -1877,7 +1877,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         const opc = await opcionElegida(db, run, ctx).catch(() => null);
         const optCosto = (opc as any)?.costo;
         if (optCosto != null && optCosto !== "" && Number.isFinite(Number(optCosto))) {
-          ship.costo_producto = +Number(optCosto).toFixed(2);
+          // El costo de la opción es POR UNIDAD (la UI lo rotula "del producto",
+          // y el costo del producto es "de una unidad, se multiplica solo") →
+          // se multiplica por las unidades de la presentación, igual que el
+          // costo del producto abajo. Antes se guardaba sin × cant y una
+          // presentación de "2 pares" registraba el costo de 1.
+          ship.costo_producto = +(Number(optCosto) * cant).toFixed(2);
         } else {
           const { data: p } = await db.from("products").select("config").eq("id", pid).maybeSingle();
           const unit = (p as any)?.config?.costo;
@@ -4732,7 +4737,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
               const val = Number(env.adelanto_valor ?? 0);
               const precio = Number((p as any).config?.precio);
               pc.adelanto = env.adelanto_modo === "porcentaje" && Number.isFinite(precio) && precio > 0
-                ? (precio * val / 100).toFixed(2)
+                ? Number((precio * val / 100).toFixed(2)) // número, no string (consistente con la otra rama)
                 : val;
             }
           }
