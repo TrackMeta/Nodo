@@ -243,15 +243,16 @@ function renderMetricas(F){
 }
 
 // El align-items:stretch del flex NO iguala las tarjetas en este codebase (quirk
-// ya visto en el Dashboard). Igualamos por JS: medir ambas y ponerlas al máximo.
-// A prueba de balas ante cualquier largo de texto o ancho de pantalla.
+// ya visto en el Dashboard; hasta min-height dispara un stretch raro). Se iguala
+// por JS con `height` EXPLÍCITO (tamaño definido que el flex ya no puede estirar):
+// medir el natural de ambas y fijarlas al máximo. A prueba de cualquier texto/ancho.
 function igualarAlto(el){
   const cards=[...el.querySelectorAll(".met")];
-  if(cards.length<2) return;
+  if(cards.length<2){ cards.forEach(c=>c.style.height="auto"); return; }
   requestAnimationFrame(()=>{
-    cards.forEach(c=>c.style.minHeight="0");
-    const mx=Math.max(...cards.map(c=>c.offsetHeight));
-    cards.forEach(c=>c.style.minHeight=mx+"px");
+    cards.forEach(c=>c.style.height="auto");
+    const mx=Math.max(...cards.map(c=>c.offsetHeight)); // offsetHeight fuerza el reflow → alto natural
+    cards.forEach(c=>c.style.height=mx+"px");
   });
 }
 
