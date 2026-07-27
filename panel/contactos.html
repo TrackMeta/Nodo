@@ -447,6 +447,13 @@ async function saveContact(){
   }
   const wa=$("cPhone").value.replace(/[^0-9]/g,"");
   if(!wa){ toast("Escribe un teléfono",true); return; }
+  // No sobrescribir en silencio: el upsert pisaría el nombre del contacto que ya
+  // exista con ese número y diría "guardado" como si fuera nuevo.
+  const ya=st.contacts.find(c=>c.wa_id===wa);
+  if(ya){ toast(`Ya tienes un contacto con ese número${ya.nombre?` (${ya.nombre})`:""}. Ábrelo desde la lista para editarlo.`,true); return; }
+  // El wa_id de WhatsApp SIEMPRE incluye el código de país (ej. 51 en Perú). Un
+  // número muy corto casi seguro lo omite → el bot no lo reconocería al chatear.
+  if(wa.length<10 && !await confirmDialog({title:"¿Falta el código de país?",message:`«${wa}» parece no incluir el código de país. El número de WhatsApp lo incluye siempre (ej. <b>51${wa}</b>). ¿Guardar igual?`,confirmText:"Guardar igual"})) return;
   const { error }=await supa.from("contacts").upsert({ channel_id:st.channelId, wa_id:wa, nombre:nombre||null },{ onConflict:"channel_id,wa_id" });
   if(error){ toast(error.message,true); return; }
   $("modal").classList.remove("show"); toast("Contacto guardado ✓"); await load();

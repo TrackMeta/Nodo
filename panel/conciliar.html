@@ -89,6 +89,7 @@ import { mountDateRange, computePreset, rangeLabel } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const money=(v)=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+const plu=(n,s,p)=>n===1?s:p;   // frase en singular o plural según el conteo
 const fFecha=(d)=>d?new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(d):"—";
 
 const st={ channelId:null, rango:null, archivo:null, rep:null,
@@ -213,13 +214,13 @@ function renderResultado(){
     ["revisar","Por revisar",r.revisar.length,"var(--amber)","tú decides cuál es"],
     ["sinpago","Ventas sin pago",r.sinPago.length,"var(--red)","el banco no las respalda"],
     ["sinventa","Pagos sin venta",st.sinVenta.conSeñal.length,"var(--violet)",
-      st.sinVenta.ajenos.length?`+ ${st.sinVenta.ajenos.length} ajenos, ignorados`:"entró plata no registrada"],
+      st.sinVenta.ajenos.length?`+ ${st.sinVenta.ajenos.length} ${plu(st.sinVenta.ajenos.length,"ajeno, ignorado","ajenos, ignorados")}`:"entró plata no registrada"],
   ];
   $("view").innerHTML=`
     <div class="card" style="padding:14px 16px;margin-bottom:14px">
-      <div class="muted"><b>${esc(st.archivo.name)}</b> · formato ${esc(st.rep.formato)} · <b>${esc(rangeLabel(st.rango))}</b> · ${st.movsEnRango} movimientos en el rango
-      ${st.rep.salientes?` · ${st.rep.salientes} salidas ignoradas`:""}
-      ${r.yaConciliadas.length?` · ${r.yaConciliadas.length} ventas ya conciliadas antes (no se tocan)`:""}
+      <div class="muted"><b>${esc(st.archivo.name)}</b> · formato ${esc(st.rep.formato)} · <b>${esc(rangeLabel(st.rango))}</b> · ${st.movsEnRango} ${plu(st.movsEnRango,"movimiento","movimientos")} en el rango
+      ${st.rep.salientes?` · ${st.rep.salientes} ${plu(st.rep.salientes,"salida ignorada","salidas ignoradas")}`:""}
+      ${r.yaConciliadas.length?` · ${r.yaConciliadas.length} ${plu(r.yaConciliadas.length,"venta ya conciliada antes (no se toca)","ventas ya conciliadas antes (no se tocan)")}`:""}
       <button class="btn sm" id="otro" style="margin-left:10px">Otro archivo</button></div>
     </div>
     <div class="kpis">${K.map(([k,t,n,c,s])=>`
@@ -317,9 +318,9 @@ function renderLista(){
   // ve vacía como si estuviera rota. Por eso se pueden abrir a mano.
   const verTodos=st.verAjenos;
   const lista=verTodos ? [...sv.conSeñal, ...sv.ajenos.map(m=>({mov:m,pistas:[]}))] : sv.conSeñal;
-  const botonAjenos=sv.ajenos.length?`<button class="btn sm" id="verAjenos" style="margin-left:8px">${verTodos?"Ocultarlos":`Ver los ${sv.ajenos.length} ignorados`}</button>`:"";
+  const botonAjenos=sv.ajenos.length?`<button class="btn sm" id="verAjenos" style="margin-left:8px">${verTodos?"Ocultarlos":`Ver ${sv.ajenos.length===1?"el":"los"} ${sv.ajenos.length} ${plu(sv.ajenos.length,"ignorado","ignorados")}`}</button>`:"";
   if(!lista.length) { vacio(box,"No hay pagos huérfanos que parezcan de Nodo.",
-      `${sv.ajenos.length} movimientos del archivo no calzaron con ninguna venta, pero tampoco hay señal de que fueran del bot (ningún cliente mandó un comprobante cerca de esa hora). Se ignoran.`);
+      `${sv.ajenos.length} ${plu(sv.ajenos.length,"movimiento del archivo no calzó","movimientos del archivo no calzaron")} con ninguna venta, pero tampoco hay señal de que ${plu(sv.ajenos.length,"fuera","fueran")} del bot (ningún cliente mandó un comprobante cerca de esa hora). Se ${plu(sv.ajenos.length,"ignora","ignoran")}.`);
     if(sv.ajenos.length) box.insertAdjacentHTML("beforeend",`<div style="text-align:center;margin-top:-10px">${botonAjenos}</div>`);
     const ba=$("verAjenos"); if(ba) ba.onclick=()=>{ st.verAjenos=!st.verAjenos; renderLista(); };
     return; }

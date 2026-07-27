@@ -138,8 +138,11 @@ const $=(id)=>document.getElementById(id);
 const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
 function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)); }
 
-const money=(v)=>{ const s=v<0?"-":""; return s+"S/ "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
-const money0=(v)=>"S/ "+Math.round(v).toLocaleString("es-PE");
+// Moneda del canal (símbolo por código ISO), igual que el Dashboard.
+const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
+let CUR="PEN"; const curSym=()=>CUR_SYM[CUR]||CUR;
+const money=(v)=>{ const s=v<0?"-":""; return s+curSym()+" "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
+const money0=(v)=>curSym()+" "+Math.round(v).toLocaleString("es-PE");
 const nf=(v,d=0)=>Number(v).toLocaleString("es-PE",{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct=(v)=>nf(v*100,2)+"%";
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -236,7 +239,7 @@ async function loadAccount(){
   st.adAccounts=[]; st.syncError=null;
   try{ const { data }=await supa.from("ad_accounts").select("account_id,nombre").eq("channel_id",st.channelId).eq("activo",true); st.adAccounts=data||[]; }catch(_){}
   if(st.account!=="all" && !st.adAccounts.some(a=>a.account_id===st.account)) st.account="all";
-  try{ const { data }=await supa.from("channels").select("ads_sync_error").eq("id",st.channelId).maybeSingle(); st.syncError=data?.ads_sync_error||null; }catch(_){}
+  try{ const { data }=await supa.from("channels").select("ads_sync_error,moneda").eq("id",st.channelId).maybeSingle(); st.syncError=data?.ads_sync_error||null; CUR=(data&&data.moneda)||"PEN"; }catch(_){}
   renderStatus(); await reload();
 }
 function renderStatus(){
