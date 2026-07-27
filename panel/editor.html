@@ -1333,8 +1333,14 @@ async function save(){
   const toDel=(oldNodes||[]).map(n=>n.id).filter(id=>!keep.has(id));
   if(toDel.length) await supa.from("flow_nodes").delete().in("id",toDel);
   if(rows.length){ const { error } = await supa.from("flow_nodes").upsert(rows); if(error){ toast(error.message,true); return; } }
-  // 2) Reconstruir aristas.
-  await supa.from("flow_edges").delete().eq("flow_id",st.flowId);
+  // 2) Reconstruir aristas de forma SEGURA. Antes se borraban TODAS y luego se
+  //    insertaban en pasos separados: no era atómico, así que si el insert fallaba
+  //    (un blip de red, un constraint) el flujo quedaba SIN ninguna conexión.
+  //    Ahora se insertan las nuevas PRIMERO y solo entonces se borran las viejas
+  //    por id: si el insert falla, las viejas siguen intactas (el flujo sigue
+  //    andando); en el peor caso quedan duplicadas un instante y el próximo
+  //    guardado las limpia. (flow_edges no tiene UNIQUE → conviven sin chocar.)
+  const { data:oldEdges } = await supa.from("flow_edges").select("id").eq("flow_id",st.flowId);
   const edges=[];
   for(const dfId in exp){
     const node=exp[dfId]; const srcUuid=st.dfToUuid[dfId]; const m=st.model[srcUuid]; if(!m) continue;
@@ -1349,6 +1355,8 @@ async function save(){
     }
   }
   if(edges.length){ const { error } = await supa.from("flow_edges").insert(edges); if(error){ toast(error.message,true); return; } }
+  const oldIds=(oldEdges||[]).map(e=>e.id);
+  if(oldIds.length){ const { error } = await supa.from("flow_edges").delete().in("id",oldIds); if(error){ toast(error.message,true); return; } }
   toast("Guardado ✓");
 }
 
