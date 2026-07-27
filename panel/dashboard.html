@@ -40,18 +40,18 @@
   .kpi .ic svg{width:18px;height:18px}
   .kpi .v{font-size:27px;font-weight:650;margin-top:12px;letter-spacing:-.5px}
   .kpi .d{font-size:12px;color:var(--faint);margin-top:3px;font-weight:400}
-  /* Cifra de Efectividad (conversación de venta → compra) */
-  .efec{display:flex;align-items:center;gap:22px;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:18px 24px;margin:22px 0 0}
-  .efec.mid{border-left-color:var(--amber)} .efec.low{border-left-color:var(--border)}
-  .efec .big{font-size:46px;font-weight:750;letter-spacing:-1.5px;line-height:.95;color:var(--green);flex:none}
-  .efec.mid .big{color:var(--amber)} .efec.low .big{color:var(--muted)}
-  .efec .txt{flex:1;min-width:0}
-  .efec .lbl{font-size:15.5px;font-weight:700;color:var(--text)}
-  .efec .sub{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
-  .efec .brk{font-size:11.5px;color:var(--faint);margin-top:6px}
-  .efec .none{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.5}
+  /* Métricas de conversión: Efectividad de venta + Conversión a compra */
+  .metricas{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:22px 0 0}
   #efecPanel:empty{display:none}
-  @media(max-width:640px){ .efec{gap:16px;padding:16px 18px} .efec .big{font-size:38px} }
+  .metric{display:flex;gap:16px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:18px 20px}
+  .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.conv{border-left-color:var(--brand)}
+  .metric .num{font-size:40px;font-weight:750;letter-spacing:-1.5px;line-height:.92;color:var(--green);flex:none}
+  .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.conv .num{color:var(--brand)}
+  .metric .mtxt{flex:1;min-width:0}
+  .metric .mlbl{font-size:14.5px;font-weight:700;color:var(--text)}
+  .metric .mdesc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.45}
+  .metric .mbrk{font-size:11px;color:var(--faint);margin-top:7px}
+  @media(max-width:640px){ .metricas{grid-template-columns:1fr} .metric .num{font-size:34px} }
   .cols{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
   @media(max-width:860px){.cols{grid-template-columns:1fr}}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
@@ -835,7 +835,7 @@ async function load(){
   animateNums($("kpis"));
   renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, tipo });
 
-  renderEfectividad(porStage);
+  renderMetricas(porStage);
   renderFunnel(porStage);
   renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds);
   renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
@@ -941,30 +941,38 @@ function renderBand(b){
   steps.push(`<span class="pb-op">=</span><div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${netaCls}">${money(b.neta)}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`);
   box.innerHTML=steps.join("");
 }
-// Cifra grande de Efectividad: de las conversaciones de VENTA (el bot enganchó
-// al cliente a un producto → etapa "interesado" en adelante, incluidas las que
-// se perdieron), qué % terminó en compra. Es "conversación → venta" honesto: no
-// esconde las caídas ni cuenta a quien escribió y nunca entró a comprar (nuevo).
-// Foto EN VIVO (misma fuente que el Embudo), no filtrada por fecha.
-function renderEfectividad(porStage){
+// Dos métricas de conversión, foto EN VIVO (misma fuente que el Embudo):
+//  • Efectividad de venta = compras ÷ conversaciones de venta reales
+//    (interesado+confirmado+comprado+perdido). Mide qué tan bien CIERRA el bot;
+//    no cuenta a quien escribió y nunca entró a comprar ("nuevo").
+//  • Conversión a compra = compras ÷ TODOS los contactos (incluye "nuevo").
+//    Mide la conversión total del embudo (engancha + cierra).
+function renderMetricas(porStage){
   const el=$("efecPanel"); if(!el) return;
   const c={}; STAGES.forEach(s=>c[s.k]=Number(porStage[s.k]||0));
-  const conv=c.interesado+c.confirmado+c.comprado+c.perdido; // entraron a una venta
-  const cerraron=c.comprado;
-  if(!conv){
-    el.innerHTML=`<div class="efec low"><div class="big">—</div><div class="txt">`+
-      `<div class="lbl">Efectividad de venta</div>`+
-      `<div class="none">Aún no hay conversaciones de venta. Apenas entren clientes por WhatsApp y el bot empiece a vender, verás aquí cuántas terminan en compra.</div>`+
-      `</div></div>`;
-    return;
-  }
-  const p=Math.round(cerraron/conv*100);
-  const cls=p>=20?"":p>=8?"mid":"low";
-  el.innerHTML=`<div class="efec ${cls}"><div class="big">${p}%</div><div class="txt">`+
-    `<div class="lbl">Efectividad de venta</div>`+
-    `<div class="sub">De cada conversación de venta que atiende el bot, <b>${p}%</b> termina en compra.</div>`+
-    `<div class="brk">${cerraron} ${cerraron===1?"cerró":"cerraron"} de ${conv} ${conv===1?"conversación":"conversaciones"} · en vivo</div>`+
+  if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
+  const total=STAGES.reduce((a,s)=>a+c[s.k],0);
+  const conv=c.interesado+c.confirmado+c.comprado+c.perdido;
+  const comprado=c.comprado;
+  // Efectividad (semáforo: cierra bien / regular / flojo)
+  const eP = conv? Math.round(comprado/conv*100) : null;
+  const eCls = eP==null ? "low" : eP>=20 ? "" : eP>=8 ? "mid" : "low";
+  const tEfec="Compras ÷ conversaciones de venta reales (interesado, confirmado, comprado y perdido). No cuenta a quien solo escribió sin entrar a comprar. Mide qué tan bien cierra el bot.";
+  const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
+    `<div class="mlbl">Efectividad de venta</div>`+
+    `<div class="mdesc">De cada conversación de venta, cuántas cierran.</div>`+
+    `<div class="mbrk">${eP==null?"Aún sin conversaciones de venta":comprado+" de "+conv+(conv===1?" conversación":" conversaciones")} · en vivo</div>`+
     `</div></div>`;
+  // Conversión a compra (informativa, color marca)
+  const cP = total? Math.round(comprado/total*100) : null;
+  const cCls = total ? "conv" : "low";
+  const tConv="Compras ÷ TODOS los contactos, incluidos los que solo escribieron. Es la conversión total del embudo: engancha + cierra.";
+  const convHtml=`<div class="metric ${cCls}" title="${tConv}"><div class="num">${cP==null?"—":cP+"%"}</div><div class="mtxt">`+
+    `<div class="mlbl">Conversión a compra</div>`+
+    `<div class="mdesc">De todos los que te escriben, cuántos compraron.</div>`+
+    `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(total===1?" contacto":" contactos")} · en vivo</div>`+
+    `</div></div>`;
+  el.innerHTML=`<div class="metricas">${efec}${convHtml}</div>`;
 }
 // Embudo de contactos por etapa (mismo que la sección Embudos): foto EN VIVO,
 // no filtrada por fecha. Sale de dashboard_stats.por_stage.
