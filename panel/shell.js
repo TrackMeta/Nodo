@@ -386,6 +386,11 @@ export function askChoice(opts = {}) {
 function escHtml(s) { return (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function escAttr(s) { return escHtml(s).replace(/"/g, "&quot;"); }
 
+// Normaliza para buscar SIN tildes ni mayúsculas: "José" y "jose" coinciden.
+// Sin esto, un operador que escribe sin tilde nunca encuentra "María",
+// "Ramírez", "Ángel"… (nombres peruanos comunes) en ninguna Bandeja/lista.
+export function norm(s) { return (s ?? "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+
 // Favicon dinámico = logo del bot elegido.
 export function setFavicon(href) {
   if (!href) return;

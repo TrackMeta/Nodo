@@ -186,7 +186,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice, norm } from "./shell.js";
 import * as O from "./orders.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
@@ -233,7 +233,7 @@ async function boot(){
   const shell=await mountShell({ active:"pedidos" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
-  $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
+  $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
   document.addEventListener("click",(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } });
   cargarListas();  // precarga las listas de agencias/distritos para el editor
@@ -297,9 +297,9 @@ function abrirExport(courier){
       else { const d=Number(S.periodo); arr=arr.filter(o=>(Date.now()-cuandoT(o))<=d*86400000); }
     }
     arr=arr.filter(o=>POR_DESPACHAR[zona].has(o.estado));
-    if(S.q){ const q=S.q.toLowerCase(); arr=arr.filter(o=>{ const c=o.contact||{},s=o.shipping||{};
-      return (c.nombre||"").toLowerCase().includes(q)||(c.wa_id||"").includes(q)||(s.cliente||"").toLowerCase().includes(q)
-        ||(s.distrito||"").toLowerCase().includes(q)||(s.ciudad||"").toLowerCase().includes(q)||(s.destino||"").toLowerCase().includes(q); }); }
+    if(S.q){ const q=norm(S.q); arr=arr.filter(o=>{ const c=o.contact||{},s=o.shipping||{};
+      return norm(c.nombre).includes(q)||(c.wa_id||"").includes(q)||norm(s.cliente).includes(q)
+        ||norm(s.distrito).includes(q)||norm(s.ciudad).includes(q)||norm(s.destino).includes(q); }); }
     return arr;
   }
   const ov=document.createElement("div"); ov.className="overlay";
@@ -424,7 +424,7 @@ async function load(){
 
 function render(){
   let list=st.list.filter(isFisico);
-  if(st.q) list=list.filter(o=>{ const c=o.contact||{}; return (c.nombre||"").toLowerCase().includes(st.q)||(c.wa_id||"").includes(st.q); });
+  if(st.q) list=list.filter(o=>{ const c=o.contact||{}; return norm(c.nombre).includes(st.q)||(c.wa_id||"").includes(st.q); });
   const box=$("kb");
 
   const FIN=new Set(["entregado_cobrado","recogido","rechazado","no_recogido","cancelado"]);

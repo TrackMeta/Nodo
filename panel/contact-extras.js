@@ -14,7 +14,7 @@
 //  · EXTRAS_CSS       — estilos de las tarjetas nuevas (una sola fuente)
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
-import { toast, icon } from "./shell.js";
+import { toast, icon, norm } from "./shell.js";
 import { cargarListas, sugerirAgencia } from "./courier-export.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -838,7 +838,7 @@ export function elegirPedidosDespacho(orders, deps) {
       const mon = (adel || saldo)
         ? `${adel ? `Adelanto <b>S/ ${adel}</b>` : ""}${adel && saldo ? "<br>" : ""}${saldo ? `Saldo <b>S/ ${saldo}</b>` : ""}`
         : "";
-      const q = `${c.nombre || s.cliente || ""} ${dest} ${s.ciudad || ""} ${s.dni || ""}`.toLowerCase();
+      const q = norm(`${c.nombre || s.cliente || ""} ${dest} ${s.ciudad || ""} ${s.dni || ""}`);
       return `<div class="sel-row on" data-id="${esc(o.id)}" data-q="${esc(q)}">
         <span class="sel-check">✓</span>
         <span class="sel-em">${p.emoji ? esc(p.emoji) : "📦"}</span>
@@ -868,7 +868,7 @@ export function elegirPedidosDespacho(orders, deps) {
       ov.querySelector(".save").disabled = !n;
     };
     const filtrar = () => {
-      const q = (ov.querySelector("[data-search]").value || "").trim().toLowerCase();
+      const q = norm((ov.querySelector("[data-search]").value || "").trim());
       ov.querySelectorAll(".sel-row").forEach((r) => { r.style.display = (!q || r.dataset.q.includes(q)) ? "" : "none"; });
       paint();
     };

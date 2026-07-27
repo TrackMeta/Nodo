@@ -189,7 +189,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, askChoice } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, askChoice, norm } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -224,7 +224,7 @@ async function boot(){
   const shell=await mountShell({ active:"contactos" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.sel.clear(); subscribe(); load(); });
-  $("q").addEventListener("input", e=>{ f.q=e.target.value.trim().toLowerCase(); st.visible=120; render(); });
+  $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=120; render(); });
   $("fSource").addEventListener("change", e=>{ f.source=e.target.value; render(); });
   $("fSort").addEventListener("change", e=>{ f.sort=e.target.value; render(); });
   $("filtBtn").onclick=()=>$("filters").classList.toggle("show");
@@ -275,8 +275,8 @@ function filtered(){
     // Los archivados se ocultan por defecto; el filtro "Archivados" los aísla.
     if(f.archivado){ if(!isArchived(c)) return false; } else if(isArchived(c)) return false;
     if(f.q){
-      const tagNames=(c.contact_tags||[]).map(x=>st.tags.find(t=>t.id===x.tag_id)?.nombre||"").join(" ").toLowerCase();
-      if(!((c.nombre||"").toLowerCase().includes(f.q) || (c.wa_id||"").includes(f.q) || tagNames.includes(f.q))) return false;
+      const tagNames=norm((c.contact_tags||[]).map(x=>st.tags.find(t=>t.id===x.tag_id)?.nombre||"").join(" "));
+      if(!(norm(c.nombre).includes(f.q) || (c.wa_id||"").includes(f.q) || tagNames.includes(f.q))) return false;
     }
     if(f.source && c.source!==f.source) return false;
     if(f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;

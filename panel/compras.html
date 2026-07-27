@@ -98,7 +98,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, norm } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -126,7 +126,7 @@ async function boot(){
   const shell=await mountShell({ active:"compras" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
-  $("q").oninput=(e)=>{ st.q=e.target.value.trim().toLowerCase(); render(); };
+  $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
   mountDateRange($("dr"), { valor:st.rango, onChange:(r)=>{ st.rango=r; render(); } });
@@ -182,9 +182,9 @@ function operacionesDe(o){
 }
 function matchBusqueda(o,q){
   const c=o.contact||{}, s=o.shipping||{};
-  if((c.nombre||"").toLowerCase().includes(q)) return true;
+  if(norm(c.nombre).includes(q)) return true;
   if((c.wa_id||"").includes(q)) return true;
-  if((s.cliente||"").toLowerCase().includes(q)) return true;
+  if(norm(s.cliente).includes(q)) return true;
   // Solo dígitos: se compara ignorando guiones y espacios del comprobante.
   const qd=q.replace(/[^0-9a-z]/gi,"");
   if(qd && operacionesDe(o).some(v=>v.replace(/[^0-9a-z]/gi,"").includes(qd))) return true;

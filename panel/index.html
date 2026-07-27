@@ -516,6 +516,7 @@
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
 import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
+import { norm } from "./shell.js";
 injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
@@ -808,7 +809,7 @@ document.addEventListener("click",onDocClickComposer);
 function applyFilters(cv){
   const f = state.filters, c = cv.contact;
   if (state.search){ const q=state.search, qd=q.replace(/\D/g,"");
-    const nameHit=(c.nombre||"").toLowerCase().includes(q);
+    const nameHit=norm(c.nombre).includes(q);
     const phoneHit=qd && (c.wa_id||"").includes(qd);
     // …o el nº de operación de alguno de sus pagos (lo resuelve buscarOperacion
     // contra la tabla de pedidos: acá solo vive la conversación, no sus ventas).
@@ -1165,7 +1166,7 @@ async function buscarOperacion(q){
   let t=null;
   const limpiar=()=>{ inp.value=""; state.search=""; state.searchOps=new Set(); x.hidden=true; renderConversations(); };
   inp.addEventListener("input", ()=>{
-    state.search=inp.value.trim().toLowerCase(); x.hidden=!inp.value;
+    state.search=norm(inp.value.trim()); x.hidden=!inp.value;
     renderConversations();
     // La consulta a pedidos va aparte y con retraso: el filtro por nombre debe
     // responder en cada tecla sin esperar a la red.
