@@ -111,6 +111,7 @@
       </div>
       <div class="nodo-actions" style="flex-wrap:wrap;gap:8px">
         <div class="dseg" id="tipoSeg"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button></div>
+        <div class="dseg" id="zonaSeg" style="display:none"><button data-z="total" class="on">Total</button><button data-z="lima">Lima</button><button data-z="provincia">Provincia</button></div>
         <select class="selp" id="prodSel"><option value="all">Todos los productos</option></select>
         <div id="dateHost"></div>
         <span class="helpwrap">
@@ -171,7 +172,7 @@ let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Math.round(Number(n||0))
 const stMap=Object.fromEntries(STAGES.map(s=>[s.k,s]));
 const col=(k)=>stMap[k]?.color||"#888";
 
-const st={ channelId:null, contacts:[], ordersBy:{}, rt:null, tipo:"all", prod:"all", range:null, dr:null, loadGen:0 };
+const st={ channelId:null, contacts:[], ordersBy:{}, zonaMap:{}, rt:null, tipo:"all", zona:"total", prod:"all", range:null, dr:null, loadGen:0 };
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -183,7 +184,8 @@ async function boot(){
   shell.onLeave?.(()=>window.removeEventListener("resize",onResize));
   shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });
   st.dr=mountDateRange($("dateHost"), { valor:st.range, nota:"Por fecha de llegada del contacto · Hora de Lima", onChange:(r)=>{ st.range=r; render(); } });
-  $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; fillProdSel(); render(); });
+  $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; st.zona="total"; $("zonaSeg").style.display= st.tipo==="fisico"?"":"none"; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.z==="total")); fillProdSel(); render(); });
+  $("zonaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.zona=b.dataset.z; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); render(); });
   $("prodSel").onchange=(e)=>{ st.prod=e.target.value; render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("helpBtn").onclick=(e)=>{ e.stopPropagation(); const d=$("dateHelp"); d.hidden=!d.hidden; $("helpBtn").classList.toggle("on",!d.hidden); };
@@ -206,14 +208,26 @@ async function load(){
   st.ordersBy={};
   (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   CUR=(chR.data&&chR.data.moneda)||"PEN";
+  // Zona (Lima/Provincia) por contacto: el bot setea el campo zona_entrega TEMPRANO
+  // (apenas dice de dónde es, antes del pedido). Así el split de Físico es limpio.
+  st.zonaMap={};
+  try{
+    const { data:zf }=await supa.from("custom_fields").select("id").eq("channel_id",st.channelId).eq("key","zona_entrega").maybeSingle();
+    if(zf&&zf.id){ const { data:zv }=await supa.from("contact_field_values").select("contact_id,value").eq("field_id",zf.id).limit(8000);
+      (zv||[]).forEach(r=>{ const v=String(r.value||"").toLowerCase(); if(v==="lima"||v==="provincia") st.zonaMap[r.contact_id]=v; }); }
+  }catch(_){}
+  if(gen!==st.loadGen) return;
   fillProdSel();
   render();
 }
 
 // ── Filtros (en memoria; no re-consulta) ──────────────────────────────
 function tipoDe(c){ const t=c.product&&c.product.tipo; return t==="fisico"?"fisico":"digital"; }
+// Lima o provincia de un contacto: primero el campo temprano zona_entrega; si no,
+// del último pedido físico. null = todavía no dijo de dónde es (solo va en "Total").
+function zonaDeContacto(c){ const z=st.zonaMap[c.id]; if(z) return z; for(const o of (st.ordersBy[c.id]||[])){ if(O.esFisico(o)){ const zz=O.zonaDe(o); if(zz==="lima"||zz==="provincia") return zz; } } return null; }
 function enRango(c){ if(!st.range) return true; const d=new Date(c.created_at); const from=st.range.from, to=new Date(st.range.to.getFullYear(),st.range.to.getMonth(),st.range.to.getDate(),23,59,59); return d>=from && d<=to; }
-function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
+function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.tipo!=="fisico"||st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
 
 function fillProdSel(){
   const sel=$("prodSel"); if(!sel) return;
@@ -369,7 +383,7 @@ function renderDist(F){
 function renderProductos(){
   const panel=$("prodPanel"), grid=$("prodFunnels");
   // Agrupa por producto (respeta tipo + fecha, ignora el selector de producto para poder comparar).
-  const base=st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && enRango(c) && c.product_id && c.product);
+  const base=st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.tipo!=="fisico"||st.zona==="total"||zonaDeContacto(c)===st.zona) && enRango(c) && c.product_id && c.product);
   const porProd=new Map();
   base.forEach(c=>{ if(!porProd.has(c.product_id)) porProd.set(c.product_id,{ prod:c.product, cs:[] }); porProd.get(c.product_id).cs.push(c); });
   if(porProd.size<2){ panel.style.display="none"; return; } // con 1 solo producto no aporta comparar
