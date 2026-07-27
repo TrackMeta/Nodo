@@ -150,6 +150,8 @@ async function boot(){
   st.channelId=shell.channelId;
   st.range=computePreset("max");
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
+  const onResize=()=>igualarAlto($("metPanel")); window.addEventListener("resize",onResize);
+  shell.onLeave?.(()=>window.removeEventListener("resize",onResize));
   shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });
   st.dr=mountDateRange($("dateHost"), { valor:st.range, nota:"Por fecha de llegada del contacto · Hora de Lima", onChange:(r)=>{ st.range=r; render(); } });
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; fillProdSel(); render(); });
@@ -237,6 +239,20 @@ function renderMetricas(F){
       <div class="mdesc">De <b>todos los que te escriben</b> (incluidos los que solo saludaron), cuántos llegan a comprar. Es la conversión total del embudo: enganchar + cerrar.</div>
       <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos</div>
     </div>`;
+  igualarAlto(el);
+}
+
+// El align-items:stretch del flex NO iguala las tarjetas en este codebase (quirk
+// ya visto en el Dashboard). Igualamos por JS: medir ambas y ponerlas al máximo.
+// A prueba de balas ante cualquier largo de texto o ancho de pantalla.
+function igualarAlto(el){
+  const cards=[...el.querySelectorAll(".met")];
+  if(cards.length<2) return;
+  requestAnimationFrame(()=>{
+    cards.forEach(c=>c.style.minHeight="0");
+    const mx=Math.max(...cards.map(c=>c.offsetHeight));
+    cards.forEach(c=>c.style.minHeight=mx+"px");
+  });
 }
 
 function renderNeck(F){
