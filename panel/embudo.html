@@ -21,6 +21,15 @@
   .dseg button{border:none;background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:7px}
   .dseg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
   .selp{height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12.5px;font-weight:600;padding:0 10px;font-family:inherit;max-width:200px}
+  .helpbtn{height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;font-family:inherit;white-space:nowrap}
+  .helpbtn:hover{border-color:var(--brand);color:var(--text)}
+  .helpbtn.on{border-color:var(--brand);color:var(--brand)}
+  .datehelp{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--brand);border-radius:14px;padding:16px 18px;margin:0 0 18px;font-size:13px;line-height:1.6;color:var(--muted)}
+  .datehelp[hidden]{display:none}
+  .datehelp h4{margin:0 0 8px;font-size:14.5px;color:var(--text);font-weight:700}
+  .datehelp b{color:var(--text)}
+  .datehelp ul{margin:10px 0 0;padding-left:20px} .datehelp li{margin-bottom:7px}
+  .datehelp .ej{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 13px;margin-top:10px;color:var(--text);font-size:12.5px}
   .live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600}
   .live .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -99,9 +108,21 @@
         <div class="dseg" id="tipoSeg"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button></div>
         <select class="selp" id="prodSel"><option value="all">Todos los productos</option></select>
         <div id="dateHost"></div>
+        <button class="helpbtn" id="helpBtn" type="button"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>¿Cómo lee las fechas?</button>
         <span class="live"><span class="pulse"></span>En vivo</span>
         <button class="nodo-btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button>
       </div>
+    </div>
+
+    <div id="dateHelp" class="datehelp" hidden>
+      <h4>Cómo lee las fechas este embudo</h4>
+      Las fechas van por <b>cuándo LLEGÓ cada contacto</b> (cuándo te escribió por primera vez), <b>no</b> por cuándo compró.
+      <div class="ej">Ejemplo: si un cliente <b>llega hoy y compra mañana</b>, su compra se cuenta en <b>HOY</b> — el día que llegó. Nunca aparece en mañana.</div>
+      <ul>
+        <li><b>Un período reciente se ve más bajo de lo real:</b> los que acaban de llegar todavía no compraron. Cada día "madura" en los días siguientes, cuando esa misma gente compra y se le suma al día en que llegó.</li>
+        <li><b>Por eso "Hoy" o "Esta semana" casi siempre se ven flojos</b> (aún inmaduros), y "El mes pasado" ya es real y confiable.</li>
+        <li><b>Consejo:</b> juzga un período cuando ya pasó (dale 1–2 semanas). Comparar el mes en curso contra el mes pasado es injusto — el actual todavía se está llenando.</li>
+      </ul>
     </div>
 
     <div class="mets" id="metPanel"></div>
@@ -159,6 +180,7 @@ async function boot(){
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; fillProdSel(); render(); });
   $("prodSel").onchange=(e)=>{ st.prod=e.target.value; render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
+  $("helpBtn").onclick=()=>{ const d=$("dateHelp"); d.hidden=!d.hidden; $("helpBtn").classList.toggle("on",!d.hidden); };
   subscribe();
   await load();
 }
