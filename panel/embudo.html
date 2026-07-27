@@ -33,7 +33,8 @@
   .met .num{font-size:52px;font-weight:750;letter-spacing:-2px;line-height:.9;color:var(--green);flex:none;min-width:96px;text-align:center}
   .met.mid .num{color:var(--amber)} .met.low .num{color:var(--muted)} .met.mconv .num{color:var(--brand)}
   .met .mtxt{flex:1;min-width:0}
-  .met .mlbl{font-size:16px;font-weight:700}
+  .met .mlbl{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .met .mtag{font-size:10px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;white-space:nowrap}
   .met .mdesc{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5}
   .met .mbrk{font-size:11.5px;color:var(--faint);margin-top:9px}
   @media(max-width:720px){ .mets{flex-direction:column} .met .num{font-size:42px;min-width:76px} }
@@ -231,13 +232,13 @@ function renderMetricas(F){
   const eCls = ef==null?"low":ef>=20?"":ef>=8?"mid":"low";
   el.innerHTML=`
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
-      <div class="mlbl">Efectividad de venta</div>
-      <div class="mdesc">De cada <b>conversación de venta</b> que atiende el bot (el cliente se interesó en un producto), cuántas terminan en compra. No cuenta a quien solo escribió y nunca entró a comprar.</div>
-      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} conversaciones de venta</div>
+      <div class="mlbl">Efectividad de cierre <span class="mtag">base: interesados</span></div>
+      <div class="mdesc">De los que <b>se interesaron</b> de verdad, cuántos terminas <b>cerrando</b>. Mide qué tan bueno es el bot vendiendo — no cuenta a los curiosos que solo saludan.</div>
+      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} interesados</div>
     </div></div>
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
-      <div class="mlbl">Conversión a compra</div>
-      <div class="mdesc">De <b>todos los que te escriben</b> (incluidos los que solo saludaron), cuántos llegan a comprar. Es la conversión total del embudo: enganchar + cerrar.</div>
+      <div class="mlbl">Conversión total <span class="mtag">base: todos los contactos</span></div>
+      <div class="mdesc">De <b>todos los que te escriben</b> (curiosos incluidos), cuántos llegan a comprar. Es todo el embudo junto: <b>enganchar + cerrar</b>.</div>
       <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos</div>
     </div></div>`;
   igualarAlto(el);

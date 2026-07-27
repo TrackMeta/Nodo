@@ -50,7 +50,8 @@
   .metric .num{font-size:42px;font-weight:750;letter-spacing:-1.5px;line-height:1;color:var(--green);flex:none;min-width:78px;text-align:center}
   .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.mconv .num{color:var(--brand)}
   .metric .mtxt{flex:1;min-width:0}
-  .metric .mlbl{font-size:15px;font-weight:700;color:var(--text)}
+  .metric .mlbl{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .metric .mtag{font-size:9.5px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;white-space:nowrap}
   .metric .mdesc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
   .metric .mbrk{font-size:11px;color:var(--faint);margin-top:8px}
   /* Desktop: alto FIJO idéntico (el stretch del flex no las igualaba por un
@@ -982,18 +983,18 @@ function renderMetricas(porStage){
   // Efectividad (semáforo: cierra bien / regular / flojo)
   const eP = conv? Math.round(comprado/conv*100) : null;
   const eCls = eP==null ? "low" : eP>=20 ? "" : eP>=8 ? "mid" : "low";
-  const tEfec="Compras ÷ conversaciones de venta reales (interesado, confirmado, comprado y perdido). No cuenta a quien solo escribió sin entrar a comprar. Mide qué tan bien cierra el bot.";
+  const tEfec="Compras ÷ los que se interesaron de verdad (interesado, confirmado, comprado y perdido). No cuenta a los curiosos que solo escribieron. Mide qué tan bien cierra el bot.";
   const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
-    `<div class="mlbl">Efectividad de venta</div>`+
-    `<div class="mdesc">De cada conversación de venta, cuántas cierran.</div>`+
-    `<div class="mbrk">${eP==null?"Aún sin conversaciones de venta":comprado+" de "+conv+(conv===1?" conversación":" conversaciones")} · en vivo</div>`+
+    `<div class="mlbl">Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
+    `<div class="mdesc">De los que se interesaron, cuántos terminas cerrando.</div>`+
+    `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · en vivo</div>`+
     `</div></div>`;
   // Conversión a compra (informativa, color marca)
   const cP = total? Math.round(comprado/total*100) : null;
   const cCls = total ? "mconv" : "low"; // OJO: no usar "conv" — colisiona con .conv (píldoras del embudo, margin-top:16px)
-  const tConv="Compras ÷ TODOS los contactos, incluidos los que solo escribieron. Es la conversión total del embudo: engancha + cierra.";
+  const tConv="Compras ÷ TODOS los contactos, incluidos los curiosos que solo escribieron. Es todo el embudo junto: engancha + cierra.";
   const convHtml=`<div class="metric ${cCls}" title="${tConv}"><div class="num">${cP==null?"—":cP+"%"}</div><div class="mtxt">`+
-    `<div class="mlbl">Conversión a compra</div>`+
+    `<div class="mlbl">Conversión total <span class="mtag">base: todos los contactos</span></div>`+
     `<div class="mdesc">De todos los que te escriben, cuántos compraron.</div>`+
     `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(total===1?" contacto":" contactos")} · en vivo</div>`+
     `</div></div>`;
