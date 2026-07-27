@@ -239,6 +239,9 @@ async function boot(){
   $("ckAll").onchange=(e)=>{ const list=filtered(); if(e.target.checked) list.forEach(c=>st.sel.add(c.id)); else list.forEach(c=>st.sel.delete(c.id)); render(); };
   $("bulkClear").onclick=()=>{ st.sel.clear(); render(); };
   document.querySelectorAll(".bulk .bbtn").forEach(b=> b.onclick=()=>bulk(b.dataset.act));
+  // Deep-link ?stage=<k> (desde "Reactivar" del Embudo): pre-filtra por esa etapa.
+  const qStage=new URLSearchParams(location.search).get("stage");
+  if(qStage && STAGE[qStage]){ f.stages=new Set([qStage]); const fp=$("filters"); if(fp) fp.classList.add("show"); }
   subscribe();
   await load();
 }

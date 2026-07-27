@@ -17,40 +17,72 @@
   *{box-sizing:border-box} html,body{height:100%;margin:0}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin:6px 0 20px}
-  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:15px 17px}
-  .kpi .h{color:var(--muted);font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
-  .kpi .dot{width:10px;height:10px;border-radius:50%;flex:none}
-  .kpi .v{font-size:28px;font-weight:650;margin-top:9px;letter-spacing:-.5px}
-  .kpi .d{font-size:11.5px;color:var(--faint);margin-top:2px}
-  .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
-  .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
-  .panel .ps{color:var(--muted);font-size:12.5px;margin:0 0 18px}
-  /* Embudo */
-  .funnel{display:flex;flex-direction:column;gap:11px}
-  .frow{display:flex;align-items:center;gap:14px;width:100%;background:none;border:none;padding:8px;border-radius:12px;text-align:left;transition:background .12s;color:var(--text);font-family:inherit}
-  .frow:hover{background:var(--surface-2)}
-  .fhead{width:150px;flex:none;display:flex;align-items:center;gap:9px}
-  .fdot{width:11px;height:11px;border-radius:50%;flex:none}
-  .fname{font-size:14px;font-weight:600}
-  .fsub{font-size:11px;color:var(--faint)}
-  .fbar{flex:1;height:34px;background:var(--surface-2);border-radius:9px;overflow:hidden;position:relative}
-  .fbar span{display:block;height:100%;border-radius:9px;min-width:3px;transition:width .5s ease}
-  .fmeta{width:96px;flex:none;text-align:right}
-  .fmeta .fn{font-size:18px;font-weight:700}
-  .fmeta .fp{font-size:11px;color:var(--muted)}
-  .fgo{width:20px;flex:none;color:var(--faint);opacity:0;transition:opacity .12s}
-  .frow:hover .fgo{opacity:1}
-  .hint{font-size:12px;color:var(--faint);margin-top:14px;display:flex;align-items:center;gap:7px}
+  .dseg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:3px}
+  .dseg button{border:none;background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:7px}
+  .dseg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .selp{height:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12.5px;font-weight:600;padding:0 10px;font-family:inherit;max-width:200px}
   .live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600}
   .live .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .nodo-btn.spin svg{animation:rspin .8s linear infinite}
   @keyframes rspin{to{transform:rotate(360deg)}}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .conv{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
-  .convpill{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:9px 13px;font-size:12.5px;color:var(--muted)}
-  .convpill b{color:var(--text);font-size:15px;font-weight:700}
-  .empty{color:var(--faint);font-size:13px;padding:20px 0;text-align:center}
+  /* KPIs grandes: Efectividad + Conversión (con explicación completa) */
+  .mets{display:flex;gap:14px;margin:6px 0 18px}
+  .met{flex:1 1 0;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px;display:flex;gap:20px;align-items:flex-start}
+  .met.mid{border-left-color:var(--amber)} .met.low{border-left-color:var(--border)} .met.mconv{border-left-color:var(--brand)}
+  .met .num{font-size:52px;font-weight:750;letter-spacing:-2px;line-height:.9;color:var(--green);flex:none;min-width:96px;text-align:center}
+  .met.mid .num{color:var(--amber)} .met.low .num{color:var(--muted)} .met.mconv .num{color:var(--brand)}
+  .met .mtxt{flex:1;min-width:0}
+  .met .mlbl{font-size:16px;font-weight:700}
+  .met .mdesc{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5}
+  .met .mbrk{font-size:11.5px;color:var(--faint);margin-top:9px}
+  @media(max-width:720px){ .mets{flex-direction:column} .met .num{font-size:42px;min-width:76px} }
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
+  .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
+  .panel .ps{color:var(--muted);font-size:12.5px;margin:0 0 16px}
+  /* Cuello de botella */
+  .neck{display:flex;align-items:flex-start;gap:11px;background:rgba(240,169,43,.09);border:1px solid rgba(240,169,43,.32);border-radius:12px;padding:12px 15px;margin-bottom:18px;font-size:13px;line-height:1.5}
+  .neck.ok{background:rgba(34,192,121,.09);border-color:rgba(34,192,121,.32)}
+  .neck .ni{flex:none;margin-top:1px}
+  .neck b{color:var(--text)}
+  /* Embudo de verdad: niveles que se angostan */
+  .fun{display:flex;flex-direction:column;align-items:center;gap:0}
+  .flvl{width:100%;display:flex;flex-direction:column;align-items:center}
+  .fbar2{height:56px;border-radius:12px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#fff;min-width:132px;transition:width .5s ease;overflow:hidden}
+  .fbar2 .fl{font-weight:700;font-size:14px;white-space:nowrap}
+  .fbar2 .fr{font-weight:800;font-size:20px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .fstep{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;padding:7px 0;font-weight:600}
+  .fstep .drop{color:var(--red)} .fstep .keep{color:var(--green)}
+  .fstep svg{width:14px;height:14px;color:var(--faint)}
+  /* Plata en juego */
+  .plata{display:flex;align-items:center;gap:12px;margin-top:18px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:13px 16px;font-size:13px}
+  .plata .pv{font-size:20px;font-weight:750;color:var(--amber)}
+  /* Distribución actual + reactivar */
+  .dist{display:flex;flex-direction:column;gap:9px}
+  .drow{display:flex;align-items:center;gap:13px}
+  .dhead{width:158px;flex:none;display:flex;align-items:center;gap:9px}
+  .ddot{width:11px;height:11px;border-radius:50%;flex:none}
+  .dname{font-size:13.5px;font-weight:600} .dsub{font-size:10.5px;color:var(--faint)}
+  .dbarwrap{flex:1;height:26px;background:var(--surface-2);border-radius:8px;overflow:hidden}
+  .dbar{height:100%;border-radius:8px;min-width:3px;transition:width .5s}
+  .dn{width:52px;flex:none;text-align:right;font-size:15px;font-weight:700}
+  .react{flex:none;border:1px solid var(--border);background:var(--surface-2);color:var(--brand);border-radius:8px;font-size:11.5px;font-weight:700;padding:6px 11px;white-space:nowrap;visibility:hidden}
+  .drow:hover .react{visibility:visible} .react:hover{border-color:var(--brand)}
+  /* Embudo por producto */
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .pcard{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:15px 16px}
+  .pc-hd{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .pc-emoji{font-size:20px} .pc-name{font-weight:700;font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pc-tag{font-size:10px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:2px 8px}
+  .pc-kpis{display:flex;gap:10px;margin-bottom:12px}
+  .pc-kpi{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
+  .pc-kv{font-size:22px;font-weight:750;letter-spacing:-1px} .pc-kv.ef{color:var(--green)} .pc-kv.cv{color:var(--brand)} .pc-kv.z{color:var(--muted)}
+  .pc-kl{font-size:10px;color:var(--muted);margin-top:1px;font-weight:600}
+  .pc-mini{display:flex;height:8px;border-radius:5px;overflow:hidden;background:var(--surface)}
+  .pc-mini span{display:block;height:100%}
+  .pc-foot{font-size:11px;color:var(--faint);margin-top:8px}
+  .hint{font-size:12px;color:var(--faint);margin-top:6px;display:flex;align-items:center;gap:7px;line-height:1.5}
+  .empty{color:var(--faint);font-size:13px;padding:22px 0;text-align:center;line-height:1.6}
 </style>
 </head>
 <body>
@@ -59,112 +91,261 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Embudo</h1>
-        <p class="nodo-lead">Dónde está cada contacto en el camino de compra, <b>en vivo</b>. Toca una etapa para verla en la Bandeja. Es la foto de las <b>personas</b>; para las ventas está <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
+        <p class="nodo-lead">El camino de tus clientes de <b>llegar</b> a <b>comprar</b>, en vivo. Mira dónde se te caen y actúa. Es la foto de las <b>personas</b>; para el detalle de ventas está <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
       </div>
-      <div class="nodo-actions"><span class="live"><span class="pulse"></span>En vivo</span> <button class="nodo-btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
+      <div class="nodo-actions" style="flex-wrap:wrap;gap:8px">
+        <div class="dseg" id="tipoSeg"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button></div>
+        <select class="selp" id="prodSel"><option value="all">Todos los productos</option></select>
+        <div id="dateHost"></div>
+        <span class="live"><span class="pulse"></span>En vivo</span>
+        <button class="nodo-btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button>
+      </div>
     </div>
 
-    <div class="kpis" id="kpis"></div>
+    <div class="mets" id="metPanel"></div>
 
     <div class="panel">
-      <h3>Distribución del embudo</h3>
-      <p class="ps">Cuántos contactos hay ahora mismo en cada etapa.</p>
-      <div class="funnel" id="funnel"><div class="empty">Cargando…</div></div>
-      <div class="conv" id="conv"></div>
-      <div class="hint"><span id="totalHint"></span></div>
+      <h3>Cómo avanzan</h3>
+      <p class="ps">De cada nivel, cuántos pasan al siguiente. Lo importante no es el número de cada etapa, sino <b>dónde se caen</b>.</p>
+      <div id="neck"></div>
+      <div class="fun" id="fun"></div>
+      <div id="plata"></div>
     </div>
+
+    <div class="panel">
+      <h3>Dónde están ahora</h3>
+      <p class="ps">Cuántos contactos hay en cada etapa en este momento. Pasa el mouse para reactivarlos.</p>
+      <div class="dist" id="dist"></div>
+    </div>
+
+    <div class="panel" id="prodPanel" style="display:none">
+      <h3>Embudo por producto</h3>
+      <p class="ps">Qué producto convierte mejor. Cada uno con su Efectividad (de sus conversaciones de venta, cuántas cierran) y su Conversión (de sus contactos, cuántos compran).</p>
+      <div class="pgrid" id="prodFunnels"></div>
+    </div>
+
+    <div class="hint" id="dateNote"></div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast, icon } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
+import * as O from "./orders.js";
+import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js";
+
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, counts:{}, total:0, rt:null };
-function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const nf=new Intl.NumberFormat("es-PE");
+function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
+let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
+const stMap=Object.fromEntries(STAGES.map(s=>[s.k,s]));
+const col=(k)=>stMap[k]?.color||"#888";
+
+const st={ channelId:null, contacts:[], ordersBy:{}, rt:null, tipo:"all", prod:"all", range:null, dr:null, loadGen:0 };
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"embudo" });
   st.channelId=shell.channelId;
-  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } }); // no dejar la suscripción realtime viva al navegar (SPA)
+  st.range=computePreset("max");
+  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
   shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });
+  st.dr=mountDateRange($("dateHost"), { valor:st.range, nota:"Por fecha de llegada del contacto · Hora de Lima", onChange:(r)=>{ st.range=r; render(); } });
+  $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; fillProdSel(); render(); });
+  $("prodSel").onchange=(e)=>{ st.prod=e.target.value; render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   subscribe();
   await load();
 }
 
-// Conteo por etapa sin traer filas (head+count). El contacto de prueba de
-// webchat no cuenta. "nuevo" incluye los que aún no tienen etapa (null).
-async function countStage(k){
-  let q=supa.from("contacts").select("*",{count:"exact",head:true})
-    .eq("channel_id",st.channelId).neq("wa_id","webchat-test");
-  q = k==="nuevo" ? q.or("stage.eq.nuevo,stage.is.null") : q.eq("stage",k);
-  const { count, error }=await q;
-  return error ? 0 : (count||0);
-}
-
 async function load(){
   if(!st.channelId){ render(); return; }
-  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
-  const totalQ=supa.from("contacts").select("*",{count:"exact",head:true})
-    .eq("channel_id",st.channelId).neq("wa_id","webchat-test");
-  const [total,...counts]=await Promise.all([
-    totalQ.then(r=>r.count||0),
-    ...STAGES.map(s=>countStage(s.k)),
+  const gen=(st.loadGen=(st.loadGen||0)+1);
+  const [cR, oR, chR] = await Promise.all([
+    supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").limit(5000),
+    supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping").eq("channel_id",st.channelId).limit(8000),
+    supa.from("channels").select("moneda").eq("id",st.channelId).maybeSingle(),
   ]);
-  if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
-  st.total=total;
-  st.counts=Object.fromEntries(STAGES.map((s,i)=>[s.k,counts[i]]));
+  if(gen!==st.loadGen) return;
+  st.contacts=cR.data||[];
+  st.ordersBy={};
+  (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
+  CUR=(chR.data&&chR.data.moneda)||"PEN";
+  fillProdSel();
   render();
 }
 
-function render(){
-  const c=st.counts, total=st.total||0;
-  const pct=(n)=> total? Math.round(n/total*100):0;
-  // KPIs
-  const activos=(c.nuevo||0)+(c.interesado||0); // aún sin decidir
-  $("kpis").innerHTML=[
-    ["Total contactos", nf.format(total), "en este canal", "var(--brand)"],
-    ["Sin decidir", nf.format(activos), "Nuevos + Interesados", "#EF9F27"],
-    ["Confirmados", nf.format(c.confirmado||0), "por recibir o pagar saldo", "#8b5cf6"],
-    ["Compraron", nf.format(c.comprado||0), pct(c.comprado||0)+"% del total", "var(--green)"],
-    ["Perdidos", nf.format(c.perdido||0), pct(c.perdido||0)+"% del total", "#888780"],
-  ].map(([h,v,d,col])=>`<div class="kpi"><div class="h"><span class="dot" style="background:${col}"></span>${h}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+// ── Filtros (en memoria; no re-consulta) ──────────────────────────────
+function tipoDe(c){ const t=c.product&&c.product.tipo; return t==="fisico"?"fisico":"digital"; }
+function enRango(c){ if(!st.range) return true; const d=new Date(c.created_at); const from=st.range.from, to=new Date(st.range.to.getFullYear(),st.range.to.getMonth(),st.range.to.getDate(),23,59,59); return d>=from && d<=to; }
+function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
 
-  // Funnel
-  const max=Math.max(1,...STAGES.map(s=>c[s.k]||0));
-  $("funnel").innerHTML= total===0
-    ? `<div class="empty">Aún no hay contactos en este canal.<br>Cuando lleguen mensajes, verás el embudo llenarse acá.</div>`
-    : STAGES.map(s=>{
-      const n=c[s.k]||0;
-      return `<button class="frow" data-stage="${s.k}" title="Ver en la Bandeja">
-        <div class="fhead"><span class="fdot" style="background:${s.color}"></span><div><div class="fname">${s.label}</div><div class="fsub">${s.desc}</div></div></div>
-        <div class="fbar"><span style="width:${Math.round(n/max*100)}%;background:${s.color}"></span></div>
-        <div class="fmeta"><div class="fn">${nf.format(n)}</div><div class="fp">${pct(n)}% del total</div></div>
-        <div class="fgo">›</div>
-      </button>`;
-    }).join("");
-  $("funnel").querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=> location.href="index.html?stage="+b.dataset.stage);
-
-  // Conversión honesta (foto actual): cuántos llegaron a comprar del total.
-  const convTotal= pct(c.comprado||0);
-  const interesados=(c.interesado||0)+(c.confirmado||0)+(c.comprado||0); // pasaron de "solo nuevo"
-  $("conv").innerHTML= total===0 ? "" : `
-    <div class="convpill">Conversión a compra: <b>${convTotal}%</b></div>
-    <div class="convpill">Mostraron interés: <b>${pct(interesados)}%</b></div>
-    <div class="convpill">Se perdieron: <b>${pct(c.perdido||0)}%</b></div>`;
-  $("totalHint").textContent= total? `${nf.format(total)} contactos · foto de este momento (se actualiza sola)` : "";
+function fillProdSel(){
+  const sel=$("prodSel"); if(!sel) return;
+  const vistos=new Map();
+  st.contacts.forEach(c=>{ if(!c.product_id||!c.product) return; if(st.tipo!=="all"&&tipoDe(c)!==st.tipo) return; if(!vistos.has(c.product_id)) vistos.set(c.product_id,c.product); });
+  const prods=[...vistos.entries()].sort((a,b)=>(a[1].nombre||"").localeCompare(b[1].nombre||""));
+  const cur=st.prod;
+  sel.innerHTML=`<option value="all">Todos los productos</option>`+prods.map(([id,p])=>`<option value="${esc(id)}">${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre||"Producto")}</option>`).join("");
+  sel.value=prods.some(([id])=>id===cur)?cur:"all"; if(sel.value!==cur) st.prod=sel.value;
 }
 
-// Tiempo real: cualquier cambio de contacto (nuevo, o cambio de etapa) recuenta.
+// ── El cálculo del embudo para un subconjunto de contactos ────────────
+const pct=(a,b)=> b>0 ? Math.round(a/b*100) : null;
+function funnelDe(cs){
+  const c={nuevo:0,interesado:0,confirmado:0,comprado:0,perdido:0};
+  cs.forEach(x=>{ const k=(x.stage||"nuevo"); if(k in c) c[k]++; else c.nuevo++; });
+  const total=cs.length;
+  const interes=c.interesado+c.confirmado+c.comprado+c.perdido; // entraron a una venta
+  const confirmaron=c.confirmado+c.comprado;
+  const compraron=c.comprado;
+  return { c, total,
+    niveles:{ llegaron:total, interes, confirmaron, compraron },
+    paso:{ interes:pct(interes,total), confirmar:pct(confirmaron,interes), comprar:pct(compraron,confirmaron) },
+    efectividad: pct(compraron, interes),   // de las conversaciones de venta, cuántas cierran
+    conversion: pct(compraron, total) };    // de todos los contactos, cuántos compran
+}
+
+function render(){
+  const cs=filtrados();
+  const F=funnelDe(cs);
+  renderMetricas(F);
+  renderNeck(F);
+  renderFunnel(F);
+  renderPlata(cs);
+  renderDist(F);
+  renderProductos();
+  const rl=rangeLabel(st.range);
+  $("dateNote").innerHTML= F.total===0 ? "" :
+    `<span style="flex:none">ℹ️</span> <span><b>${nf.format(F.total)} contactos</b> que llegaron en «${esc(rl)}». Foto en vivo, se actualiza sola. <b>Ojo:</b> un período reciente se ve más bajo de lo real — los que acaban de llegar todavía están en camino de comprar.</span>`;
+}
+
+function renderMetricas(F){
+  const el=$("metPanel");
+  if(F.total===0){ el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">Aún sin contactos</div><div class="mdesc">Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión.</div></div></div>`; return; }
+  const ef=F.efectividad, cv=F.conversion;
+  const eCls = ef==null?"low":ef>=20?"":ef>=8?"mid":"low";
+  el.innerHTML=`
+    <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
+      <div class="mlbl">Efectividad de venta</div>
+      <div class="mdesc">De cada <b>conversación de venta</b> que atiende el bot (el cliente se interesó en un producto), cuántas terminan en compra. No cuenta a quien solo escribió y nunca entró a comprar.</div>
+      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} conversaciones de venta</div>
+    </div>
+    <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
+      <div class="mlbl">Conversión a compra</div>
+      <div class="mdesc">De <b>todos los que te escriben</b> (incluidos los que solo saludaron), cuántos llegan a comprar. Es la conversión total del embudo: enganchar + cerrar.</div>
+      <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos</div>
+    </div>`;
+}
+
+function renderNeck(F){
+  const el=$("neck");
+  if(F.total===0){ el.innerHTML=""; return; }
+  // Los 3 saltos y su caída (100 - % que pasa). Solo se evalúan los que tienen gente arriba.
+  const saltos=[
+    { de:"que lleguen", a:"que se interesen", arriba:F.niveles.llegaron, paso:F.paso.interes, tip:"enganche: el mensaje inicial y la oferta" },
+    { de:"interesados", a:"confirmar", arriba:F.niveles.interes, paso:F.paso.confirmar, tip:"la venta: precio, confianza, objeciones" },
+    { de:"confirmados", a:"comprar", arriba:F.niveles.confirmaron, paso:F.paso.comprar, tip:"el cierre: cobro, adelanto, entrega" },
+  ].filter(s=> s.arriba>0 && s.paso!=null);
+  if(!saltos.length){ el.innerHTML=""; return; }
+  const peor=saltos.reduce((a,b)=> (b.paso<a.paso?b:a));
+  const drop=100-peor.paso;
+  const seCae=Math.round(peor.arriba*drop/100);
+  if(drop<=25){
+    el.innerHTML=`<div class="neck ok">${icon("check")||"✓"}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`;
+    return;
+  }
+  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`;
+}
+
+function renderFunnel(F){
+  const el=$("fun");
+  if(F.total===0){ el.innerHTML=`<div class="empty">Aún no hay contactos en este canal.<br>Cuando lleguen mensajes, verás el embudo llenarse acá.</div>`; return; }
+  const N=F.niveles;
+  const niveles=[
+    { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
+    { lbl:"Mostraron interés", n:N.interes, c:col("interesado") },
+    { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado") },
+    { lbl:"Compraron", n:N.compraron, c:col("comprado") },
+  ];
+  const pasos=[F.paso.interes, F.paso.confirmar, F.paso.comprar];
+  let html="";
+  niveles.forEach((lv,i)=>{
+    const w= N.llegaron>0 ? Math.max(12, Math.round(lv.n/N.llegaron*100)) : 12;
+    const pc= pct(lv.n,N.llegaron);
+    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl">${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
+    if(i<niveles.length-1){
+      const p=pasos[i];
+      const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
+      html+= p==null ? `<div class="fstep">${arrow}—</div>`
+        : `<div class="fstep">${arrow}<span class="keep">pasa el ${p}%</span> · <span class="drop">se cae el ${100-p}%</span></div>`;
+    }
+  });
+  el.innerHTML=html;
+}
+
+function renderPlata(cs){
+  const el=$("plata");
+  // Plata comprometida y aún NO cobrada de quienes están en "confirmado".
+  const confirmados=cs.filter(c=>(c.stage||"")==="confirmado");
+  let porCobrar=0, conPed=0;
+  confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
+  if(porCobrar<=0){ el.innerHTML=""; return; }
+  el.innerHTML=`<div class="plata"><span style="font-size:17px">💰</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
+}
+
+function renderDist(F){
+  const el=$("dist");
+  if(F.total===0){ el.innerHTML=""; return; }
+  const c=F.c, max=Math.max(1,...STAGES.map(s=>c[s.k]||0));
+  el.innerHTML=STAGES.map(s=>{
+    const n=c[s.k]||0;
+    const reactivable=(s.k==="interesado"||s.k==="confirmado") && n>0;
+    const p=pct(n,F.total);
+    return `<div class="drow">
+      <div class="dhead"><span class="ddot" style="background:${s.color}"></span><div><div class="dname">${esc(s.label)}</div><div class="dsub">${esc(s.desc||"")}</div></div></div>
+      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(n/max*100)}%;background:${s.color}"></div></div>
+      <div class="dn">${nf.format(n)}</div>
+      ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:`<span style="width:96px;flex:none;text-align:right;font-size:11px;color:var(--faint)">${p!=null?p+"%":""}</span>`}
+    </div>`;
+  }).join("");
+  el.querySelectorAll("[data-k]").forEach(b=> b.onclick=()=> location.href="contactos.html?stage="+b.dataset.k);
+}
+
+function renderProductos(){
+  const panel=$("prodPanel"), grid=$("prodFunnels");
+  // Agrupa por producto (respeta tipo + fecha, ignora el selector de producto para poder comparar).
+  const base=st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && enRango(c) && c.product_id && c.product);
+  const porProd=new Map();
+  base.forEach(c=>{ if(!porProd.has(c.product_id)) porProd.set(c.product_id,{ prod:c.product, cs:[] }); porProd.get(c.product_id).cs.push(c); });
+  if(porProd.size<2){ panel.style.display="none"; return; } // con 1 solo producto no aporta comparar
+  panel.style.display="";
+  const cards=[...porProd.entries()].map(([id,g])=>({ id, prod:g.prod, F:funnelDe(g.cs) }))
+    .sort((a,b)=> (b.F.conversion??-1)-(a.F.conversion??-1) || b.F.total-a.F.total);
+  grid.innerHTML=cards.map(({prod,F})=>{
+    const efC=F.efectividad==null?"z":F.efectividad>=20?"ef":F.efectividad>=8?"z":"z";
+    const cvC=F.conversion==null?"z":"cv";
+    const N=F.niveles;
+    const seg=(n,c)=> N.llegaron>0?`<span style="width:${Math.round(n/N.llegaron*100)}%;background:${c}"></span>`:"";
+    return `<div class="pcard">
+      <div class="pc-hd"><span class="pc-emoji">${prod.emoji?esc(prod.emoji):"📦"}</span><span class="pc-name">${esc(prod.nombre||"Producto")}</span><span class="pc-tag">${prod.tipo==="fisico"?"Físico":"Digital"}</span></div>
+      <div class="pc-kpis">
+        <div class="pc-kpi"><div class="pc-kv ${efC}">${F.efectividad==null?"—":F.efectividad+"%"}</div><div class="pc-kl">Efectividad</div></div>
+        <div class="pc-kpi"><div class="pc-kv ${cvC}">${F.conversion==null?"—":F.conversion+"%"}</div><div class="pc-kl">Conversión</div></div>
+      </div>
+      <div class="pc-mini">${seg(N.compraron,col("comprado"))}${seg(N.confirmaron-N.compraron,col("confirmado"))}${seg(N.interes-N.confirmaron,col("interesado"))}${seg(N.llegaron-N.interes,"#3a4453")}</div>
+      <div class="pc-foot">${nf.format(N.compraron)} compraron · ${nf.format(N.llegaron)} contactos</div>
+    </div>`;
+  }).join("");
+}
+
 function subscribe(){
-  if(st.rt) supa.removeChannel(st.rt);
+  if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} }
   let t=null;
-  st.rt=supa.channel("nodo-embudo").on("postgres_changes",
-    { event:"*", schema:"public", table:"contacts" },
-    ()=>{ clearTimeout(t); t=setTimeout(load,500); }).subscribe();
+  st.rt=supa.channel("nodo-embudo-"+st.channelId).on("postgres_changes",
+    { event:"*", schema:"public", table:"contacts", filter:`channel_id=eq.${st.channelId}` },
+    ()=>{ clearTimeout(t); t=setTimeout(load,600); }).subscribe();
 }
 boot();
 </script>
