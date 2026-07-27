@@ -48,9 +48,9 @@
   /* Embudo de verdad: niveles que se angostan */
   .fun{display:flex;flex-direction:column;align-items:center;gap:0}
   .flvl{width:100%;display:flex;flex-direction:column;align-items:center}
-  .fbar2{height:56px;border-radius:12px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#fff;min-width:132px;transition:width .5s ease;overflow:hidden}
-  .fbar2 .fl{font-weight:700;font-size:14px;white-space:nowrap}
-  .fbar2 .fr{font-weight:800;font-size:20px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .fbar2{height:56px;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 18px;color:#fff;min-width:220px;transition:width .5s ease;overflow:hidden}
+  .fbar2 .fl{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .fbar2 .fr{font-weight:800;font-size:20px;white-space:nowrap;flex:none;text-shadow:0 1px 2px rgba(0,0,0,.25)}
   .fstep{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;padding:7px 0;font-weight:600}
   .fstep .drop{color:var(--red)} .fstep .keep{color:var(--green)}
   .fstep svg{width:14px;height:14px;color:var(--faint)}
@@ -59,14 +59,15 @@
   .plata .pv{font-size:20px;font-weight:750;color:var(--amber)}
   /* Distribución actual + reactivar */
   .dist{display:flex;flex-direction:column;gap:9px}
-  .drow{display:flex;align-items:center;gap:13px}
+  .drow{display:flex;align-items:center;gap:13px;position:relative}
   .dhead{width:158px;flex:none;display:flex;align-items:center;gap:9px}
   .ddot{width:11px;height:11px;border-radius:50%;flex:none}
   .dname{font-size:13.5px;font-weight:600} .dsub{font-size:10.5px;color:var(--faint)}
   .dbarwrap{flex:1;height:26px;background:var(--surface-2);border-radius:8px;overflow:hidden}
   .dbar{height:100%;border-radius:8px;min-width:3px;transition:width .5s}
-  .dn{width:52px;flex:none;text-align:right;font-size:15px;font-weight:700}
-  .react{flex:none;border:1px solid var(--border);background:var(--surface-2);color:var(--brand);border-radius:8px;font-size:11.5px;font-weight:700;padding:6px 11px;white-space:nowrap;visibility:hidden}
+  .dn{width:46px;flex:none;text-align:right;font-size:15px;font-weight:700}
+  .dpct{width:44px;flex:none;text-align:right;font-size:11px;color:var(--faint)}
+  .react{position:absolute;right:0;top:50%;transform:translateY(-50%);border:1px solid var(--border);background:var(--surface-2);color:var(--brand);border-radius:8px;font-size:11.5px;font-weight:700;padding:6px 11px;white-space:nowrap;visibility:hidden;box-shadow:0 3px 10px rgba(0,0,0,.35)}
   .drow:hover .react{visibility:visible} .react:hover{border-color:var(--brand)}
   /* Embudo por producto */
   .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
@@ -285,7 +286,7 @@ function renderFunnel(F){
   const N=F.niveles;
   const niveles=[
     { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
-    { lbl:"Mostraron interés", n:N.interes, c:col("interesado") },
+    { lbl:"Interés", n:N.interes, c:col("interesado") },
     { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado") },
     { lbl:"Compraron", n:N.compraron, c:col("comprado") },
   ];
@@ -327,7 +328,8 @@ function renderDist(F){
       <div class="dhead"><span class="ddot" style="background:${s.color}"></span><div><div class="dname">${esc(s.label)}</div><div class="dsub">${esc(s.desc||"")}</div></div></div>
       <div class="dbarwrap"><div class="dbar" style="width:${Math.round(n/max*100)}%;background:${s.color}"></div></div>
       <div class="dn">${nf.format(n)}</div>
-      ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:`<span style="width:96px;flex:none;text-align:right;font-size:11px;color:var(--faint)">${p!=null?p+"%":""}</span>`}
+      <div class="dpct">${p!=null?p+"%":""}</div>
+      ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:``}
     </div>`;
   }).join("");
   el.querySelectorAll("[data-k]").forEach(b=> b.onclick=()=> location.href="contactos.html?stage="+b.dataset.k);
