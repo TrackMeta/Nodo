@@ -83,6 +83,7 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"copiloto" });
   st.channelId=shell.channelId;
+  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } }); // no dejar la suscripción realtime viva al navegar (SPA)
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");

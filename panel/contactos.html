@@ -223,6 +223,7 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"contactos" });
   st.channelId=shell.channelId;
+  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } }); // no dejar la suscripción realtime viva al navegar (SPA)
   shell.onChannel(id=>{ st.channelId=id; st.sel.clear(); subscribe(); load(); });
   $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=120; render(); });
   $("fSource").addEventListener("change", e=>{ f.source=e.target.value; render(); });
