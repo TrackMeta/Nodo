@@ -126,6 +126,10 @@ async function sendBatch(db: SupabaseClient, c: any) {
         type: "template", content: { template: (tpl as any).name, params: bodyParams }, wamid: wamid || null, status: "sent",
         sent_by: "bot",
       });
+      // Anti-spam: una campaña (deliberada) no se frena, pero marca el "último
+      // toque de marketing" del contacto para que el scheduler NO le encime hoy
+      // un paso de secuencia ni un nudge automático. Columna 0056; best-effort.
+      if (canSend) await db.from("contacts").update({ ultimo_auto_msg_at: new Date().toISOString() }).eq("id", s.contact_id).then(() => {}, () => {});
       ok++;
     } catch (e) {
       await db.from("campaign_sends").update({ estado: "fallido", error: { message: String((e as any)?.message ?? e) } }).eq("id", s.id);

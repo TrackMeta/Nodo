@@ -15,6 +15,19 @@ import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/
 
 const db = serviceClient();
 
+// Anti-spam: ventana de enfriamiento entre envíos AUTOMÁTICOS de marketing a un
+// mismo contacto (secuencias + recordatorios de adelanto). Las campañas, que son
+// deliberadas, NO se frenan pero SÍ marcan el timestamp (así un envío del negocio
+// suprime el nudge automático de ese día). Los avisos transaccionales de pedido
+// (guía, clave, "llegó a agencia") NO cuentan: son mensajes que el cliente espera.
+const ANTISPAM_MS = 18 * 3600 * 1000;
+const tocoMktReciente = (c: any, now: number) =>
+  !!c?.ultimo_auto_msg_at && (now - new Date(c.ultimo_auto_msg_at).getTime()) < ANTISPAM_MS;
+async function marcarTocoMkt(contactId: string) {
+  await db.from("contacts").update({ ultimo_auto_msg_at: new Date().toISOString() })
+    .eq("id", contactId).then(() => {}, () => {}); // best-effort (columna 0056)
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -183,9 +196,10 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
         // Respeta al que pidió que no le escriban (mismo criterio que el
         // remarketing: un "no me escriban" vale para todo).
         const { data: c } = await db.from("contacts")
-          .select("no_remarketing, bot_activo").eq("id", (o as any).contact_id).maybeSingle();
+          .select("no_remarketing, bot_activo, ultimo_auto_msg_at").eq("id", (o as any).contact_id).maybeSingle();
         if ((c as any)?.no_remarketing === true) continue;
         if ((c as any)?.bot_activo === false) continue; // lo tomó un humano
+        if (tocoMktReciente(c, now)) continue; // anti-spam: ya recibió un envío automático hace poco
         if (!await enHorario(chId)) continue;
         try {
           // Fuera de la ventana de 24h el texto libre lo rechaza Meta (el cliente
@@ -208,6 +222,7 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
               shipping: { ...ship, _nudge_adelanto: new Date().toISOString() },
               updated_at: new Date().toISOString(),
             }).eq("id", (o as any).id);
+            await marcarTocoMkt((o as any).contact_id); // sella el anti-spam
             recordados++;
           }
         } catch (e) { console.error("[scheduler] nudge adelanto:", (e as any)?.message ?? e); }
@@ -302,7 +317,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const paso = pasos[s.paso_actual];
 
   const { data: c } = await db.from("contacts")
-    .select("ultimo_mensaje_cliente_at, bot_activo, stage, no_remarketing").eq("id", s.contact_id).maybeSingle();
+    .select("ultimo_mensaje_cliente_at, bot_activo, stage, no_remarketing, ultimo_auto_msg_at").eq("id", s.contact_id).maybeSingle();
   if (!c) return false;
   if ((c as any).bot_activo === false) return false; // humano tomó la conversación
 
@@ -336,6 +351,11 @@ async function processSub(s: any, now: number): Promise<boolean> {
     .eq("contact_id", s.contact_id).in("estado", ["activo", "esperando"]).maybeSingle();
   if (active) return false;
 
+  // Anti-spam: no encimar envíos automáticos. Si ya recibió un toque de marketing
+  // (otra secuencia, un nudge, o una campaña) dentro de la ventana de enfriamiento,
+  // se posterga al próximo tick — no se pierde el paso, solo espera.
+  if (tocoMktReciente(c, now)) return false;
+
   // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
   // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
   // "te dejo el X a S/Y" no es solo texto: el OCR valida contra el precio con
@@ -349,11 +369,14 @@ async function processSub(s: any, now: number): Promise<boolean> {
   }
 
   // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
-  if (paso.flow_id) await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
+  // `toco` marca si de verdad salió algo (para sellar el anti-spam solo entonces).
+  let toco = false;
+  if (paso.flow_id) { await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id); toco = true; }
   else if (paso.template_name) {
     await sendTemplateToContact(db, s.channel_id, s.contact_id, {
       name: paso.template_name, language: paso.template_lang, params: paso.template_params,
     });
+    toco = true;
   }
   // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
   // Las secuencias se disparan por silencio → la ventana de 24h casi siempre
@@ -364,10 +387,12 @@ async function processSub(s: any, now: number): Promise<boolean> {
   else if (paso.mensaje || paso.bubbles?.length || paso.variantes?.length) {
     if (await ventana24hAbierta(db, s.contact_id)) {
       await deliverStep(db, s.channel_id, s.contact_id, paso);
+      toco = true;
     } else {
       console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);
     }
   }
+  if (toco) await marcarTocoMkt(s.contact_id);
 
   const next = s.paso_actual + 1;
   await db.from("sequence_subscriptions").update({

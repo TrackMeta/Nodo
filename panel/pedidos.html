@@ -513,6 +513,12 @@ function kcard(o){
     : `Total <b>${money(total(o),o.currency)}</b>`;
   const act=primaryAction(o);
   const enTurno=TURNO_STATES.has(o.estado);
+  // Antigüedad "sin pagar" para los pedidos en espera del adelanto: se resalta en
+  // rojo a partir de 2 días para que la columna no se llene de leads muertos sin
+  // que nadie lo note (la auto-limpieza es opt-in a propósito — auto-cancelar
+  // sería peligroso — así que al menos la staleness se ve de un vistazo).
+  const diasEsp = o.estado==="esperando_adelanto"
+    ? Math.floor((Date.now()-new Date(o.created_at||Date.now()).getTime())/86400000) : -1;
 
   // Botón principal: si el estado se resuelve en "Pagos por validar" (validar pago),
   // el botón salta allá; si no, avanza el pedido en el mismo tablero.
@@ -535,6 +541,7 @@ function kcard(o){
       ${enTurno?`<span class="kc-turno">PAGO POR VALIDAR</span>`:""}
     </div>
     <div class="kc-money">${moneyLine}</div>
+    ${diasEsp>=0?`<div style="font-size:11.5px;margin-top:3px;font-weight:${diasEsp>=2?"700":"500"};color:${diasEsp>=2?"var(--red)":"var(--faint)"}">⏳ ${diasEsp<1?"esperando el adelanto (hoy)":`sin adelanto hace ${diasEsp} día${diasEsp>1?"s":""}`}</div>`:""}
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
     ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠ Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     <div class="kc-act">

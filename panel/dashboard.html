@@ -204,6 +204,8 @@
 
     <div id="asesorPanel"></div>
 
+    <div id="onbPanel"></div>
+
     <div class="pband" id="pband"></div>
 
     <div class="kpis" id="kpis"></div>
@@ -554,7 +556,7 @@ async function boot(){
   channelId=shell.channelId;
   const c=shell.channels.find(x=>x.id===channelId);
   $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");
-  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); });
+  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); renderOnboarding(id); });
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
     tipo=b.dataset.t;
     $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
@@ -579,11 +581,59 @@ async function boot(){
   $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
   renderDatePop();
   load();
+  renderOnboarding(channelId);
 }
 
 function kpi(icon, color, label, value, sub){
   return `<div class="kpi"><div class="h"><span class="ic" style="background:${color}22;color:${color}">${IC[icon]}</span>${esc(label)}</div>
     <div class="v">${value}</div>${sub?`<div class="d">${esc(sub)}</div>`:""}</div>`;
+}
+
+// ── Primeros pasos (onboarding) ─────────────────────────────────────
+// Checklist de puesta en marcha: guía a un dueño nuevo en el ORDEN de config
+// (Negocio → Producto → Flujo → IA → WhatsApp), que antes no estaba en ningún
+// lado. Cubre además el aviso de "falta API key de IA" (paso IA). Todas las
+// señales son legibles por el panel (columnas de channels + conteos). Se oculta
+// solo cuando está TODO listo, o si el dueño lo descarta (por canal).
+async function renderOnboarding(cid){
+  const box=$("onbPanel"); if(!box || !cid) return;
+  if(localStorage.getItem("nodo.onb.done."+cid)==="1"){ box.innerHTML=""; return; }
+  const [ch, prod, ai, flows] = await Promise.all([
+    supa.from("channels").select("negocio,phone_number_id").eq("id",cid).maybeSingle(),
+    supa.from("products").select("id",{count:"exact",head:true}).eq("channel_id",cid),
+    supa.from("channel_ai").select("provider",{count:"exact",head:true}).eq("channel_id",cid),
+    supa.from("flows").select("id",{count:"exact",head:true}).eq("channel_id",cid).eq("estado","activo"),
+  ]);
+  const cd=ch.data||{};
+  const pasos=[
+    { ok:!!(cd.negocio&&String(cd.negocio).trim()), t:"Cuéntale a la IA de tu negocio", h:"negocio.html", d:"Qué vendes, a quién, cómo hablas" },
+    { ok:(prod.count||0)>0, t:"Crea tu primer producto", h:"productos.html", d:"Con su precio, entrega y presentaciones" },
+    { ok:(flows.count||0)>0, t:"Activa un flujo de venta", h:"editor.html", d:"La conversación que vende ese producto" },
+    { ok:(ai.count||0)>0, t:"Conecta la IA (API key)", h:"ia.html", d:"Sin esto el vendedor IA no puede responder" },
+    { ok:!!cd.phone_number_id, t:"Conecta tu WhatsApp", h:"canales.html", d:"El último paso para salir a clientes reales" },
+  ];
+  const hechos=pasos.filter(p=>p.ok).length;
+  if(hechos===pasos.length){ localStorage.setItem("nodo.onb.done."+cid,"1"); box.innerHTML=""; return; }
+  const pct=Math.round(hechos/pasos.length*100);
+  box.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 18px 14px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px">
+      <div style="font-weight:800;font-size:15px">🚀 Primeros pasos <span style="color:var(--faint);font-weight:600;font-size:13px">· ${hechos} de ${pasos.length}</span></div>
+      <button id="onbSkip" style="background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer">Ocultar</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Deja tu bot listo para vender. Puedes hacerlos en cualquier orden.</div>
+    <div style="height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-bottom:14px"><span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#a855f7,#ec4899);transition:width .4s"></span></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${pasos.map(p=>`<a href="${p.h}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;text-decoration:none;background:${p.ok?"transparent":"var(--surface-2)"};border:1px solid ${p.ok?"transparent":"var(--border)"}">
+        <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;${p.ok?"background:#22c07922;color:#22c079":"background:var(--surface);border:1.5px solid var(--border);color:var(--faint)"}">${p.ok?"✓":""}</span>
+        <span style="flex:1;min-width:0">
+          <span style="display:block;font-weight:700;font-size:13.5px;color:${p.ok?"var(--faint)":"var(--text)"};${p.ok?"text-decoration:line-through":""}">${esc(p.t)}</span>
+          <span style="display:block;font-size:11.5px;color:var(--faint)">${esc(p.d)}</span>
+        </span>
+        ${p.ok?"":`<span style="flex:0 0 auto;color:var(--brand);font-size:12px;font-weight:700">Ir →</span>`}
+      </a>`).join("")}
+    </div>
+  </div>`;
+  const skip=$("onbSkip"); if(skip) skip.onclick=()=>{ localStorage.setItem("nodo.onb.done."+cid,"1"); box.innerHTML=""; };
 }
 
 async function load(){
