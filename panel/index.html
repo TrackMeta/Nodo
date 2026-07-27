@@ -1252,6 +1252,9 @@ function renderEvent(e){
 }
 function renderMsg(m) {
   const t = $("thread");
+  // ¿El operador ya estaba al fondo? Si había subido a leer mensajes viejos,
+  // un mensaje nuevo por realtime NO debe arrancarlo hacia abajo.
+  const atBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 120;
   const si = senderInfo(m);
   const key = m.direction === "in" ? "in" : (si ? si.key : "bot");
   // Cabecera de remitente, agrupada: solo aparece cuando cambia quién manda
@@ -1288,7 +1291,7 @@ function renderMsg(m) {
     });
     t.appendChild(bd);
   }
-  t.scrollTop = t.scrollHeight;
+  if (atBottom) t.scrollTop = t.scrollHeight;
 }
 function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"⚠ falló",pending:"…"}[s]||s; }
 function mediaHtml(m){
@@ -1465,13 +1468,17 @@ async function okManualEnvio() {
   if (ok) { (state.manualOk = state.manualOk || new Set()).add(state.contactId); }
   return ok;
 }
+let sending = false;
 async function sendMsg() {
   const input = $("msgInput"); const text = input.value.trim();
-  if (!text || !state.contactId) return;
+  // Guarda de re-entrada: el handler de Enter (msgInput keydown) NO mira el
+  // botón deshabilitado, y el input recién se limpia DESPUÉS del await de red;
+  // sin esto, doble-Enter rápido enviaba el MISMO mensaje dos veces al cliente.
+  if (!text || !state.contactId || sending) return;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
-  if (!await okManualEnvio()) return;
-  $("sendBtn").disabled = true;
+  sending = true; $("sendBtn").disabled = true;
   try {
+    if (!await okManualEnvio()) return;
     if (state.isTest) {
       if (state.testAs === "bot") {
         // Simular respuesta del bot: mensaje saliente directo (RLS admin).
@@ -1491,7 +1498,7 @@ async function sendMsg() {
       else { input.value = ""; setBotPill(false); }
     }
   } catch { toast("Error de red", true); }
-  $("sendBtn").disabled = false;
+  finally { sending = false; $("sendBtn").disabled = false; }
 }
 
 // ── Adjuntar media (imagen / audio / video / archivo) ──

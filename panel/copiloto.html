@@ -245,7 +245,7 @@ function card(o,et){
   const acts=botones(o,et);
 
   el.innerHTML=`
-    ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}"/>`
+    ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="thumb none" style="display:none">⚠ No cargó el comprobante</div>`
         :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">

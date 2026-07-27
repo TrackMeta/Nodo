@@ -377,6 +377,10 @@ export function askChoice(opts = {}) {
       </div>`, { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
     back.querySelectorAll(".nodo-choice").forEach((b) => b.onclick = () => { settled = true; resolve(b.dataset.v); back.remove(); });
     back.querySelector("#nmCancel").onclick = () => close();
+    // Escape cierra, igual que askText/confirmDialog (antes solo cerraba con el
+    // botón o clic afuera → inconsistente con los otros diálogos).
+    back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    setTimeout(() => back.querySelector("#nmCancel")?.focus(), 30);
   });
 }
 function escHtml(s) { return (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
