@@ -754,13 +754,6 @@ async function load(){
   const calle=orders.filter(O.enLaCalle).reduce((a,o)=>a+O.porCobrar(o),0);
   const espAdel=todas.filter(o=>o.estado==="esperando_adelanto");
   const perdidos=orders.filter(O.esPerdido).length;
-  // Ganancia real. Solo se suman los pedidos que TIENEN los datos; los que no,
-  // se cuentan aparte y se avisa — un margen a medias es peor que ninguno.
-  let ganancia=0, sinDatos=0;
-  orders.forEach(o=>{
-    const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
-    if(m==null) sinDatos++; else ganancia+=m;
-  });
 
   // ── Banda de rentabilidad: cuánto GANASTE de verdad (con el gasto de Meta) ──
   const ins = insR.error ? [] : (insR.data||[]);
@@ -891,7 +884,10 @@ async function load(){
   asesorResumen={
     periodo: ($("dfLabel")?$("dfLabel").textContent:"")||"el periodo",
     tipo_filtro: tipo,
-    ganancia: Math.round(ganancia), ingresos: Math.round(vendido), ventas: compras,
+    // La MISMA ganancia bruta que ve en pantalla (banda + KPI), para que el
+    // Asesor IA no reporte un número que no cuadra con el Dashboard. Antes usaba
+    // O.margen para todos (excluía el digital sin costo) y divergía de `bruta`.
+    ganancia: Math.round(bruta), ingresos: Math.round(vendido), ventas: compras,
     ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidos,
     embudo_por_etapa: ps,
     interesados_sin_comprar: (Number(ps.interesado)||0)+(Number(ps.confirmado)||0),
