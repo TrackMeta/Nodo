@@ -251,11 +251,13 @@ function subscribe(){
 }
 
 async function load(){
+  const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera: si cambias de bot a media carga, esta se descarta
   const [{ data:cs }, { data:tg }, { data:os }] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,source,ad_id,ctwa_clid,bot_activo,bloqueado,no_remarketing,created_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji),contact_tags(tag_id),conv:conversations(archivada)").eq("channel_id",st.channelId).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).limit(2000),
-    supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
-    supa.from("orders").select("contact_id,amount,order_bumps,estado,currency").eq("channel_id",st.channelId).limit(8000),
+    supa.from("contacts").select("id,nombre,wa_id,stage,source,ad_id,ctwa_clid,bot_activo,bloqueado,no_remarketing,created_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji),contact_tags(tag_id),conv:conversations(archivada)").eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).limit(2000),
+    supa.from("tags").select("id,nombre,color").eq("channel_id",forChannel).order("nombre"),
+    supa.from("orders").select("contact_id,amount,order_bumps,estado,currency").eq("channel_id",forChannel).limit(8000),
   ]);
+  if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó → no pintes datos viejos
   st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test");
   st.tags=tg||[];
   st.ordersBy={};

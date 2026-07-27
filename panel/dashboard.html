@@ -637,6 +637,7 @@ async function renderOnboarding(cid){
 }
 
 async function load(){
+  const cid=channelId; // anti-carrera: si cambias de bot a media carga, esta se descarta
   await loadCurrency();
   const r=computeRange();
   const fromISO=r.from.toISOString(), toISO=r.to.toISOString();
@@ -664,6 +665,7 @@ async function load(){
     // Embudo (que lo excluye). Traemos su etapa para descontarlo del mismo bucket.
     supa.from("contacts").select("stage").eq("channel_id",channelId).eq("wa_id","webchat-test").maybeSingle(),
   ]);
+  if(cid!==channelId) return; // cambiaste de bot mientras cargaba → no pintes los números del anterior
   const s=stats.data||{};
   if(typeof contR?.count==="number") s.contactos=contR.count;
   // Copia de por_stage con el contacto de prueba descontado de su etapa cruda

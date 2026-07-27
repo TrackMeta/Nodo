@@ -127,11 +127,13 @@ const ETAPAS=[
 const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
 async function load(){
+  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   const sel="id,amount,currency,estado,shipping,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)";
   let { data, error }=await supa.from("orders").select(sel)
     .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true});
   if(error){ ({ data }=await supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
     .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true})); }
+  if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
   st.list=data||[];
 
   // Pedidos con un pago de VENTA EXTRA pendiente de aprobar: ya están
@@ -160,6 +162,7 @@ async function load(){
       });
     }catch(_){ /* sin campos aún */ }
   }
+  if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   render();
 }
 

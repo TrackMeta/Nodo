@@ -107,12 +107,14 @@ async function countStage(k){
 
 async function load(){
   if(!st.channelId){ render(); return; }
+  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   const totalQ=supa.from("contacts").select("*",{count:"exact",head:true})
     .eq("channel_id",st.channelId).neq("wa_id","webchat-test");
   const [total,...counts]=await Promise.all([
     totalQ.then(r=>r.count||0),
     ...STAGES.map(s=>countStage(s.k)),
   ]);
+  if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   st.total=total;
   st.counts=Object.fromEntries(STAGES.map((s,i)=>[s.k,counts[i]]));
   render();

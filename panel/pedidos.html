@@ -400,6 +400,7 @@ function wireRealtime(){
 
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
+  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   // Remitente del rótulo = nombre del NEGOCIO (Negocio → Conocimiento), no el
   // del canal/bot; si no está, cae al nombre del canal. Resiliente: sin la
   // columna negocio_form, reintenta solo con nombre+entregas.
@@ -420,6 +421,7 @@ async function load(){
       data=r2.data;
     } else data=r1.data;
   }
+  if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   st.list=data||[]; render();
 }
 

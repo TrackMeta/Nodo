@@ -157,6 +157,7 @@ const ymd=(d)=>{ const x=new Date(d); return `${x.getFullYear()}-${String(x.getM
 async function loadData(){
   st.rows=[]; st.loaded=false;
   const cid=st.channelId; if(!cid){ st.loaded=true; return; }
+  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot/cuenta
   const r=st.range||computePreset("30d"); const from=ymd(r.from), to=ymd(r.to);
   let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
   try{ [insR,metaR,ordR]=await Promise.all([
@@ -184,6 +185,7 @@ async function loadData(){
     if(!row.prod && o.product){ row.prod=(o.product.emoji?o.product.emoji+" ":"")+(o.product.nombre||""); row.prodTag=o.product.tipo==="fisico"?"fisico":"digital"; }
   });
   Object.values(byAd).forEach(row=>{ row.neta=row._margen-row.gasto; });   // ganancia neta = margen − gasto de ads
+  if(gen!==st.loadGen) return; // otra carga (otro bot/cuenta) la reemplazó
   st.rows=Object.values(byAd); st.loaded=true;
 }
 async function reload(){ await loadData(); render(); }

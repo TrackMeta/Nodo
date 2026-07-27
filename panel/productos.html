@@ -212,12 +212,14 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); const f=$("armFab"); if(f) f.style.display="inline-flex"; }
 
 async function loadProducts(){
+  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   // Las opciones de compra son la verdad: si un producto tiene más de una, ES
   // multi-opción. Ya no hace falta un checkbox aparte que lo declare.
   const full="id,nombre,config,folder,emoji,tipo,clase,product_versions(id,precio,activo)";
   let { data, error } = await supa.from("products").select(full).eq("channel_id",st.channelId).order("created_at");
   if(error){ ({ data, error } = await supa.from("products").select("id,nombre,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at")); }
   if(error){ ({ data } = await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).order("created_at")); }
+  if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   st.list=data||[]; renderFolders(); renderCards();
 }
 // Opciones activas de un producto (para las tarjetas del grid).

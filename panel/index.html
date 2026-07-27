@@ -590,11 +590,13 @@ const RECOMPRA_ESTADOS = ["carrito","pendiente","esperando_adelanto","confirmado
 // Comprador (dorado) que además tiene un pedido vivo = recompra en curso.
 const esRecompra = (c)=> !!c && c.stage==="comprado" && !!state.recompraSet && state.recompraSet.has(c.id);
 async function loadConversations() {
+  const gen=(state.loadGen=(state.loadGen||0)+1); // anti-carrera al cambiar de bot
   const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source${p?",product_id,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   let { data, error } = await supa.from("conversations").select(sel(true))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200);
   if (error) { ({ data } = await supa.from("conversations").select(sel(false))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200)); }
+  if (gen!==state.loadGen) return; // cambiaste de bot mientras cargaba → no pintes la bandeja del anterior
   // Los archivados se conservan en state.convs (para contarlos y para el filtro
   // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.
   state.convs = (data||[]).filter(cv=>cv.contact && !cv.contact.bloqueado && cv.contact.wa_id!=="webchat-test");
