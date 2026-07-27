@@ -391,6 +391,41 @@ function escAttr(s) { return escHtml(s).replace(/"/g, "&quot;"); }
 // "Ramírez", "Ángel"… (nombres peruanos comunes) en ninguna Bandeja/lista.
 export function norm(s) { return (s ?? "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
 
+// ── Guarda de "cambios sin guardar" ─────────────────────────────────
+// Las pantallas-formulario (Productos, Negocio, IA) usan Guardar explícito;
+// como TODO navega por SPA (BOUNDARY vacío) y el bot se cambia en el sitio,
+// salir a media edición perdía todo en silencio. Una página llama a
+// guardUnsaved(selector) en su boot: a partir de ahí, editar cualquier input
+// DENTRO de ese contenedor marca "sucio", y al intentar salir (nav del
+// sidebar, cambio de bot, cerrar/recargar la pestaña) se pide confirmación.
+// La página llama markClean() cuando guarda con éxito. El contenedor acota el
+// rastreo para que la búsqueda/filtros y los modales de shell (que cuelgan del
+// body) no marquen sucio por error.
+let _dirty = false, _guardSel = null, _dirtyWired = false;
+export function guardUnsaved(selector) {
+  _guardSel = selector || ".nodo-page"; _dirty = false;
+  if (_dirtyWired) return; _dirtyWired = true;
+  // [data-noguard] marca sub-secciones con su PROPIO botón Guardar (p. ej. el
+  // horario global en la ficha del producto): editarlas no debe ensuciar el
+  // formulario principal ni pedir confirmación al salir tras guardarlas.
+  const mark = (e) => { const t = e.target; if (_guardSel && t && t.closest && t.closest(_guardSel) && !t.closest("[data-noguard]")) _dirty = true; };
+  document.addEventListener("input", mark, true);
+  document.addEventListener("change", mark, true);
+  window.addEventListener("beforeunload", (e) => { if (_dirty) { e.preventDefault(); e.returnValue = ""; } });
+}
+export function markClean() { _dirty = false; }
+export function markDirty() { if (_guardSel) _dirty = true; }
+export function isDirty() { return _dirty; }
+// Se resetea al cambiar de página (teardown): la nueva vuelve a opt-in si toca.
+function _resetGuard() { _guardSel = null; _dirty = false; }
+// true = se puede salir; pregunta solo si hay cambios sin guardar.
+async function _dirtyGate() {
+  if (!_dirty) return true;
+  const ok = await confirmDialog({ title: "Cambios sin guardar", message: "Hiciste cambios que no guardaste. Si sales ahora se perderán.", confirmText: "Salir sin guardar", cancelText: "Seguir aquí", danger: true });
+  if (ok) _dirty = false;
+  return ok;
+}
+
 // Favicon dinámico = logo del bot elegido.
 export function setFavicon(href) {
   if (!href) return;
@@ -750,7 +785,7 @@ export async function mountShell({ active } = {}) {
     if (!botPop) return;
     botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
       + `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>`;
-    botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = () => { S.api.setChannel(b.dataset.id); closeBotPop(); }; });
+    botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = async () => { if (b.dataset.id !== S.channelId && !(await _dirtyGate())) return; S.api.setChannel(b.dataset.id); closeBotPop(); }; });
     const cr = botPop.querySelector(".nb-create"); if (cr) cr.onclick = () => { closeBotPop(); openCreateBot(); };
   };
   const positionBotPop = () => {
@@ -847,7 +882,13 @@ function setupRouter() {
   S.routerReady = true;
   S.pageStyles = pageHeadAssets(document); // estilos de la página actual (style + link externos)
   document.addEventListener("click", onNavClick);
-  window.addEventListener("popstate", () => navigate(location.href, { push: false }));
+  window.addEventListener("popstate", async () => {
+    // Back/forward con cambios sin guardar: si el usuario elige quedarse,
+    // rehacemos el push a la página actual para que URL y contenido no se
+    // desincronicen (el navegador ya movió el puntero del historial).
+    if (_dirty && !(await _dirtyGate())) { history.pushState({ spa: true }, "", _curHref); return; }
+    navigate(location.href, { push: false });
+  });
 }
 
 function onNavClick(e) {
@@ -904,13 +945,18 @@ function teardown() {
   S.leaves.forEach((cb) => { try { cb(); } catch (e) { console.error(e); } });
   S.leaves = [];
   S.subs = [];
+  _resetGuard(); // la nueva página vuelve a opt-in con guardUnsaved() si es un formulario
 }
 
+let _curHref = location.href; // página SPA mostrada ahora (para restaurar si se cancela un back/forward)
 async function navigate(href, { push = true } = {}) {
   const dest = new URL(href, location.href);
   if (BOUNDARY.has(fileOf(dest.pathname)) || dest.origin !== location.origin) {
     location.href = dest.href; return; // frontera → navegación normal
   }
+  // Navegación deliberada (clic del sidebar): frena si hay cambios sin guardar.
+  // El back/forward (push=false) se controla en el listener de popstate.
+  if (push && !(await _dirtyGate())) return;
   try {
     let html = pageCache.get(dest.pathname);
     if (html == null) {
@@ -938,6 +984,7 @@ async function navigate(href, { push = true } = {}) {
     contentNodes.forEach((n) => document.body.appendChild(n));
 
     if (push) history.pushState({ spa: true }, "", dest.href);
+    _curHref = dest.href; // el swap ya ocurrió: esta es la página mostrada
     const page = document.querySelector(".nodo-page");
     if (page) page.scrollTop = 0; else window.scrollTo(0, 0);
     await runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)

@@ -142,7 +142,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 // ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
 // Claude: IDs vigentes de la Messages API (el backend no manda temperature
@@ -250,6 +250,7 @@ async function boot(){
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
   st.channelId=shell.channelId;
+  guardUnsaved(".nodo-page"); // avisa si sales con un formulario de IA a medio editar
   shell.onChannel(id=>{ st.channelId=id; loadCfg(); });
   if(st.channelId) await loadCfg();
 }
@@ -376,7 +377,7 @@ function renderAtencion(b){
     const { error }=await supa.from("channels").update({ pedidos_config:full }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=full; toast("Atención guardada ✓");
+    st.channel.pedidos_config=full; markClean(); toast("Atención guardada ✓");
   };
 }
 
@@ -441,7 +442,7 @@ async function saveCampos(e){
   const rows=st.campos.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo||"text", modo:"fijo", valor:f.valor||null, descripcion:f.descripcion||null }; if(f.id) r.id=f.id; return r; });
   if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows);
     if(error){ btn.disabled=false; btn.textContent=old; toast(/valor|descripcion|column/.test(error.message)?"Falta aplicar la migración 0013 (valor/descripcion)":error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
-  btn.disabled=false; btn.textContent=old; st.campos.loaded=false; toast("Campos guardados ✓"); renderCampos($("body"));
+  btn.disabled=false; btn.textContent=old; st.campos.loaded=false; markClean(); toast("Campos guardados ✓"); renderCampos($("body"));
 }
 
 // ── Conocimiento del negocio — FORMULARIO estructurado ──────────────
@@ -512,6 +513,7 @@ async function saveForm(btn){
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return false; }
   st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso;
+  markClean();
   return true;
 }
 
@@ -610,7 +612,7 @@ function renderPerfiles(b){
     const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
-    st.channel.ia_perfiles=ia_perfiles; toast("Perfiles guardados ✓");
+    st.channel.ia_perfiles=ia_perfiles; markClean(); toast("Perfiles guardados ✓");
   };
 }
 
@@ -850,7 +852,7 @@ function renderValidador(b){
         extra=" · {{datos_pago}} actualizado";
       }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
     }
-    btn.disabled=false; btn.textContent=old; toast("Validador guardado ✓"+extra);
+    btn.disabled=false; btn.textContent=old; markClean(); toast("Validador guardado ✓"+extra);
   };
 }
 
@@ -916,7 +918,7 @@ async function onAction(action, provider, btn){
       if(r?.ok) toast("IA responde ✓"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
     } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto ✓"); }
     else if(action==="delete"){ if(!await confirmDialog({title:"Eliminar configuración",message:"¿Eliminar la configuración de "+provider+"?",confirmText:"Eliminar",danger:true})) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado ✓"); }
-    await loadCfg();
+    await loadCfg(); markClean();
   }catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }

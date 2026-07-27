@@ -176,7 +176,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set() };
@@ -200,6 +200,7 @@ async function boot(){
   if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"productos" });
   st.channelId=shell.channelId;
+  guardUnsaved(".nodo-page"); // avisa si sales con la ficha del producto a medio editar
   shell.onChannel(id=>{ st.channelId=id; st.prod=null; showGrid(); loadProducts(); });
   $("addProduct").onclick = createProduct;
   $("saveBtn").onclick = saveProduct;
@@ -970,7 +971,7 @@ async function renderRemarketing(){
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no llegó a comprar. Es una serie de mensajes por <b>silencio</b>: cada paso espera un tiempo sin respuesta y manda un mensaje (texto y multimedia). Si el cliente responde, se pausa sola; si compra, sale.</p>
 
-    <div class="card">
+    <div class="card" data-noguard>
       <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 8px">${icon("clock")} Horario de envío <span style="font-size:11px;color:var(--faint);font-weight:400">· aplica a TODO el remarketing del bot</span></h4>
       <div style="display:flex;align-items:center;gap:10px">
         <span class="sw ${rm.activo?'on':''}" id="hrTog"></span>
@@ -2857,7 +2858,7 @@ async function saveProduct(){
     if(error){ toast(error.message,true); return; }
     if(!v.id && data) v.id=data.id;
   }
-  toast("Guardado ✓"); loadProducts();
+  markClean(); toast("Guardado ✓"); loadProducts();
 }
 // ════════════════════════════════════════════════════════════════════
 // ASISTENTE "Armar con IA" (capa Crea): brief → borrador del producto.

@@ -104,7 +104,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
@@ -118,6 +118,7 @@ async function boot(){
   document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"negocio" });
   st.channelId=shell.channelId;
+  guardUnsaved(".nodo-page"); // avisa si sales con el formulario a medio editar
   shell.onChannel(id=>{ st.channelId=id; load(); });
   cargarListas().then(l=>{ st.listas=l; if(st.tab==="entrega") render(); });
   if(st.channelId) await load();
@@ -200,6 +201,7 @@ async function saveForm(btn){
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return false; }
   st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso;
+  markClean();
   return true;
 }
 function renderConocimiento(b){
@@ -532,6 +534,7 @@ async function guardarEntregas(){
   const { error }=await supa.from("channels").update({ entregas:E }).eq("id",st.channelId);
   if(error){ toast(/entregas|column/.test(error.message)?"Falta aplicar la migración 0032":error.message,true); return; }
   st.channel.entregas=JSON.parse(JSON.stringify(E));
+  markClean();
   toast("Entrega guardada ✓");
 }
 
