@@ -2067,35 +2067,33 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
 const SEG_RANK: Record<string, number> = {
   solo_inicio: 1, general: 1, interactuo: 2, provincia_sin_adelanto: 3,
 };
-// Enrola al contacto en la secuencia de remarketing de un SEGMENTO (audiencia),
-// si el negocio configuró una para ese segmento en este canal. "Gradúa" (opción
-// A de Rodrigo): sale de su secuencia de remarketing actual y entra a la del
-// segmento, PERO solo si es más profundo que donde está (nunca degrada). Si no
-// hay secuencia para el segmento, cae al `fallbackSeqId` (ej. la general del
-// producto) tratado como rango "general"; si tampoco, no toca nada.
-async function enrolarSegmento(
-  db: SupabaseClient, channelId: string, contactId: string, segmento: string, fallbackSeqId?: string | null,
-) {
+// Enrola al contacto en la secuencia de remarketing de un SEGMENTO (audiencia).
+// El remarketing es POR PRODUCTO: la secuencia sale del mapa del producto del
+// contacto, `products.config.remarketing_seqs = {general, curioso/solo_inicio,
+// interactuo, provincia_sin_adelanto}`. Si no hay para el segmento, cae a la
+// "general" de ese producto (o al legacy `remarketing_seq_id`). "Gradúa" (opción
+// A): sale de su secuencia actual y entra a la del segmento, PERO solo si es más
+// profundo (nunca degrada); el segmento en curso se guarda en la propia sub.
+async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId: string, segmento: string) {
   try {
-    const { data: seq } = await db.from("sequences").select("id")
-      .eq("channel_id", channelId).eq("segmento", segmento).eq("activo", true)
-      .order("created_at").limit(1).maybeSingle();
-    let seqId = (seq as any)?.id as string | undefined;
+    // Producto del contacto → su mapa de remarketing por segmento.
+    const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+    const productId = (c as any)?.product_id;
+    if (!productId) return; // sin producto → no hay a qué remarketing engancharlo
+    const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
+    const cfg = (p as any)?.config ?? {};
+    const map = (cfg.remarketing_seqs && typeof cfg.remarketing_seqs === "object") ? cfg.remarketing_seqs : {};
+    let seqId = map[segmento] as string | undefined;
     let seg = segmento;
-    if (!seqId && fallbackSeqId) { seqId = fallbackSeqId; seg = "general"; }
-    if (!seqId) return; // nada configurado → el contacto se queda donde estaba
+    if (!seqId) { seqId = (map.general ?? cfg.remarketing_seq_id) as string | undefined; seg = "general"; }
+    if (!seqId) return; // el producto no tiene secuencia para este segmento ni general
     const rank = SEG_RANK[seg] ?? 1;
-    // Sus secuencias de remarketing ACTIVAS + su profundidad, para graduar solo
-    // hacia adelante y no moverlo lateral/atrás.
+    // Sus subs de remarketing ACTIVAS + el segmento en que están (guardado en la
+    // sub), para graduar solo hacia adelante y no moverlo lateral/atrás.
     const { data: activos } = await db.from("sequence_subscriptions")
-      .select("id, sequence_id").eq("contact_id", contactId).eq("estado", "activa");
-    if ((activos ?? []).some((a: any) => a.sequence_id === seqId)) return; // ya está en la del segmento
-    let rankActual = 0;
-    if ((activos ?? []).length) {
-      const ids = (activos as any[]).map((a) => a.sequence_id);
-      const { data: segs } = await db.from("sequences").select("segmento").in("id", ids);
-      rankActual = Math.max(0, ...(segs ?? []).map((x: any) => SEG_RANK[x.segmento ?? "general"] ?? 1));
-    }
+      .select("id, sequence_id, segmento").eq("contact_id", contactId).eq("estado", "activa");
+    if ((activos ?? []).some((a: any) => a.sequence_id === seqId)) return; // ya está en esa secuencia
+    const rankActual = Math.max(0, ...(activos ?? []).map((a: any) => SEG_RANK[a.segmento ?? "general"] ?? 1));
     if (rank <= rankActual) return; // hay algo igual o más profundo → no mover
     // Graduar: cancelar lo activo y entrar a la nueva desde el paso 0.
     if ((activos ?? []).length) {
@@ -2105,9 +2103,9 @@ async function enrolarSegmento(
     }
     await db.from("sequence_subscriptions").upsert({
       channel_id: channelId, contact_id: contactId, sequence_id: seqId,
-      estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
+      estado: "activa", paso_actual: 0, segmento: seg, updated_at: new Date().toISOString(),
     }, { onConflict: "contact_id,sequence_id" });
-  } catch (_) { /* columna segmento pendiente / etc → no rompe el flujo */ }
+  } catch (_) { /* columnas pendientes / etc → no rompe el flujo */ }
 }
 
 // Notifica a los admins del canal por Telegram (bot token en Vault).
@@ -5089,14 +5087,12 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
   if (!productId) return;
   try { await db.from("contacts").update({ product_id: productId }).eq("id", contactId); } catch (_) { /* columna pendiente */ }
   // Auto-enrolar al remarketing: apenas el contacto muestra interés (escribe la
-  // palabra clave = entra a la conversación del producto) es un CURIOSO. Entra al
-  // segmento "solo_inicio" si el negocio lo configuró; si no, a la general del
-  // producto (remarketing_seq_id) — así el comportamiento de siempre no cambia.
-  // enrolarSegmento no degrada ni resetea (si ya interactuó/compró, no lo mueve),
-  // y el scheduler lo saca solo si compra/responde/opt-out.
+  // palabra clave = entra a la conversación del producto) es un CURIOSO. Entra a
+  // la secuencia "solo_inicio" del PRODUCTO (o su general, dentro de
+  // enrolarSegmento). No degrada ni resetea (si ya interactuó/compró, no lo mueve);
+  // el scheduler lo saca solo si compra/responde/opt-out.
   try {
-    const { data: p } = await db.from("products").select("channel_id, config, tipo").eq("id", productId).maybeSingle();
-    const seqId = (p as any)?.config?.remarketing_seq_id;
+    const { data: p } = await db.from("products").select("channel_id, tipo").eq("id", productId).maybeSingle();
     const chId = (p as any)?.channel_id;
     // Entró a la venta de un producto por la palabra clave → CURIOSO (solo tiró
     // la keyword; pasa a Interesado recién cuando interactúa de verdad). moverEtapa
@@ -5104,7 +5100,7 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
     if (chId) await moverEtapa(db, chId, contactId, "curioso");
     // Producto digital → etiqueta "Digital" desde ya (filtrable en la Bandeja).
     if (chId && (p as any)?.tipo === "digital") await autoEtiquetaZona(db, chId, contactId, "digital");
-    if (chId) await enrolarSegmento(db, chId, contactId, "solo_inicio", seqId);
+    if (chId) await enrolarSegmento(db, chId, contactId, "solo_inicio");
   } catch (_) { /* sin remarketing / columnas pendientes → no pasa nada */ }
 }
 
