@@ -159,18 +159,25 @@ async function loadData(){
   const cid=st.channelId; if(!cid){ st.loaded=true; return; }
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot/cuenta
   const r=st.range||computePreset("30d"); const from=ymd(r.from), to=ymd(r.to);
+  // Los pedidos van por created_at (timestamptz): hay que comparar contra el
+  // INSTANTE UTC real del día LOCAL (Lima), no contra la fecha naive que la
+  // sesión UTC de Postgres leería corrida ~5h → así se perdían las ventas de la
+  // tarde-noche (horario pico) del último día del rango. El gasto sí va con ymd()
+  // porque ads_insights.fecha es columna `date` (sin hora, por día calendario).
+  const ordDesde=r.from.toISOString();
+  const ordHasta=new Date(r.to.getFullYear(),r.to.getMonth(),r.to.getDate()+1).toISOString();
   let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
   try{ [insR,metaR,ordR]=await Promise.all([
     supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to),
     supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id").eq("channel_id",cid),
-    supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",from).lte("created_at",to+"T23:59:59"),
+    supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lt("created_at",ordHasta),
   ]); }catch(_){ st.loaded=true; return; }
   const meta=Object.fromEntries((metaR.data||[]).map(m=>[m.ad_id,m]));
   const byAd={};
   const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
   (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=+i.gasto||0; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=+i.gasto||0; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
-  (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=(o.created_at||"").slice(0,10); const d=day(row,f);
+  (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=o.created_at?ymd(new Date(o.created_at)):""; const d=day(row,f);
     if(esConf){ row.conf++; d.conf++; }
     if(esVenta){ row.ventas++; row.ingresos+=tot; d.ventas++; d.ingresos+=tot;
       // Margen con el MISMO criterio que el Dashboard: digital = cobrado − su costo
