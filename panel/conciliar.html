@@ -414,7 +414,9 @@ async function anular(v,el){
     confirmText:"Anular venta", cancelText:"No, dejarla" });
   if(!motivo) return;
   const estado=(v._o.product||{}).tipo==="digital"?"anulada":"cancelado";
-  const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:v.id, estado,
+  // OJO: v._orderId, NO v.id — para una parte de provincia v.id es compuesto
+  // ("<orderId>::saldo") y order-update no encontraría el pedido.
+  const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:v._orderId, estado,
     shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } } });
   if(error||data?.error){ toast(error?.message||data.error,true); return; }
   toast("Venta anulada ✓"); el.style.opacity=.4; el.querySelectorAll("button").forEach(b=>b.disabled=true);
