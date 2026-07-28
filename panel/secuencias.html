@@ -39,6 +39,22 @@
   .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 6px}
   .banner{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:12px;padding:13px 16px;font-size:13px;color:var(--muted);line-height:1.55;margin:8px 0 24px}
   .banner b{color:var(--text)}
+  /* Explicación "cómo funcionan" (vista tarjetas) */
+  .explain{background:radial-gradient(120% 130% at 0% 0%,rgba(43,127,255,.08),transparent 55%),var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin:4px 0 22px}
+  .ex-hd{font-size:15px;font-weight:750;letter-spacing:-.2px;display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .ex-hd svg{width:19px;height:19px;color:var(--brand)}
+  .ex-lead{font-size:13px;color:var(--muted);line-height:1.55;margin:0 0 15px;max-width:660px}
+  .ex-title{font-size:11px;font-weight:800;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:11px}
+  .ex-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px}
+  .ex-it{display:flex;gap:11px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px 13px}
+  .ex-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
+  .ex-ic svg{width:16px;height:16px}
+  .ex-it.green .ex-ic{background:var(--green-bg);color:var(--green)}
+  .ex-it.blue .ex-ic{background:var(--brand-bg);color:var(--brand)}
+  .ex-it.amber .ex-ic{background:var(--amber-bg);color:var(--amber)}
+  .ex-it.gray .ex-ic{background:var(--bg);color:var(--muted)}
+  .ex-tx b{font-size:13px;font-weight:700;display:block;margin-bottom:2px;color:var(--text)}
+  .ex-tx span{font-size:11.5px;color:var(--muted);line-height:1.5}
   .editwrap{max-width:760px}
   .tl{position:relative;padding-left:40px}
   .tl::before{content:"";position:absolute;left:15px;top:8px;bottom:30px;width:2px;background:var(--border)}
@@ -90,6 +106,21 @@
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addSeq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva secuencia</button>
+        </div>
+      </div>
+      <div class="explain">
+        <div class="ex-hd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>Cómo trabajan tus secuencias</div>
+        <p class="ex-lead">Reenganchan solas al cliente que se quedó callado, paso a paso: tú defines cada mensaje y cuánto <b style="color:var(--text)">silencio</b> esperar antes de mandarlo, y el bot hace el resto. Puedes rebajar el precio en un paso (el sistema valida ese descuento al pagar).</p>
+        <div class="ex-title">Se detienen solas cuando el cliente…</div>
+        <div class="ex-grid">
+          <div class="ex-it green"><span class="ex-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>
+            <div class="ex-tx"><b>Compra o se compromete</b><span>Ya es tuyo — sale de la secuencia. No le seguimos ofreciendo descuentos a quien ya aceptó pagar.</span></div></div>
+          <div class="ex-it blue"><span class="ex-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg></span>
+            <div class="ex-tx"><b>Responde</b><span>El reloj del silencio se reinicia: mientras haya conversación, no le insiste.</span></div></div>
+          <div class="ex-it gray"><span class="ex-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span>
+            <div class="ex-tx"><b>Tú tomas el chat</b><span>Se <b style="color:var(--text);font-weight:700">pausa</b> mientras lo atiendes y se reanuda sola cuando reactivas el bot. No se pierde.</span></div></div>
+          <div class="ex-it amber"><span class="ex-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg></span>
+            <div class="ex-tx"><b>Pide que no le escriban</b><span>“ya no quiero”, “baja”, “stop”… se cancela y no vuelve a recibir remarketing nunca.</span></div></div>
         </div>
       </div>
       <div class="nodo-folders" id="folders"></div>
