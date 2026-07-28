@@ -945,7 +945,7 @@ function buildCondicionCfg(m, body){
   };
   paint(); body.appendChild(list);
   const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" ruta";
-  add.onclick=()=>{ c.rutas.push({handle:"ruta:"+(c.rutas.length+1),nombre:"Ruta "+(c.rutas.length+1),match:"todas",condiciones:[]}); syncCondHandles(m); paint(); };
+  add.onclick=()=>{ const used=new Set(c.rutas.map(r=>r.handle)); let n=c.rutas.length+1; while(used.has("ruta:"+n)) n++; c.rutas.push({handle:"ruta:"+n,nombre:"Ruta "+(c.rutas.length+1),match:"todas",condiciones:[]}); syncCondHandles(m); paint(); };
   body.appendChild(add);
 }
 function syncCondHandles(m){
