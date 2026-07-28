@@ -356,10 +356,18 @@ async function processSub(s: any, now: number): Promise<boolean> {
   //    paso, solo se posterga hasta una hora decente).
   if (!await enHorario(s.channel_id)) return false;
 
-  // Silencio consciente de la conversación: se mide desde el último mensaje
-  // del cliente (si responde, el temporizador se reinicia solo).
-  const anchor = (c as any).ultimo_mensaje_cliente_at ?? s.updated_at ?? s.suscrito_at;
-  const silenceSec = (now - new Date(anchor).getTime()) / 1000;
+  // Temporizador del paso: cuenta desde el MÁS RECIENTE entre (a) cuándo se envió
+  // el paso anterior —`updated_at` se sella en cada avance— y (b) el último
+  // mensaje del cliente. Así cada paso corre DESDE EL PASO ANTERIOR (el "espera
+  // entre toques" que configura el negocio), pero si el cliente RESPONDE su
+  // mensaje es más reciente → el temporizador se REINICIA y no se le insiste
+  // mientras haya conversación. (El paso 1 no tiene "paso anterior": updated_at
+  // ≈ suscrito_at → cuenta desde que mostró interés / su último mensaje.)
+  const marcas = [(c as any).ultimo_mensaje_cliente_at, s.updated_at, s.suscrito_at]
+    .map((t) => (t ? new Date(t).getTime() : NaN))
+    .filter((t) => Number.isFinite(t));
+  const anchor = marcas.length ? Math.max(...marcas) : now;
+  const silenceSec = (now - anchor) / 1000;
   const umbral = Number(paso.umbral_silencio_seg ?? paso.delay_seg ?? 0);
   if (silenceSec < umbral) return false; // aún no toca
 

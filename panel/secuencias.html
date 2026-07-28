@@ -110,7 +110,7 @@
       </div>
       <div class="explain">
         <div class="ex-hd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>Cómo trabajan tus secuencias</div>
-        <p class="ex-lead">Reenganchan solas al cliente que se quedó callado, paso a paso: tú defines cada mensaje y cuánto <b style="color:var(--text)">silencio</b> esperar antes de mandarlo, y el bot hace el resto. Puedes rebajar el precio en un paso (el sistema valida ese descuento al pagar).</p>
+        <p class="ex-lead">Reenganchan solas al cliente que se quedó callado, paso a paso: tú defines cada mensaje y <b style="color:var(--text)">cuánto esperar</b> entre uno y el siguiente, y el bot hace el resto. Si el cliente responde, el temporizador se reinicia. Puedes rebajar el precio en un paso (el sistema valida ese descuento al pagar).</p>
         <div class="ex-title">Se detienen solas cuando el cliente…</div>
         <div class="ex-grid">
           <div class="ex-it green"><span class="ex-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>
@@ -208,7 +208,7 @@ async function deleteSeq(){
 function miniTimeline(pasos){
   const p=pasos||[]; if(!p.length) return `<div class="mtl"><span class="more" style="margin:0">Sin pasos aún</span></div>`;
   const show=p.slice(0,4);
-  let html=show.map((s,i)=>`${i>0?'<span class="ml"></span>':''}<span class="md" title="${esc(durLabel(s.umbral_silencio_seg))} de silencio"></span>`).join("");
+  let html=show.map((s,i)=>`${i>0?'<span class="ml"></span>':''}<span class="md" title="${esc(durLabel(s.umbral_silencio_seg))} de espera"></span>`).join("");
   if(p.length>4) html+=`<span class="ml"></span><span class="more">+${p.length-4}</span>`;
   return `<div class="mtl">${html}</div>`;
 }
@@ -261,7 +261,7 @@ function renderDetail(){
       <div><label style="margin:0 0 4px">Carpeta</label>
         <select class="sel" id="s_folder" style="min-width:240px"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${s.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
     </div>
-    <div class="banner">Cada paso se dispara tras X tiempo de <b>silencio</b> del cliente (desde su último mensaje). Si el cliente responde, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras hay conversación.</div>
+    <div class="banner">Cada paso espera su tiempo <b>desde que se envió el paso anterior</b> (el primero, desde el último mensaje del cliente). Si el cliente <b>responde</b>, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras haya conversación.</div>
     <div class="editwrap">
       <div class="tl" id="steps"></div>
       <button class="addstep" id="addStep">+ Añadir paso</button>
@@ -333,7 +333,7 @@ function stepCard(paso,i){
     <div class="scard">
       <div class="srow">
         <div class="delay">Tras <input class="in num" type="number" min="1" value="${val}"/>
-          <select class="sel unit">${UNITS.map(([v,l])=>`<option value="${v}" ${v===u?"selected":""}>${l}</option>`).join("")}</select> de silencio</div>
+          <select class="sel unit">${UNITS.map(([v,l])=>`<option value="${v}" ${v===u?"selected":""}>${l}</option>`).join("")}</select> de espera</div>
         <button class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Quitar</button>
       </div>
       <label>Acción</label>
