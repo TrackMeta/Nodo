@@ -105,6 +105,20 @@ export async function runEngine(
     await aplicarOptOut(db, channelId, contactId);
   }
 
+  // "Interesado activo" por CONVERSAR: si el cliente ya mandó 2+ mensajes (no
+  // solo la palabra clave), gradúa a la secuencia de ese segmento AUNQUE no haya
+  // dejado datos (la otra vía es setField). Lee máximo 2 filas → barato.
+  // enrolarSegmento no degrada (a un provincia/comprador ni lo toca) ni corre si
+  // no hay secuencia "interactuo". No aplica si justo pidió opt-out (sus subs se
+  // acaban de cancelar y re-enrolarlo sería contradictorio).
+  if (event.type === "message" && !esOptOut(event.text)) {
+    try {
+      const { data: ins } = await db.from("messages").select("id")
+        .eq("contact_id", contactId).eq("direction", "in").limit(2);
+      if ((ins ?? []).length >= 2) await enrolarSegmento(db, channelId, contactId, "interactuo");
+    } catch (_) { /* best-effort */ }
+  }
+
   // ¿Pidió hablar con una persona? Se corta acá: el bot no sigue contestando
   // encima de alguien que ya pidió un humano. Le confirma que lo pasa (con la
   // expectativa según horario) para no dejarlo en el aire.
