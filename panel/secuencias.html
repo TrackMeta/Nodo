@@ -149,8 +149,10 @@ const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 // ¿A quién va dirigida la secuencia? El motor mete a cada cliente en la del
 // segmento que le corresponde según qué tan lejos llegó (ver "Cómo trabajan").
 const SEGMENTOS=[
-  ["general","🌐 Todos los interesados (general)","Cualquiera que mostró interés en un producto. Es la red de seguridad."],
-  ["provincia_sin_adelanto","📦 Provincia · dejó sus datos, sin adelanto","Pedidos de provincia esperando el adelanto: dieron nombre, DNI, dirección y agencia, pero no pagaron los S/…. Súper caliente."],
+  ["general","🌐 Todos los interesados (general)","Cualquiera que mostró interés en un producto. Es la red de seguridad para quien no calce en un segmento específico."],
+  ["solo_inicio","🌱 Solo curiosos","Escribieron la palabra clave y no volvieron a interactuar (no dejaron ningún dato). Un reenganche suave para reavivarlos."],
+  ["interactuo","💬 Interesados activos","Conversaron o dejaron algún dato (talla, ciudad…) pero no llegaron a dejar un pedido. Ya sabes qué les interesó, ve al grano."],
+  ["provincia_sin_adelanto","📦 Provincia · dejó sus datos, sin adelanto","Pedidos de provincia esperando el adelanto: dieron nombre, DNI, dirección y agencia, pero no pagaron. Súper caliente."],
 ];
 const segLabel=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[1];
 const segDesc=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[2];

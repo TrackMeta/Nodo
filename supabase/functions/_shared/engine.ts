@@ -2044,31 +2044,53 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
   await q;
 }
 
+// "Profundidad" de cada segmento. El contacto solo GRADÚA hacia adelante (a un
+// segmento más profundo), nunca retrocede: un provincia-sin-adelanto no vuelve a
+// "curioso" porque el motor le escriba en un campo.
+const SEG_RANK: Record<string, number> = {
+  solo_inicio: 1, general: 1, interactuo: 2, provincia_sin_adelanto: 3,
+};
 // Enrola al contacto en la secuencia de remarketing de un SEGMENTO (audiencia),
-// si el negocio configuró una para ese segmento en este canal. "Gradúa" al
-// contacto (opción A elegida por Rodrigo): sale de cualquier OTRA secuencia de
-// remarketing activa y entra a la del segmento — así siempre se le habla acorde
-// a dónde está. No reinicia el drip si ya está activo en la del segmento.
-async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId: string, segmento: string) {
+// si el negocio configuró una para ese segmento en este canal. "Gradúa" (opción
+// A de Rodrigo): sale de su secuencia de remarketing actual y entra a la del
+// segmento, PERO solo si es más profundo que donde está (nunca degrada). Si no
+// hay secuencia para el segmento, cae al `fallbackSeqId` (ej. la general del
+// producto) tratado como rango "general"; si tampoco, no toca nada.
+async function enrolarSegmento(
+  db: SupabaseClient, channelId: string, contactId: string, segmento: string, fallbackSeqId?: string | null,
+) {
   try {
     const { data: seq } = await db.from("sequences").select("id")
       .eq("channel_id", channelId).eq("segmento", segmento).eq("activo", true)
       .order("created_at").limit(1).maybeSingle();
-    const seqId = (seq as any)?.id;
-    if (!seqId) return; // el negocio no configuró secuencia para este segmento → sigue en la general
-    // Graduar: salir de las OTRAS secuencias de remarketing activas.
-    await db.from("sequence_subscriptions")
-      .update({ estado: "cancelada", updated_at: new Date().toISOString() })
-      .eq("contact_id", contactId).eq("estado", "activa").neq("sequence_id", seqId);
-    // Entrar a la del segmento — sin reiniciar si ya está en curso ahí.
-    const { data: ex } = await db.from("sequence_subscriptions").select("estado")
-      .eq("contact_id", contactId).eq("sequence_id", seqId).maybeSingle();
-    if ((ex as any)?.estado === "activa") return;
+    let seqId = (seq as any)?.id as string | undefined;
+    let seg = segmento;
+    if (!seqId && fallbackSeqId) { seqId = fallbackSeqId; seg = "general"; }
+    if (!seqId) return; // nada configurado → el contacto se queda donde estaba
+    const rank = SEG_RANK[seg] ?? 1;
+    // Sus secuencias de remarketing ACTIVAS + su profundidad, para graduar solo
+    // hacia adelante y no moverlo lateral/atrás.
+    const { data: activos } = await db.from("sequence_subscriptions")
+      .select("id, sequence_id").eq("contact_id", contactId).eq("estado", "activa");
+    if ((activos ?? []).some((a: any) => a.sequence_id === seqId)) return; // ya está en la del segmento
+    let rankActual = 0;
+    if ((activos ?? []).length) {
+      const ids = (activos as any[]).map((a) => a.sequence_id);
+      const { data: segs } = await db.from("sequences").select("segmento").in("id", ids);
+      rankActual = Math.max(0, ...(segs ?? []).map((x: any) => SEG_RANK[x.segmento ?? "general"] ?? 1));
+    }
+    if (rank <= rankActual) return; // hay algo igual o más profundo → no mover
+    // Graduar: cancelar lo activo y entrar a la nueva desde el paso 0.
+    if ((activos ?? []).length) {
+      await db.from("sequence_subscriptions")
+        .update({ estado: "cancelada", updated_at: new Date().toISOString() })
+        .eq("contact_id", contactId).eq("estado", "activa");
+    }
     await db.from("sequence_subscriptions").upsert({
       channel_id: channelId, contact_id: contactId, sequence_id: seqId,
       estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
     }, { onConflict: "contact_id,sequence_id" });
-  } catch (_) { /* columna segmento pendiente / etc → no rompe la creación del pedido */ }
+  } catch (_) { /* columna segmento pendiente / etc → no rompe el flujo */ }
 }
 
 // Notifica a los admins del canal por Telegram (bot token en Vault).
@@ -5049,13 +5071,12 @@ export async function recomputeStageOnLoss(db: SupabaseClient, channelId: string
 async function markProduct(db: SupabaseClient, contactId: string, productId?: string | null) {
   if (!productId) return;
   try { await db.from("contacts").update({ product_id: productId }).eq("id", contactId); } catch (_) { /* columna pendiente */ }
-  // Auto-enrolar al remarketing del producto: apenas el contacto muestra interés
-  // (entra a la conversación de ese producto), queda inscrito. El scheduler lo
-  // saca solo si compra (yaCompro), si responde (el silencio se reinicia) o si
-  // pidió no más mensajes (no_remarketing) — así que suscribir a un comprador es
-  // inofensivo (se completa antes de enviarle nada). Solo se inscribe la PRIMERA
-  // vez: si ya hay una suscripción (activa, pausada, completada o cancelada) no
-  // se toca, para no resetear el drip ni pisar un opt-out.
+  // Auto-enrolar al remarketing: apenas el contacto muestra interés (escribe la
+  // palabra clave = entra a la conversación del producto) es un CURIOSO. Entra al
+  // segmento "solo_inicio" si el negocio lo configuró; si no, a la general del
+  // producto (remarketing_seq_id) — así el comportamiento de siempre no cambia.
+  // enrolarSegmento no degrada ni resetea (si ya interactuó/compró, no lo mueve),
+  // y el scheduler lo saca solo si compra/responde/opt-out.
   try {
     const { data: p } = await db.from("products").select("channel_id, config, tipo").eq("id", productId).maybeSingle();
     const seqId = (p as any)?.config?.remarketing_seq_id;
@@ -5064,16 +5085,7 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
     if (chId) await moverEtapa(db, chId, contactId, "interesado");
     // Producto digital → etiqueta "Digital" desde ya (filtrable en la Bandeja).
     if (chId && (p as any)?.tipo === "digital") await autoEtiquetaZona(db, chId, contactId, "digital");
-    if (seqId && chId) {
-      const { data: ex } = await db.from("sequence_subscriptions").select("id")
-        .eq("contact_id", contactId).eq("sequence_id", seqId).maybeSingle();
-      if (!ex) {
-        await db.from("sequence_subscriptions").insert({
-          channel_id: chId, contact_id: contactId, sequence_id: seqId,
-          estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
-        });
-      }
-    }
+    if (chId) await enrolarSegmento(db, chId, contactId, "solo_inicio", seqId);
   } catch (_) { /* sin remarketing / columnas pendientes → no pasa nada */ }
 }
 
@@ -5098,6 +5110,12 @@ async function setField(db: SupabaseClient, channelId: string, contactId: string
     { contact_id: contactId, field_id: (f as any).id, value, updated_at: new Date().toISOString() },
     { onConflict: "contact_id,field_id" },
   );
+  // El contacto dejó un dato REAL (no un candado interno del motor, que empieza
+  // con "_") → "interesado activo": gradúa a esa secuencia si el negocio la
+  // configuró. No-op si no la hay, y nunca degrada a quien ya está más profundo.
+  if (!key.startsWith("_") && value != null && String(value).trim() !== "") {
+    await enrolarSegmento(db, channelId, contactId, "interactuo").catch(() => {});
+  }
 }
 async function hasTag(db: SupabaseClient, contactId: string, tagName: string): Promise<boolean> {
   const { data } = await db.from("contact_tags")
