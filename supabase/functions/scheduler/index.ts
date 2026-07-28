@@ -273,12 +273,28 @@ async function processOrderReminders(now: number): Promise<number> {
 
 // ¿El contacto ya compró? Mira la etapa y, por si acaso, un pedido confirmado
 // (la etapa se puede mover a mano; la venta real no miente).
+// ¿El contacto ya es cliente FIRME? = compró (venta cerrada al 100%) O se
+// comprometió (Lima contraentrega confirmada esperando al motorizado, o
+// provincia con el adelanto ya validado). En ambos casos NO hay que seguir
+// mandándole remarketing: ofrecerle "última oportunidad / descuento" a alguien
+// que ya aceptó pagar el precio completo queda mal y quema la marca.
+// El embudo mapea todos los estados de compromiso a la etapa "confirmado" y las
+// ventas cerradas a "comprado", así que la etapa basta; igual se revisan los
+// estados del pedido por si la etapa quedó rezagada.
+// OJO: `esperando_adelanto` y el digital `pendiente` NO cuentan (son etapa
+// "interesado" = prospecto que aún puede abandonar) → a esos SÍ se les sigue.
+const ESTADOS_FIRMES = [
+  "confirmada", "entregado_cobrado", "recogido", "saldo_pagado",       // comprado (100%)
+  "confirmado", "en_reparto", "reprogramado", "adelanto_validado",     // comprometido
+  "por_despachar", "despachado", "en_agencia",
+];
 async function yaCompro(contactId: string, stage: string | null): Promise<boolean> {
-  if (String(stage ?? "").toLowerCase() === "comprado") return true;
+  const st = String(stage ?? "").toLowerCase();
+  if (st === "comprado" || st === "confirmado") return true;
   try {
     const { data } = await db.from("orders").select("id")
       .eq("contact_id", contactId)
-      .in("estado", ["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"])
+      .in("estado", ESTADOS_FIRMES)
       .limit(1).maybeSingle();
     return !!data;
   } catch (_) { return false; }
@@ -328,8 +344,9 @@ async function processSub(s: any, now: number): Promise<boolean> {
       .update({ estado: "cancelada", updated_at: new Date().toISOString() }).eq("id", s.id);
     return false;
   }
-  // 2) Ya compró → sale del remarketing. Mandarle "última oportunidad" a alguien
-  //    que acaba de pagar es vergonzoso y quema la marca.
+  // 2) Ya compró O se comprometió → sale del remarketing. Mandarle "última
+  //    oportunidad" a alguien que ya pagó, o que ya aceptó pagar y espera su
+  //    entrega, es vergonzoso y quema la marca.
   if (await yaCompro(s.contact_id, (c as any).stage)) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
