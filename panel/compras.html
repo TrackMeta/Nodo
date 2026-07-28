@@ -72,7 +72,7 @@
   .vchip:hover{border-color:var(--green);color:var(--green)}
   .vchip.on{border-color:var(--green);color:var(--green);background:var(--green-bg)}
   .vchip.done{color:var(--green);border-color:transparent;background:var(--green-bg);cursor:default}
-  .pc-rt{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+  .pc-amt-side{display:flex;align-items:center;gap:9px;flex:none}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
   .lightbox.show{display:flex} .lightbox img{max-width:92vw;max-height:92vh;border-radius:12px}
 </style>
@@ -339,14 +339,11 @@ function card(o){
       <span class="pc-em">${p.emoji?esc(p.emoji):icon("box")}</span>
       <div class="pc-id"><div class="pc-nm">${esc(c.nombre||s.cliente||"Sin nombre")}</div>
         <div class="pc-ph">${c.wa_id?"+"+esc(c.wa_id):"—"} · ${fecha(cuando(o))}</div></div>
-      <div class="pc-rt">
-        <span class="ttag ${tipo}">${tipo==="digital"?"DIGITAL":tipo==="lima"?"LIMA":"PROVINCIA"}</span>
-        ${verifChip(o)}
-      </div>
+      <span class="ttag ${tipo}">${tipo==="digital"?"DIGITAL":tipo==="lima"?"LIMA":"PROVINCIA"}</span>
     </div>
     <div class="pc-row">
       <div class="pc-prod">${esc(p.nombre||"—")}${v.nombre?` <span class="vv">· ${esc(v.nombre)}</span>`:""}</div>
-      <div class="pc-amt">${money(O.total(o),o.currency)}${bumps?`<span class="bump">+${bumps} extra${bumps>1?"s":""}</span>`:""}</div>
+      <div class="pc-amt-side">${verifChip(o)}<div class="pc-amt">${money(O.total(o),o.currency)}${bumps?`<span class="bump">+${bumps} extra${bumps>1?"s":""}</span>`:""}</div></div>
     </div>
     ${meta.length?`<div class="pc-meta">${meta.join("<br>")}</div>`:""}
     ${Number(s.vuelto)>0?`<div class="pc-vuelto">Pagó de más · vuelto <b>${money(s.vuelto,o.currency)}</b> a favor del cliente</div>`:""}
