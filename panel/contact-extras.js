@@ -27,8 +27,9 @@ export function money(v, cur) {
 // Las etapas del embudo — FUENTE ÚNICA (la Bandeja, la ficha y la sección Embudo
 // la importan). value=lo que se guarda · label=lo que se muestra · color/desc.
 export const EMBUDO_STAGES = [
-  { k: "nuevo",      label: "Nuevo",      color: "#378ADD", desc: "Recién escribió" },
-  { k: "interesado", label: "Interesado", color: "#EF9F27", desc: "Preguntó, quiere más" },
+  { k: "nuevo",      label: "Nuevo",      color: "#378ADD", desc: "Llegó, aún genérico" },
+  { k: "curioso",    label: "Curioso",    color: "#29B6D8", desc: "Solo tiró la palabra clave" },
+  { k: "interesado", label: "Interesado", color: "#EF9F27", desc: "Interactuó, quiere más" },
   { k: "confirmado", label: "Confirmado", color: "#8b5cf6", desc: "Confirmó recibir / adelanto validado" },
   { k: "comprado",   label: "Comprado",   color: "#1D9E75", desc: "Venta cerrada, plata dentro" },
   { k: "perdido",    label: "Perdido",    color: "#888780", desc: "Se cayó / no compró" },

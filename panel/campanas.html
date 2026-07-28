@@ -103,7 +103,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.j
 const $=(id)=>document.getElementById(id);
 // Etapas reales del ciclo de vida del contacto (contacts.stage). Se quitaron
 // los placeholders p1–p4 que no correspondían a ninguna etapa del negocio.
-const STAGES=[["nuevo","Nuevo"],["interesado","Interesado"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
+const STAGES=[["nuevo","Nuevo"],["curioso","Curioso"],["interesado","Interesado"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
 // Estados del Kanban de Pedidos (orders.estado) para segmentar por logística.
 const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirmado (Lima)"],["en_reparto","En reparto"],["reprogramado","Reprogramado"],["entregado_cobrado","Entregado y cobrado"],["esperando_adelanto","Esperando adelanto"],["adelanto_validado","Adelanto validado"],["por_despachar","Por despachar"],["despachado","Despachado"],["en_agencia","En agencia"],["saldo_pagado","Saldo pagado"],["recogido","Recogido"],["no_recogido","No recogido"],["rechazado","Rechazado"]];
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };

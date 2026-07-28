@@ -115,7 +115,10 @@ export async function runEngine(
     try {
       const { data: ins } = await db.from("messages").select("id")
         .eq("contact_id", contactId).eq("direction", "in").limit(2);
-      if ((ins ?? []).length >= 2) await enrolarSegmento(db, channelId, contactId, "interactuo");
+      if ((ins ?? []).length >= 2) {
+        await moverEtapa(db, channelId, contactId, "interesado"); // etapa del embudo
+        await enrolarSegmento(db, channelId, contactId, "interactuo"); // secuencia
+      }
     } catch (_) { /* best-effort */ }
   }
 
@@ -5033,7 +5036,7 @@ export function stageDeEstado(estado?: string | null): string | null {
   if (STAGE_INTERESADO.has(e)) return "interesado";
   return null; // carrito u otros → no toca la etapa
 }
-const STAGE_RANK: Record<string, number> = { nuevo: 0, interesado: 1, confirmado: 2, comprado: 3 };
+const STAGE_RANK: Record<string, number> = { nuevo: 0, curioso: 1, interesado: 2, confirmado: 3, comprado: 4 };
 // Mueve la etapa SOLO hacia adelante (nunca retrocede), salvo a "perdido" y solo
 // si el contacto no era ya "comprado" (un comprador no se marca perdido por un
 // pedido posterior que se cayó). Silenciosa ante errores: nunca rompe la venta.
@@ -5095,8 +5098,10 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
     const { data: p } = await db.from("products").select("channel_id, config, tipo").eq("id", productId).maybeSingle();
     const seqId = (p as any)?.config?.remarketing_seq_id;
     const chId = (p as any)?.channel_id;
-    // Entró a la venta de un producto → Interesado (solo avanza; si ya compró, no toca).
-    if (chId) await moverEtapa(db, chId, contactId, "interesado");
+    // Entró a la venta de un producto por la palabra clave → CURIOSO (solo tiró
+    // la keyword; pasa a Interesado recién cuando interactúa de verdad). moverEtapa
+    // solo avanza (si ya interactuó/compró, no lo retrocede).
+    if (chId) await moverEtapa(db, chId, contactId, "curioso");
     // Producto digital → etiqueta "Digital" desde ya (filtrable en la Bandeja).
     if (chId && (p as any)?.tipo === "digital") await autoEtiquetaZona(db, chId, contactId, "digital");
     if (chId) await enrolarSegmento(db, chId, contactId, "solo_inicio", seqId);
@@ -5128,7 +5133,8 @@ async function setField(db: SupabaseClient, channelId: string, contactId: string
   // con "_") → "interesado activo": gradúa a esa secuencia si el negocio la
   // configuró. No-op si no la hay, y nunca degrada a quien ya está más profundo.
   if (!key.startsWith("_") && value != null && String(value).trim() !== "") {
-    await enrolarSegmento(db, channelId, contactId, "interactuo").catch(() => {});
+    await moverEtapa(db, channelId, contactId, "interesado").catch(() => {}); // etapa del embudo
+    await enrolarSegmento(db, channelId, contactId, "interactuo").catch(() => {}); // secuencia
   }
 }
 async function hasTag(db: SupabaseClient, contactId: string, tagName: string): Promise<boolean> {
