@@ -985,8 +985,13 @@ async function renderRemarketing(){
         <span style="font-size:12.5px;color:var(--muted)">hasta</span>
         <input class="in" id="hrHasta" type="time" value="${esc(rm.hasta||'21:00')}" style="width:120px"/>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
-        <button class="btn primary" id="hrSave" style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar horario</button>
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <span class="sw ${rm.antispam!==false?'on':''}" id="asTog" style="margin-top:2px"></span>
+        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Anti-spam · máximo 1 mensaje automático cada 18 h <span style="font-size:9.5px;color:var(--green,#22c079);font-weight:800;letter-spacing:.4px;border:1px solid var(--green,#22c079);border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
+          <div style="font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5">Protege tu número de un <b>baneo de WhatsApp</b> por sobre-envío: coordina secuencias, nudges y campañas para no encimarlos. Los avisos del pedido (va en camino, etc.) no cuentan. Apágalo solo si sabes lo que haces.</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+        <button class="btn primary" id="hrSave" style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar horario y anti-spam</button>
         <span style="font-size:11px;color:var(--faint);flex:1">Apagado = a cualquier hora. Fuera del horario el mensaje no se pierde: espera a la próxima hora permitida.</span>
       </div>
     </div>
@@ -1017,6 +1022,8 @@ async function renderRemarketing(){
   // ── Horario (global del canal) ──
   const hrSw=$("hrTog");
   if(hrSw) hrSw.onclick=()=>{ rm.activo=!rm.activo; hrSw.classList.toggle("on",rm.activo); $("hrRange").style.display=rm.activo?"flex":"none"; };
+  const asSw=$("asTog");
+  if(asSw) asSw.onclick=()=>{ rm.antispam=(rm.antispam===false); asSw.classList.toggle("on",rm.antispam!==false); };
   if($("hrSave")) $("hrSave").onclick=async(e)=>{
     rm.desde=$("hrDesde")?.value||rm.desde; rm.hasta=$("hrHasta")?.value||rm.hasta;
     if(rm.activo && rm.desde && rm.hasta && rm.hasta<=rm.desde){ toast("La hora final debe ser mayor a la inicial",true); return; }

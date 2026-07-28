@@ -199,7 +199,7 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
           .select("no_remarketing, bot_activo, ultimo_auto_msg_at").eq("id", (o as any).contact_id).maybeSingle();
         if ((c as any)?.no_remarketing === true) continue;
         if ((c as any)?.bot_activo === false) continue; // lo tomó un humano
-        if (tocoMktReciente(c, now)) continue; // anti-spam: ya recibió un envío automático hace poco
+        if (await antispamOn((o as any).channel_id) && tocoMktReciente(c, now)) continue; // anti-spam (si está activo): ya recibió un envío automático hace poco
         if (!await enHorario(chId)) continue;
         try {
           // Fuera de la ventana de 24h el texto libre lo rechaza Meta (el cliente
@@ -322,6 +322,21 @@ async function enHorario(channelId: string): Promise<boolean> {
   } catch (_) { return true; } // ante la duda, no bloquear el remarketing
 }
 
+// ¿El anti-spam de 18h está activo en este canal? Recomendado ON (protege el
+// número de un baneo por sobre-envío), pero el negocio puede apagarlo. Default
+// ON si no está configurado. Reusa el caché de la config de remarketing.
+async function antispamOn(channelId: string): Promise<boolean> {
+  try {
+    let cfg = horarioCache.get(channelId);
+    if (cfg === undefined) {
+      const { data } = await db.from("channels").select("remarketing, timezone").eq("id", channelId).maybeSingle();
+      cfg = data ?? null;
+      horarioCache.set(channelId, cfg);
+    }
+    return (cfg?.remarketing?.antispam ?? true) !== false;
+  } catch (_) { return true; }
+}
+
 async function processSub(s: any, now: number): Promise<boolean> {
   const { data: seq } = await db.from("sequences").select("pasos, activo").eq("id", s.sequence_id).maybeSingle();
   const pasos = Array.isArray((seq as any)?.pasos) ? (seq as any).pasos : [];
@@ -379,7 +394,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // Anti-spam: no encimar envíos automáticos. Si ya recibió un toque de marketing
   // (otra secuencia, un nudge, o una campaña) dentro de la ventana de enfriamiento,
   // se posterga al próximo tick — no se pierde el paso, solo espera.
-  if (tocoMktReciente(c, now)) return false;
+  if (await antispamOn(s.channel_id) && tocoMktReciente(c, now)) return false;
 
   // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
   // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
