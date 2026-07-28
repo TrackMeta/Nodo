@@ -1928,6 +1928,11 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // Etiqueta automática de zona/tipo (filtrable en la Bandeja): Lima/Provincia
     // según la entrega física; Digital si el pedido no lleva zona (venta digital).
     await autoEtiquetaZona(db, run.channel_id, run.contact_id, zonaShip === "lima" ? "lima" : zonaShip === "provincia" ? "provincia" : "digital");
+    // Provincia que dejó TODOS sus datos pero no pagó el adelanto → su secuencia
+    // específica (si el negocio la configuró). Gradúa: sale de la general.
+    if ((a.estado === "esperando_adelanto") && zonaShip === "provincia") {
+      await enrolarSegmento(db, run.channel_id, run.contact_id, "provincia_sin_adelanto").catch(() => {});
+    }
     if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
     await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
     // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
@@ -2037,6 +2042,33 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
     .eq("contact_id", run.contact_id);
   if (a.sequence_id) q = q.eq("sequence_id", a.sequence_id);
   await q;
+}
+
+// Enrola al contacto en la secuencia de remarketing de un SEGMENTO (audiencia),
+// si el negocio configuró una para ese segmento en este canal. "Gradúa" al
+// contacto (opción A elegida por Rodrigo): sale de cualquier OTRA secuencia de
+// remarketing activa y entra a la del segmento — así siempre se le habla acorde
+// a dónde está. No reinicia el drip si ya está activo en la del segmento.
+async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId: string, segmento: string) {
+  try {
+    const { data: seq } = await db.from("sequences").select("id")
+      .eq("channel_id", channelId).eq("segmento", segmento).eq("activo", true)
+      .order("created_at").limit(1).maybeSingle();
+    const seqId = (seq as any)?.id;
+    if (!seqId) return; // el negocio no configuró secuencia para este segmento → sigue en la general
+    // Graduar: salir de las OTRAS secuencias de remarketing activas.
+    await db.from("sequence_subscriptions")
+      .update({ estado: "cancelada", updated_at: new Date().toISOString() })
+      .eq("contact_id", contactId).eq("estado", "activa").neq("sequence_id", seqId);
+    // Entrar a la del segmento — sin reiniciar si ya está en curso ahí.
+    const { data: ex } = await db.from("sequence_subscriptions").select("estado")
+      .eq("contact_id", contactId).eq("sequence_id", seqId).maybeSingle();
+    if ((ex as any)?.estado === "activa") return;
+    await db.from("sequence_subscriptions").upsert({
+      channel_id: channelId, contact_id: contactId, sequence_id: seqId,
+      estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
+    }, { onConflict: "contact_id,sequence_id" });
+  } catch (_) { /* columna segmento pendiente / etc → no rompe la creación del pedido */ }
 }
 
 // Notifica a los admins del canal por Telegram (bot token en Vault).
