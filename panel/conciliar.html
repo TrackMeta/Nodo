@@ -168,11 +168,16 @@ async function conciliar(){
   // los que tienen venta cerrada. La cubeta "pagos sin venta" existe justamente
   // para encontrar a quien pagó y cuya venta NO se registró: filtrando por los
   // que ya tienen venta, esos clientes se quedaban sin señal y no aparecían.
-  const { data:ms }=await supa.from("messages").select("contact_id,ts")
+  const { data:ms }=await supa.from("messages").select("contact_id,ts,content")
     .eq("channel_id",st.channelId).eq("direction","in").eq("type","image")
     .gte("ts",new Date(desde.getTime()-MARGEN_HORAS*3600000).toISOString())
     .lte("ts",hasta.toISOString()).order("ts",{ascending:false}).limit(8000);
   const imgs=(ms||[]).map(m=>({ contact_id:m.contact_id, fecha:new Date(m.ts) }));
+  // Hora EXACTA de cada comprobante por su URL: sirve para anclar el adelanto y
+  // el saldo de un pedido de provincia CADA UNO a su propio pago (no al último a
+  // secas), y que el cruce sea preciso.
+  const imgTimeByUrl=new Map();
+  (ms||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!imgTimeByUrl.has(u)) imgTimeByUrl.set(u,new Date(m.ts)); });
   // Nombres, para poder decir DE QUIÉN podría ser cada pago huérfano.
   const nombres=new Map();
   const cids=[...new Set(imgs.map(m=>m.contact_id).filter(Boolean))];
@@ -180,15 +185,36 @@ async function conciliar(){
     const { data:cs }=await supa.from("contacts").select("id,nombre,wa_id").in("id",cids.slice(i,i+300));
     (cs||[]).forEach(c=>nombres.set(c.id,c.nombre||c.wa_id||""));
   }
-  const ultimaImg=new Map();
-  for(const m of imgs) if(!ultimaImg.has(m.contact_id)) ultimaImg.set(m.contact_id,m.fecha);
+  const ultimaImg=new Map(), primeraImg=new Map();
+  // imgs viene en orden descendente (ts DESC): la 1ª vista por contacto es su
+  // última imagen; sobrescribiendo hasta el final queda la primera (la más vieja).
+  for(const m of imgs){ if(!ultimaImg.has(m.contact_id)) ultimaImg.set(m.contact_id,m.fecha); primeraImg.set(m.contact_id,m.fecha); }
 
-  st.ventas=cerradas.map(o=>({
-    id:o.id, monto:O.total(o), cliente:(o.shipping||{}).cliente || (o.contact||{}).nombre || "",
-    producto:(o.product||{}).nombre||"", metodo:metodoDe(o),   // del OCR, para cruzar con la billetera de origen
-    fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
-    _o:o, _yaConciliado:(o.shipping||{}).conciliacion||null,
-  }));
+  // Un pedido de PROVINCIA pagado por Yape entra al banco como DOS transferencias
+  // (adelanto + saldo). Buscar UNA sola igual al total nunca calzaría, y salía
+  // "sin respaldo" aunque los dos pagos estuvieran en el banco. Se divide en sus
+  // dos pagos esperados y se concilia cada uno por separado, con las MISMAS reglas
+  // conservadoras del motor (monto exacto, elección mutua). Digital y Lima (un
+  // solo cobro, o efectivo) siguen como una sola entrada por el total.
+  const entradasDe=(o)=>{
+    const s=o.shipping||{}, cliente=s.cliente||(o.contact||{}).nombre||"", producto=(o.product||{}).nombre||"";
+    const total=O.total(o), adel=Number(s.adelanto)||0, saldo=+(total-adel).toFixed(2);
+    const conc=s.conciliacion||{}, partes=conc.partes||{};
+    if(O.zonaDe(o)==="provincia" && adel>0.005 && saldo>0.005){
+      // Cada pago anclado a SU comprobante (por la URL); si no se ubica, cae a la
+      // primera/última imagen del contacto, y por último a la fecha del pedido.
+      const fAdel = imgTimeByUrl.get(s.adelanto_comprobante) || primeraImg.get(o.contact_id) || new Date(o.created_at);
+      const fSaldo= imgTimeByUrl.get(s.saldo_comprobante)    || ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at);
+      return [
+        { id:o.id+"::adelanto", monto:adel,  cliente, producto, metodo:s.adelanto_metodo||"", fecha:fAdel,  _o:o, _orderId:o.id, _parte:"adelanto", _parteTxt:"adelanto", _yaConciliado:partes.adelanto||null },
+        { id:o.id+"::saldo",    monto:saldo, cliente, producto, metodo:s.saldo_metodo||"",    fecha:fSaldo, _o:o, _orderId:o.id, _parte:"saldo",    _parteTxt:"saldo",    _yaConciliado:partes.saldo||null },
+      ];
+    }
+    return [{ id:o.id, monto:total, cliente, producto, metodo:metodoDe(o),
+      fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
+      _o:o, _orderId:o.id, _parte:null, _parteTxt:"", _yaConciliado:(conc.partes?null:(s.conciliacion||null)) }];
+  };
+  st.ventas=cerradas.flatMap(entradasDe);
 
   // Los ya conciliados en una corrida anterior no se vuelven a tocar.
   const pendientes=st.ventas.filter(v=>!v._yaConciliado);
@@ -243,8 +269,9 @@ function fila(inner){ const d=document.createElement("div"); d.className="row"; 
 function chips(por){ return `<div class="por">${por.map(p=>{
   const cls=/calza|exacto/.test(p)?"good":/otro titular|después/.test(p)?"warn":"";
   return `<span class="${cls}">${esc(p)}</span>`;}).join("")}</div>`; }
-function cab(v){ return `<div class="top">
-  <span class="nm">${esc(v.cliente||"Sin nombre")}</span>
+function cab(v){ const parte=v._parteTxt?` <span style="font-size:10px;font-weight:800;color:var(--amber);background:rgba(240,169,43,.15);border:1px solid var(--amber);border-radius:10px;padding:1px 7px;margin-left:6px;text-transform:uppercase;letter-spacing:.3px">${esc(v._parteTxt)}</span>`:"";
+  return `<div class="top">
+  <span class="nm">${esc(v.cliente||"Sin nombre")}${parte}</span>
   <span class="muted" style="font-size:12px">${esc(v.producto||"")}</span>
   <span class="amt">${money(v.monto)}</span></div>
   <div class="hint" style="margin-top:2px">comprobante ${fFecha(v.fecha)}</div>`; }
@@ -403,25 +430,43 @@ function actualizarCuenta(){
 async function aplicar(){
   const b=$("aplicar"); b.disabled=true; b.textContent="Guardando…";
   const sello=(extra)=>({ archivo:st.archivo.name, at:new Date().toISOString(), ...extra });
-  const tareas=[];
+  // 1) Sello por ENTRADA (una entrada = un pago; provincia tiene 2). Clave = id
+  //    de la entrada (compuesto para provincia: "<orderId>::adelanto|saldo").
+  const sellos=new Map();
   for(const c of st.res.cuadradas){
     const d=st.decisiones.get(c.venta.id);
     if(d && d.tipo==="descartar") continue;             // el humano dijo que no
-    tareas.push([c.venta.id, sello({ estado:"cuadrado", automatico:true, por:c.por,
-      mov:{ quien:c.mov.quien, monto:c.mov.monto, fecha:c.mov.fecha.toISOString() } })]);
+    sellos.set(c.venta.id, { entry:c.venta, sello:sello({ estado:"cuadrado", automatico:true, por:c.por,
+      mov:{ quien:c.mov.quien, monto:c.mov.monto, fecha:c.mov.fecha.toISOString() } }) });
   }
   for(const [id,d] of st.decisiones){
-    if(d.tipo==="cuadrar") tareas.push([id, sello({ estado:"cuadrado", automatico:false, por:d.por,
-      mov:{ quien:d.mov.quien, monto:d.mov.monto, fecha:d.mov.fecha.toISOString() } })]);
-    else if(d.tipo==="otro_medio") tareas.push([id, sello({ estado:"otro_medio", motivo:d.motivo })]);
+    const entry=(st.ventas||[]).find(v=>v.id===id); if(!entry) continue;
+    if(d.tipo==="cuadrar") sellos.set(id, { entry, sello:sello({ estado:"cuadrado", automatico:false, por:d.por,
+      mov:{ quien:d.mov.quien, monto:d.mov.monto, fecha:d.mov.fecha.toISOString() } }) });
+    else if(d.tipo==="otro_medio") sellos.set(id, { entry, sello:sello({ estado:"otro_medio", motivo:d.motivo }) });
+  }
+  // 2) Agrupar por PEDIDO real. Un pedido de provincia = 2 partes → UN solo write
+  //    (order-update fusiona el shipping al tope, así que dos writes al mismo
+  //    pedido se pisarían). Se preserva la parte que quedó conciliada antes.
+  const porOrden=new Map();
+  for(const { entry, sello:sl } of sellos.values()){
+    if(entry._parte){
+      const prev=porOrden.get(entry._orderId);
+      const previas=(entry._o.shipping&&entry._o.shipping.conciliacion&&entry._o.shipping.conciliacion.partes)||{};
+      const partes = (prev&&prev.partes) ? prev.partes : { ...previas };
+      partes[entry._parte]=sl;
+      porOrden.set(entry._orderId, { partes });
+    } else {
+      porOrden.set(entry._orderId, sl);
+    }
   }
   let ok=0, fail=0;
-  for(const [id,conc] of tareas){
+  for(const [id,conc] of porOrden){
     const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:id, shipping:{ conciliacion:conc } } });
     if(error||data?.error) fail++; else ok++;
   }
   b.textContent="Guardar lo decidido"; b.disabled=false;
-  toast(fail? `${ok} guardadas · ${fail} fallaron` : `${ok} ventas conciliadas ✓`, !!fail);
+  toast(fail? `${ok} guardados · ${fail} fallaron` : `${ok} ${plu(ok,"pedido conciliado","pedidos conciliados")} ✓`, !!fail);
   if(ok) { st.res=null; st.rep=null; render(); }
 }
 
