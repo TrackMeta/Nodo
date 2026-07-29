@@ -561,8 +561,8 @@ function renderContactPanel(){
     </div>
     ${order&&O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
-    ${miaCard}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
+    ${miaCard}
     ${sec("Etapa del embudo", stageBody, {open:true})}
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios enviados", mediaBody, {count:media.length})}
