@@ -222,6 +222,32 @@ export function printRotulo(o, remitente) {
 // Estilos de las tarjetas nuevas de la ficha (pago por validar, Pedido, acciones,
 // campos técnicos). Se inyectan una vez por página con injectExtrasCss().
 export const EXTRAS_CSS = `
+  /* Acento IA (violeta/fucsia) para la Memoria IA — disponible donde se inyecte */
+  :root{--ia:#a855f7;--ia-2:#ec4899;--ia-bg:rgba(168,85,247,.12);--ia-border:rgba(168,85,247,.4)}
+  /* ── Memoria IA (piel de la sección IA) ── */
+  .cpanel .mia{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:14px;padding:13px 13px 11px;margin:14px 0 6px;
+    background:radial-gradient(120% 130% at 0% 0%,rgba(168,85,247,.20),transparent 55%),radial-gradient(120% 130% at 100% 100%,rgba(236,72,153,.14),transparent 55%),var(--surface-2)}
+  .cpanel .mia::after{content:"";position:absolute;right:-38px;top:-38px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,.30),transparent 70%);filter:blur(20px);pointer-events:none}
+  .cpanel .mia-hd{position:relative;display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+  .cpanel .mia-badge{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ia);background:var(--ia-bg);border:1px solid var(--ia-border);border-radius:999px;padding:4px 10px}
+  .cpanel .mia-badge svg{width:13px;height:13px}
+  .cpanel .mia-cap{font-size:10px;color:var(--faint)}
+  .cpanel .mia-lyr{position:relative;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:0 0 5px}
+  .cpanel .mia-lyr .mia-sub{color:var(--faint);text-transform:none;letter-spacing:0;font-weight:400}
+  .cpanel .mia-chips{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin-bottom:13px}
+  .cpanel .mia-chip{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid transparent;line-height:1;font-family:inherit}
+  .cpanel .mia-chip.sell{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.5);color:#e9d5ff;cursor:pointer}
+  .cpanel .mia-chip.ghost{background:rgba(168,85,247,.05);border:1px dashed var(--ia-border);color:var(--muted);cursor:pointer}
+  .cpanel .mia-chip.who{background:rgba(236,72,153,.12);border-color:rgba(236,72,153,.45);color:#f9a8d4}
+  .cpanel .mia-chip.how{background:rgba(168,85,247,.05);border:1px dashed #4a3a63;color:#9a8bb0}
+  .cpanel .mia-chip.sell:hover,.cpanel .mia-chip.ghost:hover{filter:brightness(1.14)}
+  .cpanel .mia-chip svg{width:11px;height:11px;vertical-align:-1px;opacity:.7}
+  .cpanel .mia-none{font-size:11.5px;color:var(--faint)}
+  .cpanel .mia-edit{font-size:12px;height:28px;border-radius:999px;background:var(--surface);border:1px solid var(--ia);color:var(--text);padding:0 11px;outline:none;min-width:90px;font-family:inherit}
+  .cpanel .mia-foot{position:relative;display:flex;align-items:center;justify-content:space-between;margin-top:2px;padding-top:10px;border-top:1px solid var(--border)}
+  .cpanel .mia-hint{font-size:10.5px;color:var(--faint)}
+  .cpanel .mia-mini{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;margin:10px 0 2px}
+  .cpanel .mia-mini:first-child{margin-top:0}
   /* Secciones desplegables (acordeón) */
   .cpanel .cx-sec{border-top:1px solid var(--border)}
   .cpanel .cx-sec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:13px 2px;

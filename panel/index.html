@@ -16,6 +16,8 @@
     --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
     --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2311;
     --red:#e2564a; --red-bg:#2c1615; --radius:14px;
+    /* Acento IA (violeta/fucsia robot) — mismo que la sección IA (ia.html) */
+    --ia:#a855f7; --ia-2:#ec4899; --ia-bg:rgba(168,85,247,.12); --ia-border:rgba(168,85,247,.4);
     --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box}
@@ -962,11 +964,9 @@ function renderContactPanel(){
   const nodos = events.filter(e=>e.tipo==="nodo");
   const errs  = events.filter(e=>e.tipo==="error");
   const botTxt = contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>';
-  const datosRows = isTest ? "" : `
-    <div class="kv"><span class="k">Teléfono</span><span class="v">+${esc(contact.wa_id)}</span></div>
+  const sysRows = isTest ? "" : `
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
-    <div class="kv"><span class="k">Estado del bot</span><span class="v">${botTxt}</span></div>
     <div class="kv"><span class="k">Origen</span><span class="v">${esc(origenLabel(contact.source))}</span></div>
     ${contact.ad_id?`<div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id)}</span></div>`:""}
     ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?emoji+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}
@@ -980,18 +980,43 @@ function renderContactPanel(){
       : ""}</div>${
       (!assigned.size && !avail.length) ? '<div class="cmuted" style="margin-top:6px">Crea etiquetas en la sección Etiquetas para clasificar a tus clientes.</div>'
       : (!assigned.size ? '<div class="cmuted" style="margin-top:6px">Sin etiquetas aún — añade una para segmentar y filtrar.</div>' : "")}`;
-  const fieldsBody = `<div id="pFields">${
-      userFields.length
-        ? userFields.map(f=>`<div class="cfield"><label>${esc(f.nombre)} <span style="color:var(--faint)">{{${esc(f.key)}}}</span></label><input class="cinput" data-field="${f.id}" value="${esc(vals[f.id]||"")}"/></div>`).join("")
-        : '<span class="cmuted">Este contacto no tiene campos con datos aún</span>'
-    }${techFields.length?`<details class="cf-tech"><summary>Campos técnicos del motor (${techFields.length})</summary>${
-      techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("")
-    }</details>`:""}</div>`;
+  // ── Memoria IA ──────────────────────────────────────────────────────
+  // "Para vender" = los campos capturados del cliente (los que ya tienes).
+  // "Quién es" / "Cómo tratarla" salen del motor y aún no están cableados:
+  // se leen de la (futura) columna contacts.memoria_ia y solo se pintan cuando
+  // hay datos, para no ensuciar el panel con secciones vacías en producción.
+  const spark = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 13.8 9.2 21 11 13.8 12.8 12 20 10.2 12.8 3 11 10.2 9.2Z"/></svg>`;
+  const qico  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
+  const mia = (contact.memoria_ia && typeof contact.memoria_ia==="object") ? contact.memoria_ia : {};
+  const miaWho = Array.isArray(mia.quien_es)   ? mia.quien_es.filter(Boolean)   : [];
+  const miaHow = Array.isArray(mia.como_tratar) ? mia.como_tratar.filter(Boolean) : [];
+  const sellChips = userFields.map(f=>{
+    const v = String(vals[f.id]||"").trim();
+    return v
+      ? `<button type="button" class="mia-chip sell" data-field="${f.id}" data-name="${esc(f.nombre)}" title="${esc(f.nombre)} — toca para editar">${esc(v)}</button>`
+      : `<button type="button" class="mia-chip ghost" data-field="${f.id}" data-name="${esc(f.nombre)}" title="Sin dato — toca para llenar">${esc(f.nombre)}</button>`;
+  }).join("");
+  const miaCard = isTest ? "" : `<div class="mia">
+      <div class="mia-hd"><span class="mia-badge">${spark} Memoria IA</span><span class="mia-cap">la IA la mantiene sola</span></div>
+      <div class="mia-lyr">Para vender</div>
+      <div class="mia-chips" id="pFields">${sellChips || '<span class="mia-none">Aún sin datos — la IA los irá capturando al conversar</span>'}</div>
+      ${miaWho.length?`<div class="mia-lyr">Quién es <span class="mia-sub">· detectado</span></div><div class="mia-chips">${miaWho.map(t=>`<span class="mia-chip who">${esc(t)}</span>`).join("")}</div>`:""}
+      ${miaHow.length?`<div class="mia-lyr">Cómo tratar <span class="mia-sub">· deducido</span></div><div class="mia-chips">${miaHow.map(t=>`<span class="mia-chip how">${esc(t)} ${qico}</span>`).join("")}</div>`:""}
+      <div class="mia-foot"><span class="mia-hint">Toca un chip para editar · vacíalo para borrar</span></div>
+    </div>`;
+  // Avanzado: cuerpos plegados (automatizaciones + diagnóstico del motor)
+  const autoRows = [
+    ...runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc((r.estado||"").replace(/^./,c=>c.toUpperCase()))}</span></div>`),
+    ...subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`),
+  ];
+  const autoBody = autoRows.length ? autoRows.join("") : '<div class="cempty">Ninguna automatización activa</div>';
+  const techBody = techFields.length ? techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("") : '<div class="cempty">Sin candados internos</div>';
   const mediaBody = media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>` : '<div class="cempty">Sin archivos enviados</div>';
-  const runsBody = runsA.length ? runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc((r.estado||"").replace(/^./,c=>c.toUpperCase()))}</span></div>`).join("") : '<div class="cempty">Ningún flujo activo</div>';
-  const subsBody = subsA.length ? subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join("") : '<div class="cempty">Sin secuencias activas</div>';
   const nodosBody = nodos.length ? nodos.slice(0,15).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">El motor registrará aquí los nodos ejecutados</div>';
   const errsBody = errs.length ? errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">Sin errores registrados</div>';
+  // diagBody/advBody van DESPUÉS de nodosBody/errsBody (son const: evita el temporal dead zone)
+  const diagBody = `<div class="mia-mini">Nodos ejecutados</div>${nodosBody}<div class="mia-mini">Errores</div>${errsBody}<div class="mia-mini">Campos técnicos</div>${techBody}`;
+  const advBody = sec("Automatizaciones activas", autoBody, {count:autoRows.length}) + sec("Datos de sistema", sysRows, {}) + sec("Diagnóstico del motor", diagBody, {});
   const cet = copilotoEtapa(order); // ¿este contacto tiene algo que decidir?
   const compFallback = (media.find(m=>m.direction==="in" && m.type==="image")||{}).content?.media_url || null;
   p.innerHTML = `
@@ -1002,19 +1027,16 @@ function renderContactPanel(){
       </div>
       <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
+      ${isTest?"":`<div class="cph" style="margin-top:3px">${botTxt}</div>`}
     </div>
     ${!isTest && order && O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar los datos del pedido">${icon("edit")} Editar pedido</button><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
-    ${!isTest?sec("Datos", datosRows, {open:true}):""}
+    ${miaCard}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${sec("Etapa del embudo", stageBody, {open:true})}
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
-    ${sec("Campos personalizados", fieldsBody, {count:userFields.length})}
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
-    ${sec("Flujos en ejecución", runsBody, {count:runsA.length})}
-    ${sec("Secuencias suscritas", subsBody, {count:subsA.length})}
-    ${sec("Nodos ejecutados", nodosBody, {count:nodos.length})}
-    ${sec("Registro de errores", errsBody, {count:errs.length})}`;
+    ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
   p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada ✓"); renderContactPanel(); loadConversations(); });
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{
     await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
@@ -1032,12 +1054,28 @@ function renderContactPanel(){
     });
   }
   if(!window.__tagPopWired){ window.__tagPopWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".tagadd-wrap")) document.querySelectorAll(".tagpop").forEach(x=>{ x.hidden=true; }); }); }
-  p.querySelectorAll("#pFields input[data-field]").forEach(inp=> inp.onchange=async()=>{
-    const { error }=await supa.from("contact_field_values").upsert(
-      { contact_id:contact.id, field_id:inp.dataset.field, value:inp.value, updated_at:new Date().toISOString() },
-      { onConflict:"contact_id,field_id" });
-    if(error){ toast("No se pudo guardar el campo: "+error.message,true); return; }
-    vals[inp.dataset.field]=inp.value; toast("Campo guardado ✓");
+  // Memoria IA · "Para vender": tocar un chip lo vuelve input inline. Enter/blur
+  // guarda en contact_field_values; Escape cancela. Vaciarlo = el chip queda fantasma (borrado).
+  p.querySelectorAll(".mia-chip.sell, .mia-chip.ghost").forEach(chip=> chip.onclick=()=>{
+    const fid=chip.dataset.field, name=chip.dataset.name||"";
+    const cur=chip.classList.contains("ghost") ? "" : chip.textContent.trim();
+    const inp=document.createElement("input");
+    inp.className="mia-edit"; inp.value=cur; inp.placeholder=name;
+    chip.replaceWith(inp); inp.focus(); inp.select();
+    let done=false;
+    const save=async()=>{
+      if(done) return; done=true;
+      const val=inp.value.trim();
+      if(val===cur){ renderContactPanel(); return; }
+      const { error }=await supa.from("contact_field_values").upsert(
+        { contact_id:contact.id, field_id:fid, value:val, updated_at:new Date().toISOString() },
+        { onConflict:"contact_id,field_id" });
+      if(error){ toast("No se pudo guardar: "+error.message,true); }
+      else { vals[fid]=val; logEvent(contact.id,"campo",val?("Dato actualizado: "+name):("Dato borrado: "+name)); toast(val?"Guardado ✓":"Dato borrado ✓"); }
+      renderContactPanel();
+    };
+    inp.addEventListener("blur", save);
+    inp.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } else if(e.key==="Escape"){ done=true; renderContactPanel(); } };
   });
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
     const ok=await openEditarPedido({...order, contact}, { supa });

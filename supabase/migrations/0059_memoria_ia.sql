@@ -1,0 +1,24 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Nodo · 0059 — Memoria IA por contacto (contacts.memoria_ia)
+--
+-- Perfil vivo que el bot construye de cada cliente, más allá de los campos
+-- capturados ("Para vender", que ya viven en contact_field_values). Guarda
+-- las dos capas nuevas que la IA DETECTA/DEDUCE del texto libre, sin
+-- interrogar:
+--
+--   {
+--     "quien_es":     ["Compra para su mamá", "Es enfermera"],  -- detectado
+--     "como_tratar":  ["Decide rápido", "Trato cercano"],       -- deducido
+--     "updated_at":   "2026-07-29T..."
+--   }
+--
+-- Es un RESUMEN CURADO (corto, se actualiza — no un diario que engorda), para
+-- que inyectarlo en cada respuesta cueste fracciones de centavo. El panel
+-- (index.html / probar.html · renderContactPanel) lo lee y pinta las capas
+-- "Quién es" / "Cómo tratar" solo cuando hay datos.
+--
+-- Aislamiento: contacts ya tiene RLS por cuenta (ver 0039), así que esta
+-- columna hereda el mismo aislamiento — un negocio nunca ve la memoria de otro.
+-- Aditiva y con default '{}': lecturas y motor existentes no se ven afectados.
+-- ═══════════════════════════════════════════════════════════════════
+alter table contacts add column if not exists memoria_ia jsonb not null default '{}'::jsonb;

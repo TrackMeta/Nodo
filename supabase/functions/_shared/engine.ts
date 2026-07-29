@@ -14,6 +14,7 @@ import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
 import { sedeReconocida } from "./shalom-agencias.ts";
+import { actualizarMemoriaIA } from "./memoria.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -4412,6 +4413,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       run.vars[cfg.guardar_en] = result;
       await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
       await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo capturado (IA)", `${cfg.guardar_en}: ${result ?? ""}`.slice(0, 140));
+    }
+    // Memoria IA (Fase 2): tras una respuesta conversacional, actualiza el perfil
+    // vivo del cliente (capas "quién es" / "cómo tratar"). Throttled a 1 análisis
+    // cada 15 min por contacto y 100% defensivo — nunca bloquea ni tumba la venta.
+    if (op === "generar_texto") {
+      await actualizarMemoriaIA(db, {
+        channelId: run.channel_id, contactId: run.contact_id,
+        provider, apiKey: ai.api_key, thread: await historial(db, run),
+      }).catch(() => {});
     }
     // El OCR YA LEE el banco, la operación y el monto — pero se perdían: el
     // nodo solo guardaba el texto crudo ("PAGO_OK"). Si el comprobante trae un
