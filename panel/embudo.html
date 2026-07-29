@@ -99,6 +99,13 @@
   .pc-foot{font-size:11px;color:var(--faint);margin-top:8px}
   .hint{font-size:12px;color:var(--faint);margin-top:6px;display:flex;align-items:center;gap:7px;line-height:1.5}
   .empty{color:var(--faint);font-size:13px;padding:22px 0;text-align:center;line-height:1.6}
+  /* Embudo de entrega (provincia): KPIs de recojo */
+  .dkpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .dkpi{flex:1;min-width:150px;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 15px}
+  .dkpi .dv{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1}
+  .dkpi .dl{font-size:12px;color:var(--muted);margin-top:6px;font-weight:700}
+  .dkpi .dd{font-size:11px;color:var(--faint);margin-top:3px;line-height:1.4}
+  .dkpi.good .dv{color:var(--green)} .dkpi.warn .dv{color:var(--amber)} .dkpi.bad .dv{color:var(--red)}
 </style>
 </head>
 <body>
@@ -140,6 +147,14 @@
       <div id="neck"></div>
       <div class="fun" id="fun"></div>
       <div id="plata"></div>
+    </div>
+
+    <div class="panel" id="entregaPanel" style="display:none">
+      <h3>Embudo de entrega · Provincia</h3>
+      <p class="ps">Lo que pasa <b>después</b> de la venta: de los que ya pagaron el adelanto, cuántos llegan a <b>recoger</b> en la agencia. Aquí es donde provincia se sangra (el no-recojo). Es la foto de los <b>pedidos</b>, no de las personas.</p>
+      <div class="dkpis" id="entregaKpis"></div>
+      <div class="fun" id="entregaFun"></div>
+      <div id="entregaFuga"></div>
     </div>
 
     <div class="panel">
@@ -263,6 +278,7 @@ function render(){
   renderNeck(F);
   renderFunnel(F);
   renderPlata(cs);
+  renderEntrega(cs);
   renderDist(F);
   renderProductos();
   const rl=rangeLabel(st.range);
@@ -362,6 +378,78 @@ function renderPlata(cs){
   confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
   if(porCobrar<=0){ el.innerHTML=""; return; }
   el.innerHTML=`<div class="plata"><span style="font-size:17px">💰</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
+}
+
+// ── Embudo de ENTREGA (solo provincia) ────────────────────────────────
+// Distinto del embudo de venta: mide el viaje POST-venta hacia el recojo en la
+// agencia, donde provincia se sangra (no-recojo). Cuenta PEDIDOS por estado (no
+// personas), de los contactos ya filtrados por fecha/producto/zona=provincia.
+function renderEntrega(cs){
+  const panel=$("entregaPanel");
+  if(!(st.tipo==="fisico" && st.zona==="provincia")){ panel.style.display="none"; return; }
+  panel.style.display="";
+  const ids=new Set(cs.map(c=>c.id));
+  const cnt={}; let fleteCaido=0;
+  Object.entries(st.ordersBy).forEach(([cid,ords])=>{ if(!ids.has(cid)) return;
+    ords.forEach(o=>{ if(!O.esFisico(o) || O.zonaDe(o)!=="provincia") return;
+      const e=o.estado; cnt[e]=(cnt[e]||0)+1;
+      if(e==="no_recogido") fleteCaido+=Number((o.shipping||{}).flete||0); }); });
+  const g=(k)=>cnt[k]||0;
+  // Niveles acumulados (cada uno incluye a los que ya pasaron de largo).
+  const conAdelanto = g("adelanto_validado")+g("por_despachar")+g("despachado")+g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");
+  const despachados = g("despachado")+g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");
+  const enAgencia   = g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");
+  const pagaronSaldo= g("saldo_pagado")+g("recogido");
+  const recogieron  = g("recogido");
+  const noRecogido  = g("no_recogido");
+  const enRiesgo    = g("en_agencia"); // llegó a la agencia, aún no paga/recoge
+
+  const kEl=$("entregaKpis"), fEl=$("entregaFun"), fugaEl=$("entregaFuga");
+  if(conAdelanto===0){
+    kEl.innerHTML=""; fugaEl.innerHTML="";
+    fEl.innerHTML=`<div class="empty">Aún no hay pedidos de provincia con adelanto pagado en este período.<br>Cuando despaches a la agencia, verás aquí cuántos llegan a recoger.</div>`;
+    return;
+  }
+  // Tasa de recojo = de los DESENLACES (recogió vs no recogió), cuántos recogieron.
+  const resueltos=recogieron+noRecogido;
+  const tasa=pct(recogieron,resueltos);
+  const enProceso=conAdelanto-resueltos; // aún en camino / en agencia / con clave sin recoger
+  const tasaCls = tasa==null?"" : (tasa>=85?"good":tasa>=65?"warn":"bad");
+  kEl.innerHTML=`
+    <div class="dkpi ${tasaCls}"><div class="dv">${tasa==null?"—":tasa+"%"}</div><div class="dl">Tasa de recojo</div>
+      <div class="dd">${tasa==null?"Aún sin desenlaces (nadie recogió ni se cayó todavía)":`${nf.format(recogieron)} recogieron de ${nf.format(resueltos)} ya resueltos`}</div></div>
+    <div class="dkpi ${enRiesgo>0?"warn":""}"><div class="dv">${nf.format(enRiesgo)}</div><div class="dl">En agencia ahora</div>
+      <div class="dd">${enRiesgo>0?"Llegaron y esperan que paguen el saldo y recojan — empújalos":"Nada esperando en agencia"}</div></div>
+    <div class="dkpi ${noRecogido>0?"bad":""}"><div class="dv">${nf.format(noRecogido)}</div><div class="dl">No recogieron</div>
+      <div class="dd">${noRecogido>0?`Llegaron pero nunca recogieron${fleteCaido>0?` · flete perdido ${money(fleteCaido)}`:""}`:"Nadie se cayó — excelente"}</div></div>`;
+
+  const niveles=[
+    { lbl:"Con adelanto", n:conAdelanto,  c:"#8b5cf6" },
+    { lbl:"Despachados",  n:despachados,  c:"#3b82f6" },
+    { lbl:"En agencia",   n:enAgencia,    c:"#0ea5e9" },
+    { lbl:"Pagaron saldo",n:pagaronSaldo, c:"#f59e0b" },
+    { lbl:"Recogieron",   n:recogieron,   c:"#16a34a" },
+  ];
+  const pasos=[pct(despachados,conAdelanto), pct(enAgencia,despachados), pct(pagaronSaldo,enAgencia), pct(recogieron,pagaronSaldo)];
+  const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
+  let html="";
+  niveles.forEach((lv,i)=>{
+    const w=Math.max(12, Math.round(lv.n/conAdelanto*100));
+    const pc=pct(lv.n,conAdelanto);
+    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl">${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
+    if(i<niveles.length-1){ const p=pasos[i];
+      html+= p==null ? `<div class="fstep">${arrow}—</div>`
+        : `<div class="fstep">${arrow}<span class="keep">pasa el ${p}%</span> · <span class="drop">se cae el ${100-p}%</span></div>`;
+    }
+  });
+  fEl.innerHTML=html;
+
+  // Aviso de la fuga principal (el no-recojo, si lo hay).
+  if(noRecogido>0){
+    fugaEl.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠"}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
+  } else if(enRiesgo>0){
+    fugaEl.innerHTML=`<div class="neck ok">${icon("check")}<div><b>${nf.format(enRiesgo)}</b> esperando en la agencia y ninguno caído aún. Avísales que paguen el saldo para cerrar el recojo.</div></div>`;
+  } else fugaEl.innerHTML="";
 }
 
 function renderDist(F){
