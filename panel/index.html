@@ -997,8 +997,10 @@ function renderContactPanel(){
   // "Quién es" / "Cómo tratarla" salen del motor y aún no están cableados:
   // se leen de la (futura) columna contacts.memoria_ia y solo se pintan cuando
   // hay datos, para no ensuciar el panel con secciones vacías en producción.
-  const spark = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 13.8 9.2 21 11 13.8 12.8 12 20 10.2 12.8 3 11 10.2 9.2Z"/></svg>`;
-  const qico  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
+  // width/height inline: red de seguridad para que el ícono NO salga gigante aunque
+  // el CSS de .mia no haya cargado todavía (p.ej. contact-extras.js cacheado viejo).
+  const spark = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 2 13.8 9.2 21 11 13.8 12.8 12 20 10.2 12.8 3 11 10.2 9.2Z"/></svg>`;
+  const qico  = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
   const mia = (contact.memoria_ia && typeof contact.memoria_ia==="object") ? contact.memoria_ia : {};
   const miaWho = Array.isArray(mia.quien_es)   ? mia.quien_es.filter(Boolean)   : [];
   const miaHow = Array.isArray(mia.como_tratar) ? mia.como_tratar.filter(Boolean) : [];
