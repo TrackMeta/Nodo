@@ -923,7 +923,7 @@ async function loadContactPanel(c){
       <div class="cph">${isT ? "Contacto de prueba (Web Chat)" : "+"+esc(c.wa_id||"")}</div>
     </div>
     <div class="cx-skel"><div class="cx-skrow sm"></div><div class="cx-skrow"></div><div class="cx-skrow sm"></div><div class="cx-skrow"></div></div>`;
-  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at${prod?",product_id,product:products(nombre,emoji)":""}`;
+  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at,memoria_ia${prod?",product_id,product:products(nombre,emoji)":""}`;
   const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes, orderRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),

@@ -482,7 +482,7 @@ function refreshPanel(){ if(st.contactId) loadContactPanel({ id:st.contactId, wa
 async function loadContactPanel(c){
   const p=$("cpanel"); p.classList.remove("hidden");
   const [ctRes,tagsRes,ctagsRes,fieldsRes,valsRes,msgRes,runsRes,subsRes,evRes,orderRes]=await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at,primera_interaccion,ad_id,ctwa_clid,ultimo_mensaje_cliente_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji)").eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle() : r),
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at,primera_interaccion,ad_id,ctwa_clid,ultimo_mensaje_cliente_at,ultimo_mensaje_at,product_id,memoria_ia,product:products(nombre,emoji)").eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,created_at").eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id",c.id),
     supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id",st.channelId).order("nombre"),
