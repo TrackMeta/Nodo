@@ -14,7 +14,7 @@ import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
 import { sedeReconocida } from "./shalom-agencias.ts";
-import { actualizarMemoriaIA } from "./memoria.ts";
+import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto } from "./memoria.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -4401,6 +4401,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       blocks.push(imageBlock(src), { type: "text", text: prompt });
       content = blocks;
+    }
+
+    // Memoria IA · lado LECTURA (Fase 2c): personaliza la respuesta con el perfil
+    // vivo del cliente ("quién es" / "cómo tratar"). Defensivo — si no hay memoria
+    // (o falta la columna), responde igual que siempre.
+    if (op === "generar_texto") {
+      try {
+        const ctxMem = memoriaComoContexto(await leerMemoria(db, run.contact_id));
+        if (ctxMem) system = system ? (system + "\n\n" + ctxMem) : ctxMem;
+      } catch (_) { /* sin memoria → responde normal */ }
     }
 
     const result = await runAI({
