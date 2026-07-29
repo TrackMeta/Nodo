@@ -275,6 +275,11 @@ export const EXTRAS_CSS = `
   .cpanel .mia-hint{font-size:10.5px;color:var(--faint)}
   .cpanel .mia-mini{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;margin:10px 0 2px}
   .cpanel .mia-mini:first-child{margin-top:0}
+  /* Tema claro: los chips llevan texto oscuro (el claro se lee mal sobre el tinte pálido) */
+  html[data-theme=light] .cpanel .mia-chip.sell{color:#6b21a8}
+  html[data-theme=light] .cpanel .mia-chip.who{color:#9d174d}
+  html[data-theme=light] .cpanel .mia-chip.how{color:#6d28d9}
+  html[data-theme=light] .cpanel .mia-edit{color:var(--text)}
   /* Secciones desplegables (acordeón) */
   .cpanel .cx-sec{border-top:1px solid var(--border)}
   .cpanel .cx-sec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:13px 2px;
