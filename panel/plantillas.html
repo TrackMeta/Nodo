@@ -22,11 +22,29 @@
   .tcard .c-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
   .tcard .c-tt{font-size:16px;font-weight:700;letter-spacing:-.2px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .chip{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
-  .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)}
+  .chip.aprobada{background:var(--green-bg);color:var(--green)} .chip.pendiente{background:var(--amber-bg);color:var(--amber)} .chip.rechazada{background:var(--red-bg);color:var(--red)} .chip.borrador{background:var(--surface-2);color:var(--muted)}
   .reco-hd{margin:8px 2px 12px} .reco-hd h3{margin:0;font-size:15px;font-weight:700} .reco-hd p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
   .tcard.reco{border:1px solid rgba(168,85,247,.35)}
   .chip.reco-badge{background:linear-gradient(135deg,rgba(168,85,247,.16),rgba(236,72,153,.13));color:#a855f7}
   .reco-use{width:100%;margin-top:12px;justify-content:center}
+  /* Modal de revisión de plantilla recomendada (ver el mensaje completo antes de Meta) */
+  .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+  .rv{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto}
+  .rv-hd{display:flex;align-items:flex-start;gap:10px;padding:18px 20px 14px;border-bottom:1px solid var(--border)}
+  .rv-hd .rv-t{flex:1;min-width:0}
+  .rv-hd h3{margin:0 0 4px;font-size:17px}
+  .rv-hd .rv-sub{font-size:12px;color:var(--muted)}
+  .rv-x{background:transparent;border:none;color:var(--muted);font-size:19px;cursor:pointer;line-height:1;padding:2px 6px}
+  .rv-body{padding:16px 20px}
+  .rv-lbl{font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--faint);margin:0 0 8px}
+  .rv-slots{display:flex;flex-direction:column;gap:7px}
+  .rv-slot{display:flex;align-items:center;gap:9px;font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:7px 10px}
+  .rv-slot .n{font-weight:800;color:var(--brand);background:var(--brand-bg);border-radius:6px;padding:1px 7px;font-size:11px;white-space:nowrap}
+  .rv-slot .vv{font-weight:700;color:#027e6f;white-space:nowrap}
+  .rv-slot .eg{color:var(--muted);margin-left:auto;font-size:11.5px;text-align:right}
+  .rv-note{margin-top:14px;font-size:12px;color:var(--muted);background:var(--surface-2);border-radius:10px;padding:10px 12px;line-height:1.45}
+  .rv-foot{display:flex;flex-wrap:wrap;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}
+  .rv-foot .btn{flex:1;min-width:120px;justify-content:center}
   .cat{font-size:10px;padding:2px 9px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
   /* Fondo de chat de WhatsApp (tema claro clásico: beige + doodle) + burbuja saliente */
   .wa-chat{background-color:#e5ddd5;
@@ -131,7 +149,7 @@ const st={ channelId:null, tpl:null, list:[], folder:"__all", localFolders:new S
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const CATS=["MARKETING","UTILITY","AUTHENTICATION"];
 const CATLABEL={MARKETING:"Marketing",UTILITY:"Utilidad",AUTHENTICATION:"Autenticación"};
-const ESTADOS=[["aprobada","Aprobada"],["pendiente","Pendiente"],["rechazada","Rechazada"]];
+const ESTADOS=[["aprobada","Aprobada"],["pendiente","Pendiente"],["rechazada","Rechazada"],["borrador","Borrador"]];
 // Doble check azul de WhatsApp (mensaje leído) para la vista previa.
 const WACHECK='<svg viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l3 3 6-7"/><path d="M6 9l3-3"/><path d="M9 6l4-5"/></svg>';
 function waHighlight(body){ return esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,'<span class="v">{{$1}}</span>'); }
@@ -185,23 +203,64 @@ function renderReco(){
   const pend=CATALOGO.filter(c=> !st.list.some(t=>t.name===c.name));
   if(!pend.length){ box.innerHTML=""; return; }
   box.innerHTML=`
-    <div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Listas para tu negocio — un clic las agrega y las envía a Meta a aprobar. Ideales para arrancar rápido.</p></div>
+    <div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Listas para tu negocio. Toca <b>Revisar</b> para ver el mensaje completo antes de enviarlo a aprobar a Meta. Ideales para arrancar rápido.</p></div>
     <div class="nodo-cards">${pend.map((c,i)=>`
-      <div class="nodo-card tcard reco">
+      <div class="nodo-card tcard reco" data-i="${i}">
         <div class="c-top"><span class="c-tt">${esc(c.titulo)}</span><span class="chip reco-badge">Recomendada</span></div>
         <div class="wa-chat tprev"><div class="wa-out">${waHighlight(c.body)}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
         <div class="c-meta"><span class="cat">${CATLABEL[c.categoria]||esc(c.categoria)}</span><span>${esc(c.language)}</span></div>
-        <button class="btn primary reco-use" data-i="${i}" type="button">Usar y enviar a Meta</button>
+        <button class="btn primary reco-use" data-i="${i}" type="button">Revisar</button>
       </div>`).join("")}</div>`;
-  box.querySelectorAll(".reco-use").forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); usarReco(pend[+b.dataset.i], b); });
+  // Tanto el botón como la tarjeta abren la revisión (ver el mensaje completo antes de Meta).
+  box.querySelectorAll(".tcard.reco").forEach(card=> card.onclick=()=> abrirRecoReview(pend[+card.dataset.i]));
 }
-async function usarReco(c, btn){
-  if(st.list.some(t=>t.name===c.name)){ toast("Ya la tienes en tus plantillas"); return; }
-  if(btn){ btn.disabled=true; btn.textContent="Agregando…"; }
+// Reemplaza {{N}} por su valor de ejemplo (así se ve el mensaje REAL que le llega al cliente).
+function fillBody(body, ejemplos){
+  return esc(body||"(cuerpo vacío)").replace(/\{\{(\d+)\}\}/g,(m,n)=>{ const v=(ejemplos||[])[+n-1];
+    return v?`<span class="v">${esc(v)}</span>`:`<span class="v pend">{{${n}}}</span>`; });
+}
+// Modal de revisión: muestra el mensaje COMPLETO (sin recorte) + los huecos y sus
+// ejemplos, y recién ahí decides enviarlo a Meta o guardarlo como borrador para editarlo.
+function abrirRecoReview(c){
+  const slots=(c.params||[]).map((p,i)=>`<div class="rv-slot"><span class="n">{{${i+1}}}</span><span class="vv">${esc(p)}</span><span class="eg">ej: ${esc((c.ejemplos||[])[i]||"—")}</span></div>`).join("");
+  const ov=document.createElement("div"); ov.className="ov";
+  ov.innerHTML=`<div class="rv">
+    <div class="rv-hd">
+      <div class="rv-t"><h3>${esc(c.titulo)}</h3><div class="rv-sub">${CATLABEL[c.categoria]||esc(c.categoria)} · ${esc(c.language)} · <b>${esc(c.name)}</b></div></div>
+      <span class="chip reco-badge">Recomendada</span>
+      <button class="rv-x" title="Cerrar">✕</button>
+    </div>
+    <div class="rv-body">
+      <div class="rv-lbl">Así le llega al cliente</div>
+      <div class="wa-chat"><div class="wa-out">${fillBody(c.body, c.ejemplos)}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
+      ${slots?`<div class="rv-lbl" style="margin:16px 0 8px">Huecos que Nodo llena solo con el dato de cada cliente</div><div class="rv-slots">${slots}</div>`:""}
+      <div class="rv-note">Al enviarla, Meta la revisa como <b>${CATLABEL[c.categoria]||esc(c.categoria)}</b> (suele tardar 24-48h). <b>Ojo:</b> el nombre y el idioma no se pueden cambiar una vez enviada. Si quieres ajustar el texto antes, usa <b>“Agregar sin enviar”</b> y edítala en tus plantillas.</div>
+    </div>
+    <div class="rv-foot">
+      <button class="btn" id="rvCancel" type="button">Cancelar</button>
+      <button class="btn" id="rvAdd" type="button">Agregar sin enviar</button>
+      <button class="btn primary" id="rvSend" type="button">Usar y enviar a Meta</button>
+    </div>
+  </div>`;
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  ov.querySelector(".rv-x").onclick=()=>ov.remove();
+  ov.querySelector("#rvCancel").onclick=()=>ov.remove();
+  ov.querySelector("#rvAdd").onclick=async(e)=>{ const b=e.currentTarget; b.disabled=true; b.textContent="Agregando…";
+    const ok=await agregarReco(c,{enviar:false}); if(ok) ov.remove(); else { b.disabled=false; b.textContent="Agregar sin enviar"; } };
+  ov.querySelector("#rvSend").onclick=async(e)=>{ const b=e.currentTarget; b.disabled=true; b.textContent="Enviando…";
+    const ok=await agregarReco(c,{enviar:true}); if(ok) ov.remove(); else { b.disabled=false; b.textContent="Usar y enviar a Meta"; } };
+}
+// Agrega una recomendada a tus plantillas. enviar=true → la manda a Meta (estado
+// pendiente); enviar=false → la guarda como borrador para revisar/editar y enviar luego.
+async function agregarReco(c, { enviar }){
+  if(st.list.some(t=>t.name===c.name)){ toast("Ya la tienes en tus plantillas"); return false; }
   const { error }=await supa.from("wa_templates").insert({
     channel_id:st.channelId, name:c.name, language:c.language, categoria:c.categoria,
-    body_preview:c.body, params:c.params, ejemplos:c.ejemplos, folder:c.folder, estado_meta:"pendiente", activa:true });
-  if(error){ toast(error.message,true); if(btn){ btn.disabled=false; btn.textContent="Usar y enviar a Meta"; } return; }
+    body_preview:c.body, params:c.params, ejemplos:c.ejemplos, folder:c.folder,
+    estado_meta: enviar?"pendiente":"borrador", activa:true });
+  if(error){ toast(error.message,true); return false; }
+  if(!enviar){ await loadList(); toast(`"${c.titulo}" agregada como borrador — revísala y envíala cuando quieras`); return true; }
   let r=null; try{ r=await callFn("channel-config",{ action:"template_submit", channel_id:st.channelId,
     template:{ name:c.name, language:c.language, category:c.categoria, body:c.body, examples:c.ejemplos } }); }
   catch(e){ r={ error:e.message }; }
@@ -209,6 +268,7 @@ async function usarReco(c, btn){
   if(r?.enviado) toast(`"${c.titulo}" enviada a Meta ✓ — en revisión (24-48h)`);
   else if(r?.falta) toast(`"${c.titulo}" agregada. Conecta WhatsApp para enviarla a aprobar.`, true);
   else toast(r?.error ? `Agregada, pero Meta la rechazó: ${r.error}` : `"${c.titulo}" agregada`, r?.error?true:false);
+  return true;
 }
 function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
 function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(t=>!t.folder).length; return st.list.filter(t=>t.folder===v).length; }
