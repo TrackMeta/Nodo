@@ -362,8 +362,8 @@ export const EXTRAS_CSS = `
   .cpanel .cx-sec:not([open])>.cx-sec-body{display:none}
   .cpanel .cf-tech:not([open])>*:not(summary){display:none}
   /* Pagos por validar, dentro de la ficha */
-  .cpanel .cx-copiloto{border:1.5px solid var(--brand);border-radius:14px;padding:12px;margin:12px 0 4px;background:var(--surface-2);display:flex;flex-direction:column;gap:9px}
-  .cpanel .cx-cop2-hd{display:flex;align-items:center;gap:8px;color:var(--brand)}
+  .cpanel .cx-copiloto{border:1px solid var(--border-strong,#2f3a48);border-radius:14px;padding:13px;margin:12px 0 4px;background:var(--surface-2);display:flex;flex-direction:column;gap:10px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
+  .cpanel .cx-cop2-hd{display:flex;align-items:center;gap:8px;color:var(--muted)}
   .cpanel .cx-cop2-pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;border-radius:999px}
   .cpanel .cx-cop2-pill.dig{background:rgba(139,92,246,.16);color:#8b5cf6}
   .cpanel .cx-cop2-pill.ext{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
@@ -381,13 +381,17 @@ export const EXTRAS_CSS = `
   .cpanel .cx-cop2-ia.ok{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
   .cpanel .cx-cop2-ia.duda,.cpanel .cx-cop2-warn{background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber)}
   .cpanel .cx-cop2-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
-  .cpanel .cx-cop2-btn{flex:1;min-width:120px;height:38px;border-radius:10px;border:none;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
-  .cpanel .cx-cop2-btn.main{background:var(--green);color:#04140c}
-  .cpanel .cx-cop2-btn.main.blue{background:var(--brand);color:#fff}
-  .cpanel .cx-cop2-btn.main.amber{background:var(--amber);color:#231a05}
-  .cpanel .cx-cop2-btn.main:hover{filter:brightness(1.07)}
-  .cpanel .cx-cop2-btn.danger{flex:none;min-width:0;padding:0 14px;background:transparent;color:var(--red);border:1px solid var(--border)}
-  .cpanel .cx-cop2-btn.danger:hover{background:var(--red-bg,rgba(239,68,68,.12))}
+  .cpanel .cx-cop2-btn{flex:1;min-width:132px;height:40px;border-radius:11px;border:none;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:filter .12s,transform .06s,box-shadow .12s}
+  /* Acción primaria (confirmar): relleno sólido + texto blanco crujiente + profundidad sutil */
+  .cpanel .cx-cop2-btn.main{background:#12a150;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22)}
+  .cpanel .cx-cop2-btn.main.blue{background:var(--brand)}
+  .cpanel .cx-cop2-btn.main.amber{background:#cf6c0e}
+  .cpanel .cx-cop2-btn.main:hover{filter:brightness(1.08)}
+  .cpanel .cx-cop2-btn.main:active{transform:scale(.985)}
+  /* Acción destructiva (rechazar): silenciosa, no compite con la primaria */
+  .cpanel .cx-cop2-btn.danger{flex:none;min-width:0;padding:0 16px;background:transparent;color:var(--red);border:1px solid var(--border-strong,#2f3a48)}
+  .cpanel .cx-cop2-btn.danger:hover{background:var(--red-bg,rgba(239,68,68,.12));border-color:var(--red)}
+  .cpanel .cx-cop2-btn.danger:active{transform:scale(.985)}
   .cpanel .cx-actions{display:flex;gap:8px;margin:12px 0 2px}
   .cpanel .cx-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;
     border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);
