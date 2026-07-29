@@ -230,10 +230,22 @@
   @media (max-width:760px){ .tplbar{flex-wrap:wrap} .tplbar .tplbtn{margin-left:52px} }
   .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
   .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
-  .msg .meta{font-size:10px;color:var(--faint);margin-top:3px}
+  .msg .meta{font-size:10px;color:var(--faint);margin-top:3px;display:flex;align-items:center;gap:5px;line-height:1}
   .in-m{align-self:flex-start;background:var(--surface-2);border-top-left-radius:4px}
   .out-m{align-self:flex-end;background:var(--brand-bg);border-top-right-radius:4px}
-  .out-m .meta{text-align:right;color:#6f92c8}
+  .out-m .meta{text-align:right;color:#6f92c8;justify-content:flex-end}
+  /* Ticks de estado del mensaje saliente (estilo WhatsApp): gris entregado, AZUL leído. */
+  .tick{display:inline-flex;align-items:center;flex:none}
+  .tick .tk{width:16px;height:11px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;display:block}
+  .tick.sent,.tick.deliv,.tick.pend{color:#8ba3c7}
+  .out-m.bot .tick.sent,.out-m.bot .tick.deliv,.out-m.bot .tick.pend{color:var(--muted)}
+  .tick.read{color:#34b7f1}
+  .tick.read .tk{filter:drop-shadow(0 0 3px rgba(52,183,241,.55))}
+  .tick.fail{color:#e5484d;font-size:12px;font-weight:800}
+  .tick.pend .tk{width:12px;height:12px;opacity:.75}
+  .tick.read.pop .tk{transform-origin:center;animation:tickPop .36s ease-out}
+  @keyframes tickPop{0%{transform:scale(.45);opacity:.2}60%{transform:scale(1.22)}100%{transform:scale(1);opacity:1}}
+  @media (prefers-reduced-motion:reduce){.tick.read.pop .tk{animation:none}}
   /* Burbuja del BOT: mismos lados (derecha) pero con el color de la sección IA. */
   .out-m.bot{background:var(--ia-bg,rgba(168,85,247,.12))}
   .out-m.bot .meta{color:var(--muted)}
@@ -1321,7 +1333,7 @@ function renderMsg(m) {
   // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
   const tr = m.content?.transcription
     ? `<div class="transcript" title="Transcripción automática del audio">🎙️ ${esc(m.content.transcription)}</div>` : "";
-  el.innerHTML = `${mh || esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
+  el.innerHTML = `${mh || esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
   t.appendChild(el);
   // Los botones se MUESTRAN siempre: si no, en una conversación real verías el
   // texto pero no los botones que le llegaron al cliente, y no entenderías por
@@ -1340,7 +1352,18 @@ function renderMsg(m) {
   }
   if (atBottom) t.scrollTop = t.scrollHeight;
 }
-function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"⚠ falló",pending:"…"}[s]||s; }
+// Ticks estilo WhatsApp. Un check = enviado; doble = entregado; doble AZUL = leído.
+const _TK_SINGLE = '<svg class="tk" viewBox="0 0 20 12" aria-hidden="true"><path d="M4 6.8 L8 10.3 L16.5 2.4"/></svg>';
+const _TK_DOUBLE = '<svg class="tk" viewBox="0 0 20 12" aria-hidden="true"><path d="M1.5 6.8 L5 10.3 L12 2.4"/><path d="M7 6.8 L10.5 10.3 L17.5 2.4"/></svg>';
+const _TK_CLOCK  = '<svg class="tk" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.4"/><path d="M7 3.6 V7 L9.4 8.6"/></svg>';
+function statusTick(s, animate){
+  const a = animate ? " pop" : "";
+  if(s==="read")      return `<span class="tick read${a}" title="Leído — el cliente vio el mensaje">${_TK_DOUBLE}</span>`;
+  if(s==="delivered") return `<span class="tick deliv" title="Entregado al teléfono">${_TK_DOUBLE}</span>`;
+  if(s==="sent")      return `<span class="tick sent" title="Enviado">${_TK_SINGLE}</span>`;
+  if(s==="failed")    return `<span class="tick fail" title="No se pudo entregar">⚠</span>`;
+  return `<span class="tick pend" title="Enviando…">${_TK_CLOCK}</span>`;
+}
 function mediaHtml(m){
   const url = m.content?.media_url; if(!url) return null;
   const cap = m.content?.caption ? `<div style="margin-top:5px">${esc(m.content.caption)}</div>` : "";
@@ -1611,9 +1634,13 @@ function subscribeRealtime() {
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
       const m = p.new;
+      // Mantiene la caché al día para que reabrir el chat muestre el tick correcto.
+      const cache = state.threadCache[m.contact_id];
+      if (cache) { const cm = cache.find(x=>x.id===m.id); if (cm) cm.status = m.status; }
       if (m.contact_id === state.contactId) {
         const el = document.querySelector(`.msg[data-id="${m.id}"] .meta`);
-        if (el && m.direction === "out") el.textContent = `${fmtTime.format(new Date(m.ts))} · ${statusLabel(m.status)}`;
+        // animate=true → el tick de "leído" hace su pop azul justo cuando el cliente ve el mensaje.
+        if (el && m.direction === "out") el.innerHTML = `${fmtTime.format(new Date(m.ts))}${statusTick(m.status, true)}`;
       }
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversationsSoon())
