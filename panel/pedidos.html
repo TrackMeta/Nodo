@@ -166,6 +166,7 @@
         <span style="color:var(--faint)">Aprobar o rechazar un comprobante es de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions">
+        <button class="nodo-btn" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir rótulos</button>
         <div class="expwrap">
           <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por despachar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="expmenu" id="exportMenu"></div>
@@ -236,6 +237,7 @@ async function boot(){
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
+  $("rotBtn").onclick=()=>abrirImprimirRotulos();
   document.addEventListener("click",(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } });
   cargarListas();  // precarga las listas de agencias/distritos para el editor
   await load();
@@ -571,7 +573,28 @@ function kcard(o){
 // Provincia = etiqueta para pegar al paquete que va a la agencia (con DNI y
 // sede, que es lo que la agencia exige para entregar). Lima = hoja para el
 // motorizado, con dirección y el MONTO A COBRAR bien grande (contraentrega).
-function printRotulo(o){
+// CSS compartido del rótulo. Al imprimir varios, cada .lbl ocupa su propia hoja
+// (salto de página ENTRE etiquetas, sin hoja en blanco al final).
+const ROTULO_CSS=`
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:26px;color:#000}
+  .lbl{border:2px solid #000;border-radius:10px;padding:18px 20px;max-width:520px;margin:0 auto 26px}
+  .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px}
+  .hd .zn{font-size:13px;font-weight:800;letter-spacing:1px;border:2px solid #000;border-radius:6px;padding:3px 10px}
+  .rem{font-size:12px}.rem b{font-size:15px}
+  table{width:100%;border-collapse:collapse}
+  td{padding:6px 4px;vertical-align:top;border-bottom:1px solid #ccc}
+  td.k{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#333;width:34%}
+  td.v{font-size:15px;font-weight:600}
+  td.v.big{font-size:20px;font-weight:800}
+  .ft{margin-top:12px;font-size:10.5px;color:#555;text-align:center}
+  @media print{ body{padding:0} .lbl{border-width:3px;max-width:none;margin:0;break-inside:avoid} .lbl+.lbl{break-before:page;page-break-before:always} .noprint{display:none} }
+  .noprint{text-align:center;margin-top:20px} .noprint button{font-size:14px;padding:9px 20px;cursor:pointer}
+`;
+
+// Arma el cuerpo <div class="lbl"> de UN pedido. Provincia = etiqueta para la
+// agencia (DNI + sede, sin guía todavía); Lima = hoja del motorizado con el
+// MONTO A COBRAR grande (contraentrega).
+function rotuloInner(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const zona=zonaDe(o);
   const remitente=st.remitente||st.channelName||"Remitente";
@@ -605,37 +628,120 @@ function printRotulo(o){
       row("Detalle", atrLine, true)+
       row("A COBRAR", money(total(o),o.currency)+"  ·  CONTRAENTREGA", true);
   }
-  const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"/>
-    <title>Rótulo ${esc(nro)}</title>
-    <style>
-      *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:26px;color:#000}
-      .lbl{border:2px solid #000;border-radius:10px;padding:18px 20px;max-width:520px;margin:0 auto}
-      .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px}
-      .hd .zn{font-size:13px;font-weight:800;letter-spacing:1px;border:2px solid #000;border-radius:6px;padding:3px 10px}
-      .rem{font-size:12px}.rem b{font-size:15px}
-      table{width:100%;border-collapse:collapse}
-      td{padding:6px 4px;vertical-align:top;border-bottom:1px solid #ccc}
-      td.k{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#333;width:34%}
-      td.v{font-size:15px;font-weight:600}
-      td.v.big{font-size:20px;font-weight:800}
-      .ft{margin-top:12px;font-size:10.5px;color:#555;text-align:center}
-      @media print{ body{padding:0} .lbl{border-width:3px;max-width:none} .noprint{display:none} }
-      .noprint{text-align:center;margin-top:20px} .noprint button{font-size:14px;padding:9px 20px;cursor:pointer}
-    </style></head><body>
-    <div class="lbl">
+  return `<div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(remitente)}</b></div>
         <div class="zn">${zona==="provincia"?(s.aereo?"AGENCIA · ✈ AÉREO":"AGENCIA"):"CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>
-    </div>
-    <div class="noprint"><button onclick="window.print()">🖨️ Imprimir</button></div>
+    </div>`;
+}
+
+// Abre una ventana e imprime uno o varios rótulos (uno por hoja).
+function printRotulos(orders){
+  if(!orders||!orders.length) return;
+  const cuerpo=orders.map(rotuloInner).join("");
+  const nro1=(orders[0].order_id||orders[0].id||"").toString().slice(0,8).toUpperCase();
+  const titulo=orders.length===1?`Rótulo ${esc(nro1)}`:`${orders.length} rótulos`;
+  const btnTxt=orders.length>1?`🖨️ Imprimir los ${orders.length} rótulos`:"🖨️ Imprimir";
+  const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"/>
+    <title>${titulo}</title>
+    <style>${ROTULO_CSS}</style></head><body>
+    ${cuerpo}
+    <div class="noprint"><button onclick="window.print()">${btnTxt}</button></div>
     <script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
     </body></html>`;
   const w=window.open("","_blank","width=640,height=800");
-  if(!w){ toast("Permite las ventanas emergentes para imprimir el rótulo",true); return; }
+  if(!w){ toast("Permite las ventanas emergentes para imprimir los rótulos",true); return; }
   w.document.open(); w.document.write(html); w.document.close();
+}
+// Un solo rótulo (botón de cada tarjeta / ficha).
+function printRotulo(o){ printRotulos([o]); }
+
+// ── Imprimir rótulos en lote ───────────────────────────────────────
+// Selector de pedidos (mismo patrón que Exportar) → imprime todas las etiquetas
+// marcadas de una vez, una por hoja. Alcance = "por despachar" de la zona actual.
+// A diferencia del Excel masivo, los AÉREOS SÍ entran (también necesitan su
+// etiqueta impresa, marcada AÉREO; el que se registra a mano es el despacho, no el rótulo).
+function abrirImprimirRotulos(){
+  const zona=st.kbZona;
+  const S={ periodo:"todos", q:"", sel:new Set() };
+  const cuandoT=(o)=> new Date(o.updated_at||o.created_at||0).getTime();
+  function filtrar(){
+    let arr=st.list.filter(o=>isFisico(o) && zonaDe(o)===zona && POR_DESPACHAR[zona].has(o.estado));
+    if(S.periodo!=="todos"){
+      const now=new Date(), hoy0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+      if(S.periodo==="hoy") arr=arr.filter(o=>cuandoT(o)>=hoy0);
+      else if(S.periodo==="ayer") arr=arr.filter(o=>cuandoT(o)>=hoy0-86400000 && cuandoT(o)<hoy0);
+      else { const d=Number(S.periodo); arr=arr.filter(o=>(Date.now()-cuandoT(o))<=d*86400000); }
+    }
+    if(S.q){ const q=norm(S.q); arr=arr.filter(o=>{ const c=o.contact||{},s=o.shipping||{};
+      return norm(c.nombre).includes(q)||(c.wa_id||"").includes(q)||norm(s.cliente).includes(q)
+        ||norm(s.distrito).includes(q)||norm(s.ciudad).includes(q)||norm(s.destino).includes(q); }); }
+    return arr.sort((a,b)=>cuandoT(b)-cuandoT(a));
+  }
+  const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
+  const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
+    return (esAer(o)?`<span class="aermark">✈ AÉREO</span>`:"")+esc(d); };
+  const ov=document.createElement("div"); ov.className="overlay";
+  ov.innerHTML=`<div class="modal"><div class="expmodal">
+    <div class="em-head">
+      <div class="em-logo" style="background:var(--brand)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div>
+      <div><div class="em-ttl">Imprimir rótulos</div><div class="em-sub">Marca los pedidos ${zona==="lima"?"de Lima":"de provincia"} por despachar; se imprime una etiqueta por hoja</div></div>
+      <button class="em-x" title="Cerrar">✕</button>
+    </div>
+    <div class="em-filters">
+      <div class="em-f"><label>Período</label><select id="emPer">
+        <option value="todos">Todos</option><option value="hoy">Hoy</option><option value="ayer">Ayer</option>
+        <option value="7">Últimos 7 días</option><option value="15">Últimos 15 días</option><option value="30">Últimos 30 días</option>
+      </select></div>
+      <div class="em-f"><label>Buscar</label><input id="emQ" placeholder="Cliente, celular, distrito…"/></div>
+    </div>
+    <div class="em-body" id="emBody"></div>
+    <div class="em-foot">
+      <div class="em-hint" id="emHint">Selecciona pedidos de la tabla</div>
+      <button class="cancel" type="button">Cancelar</button>
+      <button class="dl" id="emPrint" type="button" disabled>🖨️ Imprimir rótulos</button>
+    </div>
+  </div></div>`;
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  const $q=(s)=>ov.querySelector(s);
+  function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
+    $q("#emHint").textContent = n?`${n} rótulo${n>1?"s":""} para imprimir`:"Selecciona pedidos de la tabla";
+    $q("#emPrint").disabled=!n; $q("#emPrint").textContent=`🖨️ Imprimir ${n||""} rótulo${n===1?"":"s"}`.replace("  "," "); }
+  function render(){
+    const arr=filtrar();
+    const body=$q("#emBody");
+    if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} por despachar con esos filtros</div>`; foot(arr); return; }
+    body.innerHTML=`<table class="em-tbl"><thead><tr>
+      <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
+      ${arr.map(o=>`<tr data-id="${o.id}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${S.sel.has(o.id)?"checked":""}></td>
+        <td>${esc((o.contact||{}).nombre||(o.shipping||{}).cliente||"—")}</td>
+        <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`).join("")}
+    </tbody></table>`;
+    const all=$q("#emAll");
+    const syncAll=()=>{ const vis=arr.filter(o=>S.sel.has(o.id)).length; all.checked=vis>0&&vis===arr.length; all.indeterminate=vis>0&&vis<arr.length; };
+    const toggle=(id,on)=>{ on?S.sel.add(id):S.sel.delete(id); };
+    body.querySelectorAll("tbody tr").forEach(tr=>{ tr.onclick=(e)=>{ if(e.target.classList.contains("emChk"))return; const ch=tr.querySelector(".emChk"); ch.checked=!ch.checked; toggle(tr.dataset.id,ch.checked); syncAll(); foot(arr); }; });
+    body.querySelectorAll(".emChk").forEach(ch=> ch.onchange=()=>{ toggle(ch.dataset.id,ch.checked); syncAll(); foot(arr); });
+    all.onchange=()=>{ arr.forEach(o=>toggle(o.id,all.checked)); render(); };
+    syncAll(); foot(arr);
+  }
+  // Preselección útil: todo lo que hoy está por despachar en la zona.
+  filtrar().forEach(o=>S.sel.add(o.id));
+  $q("#emPer").onchange=(e)=>{ S.periodo=e.target.value; render(); };
+  $q("#emQ").oninput=(e)=>{ S.q=e.target.value.trim(); render(); };
+  $q(".em-x").onclick=()=>ov.remove();
+  $q(".cancel").onclick=()=>ov.remove();
+  $q("#emPrint").onclick=()=>{
+    const sel=st.list.filter(o=>S.sel.has(o.id));
+    if(!sel.length) return;
+    ov.remove();
+    printRotulos(sel);
+  };
+  render();
 }
 
 // ── Acciones (Edge Function order-update) ──────────────────────────
