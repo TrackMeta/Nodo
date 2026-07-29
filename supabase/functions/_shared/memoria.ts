@@ -77,13 +77,27 @@ export async function leerMemoria(db: SupabaseClient, contactId: string): Promis
 
 // ── Lado LECTURA: inyecta la memoria como contexto para PERSONALIZAR la
 // respuesta de venta. Devuelve "" si no hay nada, para no gastar tokens de más.
-// (Aún NO cableado en el motor: se deja listo para la Fase 2c, después de
-//  que Rodrigo valide que la escritura funciona.)
-export function memoriaComoContexto(m: MemoriaAI): string {
+// La perilla "qué tan personal" por producto (products.config.memoria_nivel):
+//   off     = no usa la memoria al responder (solo vender).
+//   suave   = un guiño natural, la venta manda (DEFAULT).
+//   cercano = trato cálido y cercano, sin descuidar la venta.
+export type NivelMemoria = "off" | "suave" | "cercano";
+export function nivelMemoria(config: unknown): NivelMemoria {
+  const n = String((config as any)?.memoria_nivel ?? "suave").toLowerCase();
+  return (n === "off" || n === "cercano") ? n : "suave";
+}
+
+// Inyecta la memoria como contexto para PERSONALIZAR la respuesta, modulado por
+// el nivel del producto. "off" no inyecta nada.
+export function memoriaComoContexto(m: MemoriaAI, nivel: NivelMemoria = "suave"): string {
+  if (nivel === "off") return "";
   const qe = (m.quien_es ?? []).slice(0, MAX_ITEMS);
   const ct = (m.como_tratar ?? []).slice(0, MAX_ITEMS);
   if (!qe.length && !ct.length) return "";
-  const lin: string[] = ["LO QUE YA SABES DE ESTE CLIENTE (úsalo con naturalidad, máximo un guiño; la venta manda, nunca lo repitas de golpe ni saques temas sensibles):"];
+  const intro = nivel === "cercano"
+    ? "LO QUE YA SABES DE ESTE CLIENTE (trátalo con calidez y cercanía, como quien ya lo conoce; sin repetirlo de golpe, sin temas sensibles y sin descuidar cerrar la venta):"
+    : "LO QUE YA SABES DE ESTE CLIENTE (úsalo con naturalidad, máximo un guiño; la venta manda, nunca lo repitas de golpe ni saques temas sensibles):";
+  const lin: string[] = [intro];
   if (qe.length) lin.push("· Quién es: " + qe.join("; "));
   if (ct.length) lin.push("· Cómo tratarlo (deducido, trátalo con tacto): " + ct.join("; "));
   return lin.join("\n");
@@ -95,7 +109,8 @@ const SYSTEM_EXTRACT = [
   '  "quien_es": hechos humanos útiles para tratarlo mejor la próxima vez (ej: "Compra para su mamá", "Es enfermera", "Prefiere que le escriban en la tarde").',
   '  "como_tratar": rasgos de comportamiento DEDUCIDOS (ej: "Decide rápido", "Regatea", "Trato cercano").',
   "REGLAS ESTRICTAS:",
-  "· NO incluyas datos operativos de la venta (zona, dirección, método de pago, talla, producto, precio): eso se guarda aparte.",
+  "· PROHIBIDO incluir datos operativos de la venta: nombre del cliente, dónde vive (ciudad/distrito/dirección), DNI, teléfono, método de pago, producto, talla, color, cantidad, precio, sede/agencia. TODO eso ya se guarda aparte — si lo pones acá, es un ERROR. Ej. de lo que NUNCA debes devolver: \"Se llama Ana\", \"Vive en Trujillo\", \"Nombre real es...\", \"Talla 38\", \"Paga con Yape\".",
+  "· \"quien_es\" es solo el CONTEXTO HUMANO no operativo (para quién compra, su oficio, una preferencia de trato/horario). \"como_tratar\" es solo COMPORTAMIENTO deducido.",
   "· NO incluyas datos sensibles (salud, problemas de dinero, temas familiares delicados). Si aparecen, IGNÓRALOS.",
   "· Solo lo ÚTIL y con evidencia en el texto. Nada de suposiciones sin base ni relleno.",
   "· Devuelve el perfil COMPLETO y actualizado (parte de lo que ya sabías y ajústalo); mantenlo corto — descarta lo que ya no aporte.",

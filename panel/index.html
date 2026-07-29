@@ -517,7 +517,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, esValorPresentable, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm } from "./shell.js";
 injectExtrasCss();
 
@@ -998,8 +998,8 @@ function renderContactPanel(){
       <div class="mia-hd"><span class="mia-badge">${spark} Memoria IA</span><span class="mia-cap">la IA la mantiene sola</span></div>
       <div class="mia-lyr">Para vender</div>
       <div class="mia-chips" id="pFields">${sellChips || '<span class="mia-none">Aún sin datos — la IA los irá capturando al conversar</span>'}</div>
-      ${miaWho.length?`<div class="mia-lyr">Quién es <span class="mia-sub">· detectado</span></div><div class="mia-chips">${miaWho.map(t=>`<span class="mia-chip who">${esc(t)}</span>`).join("")}</div>`:""}
-      ${miaHow.length?`<div class="mia-lyr">Cómo tratar <span class="mia-sub">· deducido</span></div><div class="mia-chips">${miaHow.map(t=>`<span class="mia-chip how">${esc(t)} ${qico}</span>`).join("")}</div>`:""}
+      ${miaWho.length?`<div class="mia-lyr">Quién es <span class="mia-sub">· detectado</span></div><div class="mia-chips">${miaWho.map((t,i)=>`<button type="button" class="mia-chip who" data-mlayer="quien_es" data-midx="${i}" title="Toca para editar · vacía para borrar">${esc(t)}</button>`).join("")}<button type="button" class="mia-chip ghost mia-add" data-mlayer="quien_es" title="Agregar">+</button></div>`:""}
+      ${miaHow.length?`<div class="mia-lyr">Cómo tratar <span class="mia-sub">· deducido</span></div><div class="mia-chips">${miaHow.map((t,i)=>`<button type="button" class="mia-chip how" data-mlayer="como_tratar" data-midx="${i}" title="Toca para editar · vacía para borrar">${esc(t)} ${qico}</button>`).join("")}<button type="button" class="mia-chip ghost mia-add" data-mlayer="como_tratar" title="Agregar">+</button></div>`:""}
       <div class="mia-foot"><span class="mia-hint">Toca un chip para editar · vacíalo para borrar</span></div>
     </div>`;
   // Avanzado: cuerpos plegados (automatizaciones + diagnóstico del motor)
@@ -1054,9 +1054,9 @@ function renderContactPanel(){
   if(!window.__tagPopWired){ window.__tagPopWired=true; document.addEventListener("click",(e)=>{ if(!e.target.closest(".tagadd-wrap")) document.querySelectorAll(".tagpop").forEach(x=>{ x.hidden=true; }); }); }
   // Memoria IA · "Para vender": tocar un chip lo vuelve input inline. Enter/blur
   // guarda en contact_field_values; Escape cancela. Vaciarlo = el chip queda fantasma (borrado).
-  p.querySelectorAll(".mia-chip.sell, .mia-chip.ghost").forEach(chip=> chip.onclick=()=>{
+  p.querySelectorAll(".mia-chip.sell").forEach(chip=> chip.onclick=()=>{
     const fid=chip.dataset.field, name=chip.dataset.name||"";
-    const cur=chip.classList.contains("ghost") ? "" : chip.textContent.trim();
+    const cur=chip.textContent.trim();
     const inp=document.createElement("input");
     inp.className="mia-edit"; inp.value=cur; inp.placeholder=name;
     chip.replaceWith(inp); inp.focus(); inp.select();
@@ -1075,6 +1075,8 @@ function renderContactPanel(){
     inp.addEventListener("blur", save);
     inp.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } else if(e.key==="Escape"){ done=true; renderContactPanel(); } };
   });
+  // Memoria IA · editar/borrar/agregar chips "Quién es" / "Cómo tratar"
+  wireMemoriaChips(p, contact, { supa, toast, reRender: renderContactPanel });
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
     const ok=await openEditarPedido({...order, contact}, { supa });
     if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }

@@ -79,6 +79,63 @@ export function esValorPresentable(v) {
   return true;
 }
 
+// Cablea editar/borrar/agregar de los chips "Quién es" / "Cómo tratar" de la
+// Memoria IA (los pinta la IA, pero el humano puede corregir). Los chips llevan
+// data-mlayer (quien_es|como_tratar) y data-midx; el botón "+" lleva solo
+// data-mlayer. Guarda en contacts.memoria_ia preservando _last (el reloj del
+// throttle). reRender = renderContactPanel de la página. Compartido Bandeja/Probar.
+export function wireMemoriaChips(p, contact, { supa, toast, reRender }) {
+  const getMia = () => {
+    const m = (contact.memoria_ia && typeof contact.memoria_ia === "object") ? contact.memoria_ia : {};
+    return {
+      quien_es: Array.isArray(m.quien_es) ? [...m.quien_es] : [],
+      como_tratar: Array.isArray(m.como_tratar) ? [...m.como_tratar] : [],
+      _last: m._last,
+    };
+  };
+  const guardar = async (mia) => {
+    const payload = { quien_es: mia.quien_es, como_tratar: mia.como_tratar };
+    if (mia._last) payload._last = mia._last;
+    contact.memoria_ia = payload; // que el re-render lo vea
+    const { error } = await supa.from("contacts").update({ memoria_ia: payload }).eq("id", contact.id);
+    if (error) toast("No se pudo guardar la memoria: " + error.message, true);
+    else toast("Memoria actualizada ✓");
+    reRender();
+  };
+  // input inline reutilizable (editar o agregar)
+  const editarInline = (el, valor, onSave) => {
+    const inp = document.createElement("input");
+    inp.className = "mia-edit"; inp.value = valor; if (!valor) inp.placeholder = "escribe…";
+    el.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const commit = async () => { if (done) return; done = true; await onSave(inp.value.trim()); };
+    inp.addEventListener("blur", commit);
+    inp.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
+      else if (e.key === "Escape") { done = true; reRender(); }
+    };
+  };
+  // editar / borrar (vaciar = borrar) un chip existente
+  p.querySelectorAll(".mia-chip[data-mlayer][data-midx]").forEach((chip) => chip.onclick = () => {
+    const layer = chip.dataset.mlayer, idx = Number(chip.dataset.midx);
+    const cur = getMia()[layer][idx] ?? "";
+    editarInline(chip, cur, async (v) => {
+      const m = getMia();
+      if (v === cur) { reRender(); return; }
+      if (!v) m[layer].splice(idx, 1); else m[layer][idx] = v;
+      await guardar(m);
+    });
+  });
+  // agregar un chip nuevo a la capa
+  p.querySelectorAll(".mia-add[data-mlayer]").forEach((btn) => btn.onclick = () => {
+    const layer = btn.dataset.mlayer;
+    editarInline(btn, "", async (v) => {
+      if (!v) { reRender(); return; }
+      const m = getMia(); m[layer].push(v.slice(0, 60)); await guardar(m);
+    });
+  });
+}
+
 // El webhook guarda el origen como código ("ctwa"); acá se muestra legible.
 export function origenLabel(source) {
   const s = String(source || "").toLowerCase().trim();

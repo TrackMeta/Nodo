@@ -14,7 +14,7 @@ import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
 import { sedeReconocida } from "./shalom-agencias.ts";
-import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto } from "./memoria.ts";
+import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -4403,13 +4403,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       content = blocks;
     }
 
-    // Memoria IA · lado LECTURA (Fase 2c): personaliza la respuesta con el perfil
-    // vivo del cliente ("quién es" / "cómo tratar"). Defensivo — si no hay memoria
-    // (o falta la columna), responde igual que siempre.
+    // Memoria IA · lado LECTURA (Fase 2c/2d): personaliza la respuesta con el
+    // perfil vivo del cliente, modulado por la perilla del producto (off/suave/
+    // cercano). Defensivo — si no hay memoria (o falta la columna), responde igual.
     if (op === "generar_texto") {
       try {
-        const ctxMem = memoriaComoContexto(await leerMemoria(db, run.contact_id));
-        if (ctxMem) system = system ? (system + "\n\n" + ctxMem) : ctxMem;
+        let nivel = (run as any)._memNivel as NivelMemoria | undefined;
+        if (nivel === undefined) {
+          nivel = "suave";
+          const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+          const pid = (c as any)?.product_id;
+          if (pid) {
+            const { data: pr } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+            nivel = nivelMemoria((pr as any)?.config);
+          }
+          (run as any)._memNivel = nivel;
+        }
+        if (nivel !== "off") {
+          const ctxMem = memoriaComoContexto(await leerMemoria(db, run.contact_id), nivel);
+          if (ctxMem) system = system ? (system + "\n\n" + ctxMem) : ctxMem;
+        }
       } catch (_) { /* sin memoria → responde normal */ }
     }
 

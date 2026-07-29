@@ -767,6 +767,15 @@ function renderProductoIA(){
       </div>
     </div>
     <div class="card ia-card">
+      <div style="border:1px solid var(--ia-brd);border-radius:12px;padding:13px;margin-bottom:12px;background:var(--ia-bg)">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px;color:var(--ia1)">Memoria del cliente — qué tan personal</div>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Cuánto usa la IA lo que sabe de cada cliente (“compra para su mamá”, “decide rápido”) al venderle <b>este</b> producto. La venta siempre manda.</div>
+        <select class="sel" id="pMemoriaNivel" style="width:100%">
+          <option value="off" ${c.memoria_nivel==="off"?"selected":""}>Solo vender — ignora la memoria</option>
+          <option value="suave" ${(!c.memoria_nivel||c.memoria_nivel==="suave")?"selected":""}>Equilibrado — un guiño natural (recomendado)</option>
+          <option value="cercano" ${c.memoria_nivel==="cercano"?"selected":""}>Trato cercano — cálido y personal</option>
+        </select>
+      </div>
       <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px">
         <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Cómo vender este producto <span style="font-weight:400;color:var(--faint)">— avanzado, opcional</span></summary>
         <div style="padding-bottom:13px">
@@ -834,6 +843,7 @@ function renderProductoIA(){
     </div>`;
   const setC=(k,v)=>prodSetC(k,v);
   const g=$("pEmojis"); if(g) g.oninput=(e)=>setC("emojis", e.target.value.trim());
+  const mn=$("pMemoriaNivel"); if(mn) mn.onchange=(e)=>setC("memoria_nivel", e.target.value);
   b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; prodSync(); }; });
   const goOp=$("goOpciones"); if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   const paintEj=()=>{
