@@ -52,6 +52,22 @@ export function stagePickerHtml(current) {
 // con nombres tipo "Once Aviso 3ed11330-3946-45ee-…").
 export const esCampoInterno = (key) => String(key || "").startsWith("_");
 
+// ¿El valor de un campo es un DATO DEL CLIENTE presentable (no un flag/artefacto
+// interno del motor)? Se usa en la Memoria IA ("Para vender") para no ensuciar la
+// tarjeta con variables de flujo (pedido_creado=true, pago_resultado=PAGO_OK,
+// opcion_id=<uuid>, ultima_imagen=<url>, JSON, textos larguísimos…). Solo display:
+// el dato sigue existiendo en Avanzado. Devuelve false para vacío.
+export function esValorPresentable(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+  if (s.length > 60) return false;                            // textos largos / JSON crudo
+  if (/^https?:\/\//i.test(s)) return false;                  // URLs (ej. ultima_imagen)
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i.test(s)) return false; // UUIDs (ej. opcion_id)
+  if (/^[\{\[]/.test(s)) return false;                        // JSON
+  if (/^(true|false|pago_ok|pago_no|null|undefined)$/i.test(s)) return false; // flags
+  return true;
+}
+
 // El webhook guarda el origen como código ("ctwa"); acá se muestra legible.
 export function origenLabel(source) {
   const s = String(source || "").toLowerCase().trim();

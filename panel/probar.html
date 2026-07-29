@@ -230,7 +230,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, esValorPresentable, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, stagePickerHtml } from "./contact-extras.js";
 injectExtrasCss();
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
@@ -526,12 +526,9 @@ function renderContactPanel(){
   const mia = (contact.memoria_ia && typeof contact.memoria_ia==="object") ? contact.memoria_ia : {};
   const miaWho = Array.isArray(mia.quien_es)   ? mia.quien_es.filter(Boolean)   : [];
   const miaHow = Array.isArray(mia.como_tratar) ? mia.como_tratar.filter(Boolean) : [];
-  const sellChips = userFields.map(f=>{
-    const v = String(vals[f.id]||"").trim();
-    return v
-      ? `<button type="button" class="mia-chip sell" data-field="${f.id}" data-name="${esc(f.nombre)}" title="${esc(f.nombre)} — toca para editar">${esc(v)}</button>`
-      : `<button type="button" class="mia-chip ghost" data-field="${f.id}" data-name="${esc(f.nombre)}" title="Sin dato — toca para llenar">${esc(f.nombre)}</button>`;
-  }).join("");
+  // Solo campos con DATO real del cliente (nada de fantasmas vacíos ni internos).
+  const sellChips = userFields.filter(f=>esValorPresentable(vals[f.id]))
+    .map(f=>`<button type="button" class="mia-chip sell" data-field="${f.id}" data-name="${esc(f.nombre)}" title="${esc(f.nombre)} — toca para editar">${esc(String(vals[f.id]).trim())}</button>`).join("");
   const miaCard = `<div class="mia">
       <div class="mia-hd"><span class="mia-badge">${spark} Memoria IA</span><span class="mia-cap">la IA la mantiene sola</span></div>
       <div class="mia-lyr">Para vender</div>
