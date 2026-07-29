@@ -230,7 +230,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import * as O from "./orders.js";
-import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, stagePickerHtml } from "./contact-extras.js";
 injectExtrasCss();
 const $=(id)=>document.getElementById(id);
 const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
@@ -559,7 +559,7 @@ function renderContactPanel(){
       <div class="cnm">${esc(contact.nombre||"Prueba")}</div>
       <div class="cph">Contacto de prueba (Web Chat)</div>
     </div>
-    ${order&&O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
+    ${order&&O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar los datos del pedido">${icon("edit")} Editar pedido</button><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${miaCard}
@@ -599,6 +599,7 @@ function renderContactPanel(){
   });
   // Memoria IA · editar/borrar/agregar chips "Quién es" / "Cómo tratar"
   wireMemoriaChips(p, contact, { supa, toast, reRender: renderContactPanel });
+  const edP=$("pEdit"); if(edP) edP.onclick=async()=>{ const ok=await openEditarPedido({...order,contact}, { supa }); if(ok) refreshPanel(); };
   const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{ rot.disabled=true; const rem=await remitenteDe(supa,st.channelId); printRotulo({...order,contact}, rem); rot.disabled=false; };
   if(cet) wireCopiloto(p, {...order,contact,contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText, channelId:st.channelId, reload:refreshPanel });
 }
