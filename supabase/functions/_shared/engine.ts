@@ -3812,6 +3812,21 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   run.vars.datos_completos = completo ? "si" : "no";
   ctx.datos_completos = completo ? "si" : "no";
   await setField(db, run.channel_id, run.contact_id, "datos_completos", completo ? "si" : "no");
+
+  // "Provincia sin adelanto" por DATO (no por el pedido): si es un lead de
+  // provincia que ya dejó su DNI —el dato que SOLO pide el envío por agencia—
+  // entra a ese segmento de remarketing AUNQUE el flujo todavía no haya creado el
+  // pedido esperando_adelanto. Así el segmento no depende de cuándo/si el flujo
+  // cierra el pedido. enrolarSegmento no degrada (respeta el rango) ni corre si el
+  // producto no tiene esa secuencia. El campo DNI solo está en `campos` cuando la
+  // zona ya es provincia (solo_si_zona), así que el guardo extra es redundante y
+  // seguro.
+  if (String(ctx.zona_entrega ?? "") === "provincia") {
+    const campoDni = campos.find((c) => c.validar === "dni");
+    if (campoDni && String(ctx[campoDni.clave] ?? "").trim()) {
+      await enrolarSegmento(db, run.channel_id, run.contact_id, "provincia_sin_adelanto").catch(() => {});
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
