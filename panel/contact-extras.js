@@ -50,7 +50,17 @@ export function stagePickerHtml(current) {
 // estado persistido (_await) y cualquier clave que empiece con "_". No son datos
 // del cliente — se ocultan de "Campos personalizados" (antes ensuciaban la ficha
 // con nombres tipo "Once Aviso 3ed11330-3946-45ee-…").
-export const esCampoInterno = (key) => String(key || "").startsWith("_");
+// Claves internas del motor que NO son datos del cliente (guardan veredictos /
+// estado del flujo). Se ocultan de "Para vender" y caen a "Campos técnicos"
+// (Avanzado), igual que los `_…`. El valor suele ser una frase-veredicto que el
+// filtro por valor no puede distinguir de un dato real.
+const CLAVES_INTERNAS = new Set([
+  "zona_entrega", "zona_distrito_incierto", "entrega_motivo", "menu_eleccion",
+]);
+export const esCampoInterno = (key) => {
+  const k = String(key || "");
+  return k.startsWith("_") || CLAVES_INTERNAS.has(k.toLowerCase());
+};
 
 // ¿El valor de un campo es un DATO DEL CLIENTE presentable (no un flag/artefacto
 // interno del motor)? Se usa en la Memoria IA ("Para vender") para no ensuciar la
@@ -64,7 +74,8 @@ export function esValorPresentable(v) {
   if (/^https?:\/\//i.test(s)) return false;                  // URLs (ej. ultima_imagen)
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i.test(s)) return false; // UUIDs (ej. opcion_id)
   if (/^[\{\[]/.test(s)) return false;                        // JSON
-  if (/^(true|false|pago_ok|pago_no|null|undefined)$/i.test(s)) return false; // flags
+  if (/^(true|false|pago_ok|pago_no|null|undefined)$/i.test(s)) return false; // flags booleanos
+  if (/^(si|sí|no|ok|okay|ya|nel|dale|listo)$/i.test(s)) return false;        // respuestas-flag cortas
   return true;
 }
 
