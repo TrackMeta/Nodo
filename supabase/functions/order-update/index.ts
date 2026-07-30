@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -102,6 +102,18 @@ Deno.serve(async (req) => {
     const st = stageDeEstado(newEstado);
     if (st === "perdido") await recomputeStageOnLoss(db, (order as any).channel_id, (order as any).contact_id);
     else await moverEtapa(db, (order as any).channel_id, (order as any).contact_id, st);
+    // 📦 Stock: si la venta se CAE (cancelada/rechazada/no recogida/anulada),
+    // devuelve al inventario las unidades que se reservaron al crear el pedido.
+    // Idempotente: la bandera stock_devuelto evita devolver dos veces.
+    if (st === "perdido") {
+      const ship = ((order as any).shipping || {}) as any;
+      if (ship.stock_descontado && !ship.stock_devuelto && Array.isArray(ship.stock_mov)) {
+        try {
+          await aplicarStock(db, ship.stock_mov, 1);
+          await db.from("orders").update({ shipping: { ...ship, stock_devuelto: true } }).eq("id", (order as any).id);
+        } catch (e) { console.error("[order-update] devolver stock:", (e as any)?.message ?? e); }
+      }
+    }
   }
 
   // Venta física cerrada (saldo pagado / recogido / entregado) → cierra la

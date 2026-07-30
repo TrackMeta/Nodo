@@ -387,6 +387,57 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
   }
 }
 
+// ── Stock / inventario ─────────────────────────────────────────────
+// Clave estable de una variante a partir de los atributos del producto (los que
+// tienen VALORES declarados) y lo capturado en el pedido. DEBE coincidir con
+// stockKey() del panel (productos.html): nombre=valor(normalizado)|… o "_".
+function stockKeyEngine(atributos: any[], vals: Record<string, unknown> | undefined | null): string {
+  const axes = (atributos || []).filter((a) => a && a.nombre && String(a.valores ?? "").trim());
+  const parts = axes.map((a) => a.nombre + "=" + String((vals && (vals as any)[a.nombre]) ?? "").trim().toLowerCase());
+  return parts.length ? parts.join("|") : "_";
+}
+// Aplica deltas de stock a products.config.stock. signo -1 = reservar (descontar
+// al crear el pedido), +1 = devolver (al cancelar/perder). SOLO toca variantes
+// que el dueño lleva en cuenta (clave presente en config.stock) y productos con
+// stock configurado. NO bloquea nada (elección de Rodrigo: "sigue vendiendo pero
+// avisa"). Devuelve alertas de las variantes que cruzaron el umbral/0 (al
+// descontar) para que el caller avise. Idempotencia: la controla el caller con
+// las banderas shipping.stock_descontado / stock_devuelto.
+export async function aplicarStock(
+  db: SupabaseClient,
+  movimientos: Array<{ product_id?: string | null; key?: string; unidades?: number }>,
+  signo: -1 | 1,
+): Promise<Array<{ nombre: string; key: string; restante: number; agotado: boolean }>> {
+  const alerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
+  const byProd = new Map<string, typeof movimientos>();
+  for (const m of movimientos || []) {
+    if (!m?.product_id || !m?.key || !(Number(m.unidades) > 0)) continue;
+    (byProd.get(m.product_id) ?? byProd.set(m.product_id, []).get(m.product_id)!).push(m);
+  }
+  for (const [pid, movs] of byProd) {
+    try {
+      const { data: p } = await db.from("products").select("nombre, config").eq("id", pid).maybeSingle();
+      const cfg = (p as any)?.config || {};
+      const stock = (cfg.stock && typeof cfg.stock === "object" && !Array.isArray(cfg.stock)) ? cfg.stock : null;
+      if (!stock) continue; // el producto no lleva stock → no se toca
+      const umbral = cfg.stock_umbral != null ? Number(cfg.stock_umbral) : 3;
+      let changed = false;
+      for (const m of movs) {
+        const k = m.key as string;
+        if (!(k in stock)) continue; // esa variante no se lleva en cuenta
+        const before = Number(stock[k]) || 0;
+        const after = before + signo * Number(m.unidades);
+        stock[k] = after; changed = true;
+        if (signo < 0 && ((before > umbral && after <= umbral) || (before > 0 && after <= 0))) {
+          alerts.push({ nombre: (p as any).nombre || "producto", key: k, restante: after, agotado: after <= 0 });
+        }
+      }
+      if (changed) await db.from("products").update({ config: { ...cfg, stock } }).eq("id", pid);
+    } catch (e) { console.error("[aplicarStock]", (e as any)?.message ?? e); }
+  }
+  return alerts;
+}
+
 // ── Pasar la conversación a un humano ──────────────────────────────
 // Dos disparadores distintos, porque son dos cosas distintas:
 //   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
@@ -2012,6 +2063,36 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       await adjuntarRegalos(db, run.channel_id, run.contact_id, (ord as any).id, (c as any)?.product_id);
       if (a.estado === "confirmada") await entregarExtrasDigitales(db, run.channel_id, run.contact_id, (ord as any).id);
     } catch (e) { console.error("[crearPedido] regalos:", (e as any)?.message ?? e); }
+    // 📦 Stock: reservar (descontar) al crear el pedido físico. Descuenta el
+    // principal (por su variante talla/color) y los regalos/extras FÍSICOS ya
+    // adjuntados (1 c/u, van en el mismo paquete). No bloquea; avisa si baja/agota.
+    // Guarda stock_mov en el pedido para poder DEVOLVERLO si se cancela.
+    try {
+      const pidS = (c as any)?.product_id;
+      const esFis = zonaShip === "lima" || zonaShip === "provincia";
+      if (esFis) {
+        const mov: Array<{ product_id: string; key: string; unidades: number }> = [];
+        if (pidS) {
+          const { data: pS } = await db.from("products").select("config").eq("id", pidS).maybeSingle();
+          const cfgS = (pS as any)?.config || {};
+          if (cfgS.stock && typeof cfgS.stock === "object") {
+            mov.push({ product_id: pidS, key: stockKeyEngine(cfgS.atributos, (ship as any).atributos), unidades: Number(ctx.cantidad) || 1 });
+          }
+        }
+        const { data: obRow } = await db.from("orders").select("order_bumps").eq("id", (ord as any).id).maybeSingle();
+        for (const b of ((obRow as any)?.order_bumps ?? [])) {
+          if (b?.product_id && b?.digital !== true) mov.push({ product_id: b.product_id, key: "_", unidades: 1 });
+        }
+        if (mov.length) {
+          const alerts = await aplicarStock(db, mov, -1);
+          await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", (ord as any).id);
+          for (const al of alerts) {
+            const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
+            await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+          }
+        }
+      }
+    } catch (e) { console.error("[crearPedido] stock:", (e as any)?.message ?? e); }
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
   }

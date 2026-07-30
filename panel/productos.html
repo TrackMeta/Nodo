@@ -412,17 +412,17 @@ function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
   const esExtra = st.prod.clase==="extra";
   const esRegalo = st.prod.clase==="regalo";
-  const EXTRA_TABS=["inicio","producto","opciones","entrega","ia"];
+  const EXTRA_TABS=["inicio","producto","opciones","entrega","ia","stock"];
   // Un regalo NO se vende: no lleva "venta con IA", activación, ventas extra ni
   // remarketing. Solo qué es (producto) y qué entrega (opciones → Qué entrega).
-  const REGALO_TABS=["inicio","producto"];
+  const REGALO_TABS=["inicio","producto","stock"];
   if(esExtra && !EXTRA_TABS.includes(st.tab)) st.tab="inicio";
   if(esRegalo && !REGALO_TABS.includes(st.tab)) st.tab="inicio";
   // Sin barra de pestañas: el producto vive en el hub "Inicio" y cada sección se
   // abre a pantalla completa con un botón para volver (navegación hub ↔ sección).
   const SEC={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
     ia:"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
-    remarketing:"Remarketing", flujos:"Flujos" };
+    remarketing:"Remarketing", flujos:"Flujos", stock:"Stock (inventario)" };
   if(esRegalo) SEC.opciones="Qué se entrega";
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
@@ -443,6 +443,7 @@ function renderDetail(){
   else if(st.tab==="extras") renderExtras();
   else if(st.tab==="remarketing") renderRemarketing();
   else if(st.tab==="flujos") renderFlujos();
+  else if(st.tab==="stock") renderStock();
   else renderActivacion();
 }
 // FAQ del producto: editor de pares P/R que compila a config.faq (texto que
@@ -717,6 +718,84 @@ function renderRegaloProducto(b){
       host.innerHTML=`<div style="font-size:12px;color:var(--faint)">Recarga la página para configurar la entrega.</div>`;
     }
   }
+}
+
+// ── Stock / inventario ─────────────────────────────────────────────
+// Ejes del stock = atributos que tienen VALORES declarados (talla, color…).
+// Un atributo de texto libre (sin valores) no entra a la matriz.
+function stockAxes(atributos){ return (atributos||[]).filter(a=>a&&a.nombre&&String(a.valores||"").trim()); }
+// Producto cartesiano de los valores → todas las variantes [{Talla:"38",Color:"negro"},…].
+function variantCombos(atributos){
+  const axes=stockAxes(atributos).map(a=>({ nombre:a.nombre, vals:String(a.valores).split(/[,\n;]+/).map(s=>s.trim()).filter(Boolean) }));
+  if(!axes.length || axes.some(a=>!a.vals.length)) return [];
+  let combos=[{}];
+  axes.forEach(ax=>{ const nx=[]; combos.forEach(cm=> ax.vals.forEach(v=> nx.push({ ...cm, [ax.nombre]:v }))); combos=nx; });
+  return combos;
+}
+// Clave estable de una variante (normalizada). DEBE coincidir con la del motor.
+function stockKey(atributos, vals){
+  const parts=stockAxes(atributos).map(a=>a.nombre+"="+String((vals&&vals[a.nombre])??"").trim().toLowerCase());
+  return parts.length?parts.join("|"):"_";
+}
+function renderStock(){
+  const b=$("tabBody");
+  const c=st.prod.config=st.prod.config||{};
+  const fisico=(st.prod.tipo||"digital")==="fisico";
+  if(!fisico){
+    b.innerHTML=`<div class="card"><h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("box")} Stock</h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">Los productos <b>digitales no se agotan</b> — un link o archivo se entrega infinitas veces. Por eso no llevan stock.</div></div>`;
+    return;
+  }
+  if(!c.stock||typeof c.stock!=="object"||Array.isArray(c.stock)) c.stock={};
+  const combos=variantCombos(c.atributos);
+  const umbral = c.stock_umbral!=null ? c.stock_umbral : 3;
+  const explic=`<div class="card" style="border-color:rgba(43,127,255,.3)">
+    <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("box")} Cómo funciona tu stock</h4>
+    <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--muted);line-height:1.7">
+      <li><b>Se reserva al crear el pedido:</b> apenas se arma un pedido, se descuenta. Así la cuenta refleja lo comprometido, no solo lo ya entregado.</li>
+      <li><b>El bot NO deja de vender en 0:</b> sigue tomando pedidos aunque llegue a 0 (o negativo) y <b>te avisa</b> por Telegram y en el panel para que repongas. Tú decides si frenas.</li>
+      <li><b>Vuelve solo si se cae la venta:</b> si un pedido se <b>cancela, se rechaza o no se recoge</b>, esas unidades <b>regresan</b> al stock.</li>
+      <li>Repones editando los números de abajo cuando compras más mercadería.</li>
+    </ul></div>`;
+  const umbralCard=`<div class="card">
+    <h4 style="margin-top:0">Avísame cuando el stock baje de</h4>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+      <input class="in" id="stkUmbral" type="number" min="0" step="1" value="${esc(umbral)}" style="width:110px"/>
+      <span style="font-size:12.5px;color:var(--muted)">unidades — te llega una alerta al llegar a ese número o a 0.</span>
+    </div></div>`;
+  let cuerpo;
+  if(combos.length){
+    const filas=combos.map(cm=>{
+      const k=stockKey(c.atributos,cm);
+      const label=Object.entries(cm).map(([n,v])=>`${esc(n)} ${esc(v)}`).join(" · ");
+      const val=c.stock[k];
+      const bajo = val!=null && Number(val)<=Number(umbral);
+      return `<tr>
+        <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-size:13px">${label}${val!=null&&Number(val)<=0?' <span style="color:var(--red,#e2564a);font-weight:700">· agotado</span>':bajo?' <span style="color:var(--amber,#f0a92b);font-weight:700">· bajo</span>':''}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid var(--border);width:120px;text-align:right"><input class="in stkV" data-k="${esc(k)}" type="number" step="1" value="${val==null?"":esc(val)}" placeholder="—" style="width:100px;text-align:right"/></td>
+      </tr>`;
+    }).join("");
+    cuerpo=`<div class="card">
+      <h4 style="margin-top:0">Unidades por variante</h4>
+      <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Una fila por cada combinación de tus atributos (${stockAxes(c.atributos).map(a=>esc(a.nombre)).join(" × ")}). Vacío = no llevas la cuenta de esa variante.</div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+        <thead><tr><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Variante</th><th style="text-align:right;padding:6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Stock</th></tr></thead>
+        <tbody>${filas}</tbody></table></div></div>`;
+  } else {
+    const k="_"; const val=c.stock[k];
+    cuerpo=`<div class="card">
+      <h4 style="margin-top:0">Unidades disponibles</h4>
+      <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Este producto no tiene variantes (talla/color), así que es un solo número. ${(c.atributos||[]).length?"Si quieres llevar el stock por talla/color, agrega esos atributos con sus valores en <b>Producto → Detalles a preguntar</b>.":""}</div>
+      <input class="in stkV" data-k="_" type="number" step="1" value="${val==null?"":esc(val)}" placeholder="—" style="width:140px"/>
+      ${val!=null&&Number(val)<=0?'<div style="color:var(--red,#e2564a);font-weight:700;font-size:12.5px;margin-top:6px">Agotado</div>':(val!=null&&Number(val)<=Number(umbral)?'<div style="color:var(--amber,#f0a92b);font-weight:700;font-size:12.5px;margin-top:6px">Stock bajo</div>':'')}</div>`;
+  }
+  b.innerHTML=explic+umbralCard+cuerpo;
+  $("stkUmbral").onchange=(e)=>{ const v=e.target.value.trim(); if(v==="") delete c.stock_umbral; else c.stock_umbral=Math.max(0,parseInt(v,10)||0); };
+  b.querySelectorAll(".stkV").forEach(inp=> inp.onchange=(e)=>{
+    const k=inp.dataset.k, v=e.target.value.trim();
+    if(v==="") delete c.stock[k]; else c.stock[k]=Math.round(Number(v)||0);
+    renderStock(); // re-pinta para actualizar los sellos agotado/bajo
+  });
 }
 
 // Selector de emoji del producto (compartido). Requiere #emojiBtn y #emojiPop.
@@ -1797,20 +1876,23 @@ async function renderInicio(){
     if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
     if(t==="remarketing"){ const ok=!!c.remarketing_seq_id; return {ok,opt:true,msg:ok?"Secuencia enlazada":"Sin remarketing (opcional)"}; }
     if(t==="flujos") return {ok:true,opt:true,msg:"Editor visual (avanzado)"};
+    if(t==="stock"){ const s=(c.stock&&typeof c.stock==="object")?c.stock:{}; const ks=Object.keys(s); const tot=ks.reduce((a,k)=>a+(Number(s[k])||0),0); return {ok:ks.length>0,opt:true,msg:ks.length?`${tot} unidad(es) en stock`:"Sin stock cargado (opcional)"}; }
     return {ok:false,msg:""};
   };
   const NM={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega", ia:"Venta con IA",
-    activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)" };
+    activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)", stock:"Stock (inventario)" };
   if(esRegalo){ NM.producto="El regalo · qué es y qué entrega"; }
   const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>';
   const IC={ producto:icon("box"), opciones:icon("productos"), entrega:fisico?icon("truck"):icon("link"),
-    ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos") };
+    ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos"), stock:icon("productos") };
+  // "stock" solo en productos FÍSICOS (los digitales no se agotan).
+  const fase1 = fisico ? ["producto","opciones","entrega","stock"] : ["producto","opciones","entrega"];
   const PH = esRegalo
-    ? [["1","El regalo",fisico?"Qué es (se suma al paquete del pedido)":"Qué es y qué se entrega (el link o archivo)",["producto"]]]
+    ? [["1","El regalo",fisico?"Qué es, cuánto tienes y cómo llega":"Qué es y qué se entrega (el link o archivo)",fisico?["producto","stock"]:["producto"]]]
     : esExtra
-    ? [["1","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
+    ? [["1","El producto","Lo que vendes, su precio, cómo se entrega y tu stock",fisico?["producto","opciones","entrega","stock"]:["producto","opciones","entrega"]],
        ["2","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
-    : [["1","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
+    : [["1","El producto","Lo que vendes, precios, entrega"+(fisico?" y stock":""),fase1],
        ["2","La venta","La venta con IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
        ["3","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
   // Color por fase: ① azul (producto) · ② violeta IA (venta) · ③ gris (avanzado).
