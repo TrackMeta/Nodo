@@ -383,12 +383,24 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
       // Regalo FÍSICO con variantes: su clave de stock se calcula con lo que el
       // cliente eligió PARA EL REGALO (capturado con clave prefijada rg<gi>_<clave>
       // por la IA), no con la talla del principal. Sin variantes → "_".
+      // Si al crear el pedido el cliente TODAVÍA no dio la talla del regalo (es un
+      // dato OPCIONAL, no bloquea el cierre), el bump queda `stock_pendiente` y
+      // reconciliarStockExtras lo descuenta cuando la capture — igual que un extra.
+      // Sin esto, el regalo salía con clave de stock vacía y su stock nunca bajaba.
       if (!digital && pid) {
         const { data: gp } = await db.from("products").select("config").eq("id", pid).maybeSingle();
         const gatrs = normalizeAtributos((gp as any)?.config?.atributos).filter((a: any) => a.valores?.length);
-        const giftVals: Record<string, unknown> = {};
-        for (const ga of gatrs) giftVals[ga.nombre] = rv[`rg${gi}_${ga.clave}`];
-        stockKey = stockKeyEngine(gatrs, giftVals);
+        if (gatrs.length) {
+          const giftVals: Record<string, unknown> = {};
+          let faltan = false;
+          for (const ga of gatrs) { const v = rv[`rg${gi}_${ga.clave}`]; if (v == null || String(v).trim() === "") faltan = true; else giftVals[ga.nombre] = v; }
+          if (faltan) {
+            bumps.push({ regalo: true, nombre: g?.nombre || "regalo", precio: 0, costo, digital, version_id: vid ?? null, product_id: pid ?? null, stock_pendiente: true, talla_pref: `rg${gi}`, entregado: false });
+            changed = true;
+            continue;
+          }
+          stockKey = stockKeyEngine(gatrs, giftVals);
+        }
       }
       bumps.push({ regalo: true, nombre: g?.nombre || "regalo", precio: 0, costo, digital, version_id: vid ?? null, product_id: pid ?? null, stock_key: stockKey, entregado: false });
       changed = true;
@@ -470,7 +482,9 @@ async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
     for (const b of pend) {
       const { data: ep } = await db.from("products").select("config").eq("id", b.product_id).maybeSingle();
       const eatrs = normalizeAtributos((ep as any)?.config?.atributos).filter((a: any) => a.valores?.length);
-      const pref = "xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10);
+      // Prefijo de las variables donde la IA guardó la talla de ESTE bump: los
+      // REGALOS lo traen guardado (`rg<gi>`); los EXTRAS usan el `xt<vid>` calculado.
+      const pref = b.talla_pref ?? ("xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10));
       const vals: Record<string, unknown> = {};
       let faltan = false;
       for (const ea of eatrs) {
@@ -2136,7 +2150,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         }
         const { data: obRow } = await db.from("orders").select("order_bumps").eq("id", (ord as any).id).maybeSingle();
         for (const b of ((obRow as any)?.order_bumps ?? [])) {
-          if (b?.product_id && b?.digital !== true) mov.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
+          if (b?.product_id && b?.digital !== true && !b?.stock_pendiente) mov.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
         }
         if (mov.length) {
           const alerts = await aplicarStock(db, mov, -1);
