@@ -524,7 +524,8 @@ function compileProductoIA(c,tipo){
   // 🎁 Regalo con la compra: si está activado "mencionar", la IA lo usa de gancho.
   const regs=(c.regalos||[]).filter(r=>r&&r.nombre);
   if(c.regalo_mencionar && regs.length){
-    L.push("## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS de regalo: "+regs.map(r=>r.nombre).join(", ")+". Puedes mencionarlo con naturalidad para incentivar el cierre (\"y de regalo te incluyo…\"). No lo cobres, no lo prometas dos veces ni exageres; se entrega solo al cerrar la compra.");
+    const lista=regs.map(r=> (r.desc&&String(r.desc).trim()) ? `- ${r.nombre}: ${String(r.desc).trim()}` : `- ${r.nombre}`).join("\n");
+    L.push("## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS de regalo:\n"+lista+"\nPuedes mencionarlo con naturalidad para incentivar el cierre (\"y de regalo te incluyo…\"). Si el cliente pregunta qué es, explícaselo con su descripción. No lo cobres, no lo prometas dos veces ni exageres; se entrega solo al cerrar la compra.");
   }
   return L.join("\n\n");
 }
@@ -681,6 +682,11 @@ function renderRegaloProducto(b){
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("box")} Cómo llega</h4>
       <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Como es físico, <b>viaja en el mismo paquete</b> del pedido — no configuras entrega. Aparece en el rótulo del envío.</div>
     </div>`}
+    <div class="card" style="border-color:rgba(168,85,247,.32)">
+      <h4 style="display:flex;align-items:center;gap:7px;margin-top:0"><span style="color:var(--ia1,#a855f7);display:inline-flex"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span> Descripción para la IA <span style="font-weight:400;color:var(--faint);font-size:12px">— opcional</span></h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin:2px 0 8px">Qué es el regalo y por qué es valioso. La IA la usa para <b>mencionarlo como gancho</b> y para <b>responder si el cliente pregunta</b> "¿qué es ese regalo?". (Solo se usa si activas "Mencionar el regalo" en el producto principal.)</div>
+      <textarea class="ta" id="pRegDesc" placeholder="Ej. Una guía en PDF con 20 recetas saludables, lista para imprimir. Complementa perfecto las zapatillas para quien empieza a entrenar.">${esc(c.regalo_desc||"")}</textarea>
+    </div>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Lo que te cuesta <span style="font-weight:400;color:var(--faint);font-size:12px">— opcional</span></h4>
       <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="${tipo==="fisico"?"Ej. 8":"Ej. 0"}" style="margin-top:8px"/>
@@ -694,6 +700,9 @@ function renderRegaloProducto(b){
   $("pCosto").onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   $("pFolder").onchange=(e)=>st.prod.folder=e.target.value||null;
+  // Descripción del regalo para la IA: se guarda directo (sin prodSync, que
+  // recompilaría contexto_producto y la pisaría). La lee el principal al mencionar.
+  const rd=$("pRegDesc"); if(rd) rd.oninput=(e)=>{ const v=e.target.value.trim(); if(v) c.regalo_desc=v; else delete c.regalo_desc; };
   $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
   const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(); }catch(_){ toast("JSON inválido",true); } };
   wireEmojiPicker();
@@ -1686,12 +1695,13 @@ async function renderExtras(){
 // importar precio — un regalo vale 0). Alimenta el selector de "Regalo con la compra".
 async function cargarCatalogoRegalos(){
   let { data:prods } = await supa.from("products")
-    .select("id,nombre,emoji,tipo,clase,product_versions(id,nombre,activo)")
+    .select("id,nombre,emoji,tipo,clase,config,product_versions(id,nombre,activo)")
     .eq("channel_id",st.channelId).eq("clase","regalo").order("nombre");
   const cat=[];
   (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{
     if(v.activo!==false) cat.push({ version_id:v.id, product_id:p.id, tipo:p.tipo||"digital",
-      nombre:`${p.emoji?p.emoji+" ":""}${p.nombre}${v.nombre&&v.nombre!=="Estándar"?" · "+v.nombre:""}` });
+      nombre:`${p.emoji?p.emoji+" ":""}${p.nombre}${v.nombre&&v.nombre!=="Estándar"?" · "+v.nombre:""}`,
+      desc:(p.config&&p.config.regalo_desc)||"" });
   }));
   st.regCat=cat; return cat;
 }
@@ -1700,12 +1710,14 @@ function paintRegalos(){
   box.innerHTML="";
   if(!cfg.regalos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin regalo por ahora.</div>`; return; }
   cfg.regalos.forEach((r,i)=>{
-    // Si venía solo con version_id, completa sus datos desde el catálogo.
-    if(!r.product_id){ const c=cat.find(x=>x.version_id===r.version_id); if(c) cfg.regalos[i]=r={ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }; }
+    // Refresca desde el catálogo (nombre/tipo/descripción actuales del regalo) para
+    // que la descripción que ve la IA no quede vieja si se editó en el regalo.
+    const cur=cat.find(x=>x.version_id===r.version_id);
+    if(cur) cfg.regalos[i]=r={ version_id:cur.version_id, product_id:cur.product_id, nombre:cur.nombre, tipo:cur.tipo, desc:cur.desc };
     const row=document.createElement("div"); row.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:8px";
     const sel=document.createElement("select"); sel.className="in"; sel.style.flex="1";
     sel.innerHTML=cat.map(c=>`<option value="${esc(c.version_id)}" ${c.version_id===r.version_id?"selected":""}>${esc(c.nombre)} · ${c.tipo==="fisico"?"físico":"digital"}</option>`).join("");
-    sel.onchange=()=>{ const c=cat.find(x=>x.version_id===sel.value); if(c) cfg.regalos[i]={ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }; };
+    sel.onchange=()=>{ const c=cat.find(x=>x.version_id===sel.value); if(c) cfg.regalos[i]={ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo, desc:c.desc }; };
     const del=document.createElement("button"); del.className="btn"; del.textContent="Quitar"; del.onclick=()=>{ cfg.regalos.splice(i,1); paintRegalos(); };
     row.appendChild(sel); row.appendChild(del); box.appendChild(row);
   });
