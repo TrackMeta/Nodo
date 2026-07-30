@@ -36,7 +36,10 @@ export const EST = {
   // pagar a propósito, para poder medir cuántos abandonan.
   esperando_adelanto: { label:"Esperando adelanto",  venta:false, cobro:"nada",     tono:"warn", zona:"provincia" },
   adelanto_validado:  { label:"Adelanto validado",   venta:true,  cobro:"adelanto", tono:"ok",   zona:"provincia" },
-  por_despachar:      { label:"Por despachar",       venta:true,  cobro:"adelanto", tono:"ok",   zona:"provincia" },
+  // Mismo momento que adelanto_validado (adelanto pagado, listo para despachar):
+  // se muestra con el MISMO nombre para no confundir. Sigue siendo un estado
+  // aparte por compatibilidad con pedidos viejos que ya estaban aquí.
+  por_despachar:      { label:"Adelanto validado",   venta:true,  cobro:"adelanto", tono:"ok",   zona:"provincia" },
   despachado:         { label:"Despachado",          venta:true,  cobro:"adelanto", tono:"warn", zona:"provincia" },
   en_agencia:         { label:"En agencia",          venta:true,  cobro:"adelanto", tono:"warn", zona:"provincia" },
   saldo_pagado:       { label:"Saldo pagado",        venta:true,  cobro:"todo",     tono:"ok",   zona:"provincia" },

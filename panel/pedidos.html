@@ -489,7 +489,7 @@ function primaryAction(o){
   switch(o.estado){
     case "carrito": return { label:"Confirmar pedido", estado:"confirmado" };
     case "confirmado": return zona==="provincia"
-      ? { label:"Por despachar", estado:"por_despachar" }
+      ? { label:"Adelanto validado", estado:"adelanto_validado" }
       : { label:"Salió a reparto", estado:"en_reparto" };
     case "adelanto_validado":
     case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
@@ -798,7 +798,7 @@ function openMenu(ev,o){
   ops.push(["sep"]);
   const trans=zona==="lima"
     ? [["confirmado"],["en_reparto"],["entregado_cobrado"],["reprogramado"],["rechazado"]]
-    : [["esperando_adelanto"],["adelanto_validado"],["por_despachar"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
+    : [["esperando_adelanto"],["adelanto_validado"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
   trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${O.label(e)}`,()=>confirmSet(o,e,O.label(e))]); });
   ops.push(["sep"]);
   // Si la plata YA entró, tumbar el pedido no es cancelar: es anular una venta,
