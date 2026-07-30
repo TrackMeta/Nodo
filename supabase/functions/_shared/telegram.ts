@@ -118,3 +118,15 @@ export async function setWebhook(botToken: string, url: string, secret: string):
     return data?.ok ? { ok: true } : { ok: false, error: data?.description ?? "no se pudo registrar" };
   } catch (e) { return { ok: false, error: String((e as any)?.message ?? e) }; }
 }
+
+// Quita el webhook del bot (para desconectar Telegram). Best-effort: no lanza.
+export async function deleteWebhook(botToken: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drop_pending_updates: true }),
+    });
+    const data = await res.json();
+    return data?.ok ? { ok: true } : { ok: false, error: data?.description ?? "no se pudo quitar" };
+  } catch (e) { return { ok: false, error: String((e as any)?.message ?? e) }; }
+}

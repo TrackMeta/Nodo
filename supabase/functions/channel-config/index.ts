@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
-import { setWebhook } from "../_shared/telegram.ts";
+import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 
 const db = serviceClient();
@@ -389,6 +389,22 @@ Deno.serve(async (req) => {
         });
         if (error) return json({ error: "guardar_secreto", detalle: `${kind}: ${error.message}` }, 400);
       }
+      return json({ ok: true });
+    }
+
+    if (action === "telegram_disconnect") {
+      // Desconecta Telegram: quita el webhook del Copiloto, limpia chats/vínculo
+      // y borra el bot token del Vault. NO toca datos del negocio (Telegram es
+      // solo el canal de avisos). El deleteWebhook es best-effort (si el token ya
+      // no vale, igual limpiamos el resto).
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.telegram_bot_token;
+      if (token) { try { await deleteWebhook(token); } catch { /* best-effort */ } }
+      const { error: e1 } = await db.from("channels")
+        .update({ telegram_chat_ids: [], telegram_webhook_secret: null, telegram_pair: null }).eq("id", channel_id);
+      if (e1) return json({ error: "desconectar_tg", detalle: e1.message }, 400);
+      const { error: e2 } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: "telegram_bot_token" });
+      if (e2) return json({ error: "desconectar_tg_secreto", detalle: e2.message }, 400);
       return json({ ok: true });
     }
 

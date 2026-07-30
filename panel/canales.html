@@ -283,6 +283,26 @@ async function desconectarWA(btn){
     if(btn){ btn.disabled=false; btn.textContent="Desconectar número"; }
   }
 }
+// Desconectar Telegram: quita el webhook, limpia chats y borra el bot token.
+// NO toca datos del negocio (Telegram es solo el canal de avisos).
+async function desconectarTG(btn){
+  const ok=await confirmDialog({
+    title:"Desconectar Telegram",
+    message:"Se quitará el <b>bot de Telegram</b> de este canal: dejarás de recibir avisos y de aprobar pagos desde el celular. Se borran el token, los chats vinculados y el Copiloto.<br><br><b>Tus contactos, pedidos y flujos NO se tocan.</b> Después puedes conectar otro bot.<br><br>¿Desconectar Telegram?",
+    confirmText:"Sí, desconectar",
+    danger:true
+  });
+  if(!ok) return;
+  if(btn){ btn.disabled=true; btn.textContent="Desconectando…"; }
+  try{
+    await callFn("channel-config",{ action:"telegram_disconnect", channel_id:st.channelId });
+    toast("Telegram desconectado ✓");
+    await load();  // el canal Telegram queda "Sin conectar"
+  }catch(err){
+    toast(err.message||"No se pudo desconectar",true);
+    if(btn){ btn.disabled=false; btn.textContent="Desconectar Telegram"; }
+  }
+}
 
 // ── Tarjeta bonita del número conectado ────────────────────────────────
 // El número, el nombre verificado y la calidad vienen de Meta (Graph API) vía
@@ -405,7 +425,7 @@ function renderTG(){
       <div style="font-weight:700;font-size:13px;margin-top:14px">1 · El bot</div>
       <label>Bot token ${badge(s.telegram_bot_token)}</label>
       <input class="in" type="password" id="t_token" ${NOFILL_PWD} placeholder="${ph(s.telegram_bot_token,'123456:ABC-DEF...')}"/>
-      <div class="acts"><button class="btn primary" id="saveTG">Guardar token</button></div>
+      <div class="acts"><button class="btn primary" id="saveTG">Guardar token</button>${s.telegram_bot_token?`<button class="btn danger" id="tgDisc" style="margin-left:auto" title="Quitar el bot de Telegram (avisos y aprobaciones)">Desconectar Telegram</button>`:""}</div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -447,6 +467,7 @@ function renderTG(){
       </div>`;
   $("saveTG").onclick=(e)=>save(e.target,{ telegram_bot_token:$("t_token").value||undefined });
   $("saveChats").onclick=(e)=>save(e.target,{ telegram_chat_ids:$("t_chats").value });
+  const tgd=$("tgDisc"); if(tgd) tgd.onclick=()=>desconectarTG(tgd);
   const hk=$("tgHook");
   if(hk) hk.onclick=async(e)=>{
     const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Conectando…";
