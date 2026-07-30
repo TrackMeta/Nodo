@@ -4455,10 +4455,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           apoyos.map((x: any) => `- [[media:${x.m.tag}]] — ${x.m.descripcion || `apoyo para ${x.a.nombre}`}`).join("\n")
         : "";
       const faltan = atributos.filter((a: any) => a.obligatorio !== false && !String(ctx[a.clave] ?? "").trim());
-      const cierre = faltan.length
-        ? `\n\nAún te falta capturar: **${faltan.map((a: any) => a.nombre).join(", ")}**. Pídelos con naturalidad, de a pocos, sin interrogar ni pedir todo de golpe, y no confirmes el pedido hasta tenerlos.`
-        : "\n\nYa tienes todos los atributos obligatorios: no los vuelvas a pedir.";
-      parts.push("## Datos que debes capturar de este pedido\n" + L.join("\n") + apoyoTxt + cierre);
+      // Atributos OPCIONALES sin capturar (típicamente la talla del REGALO o del
+      // EXTRA físico): no bloquean el cierre, pero SÍ hay que preguntarlos una vez
+      // — sin esa talla no se puede enviar la variante correcta ni descontar su
+      // stock (adjuntarRegalos / reconciliarStockExtras la necesitan). Antes caían
+      // en "ya tienes los obligatorios: no vuelvas a pedir" y NUNCA se preguntaban,
+      // así que el regalo/extra salía sin talla y su stock no se descontaba.
+      const faltanOpc = atributos.filter((a: any) => a.obligatorio === false && !String(ctx[a.clave] ?? "").trim());
+      const cierreReq = faltan.length
+        ? `\n\nAún te falta capturar (OBLIGATORIO): **${faltan.map((a: any) => a.nombre).join(", ")}**. Pídelos con naturalidad, de a pocos, sin interrogar ni pedir todo de golpe, y no confirmes el pedido hasta tenerlos.`
+        : "\n\nYa tienes todos los atributos obligatorios.";
+      const cierreOpc = faltanOpc.length
+        ? `\n\nAntes de cerrar, pregunta UNA vez (no bloquean la venta, pero se necesitan para enviar la variante correcta del regalo/extra): **${faltanOpc.map((a: any) => a.nombre).join(", ")}**. Si el cliente no la sabe o le da igual, cierra el pedido igual sin insistir.`
+        : "";
+      parts.push("## Datos que debes capturar de este pedido\n" + L.join("\n") + apoyoTxt + cierreReq + cierreOpc);
     }
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
