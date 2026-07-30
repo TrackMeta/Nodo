@@ -56,9 +56,13 @@ Deno.serve(async (req) => {
     { onConflict: "contact_id" },
   );
 
-  // Reiniciar la prueba: BORRÓN Y CUENTA NUEVA. Limpia todo lo del contacto de
-  // prueba (mensajes, runs, secuencias, eventos/timeline, etiquetas, campos) y
-  // resetea sus datos, para empezar como si fuera un cliente nuevo.
+  // Reiniciar la prueba: BORRÓN Y CUENTA NUEVA. Limpia TODO lo del contacto de
+  // prueba (mensajes, runs, secuencias, eventos/timeline, etiquetas, campos y
+  // PEDIDOS) y resetea sus datos, para empezar como si fuera un cliente nuevo.
+  // Solo aplica al contacto de prueba (wa_id = webchat-test) de este canal.
+  // OJO: sin borrar los PEDIDOS y la MEMORIA IA, el contacto seguía siendo
+  // "comprador" tras reiniciar → el modo post-venta/recompra lo secuestraba y no
+  // se podía volver a probar una venta desde cero. Por eso van acá.
   if (reset) {
     await Promise.all([
       db.from("messages").delete().eq("contact_id", contactId),
@@ -67,11 +71,12 @@ Deno.serve(async (req) => {
       db.from("contact_events").delete().eq("contact_id", contactId),
       db.from("contact_tags").delete().eq("contact_id", contactId),
       db.from("contact_field_values").delete().eq("contact_id", contactId),
+      db.from("orders").delete().eq("contact_id", contactId),
     ]);
     await db.from("contacts").update({
       stage: "nuevo", bot_activo: true, product_id: null, ad_id: null,
       ctwa_clid: null, source: null, last_input: null, last_input_type: null,
-      consecutive_failed_reply: 0,
+      consecutive_failed_reply: 0, memoria_ia: null,
       primera_interaccion: new Date().toISOString(),
       ultimo_mensaje_at: new Date().toISOString(),
       ultimo_mensaje_cliente_at: null,
