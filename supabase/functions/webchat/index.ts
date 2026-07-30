@@ -76,7 +76,11 @@ Deno.serve(async (req) => {
     await db.from("contacts").update({
       stage: "nuevo", bot_activo: true, product_id: null, ad_id: null,
       ctwa_clid: null, source: null, last_input: null, last_input_type: null,
-      consecutive_failed_reply: 0, memoria_ia: null,
+      consecutive_failed_reply: 0,
+      // memoria_ia es `jsonb NOT NULL default '{}'` (migración 0059): ponerla en
+      // `null` viola la constraint y TUMBABA el update entero → la memoria "no se
+      // reiniciaba". Se limpia con un objeto VACÍO, no con null.
+      memoria_ia: {},
       primera_interaccion: new Date().toISOString(),
       ultimo_mensaje_at: new Date().toISOString(),
       ultimo_mensaje_cliente_at: null,
