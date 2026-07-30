@@ -184,12 +184,14 @@ export function sec(title, body, { open = false, count = null } = {}) {
 
 const TONO_COLOR = { ok: "var(--green)", warn: "var(--amber)", bad: "var(--red)" };
 
-// Tarjeta compacta del pedido dentro de la ficha (producto, estado, zona, plata,
-// envío). Devuelve solo el HTML interior; el <h4> y el botón de rótulo los pone
-// quien la usa.
+// Apartado COMPLETO del pedido dentro de la ficha: producto + atributos, ventas
+// extra y regalos (order_bumps), y todos los datos del cliente (incluido su
+// teléfono) con lo que edites (agencia CONFIRMADA `destino`, guía, clave…).
+// Devuelve solo el HTML interior; el <h4> y el botón de rótulo los pone quien la
+// usa. Necesita `o.contact` (nombre, wa_id): latestOrder lo trae en el join.
 export function pedidoResumenHtml(o) {
   if (!o) return "";
-  const p = o.product || {}, v = o.version || {}, s = o.shipping || {};
+  const c = o.contact || {}, p = o.product || {}, v = o.version || {}, s = o.shipping || {};
   const zona = O.zonaDe(o);
   const zonaTxt = zona === "lima" ? "LIMA" : zona === "provincia" ? "PROVINCIA" : "DIGITAL";
   const col = TONO_COLOR[O.tono(o.estado)] || "var(--amber)";
@@ -198,29 +200,58 @@ export function pedidoResumenHtml(o) {
   const moneyLine = adel || saldo
     ? `${adel ? `Adelanto <b>${money(adel, o.currency)}</b>` : ""}${adel && saldo ? " · " : ""}${saldo ? `Saldo <b>${money(saldo, o.currency)}</b>` : ""}`
     : `Total <b>${money(O.total(o), o.currency)}</b>`;
-  // Mini ficha con etiquetas: se ven TODOS los datos que editas (incluida la
-  // agencia CONFIRMADA `destino`, no solo lo que dijo el cliente). Si en
-  // provincia aún no confirmaste la sede, se muestra lo pedido con un aviso.
-  const lines = [];
-  const line = (k, valHtml) => { if (valHtml) lines.push(`<div class="pd-line"><span class="pd-k">${esc(k)}</span><span class="pd-v">${valHtml}</span></div>`); };
   const air = s.aereo ? ` <span class="pd-chip air">✈ Aéreo</span>` : "";
-  const dest = (s.cliente || c.nombre || "").trim();
-  line("Destinatario", dest ? esc(dest) : "");
-  if (zona === "provincia") {
-    line("DNI", s.dni ? esc(s.dni) : "");
-    if (s.destino) line("Agencia", `${esc(s.destino)}${air}`);
-    else if (s.sede) line("Agencia", `${esc(s.sede)} <span class="pd-chip warn">sin confirmar</span>${air}`);
-    else if (s.ciudad) line("Agencia", `Shalom ${esc(cap(s.ciudad))}${air}`);
-    if (!s.destino && s.ciudad && s.sede) line("Ciudad", esc(cap(s.ciudad)));
-    if (s.mercaderia) line("Medida", esc(s.mercaderia));
-  } else if (zona === "lima") {
-    line("Dirección", s.direccion ? esc(s.direccion) : "");
-    line("Distrito", s.distrito ? esc(cap(s.distrito)) : "");
-    line("Referencia", s.referencia ? esc(s.referencia) : "");
+  const linesHtml = (arr) => arr.length ? `<div class="pd-info">${arr.join("")}</div>` : "";
+  const mkLine = (k, valHtml) => valHtml ? `<div class="pd-line"><span class="pd-k">${esc(k)}</span><span class="pd-v">${valHtml}</span></div>` : "";
+
+  // ── PRODUCTO: atributos del principal (talla, color…) + guía/clave. Los
+  //    atributos del regalo/extra NO van acá: se muestran con su bump abajo.
+  const prodLines = [];
+  for (const [k, val] of Object.entries(s.atributos || {})) {
+    if (/regalo|extra/i.test(k)) continue;
+    prodLines.push(mkLine(k, esc(val)));
   }
-  for (const [k, val] of Object.entries(s.atributos || {})) line(k, esc(val));
-  if (s.guia) line("Guía", `<b class="mono">${esc(s.guia)}</b>`);
-  if (s.clave_recojo) line("Clave", `<b class="mono">${esc(s.clave_recojo)}</b>`);
+  if (s.guia) prodLines.push(mkLine("Guía", `<b class="mono">${esc(s.guia)}</b>`));
+  if (s.clave_recojo) prodLines.push(mkLine("Clave", `<b class="mono">${esc(s.clave_recojo)}</b>`));
+
+  // ── VENTAS EXTRA Y REGALOS: cada order_bump del pedido, con su variante
+  //    (parseada del stock_key) y su precio. El regalo va marcado "Gratis".
+  const bumps = Array.isArray(o.order_bumps) ? o.order_bumps : [];
+  const bumpRows = bumps.map((b) => {
+    const esRegalo = b.regalo === true || Number(b.precio || 0) === 0;
+    const nom = (String(b.nombre || "")
+      .replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "")      // quita el sufijo de precio (lo mostramos aparte)
+      .replace(/\s*\((?:extra|regalo)\)\s*/ig, " ")   // quita "(extra)"/"(regalo)" (ya lo dice el icono)
+      .replace(/\s{2,}/g, " ").trim()) || (esRegalo ? "Regalo" : "Extra");
+    const varTxt = (b.stock_key && b.stock_key !== "_")
+      ? b.stock_key.split("|").map((kv) => { const [k, val] = kv.split("="); return `${k} ${cap(val || "")}`; }).join(" · ")
+      : "";
+    const precioTxt = esRegalo ? "Gratis" : money(Number(b.precio || 0), o.currency);
+    const flags = (b.stock_pendiente ? ` <span class="pd-chip warn">falta talla</span>` : "")
+      + (b.digital ? ` <span class="pd-chip">${b.entregado ? "entregado ✓" : "digital"}</span>` : "");
+    return `<div class="pd-bump"><span class="pd-bi">${esRegalo ? "🎁" : "➕"}</span>` +
+      `<span class="pd-bn">${esc(nom)}${varTxt ? ` <span class="pd-bvar">${esc(varTxt)}</span>` : ""}${flags}</span>` +
+      `<span class="pd-bp">${esc(precioTxt)}</span></div>`;
+  }).join("");
+
+  // ── DATOS DEL CLIENTE: nombre, teléfono y a dónde se entrega ──
+  const cliLines = [];
+  const dest = (s.cliente || c.nombre || "").trim();
+  cliLines.push(mkLine("Cliente", dest ? esc(dest) : ""));
+  cliLines.push(mkLine("Teléfono", c.wa_id ? `<b class="mono">+${esc(c.wa_id)}</b>` : ""));
+  if (zona === "provincia") {
+    cliLines.push(mkLine("DNI", s.dni ? `<b class="mono">${esc(s.dni)}</b>` : ""));
+    if (s.destino) cliLines.push(mkLine("Agencia", `${esc(s.destino)}${air}`));
+    else if (s.sede) cliLines.push(mkLine("Agencia", `${esc(s.sede)} <span class="pd-chip warn">sin confirmar</span>${air}`));
+    else if (s.ciudad) cliLines.push(mkLine("Agencia", `Shalom ${esc(cap(s.ciudad))}${air}`));
+    if (!s.destino && s.ciudad && s.sede) cliLines.push(mkLine("Ciudad", esc(cap(s.ciudad))));
+    if (s.mercaderia) cliLines.push(mkLine("Medida", esc(s.mercaderia)));
+  } else if (zona === "lima") {
+    cliLines.push(mkLine("Dirección", s.direccion ? esc(s.direccion) : ""));
+    cliLines.push(mkLine("Distrito", s.distrito ? esc(cap(s.distrito)) : ""));
+    cliLines.push(mkLine("Referencia", s.referencia ? esc(s.referencia) : ""));
+  }
+
   return `
     <div class="pd-card">
       <div class="pd-top">
@@ -231,7 +262,10 @@ export function pedidoResumenHtml(o) {
         <span class="pd-badge" style="color:${col};background:${col}1e;border-color:${col}55">${esc(O.label(o.estado))}</span>
         <span class="pd-money">${moneyLine}</span>
       </div>
-      ${lines.length ? `<div class="pd-info">${lines.join("")}</div>` : ""}
+      ${linesHtml(prodLines.filter(Boolean))}
+      ${bumpRows ? `<div class="pd-sub">Ventas extra y regalos</div><div class="pd-bumps">${bumpRows}</div>` : ""}
+      <div class="pd-sub">Datos del cliente</div>
+      ${linesHtml(cliLines.filter(Boolean))}
     </div>`;
 }
 
@@ -430,6 +464,15 @@ export const EXTRAS_CSS = `
   .pd-chip{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;border:1px solid;border-radius:5px;padding:0 5px;vertical-align:middle;white-space:nowrap}
   .pd-chip.air{color:#3b82f6;border-color:#3b82f6}
   .pd-chip.warn{color:var(--amber);border-color:var(--amber)}
+  /* Sub-encabezado dentro del apartado del pedido */
+  .pd-sub{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);border-top:1px dashed var(--border);padding-top:8px;margin-top:1px}
+  /* Ventas extra y regalos */
+  .pd-bumps{display:flex;flex-direction:column;gap:6px}
+  .pd-bump{display:flex;align-items:baseline;gap:7px;font-size:12px;line-height:1.4}
+  .pd-bi{flex:none;font-size:13px}
+  .pd-bn{flex:1;min-width:0;color:var(--text);word-break:break-word}
+  .pd-bvar{color:var(--muted);font-size:11px}
+  .pd-bp{flex:none;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
   /* Campos técnicos (colapsados) */
   .cf-tech{margin-top:10px;font-size:12px}
   .cf-tech summary{cursor:pointer;color:var(--faint);list-style:none;display:flex;align-items:center;gap:6px;padding:2px 0}
