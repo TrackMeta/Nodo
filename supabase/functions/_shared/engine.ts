@@ -3148,6 +3148,51 @@ export async function leerGuiaShalom(db: SupabaseClient, channelId: string, imag
   };
 }
 
+// Normaliza el borrador de un producto a la forma EXACTA que aplica el panel
+// (armAplicar en productos.html). Hace falta porque `runAI` no fuerza el
+// jsonSchema en todos los proveedores (OpenAI solo pide json_object; el
+// output_config de Anthropic no es un parámetro real y se ignora), así que la IA
+// devuelve su forma natural: `tipo:"físico"` con tilde, `atributos` como objeto
+// {talla:[...],color:[...]}, `faq` con {pregunta,respuesta}, y el pitch en
+// `descripcion` en vez de `ia.resumen`. Sin esto, el panel PERDÍA talla/color,
+// FAQ y el pitch al aplicar el borrador.
+function normalizarDraftProducto(d: any): any {
+  if (!d || typeof d !== "object") return d;
+  // tipo: acepta con/sin tilde ("físico" → "fisico").
+  const t = String(d.tipo ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (t.startsWith("dig")) d.tipo = "digital";
+  else if (t.startsWith("fis") || t.startsWith("phys")) d.tipo = "fisico";
+  // atributos: objeto {talla:[...],color:[...]} → array [{nombre, valores}].
+  if (d.atributos && !Array.isArray(d.atributos) && typeof d.atributos === "object") {
+    d.atributos = Object.entries(d.atributos).map(([nombre, vals]) => ({
+      nombre: String(nombre).charAt(0).toUpperCase() + String(nombre).slice(1),
+      valores: Array.isArray(vals) ? vals.join(", ") : String(vals ?? ""),
+    }));
+  }
+  if (Array.isArray(d.atributos)) {
+    d.atributos = d.atributos
+      .map((a: any) => ({ nombre: String(a?.nombre ?? "").trim(), valores: Array.isArray(a?.valores) ? a.valores.join(", ") : String(a?.valores ?? "") }))
+      .filter((a: any) => a.nombre);
+  }
+  // faq: acepta {q,a} o {pregunta,respuesta} (o question/answer).
+  if (Array.isArray(d.faq)) {
+    d.faq = d.faq
+      .map((f: any) => ({ q: String(f?.q ?? f?.pregunta ?? f?.question ?? "").trim(), a: String(f?.a ?? f?.respuesta ?? f?.answer ?? "").trim() }))
+      .filter((f: any) => f.q && f.a);
+  }
+  // ia: el pitch a veces llega como d.descripcion/d.detalle (nivel raíz).
+  d.ia = (d.ia && typeof d.ia === "object") ? d.ia : {};
+  if (!d.ia.resumen && d.descripcion) d.ia.resumen = String(d.descripcion);
+  if (!d.ia.detalle && d.detalle) d.ia.detalle = String(d.detalle);
+  // presentaciones: el precio SIEMPRE lo pone el dueño (se ignora si vino).
+  if (Array.isArray(d.presentaciones)) {
+    d.presentaciones = d.presentaciones
+      .map((x: any) => ({ nombre: String(x?.nombre ?? "").trim(), descripcion: String(x?.descripcion ?? ""), cantidad: Number(x?.cantidad) || 1 }))
+      .filter((x: any) => x.nombre);
+  }
+  return d;
+}
+
 // ── Asistente "Armar con IA" (capa Crea): brief → borrador del producto ──
 // Del brief del dueño arma la ficha en BORRADOR (para que él revise). Respeta la
 // voz del negocio. 🔒 NUNCA inventa datos duros (precios reales, Yape, links,
@@ -3201,8 +3246,10 @@ export async function armarProducto(
     jsonSchema: schema as unknown as Record<string, unknown>,
   });
   const m = /\{[\s\S]*\}/.exec(raw);
-  try { return m ? JSON.parse(m[0]) : JSON.parse(raw); }
+  let parsed: any;
+  try { parsed = m ? JSON.parse(m[0]) : JSON.parse(raw); }
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
+  return normalizarDraftProducto(parsed);
 }
 
 // ── Asistente "Armar con IA": brief → borrador del CONOCIMIENTO DEL NEGOCIO ──
@@ -3254,8 +3301,17 @@ export async function armarNegocio(
     jsonSchema: schema as unknown as Record<string, unknown>,
   });
   const m = /\{[\s\S]*\}/.exec(raw);
-  try { return m ? JSON.parse(m[0]) : JSON.parse(raw); }
+  let parsed: any;
+  try { parsed = m ? JSON.parse(m[0]) : JSON.parse(raw); }
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
+  // Mismo motivo que en el producto: la IA suele devolver la FAQ como
+  // {pregunta,respuesta} y el panel espera {q,a} → se perdía entera.
+  if (parsed && Array.isArray(parsed.faq)) {
+    parsed.faq = parsed.faq
+      .map((f: any) => ({ q: String(f?.q ?? f?.pregunta ?? f?.question ?? "").trim(), a: String(f?.a ?? f?.respuesta ?? f?.answer ?? "").trim() }))
+      .filter((f: any) => f.q && f.a);
+  }
+  return parsed;
 }
 
 // ── Asesor IA (capas Mide + Aconseja): razona sobre los números REALES del ──
