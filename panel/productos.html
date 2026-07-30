@@ -2763,7 +2763,7 @@ function paintVals(box, a, onChange){
     +`<input class="valnew" placeholder="${arr.length?"Otro…":"Ej. 38"}" style="border:none;background:transparent;outline:none;color:var(--text);font:inherit;flex:1;min-width:70px;padding:4px 2px"/>`;
   box.querySelectorAll(".valx").forEach(bx=> bx.onclick=()=>{ arr.splice(+bx.dataset.i,1); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); });
   const inp=box.querySelector(".valnew");
-  const add=()=>{ const v=inp.value.trim(); if(!v) return false; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
+  const add=()=>{ const v=inp.value.trim(); if(!v) return false; inp.onblur=null; inp.value=""; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
   inp.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===","){ e.preventDefault(); add(); } else if(e.key==="Backspace" && !inp.value && arr.length){ arr.pop(); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); } };
   inp.onblur=()=>{ add(); };
   // Al tocar la caja (no un chip), enfoca el input para escribir.
