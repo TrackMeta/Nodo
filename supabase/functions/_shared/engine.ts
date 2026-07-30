@@ -2121,6 +2121,9 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     }
     const monto = parseMonto(a.monto ?? a.amount, ctx);
     if (monto !== undefined) patch.amount = monto;
+    // Stock de un extra FÍSICO recién sumado: se aplica DESPUÉS del patch, aparte,
+    // para no enredarse con el merge de shipping/datos de acá.
+    let extraStock: { product_id: string; key: string; unidades: number } | null = null;
     // a.bump: { nombre, precio } — suma una venta extra al pedido. Alimenta las
     // métricas de "ventas extra" del Dashboard y la columna "Valor Producto
     // extra" de la hoja, sin inventar una tabla nueva.
@@ -2137,6 +2140,20 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const nuevo: Record<string, unknown> = { nombre, precio };
         if (a.bump.version_id) nuevo.version_id = resolve(String(a.bump.version_id), ctx);
         if (a.bump.digital) { nuevo.digital = true; nuevo.entregado = false; }
+        // Un extra FÍSICO también descuenta stock (igual que el principal/regalo).
+        // El bump no traía el product_id → lo resolvemos desde el version_id y lo
+        // guardamos, para poder descontar y devolver. Clave "_" (no captura talla).
+        if (nuevo.version_id && !nuevo.digital) {
+          try {
+            const { data: pv } = await db.from("product_versions").select("product_id").eq("id", nuevo.version_id).maybeSingle();
+            const pid = (pv as any)?.product_id;
+            if (pid) {
+              nuevo.product_id = pid;
+              const { data: pr } = await db.from("products").select("tipo, config").eq("id", pid).maybeSingle();
+              if ((pr as any)?.tipo === "fisico" && (pr as any)?.config?.stock) extraStock = { product_id: pid, key: "_", unidades: 1 };
+            }
+          } catch { /* sin product_id → no se descuenta, como antes */ }
+        }
         patch.order_bumps = [...previos, nuevo];
         // Venta extra "ride-along" en un pedido FÍSICO: no se cobra aparte, se
         // suma al SALDO (lo que cobra la agencia en provincia, o el motorizado en
@@ -2165,6 +2182,18 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     }
     const { error } = await db.from("orders").update(patch).eq("id", orderId);
     if (error) throw new Error(error.message);
+    // 📦 Stock del extra físico recién sumado: descuenta 1 y lo agrega a stock_mov
+    // del pedido (para devolverlo si la venta se cae). Aparte del patch de arriba.
+    if (extraStock) {
+      try {
+        const { data: o2 } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+        const ship2 = ((o2 as any)?.shipping ?? {}) as Record<string, unknown>;
+        const mov = Array.isArray((ship2 as any).stock_mov) ? [...(ship2 as any).stock_mov, extraStock] : [extraStock];
+        const alerts = await aplicarStock(db, [extraStock], -1);
+        await db.from("orders").update({ shipping: { ...ship2, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+        for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+      } catch (e) { console.error("[actualizarPedido] stock extra:", (e as any)?.message ?? e); }
+    }
     if (a.estado) await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido → " + patch.estado);
     await syncPedidoSheet(db, orderId); // la fila sigue al pedido
   } catch (err) {
