@@ -450,6 +450,49 @@ export async function aplicarStock(
   return alerts;
 }
 
+// Descuenta el stock de los extras físicos con tallas propias YA aceptados
+// (bump stock_pendiente) cuando el cliente ya dijo su talla (capturada con
+// prefijo xt<vid>_). Corre tras extraerDatos. Idempotente: al descontar marca
+// stock_pendiente=false. Añade el movimiento a shipping.stock_mov (para devolver
+// si la venta se cae). Avisa si baja/agota (no bloquea).
+async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
+  try {
+    const oid = (run.vars as any)?._order_id;
+    if (!oid) return;
+    const { data: o } = await db.from("orders").select("order_bumps, shipping").eq("id", oid).maybeSingle();
+    const bumps = ((o as any)?.order_bumps ?? []) as any[];
+    const pend = bumps.filter((b) => b?.stock_pendiente && b?.product_id);
+    if (!pend.length) return;
+    const ship = ((o as any)?.shipping ?? {}) as any;
+    const mov: any[] = Array.isArray(ship.stock_mov) ? [...ship.stock_mov] : [];
+    const alerts: any[] = [];
+    let changed = false;
+    for (const b of pend) {
+      const { data: ep } = await db.from("products").select("config").eq("id", b.product_id).maybeSingle();
+      const eatrs = normalizeAtributos((ep as any)?.config?.atributos).filter((a: any) => a.valores?.length);
+      const pref = "xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10);
+      const vals: Record<string, unknown> = {};
+      let faltan = false;
+      for (const ea of eatrs) {
+        const v = (run.vars as any)?.[`${pref}_${ea.clave}`] ?? ctx?.[`${pref}_${ea.clave}`];
+        if (v == null || String(v).trim() === "") { faltan = true; break; }
+        vals[ea.nombre] = v;
+      }
+      if (faltan) continue; // aún no dijo su talla → esperar al próximo mensaje
+      const key = stockKeyEngine(eatrs, vals);
+      const al = await aplicarStock(db, [{ product_id: b.product_id, key, unidades: 1 }], -1);
+      for (const a of al) alerts.push(a);
+      mov.push({ product_id: b.product_id, key, unidades: 1 });
+      b.stock_pendiente = false; b.stock_key = key;
+      changed = true;
+    }
+    if (changed) {
+      await db.from("orders").update({ order_bumps: bumps, shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", oid);
+      for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+    }
+  } catch (e) { console.error("[reconciliarStockExtras]", (e as any)?.message ?? e); }
+}
+
 // ── Pasar la conversación a un humano ──────────────────────────────
 // Dos disparadores distintos, porque son dos cosas distintas:
 //   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
@@ -2152,9 +2195,11 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const nuevo: Record<string, unknown> = { nombre, precio };
         if (a.bump.version_id) nuevo.version_id = resolve(String(a.bump.version_id), ctx);
         if (a.bump.digital) { nuevo.digital = true; nuevo.entregado = false; }
-        // Un extra FÍSICO también descuenta stock (igual que el principal/regalo).
-        // El bump no traía el product_id → lo resolvemos desde el version_id y lo
-        // guardamos, para poder descontar y devolver. Clave "_" (no captura talla).
+        // Un extra FÍSICO también descuenta stock. El bump no traía product_id →
+        // lo resolvemos del version_id y lo guardamos. Si el extra tiene tallas
+        // PROPIAS, no se descuenta aún: se marca stock_pendiente y el bot pregunta
+        // su talla (buildContext la agrega a _atributos); al capturarla,
+        // reconciliarStockExtras descuenta la variante. Sin tallas → "_" al toque.
         if (nuevo.version_id && !nuevo.digital) {
           try {
             const { data: pv } = await db.from("product_versions").select("product_id").eq("id", nuevo.version_id).maybeSingle();
@@ -2162,7 +2207,11 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
             if (pid) {
               nuevo.product_id = pid;
               const { data: pr } = await db.from("products").select("tipo, config").eq("id", pid).maybeSingle();
-              if ((pr as any)?.tipo === "fisico" && (pr as any)?.config?.stock) extraStock = { product_id: pid, key: "_", unidades: 1 };
+              if ((pr as any)?.tipo === "fisico" && (pr as any)?.config?.stock) {
+                const eatrs = normalizeAtributos((pr as any).config.atributos).filter((a: any) => a.valores?.length);
+                if (eatrs.length) nuevo.stock_pendiente = true; // tiene tallas → se pregunta y descuenta luego
+                else extraStock = { product_id: pid, key: "_", unidades: 1 };
+              }
             }
           } catch { /* sin product_id → no se descuenta, como antes */ }
         }
@@ -4323,6 +4372,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }));
     const campos = [...(Array.isArray(cfg.campos) ? cfg.campos : []), ...attrCampos];
     if (campos.length) await extraerDatos(db, run, { ...cfg, campos }, ctx).catch(() => null);
+    // 📦 Si ya se capturó la talla de un extra físico pendiente, descuéntala.
+    await reconciliarStockExtras(db, run, ctx).catch(() => null);
   }
 
   // Operación "clasificar": mete la última respuesta del cliente en una de las
@@ -5091,6 +5142,25 @@ async function buildContext(db: SupabaseClient, run: Run) {
         (run as any)._prodCtx = pc;
       }
       for (const [k, v] of Object.entries(pc)) if (k !== "_id") ctx[k] = v;
+      // 📦 Extra físico con tallas propias YA aceptado (bump stock_pendiente): el
+      // bot pregunta su talla (campos OPCIONALES, prefijo xt<vid>_). Al capturarla,
+      // reconciliarStockExtras descuenta la variante. Copia FRESCA de _atributos
+      // (no toca el pc cacheado). Solo consulta si hay un pedido en curso.
+      try {
+        const oid = (run.vars as any)?._order_id;
+        if (oid) {
+          const { data: ob } = await db.from("orders").select("order_bumps").eq("id", oid).maybeSingle();
+          const pend = (((ob as any)?.order_bumps) ?? []).filter((b: any) => b?.stock_pendiente && b?.product_id);
+          const extraAttrs: any[] = [];
+          for (const b of pend) {
+            const { data: ep } = await db.from("products").select("config").eq("id", b.product_id).maybeSingle();
+            const eatrs = normalizeAtributos((ep as any)?.config?.atributos).filter((a: any) => a.valores?.length);
+            const pref = "xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10);
+            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} del extra (${b.nombre || "extra"})`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false });
+          }
+          if (extraAttrs.length) ctx._atributos = [...(Array.isArray(ctx._atributos) ? ctx._atributos : []), ...extraAttrs];
+        }
+      } catch { /* sin pedido/config → sin extra attrs */ }
     }
   } catch (_) { /* columnas pendientes */ }
   // 3) Variables del run en curso, y 4) Campos del contacto (lo más específico).
