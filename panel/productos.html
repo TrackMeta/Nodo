@@ -411,17 +411,23 @@ async function deleteProduct(){
 function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
   const esExtra = st.prod.clase==="extra";
+  const esRegalo = st.prod.clase==="regalo";
   const EXTRA_TABS=["inicio","producto","opciones","entrega","ia"];
+  // Un regalo NO se vende: no lleva "venta con IA", activación, ventas extra ni
+  // remarketing. Solo qué es (producto) y qué entrega (opciones → Qué entrega).
+  const REGALO_TABS=["inicio","producto","opciones"];
   if(esExtra && !EXTRA_TABS.includes(st.tab)) st.tab="inicio";
+  if(esRegalo && !REGALO_TABS.includes(st.tab)) st.tab="inicio";
   // Sin barra de pestañas: el producto vive en el hub "Inicio" y cada sección se
   // abre a pantalla completa con un botón para volver (navegación hub ↔ sección).
   const SEC={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
     ia:"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
     remarketing:"Remarketing", flujos:"Flujos" };
+  if(esRegalo) SEC.opciones="Qué se entrega";
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
   d.innerHTML = onHub
-    ? `<h1 class="pdet-h1">${esc(st.prod.nombre)}${esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:""}</h1>
+    ? `<h1 class="pdet-h1">${esc(st.prod.nombre)}${esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:""}</h1>
        <div id="tabBody"></div>`
     : `<div class="pdet-secbar">
          <button class="pdet-back" id="backHub">${CHEV}Inicio</button>
@@ -1673,6 +1679,7 @@ async function renderInicio(){
   b.innerHTML=`<div class="empty">Cargando…</div>`;
   const fisico=(st.prod.tipo||"digital")==="fisico";
   const esExtra=st.prod.clase==="extra";
+  const esRegalo=st.prod.clase==="regalo";
   const c=st.prod.config||{};
   const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id);
   const fIni=(flows||[]).find(f=>f.role==="mensajes_iniciales");
@@ -1685,7 +1692,13 @@ async function renderInicio(){
   // Estado por sección (para los puntitos y el X/Y de cada fase).
   const est=(t)=>{
     if(t==="producto"){ return {ok:true,msg:"Nombre y tipo listos"}; }
-    if(t==="opciones"){ const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} presentación(es), ${cp} con precio`:"Ninguna presentación tiene precio"}; }
+    if(t==="opciones"){
+      if(esRegalo){ // un regalo no lleva precio: solo importa qué entrega
+        if(fisico) return {ok:true,msg:"Viaja en el paquete del pedido"};
+        const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()));
+        return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo del regalo"};
+      }
+      const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} presentación(es), ${cp} con precio`:"Ninguna presentación tiene precio"}; }
     if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
@@ -1696,10 +1709,13 @@ async function renderInicio(){
   };
   const NM={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega", ia:"Venta con IA",
     activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)" };
+  if(esRegalo){ NM.producto="Qué es el regalo"; NM.opciones=fisico?"El regalo (viaja en el paquete)":"Qué se entrega (link o archivo)"; }
   const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>';
   const IC={ producto:icon("box"), opciones:icon("productos"), entrega:fisico?icon("truck"):icon("link"),
     ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos") };
-  const PH = esExtra
+  const PH = esRegalo
+    ? [["1","El regalo",fisico?"Qué es (se suma al paquete del pedido)":"Qué es y qué se entrega (el link o archivo)",fisico?["producto"]:["producto","opciones"]]]
+    : esExtra
     ? [["1","El producto","Lo que vendes, su precio y cómo se entrega",["producto","opciones","entrega"]],
        ["2","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
     : [["1","El producto","Lo que vendes, sus precios y cómo se entrega",["producto","opciones","entrega"]],
@@ -1723,7 +1739,8 @@ async function renderInicio(){
       <div class="ini-items">${ids.map(t=>item(t,col)).join("")}</div></div>`; };
 
   // Producto "vacío" (sin conocimiento IA ni precio) → hero para armarlo con IA.
-  const vacio = !est("ia").ok && !est("opciones").ok;
+  // Un regalo no se vende con IA → nunca muestra ese hero.
+  const vacio = !esRegalo && !est("ia").ok && !est("opciones").ok;
   b.innerHTML=`
     ${vacio?`<div class="armhero">
       <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
@@ -1732,7 +1749,12 @@ async function renderInicio(){
     </div>`:""}
     <p class="hint" style="margin:0 0 16px">Arma tu producto por partes. Toca una sección para completarla; las que aparecen en <b style="color:var(--green,#22c079)">verde</b> ya están listas.</p>
     ${PH.map(phCard).join("")}
-    ${esExtra
+    ${esRegalo
+      ? `<div class="card" style="border-color:rgba(168,85,247,.4)">
+          <h4 style="margin-top:0">🎁 Esto es un regalo</h4>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende ni tiene flujo propio: se <b>regala gratis al comprar un producto principal</b>. Ve a ese principal → pestaña <b>Ventas extra</b> → <b>Regalo con la compra</b> y elígelo ahí. ${fisico?"Como es físico, viaja en el mismo paquete del pedido.":"Como es digital, configura arriba el link o archivo que se entrega."}</div>
+        </div>`
+      : esExtra
       ? `<div class="card" style="border-color:var(--brand-border)">
           <h4 style="margin-top:0">Este es un complemento</h4>
           <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende solo: se ofrece <b>enganchado a un producto principal</b> (en la pestaña <b>Ventas extra</b> de ese principal). No necesita su propio flujo — con completar lo de arriba basta.</div>
@@ -1759,7 +1781,7 @@ async function renderInicio(){
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
   b.querySelectorAll(".ini-ph-hd").forEach(h=> h.onclick=(ev)=>{ if(ev.target.closest(".ini-item"))return; st.tab=h.dataset.first; renderDetail(); });
-  if(!esExtra){
+  if(!esExtra && !esRegalo){
     renderSalud();
     const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
     const av=$("activarVenta");
