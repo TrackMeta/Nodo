@@ -238,7 +238,12 @@ export function pedidoResumenHtml(o) {
   const cliLines = [];
   const dest = (s.cliente || c.nombre || "").trim();
   cliLines.push(mkLine("Cliente", dest ? esc(dest) : ""));
-  cliLines.push(mkLine("Teléfono", c.wa_id ? `<b class="mono">+${esc(c.wa_id)}</b>` : ""));
+  // El contacto de prueba tiene wa_id literal "webchat-test" (no es un número):
+  // se muestra como tal, sin el "+" que insinúa un teléfono real.
+  const esPrueba = c.wa_id === "webchat-test";
+  const telHtml = esPrueba ? `<span class="pd-muted">Web Chat (prueba)</span>`
+    : (c.wa_id ? `<b class="mono">+${esc(c.wa_id)}</b>` : "");
+  cliLines.push(mkLine("Teléfono", telHtml));
   if (zona === "provincia") {
     cliLines.push(mkLine("DNI", s.dni ? `<b class="mono">${esc(s.dni)}</b>` : ""));
     if (s.destino) cliLines.push(mkLine("Agencia", `${esc(s.destino)}${air}`));
@@ -473,6 +478,7 @@ export const EXTRAS_CSS = `
   .pd-bn{flex:1;min-width:0;color:var(--text);word-break:break-word}
   .pd-bvar{color:var(--muted);font-size:11px}
   .pd-bp{flex:none;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  .pd-muted{color:var(--muted)}
   /* Campos técnicos (colapsados) */
   .cf-tech{margin-top:10px;font-size:12px}
   .cf-tech summary{cursor:pointer;color:var(--faint);list-style:none;display:flex;align-items:center;gap:6px;padding:2px 0}
