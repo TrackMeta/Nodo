@@ -67,6 +67,25 @@
   .steps b{color:var(--text)}
   .future{border:1px dashed var(--border);border-radius:16px;padding:20px;color:var(--faint);font-size:13px;display:flex;align-items:center;gap:14px}
   .future .ico{width:44px;height:44px;border-radius:12px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px;flex:none}
+  /* Tarjeta del número conectado (bonita, aparece cuando Meta confirma el número) */
+  .wanum{display:flex;align-items:center;gap:14px;margin:14px 0 4px;padding:15px 17px;border-radius:15px;position:relative;overflow:hidden;
+    background:linear-gradient(135deg,rgba(37,211,102,.15),rgba(18,140,126,.09));border:1px solid rgba(37,211,102,.38)}
+  .wanum::after{content:"";position:absolute;right:-34px;top:-34px;width:130px;height:130px;border-radius:50%;background:radial-gradient(circle,rgba(37,211,102,.28),transparent 70%);filter:blur(16px);pointer-events:none}
+  .wanum-ic{flex:none;width:52px;height:52px;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(37,211,102,.30);position:relative;z-index:1}
+  .wanum-ic img{width:36px;height:36px}
+  .wanum-main{flex:1;min-width:0;position:relative;z-index:1}
+  .wanum-name{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:1px}
+  .wanum-name b{color:var(--text)}
+  .wanum-vf{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#25d366;color:#fff;font-size:9px;font-weight:900;flex:none}
+  .wanum-tel{font-size:23px;font-weight:800;letter-spacing:.4px;color:var(--text);line-height:1.15;font-variant-numeric:tabular-nums}
+  .wanum-meta{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:4px}
+  .wanum-dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .wanum-dot.green{background:#25d366;box-shadow:0 0 7px rgba(37,211,102,.7)}
+  .wanum-dot.yellow{background:#e0a800} .wanum-dot.red{background:#f04747} .wanum-dot.gray{background:#8a94a6}
+  .wanum-copy{position:relative;z-index:1;flex:none;align-self:flex-start}
+  .wanum-skel{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12.5px;padding:13px 4px}
+  .wanum-skel .sk{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--muted);animation:waSpin .8s linear infinite}
+  @keyframes waSpin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -135,6 +154,7 @@ function renderWA(){
       <div class="chd"><span class="ico"><img src="${LOGO.wa}" alt="WhatsApp"/></span>
         <div><div class="nm">WhatsApp Cloud API</div><div class="sub2">Número principal de ventas y atención</div></div>
         <span class="st ${conn?'on':''}">${conn?'Conectado':'Sin conectar'}</span></div>
+      <div id="waNumHero"></div>
       <div class="desc">Credenciales del número (Meta Developers). El token y el App Secret se guardan cifrados en Vault.</div>
 
       <div class="metabox">
@@ -218,6 +238,8 @@ function renderWA(){
   const vcopy=$("w_verify_copy");
   if(vcopy) vcopy.onclick=()=>{ const v=$("w_verify").value.trim(); v?copiar(v):toast("Escribe primero un verify token",true); };
   $("waTest").onclick=(e)=>probarWA(e.target);
+  // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
+  if(conn) cargarNumeroHero();
   // Toggle "solo anuncios": guarda al instante (merge sobre ia_router para no
   // pisar el resto del ruteo — fallback_flow_id, umbral, etc.).
   $("w_soloads").onclick=async(e)=>{
@@ -233,6 +255,41 @@ function renderWA(){
 async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado ✓"); }
   catch{ toast("No se pudo copiar — selecciónalo a mano",true); }
+}
+
+// ── Tarjeta bonita del número conectado ────────────────────────────────
+// El número, el nombre verificado y la calidad vienen de Meta (Graph API) vía
+// la acción whatsapp_test. Se muestra arriba, siempre que Meta acepte el número.
+function numeroHeroHtml(n){
+  const cal=(n.calidad||"").toUpperCase();
+  const calMap={ GREEN:["green","Calidad verde · número sano"], YELLOW:["yellow","Calidad amarilla · con cuidado"], RED:["red","Calidad roja · en riesgo"] };
+  const cm=calMap[cal];
+  const calCls = cm ? cm[0] : "gray";
+  // "Conectado a Meta" va SIEMPRE; la calidad se antepone solo si Meta la reporta
+  // (evita el "Conectado a Meta · Conectado a Meta" cuando no hay calidad).
+  const meta = cm ? `${cm[1]} · Conectado a Meta`
+    : (n.calidad ? `Calidad ${String(n.calidad).toLowerCase()} · Conectado a Meta` : "Conectado a Meta");
+  const nombre=n.nombre?esc(n.nombre):"WhatsApp Business";
+  const tel=n.telefono?esc(n.telefono):"—";
+  return `<div class="wanum">
+    <div class="wanum-ic"><img src="${LOGO.wa}" alt="WhatsApp"/></div>
+    <div class="wanum-main">
+      <div class="wanum-name"><b>${nombre}</b> <span class="wanum-vf" title="Nombre verificado por Meta">✓</span></div>
+      <div class="wanum-tel">${tel}</div>
+      <div class="wanum-meta"><span class="wanum-dot ${calCls}"></span>${meta}</div>
+    </div>
+    ${n.telefono?`<button class="copybtn wanum-copy" data-copynum="${esc(n.telefono)}" title="Copiar número">${icon("copy")}</button>`:""}
+  </div>`;
+}
+function pintarHero(box,n){ box.innerHTML=numeroHeroHtml(n); const b=box.querySelector("[data-copynum]"); if(b) b.onclick=()=>copiar(b.getAttribute("data-copynum")); }
+async function cargarNumeroHero(){
+  const box=$("waNumHero"); if(!box) return;
+  box.innerHTML=`<div class="wanum"><div class="wanum-skel"><span class="sk"></span>Verificando el número con Meta…</div></div>`;
+  try{
+    const r=await callFn("channel-config",{ action:"whatsapp_test", channel_id:st.channelId });
+    if(r&&r.numero) pintarHero(box,r.numero);
+    else box.innerHTML="";  // token/ID inválido → sin hero; "Probar conexión" muestra el porqué
+  }catch(_){ box.innerHTML=""; }
 }
 
 // Diagnóstico REAL de WhatsApp: cada línea dice qué pasa Y qué hacer si falla,
@@ -251,6 +308,8 @@ async function probarWA(btn){
 }
 function pintarWA(r){
   const box=$("waDiag"); if(!box) return;
+  // Refresca la tarjeta bonita del número con lo que acaba de decir Meta.
+  const hero=$("waNumHero"); if(hero){ if(r.numero) pintarHero(hero,r.numero); else hero.innerHTML=""; }
   const fila=(ok,txt,ayuda)=>`
     <div style="display:flex;gap:8px;align-items:flex-start;margin-top:7px">
       <span style="flex:0 0 16px;line-height:1.5">${ok?"✅":"⚠️"}</span>
