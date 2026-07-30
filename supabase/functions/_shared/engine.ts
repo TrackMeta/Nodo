@@ -358,17 +358,18 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
 // mismo paquete (queda como ítem del pedido con costo pero venta 0).
 // Idempotente: no duplica un regalo ya adjuntado. No es venta (precio 0) → no
 // infla ingresos; el `costo` queda para descontarlo como costo de marketing.
-export async function adjuntarRegalos(db: SupabaseClient, channelId: string, contactId: string, orderId: string, productId?: string | null) {
+export async function adjuntarRegalos(db: SupabaseClient, channelId: string, contactId: string, orderId: string, productId?: string | null, runVars?: Record<string, unknown> | null) {
   try {
     if (!productId || !orderId) return;
     const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
     const regalos = Array.isArray((p as any)?.config?.regalos) ? (p as any).config.regalos : [];
     if (!regalos.length) return;
-    const { data: o } = await db.from("orders").select("order_bumps, shipping").eq("id", orderId).maybeSingle();
+    const { data: o } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
     const bumps = ((o as any)?.order_bumps ?? []) as any[];
-    const shipAtr = ((o as any)?.shipping?.atributos) ?? {}; // talla/color que capturó el cliente
+    const rv = runVars || {};
     let changed = false;
-    for (const g of regalos) {
+    for (let gi = 0; gi < regalos.length; gi++) {
+      const g = regalos[gi];
       const vid = g?.version_id, pid = g?.product_id;
       if (!vid && !pid) continue;
       if (bumps.some((b) => b?.regalo && ((vid && b.version_id === vid) || (pid && b.product_id === pid)))) continue; // ya adjuntado
@@ -379,12 +380,15 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
         const cv = Number((v as any)?.costo);
         if (Number.isFinite(cv)) costo = cv;
       }
-      // Regalo FÍSICO con variantes (talla/color): su clave de stock se calcula
-      // con los atributos del REGALO + lo que dijo el cliente (compartido por
-      // nombre de atributo). Sin variantes → "_".
+      // Regalo FÍSICO con variantes: su clave de stock se calcula con lo que el
+      // cliente eligió PARA EL REGALO (capturado con clave prefijada rg<gi>_<clave>
+      // por la IA), no con la talla del principal. Sin variantes → "_".
       if (!digital && pid) {
         const { data: gp } = await db.from("products").select("config").eq("id", pid).maybeSingle();
-        stockKey = stockKeyEngine((gp as any)?.config?.atributos, shipAtr);
+        const gatrs = normalizeAtributos((gp as any)?.config?.atributos).filter((a: any) => a.valores?.length);
+        const giftVals: Record<string, unknown> = {};
+        for (const ga of gatrs) giftVals[ga.nombre] = rv[`rg${gi}_${ga.clave}`];
+        stockKey = stockKeyEngine(gatrs, giftVals);
       }
       bumps.push({ regalo: true, nombre: g?.nombre || "regalo", precio: 0, costo, digital, version_id: vid ?? null, product_id: pid ?? null, stock_key: stockKey, entregado: false });
       changed = true;
@@ -1967,7 +1971,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       // 🎁 Regalo con la compra (venta digital ya confirmada): adjunta y entrega.
       try {
         const { data: cc } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
-        await adjuntarRegalos(db, run.channel_id, run.contact_id, run.vars._order_id as string, (cc as any)?.product_id);
+        await adjuntarRegalos(db, run.channel_id, run.contact_id, run.vars._order_id as string, (cc as any)?.product_id, run.vars);
         await entregarExtrasDigitales(db, run.channel_id, run.contact_id, run.vars._order_id as string);
       } catch (e) { console.error("[crearPedido] regalos (precreado):", (e as any)?.message ?? e); }
       return;
@@ -2068,7 +2072,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // al CERRAR (para una venta digital `confirmada`, ya mismo; para físico Lima/
     // provincia, al pasar a entregado_cobrado/saldo_pagado, vía order-update/saldo).
     try {
-      await adjuntarRegalos(db, run.channel_id, run.contact_id, (ord as any).id, (c as any)?.product_id);
+      await adjuntarRegalos(db, run.channel_id, run.contact_id, (ord as any).id, (c as any)?.product_id, run.vars);
       if (a.estado === "confirmada") await entregarExtrasDigitales(db, run.channel_id, run.contact_id, (ord as any).id);
     } catch (e) { console.error("[crearPedido] regalos:", (e as any)?.message ?? e); }
     // 📦 Stock: reservar (descontar) al crear el pedido físico. Descuenta el
@@ -5002,6 +5006,24 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // capturarlos y mostrarle a la IA qué falta. "_" = interno, no {{...}}.
           const attrs = normalizeAtributos((p as any).config?.atributos);
           if (attrs.length) pc._atributos = attrs;
+          // Regalos FÍSICOS con tallas propias: el bot también las pregunta (campos
+          // OPCIONALES, clave prefijada rg<idx>_<clave> para no chocar con el
+          // principal). extraerDatos los captura y adjuntarRegalos descuenta la
+          // variante correcta del regalo. Se resuelve 1 vez (pc va cacheado por run).
+          const regsCtx = Array.isArray((p as any).config?.regalos) ? (p as any).config.regalos : [];
+          for (let gi = 0; gi < regsCtx.length; gi++) {
+            const g = regsCtx[gi];
+            if (g?.tipo !== "fisico" || !g?.product_id) continue;
+            try {
+              const { data: gp } = await db.from("products").select("config").eq("id", g.product_id).maybeSingle();
+              const gatrs = normalizeAtributos((gp as any)?.config?.atributos).filter((a: any) => a.valores?.length);
+              if (!gatrs.length) continue;
+              pc._atributos = pc._atributos || [];
+              for (const ga of gatrs) {
+                pc._atributos.push({ nombre: `${ga.nombre} del regalo (${g.nombre || "regalo"})`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false });
+              }
+            } catch { /* sin config → no se agregan */ }
+          }
           // Multimedia que la IA puede enviar (se resuelve por [[media:tag]] al
           // emitir el texto). Se guarda con "_" para no filtrarse a {{...}}. El
           // catálogo suma la multimedia del producto MÁS la de apoyo de cada
