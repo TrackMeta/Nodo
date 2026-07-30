@@ -27,6 +27,11 @@
   .tcard.reco{border:1px solid rgba(168,85,247,.35)}
   .chip.reco-badge{background:linear-gradient(135deg,rgba(168,85,247,.16),rgba(236,72,153,.13));color:#a855f7}
   .reco-use{width:100%;margin-top:12px;justify-content:center}
+  /* Pestaña "Recomendadas" con acento violeta (para distinguirla de tus carpetas) */
+  .nodo-folder.reco{border-color:rgba(168,85,247,.5);color:#a855f7}
+  .nodo-folder.reco svg{vertical-align:-2px;margin-right:2px}
+  .nodo-folder.reco.on{background:linear-gradient(135deg,rgba(168,85,247,.2),rgba(236,72,153,.14));border-color:rgba(168,85,247,.65);color:#a855f7}
+  .nodo-folder.reco .cnt{background:rgba(168,85,247,.2);color:#a855f7}
   /* Modal de revisión de plantilla recomendada (ver el mensaje completo antes de Meta) */
   .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
   .rv{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto}
@@ -198,10 +203,15 @@ async function loadList(){
 // Sección "Recomendadas": catálogo curado (plantillas-catalogo.js) que ve TODA
 // cuenta por defecto. Muestra solo las que aún no agregaste; un clic las copia a
 // tus plantillas y las manda a aprobar a Meta.
+// Catálogo curado que aún NO agregaste (las agregadas viven en tus plantillas).
+function recoPend(){ return CATALOGO.filter(c=> !st.list.some(t=>t.name===c.name)); }
+// El catálogo ahora vive en la carpeta "Recomendadas": solo se pinta cuando esa
+// carpeta está seleccionada (antes era un bloque fijo arriba de todo).
 function renderReco(){
   const box=$("recoBox"); if(!box) return;
-  const pend=CATALOGO.filter(c=> !st.list.some(t=>t.name===c.name));
-  if(!pend.length){ box.innerHTML=""; return; }
+  if(st.folder!=="__reco"){ box.innerHTML=""; return; }
+  const pend=recoPend();
+  if(!pend.length){ box.innerHTML=`<div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Ya agregaste todas las recomendadas ✓ — las encuentras en tus carpetas “Recomendadas · …”.</p></div>`; return; }
   box.innerHTML=`
     <div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Listas para tu negocio. Toca <b>Revisar</b> para ver el mensaje completo antes de enviarlo a aprobar a Meta. Ideales para arrancar rápido.</p></div>
     <div class="nodo-cards">${pend.map((c,i)=>`
@@ -273,12 +283,16 @@ async function agregarReco(c, { enviar }){
 function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
 function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(t=>!t.folder).length; return st.list.filter(t=>t.folder===v).length; }
 function renderFolders(){
-  const isReal=st.folder!=="__all"&&st.folder!=="__none";
+  // __reco no es una carpeta real (no se puede eliminar): es el catálogo curado.
+  const isReal=st.folder!=="__all"&&st.folder!=="__none"&&st.folder!=="__reco";
   const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
+  const RECO_ICO='<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 2 13.8 9.2 21 11 13.8 12.8 12 20 10.2 12.8 3 11 10.2 9.2Z"/></svg>';
+  const recoTab=`<button class="nodo-folder reco ${st.folder==='__reco'?'on':''}" data-f="__reco" title="Plantillas recomendadas, listas para usar">${RECO_ICO} Recomendadas<span class="cnt">${recoPend().length}</span></button>`;
   $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
+    +recoTab
     +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
     +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
-  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
+  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); renderReco(); });
   $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Utility",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderCards(); } };
   const df=$("delFolder"); if(df) df.onclick=deleteFolder;
 }
@@ -290,6 +304,8 @@ async function deleteFolder(){
   st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await loadList();
 }
 function renderCards(){
+  // La carpeta "Recomendadas" muestra el catálogo (lo pinta renderReco), no tus plantillas.
+  if(st.folder==="__reco"){ $("cards").innerHTML=""; return; }
   let list=st.list;
   if(st.folder==="__none") list=list.filter(t=>!t.folder); else if(st.folder!=="__all") list=list.filter(t=>t.folder===st.folder);
   const box=$("cards");
