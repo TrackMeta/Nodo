@@ -71,13 +71,11 @@
   .wanum{display:flex;align-items:center;gap:14px;margin:14px 0 4px;padding:15px 17px;border-radius:15px;position:relative;overflow:hidden;
     background:linear-gradient(135deg,rgba(37,211,102,.15),rgba(18,140,126,.09));border:1px solid rgba(37,211,102,.38)}
   .wanum::after{content:"";position:absolute;right:-34px;top:-34px;width:130px;height:130px;border-radius:50%;background:radial-gradient(circle,rgba(37,211,102,.28),transparent 70%);filter:blur(16px);pointer-events:none}
-  .wanum-ic{flex:none;width:52px;height:52px;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(37,211,102,.30);position:relative;z-index:1}
-  .wanum-ic img{width:36px;height:36px}
   .wanum-main{flex:1;min-width:0;position:relative;z-index:1}
-  .wanum-name{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:1px}
+  .wanum-name{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:2px}
   .wanum-name b{color:var(--text)}
   .wanum-vf{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#25d366;color:#fff;font-size:9px;font-weight:900;flex:none}
-  .wanum-tel{font-size:23px;font-weight:800;letter-spacing:.4px;color:var(--text);line-height:1.15;font-variant-numeric:tabular-nums}
+  .wanum-tel{font-size:27px;font-weight:800;letter-spacing:.4px;color:var(--text);line-height:1.15;font-variant-numeric:tabular-nums}
   .wanum-meta{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:4px}
   .wanum-dot{width:9px;height:9px;border-radius:50%;flex:none}
   .wanum-dot.green{background:#25d366;box-shadow:0 0 7px rgba(37,211,102,.7)}
@@ -274,12 +272,17 @@ function numeroHeroHtml(n){
   // (evita el "Conectado a Meta · Conectado a Meta" cuando no hay calidad).
   const meta = cm ? `${cm[1]} · Conectado a Meta`
     : (n.calidad ? `Calidad ${String(n.calidad).toLowerCase()} · Conectado a Meta` : "Conectado a Meta");
-  const nombre=n.nombre?esc(n.nombre):"WhatsApp Business";
+  // Sin logo (elección de Rodrigo, opción C): el número manda. El nombre lleva el
+  // check de verificado + "· WhatsApp" para dejar claro de qué canal es.
+  const tieneNombre=!!n.nombre;
+  const nombre=tieneNombre?esc(n.nombre):"Número de WhatsApp";
+  const nameLine=tieneNombre
+    ? `<b>${nombre}</b> <span class="wanum-vf" title="Nombre verificado por Meta">✓</span> · WhatsApp`
+    : `<b>${nombre}</b>`;
   const tel=n.telefono?esc(n.telefono):"—";
   return `<div class="wanum">
-    <div class="wanum-ic"><img src="${LOGO.wa}" alt="WhatsApp"/></div>
     <div class="wanum-main">
-      <div class="wanum-name"><b>${nombre}</b> <span class="wanum-vf" title="Nombre verificado por Meta">✓</span></div>
+      <div class="wanum-name">${nameLine}</div>
       <div class="wanum-tel">${tel}</div>
       <div class="wanum-meta"><span class="wanum-dot ${calCls}"></span>${meta}</div>
     </div>
