@@ -882,6 +882,13 @@ function setupRouter() {
   S.routerReady = true;
   S.pageStyles = pageHeadAssets(document); // estilos de la página actual (style + link externos)
   document.addEventListener("click", onNavClick);
+  // Prefetch: baja la sección al pasar el mouse/foco/toque por su link → clic instantáneo.
+  if (S.nav) {
+    S.nav.addEventListener("pointerover", onNavHover, { passive: true });
+    S.nav.addEventListener("pointerdown", onNavHover, { passive: true });
+    S.nav.addEventListener("focusin", onNavHover);
+  }
+  schedulePrefetchAll(); // y calienta todas en el tiempo muerto
   window.addEventListener("popstate", async () => {
     // Back/forward con cambios sin guardar: si el usuario elige quedarse,
     // rehacemos el push a la página actual para que URL y contenido no se
@@ -992,4 +999,55 @@ async function navigate(href, { push = true } = {}) {
     console.error("[SPA] fallback a navegación normal:", e);
     location.href = dest.href; // degradación limpia
   }
+}
+
+// ── Prefetch de secciones: baja el HTML al pageCache ANTES del clic ──────
+// La 1ª navegación a una sección baja su HTML completo (productos ~230KB). Si
+// ya lo trajimos al pasar el mouse por el link, o en el tiempo muerto tras
+// cargar, el clic es instantáneo (navigate lee de pageCache). Es solo warming
+// de caché: idempotente, silencioso, y si falla no pasa nada (navigate hace el
+// fetch normal). No re-baja lo ya cacheado ni las páginas "frontera".
+const _prefetching = new Set();
+function prefetchPage(href) {
+  try {
+    if (!href) return;
+    const dest = new URL(href, location.href);
+    if (dest.origin !== location.origin) return;
+    if (!dest.pathname.endsWith(".html")) return;
+    if (BOUNDARY.has(fileOf(dest.pathname))) return;   // frontera → navegación normal, no cachear
+    if (dest.pathname === location.pathname) return;   // ya estás aquí
+    if (pageCache.has(dest.pathname) || _prefetching.has(dest.pathname)) return;
+    _prefetching.add(dest.pathname);
+    fetch(dest.href, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((html) => { if (html != null) pageCache.set(dest.pathname, html); })
+      .catch(() => {})
+      .finally(() => _prefetching.delete(dest.pathname));
+  } catch { /* noop */ }
+}
+function onNavHover(e) {
+  const a = e.target.closest && e.target.closest('a[href$=".html"]');
+  if (a) prefetchPage(a.getAttribute("href"));
+}
+const _requestIdle = window.requestIdleCallback ? window.requestIdleCallback.bind(window) : (fn) => setTimeout(fn, 200);
+let _prefetchedAll = false;
+// Tras cargar, en el tiempo muerto, calienta TODAS las secciones del sidebar
+// (una por tick de idle para no saturar la red). Se salta si la conexión es
+// lenta o el usuario pidió ahorro de datos.
+function schedulePrefetchAll() {
+  if (_prefetchedAll) return;
+  _prefetchedAll = true;
+  const con = navigator.connection;
+  if (con && (con.saveData || /(^|-)2g$/.test(con.effectiveType || ""))) return;
+  _requestIdle(() => {
+    if (!S.nav) return;
+    const links = Array.from(S.nav.querySelectorAll('a.nodo-link[href$=".html"]'));
+    let i = 0;
+    const next = () => {
+      if (i >= links.length) return;
+      prefetchPage(links[i++].getAttribute("href"));
+      _requestIdle(next);
+    };
+    next();
+  });
 }
