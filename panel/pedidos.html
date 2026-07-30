@@ -566,6 +566,16 @@ function kcard(o){
   el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
   const wb=el.querySelector("[data-cfsede]");
   if(wb) wb.onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
+  // Clic en el CUERPO de la tarjeta → abre la conversación de ese cliente en la
+  // Bandeja (deep-link ?c=). Los botones internos (avanzar, editar, rótulo, ⋮)
+  // se ignoran acá con closest(): siguen haciendo lo suyo. Sin contacto, no hace
+  // nada (un pedido sembrado sin contact_id).
+  const cid=o.contact_id||(o.contact&&o.contact.id);
+  if(cid){
+    el.style.cursor="pointer";
+    el.title="Abrir la conversación de este cliente";
+    el.addEventListener("click",(ev)=>{ if(ev.target.closest("button,a,input,.menu")) return; location.href="index.html?c="+cid; });
+  }
   return el;
 }
 
