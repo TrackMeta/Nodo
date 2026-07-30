@@ -1658,11 +1658,20 @@ async function cargarCatalogoExtras(){
     .eq("channel_id",st.channelId).order("nombre");
   if(error){ ({ data:prods } = await supa.from("products").select("id,nombre,emoji,tipo,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre")); }
   const cat=[];
-  (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{
-    if(v.activo!==false && v.precio!=null && v.precio!=="")
-      cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio, tipo:p.tipo||"digital", esExtra:p.clase==="extra",
-        nombreProd:p.nombre, contexto:(p.config&&p.config.contexto_producto)||"" });
-  }));
+  (prods||[]).forEach(p=>{
+    // ¿Este extra FÍSICO lleva tallas/variantes con stock? Si sí, el flujo debe
+    // preguntar la talla al aceptarlo (para enviar la variante correcta y
+    // descontar SU stock). Espeja la condición del motor (engine.ts: físico +
+    // config.stock + atributos con valores → bump.stock_pendiente).
+    const atrsX=Array.isArray(p.config&&p.config.atributos)?p.config.atributos.filter(a=>a&&a.nombre&&String(a.valores||"").trim()):[];
+    const stockOkX=p.config&&p.config.stock&&typeof p.config.stock==="object"&&!Array.isArray(p.config.stock);
+    const tieneTallas=(p.tipo==="fisico")&&atrsX.length>0&&!!stockOkX;
+    (p.product_versions||[]).forEach(v=>{
+      if(v.activo!==false && v.precio!=null && v.precio!=="")
+        cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio, tipo:p.tipo||"digital", esExtra:p.clase==="extra", tieneTallas,
+          nombreProd:p.nombre, contexto:(p.config&&p.config.contexto_producto)||"" });
+    });
+  });
   st.extraCat=cat;
   return cat;
 }
@@ -1722,7 +1731,33 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     await E(nCond,"si_no_cumple",nResp);     // duda → responder → escuchar
     await E(nResp,"exito",nEsp);
     await E(nCond,"ruta:acepta",nAdd);
-    await E(nAdd,"continuar",nConfE);
+    // Extra FÍSICO con tallas/variantes: al sumarlo, el motor deja el bump
+    // stock_pendiente, así que hay que PREGUNTAR su talla (para enviar la
+    // variante correcta y descontar SU stock). Antes se saltaba directo al
+    // mensaje fijo "te lo sumo" — un mensaje FIJO no es turno de IA, así que la
+    // talla nunca se preguntaba y su stock no bajaba. Insertamos: pedir talla →
+    // escuchar (con timeout, no colgar) → capturar (la IA la extrae y
+    // reconciliarStockExtras descuenta) → confirmar. Extras sin tallas / digitales
+    // siguen con el mensaje fijo directo.
+    const preguntarTalla = !esDigital && !!(info && info.tieneTallas);
+    if(preguntarTalla){
+      const nAskT=await N("ia",`Pedir talla del extra ${i+1}`,{
+        operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
+        prompt:`El cliente aceptó sumar ${label} a su pedido. Como ${label} viene en tallas/variantes, pregúntale con naturalidad cuál quiere para enviarle la correcta. Una sola pregunta, breve. No repreguntes datos que ya tienes.`,
+      },false,3200,y);
+      const nEspT=await N("pregunta",`Esperar talla del extra ${i+1}`,{ text:"", timeout_seg:esperaSeg },false,3480,y);
+      const nCapT=await N("ia",`Anotar talla del extra ${i+1}`,{
+        operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
+        prompt:`El cliente acaba de indicar la talla/variante de ${label}. Responde SOLO con un OK muy corto (ej. «¡Anotado! 👍»). No vuelvas a preguntar.`,
+      },false,3760,y);
+      await E(nAdd,"continuar",nAskT);
+      await E(nAskT,"exito",nEspT);
+      await E(nEspT,"continuar",nCapT);
+      await E(nEspT,"timeout",nConfE);   // no dio talla → igual confirma la suma
+      await E(nCapT,"exito",nConfE);
+    }else{
+      await E(nAdd,"continuar",nConfE);
+    }
     prevExit=nConfE;                          // el siguiente ofrecimiento cuelga de acá
   }
   await E(prevExit,"continuar",exitNode);
