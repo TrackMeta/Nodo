@@ -3861,6 +3861,11 @@ type CampoDato = {
   // (provincia), pero para un envío en Lima con contraentrega no sirve de nada
   // y pedirlo sería fricción gratis.
   solo_si_zona?: "lima" | "provincia";
+  // La talla de un EXTRA ride-along se extrae SOLO del último mensaje del
+  // cliente (su respuesta a "¿qué talla?"), nunca del historial: si no, hereda
+  // un valor que dio para OTRO atributo que comparte valores (gorra M/L ←
+  // "M" de las medias S/M). Ver el uso en extraerDatos.
+  solo_ultimo?: boolean;
 };
 
 // Palabras que no identifican NINGUNA oficina en particular. Si al sacarlas la
@@ -3974,69 +3979,86 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
       const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
       const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
       if (ai?.api_key) {
-        const lista = faltan.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
-        const raw = await runAI({
-          provider: ai.provider, apiKey: ai.api_key, model: ai.model,
-          // Dos reglas aprendidas probando con el modelo real:
-          // 1) Si NO le decimos que copie tal cual, "corrige" solo: un DNI de 7
-          //    dígitos lo omitía en silencio, y entonces nuestra validación por
-          //    código nunca corría y la IA no podía decir "te faltó un dígito".
-          // 2) Si no le decimos que lo impreciso TAMBIÉN es dirección, mandaba
-          //    "por el mercado de Santa Anita" a referencia y la dirección
-          //    quedaba vacía → nunca se marcaba la duda y la re-preguntaba.
-          system: "Extraes datos de mensajes de clientes peruanos para un pedido. Respondes SOLO con un JSON, sin explicaciones.\n" +
-            "REGLAS:\n" +
-            "- Si un dato NO aparece en el mensaje, omítelo: jamás lo inventes ni lo deduzcas.\n" +
-            "- Copia el valor TAL COMO lo dijo el cliente, aunque te parezca incompleto, mal escrito o inválido. " +
-            "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
-            "- Si un dato trae \"valores posibles: A, B, C\", el valor DEBE ser uno de esa lista (elige el que dijo el cliente, o el más cercano por escrito/número). NO copies el nombre del producto, de la versión ni el precio como si fuera el valor: si el cliente no eligió ninguno de esos valores, OMITE ese dato.\n" +
-            "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
-            "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
-            "- PERO el nombre de una ciudad o distrito SOLO (\"Lima\", \"Miraflores\", \"Trujillo\", \"soy de Lima\") NO es una dirección: " +
-            "es la ciudad o el distrito. La dirección lleva una calle/avenida/jirón con número, o un punto concreto (un mercado, un " +
-            "colegio, un parque). Si el cliente solo menciona la ciudad o el distrito, NO lo pongas en el campo de dirección: déjalo vacío.\n" +
-            // El cliente casi nunca responde "limpio". A "¿cuál es la sede?"
-            // contesta "shalom real 500 huancayo", y como la descripción del campo
-            // decía "la oficina EXACTA, NO la ciudad", el modelo lo omitía ENTERO:
-            // la sede quedaba vacía, el pedido no se completaba y la IA repreguntaba.
-            "- El cliente suele responder con más cosas de las pedidas (la sede junto con su ciudad, " +
-            "el nombre junto con el DNI). Quédate con la parte que corresponde a cada dato y guárdala igual: " +
-            "nunca descartes un dato entero porque venga mezclado con otra información.\n" +
-            "- Te pasamos los últimos mensajes del cliente, del más viejo al más nuevo. Si se corrigió, " +
-            "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).\n" +
-            "- También te pasamos la última pregunta del vendedor. Úsala SOLO para entender respuestas " +
-            "cortas: si preguntó la talla y el cliente dijo «38 negras», la talla es 38. " +
-            "NUNCA saques datos de esa pregunta: el vendedor repite lo que ya sabe, y copiarlo de ahí " +
-            "sería inventar que el cliente lo dijo.",
-          content: (pregunta ? `Lo último que preguntó el vendedor:\n"""\n${pregunta}\n"""\n\n` : "") +
-            `Mensajes del cliente (del más viejo al más nuevo):\n"""\n${contexto}\n"""\n\nDatos a buscar:\n${lista}\n\n` +
-            `Devuelve solo los que el CLIENTE haya dicho:\n{${faltan.map((c) => `"${c.clave}":"..."`).join(",")}}`,
-          maxTokens: 250,
-        });
-        const m = /\{[\s\S]*\}/.exec(raw);
-        const parsed = m ? JSON.parse(m[0]) : {};
-        for (const c of faltan) {
-          const val = String(parsed?.[c.clave] ?? "").trim();
-          if (!val) continue;
-          const v = validarDato(c, val, ctx);
-          if (!v.ok) {
-            // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
-            // le dice a la IA qué pedirle exactamente.
-            run.vars["_error_" + c.clave] = v.motivo ?? "";
-            ctx["_error_" + c.clave] = v.motivo ?? "";
-            continue;
+        // Extrae un grupo de campos desde una `fuente` de texto y guarda lo válido.
+        // Se llama por separado para los campos "de historial" (la mayoría) y para
+        // los `solo_ultimo` (talla del extra) — ver por qué más abajo.
+        const procesar = async (grupo: CampoDato[], fuente: string) => {
+          if (!grupo.length || !fuente.trim()) return;
+          const lista = grupo.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
+          const raw = await runAI({
+            provider: ai.provider, apiKey: ai.api_key, model: ai.model,
+            // Dos reglas aprendidas probando con el modelo real:
+            // 1) Si NO le decimos que copie tal cual, "corrige" solo: un DNI de 7
+            //    dígitos lo omitía en silencio, y entonces nuestra validación por
+            //    código nunca corría y la IA no podía decir "te faltó un dígito".
+            // 2) Si no le decimos que lo impreciso TAMBIÉN es dirección, mandaba
+            //    "por el mercado de Santa Anita" a referencia y la dirección
+            //    quedaba vacía → nunca se marcaba la duda y la re-preguntaba.
+            system: "Extraes datos de mensajes de clientes peruanos para un pedido. Respondes SOLO con un JSON, sin explicaciones.\n" +
+              "REGLAS:\n" +
+              "- Si un dato NO aparece en el mensaje, omítelo: jamás lo inventes ni lo deduzcas.\n" +
+              "- Copia el valor TAL COMO lo dijo el cliente, aunque te parezca incompleto, mal escrito o inválido. " +
+              "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
+              "- Si un dato trae \"valores posibles: A, B, C\", el valor DEBE ser uno de esa lista (elige el que dijo el cliente, o el más cercano por escrito/número). NO copies el nombre del producto, de la versión ni el precio como si fuera el valor: si el cliente no eligió ninguno de esos valores, OMITE ese dato.\n" +
+              "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
+              "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
+              "- PERO el nombre de una ciudad o distrito SOLO (\"Lima\", \"Miraflores\", \"Trujillo\", \"soy de Lima\") NO es una dirección: " +
+              "es la ciudad o el distrito. La dirección lleva una calle/avenida/jirón con número, o un punto concreto (un mercado, un " +
+              "colegio, un parque). Si el cliente solo menciona la ciudad o el distrito, NO lo pongas en el campo de dirección: déjalo vacío.\n" +
+              // El cliente casi nunca responde "limpio". A "¿cuál es la sede?"
+              // contesta "shalom real 500 huancayo", y como la descripción del campo
+              // decía "la oficina EXACTA, NO la ciudad", el modelo lo omitía ENTERO:
+              // la sede quedaba vacía, el pedido no se completaba y la IA repreguntaba.
+              "- El cliente suele responder con más cosas de las pedidas (la sede junto con su ciudad, " +
+              "el nombre junto con el DNI). Quédate con la parte que corresponde a cada dato y guárdala igual: " +
+              "nunca descartes un dato entero porque venga mezclado con otra información.\n" +
+              "- Te pasamos los últimos mensajes del cliente, del más viejo al más nuevo. Si se corrigió, " +
+              "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).\n" +
+              "- También te pasamos la última pregunta del vendedor. Úsala SOLO para entender respuestas " +
+              "cortas: si preguntó la talla y el cliente dijo «38 negras», la talla es 38. " +
+              "NUNCA saques datos de esa pregunta: el vendedor repite lo que ya sabe, y copiarlo de ahí " +
+              "sería inventar que el cliente lo dijo.",
+            content: (pregunta ? `Lo último que preguntó el vendedor:\n"""\n${pregunta}\n"""\n\n` : "") +
+              `Mensajes del cliente (del más viejo al más nuevo):\n"""\n${fuente}\n"""\n\nDatos a buscar:\n${lista}\n\n` +
+              `Devuelve solo los que el CLIENTE haya dicho:\n{${grupo.map((c) => `"${c.clave}":"..."`).join(",")}}`,
+            maxTokens: 250,
+          });
+          const m = /\{[\s\S]*\}/.exec(raw);
+          const parsed = m ? JSON.parse(m[0]) : {};
+          for (const c of grupo) {
+            const val = String(parsed?.[c.clave] ?? "").trim();
+            if (!val) continue;
+            const v = validarDato(c, val, ctx);
+            if (!v.ok) {
+              // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
+              // le dice a la IA qué pedirle exactamente.
+              run.vars["_error_" + c.clave] = v.motivo ?? "";
+              ctx["_error_" + c.clave] = v.motivo ?? "";
+              continue;
+            }
+            run.vars[c.clave] = val;
+            ctx[c.clave] = val;
+            await setField(db, run.channel_id, run.contact_id, c.clave, val);
+            const duda = datoDudoso(c.clave, val);
+            if (duda) {
+              await setField(db, run.channel_id, run.contact_id, "_duda_" + c.clave, duda);
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ " + duda, `${c.clave}: ${val}`);
+            } else {
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "Dato capturado", `${c.clave}: ${val}`);
+            }
           }
-          run.vars[c.clave] = val;
-          ctx[c.clave] = val;
-          await setField(db, run.channel_id, run.contact_id, c.clave, val);
-          const duda = datoDudoso(c.clave, val);
-          if (duda) {
-            await setField(db, run.channel_id, run.contact_id, "_duda_" + c.clave, duda);
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ " + duda, `${c.clave}: ${val}`);
-          } else {
-            await logEvent(db, run.channel_id, run.contact_id, "campo", "Dato capturado", `${c.clave}: ${val}`);
-          }
-        }
+        };
+        // La mayoría de datos se leen del HISTORIAL (el cliente escribe todo junto).
+        // PERO la talla de un EXTRA ride-along (`solo_ultimo`) se lee SOLO del último
+        // mensaje: es la respuesta a "¿qué talla de gorra?". Con el historial, la IA
+        // "heredaba" un valor que el cliente dio para OTRO atributo con valores
+        // solapados — la gorra (M/L) se quedaba con la "M" que el cliente dijo para
+        // las medias de regalo (S/M) ANTES de que se ofreciera la gorra. Como quedaba
+        // seteada, su respuesta real ("L") ya no se extraía (faltan la excluye) → el
+        // pedido/stock salían con la talla equivocada. Leyendo solo su turno, se
+        // captura recién cuando el cliente de verdad la dice, y la correcta.
+        await procesar(faltan.filter((c) => !c.solo_ultimo), contexto);
+        await procesar(faltan.filter((c) => c.solo_ultimo), texto);
       }
     } catch (e) { console.error("[extraerDatos]", (e as any)?.message ?? e); }
   }
@@ -4384,6 +4406,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       clave: a.clave, label: a.nombre, requerido: a.obligatorio !== false,
       detalle: [a.valores?.length ? `valores posibles: ${a.valores.join(", ")}` : "", a.ayuda]
         .filter(Boolean).join(". ") || undefined,
+      // La talla de un EXTRA ride-along se captura SOLO de la respuesta directa del
+      // cliente, nunca del historial (evita heredar la talla de otro atributo con
+      // valores solapados). Ver extraerDatos → procesar().
+      solo_ultimo: a.solo_ultimo === true,
     }));
     const campos = [...(Array.isArray(cfg.campos) ? cfg.campos : []), ...attrCampos];
     if (campos.length) await extraerDatos(db, run, { ...cfg, campos }, ctx).catch(() => null);
@@ -5193,7 +5219,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
             // veía "Única" en el nombre del atributo y capturaba eso como talla en
             // vez de M/L. Igual que el regalo, que usa el nombre del producto.
             const eNom = String((ep as any)?.nombre || "").replace(/\s*\(extra\)\s*/i, "").trim() || "el extra";
-            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} de ${eNom} (extra que agregó)`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, media: Array.isArray(ea.media) ? ea.media : [] });
+            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} de ${eNom} (extra que agregó)`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, solo_ultimo: true, media: Array.isArray(ea.media) ? ea.media : [] });
           }
           if (extraAttrs.length) ctx._atributos = [...(Array.isArray(ctx._atributos) ? ctx._atributos : []), ...extraAttrs];
         }
