@@ -246,16 +246,19 @@ async function deleteFolder(){
 function renderCards(){
   // Control Todos / Principales / Extras (los extras son complementos de ventas extra).
   const esEx=(p)=>p.clase==="extra";
-  const counts={ todos:st.list.length, principal:st.list.filter(p=>!esEx(p)).length, extra:st.list.filter(esEx).length };
+  const esReg=(p)=>p.clase==="regalo";
+  const esPrin=(p)=>!esEx(p)&&!esReg(p);
+  const counts={ todos:st.list.length, principal:st.list.filter(esPrin).length, extra:st.list.filter(esEx).length, regalo:st.list.filter(esReg).length };
   const segEl=$("claseSeg");
   if(segEl){
     const seg=(v,l)=>`<button data-clase="${v}" style="border:none;background:${st.claseFilter===v?'var(--brand)':'transparent'};color:${st.claseFilter===v?'#fff':'var(--muted)'};font:inherit;font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer">${l} <span style="opacity:.7">${counts[v]}</span></button>`;
-    segEl.innerHTML=seg("todos","Todos")+seg("principal","Principales")+seg("extra","Extras");
+    segEl.innerHTML=seg("todos","Todos")+seg("principal","Principales")+seg("extra","Extras")+(counts.regalo?seg("regalo","Regalos"):"");
     segEl.querySelectorAll("[data-clase]").forEach(b=> b.onclick=()=>{ st.claseFilter=b.dataset.clase; renderCards(); });
   }
   let list=st.list;
-  if(st.claseFilter==="principal") list=list.filter(p=>!esEx(p));
+  if(st.claseFilter==="principal") list=list.filter(esPrin);
   else if(st.claseFilter==="extra") list=list.filter(esEx);
+  else if(st.claseFilter==="regalo") list=list.filter(esReg);
   if(st.folder==="__none") list=list.filter(p=>!p.folder); else if(st.folder!=="__all") list=list.filter(p=>p.folder===st.folder);
   const box=$("cards");
   if(!st.list.length){
@@ -277,8 +280,8 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
-      <div class="c-sub">${esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico · envíos":"Producto digital")}</div>
-      <div class="c-foot">${esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">🟩 Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
+      <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico · envíos":"Producto digital")}</div>
+      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">🎁 Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">🟩 Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}${p.folder?`<span class="nodo-pill neutral">${icon("folder")}${esc(p.folder)}</span>`:''}</div>`;
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -306,6 +309,9 @@ function nuevoProductoModal(){
         <button class="npc" data-c="extra" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
           <span style="font-weight:800;font-size:14px;color:var(--text)">🟩 Extra (complemento)</span>
           <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende solo — se engancha como <b>venta extra</b> a un principal. Solo lo esencial: precio, entrega y cómo lo vende la IA.</span></button>
+        <button class="npc" data-c="regalo" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
+          <span style="font-weight:800;font-size:14px;color:var(--text)">🎁 Regalo</span>
+          <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende: se <b>regala gratis</b> al comprar un principal. Digital o físico. Solo configuras qué es y su entrega.</span></button>
       </div>
       <div style="font-size:13px;color:var(--muted);margin:0 0 18px">¿Cómo se entrega? Esto adapta la ficha.</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -1510,12 +1516,15 @@ async function renderExtras(){
   b.innerHTML=`<div class="empty">Cargando…</div>`;
   const cfg=st.prod.config=st.prod.config||{};
   if(!Array.isArray(cfg.extras)) cfg.extras=[];
+  if(!Array.isArray(cfg.regalos)) cfg.regalos=[];
   if(!cfg.extras_momento) cfg.extras_momento="antes";
   if(cfg.extras_espera_min==null) cfg.extras_espera_min=15;
   if(!cfg.extras_prov_momento) cfg.extras_prov_momento="post";
 
   const cat=await cargarCatalogoExtras();
+  const regCat=await cargarCatalogoRegalos();
   const esFisico=(st.prod.tipo==="fisico");
+  const esPrincipal=(st.prod.clase!=="extra" && st.prod.clase!=="regalo");
 
   const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${cfg.extras_momento===v?'var(--brand)':'var(--border)'};
     background:${cfg.extras_momento===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
@@ -1523,6 +1532,15 @@ async function renderExtras(){
     <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>`;
 
   b.innerHTML=`
+    ${esPrincipal?`
+    <div class="card" style="border-color:rgba(168,85,247,.4)">
+      <h4 style="margin-top:0">🎁 Regalo con la compra</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Un obsequio <b>gratis</b> que se entrega solo al <b>cerrar la venta</b> de este producto — no se cobra ni se pregunta. El <b>digital</b> le llega al chat; el <b>físico</b> viaja en el mismo paquete. ${esFisico?"":"<b>Ojo:</b> como este producto es digital, elige regalos digitales (un regalo físico necesitaría su propio envío)."}</div>
+      <div id="regList" style="margin-top:12px"></div>
+      <button class="btn" id="regAdd" ${regCat.length?"":"disabled"} style="margin-top:8px">+ Agregar regalo</button>
+      ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>🎁 Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
+    </div>`:""}
+
     <div class="card" style="border-color:var(--brand-border)">
       <h4 style="margin-top:0">Ventas extra</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
@@ -1573,7 +1591,37 @@ async function renderExtras(){
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
   const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
   $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
+  const ra=$("regAdd"); if(ra) ra.onclick=()=>{ const c=regCat[0]; if(!c) return; cfg.regalos.push({ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }); paintRegalos(); };
+  paintRegalos();
   paintExtras();
+}
+// Catálogo de productos de clase "regalo" (todas sus versiones activas, sin
+// importar precio — un regalo vale 0). Alimenta el selector de "Regalo con la compra".
+async function cargarCatalogoRegalos(){
+  let { data:prods } = await supa.from("products")
+    .select("id,nombre,emoji,tipo,clase,product_versions(id,nombre,activo)")
+    .eq("channel_id",st.channelId).eq("clase","regalo").order("nombre");
+  const cat=[];
+  (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{
+    if(v.activo!==false) cat.push({ version_id:v.id, product_id:p.id, tipo:p.tipo||"digital",
+      nombre:`${p.emoji?p.emoji+" ":""}${p.nombre}${v.nombre&&v.nombre!=="Estándar"?" · "+v.nombre:""}` });
+  }));
+  st.regCat=cat; return cat;
+}
+function paintRegalos(){
+  const cfg=st.prod.config; const cat=st.regCat||[]; const box=$("regList"); if(!box) return;
+  box.innerHTML="";
+  if(!cfg.regalos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin regalo por ahora.</div>`; return; }
+  cfg.regalos.forEach((r,i)=>{
+    // Si venía solo con version_id, completa sus datos desde el catálogo.
+    if(!r.product_id){ const c=cat.find(x=>x.version_id===r.version_id); if(c) cfg.regalos[i]=r={ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }; }
+    const row=document.createElement("div"); row.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:8px";
+    const sel=document.createElement("select"); sel.className="in"; sel.style.flex="1";
+    sel.innerHTML=cat.map(c=>`<option value="${esc(c.version_id)}" ${c.version_id===r.version_id?"selected":""}>${esc(c.nombre)} · ${c.tipo==="fisico"?"físico":"digital"}</option>`).join("");
+    sel.onchange=()=>{ const c=cat.find(x=>x.version_id===sel.value); if(c) cfg.regalos[i]={ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }; };
+    const del=document.createElement("button"); del.className="btn"; del.textContent="Quitar"; del.onclick=()=>{ cfg.regalos.splice(i,1); paintRegalos(); };
+    row.appendChild(sel); row.appendChild(del); box.appendChild(row);
+  });
 }
 
 function paintExtras(){

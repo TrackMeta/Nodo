@@ -351,6 +351,42 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
   }
 }
 
+// 🎁 Regalo con la compra: adjunta al pedido los regalos configurados en el
+// producto principal (products.config.regalos), como bumps GRATIS (precio 0).
+// El digital lo entrega entregarExtrasDigitales al cerrar la venta (lleva
+// version_id + digital, igual que un extra digital); el físico viaja en el
+// mismo paquete (queda como ítem del pedido con costo pero venta 0).
+// Idempotente: no duplica un regalo ya adjuntado. No es venta (precio 0) → no
+// infla ingresos; el `costo` queda para descontarlo como costo de marketing.
+export async function adjuntarRegalos(db: SupabaseClient, channelId: string, contactId: string, orderId: string, productId?: string | null) {
+  try {
+    if (!productId || !orderId) return;
+    const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
+    const regalos = Array.isArray((p as any)?.config?.regalos) ? (p as any).config.regalos : [];
+    if (!regalos.length) return;
+    const { data: o } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+    const bumps = ((o as any)?.order_bumps ?? []) as any[];
+    let changed = false;
+    for (const g of regalos) {
+      const vid = g?.version_id, pid = g?.product_id;
+      if (!vid && !pid) continue;
+      if (bumps.some((b) => b?.regalo && ((vid && b.version_id === vid) || (pid && b.product_id === pid)))) continue; // ya adjuntado
+      const digital = g?.tipo !== "fisico";
+      let costo = 0;
+      if (vid) {
+        const { data: v } = await db.from("product_versions").select("costo").eq("id", vid).maybeSingle();
+        const cv = Number((v as any)?.costo);
+        if (Number.isFinite(cv)) costo = cv;
+      }
+      bumps.push({ regalo: true, nombre: g?.nombre || "regalo", precio: 0, costo, digital, version_id: vid ?? null, product_id: pid ?? null, entregado: false });
+      changed = true;
+    }
+    if (changed) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
+  } catch (e) {
+    console.error("[adjuntarRegalos]", (e as any)?.message ?? e);
+  }
+}
+
 // ── Pasar la conversación a un humano ──────────────────────────────
 // Dos disparadores distintos, porque son dos cosas distintas:
 //   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
@@ -1869,6 +1905,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
           currency: String(ctx.moneda || "PEN"), shipping: merged,
         });
       } catch (e) { console.error("[crearPedido] capi purchase (precreado):", (e as any)?.message ?? e); }
+      // 🎁 Regalo con la compra (venta digital ya confirmada): adjunta y entrega.
+      try {
+        const { data: cc } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+        await adjuntarRegalos(db, run.channel_id, run.contact_id, run.vars._order_id as string, (cc as any)?.product_id);
+        await entregarExtrasDigitales(db, run.channel_id, run.contact_id, run.vars._order_id as string);
+      } catch (e) { console.error("[crearPedido] regalos (precreado):", (e as any)?.message ?? e); }
       return;
     }
 
@@ -1962,6 +2004,14 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         estado: a.estado || "carrito", amount, currency: String(ctx.moneda || "PEN"), shipping: ship,
       });
     } catch (e) { console.error("[crearPedido] capi purchase:", (e as any)?.message ?? e); }
+    // 🎁 Regalo con la compra: adjunta los regalos del producto como bumps gratis.
+    // El físico viaja en el paquete; el digital lo entrega entregarExtrasDigitales
+    // al CERRAR (para una venta digital `confirmada`, ya mismo; para físico Lima/
+    // provincia, al pasar a entregado_cobrado/saldo_pagado, vía order-update/saldo).
+    try {
+      await adjuntarRegalos(db, run.channel_id, run.contact_id, (ord as any).id, (c as any)?.product_id);
+      if (a.estado === "confirmada") await entregarExtrasDigitales(db, run.channel_id, run.contact_id, (ord as any).id);
+    } catch (e) { console.error("[crearPedido] regalos:", (e as any)?.message ?? e); }
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
   }
