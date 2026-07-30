@@ -1711,7 +1711,7 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     },false,2640,y);
     const nAdd=await N("accion",`Sumar extra ${i+1}`,{
       acciones:[
-        { tipo:"actualizar_pedido", bump:{ nombre:label, precio:String(precio), sube_saldo:true, ...(esDigital?{ version_id:x.version_id, digital:true }:{}) } },
+        { tipo:"actualizar_pedido", bump:{ nombre:label, precio:String(precio), sube_saldo:true, version_id:x.version_id, ...(esDigital?{ digital:true }:{}) } },
         { tipo:"notify_admin", una_vez:`extraf_${x.version_id}`, plantilla:"venta_extra",
           datos:{ extra:`${label} (${esDigital?"digital":"físico"}, va en el mismo envío)`, monto:String(precio) } },
       ],
