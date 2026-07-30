@@ -2753,6 +2753,22 @@ const EJ_ATRIBUTO = {
              donde:"" },
 };
 
+// Valores de un atributo como arreglo (el dato vive en a.valores como CSV).
+function valsArr(a){ return String(a.valores||"").split(/[,\n;]+/).map(s=>s.trim()).filter(Boolean); }
+// Editor de valores en CASILLAS (chips): cada valor su etiqueta con ×; se agrega
+// escribiendo + Enter (o coma). onChange corre tras cada cambio (guarda + refresca).
+function paintVals(box, a, onChange){
+  const arr=valsArr(a);
+  box.innerHTML=arr.map((v,idx)=>`<span class="valchip" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 6px 4px 10px;font-size:13px">${esc(v)}<button type="button" class="valx" data-i="${idx}" title="Quitar" style="border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:0 2px">×</button></span>`).join("")
+    +`<input class="valnew" placeholder="${arr.length?"Otro…":"Ej. 38"}" style="border:none;background:transparent;outline:none;color:var(--text);font:inherit;flex:1;min-width:70px;padding:4px 2px"/>`;
+  box.querySelectorAll(".valx").forEach(bx=> bx.onclick=()=>{ arr.splice(+bx.dataset.i,1); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); });
+  const inp=box.querySelector(".valnew");
+  const add=()=>{ const v=inp.value.trim(); if(!v) return false; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
+  inp.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===","){ e.preventDefault(); add(); } else if(e.key==="Backspace" && !inp.value && arr.length){ arr.pop(); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); } };
+  inp.onblur=()=>{ add(); };
+  // Al tocar la caja (no un chip), enfoca el input para escribir.
+  box.onclick=(e)=>{ if(e.target===box) inp.focus(); };
+}
 function paintAtributos(){
   const cfg=st.prod.config; const box=$("atList"); box.innerHTML="";
   const EJ = EJ_ATRIBUTO[(st.prod.tipo||"digital")==="fisico" ? "fisico" : "digital"];
@@ -2769,9 +2785,9 @@ function paintAtributos(){
         <button class="iconbtn adel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
       </div>
       <div class="clhint" style="font-size:11px;color:var(--faint);margin-top:5px">La IA guarda lo que elija el cliente en <b style="color:var(--brand)">{{${esc(a.clave||"atributo")}}}</b> — aparece en el pedido${EJ.donde}.</div>
-      <label>Valores posibles <span style="color:var(--faint);font-weight:400">(opcional, separados por coma)</span></label>
-      <input class="in aval" value="${esc(a.valores||"")}" placeholder="${EJ.valores}"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:4px">Si los pones, la IA los ofrece y confirma que lo que dijo el cliente sea uno de ellos. Vacío = respuesta libre.</div>
+      <label>Valores posibles <span style="color:var(--faint);font-weight:400">(opcional — ej. las tallas)</span></label>
+      <div class="avalbox" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:7px;min-height:44px;background:var(--surface-2)"></div>
+      <div style="font-size:11px;color:var(--faint);margin-top:4px">Escribe un valor y pulsa <b>Enter</b> para agregarlo como casilla. La IA los ofrece y confirma. Vacío = respuesta libre.</div>
       <label>Ayuda para la IA <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
       <input class="in ahelp" value="${esc(a.ayuda||"")}" placeholder="${EJ.ayuda}"/>
       <label style="margin-top:12px">Multimedia de apoyo <span style="color:var(--faint);font-weight:400">— la IA lo envía cuando ayuda a decidir (${EJ.media})</span></label>
@@ -2785,7 +2801,11 @@ function paintAtributos(){
     anI.oninput=(e)=>{ a.nombre=e.target.value; a.clave=slugAttr(e.target.value); const h=el.querySelector(".clhint b"); if(h) h.textContent="{{"+(a.clave||"atributo")+"}}"; };
     anI.onblur=()=>{ prodSync(); };
     el.querySelector(".ao").onchange=(e)=>{ a.obligatorio=e.target.checked; prodSync(); };
-    el.querySelector(".aval").oninput=(e)=>{ a.valores=e.target.value; prodSync(); };
+    // Valores como CASILLAS (chips). Guarda internamente en a.valores CSV (el
+    // motor y la grilla de stock lo siguen leyendo igual). Dispara 'change' para
+    // que la grilla de stock (si el producto es físico) se regenere.
+    const avalBox=el.querySelector(".avalbox");
+    if(avalBox) paintVals(avalBox, a, ()=>{ prodSync(); avalBox.dispatchEvent(new Event("change",{bubbles:true})); });
     el.querySelector(".ahelp").oninput=(e)=>{ a.ayuda=e.target.value; prodSync(); };
     el.querySelector(".adel").onclick=()=>{ cfg.atributos.splice(i,1); prodSync(); paintAtributos(); };
     const mmBox=el.querySelector(".atmm");
