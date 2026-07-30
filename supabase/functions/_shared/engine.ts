@@ -3989,6 +3989,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             "- Si un dato NO aparece en el mensaje, omítelo: jamás lo inventes ni lo deduzcas.\n" +
             "- Copia el valor TAL COMO lo dijo el cliente, aunque te parezca incompleto, mal escrito o inválido. " +
             "Validar NO es tu trabajo: de eso se encarga el sistema. Nunca omitas un dato por creer que está mal.\n" +
+            "- Si un dato trae \"valores posibles: A, B, C\", el valor DEBE ser uno de esa lista (elige el que dijo el cliente, o el más cercano por escrito/número). NO copies el nombre del producto, de la versión ni el precio como si fuera el valor: si el cliente no eligió ninguno de esos valores, OMITE ese dato.\n" +
             "- Si el cliente indica dónde entregar aunque sea de forma vaga (\"por el mercado X\", \"a la espalda del colegio\"), " +
             "eso ES la dirección: ponlo en el campo de dirección igual. La referencia es información EXTRA, no un reemplazo.\n" +
             "- PERO el nombre de una ciudad o distrito SOLO (\"Lima\", \"Miraflores\", \"Trujillo\", \"soy de Lima\") NO es una dirección: " +
@@ -5184,10 +5185,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
           const pend = (((ob as any)?.order_bumps) ?? []).filter((b: any) => b?.stock_pendiente && b?.product_id);
           const extraAttrs: any[] = [];
           for (const b of pend) {
-            const { data: ep } = await db.from("products").select("config").eq("id", b.product_id).maybeSingle();
+            const { data: ep } = await db.from("products").select("nombre, config").eq("id", b.product_id).maybeSingle();
             const eatrs = normalizeAtributos((ep as any)?.config?.atributos).filter((a: any) => a.valores?.length);
             const pref = "xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10);
-            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} del extra (${b.nombre || "extra"})`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, media: Array.isArray(ea.media) ? ea.media : [] });
+            // Nombre LIMPIO del producto para el atributo (no `b.nombre`, que es la
+            // etiqueta con versión y precio, p.ej. "Gorra · Única — S/ 30"): la IA
+            // veía "Única" en el nombre del atributo y capturaba eso como talla en
+            // vez de M/L. Igual que el regalo, que usa el nombre del producto.
+            const eNom = String((ep as any)?.nombre || "").replace(/\s*\(extra\)\s*/i, "").trim() || "el extra";
+            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} de ${eNom} (extra que agregó)`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, media: Array.isArray(ea.media) ? ea.media : [] });
           }
           if (extraAttrs.length) ctx._atributos = [...(Array.isArray(ctx._atributos) ? ctx._atributos : []), ...extraAttrs];
         }
