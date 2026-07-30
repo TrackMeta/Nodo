@@ -38,6 +38,8 @@
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
   .btn.primary{background:var(--brand);border:none;color:#fff}
   .btn.primary:hover{background:var(--brand-2)}
+  .btn.danger{border-color:rgba(240,71,71,.5);color:#f04747;background:transparent}
+  .btn.danger:hover{background:rgba(240,71,71,.12)}
   .metabox{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin:14px 0 4px}
   .metabox .mt{font-weight:700;font-size:12.5px;margin-bottom:2px}
   .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
@@ -203,6 +205,7 @@ function renderWA(){
       <div class="acts">
         <button class="btn primary" id="saveWA">Guardar WhatsApp</button>
         <button class="btn" id="waTest">Probar conexión</button>
+        ${conn?`<button class="btn danger" id="waDisc" style="margin-left:auto" title="Quitar este número para conectar otro (p.ej. tras un baneo)">Desconectar número</button>`:""}
       </div>
       <div class="desc" style="margin:8px 0 0">“Conectado” solo dice que hay un token guardado. <b>Probar conexión</b> comprueba de verdad que Meta acepta el número y que la app puede recibir mensajes.</div>
       <div id="waDiag"></div>
@@ -241,6 +244,7 @@ function renderWA(){
   const vcopy=$("w_verify_copy");
   if(vcopy) vcopy.onclick=()=>{ const v=$("w_verify").value.trim(); v?copiar(v):toast("Escribe primero un verify token",true); };
   $("waTest").onclick=(e)=>probarWA(e.target);
+  const disc=$("waDisc"); if(disc) disc.onclick=()=>desconectarWA(disc);
   // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
   if(conn) cargarNumeroHero();
   // Toggle "solo anuncios": guarda al instante (merge sobre ia_router para no
@@ -258,6 +262,26 @@ function renderWA(){
 async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado ✓"); }
   catch{ toast("No se pudo copiar — selecciónalo a mano",true); }
+}
+// Desconectar el número (para poner otro tras un baneo). NO borra datos del
+// canal — solo quita phone_number_id/waba_id + los secretos del número.
+async function desconectarWA(btn){
+  const ok=await confirmDialog({
+    title:"Desconectar el número de WhatsApp",
+    message:"Se quitará la conexión de <b>este número</b> (Phone Number ID, WABA y token). <b>Tus contactos, pedidos, flujos y productos NO se borran</b> — quedan intactos en este canal. Luego podrás conectar otro número (por ejemplo si te banearon).<br><br>¿Desconectar ahora?",
+    confirmText:"Sí, desconectar",
+    danger:true
+  });
+  if(!ok) return;
+  if(btn){ btn.disabled=true; btn.textContent="Desconectando…"; }
+  try{
+    await callFn("channel-config",{ action:"whatsapp_disconnect", channel_id:st.channelId });
+    toast("Número desconectado ✓ — ya puedes conectar otro");
+    await load();  // refresca: el canal queda "Sin conectar" y desaparece la tarjeta del número
+  }catch(err){
+    toast(err.message||"No se pudo desconectar",true);
+    if(btn){ btn.disabled=false; btn.textContent="Desconectar número"; }
+  }
 }
 
 // ── Tarjeta bonita del número conectado ────────────────────────────────

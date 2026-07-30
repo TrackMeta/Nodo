@@ -3,7 +3,7 @@
 //   Gestiona los datos y secretos del canal (WhatsApp/Meta + Telegram)
 //   desde ⚙️ Configuraciones. Los secretos van cifrados a Vault; nunca
 //   se guardan en tablas legibles ni se devuelven.
-//   Acciones: status | save
+//   Acciones: status | save | whatsapp_test | whatsapp_disconnect | …
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
@@ -388,6 +388,22 @@ Deno.serve(async (req) => {
           p_channel_id: channel_id, p_kind: kind, p_value: String(val).trim(),
         });
         if (error) return json({ error: "guardar_secreto", detalle: `${kind}: ${error.message}` }, 400);
+      }
+      return json({ ok: true });
+    }
+
+    if (action === "whatsapp_disconnect") {
+      // Desconecta el NÚMERO de WhatsApp para poder poner otro (p.ej. tras un
+      // baneo). NO toca los datos del canal (contactos, pedidos, flujos,
+      // productos) ni ads/CAPI/pixel: solo quita phone_number_id + waba_id y
+      // borra los secretos del número (access_token + app_secret) del Vault.
+      // El verify_token se conserva (lo elige el usuario, es reutilizable).
+      const { error: e1 } = await db.from("channels")
+        .update({ phone_number_id: null, waba_id: null }).eq("id", channel_id);
+      if (e1) return json({ error: "desconectar", detalle: e1.message }, 400);
+      for (const kind of ["access_token", "app_secret"]) {
+        const { error } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind });
+        if (error) return json({ error: "desconectar_secreto", detalle: `${kind}: ${error.message}` }, 400);
       }
       return json({ ok: true });
     }
