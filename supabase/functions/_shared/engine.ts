@@ -5081,7 +5081,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
               if (!gatrs.length) continue;
               pc._atributos = pc._atributos || [];
               for (const ga of gatrs) {
-                pc._atributos.push({ nombre: `${ga.nombre} del regalo (${g.nombre || "regalo"})`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false });
+                pc._atributos.push({ nombre: `${ga.nombre} del regalo (${g.nombre || "regalo"})`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false, media: Array.isArray(ga.media) ? ga.media : [] });
               }
             } catch { /* sin config → no se agregan */ }
           }
@@ -5092,7 +5092,14 @@ async function buildContext(db: SupabaseClient, run: Run) {
           const cat: any[] = [];
           const mm = (p as any).config?.ia_multimedia;
           if (Array.isArray(mm)) for (const x of mm) if (x && x.tag && x.media_url) cat.push(x);
-          for (const a of attrs) for (const m of a.media) cat.push(m);
+          // OJO: `attrs` puede incluir aquí los atributos del REGALO (pc._atributos
+          // comparte la MISMA referencia que `attrs`, y el bloque de regalos de
+          // arriba les hizo push). Esos NO traen `media`, así que `a.media` puede
+          // venir undefined → `(a.media || [])` evita el "a.media is not iterable"
+          // que reventaba TODO buildContext (el catch lo tragaba en silencio) y
+          // dejaba ctx._atributos sin setear → la IA nunca pedía talla/color ni se
+          // descontaba el stock. Solo pasaba con un producto que tuviera regalo.
+          for (const a of attrs) for (const m of (a.media || [])) cat.push(m);
           if (cat.length) pc._ia_multimedia = cat;
           const env = (p as any).config?.envio;
           if (env && typeof env === "object") {
@@ -5166,7 +5173,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
             const { data: ep } = await db.from("products").select("config").eq("id", b.product_id).maybeSingle();
             const eatrs = normalizeAtributos((ep as any)?.config?.atributos).filter((a: any) => a.valores?.length);
             const pref = "xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10);
-            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} del extra (${b.nombre || "extra"})`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false });
+            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} del extra (${b.nombre || "extra"})`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, media: Array.isArray(ea.media) ? ea.media : [] });
           }
           if (extraAttrs.length) ctx._atributos = [...(Array.isArray(ctx._atributos) ? ctx._atributos : []), ...extraAttrs];
         }
