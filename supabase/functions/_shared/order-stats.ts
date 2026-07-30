@@ -35,7 +35,7 @@ export const EST: Record<string, Est> = {
 
 export type Order = {
   amount?: number | null;
-  order_bumps?: Array<{ precio?: number | null }> | null;
+  order_bumps?: Array<{ precio?: number | null; costo?: number | null; regalo?: boolean }> | null;
   estado?: string | null;
   shipping?: Record<string, unknown> | null;
 };
@@ -64,6 +64,14 @@ export const esVenta = (o: Order) => !!EST[o?.estado ?? ""]?.venta;
 export const esPerdido = (o: Order) => !!EST[o?.estado ?? ""]?.perdido;
 export const esFisico = (o: Order) => !!EST[o?.estado ?? ""]?.zona || !!(o?.shipping as any)?.zona;
 
+// 🎁 Costo de los regalos adjuntos (bumps regalo:true): no se venden (precio 0)
+// pero cuestan → cuentan como COGS. Espejo de orders.js costoRegalos.
+export function costoRegalos(o: Order): number {
+  let c = 0;
+  for (const b of o?.order_bumps || []) if ((b as any)?.regalo) c += Number((b as any)?.costo || 0);
+  return c;
+}
+
 // Ganancia por SNAPSHOT congelado en el pedido (shipping.costo_producto/flete):
 // no necesita join de productos. null = falta un dato → no se puede afirmar margen.
 export function margenSnap(o: Order): number | null {
@@ -71,7 +79,7 @@ export function margenSnap(o: Order): number | null {
   if (cp == null || cp === "") return null;
   const f = (o?.shipping as any)?.flete;
   if (esFisico(o) && (f == null || f === "")) return null;
-  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f));
+  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o);
 }
 
 // ── Resumen de un conjunto de pedidos (los KPIs del digest) ─────────
@@ -99,6 +107,8 @@ export function resumirPedidos(orders: Order[]): Digest {
       ingresos += cobrado(o);
       pc += porCobrar(o);
       vendido += total(o);
+      const reg = costoRegalos(o); // 🎁 el costo del regalo cuenta como COGS
+      if (reg > 0) costoProd += reg;
       const cp = (o?.shipping as any)?.costo_producto;
       const cpN = (cp == null || cp === "") ? null : Number(cp);
       if (!esFisico(o)) {
@@ -106,7 +116,7 @@ export function resumirPedidos(orders: Order[]): Digest {
         // (mismo criterio que la banda del Dashboard). Sin costo → solo cobrado.
         // Antes sumaba solo `cobrado` y el costo digital aparecía en el COGS pero
         // nunca se restaba → la ganancia neta salía inflada.
-        ganancia += cobrado(o) - (cpN ?? 0); conMargen++;
+        ganancia += cobrado(o) - (cpN ?? 0) - reg; conMargen++;
         if (cpN != null) costoProd += cpN;
       } else {
         const f = (o?.shipping as any)?.flete;
@@ -119,7 +129,7 @@ export function resumirPedidos(orders: Order[]): Digest {
         if (cpN == null || fN == null) {
           sinDatos++; // físico sin costo o sin flete → no se afirma margen
         } else {
-          ganancia += cobrado(o) - cpN - fN; conMargen++;
+          ganancia += cobrado(o) - cpN - fN - reg; conMargen++;
         }
       }
     }

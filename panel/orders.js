@@ -114,12 +114,20 @@ export function flete(o){
 // no altera los márgenes ya cerrados. Solo si el pedido no lo tiene (pedidos
 // viejos, previos al snapshot) se cae al costo vivo del producto × cantidad.
 // null = no hay dato de costo → no se puede hablar de margen.
+// 🎁 Costo de los regalos adjuntos (bumps con regalo:true). Un regalo no se
+// vende (precio 0 → no suma en total()), pero SÍ te cuesta: se cuenta como COGS.
+export function costoRegalos(o){
+  let c = 0;
+  for (const b of (o?.order_bumps || [])) if (b?.regalo) c += Number(b?.costo || 0);
+  return c;
+}
 export function costoProducto(o, prod, cantidad = 1){
+  const reg = costoRegalos(o);
   const snap = o?.shipping?.costo_producto;
-  if (snap != null && snap !== "") return Number(snap);
+  if (snap != null && snap !== "") return Number(snap) + reg;
   const unit = prod?.config?.costo;
-  if (unit == null || unit === "") return null;
-  return Number(unit) * (Number(cantidad) || 1);
+  if (unit == null || unit === "") return reg > 0 ? reg : null; // sin costo del principal, pero el regalo sí cuesta
+  return Number(unit) * (Number(cantidad) || 1) + reg;
 }
 
 // Ganancia real = lo cobrado − mercadería − envío. Devuelve null si falta algún

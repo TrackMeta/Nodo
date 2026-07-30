@@ -515,6 +515,11 @@ function compileProductoIA(c,tipo){
   const mm=(c.ia_multimedia||[]).filter(m=>m&&m.media_url);
   if(mm.length) L.push("## Archivos que puedes enviar\nCuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n"+mm.map(m=>`- [[media:${m.tag||"archivo"}]] — ${m.descripcion||m.filename||"archivo"}`).join("\n"));
   const req=compileConfirmaciones(c,tipo); if(req) L.push(req);
+  // 🎁 Regalo con la compra: si está activado "mencionar", la IA lo usa de gancho.
+  const regs=(c.regalos||[]).filter(r=>r&&r.nombre);
+  if(c.regalo_mencionar && regs.length){
+    L.push("## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS de regalo: "+regs.map(r=>r.nombre).join(", ")+". Puedes mencionarlo con naturalidad para incentivar el cierre (\"y de regalo te incluyo…\"). No lo cobres, no lo prometas dos veces ni exageres; se entrega solo al cerrar la compra.");
+  }
   return L.join("\n\n");
 }
 // Asegura la forma nueva de config.envio (tabs por agencia + confirmaciones),
@@ -1539,6 +1544,7 @@ async function renderExtras(){
       <div id="regList" style="margin-top:12px"></div>
       <button class="btn" id="regAdd" ${regCat.length?"":"disabled"} style="margin-top:8px">+ Agregar regalo</button>
       ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>🎁 Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="regMenc" ${cfg.regalo_mencionar?"checked":""}/> Mencionar el regalo durante la venta (la IA lo usa de gancho para cerrar)</label>
     </div>`:""}
 
     <div class="card" style="border-color:var(--brand-border)">
@@ -1592,6 +1598,7 @@ async function renderExtras(){
   const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
   $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
   const ra=$("regAdd"); if(ra) ra.onclick=()=>{ const c=regCat[0]; if(!c) return; cfg.regalos.push({ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }); paintRegalos(); };
+  const rm=$("regMenc"); if(rm) rm.onchange=(e)=>{ cfg.regalo_mencionar=e.target.checked; };
   paintRegalos();
   paintExtras();
 }
