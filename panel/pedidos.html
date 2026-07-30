@@ -200,13 +200,13 @@ function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<"
 // (adelanto, agencia, guía, saldo, clave). Un tablero por operación.
 const KB_LIMA=[
   ["star","Por confirmar",["carrito"]],
-  ["box","Por despachar",["confirmado"]],
+  ["box","Confirmado",["confirmado"]],
   ["truck","En reparto",["en_reparto","reprogramado"]],
   ["flag","Finalizados",["entregado_cobrado","rechazado","cancelado"]],
 ];
 const KB_PROV=[
   ["clock","Esperando adelanto",["carrito","esperando_adelanto"]],
-  ["box","Por despachar",["adelanto_validado","por_despachar"]],
+  ["box","Confirmado",["adelanto_validado","por_despachar"]],
   ["truck","En camino",["despachado"]],
   ["building","En agencia · cobrar saldo",["en_agencia"]],
   ["key","Clave enviada",["saldo_pagado"]],
