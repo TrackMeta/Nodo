@@ -364,21 +364,29 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
     const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
     const regalos = Array.isArray((p as any)?.config?.regalos) ? (p as any).config.regalos : [];
     if (!regalos.length) return;
-    const { data: o } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+    const { data: o } = await db.from("orders").select("order_bumps, shipping").eq("id", orderId).maybeSingle();
     const bumps = ((o as any)?.order_bumps ?? []) as any[];
+    const shipAtr = ((o as any)?.shipping?.atributos) ?? {}; // talla/color que capturó el cliente
     let changed = false;
     for (const g of regalos) {
       const vid = g?.version_id, pid = g?.product_id;
       if (!vid && !pid) continue;
       if (bumps.some((b) => b?.regalo && ((vid && b.version_id === vid) || (pid && b.product_id === pid)))) continue; // ya adjuntado
       const digital = g?.tipo !== "fisico";
-      let costo = 0;
+      let costo = 0, stockKey = "_";
       if (vid) {
         const { data: v } = await db.from("product_versions").select("costo").eq("id", vid).maybeSingle();
         const cv = Number((v as any)?.costo);
         if (Number.isFinite(cv)) costo = cv;
       }
-      bumps.push({ regalo: true, nombre: g?.nombre || "regalo", precio: 0, costo, digital, version_id: vid ?? null, product_id: pid ?? null, entregado: false });
+      // Regalo FÍSICO con variantes (talla/color): su clave de stock se calcula
+      // con los atributos del REGALO + lo que dijo el cliente (compartido por
+      // nombre de atributo). Sin variantes → "_".
+      if (!digital && pid) {
+        const { data: gp } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+        stockKey = stockKeyEngine((gp as any)?.config?.atributos, shipAtr);
+      }
+      bumps.push({ regalo: true, nombre: g?.nombre || "regalo", precio: 0, costo, digital, version_id: vid ?? null, product_id: pid ?? null, stock_key: stockKey, entregado: false });
       changed = true;
     }
     if (changed) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
@@ -2081,7 +2089,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         }
         const { data: obRow } = await db.from("orders").select("order_bumps").eq("id", (ord as any).id).maybeSingle();
         for (const b of ((obRow as any)?.order_bumps ?? [])) {
-          if (b?.product_id && b?.digital !== true) mov.push({ product_id: b.product_id, key: "_", unidades: 1 });
+          if (b?.product_id && b?.digital !== true) mov.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
         }
         if (mov.length) {
           const alerts = await aplicarStock(db, mov, -1);
