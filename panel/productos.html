@@ -427,6 +427,8 @@ function renderDetail(){
   if(esRegalo) SEC.opciones="Qué se entrega";
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
+  // En el hub ya está la tarjeta "¿Lo armo por ti?" → el FAB duplicaría. Solo en secciones.
+  const _fab=$("armFab"); if(_fab) _fab.style.display=onHub?"none":"inline-flex";
   d.innerHTML = onHub
     ? `<div id="tabBody"></div>`
     : `<div class="pdet-secbar">
@@ -2006,9 +2008,13 @@ async function renderInicio(){
   const pvText = fisico
     ? `¡Hola! El <b>${pvNom}</b> está a <b>${pvPrecio}</b>${pvEmoji}. ¿Te lo mando a <b>Lima</b> o a <b>provincia</b>?`
     : `¡Hola! El <b>${pvNom}</b> cuesta <b>${pvPrecio}</b>${pvEmoji}. Te lo entrego al instante apenas confirmes el pago 🙌`;
+  const bub=(txt,me)=>`<div style="align-self:${me?"flex-end":"flex-start"};max-width:82%;background:${me?"var(--surface-2)":"rgba(34,192,121,.14)"};border:1px solid ${me?"var(--border)":"transparent"};border-radius:13px;border-top-${me?"right":"left"}-radius:3px;padding:9px 12px;font-size:12.5px;color:var(--text);line-height:1.5">${txt}</div>`;
+  const convo = fisico
+    ? [bub(pvText,false), bub("A provincia 🙌",true), bub("¡Genial! Te llega por agencia 🚚. ¿Me pasas tu <b>nombre</b> y <b>DNI</b> para armar el envío?",false)]
+    : [bub(pvText,false), bub("Ya te yapeo 🙌",true), bub("¡Perfecto! Apenas reciba tu comprobante te mando el acceso al instante ✅",false)];
   const previewCard = `<div class="card" style="margin-bottom:0">
-      <div style="font-size:11px;color:var(--faint);margin-bottom:10px;display:flex;align-items:center;gap:6px">${icon("eye")} Vista previa · así lo vende el bot</div>
-      <div style="background:rgba(34,192,121,.12);border-radius:13px;border-top-left-radius:3px;padding:10px 13px;font-size:13px;color:var(--text);line-height:1.5">${pvText}</div>
+      <div style="font-size:11px;color:var(--faint);margin-bottom:12px;display:flex;align-items:center;gap:6px">${icon("eye")} Vista previa · así lo vende el bot</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${convo.join("")}</div>
     </div>`;
 
   // Columna derecha: poner a vender
@@ -2113,11 +2119,11 @@ function renderSalud(){
     const hay = propio || (viejo!=null&&String(viejo).trim()!=="") || (def!=null&&String(def).trim()!=="");
     if(!hay) errs.push("Sin adelanto: el pedido a provincia le pediría <b>“un adelanto de S/ ”</b> con el monto en blanco. Ponlo en Negocio → Entrega, o solo para este producto en su pestaña Entrega.");
   }
+  // OJO: "sin palabra clave / sin mensajes iniciales / sin conocimiento" ya se
+  // ven como filas naranjas del hub (Tu venta) → no repetir acá. Solo lo que NO
+  // se muestra en otro lado: métodos de pago para el validador de comprobantes.
   const metodos=(st.receta?.ch?.ocr_config?.metodos||[]).filter(m=>m&&(m.app||m.numero||m.titular));
-  if(!metodos.length) warns.push("El Validador de comprobantes no tiene métodos de pago: la IA no podrá verificar a quién le pagaron.");
-  if(!st.receta?.trigs?.length) warns.push("Sin palabras clave: nadie puede iniciar el chat de este producto.");
-  if(!st.receta?.fIni) warns.push("Sin mensajes iniciales.");
-  if(!st.prod.config?.contexto_producto) warns.push("Sin conocimiento del producto: la IA no sabrá qué vender.");
+  if(!metodos.length) warns.push("El validador de comprobantes no tiene métodos de pago: la IA no podrá verificar a quién le pagaron.");
   const line=(t,c,ic)=>`<div style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.55;margin-bottom:5px">
     <span style="color:${c};display:inline-flex;flex:none">${icon(ic)}</span><div>${t}</div></div>`;
   box.innerHTML = (errs.length||warns.length)
