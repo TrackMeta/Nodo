@@ -25,8 +25,10 @@
 // ═══════════════════════════════════════════════════════════════════
 import { supa, toast, icon, askText, confirmDialog } from "./shell.js";
 
-const PALETTE = ["#378ADD","#1D9E75","#D4537E","#BA7517","#7F77DD","#D85A30","#0EA5A5","#888780"];
+const PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#14b8a6","#0ea5e9","#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#64748b"];
 const EMOJIS  = ["📁","👟","💊","🎁","🔥","⭐","🛒","📦","💎","🎯","🏷️","✨","📚","🧴","👕","🍫"];
+const PIPETTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 0 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
+const isCustomColor = (c)=> !!c && /^#/.test(c) && !PALETTE.some(p=>p.toLowerCase()===String(c).toLowerCase());
 
 let styled = false;
 function ensureStyle(){
@@ -48,9 +50,13 @@ function ensureStyle(){
   .fb-grip svg{width:17px;height:17px}
   .fb-emoji{width:30px;height:30px;flex:none;border:1px solid var(--border);border-radius:8px;background:var(--surface-2,var(--surface));font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer}
   .fb-name{flex:1;min-width:0;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2,var(--surface));color:inherit;padding:0 10px;font-size:14px;font-family:inherit}
-  .fb-sw{display:flex;gap:5px;flex:none}
-  .fb-sw span{width:17px;height:17px;border-radius:50%;cursor:pointer}
+  .fb-sw{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:210px}
+  .fb-sw span[data-c]{width:17px;height:17px;border-radius:50%;cursor:pointer}
   .fb-sw span.on{outline:2px solid currentColor;outline-offset:2px}
+  .fb-cw{position:relative;display:inline-flex}
+  .fb-cw input[type=color]{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:none;padding:0}
+  .fb-csw{width:17px;height:17px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border-strong,var(--border));color:var(--muted)}
+  .fb-csw svg{width:11px;height:11px}
   .fb-del{width:32px;height:32px;flex:none;border:none;background:transparent;color:var(--red);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center}
   .fb-del:hover{background:var(--red-bg,rgba(226,84,74,.12))}
   .fb-del svg{width:16px;height:16px}
@@ -183,10 +189,14 @@ export async function mountFolders(opts){
         el.innerHTML = `<span class="fb-grip" aria-hidden="true">⋮⋮</span>
           <button class="fb-emoji" data-emoji>${r.emoji?esc(r.emoji):`<span style="color:var(--muted);font-size:13px">🙂</span>`}</button>
           <input class="fb-name" value="${esc(r.nombre)}" placeholder="Nombre" />
-          <div class="fb-sw">${PALETTE.map(c=>`<span data-c="${c}" style="background:${c}" class="${r.color===c?'on':''}"></span>`).join("")}</div>
+          <div class="fb-sw">${PALETTE.map(c=>`<span data-c="${c}" style="background:${c};color:${c}" class="${(r.color||'').toLowerCase()===c.toLowerCase()?'on':''}"></span>`).join("")}<span class="fb-cw"><span class="fb-csw${isCustomColor(r.color)?' on':''}" style="${isCustomColor(r.color)?`background:${esc(r.color)};color:${esc(r.color)}`:''}" title="Color personalizado">${isCustomColor(r.color)?'':PIPETTE}</span><input type="color" value="${esc(isCustomColor(r.color)?r.color:PALETTE[0])}" data-custom/></span></div>
           <button class="fb-del" title="Eliminar">${icon("trash")}</button>`;
         el.querySelector(".fb-name").oninput = (e)=> r.nombre = e.target.value;
-        el.querySelectorAll(".fb-sw span").forEach(sw=> sw.onclick=()=>{ r.color = (r.color===sw.dataset.c?null:sw.dataset.c); paint(); });
+        el.querySelectorAll(".fb-sw span[data-c]").forEach(sw=> sw.onclick=()=>{ r.color = (r.color===sw.dataset.c?null:sw.dataset.c); paint(); });
+        const ci = el.querySelector("input[data-custom]");
+        if(ci){ ci.oninput = ()=>{ r.color = ci.value.toUpperCase();
+          const csw = el.querySelector(".fb-csw"); if(csw){ csw.classList.add("on"); csw.innerHTML=""; csw.style.background=r.color; csw.style.color=r.color; }
+          el.querySelectorAll(".fb-sw span[data-c]").forEach(s=>s.classList.remove("on")); }; }
         el.querySelector("[data-emoji]").onclick = (e)=> openEmoji(e.currentTarget, (em)=>{ r.emoji=em; paint(); });
         el.querySelector(".fb-del").onclick = ()=>{ r._del=true; paint(); };
         el.addEventListener("dragstart", ()=>{ dragIdx=idx; el.classList.add("drag"); });
