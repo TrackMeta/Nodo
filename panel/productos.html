@@ -967,42 +967,27 @@ function renderProductoIA(host){
       </div>
     </div>
     <div class="card ia-card">
-      <div style="border:1px solid var(--ia-brd);border-radius:12px;padding:13px;margin-bottom:12px;background:var(--ia-bg)">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px;color:var(--ia1)">Memoria del cliente — qué tan personal</div>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Cuánto usa la IA lo que sabe de cada cliente (“compra para su mamá”, “decide rápido”) al venderle <b>este</b> producto. La venta siempre manda.</div>
-        <select class="sel" id="pMemoriaNivel" style="width:100%">
-          <option value="off" ${c.memoria_nivel==="off"?"selected":""}>Solo vender — ignora la memoria</option>
-          <option value="suave" ${(!c.memoria_nivel||c.memoria_nivel==="suave")?"selected":""}>Equilibrado — un guiño natural (recomendado)</option>
-          <option value="cercano" ${c.memoria_nivel==="cercano"?"selected":""}>Trato cercano — cálido y personal</option>
-        </select>
-      </div>
-      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px">
-        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Cómo vender este producto <span style="font-weight:400;color:var(--faint)">— avanzado, opcional</span></summary>
-        <div style="padding-bottom:13px">
-          <label style="margin-top:0">Estilo de venta</label>
-          <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
-            <option value="" ${!ia.estilo_venta?"selected":""}>— Sin definir —</option>
-            ${Object.entries(ESTILOS_VENTA).map(([k,v])=>`<option value="${k}" ${ia.estilo_venta===k?"selected":""}>${esc(v)}</option>`).join("")}
-          </select>
-          <div style="font-size:11px;color:var(--faint);margin-top:4px">Distinto al <b>tono</b> (sección IA): esto es la estrategia de venta.</div>
-          ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
-          ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
-        </div>
-      </details>
-      <div style="border:1px solid var(--brand,#2b7fff);border-radius:12px;padding:13px;margin-top:12px;background:color-mix(in srgb, var(--brand,#2b7fff) 5%, transparent)">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Objeciones y cómo responderlas <span style="font-weight:400;color:var(--faint)">— lo que más ayuda a cerrar</span></div>
-        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 8px;line-height:1.5">Las dudas o pegas típicas del cliente, cada una con tu mejor respuesta. La IA las tendrá a la mano para rebatir con tacto (no discute ni presiona de más). Escribe una por línea, «duda → respuesta». Ejemplos:<br><span style="color:var(--faint)">"Está caro" → Te dura años y el envío va incluido; además pagas al recibir.<br>"Lo pienso" → Claro 🙂 ¿qué te haría decidir? Hoy tengo stock en tu talla.<br>"¿Es original / de confianza?" → Sí, y pagas contraentrega / te mando fotos reales.</span></div>
-        ${taField("objeciones","","«Está caro» → tu respuesta\n«Lo pienso» → tu respuesta\n«No confío» → tu respuesta",5)}
-      </div>
-      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Qué es el producto</div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:13px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">1 · Qué es el producto</div>
+        <div style="font-size:11.5px;color:var(--faint);margin-bottom:8px">Lo primero que la IA necesita: qué vendes y por qué conviene.</div>
         ${taField("resumen","Información resumida (pitch corto)","En 1-2 frases: qué es y por qué conviene.",2)}
         ${taField("detalle","Descripción / detalle","Qué es, qué incluye, para quién es, beneficios, cómo se entrega…",4)}
         ${taField("reglas_producto","Reglas del producto","Ej. stock, tallas, colores, garantía, tiempos…",2)}
         ${taField("limites","Límites (nunca hacer / no prometer)","Ej. no prometer entregas en 24h, no dar descuentos mayores a X…",2)}
       </div>
+      <div style="border:1px solid var(--brand,#2b7fff);border-radius:12px;padding:13px;margin-top:12px;background:color-mix(in srgb, var(--brand,#2b7fff) 5%, transparent)">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">2 · Objeciones y cómo responderlas <span style="font-weight:400;color:var(--faint)">— lo que más ayuda a cerrar</span></div>
+        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 8px;line-height:1.5">Las dudas o pegas típicas del cliente, cada una con tu mejor respuesta. La IA las tendrá a la mano para rebatir con tacto (no discute ni presiona de más). Escribe una por línea, «duda → respuesta». Ejemplos:<br><span style="color:var(--faint)">"Está caro" → Te dura años y el envío va incluido; además pagas al recibir.<br>"Lo pienso" → Claro 🙂 ¿qué te haría decidir? Hoy tengo stock en tu talla.<br>"¿Es original / de confianza?" → Sí, y pagas contraentrega / te mando fotos reales.</span></div>
+        ${taField("objeciones","","«Está caro» → tu respuesta\n«Lo pienso» → tu respuesta\n«No confío» → tu respuesta",5)}
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:2px">Preguntas frecuentes <span style="font-weight:400;color:var(--faint)">— duda concreta → respuesta ideal</span></div>
+          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Como "¿hacen envíos a provincia?". La IA responderá con estas.</div>
+          <div id="faqList"></div>
+          <button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar pregunta</button>
+        </div>
+      </div>
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Precio y promociones</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">3 · Precio y promociones</div>
         ${taField("reglas_precio","Reglas del precio","Cuándo y cómo se cobra, qué incluye, negociación permitida…",2)}
         <div style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin:10px 0;font-size:12px;color:var(--muted);line-height:1.55">
           <span style="display:inline-flex;flex:none;color:var(--muted)">${icon("productos")}</span>
@@ -1018,12 +1003,29 @@ function renderProductoIA(host){
           ${taField("metodos_pago","Método de pago de este producto","Ej. transferencia al BCP 123-456 solo para este producto, o un Yape distinto…",2)}
         </details>
       </div>
-      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Preguntas frecuentes / objeciones</div>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:6px">La duda y su respuesta ideal. La IA responderá con estas.</div>
-        <div id="faqList"></div>
-        <button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar pregunta</button>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:20px 4px 8px">Ajustes avanzados <span style="font-weight:400;text-transform:none">— opcionales</span></div>
+      <div style="border:1px solid var(--ia-brd);border-radius:12px;padding:13px;margin-bottom:12px;background:var(--ia-bg)">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px;color:var(--ia1)">Memoria del cliente — qué tan personal</div>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Cuánto usa la IA lo que sabe de cada cliente (“compra para su mamá”, “decide rápido”) al venderle <b>este</b> producto. La venta siempre manda.</div>
+        <select class="sel" id="pMemoriaNivel" style="width:100%">
+          <option value="off" ${c.memoria_nivel==="off"?"selected":""}>Solo vender — ignora la memoria</option>
+          <option value="suave" ${(!c.memoria_nivel||c.memoria_nivel==="suave")?"selected":""}>Equilibrado — un guiño natural (recomendado)</option>
+          <option value="cercano" ${c.memoria_nivel==="cercano"?"selected":""}>Trato cercano — cálido y personal</option>
+        </select>
       </div>
+      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Cómo vender este producto <span style="font-weight:400;color:var(--faint)">— estilo, proceso, técnicas</span></summary>
+        <div style="padding-bottom:13px">
+          <label style="margin-top:0">Estilo de venta</label>
+          <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
+            <option value="" ${!ia.estilo_venta?"selected":""}>— Sin definir —</option>
+            ${Object.entries(ESTILOS_VENTA).map(([k,v])=>`<option value="${k}" ${ia.estilo_venta===k?"selected":""}>${esc(v)}</option>`).join("")}
+          </select>
+          <div style="font-size:11px;color:var(--faint);margin-top:4px">Distinto al <b>tono</b> (sección IA): esto es la estrategia de venta.</div>
+          ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
+          ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
+        </div>
+      </details>
       <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:12px">
         <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Más ayudas para la IA <span style="font-weight:400;color:var(--faint)">— ejemplos, emojis, multimedia (opcional)</span></summary>
         <div style="padding-bottom:13px">
