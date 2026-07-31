@@ -182,6 +182,9 @@ function seedForm(){
   const c=st.channel||{};
   let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
   if(!c.negocio_form && c.negocio) form.extra=c.negocio;
+  // Prellenar el nombre del negocio con el del canal cuando aún no se configuró
+  // (un canal nuevo salía con el campo vacío aunque el bot ya tiene nombre).
+  if(!form.nombre && c.nombre) form.nombre=c.nombre;
   if(!Array.isArray(form.faq)) form.faq=[];
   if(form.negritas===undefined) form.negritas=true;
   if(form.emoji_min===undefined) form.emoji_min=0;

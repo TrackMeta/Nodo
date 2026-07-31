@@ -331,9 +331,15 @@ export function askText(opts = {}) {
         </div>
       </div>`, { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
     const input = back.querySelector("#nmInput");
+    const okBtn = back.querySelector("#nmOk");
     const done = (v) => { settled = true; resolve(v); back.remove(); };
+    // El texto vacío nunca se acepta (el onclick ya lo bloqueaba en silencio, sin
+    // feedback). Ahora el botón se ve deshabilitado mientras el campo esté vacío,
+    // así el usuario entiende por qué no pasa nada. Aplica a TODOS los askText.
+    const sync = () => { okBtn.disabled = !input.value.trim(); okBtn.style.opacity = okBtn.disabled ? ".5" : ""; okBtn.style.cursor = okBtn.disabled ? "not-allowed" : ""; };
+    input.addEventListener("input", sync); sync();
     back.querySelector("#nmCancel").onclick = () => close();
-    back.querySelector("#nmOk").onclick = () => { const v = input.value.trim(); if (!v) { input.focus(); return; } done(v); };
+    okBtn.onclick = () => { const v = input.value.trim(); if (!v) { input.focus(); return; } done(v); };
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !o.multiline) { e.preventDefault(); const v = input.value.trim(); if (v) done(v); }
       else if (e.key === "Escape") { e.preventDefault(); close(); }
