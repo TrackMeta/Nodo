@@ -70,6 +70,8 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { mountFolders } from "./folder-bar.js";
+let Fbar = null;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all", localFolders:new Set() };
 const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"]];
@@ -102,50 +104,34 @@ async function load(){
   st.deleted=[];
   const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
   // Unificado: Fijos (valor que tú pones) + Capturados (los que el bot recoge).
-  st.fields=(data||[]); render();
+  st.fields=(data||[]);
+  if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"custom_field", table:"custom_fields", channelId:st.channelId, items:()=>inTab(), onChange:render, labelAll:"Todos" }); }
+  else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
+  else { await Fbar.reload(); }
+  render();
 }
 // El campo de datos de pago lo genera el Validador — acá va solo de lectura.
 const GENERADOS={ datos_pago:"IA → Validador de comprobantes" };
 function renderTabs(){
   const T=[["dinamico","Capturados",IC_VAR],["fijo","Fijos",IC_BOT]];
   $("tabs").innerHTML=T.map(([v,l,ic])=>`<button class="tab ${st.tab===v?'active':''}" data-t="${v}">${ic}<span>${l}</span></button>`).join("");
-  $("tabs").querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ if(st.tab===b.dataset.t) return; st.tab=b.dataset.t; st.folder="__all"; render(); });
+  $("tabs").querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ if(st.tab===b.dataset.t) return; st.tab=b.dataset.t; if(Fbar) Fbar.setCurrent("__all"); render(); });
 }
-function addField(){ const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null; st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"", folder }); render(); }
-function allFolders(){ const s=new Set(st.localFolders); st.fields.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
+function addField(){ const folder=(Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:null; st.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:st.tab, valor:"", descripcion:"", folder }); render(); }
 function inTab(){ return st.fields.filter(f=>(f.modo||"dinamico")===st.tab && !esInterno(f)); }
-function countIn(v){ const t=inTab(); if(v==="__all") return t.length; if(v==="__none") return t.filter(f=>!f.folder).length; return t.filter(f=>f.folder===v).length; }
-function renderFolders(){
-  const isReal=st.folder!=="__all"&&st.folder!=="__none";
-  const tabs=[["__all","Todos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
-    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
-  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; render(); });
-  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Datos de envío",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; render(); } };
-  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
-}
-async function deleteFolder(){
-  const f=st.folder; if(f==="__all"||f==="__none") return;
-  const affected=st.fields.filter(x=>x.folder===f);
-  if(!await confirmDialog(affected.length?{title:"Eliminar carpeta",message:`La carpeta "${esc(f)}" tiene ${affected.length} campo(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${esc(f)}"?`,confirmText:"Eliminar",danger:true})) return;
-  affected.forEach(x=>x.folder=null);
-  if(affected.some(x=>x.id)){ const { error }=await supa.from("custom_fields").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error && !/folder|column/.test(error.message)){ toast(error.message,true); } }
-  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); render();
-}
 function render(){
   renderTabs();
   $("lead").innerHTML=LEADS[st.tab];
-  renderFolders();
+  if(Fbar) Fbar.repaint();
   let rows=inTab();
-  if(st.folder==="__none") rows=rows.filter(f=>!f.folder); else if(st.folder!=="__all") rows=rows.filter(f=>f.folder===st.folder);
+  if(Fbar) rows=Fbar.filter(rows);
   const box=$("list");
   // Nota de transparencia: cuántos candados internos del motor se ocultaron (solo
   // en Capturados y en la vista "Todos", donde el usuario los notaría).
-  const ocultos=(st.tab==="dinamico"&&st.folder==="__all")
+  const ocultos=(st.tab==="dinamico"&&(!Fbar||Fbar.current==="__all"))
     ? st.fields.filter(f=>(f.modo||"dinamico")==="dinamico"&&esInterno(f)).length : 0;
   const notaTec=ocultos?`<div class="empty" style="margin-top:12px;text-align:left;font-size:12px">🔧 ${ocultos} campo(s) técnico(s) del motor ocultos (candados internos como <code>_once_*</code> o <code>_await</code>). No son datos del cliente y no se editan aquí.</div>`:"";
-  if(!rows.length){ box.innerHTML=`<div class="empty">${st.tab==="fijo"?"Aún no hay campos fijos":"El bot todavía no capturó campos"}${st.folder!=="__all"?" en esta carpeta":""}. ${st.tab==="fijo"?"Crea uno con “Nuevo campo”.":"Aparecerán solos cuando el bot recoja datos, o crea uno con “Nuevo campo”."}</div>`+notaTec; return; }
+  if(!rows.length){ box.innerHTML=`<div class="empty">${st.tab==="fijo"?"Aún no hay campos fijos":"El bot todavía no capturó campos"}${(Fbar&&Fbar.current!=="__all")?" en esta carpeta":""}. ${st.tab==="fijo"?"Crea uno con “Nuevo campo”.":"Aparecerán solos cuando el bot recoja datos, o crea uno con “Nuevo campo”."}</div>`+notaTec; return; }
   box.innerHTML="";
   rows.forEach(f=>{
     const el=document.createElement("div"); el.className="card";
@@ -165,7 +151,7 @@ function render(){
         <div class="f grow"><label>Nombre</label><input class="in nombre" value="${esc(f.nombre)}" placeholder="${bot?'Ej. Nombre de la empresa':'Ej. Ciudad'}"/></div>
         <div class="f grow"><label>Clave (variable)</label><input class="in key" value="${esc(f.key)}" placeholder="clave" ${f._new?"":"disabled"}/><div class="varhint">se usa como <b>{{${esc(f.key||'clave')}}}</b></div></div>
         <div class="f"><label>Tipo</label><select class="sel tipo">${TIPOS.map(([v,l])=>`<option value="${v}" ${f.tipo===v?"selected":""}>${l}</option>`).join("")}</select></div>
-        <div class="f"><label>Carpeta</label><select class="sel folder"><option value="">Sin carpeta</option>${allFolders().map(x=>`<option value="${esc(x)}" ${f.folder===x?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="f"><label>Carpeta</label><select class="sel folder"><option value="">Sin carpeta</option>${(Fbar?Fbar.metas().map(m=>m.nombre):[]).map(x=>`<option value="${esc(x)}" ${f.folder===x?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
         <button class="del" title="Eliminar">${TRASH}</button>
       </div>
       ${bot?`<div class="cr" style="margin-top:12px">

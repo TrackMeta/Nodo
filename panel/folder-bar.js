@@ -117,9 +117,20 @@ export async function mountFolders(opts){
     return `<button class="nodo-folder${on}" data-f="${esc(v)}">${inner}<span class="cnt">${count(v)}</span></button>`;
   }
 
+  function extraChip(t){
+    const on = S.current===t.v ? " on" : "";
+    const cls = t.cls ? " "+t.cls : "";
+    const cnt = (typeof t.count==="function"? t.count(): t.count);
+    return `<button class="nodo-folder${cls}${on}" data-f="${esc(t.v)}">${t.icon?t.icon:""}${esc(t.label)}${cnt==null?"":`<span class="cnt">${cnt}</span>`}</button>`;
+  }
   function render(){
-    const chips = [ chip("__all","Todos",null), chip("__none","Sin carpeta",null),
-      ...S.metas.map(m=> chip(m.nombre, m.nombre, m)) ];
+    const extra = (opts.extraTabs ? (opts.extraTabs()||[]) : []);
+    const trailing = (opts.trailingTabs ? (opts.trailingTabs()||[]) : []);
+    const chips = [ chip("__all", opts.labelAll||"Todos", null),
+      ...extra.map(extraChip),
+      chip("__none", opts.labelNone||"Sin carpeta", null),
+      ...S.metas.map(m=> chip(m.nombre, m.nombre, m)),
+      ...trailing.map(extraChip) ];
     S.el.innerHTML = chips.join("")
       + `<button class="nodo-folder add" data-act="new">+ Carpeta</button>`
       + `<button class="nodo-folder" data-act="manage" style="gap:5px">${icon("edit")}Gestionar</button>`;
@@ -289,6 +300,8 @@ export async function mountFolders(opts){
     meta(name){ return S.metas.find(m=>m.nombre===name) || null; },
     metas(){ return S.metas.slice(); },
     reload: async ()=>{ await load(); render(); },
+    repaint: ()=>render(),
+    setCurrent: (v)=>{ S.current=v; render(); },
     setChannel: async (id)=>{ S.channelId=id; S.current="__all"; await load(); render(); },
     ensureFolder: ensureRow,
     picker,

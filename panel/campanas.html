@@ -100,6 +100,8 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { mountFolders } from "./folder-bar.js";
+let Fbar = null;
 const $=(id)=>document.getElementById(id);
 // Etapas reales del ciclo de vida del contacto (contacts.stage). Se quitaron
 // los placeholders p1–p4 que no correspondían a ninguna etapa del negocio.
@@ -128,25 +130,14 @@ async function load(){
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
   ]);
   st.camps=c||[]; st.templates=tpl||[]; st.tags=tg||[];
-  renderFolders(); renderGrid();
-}
-function allFolders(){
-  const s=new Set(st.localFolders);
-  st.camps.forEach(c=>{ if(c.folder) s.add(c.folder); });
-  return [...s].sort();
-}
-function renderFolders(){
-  const folders=allFolders();
-  const tabs=[["__all","Todas"],["__none","Sin carpeta"],...folders.map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="fchip ${st.folder===v?'on':''}" data-f="${esc(v)}">${esc(l)}</button>`).join("")
-    +`<button class="btn" id="newFolder" style="height:32px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva carpeta</button>`;
-  $("folders").querySelectorAll(".fchip").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderGrid(); });
-  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Remarketing",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderGrid(); } };
+  if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"campaign", table:"campaigns", channelId:st.channelId, items:()=>st.camps, onChange:renderGrid, labelAll:"Todas" }); }
+  else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
+  else { await Fbar.reload(); }
+  renderGrid();
 }
 function renderGrid(){
   let list=st.camps;
-  if(st.folder==="__none") list=list.filter(c=>!c.folder);
-  else if(st.folder!=="__all") list=list.filter(c=>c.folder===st.folder);
+  if(Fbar) list=Fbar.filter(list);
   const box=$("grid");
   if(!list.length){ box.innerHTML=`<div class="empty">No hay campañas en esta vista. Crea una con “Nueva campaña”.</div>`; return; }
   box.innerHTML="";
@@ -185,9 +176,9 @@ function openModal(c){
   st.editing=c||null;
   $("mTitle").textContent=c?"Editar campaña":"Nueva campaña";
   $("m_nombre").value=c?.nombre||"";
-  const folders=allFolders();
+  const folders=(Fbar?Fbar.metas().map(m=>m.nombre):[]);
   $("m_folder").innerHTML=`<option value="">Sin carpeta</option>`+folders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join("");
-  $("m_folder").value=c?.folder||(st.folder!=="__all"&&st.folder!=="__none"?st.folder:"");
+  $("m_folder").value=c?.folder||((Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:"");
   $("m_tpl").innerHTML=`<option value="">— elige —</option>`+st.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.language)})</option>`).join("");
   $("m_tpl").value=c?.template_id||"";
   const seg=c?.segmento||{};

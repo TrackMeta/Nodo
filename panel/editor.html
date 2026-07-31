@@ -217,6 +217,8 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
+import { mountFolders } from "./folder-bar.js";
+let Fbar = null;
 import { attachVarPicker } from "./var-picker.js";
 const $ = (id) => document.getElementById(id);
 
@@ -537,32 +539,16 @@ async function loadFlows(){
     .eq("channel_id", st.channelId).order("created_at");
   if(error){ ({ data } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,products(nombre)").eq("channel_id", st.channelId).order("created_at")); }
   st.flows=data||[];
-  renderFolders(); renderFlowCards();
-}
-function allFolders(){ const s=new Set(st.localFolders); st.flows.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
-function countIn(v){ if(v==="__all") return st.flows.length; if(v==="__none") return st.flows.filter(f=>!f.folder).length; if(v==="__skeleton") return st.flows.filter(f=>f.kind==="skeleton").length; return st.flows.filter(f=>f.folder===v).length; }
-function renderFolders(){
-  const isReal=st.filter!=="__all"&&st.filter!=="__none"&&st.filter!=="__skeleton";
-  const tabs=[["__all","Todos"],["__skeleton","Esqueletos"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.filter===v?'on':''}" data-f="${esc(v)}">${(v==="__all"||v==="__none"||v==="__skeleton")?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
-    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
-  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.filter=b.dataset.f; renderFolders(); renderFlowCards(); });
-  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Esqueletos",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.filter=n; renderFolders(); renderFlowCards(); } };
-  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
-}
-async function deleteFolder(){
-  const f=st.filter; if(f==="__all"||f==="__none"||f==="__skeleton") return;
-  const n=countIn(f);
-  if(!await confirmDialog(n?{title:"Eliminar carpeta",message:`La carpeta "${f}" tiene ${n} flujo(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${f}"?`,confirmText:"Eliminar",danger:true})) return;
-  if(n){ const { error }=await supa.from("flows").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
-  st.localFolders.delete(f); st.filter="__all"; toast("Carpeta eliminada ✓"); await loadFlows();
+  if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"flow", table:"flows", channelId:st.channelId, items:()=>st.flows, onChange:renderFlowCards, labelAll:"Todos",
+    extraTabs:()=>[{ v:"__skeleton", label:"Esqueletos", count:()=>st.flows.filter(f=>f.kind==="skeleton").length }] }); }
+  else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
+  else { await Fbar.reload(); }
+  renderFlowCards();
 }
 function renderFlowCards(){
   let list=st.flows;
-  if(st.filter==="__skeleton") list=list.filter(f=>f.kind==="skeleton");
-  else if(st.filter==="__none") list=list.filter(f=>!f.folder);
-  else if(st.filter!=="__all") list=list.filter(f=>f.folder===st.filter);
+  if(Fbar && Fbar.current==="__skeleton") list=list.filter(f=>f.kind==="skeleton");
+  else if(Fbar) list=Fbar.filter(list);
   const box=$("flowCards");
   if(!st.flows.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div><h3>Aún no hay flujos</h3><p>Crea tu primer flujo o esqueleto para empezar a automatizar conversaciones.</p></div>`;
@@ -1329,7 +1315,7 @@ async function addTrigger(ov){
 // ── Crear flujo ──
 async function createFlow(){
   const nombre=await askText({title:"Nuevo flujo",message:"Un esqueleto es una plantilla base reutilizable que luego clonas en tus productos.",label:"Nombre del esqueleto",placeholder:"Ej. Venta con OCR",confirmText:"Crear flujo"}); if(!nombre) return;
-  const folder=(st.filter!=="__all"&&st.filter!=="__none"&&st.filter!=="__skeleton")?st.filter:null;
+  const folder=(Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none"&&Fbar.current!=="__skeleton")?Fbar.current:null;
   let { data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador", folder }).select("id").single();
   if(error && /folder|column/.test(error.message)){ ({ data, error } = await supa.from("flows").insert({ channel_id:st.channelId, kind:"skeleton", nombre, estado:"borrador" }).select("id").single()); }
   if(error){ toast(error.message,true); return; }

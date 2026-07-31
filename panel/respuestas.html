@@ -66,6 +66,8 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { mountFolders } from "./folder-bar.js";
+let Fbar = null;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -107,30 +109,16 @@ function showDetail(){ $("gridView").style.display="none"; $("detailView").style
 
 async function load(){
   const { data }=await supa.from("quick_replies").select("*").eq("channel_id",st.channelId).order("orden").order("created_at");
-  st.list=data||[]; renderFolders(); renderCards();
-}
-function allFolders(){ const s=new Set(st.localFolders); st.list.forEach(x=>{ if(x.folder) s.add(x.folder); }); return [...s].sort(); }
-function countIn(v){ if(v==="__all") return st.list.length; if(v==="__none") return st.list.filter(x=>!x.folder).length; return st.list.filter(x=>x.folder===v).length; }
-function renderFolders(){
-  const isReal=st.folder!=="__all"&&st.folder!=="__none";
-  const tabs=[["__all","Todas"],["__none","Sin carpeta"],...allFolders().map(f=>[f,f])];
-  $("folders").innerHTML=tabs.map(([v,l])=>`<button class="nodo-folder ${st.folder===v?'on':''}" data-f="${esc(v)}">${v==="__all"||v==="__none"?"":icon("folder")+" "}${esc(l)}<span class="cnt">${countIn(v)}</span></button>`).join("")
-    +`<button class="nodo-folder add" id="newFolder">+ Carpeta</button>`
-    +(isReal?`<button class="nodo-folder" id="delFolder" style="color:var(--red);border-color:transparent">${icon("trash")} Eliminar carpeta</button>`:"");
-  $("folders").querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ st.folder=b.dataset.f; renderFolders(); renderCards(); });
-  $("newFolder").onclick=async()=>{ const n=await askText({title:"Nueva carpeta",label:"Nombre de la carpeta",placeholder:"Ej. Ventas",confirmText:"Crear"}); if(n){ st.localFolders.add(n); st.folder=n; renderFolders(); renderCards(); } };
-  const df=$("delFolder"); if(df) df.onclick=deleteFolder;
-}
-async function deleteFolder(){
-  const f=st.folder; if(f==="__all"||f==="__none") return;
-  const n=countIn(f);
-  if(!await confirmDialog(n?{title:"Eliminar carpeta",message:`La carpeta "${f}" tiene ${n} respuesta(s). Se moverán a "Sin carpeta".`,confirmText:"Continuar"}:{title:"Eliminar carpeta",message:`¿Eliminar la carpeta vacía "${f}"?`,confirmText:"Eliminar",danger:true})) return;
-  if(n){ const { error }=await supa.from("quick_replies").update({ folder:null }).eq("channel_id",st.channelId).eq("folder",f); if(error){ toast(error.message,true); return; } }
-  st.localFolders.delete(f); st.folder="__all"; toast("Carpeta eliminada ✓"); await load();
+  st.list=data||[];
+  if(!Fbar){
+    Fbar=await mountFolders({ el:$("folders"), tipo:"quick_reply", table:"quick_replies", channelId:st.channelId, items:()=>st.list, onChange:renderCards, labelAll:"Todas" });
+  } else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
+  else { await Fbar.reload(); }
+  renderCards();
 }
 function renderCards(){
   let list=st.list;
-  if(st.folder==="__none") list=list.filter(x=>!x.folder); else if(st.folder!=="__all") list=list.filter(x=>x.folder===st.folder);
+  if(Fbar) list=Fbar.filter(list);
   const box=$("cards");
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg></div><h3>Aún no hay respuestas rápidas</h3><p>Crea mensajes predefinidos para responder al instante desde la Bandeja.</p></div>`;
@@ -151,7 +139,7 @@ function renderCards(){
 }
 async function createQR(){
   const titulo=await askText({title:"Nueva respuesta rápida",label:"Título de la respuesta",placeholder:"Ej. Saludo, Precio, Datos de pago",confirmText:"Crear"}); if(!titulo) return;
-  const folder=(st.folder!=="__all"&&st.folder!=="__none")?st.folder:null;
+  const folder=(Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:null;
   const { data,error }=await supa.from("quick_replies").insert({ channel_id:st.channelId, titulo:titulo.trim(), cuerpo:"", folder, orden:st.list.length }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await load(); openQR(data.id);
@@ -165,7 +153,7 @@ function renderDetail(){
       <div class="row">
         <div class="f"><label>Título</label><input class="in" id="q_titulo" value="${esc(q.titulo)}"/></div>
         <div class="f"><label>Atajo (opcional)</label><input class="in" id="q_atajo" value="${esc(q.atajo||'')}" placeholder="/precio"/></div>
-        <div class="f"><label>Carpeta</label><select class="sel" id="q_folder"><option value="">Sin carpeta</option>${allFolders().map(f=>`<option value="${esc(f)}" ${q.folder===f?"selected":""}>${esc(f)}</option>`).join("")}</select></div>
+        <div class="f"><label>Carpeta</label><div id="q_folder_slot"></div></div>
       </div>
       <label>Color identificador</label>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" id="q_palette"></div>
@@ -190,7 +178,8 @@ function renderDetail(){
     +`<label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer"><span style="width:26px;height:26px;border-radius:50%;background:${cur&&!PALETTE.includes(cur)?cur:'var(--surface-2)'};border:2px solid ${cur&&!PALETTE.includes(cur)?'var(--text)':'var(--border)'};display:inline-flex;align-items:center;justify-content:center;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><input type="color" id="q_colorCustom" value="${qrColor(cur)}" style="width:0;height:0;opacity:0;position:absolute"/></label>`
     +`<button class="btn qClearC" style="height:30px;padding:0 10px;font-size:12px">Sin color</button>`;
   // Preserva ediciones del formulario al re-renderizar por cambio de color.
-  const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value; st.qr.folder=$("q_folder").value||null; st.qr.cuerpo=$("q_cuerpo").value; };
+  if(Fbar){ const slot=$("q_folder_slot"); if(slot){ slot.innerHTML=""; slot.appendChild(Fbar.picker({ current:q.folder||null, onPick:(v)=>{ q.folder=v; } })); } }
+  const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value; st.qr.cuerpo=$("q_cuerpo").value; };
   const setColor=(c)=>{ harvest(); q.color=c||null; renderDetail(); };
   pal.querySelectorAll(".qsw").forEach(s=> s.onclick=()=>setColor(s.dataset.c));
   $("q_colorCustom").oninput=(e)=>{ q.color=e.target.value; };
@@ -216,7 +205,7 @@ function renderDetail(){
 }
 async function saveQR(){
   if(!st.qr) return;
-  const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:$("q_folder").value||null, cuerpo:$("q_cuerpo").value, color:st.qr.color||null, media:(st.qr.media&&st.qr.media.length)?st.qr.media:null };
+  const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:st.qr.folder||null, cuerpo:$("q_cuerpo").value, color:st.qr.color||null, media:(st.qr.media&&st.qr.media.length)?st.qr.media:null };
   if(!patch.titulo){ toast("El título no puede estar vacío",true); return; }
   let { error }=await supa.from("quick_replies").update(patch).eq("id",st.qr.id);
   if(error && /color|media|column/.test(error.message)){ const { color, media, ...base }=patch; ({ error }=await supa.from("quick_replies").update(base).eq("id",st.qr.id)); if(!error) toast("Guardado (aplica la migración 0028 para color/multimedia)"); }
