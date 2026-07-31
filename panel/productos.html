@@ -46,6 +46,11 @@
   .ini-item.ok-ia:hover{background:rgba(168,85,247,.16)}
   .ini-item.ok-gold{background:rgba(230,168,20,.13);box-shadow:0 0 11px -3px rgba(230,168,20,.50)}
   .ini-item.ok-gold:hover{background:rgba(230,168,20,.20)}
+  /* Nombre editable inline en el encabezado del hub */
+  .hdr-name{cursor:text;border-radius:7px;padding:1px 5px;margin-left:-5px;transition:background .12s}
+  .hdr-name:hover{background:var(--surface-2)}
+  #emojiBtn{transition:transform .1s}
+  #emojiBtn:hover{transform:scale(1.04)}
   /* Cabecera de sección (sin barra de pestañas) */
   .pdet-h1{margin:0 0 18px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px}
   .pdet-xbadge{font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px}
@@ -438,6 +443,9 @@ function renderDetail(){
     ia:"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
     remarketing:"Remarketing", flujos:"Flujos", stock:"Stock (inventario)" };
   if(esRegalo) SEC.opciones="Qué se entrega";
+  // En físico la sección "producto" ya no tiene identidad (se edita en el
+  // encabezado): solo variantes + stock, así que el breadcrumb lo refleja.
+  if((st.prod.tipo||"digital")==="fisico") SEC.producto="Variantes y stock";
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
   // "¿Lo armo por ti?" es este FAB de abajo a la derecha, visible en todo el editor.
@@ -586,8 +594,9 @@ function renderProducto(){
   // presentaciones". Acá "Producto" es lo físico: identidad, variantes y stock.
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">${tipo==="fisico"
-      ? "Lo <b>físico</b> de tu producto: <b>nombre</b>, <b>tallas/colores</b> y <b>stock</b>. El <b>precio</b>, el <b>costo</b> y las presentaciones viven en <b>Precio y presentaciones</b>."
+      ? "Las <b>tallas/colores</b> y el <b>stock</b> de tu producto. El <b>nombre</b> y el <b>emoji</b> los cambias arriba, en el encabezado; el <b>precio</b> vive en <b>Precio y presentaciones</b>."
       : "Lo básico: nombre, <b>tu costo</b> y los detalles que la IA pregunta. El <b>precio</b> y las <b>presentaciones</b> van en <b>Presentaciones y precios</b>; la <b>entrega</b> y cómo lo <b>vende la IA</b>, en sus pestañas."}</p>
+    ${tipo!=="fisico"?`
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
       <div class="row" style="align-items:flex-start;margin-top:10px">
@@ -599,7 +608,7 @@ function renderProducto(){
           <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
       </div>
       <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado del contacto que entró por él).</div>
-    </div>
+    </div>`:""}
     ${tipo==="digital"?`
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Tu costo <span style="font-weight:400;color:var(--faint);font-size:12px">— opcional</span></h4>
@@ -628,7 +637,7 @@ function renderProducto(){
     </div>
     ${tipo==="fisico"?'<div id="pStock" style="margin-bottom:12px"></div>':""}`;
   const pc=$("pCosto"); if(pc) pc.onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
-  $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
+  const pn=$("pNombre"); if(pn) pn.oninput=(e)=>st.prod.nombre=e.target.value;
   const goOpc=$("goOpc2"); if(goOpc) goOpc.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   wireEmojiPicker();
   // Detalles / variantes (tallas/colores) — movidos aquí desde Presentaciones.
@@ -706,7 +715,7 @@ function renderRegaloProducto(b){
       <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
     </details>`;
   $("pCosto").onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
-  $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
+  const pn=$("pNombre"); if(pn) pn.oninput=(e)=>st.prod.nombre=e.target.value;
   // Descripción del regalo para la IA: se guarda directo (sin prodSync, que
   // recompilaría contexto_producto y la pisaría). La lee el principal al mencionar.
   const rd=$("pRegDesc"); if(rd) rd.oninput=(e)=>{ const v=e.target.value.trim(); if(v) c.regalo_desc=v; else delete c.regalo_desc; };
@@ -1956,12 +1965,17 @@ async function renderInicio(){
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
     : fisico ? "Producto físico · envíos" : "Producto digital · entrega al instante";
-  const emojiBox = `<span style="width:52px;height:52px;flex:none;border-radius:14px;background:#fff;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center">${st.prod.emoji?esc(st.prod.emoji):"📦"}</span>`;
+  // Emoji editable (botón) + popup del selector (reusa wireEmojiPicker).
+  const emojiBox = `<div style="position:relative;flex:none">
+      <button id="emojiBtn" title="Cambiar emoji" style="width:52px;height:52px;border-radius:14px;background:#fff;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${st.prod.emoji?esc(st.prod.emoji):"📦"}</button>
+      <div id="emojiPop" style="display:none;position:absolute;z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:6px"></div>
+    </div>`;
+  const PENCIL='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
   const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
   const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${esRegalo?"0":"14px"}">
       ${emojiBox}
       <div style="flex:1;min-width:0">
-        <div style="font-size:22px;font-weight:800;letter-spacing:-.3px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">${esc(st.prod.nombre||"Producto")}${badge}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:22px;font-weight:800;letter-spacing:-.3px"><span id="hdrName" class="hdr-name" title="Clic para renombrar">${esc(st.prod.nombre||"Producto")}</span><span id="hdrEdit" title="Renombrar" style="cursor:pointer;color:var(--faint);display:inline-flex">${PENCIL}</span>${badge}</div>
         <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${tipoTxt}</div>
       </div>
       ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div style="font-size:28px;font-weight:800;background:${grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.15">${pct}%</div></div>`}
@@ -2054,7 +2068,7 @@ async function renderInicio(){
       </div>`;
   } else if(esExtra){
     b.innerHTML=`${headCard}
-      ${group("Tu producto",[qEs,qCuesta,qVar])}
+      ${group("Tu producto",fisico?[qCuesta,qVar]:[qEs,qCuesta,qVar])}
       ${group("Tu venta",[rIA])}
       <div class="card" style="border-color:var(--brand-border);margin-top:14px">
         <h4 style="margin-top:0">Este es un complemento</h4>
@@ -2062,7 +2076,7 @@ async function renderInicio(){
       </div>`;
   } else {
     b.innerHTML=`${headCard}
-      ${group("Tu producto",[qEs,qCuesta,qVar])}
+      ${group("Tu producto",fisico?[qCuesta,qVar]:[qEs,qCuesta,qVar])}
       ${group("Tu venta",[rIA,rAct])}
       ${mas}
       <div style="margin-top:18px">${sellCard}</div>`;
@@ -2070,6 +2084,23 @@ async function renderInicio(){
 
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
+  // Encabezado: emoji (selector) + nombre editable inline.
+  wireEmojiPicker();
+  const startNameEdit=()=>{
+    const nm=$("hdrName"); if(!nm) return;
+    const cur=st.prod.nombre||"";
+    const inp=document.createElement("input");
+    inp.value=cur; inp.className="in";
+    inp.style.cssText="font-size:20px;font-weight:800;padding:3px 9px;width:min(360px,60vw)";
+    const pen=$("hdrEdit"); if(pen) pen.style.display="none";
+    nm.replaceWith(inp); inp.focus(); inp.select();
+    let done=false;
+    const commit=(save)=>{ if(done) return; done=true; if(save) st.prod.nombre=inp.value.trim()||cur; renderDetail(); };
+    inp.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); commit(true); } else if(e.key==="Escape"){ e.preventDefault(); commit(false); } };
+    inp.onblur=()=>commit(true);
+  };
+  const nmEl=$("hdrName"); if(nmEl) nmEl.onclick=startNameEdit;
+  const penEl=$("hdrEdit"); if(penEl) penEl.onclick=startNameEdit;
   if(!esExtra && !esRegalo){
     renderSalud(pct>=100);
     const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
