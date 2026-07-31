@@ -575,9 +575,15 @@ function renderProducto(){
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Precio de venta</h4>
       ${multiPres ? `
-        <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Tienes <b>${vsAct.length} presentaciones</b> (packs) con precios distintos:</div>
-        <ul style="margin:8px 0 6px;padding-left:18px;font-size:13px">${vsAct.map(v=>`<li>${esc(v.nombre||"—")} — S/ ${esc(v.precio??"—")}</li>`).join("")}</ul>
-        <a href="#" id="pGoOpcPrecio" class="btn" style="text-decoration:none;display:inline-block">Administrar presentaciones y precios →</a>`
+        <div style="font-size:12.5px;color:var(--muted);margin:2px 0 10px">Cada presentación (pack) con su precio al cliente:</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${vsAct.map(v=>`<div style="display:flex;align-items:center;gap:8px">
+            <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.nombre||"Presentación")}</span>
+            <span style="color:var(--muted);font-weight:700">S/</span>
+            <input class="in pPrecioV" data-vid="${esc(v.id||"")}" type="number" min="0" step="0.5" value="${esc(v.precio??"")}" placeholder="0" style="width:120px"/>
+          </div>`).join("")}
+        </div>
+        <div style="font-size:11px;color:var(--faint);margin-top:10px">Agregar, renombrar o quitar presentaciones (y su entrega): <a href="#" id="pGoOpcPrecio" style="color:var(--brand)">Administrar presentaciones →</a></div>`
       : `
         <label style="margin-top:6px">¿Cuánto cuesta? <span style="font-weight:400;color:var(--faint);text-transform:none">(el precio al cliente)</span></label>
         <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span style="color:var(--muted);font-weight:700">S/</span><input class="in" id="pPrecioUni" type="number" min="0" step="0.5" value="${esc(v0?.precio??"")}" placeholder="Ej. 120" style="width:160px"/></div>
@@ -598,21 +604,6 @@ function renderProducto(){
           <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
       </div>
       <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado del contacto que entró por él).</div>
-      <div style="margin-top:12px"><label style="margin-top:0">Tipo de producto</label>
-        <select class="sel" id="pTipo" style="width:100%">
-          <option value="digital" ${tipo==="digital"?"selected":""}>Digital (entrega por link)</option>
-          <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
-        </select></div>
-      ${st.tipoGuardado && st.tipoGuardado!==tipo ? `
-      <div style="margin-top:12px;border:1px solid var(--amber,#f0a92b);background:rgba(240,169,43,.08);border-radius:11px;padding:10px 12px;
-                  font-size:12.5px;line-height:1.55;color:var(--muted)">
-        <b style="color:var(--amber,#f0a92b)">Cambiaste el tipo de producto.</b>
-        El flujo de venta que ya existe sigue vendiéndolo como <b>${st.tipoGuardado==="fisico"?"físico":"digital"}</b>:
-        ${st.tipoGuardado==="fisico"
-          ? "le va a seguir pidiendo dirección y cobrando contraentrega."
-          : "le va a seguir entregando un link al confirmar el pago."}
-        Después de guardar, <b>regenera el flujo</b> en la pestaña Receta.
-      </div>` : ""}
     </div>
     ${precioCard}
     <div class="card">
@@ -622,6 +613,7 @@ function renderProducto(){
       <div style="font-size:11px;color:var(--faint);margin-top:5px">${tipo==="fisico"
         ? `Costo de <b>una unidad</b>. El Dashboard lo usa para tu ganancia real (precio − costo − envío); en una presentación de 2 unidades se multiplica solo.`
         : `Lo que te cuesta cada venta (comisión de la pasarela, licencias…). El Dashboard lo usa para tu ganancia real (precio − costo). En un digital suele ser 0.`} El cliente nunca lo ve.</div>
+      ${tipo==="fisico"?`<div id="pMargen" style="display:none;align-items:center;gap:8px;margin-top:12px;background:var(--green-bg,rgba(34,192,121,.1));border:1px solid var(--green,#22c079);border-radius:11px;padding:11px 12px;font-size:13.5px;font-weight:600;color:var(--green,#22c079)"></div>`:""}
       ${tipo==="digital"?`<div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.55">
         <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("dollar")}</span>
         <div>El <b>precio de venta</b> vive en <a href="#" id="goOpc2" style="color:var(--brand)">Presentaciones y precios →</a> — ahí pones el precio, sea una sola presentación o varias. Queda disponible en tus flujos como <b style="color:var(--brand)">{{precio}}</b>.</div>
@@ -629,29 +621,58 @@ function renderProducto(){
     </div>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} ${tipo==="fisico"?"Tallas, colores y variantes":"Detalles a preguntar"} <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
-        ${tipo==="fisico"
-          ? "Agrega <b>Talla</b> (38, 39, 40) y <b>Color</b> (negro, blanco). La IA se los pregunta al cliente sin interrogar, quedan en el pedido y el <b>rótulo</b>, y <b>arman la grilla de stock</b> de abajo. <b>No cambian el precio.</b>"
-          : "Datos que la IA le <b>pregunta al cliente</b> y registra antes de cerrar la venta, pero que <b>no cambian el precio</b> (nombre para el certificado, idioma…). Ella los pesca de la conversación sin interrogar, y quedan guardados en el pedido."}
-        <br><b>¿Cambia el precio o lo que entregas?</b> Entonces no es una variante: es una
-        <a href="#" id="atGoOp" style="color:var(--brand)">presentación →</a> (ej. Básico vs Premium, 1 unidad vs pack).
-      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px">${tipo==="fisico"
+        ? "¿Tu producto viene en <b>tallas</b> o <b>colores</b>? Agrégalos aquí — la IA se los pregunta al cliente y <b>arman la grilla de stock</b> de abajo."
+        : "Datos que la IA le <b>pregunta al cliente</b> antes de cerrar (nombre para el certificado, idioma…), que <b>no cambian el precio.</b>"}</div>
+      <details style="margin-bottom:12px"><summary style="cursor:pointer;color:var(--brand);font-size:12px;font-weight:600;padding:2px 0">ⓘ Cómo funciona</summary>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:8px">
+          ${tipo==="fisico"
+            ? "La IA se los pregunta al cliente sin interrogar, quedan en el pedido y el <b>rótulo</b>, y <b>no cambian el precio.</b>"
+            : "Ella los pesca de la conversación sin interrogar y quedan guardados en el pedido."}
+          <br><b>¿Cambia el precio o lo que entregas?</b> Entonces no es una variante: es una <a href="#" id="atGoOp" style="color:var(--brand)">presentación →</a> (ej. Básico vs Premium, 1 unidad vs pack).
+        </div>
+      </details>
       <div id="atList"></div>
       <button class="btn" id="atAdd" style="margin-top:8px">+ ${tipo==="fisico"?"Variante (talla, color…)":"Detalle"}</button>
     </div>
     ${tipo==="fisico"?'<div id="pStock" style="margin-bottom:12px"></div>':""}
     <details style="margin-bottom:12px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
-      <label style="margin-top:6px">Config del producto (se genera desde los formularios)</label>
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados</summary>
+      <label style="margin-top:10px">Tipo de producto</label>
+      <select class="sel" id="pTipo" style="width:100%">
+        <option value="digital" ${tipo==="digital"?"selected":""}>Digital (entrega por link)</option>
+        <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
+      </select>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">Se define al crear el producto. Cambiarlo afecta cómo lo vende el bot — deberás <b>regenerar el flujo</b> después de guardar.</div>
+      ${st.tipoGuardado && st.tipoGuardado!==tipo ? `
+      <div style="margin-top:10px;border:1px solid var(--amber,#f0a92b);background:rgba(240,169,43,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55;color:var(--muted)">
+        <b style="color:var(--amber,#f0a92b)">Cambiaste el tipo de producto.</b>
+        El flujo de venta que ya existe sigue vendiéndolo como <b>${st.tipoGuardado==="fisico"?"físico":"digital"}</b>:
+        ${st.tipoGuardado==="fisico" ? "le va a seguir pidiendo dirección y cobrando contraentrega." : "le va a seguir entregando un link al confirmar el pago."}
+        Después de guardar, <b>regenera el flujo</b> en la pestaña Receta.
+      </div>` : ""}
+      <label style="margin-top:14px">Config del producto (se genera desde los formularios)</label>
       <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
     </details>`;
-  $("pCosto").onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
+  // Margen en vivo (físico): precio − costo, con la presentación más barata si hay varias.
+  const updateMargen=()=>{
+    const el=$("pMargen"); if(!el) return;
+    const costoN=Number(c.costo);
+    const prices=(st.versions||[]).filter(v=>v.activo!==false).map(v=>Number(v.precio)).filter(n=>!isNaN(n)&&n>0);
+    const p=prices.length?Math.min(...prices):NaN;
+    if(isNaN(p)||isNaN(costoN)){ el.style.display="none"; return; }
+    const g=Math.round((p-costoN)*100)/100;
+    el.style.display="flex";
+    el.innerHTML=`${icon("dollar")} Ganas ~S/ ${g} por ${prices.length>1?"la presentación más barata":"unidad"} <span style="font-weight:400;color:var(--faint)">(precio − costo, antes del envío)</span>`;
+  };
+  $("pCosto").onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateMargen(); };
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   const goOpc=$("goOpc2"); if(goOpc) goOpc.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(); }catch(_){ toast("JSON inválido",true); } };
-  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
-  // Precio inline (físico, 1 presentación): edita la 1ª versión; guarda con el producto.
-  const pu=$("pPrecioUni"); if(pu) pu.onchange=(e)=>{ if(v0) v0.precio=e.target.value.trim(); };
+  const pt=$("pTipo"); if(pt) pt.onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
+  // Precio inline (físico): 1 presentación = un input; varias = un input por presentación. Edita la versión y se guarda con el producto.
+  const pu=$("pPrecioUni"); if(pu) pu.onchange=(e)=>{ if(v0) v0.precio=e.target.value.trim(); updateMargen(); };
+  b.querySelectorAll(".pPrecioV").forEach(inp=> inp.onchange=(e)=>{ const v=(st.versions||[]).find(x=>String(x.id)===inp.dataset.vid); if(v) v.precio=e.target.value.trim(); updateMargen(); });
   const gp=$("pGoOpcPrecio"); if(gp) gp.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   wireEmojiPicker();
   // Detalles / variantes (tallas/colores) — movidos aquí desde Presentaciones.
@@ -662,6 +683,7 @@ function renderProducto(){
   const atl=$("atList"); if(atl && tipo==="fisico") atl.addEventListener("change", refreshStock);
   const gA=$("atGoOp"); if(gA) gA.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
   refreshStock(); // pinta el stock inline (físico)
+  updateMargen(); // muestra la ganancia si ya hay precio y costo
 }
 
 // Ficha de un REGALO: sección única con lo mínimo. No se vende → sin precio,
@@ -799,12 +821,11 @@ function stockUI(b, c, explicOn){
       <li><b>Vuelve solo si se cae la venta:</b> si un pedido se <b>cancela, se rechaza o no se recoge</b>, esas unidades <b>regresan</b> al stock.</li>
       <li>Repones editando los números de abajo cuando compras más mercadería.</li>
     </ul></div>`:`<div style="font-size:12px;color:var(--faint);line-height:1.6;margin:0 0 10px">Se descuenta al crear el pedido; el bot no deja de vender, solo te avisa; vuelve si la venta se cae.</div>`;
-  const umbralCard=`<div class="card">
-    <h4 style="margin-top:0">Avísame cuando el stock baje de</h4>
-    <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-      <input class="in" id="stkUmbral" type="number" min="0" step="1" value="${esc(umbral)}" style="width:110px"/>
-      <span style="font-size:12.5px;color:var(--muted)">unidades — te llega una alerta al llegar a ese número o a 0.</span>
-    </div></div>`;
+  const umbralRow=`<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--muted)">Avísame cuando baje de</span>
+    <input class="in" id="stkUmbral" type="number" min="0" step="1" value="${esc(umbral)}" style="width:84px"/>
+    <span style="font-size:12.5px;color:var(--muted)">unidades (o llegue a 0).</span>
+  </div>`;
   let cuerpo;
   if(combos.length){
     const filas=combos.map(cm=>{
@@ -822,16 +843,16 @@ function stockUI(b, c, explicOn){
       <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Una fila por cada combinación de tus atributos (${stockAxes(c.atributos).map(a=>esc(a.nombre)).join(" × ")}). Vacío = no llevas la cuenta de esa variante.</div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
         <thead><tr><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Variante</th><th style="text-align:right;padding:6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Stock</th></tr></thead>
-        <tbody>${filas}</tbody></table></div></div>`;
+        <tbody>${filas}</tbody></table></div>${umbralRow}</div>`;
   } else {
     const k="_"; const val=c.stock[k];
     cuerpo=`<div class="card">
       <h4 style="margin-top:0">Unidades disponibles</h4>
       <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Este producto no tiene variantes (talla/color), así que es un solo número. ${(c.atributos||[]).length?"Si quieres llevar el stock por talla/color, agrega esos atributos con sus valores en <b>Producto → Detalles a preguntar</b>.":""}</div>
       <input class="in stkV" data-k="_" type="number" step="1" value="${val==null?"":esc(val)}" placeholder="—" style="width:140px"/>
-      ${val!=null&&Number(val)<=0?'<div style="color:var(--red,#e2564a);font-weight:700;font-size:12.5px;margin-top:6px">Agotado</div>':(val!=null&&Number(val)<=Number(umbral)?'<div style="color:var(--amber,#f0a92b);font-weight:700;font-size:12.5px;margin-top:6px">Stock bajo</div>':'')}</div>`;
+      ${val!=null&&Number(val)<=0?'<div style="color:var(--red,#e2564a);font-weight:700;font-size:12.5px;margin-top:6px">Agotado</div>':(val!=null&&Number(val)<=Number(umbral)?'<div style="color:var(--amber,#f0a92b);font-weight:700;font-size:12.5px;margin-top:6px">Stock bajo</div>':'')}${umbralRow}</div>`;
   }
-  b.innerHTML=explic+umbralCard+cuerpo;
+  b.innerHTML=explic+cuerpo;
   const um=b.querySelector("#stkUmbral"); if(um) um.onchange=(e)=>{ const v=e.target.value.trim(); if(v==="") delete c.stock_umbral; else c.stock_umbral=Math.max(0,parseInt(v,10)||0); stockUI(b,c,explicOn); };
   b.querySelectorAll(".stkV").forEach(inp=> inp.onchange=(e)=>{
     const k=inp.dataset.k, v=e.target.value.trim();
