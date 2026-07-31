@@ -1964,7 +1964,7 @@ async function renderInicio(){
 
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
-    : fisico ? "Producto físico · envíos" : "Producto digital · entrega al instante";
+    : fisico ? "Producto físico" : "Producto digital · entrega al instante";
   // Emoji editable (botón) + popup del selector (reusa wireEmojiPicker).
   const emojiBox = `<div style="position:relative;flex:none">
       <button id="emojiBtn" title="Cambiar emoji" style="width:52px;height:52px;border-radius:14px;background:#fff;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${st.prod.emoji?esc(st.prod.emoji):"📦"}</button>
