@@ -569,7 +569,7 @@ async function boot() {
   });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); subscribeRealtime(); });
   // Cargas independientes en PARALELO (antes eran 5 en serie → arranque lento).
   await Promise.all([loadTestFlows(), loadFilters(), loadQuickReplies(), loadInboxFlows(), loadConversations()]);
   subscribeRealtime();
@@ -1619,8 +1619,13 @@ function loadConversationsSoon() {
 }
 function subscribeRealtime() {
   if (state.rt) supa.removeChannel(state.rt);
-  state.rt = supa.channel("nodo-inbox")
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
+  // Filtro por canal server-side: solo recibimos cambios del bot activo, no de
+  // los otros canales de la cuenta (RLS ya limita a la cuenta; esto acota al
+  // bot). Se re-suscribe al cambiar de bot (shell.onChannel). El nombre lleva el
+  // channelId para que removeChannel + re-crear no colisionen.
+  const fCh = `channel_id=eq.${state.channelId}`;
+  state.rt = supa.channel(`nodo-inbox-${state.channelId}`)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: fCh }, (p) => {
       const m = p.new;
       // Mantiene la caché al día (chat abierto o en segundo plano) para que
       // reabrirlo siga siendo instantáneo y no pierda mensajes.
@@ -1634,7 +1639,7 @@ function subscribeRealtime() {
       }
       loadConversationsSoon();
     })
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: fCh }, (p) => {
       const m = p.new;
       // Mantiene la caché al día para que reabrir el chat muestre el tick correcto.
       const cache = state.threadCache[m.contact_id];
@@ -1645,11 +1650,11 @@ function subscribeRealtime() {
         if (el && m.direction === "out") el.innerHTML = `${fmtTime.format(new Date(m.ts))}${statusTick(m.status, true)}`;
       }
     })
-    .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversationsSoon())
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: fCh }, () => loadConversationsSoon())
     // El pedido del contacto abierto cambió (el bot capturó/movió algo mientras
     // conversa) → refresca la ficha sola. No lo hace si hay un modal abierto
     // (estás editando) para no pisar lo que escribes.
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (p) => {
+    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: fCh }, (p) => {
       const cid = (p.new && p.new.contact_id) || (p.old && p.old.contact_id);
       if (!cid || cid !== state.contactId) return;
       if (document.querySelector(".overlay, .nodo-modal-back")) return;
