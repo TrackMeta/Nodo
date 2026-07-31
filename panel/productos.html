@@ -1938,6 +1938,9 @@ async function renderInicio(){
   const MISS={ opciones:"el precio", ia:"que la IA sepa venderlo", activacion:"una palabra clave", entrega:"la entrega", producto:"los datos del producto", stock:"" };
   const missing = req.filter(t=>!est(t).ok).map(t=>MISS[t]).filter(Boolean);
   const rcol = pct>=100 ? "var(--green,#22c079)" : "#f0a92b";
+  // Degradado de la barra y del %: azul→violeta mientras avanza, verde al llegar al 100%.
+  const grad = pct>=100 ? "linear-gradient(90deg,#22c079,#12b76a)" : "linear-gradient(90deg,#2b7fff,#a855f7)";
+  const gradGlow = pct>=100 ? "rgba(34,192,121,.45)" : "rgba(124,92,255,.45)";
 
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
@@ -1950,13 +1953,13 @@ async function renderInicio(){
         <div style="font-size:22px;font-weight:800;letter-spacing:-.3px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">${esc(st.prod.nombre||"Producto")}${badge}</div>
         <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${tipoTxt}</div>
       </div>
-      ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div style="font-size:26px;font-weight:800;color:${rcol};line-height:1.15">${pct}%</div></div>`}
+      ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div style="font-size:28px;font-weight:800;background:${grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.15">${pct}%</div></div>`}
     </div>`;
   const headCard = esRegalo
     ? `<div style="margin-bottom:16px">${bannerTop}</div>`
     : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:16px">
         ${bannerTop}
-        <div style="height:9px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:2px 0 10px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${rcol};transition:width .35s ease"></div></div>
+        <div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:2px 0 10px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease"></div></div>
         <div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px">${pct>=100 ? `<span style="color:var(--green,#22c079);display:inline-flex">${icon("check")}</span> Todo listo — ya puedes ponerlo a vender.` : `<span style="display:inline-flex;color:#f0a92b">${icon("alert")}</span> Te falta ${missing.map(m=>`<b style="color:var(--text)">${m}</b>`).join(" y ")}.`}</div>
       </div>`;
 
