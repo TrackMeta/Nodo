@@ -1953,7 +1953,9 @@ async function renderInicio(){
         const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()));
         return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo del regalo"};
       }
-      const n=(st.versions||[]).filter(v=>v.activo!==false).length; const cp=(st.versions||[]).filter(v=>Number(v.precio)>0).length; return {ok:cp>0,msg:cp>0?`${n} presentación(es), ${cp} con precio`:"Ninguna presentación tiene precio"}; }
+      const active=(st.versions||[]).filter(v=>v.activo!==false); const priced=active.filter(v=>Number(v.precio)>0); const prices=priced.map(v=>Number(v.precio));
+      let msg; if(!priced.length) msg="Falta ponerle precio"; else if(active.length===1) msg=`S/ ${prices[0]} · 1 presentación`; else msg=`${active.length} presentaciones · desde S/ ${Math.min(...prices)}`;
+      return {ok:priced.length>0,msg}; }
     if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
@@ -1971,13 +1973,13 @@ async function renderInicio(){
     ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos"), stock:icon("productos") };
   // Físico: precio, tallas y stock viven TODOS dentro de "Producto" (todo junto),
   // así que la fase muestra un solo ítem. Digital mantiene sus secciones.
-  const fase1 = fisico ? ["producto"] : ["producto","opciones","entrega"];
+  const fase1 = fisico ? ["producto","opciones"] : ["producto","opciones","entrega"];
   const PH = esRegalo
     ? [["1","El regalo",fisico?"Qué es, cuánto tienes y cómo llega":"Qué es y qué se entrega (el link o archivo)",["producto"]]]
     : esExtra
-    ? [["1","El producto",fisico?"Precio, tallas, stock y costo — todo aquí":"Lo que vendes, su precio y cómo se entrega",fase1],
+    ? [["1","El producto",fisico?"Precio, presentaciones, tallas y stock":"Lo que vendes, su precio y cómo se entrega",fase1],
        ["2","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
-    : [["1","El producto",fisico?"Precio, tallas, stock y costo — todo aquí":"Lo que vendes, precios y entrega",fase1],
+    : [["1","El producto",fisico?"Precio, presentaciones, tallas y stock":"Lo que vendes, precios y entrega",fase1],
        ["2","La venta","La venta con IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
        ["3","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
   // Color por fase: ① azul (producto) · ② violeta IA (venta) · ③ gris (avanzado).
