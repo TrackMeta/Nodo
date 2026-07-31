@@ -2014,8 +2014,10 @@ async function renderInicio(){
 
   // ── Filas del hub ──────────────────────────────────────────────────
   const rowHtml=(t,o)=>{ const e=est(t); const isOk=o.ok!==undefined?o.ok:e.ok;
-    const icoStyle=isOk?'':(o.warn?`style="background:var(--ia-bg,rgba(168,85,247,.14));border-color:transparent;color:var(--ia1,#a855f7)"`:'');
-    const subStyle=(!isOk&&o.warn)?'color:var(--ia1,#a855f7);font-weight:600':'color:var(--muted)';
+    // Completada = ícono verde (clase .done) + brillo verde en la fila. Pendiente =
+    // todo neutro/gris (no llama la atención); solo lo completado resalta.
+    const icoStyle='';
+    const subStyle=(!isOk&&o.warn)?'color:var(--muted);font-weight:600':'color:var(--muted)';
     const optTag=o.opt?` <span style="font-size:11px;color:var(--faint);font-weight:600">· opcional</span>`:'';
     const cls=isOk?' ok':'';
     return `<button class="ini-item${cls}" data-t="${t}">
