@@ -2014,11 +2014,10 @@ async function renderInicio(){
 
   // Más opciones (colapsable): ventas extra, remarketing, flujos
   const mas = `<details style="margin-top:16px">
-      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· ventas extra, remarketing, flujos</span></summary>
+      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· ventas extra, remarketing</span></summary>
       <div class="ini-ph" style="padding:6px;margin-top:6px"><div class="ini-items">
         ${rowHtml("extras",{label:"Ventas extra",sub:est("extras").msg,opt:true})}
         ${rowHtml("remarketing",{label:"Remarketing",sub:est("remarketing").msg,opt:true})}
-        ${rowHtml("flujos",{label:"Flujos (editor avanzado)",sub:"Editor visual del flujo de venta",opt:true})}
       </div></div>
     </details>`;
 
