@@ -143,15 +143,17 @@ const NAV_GROUPS = [
     { id:"secuencias",  label:"Secuencias",           href:"secuencias.html", icon:"secuencias" },
   ]},
   { key:"auto", sec:"Automatización", items:[
-    { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
     { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
     { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
     { id:"etiquetas",   label:"Etiquetas",            href:"etiquetas.html",  icon:"etiquetas" },
   ]},
-  // Avanzado: plomería que el dueño casi nunca toca (los campos se crean solos).
-  // Arranca colapsado para no abrumar; vive acá y no en el menú principal.
+  // Avanzado: herramientas de poder que el dueño casi nunca toca. El editor visual
+  // de flujos vive acá (el motor de flujos SIGUE corriendo por debajo; esto es solo
+  // el editor, para casos raros/depurar). Los campos se crean solos. Arranca
+  // colapsado para no abrumar; fuera del menú principal.
   { key:"avanzado", sec:"Avanzado", items:[
+    { id:"editor",      label:"Flujos",               href:"editor.html",     icon:"flujos" },
     { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
   ]},
   { key:"conf", sec:"Configuración", items:[
