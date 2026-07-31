@@ -1938,9 +1938,10 @@ async function renderInicio(){
   const MISS={ opciones:"el precio", ia:"que la IA sepa venderlo", activacion:"una palabra clave", entrega:"la entrega", producto:"los datos del producto", stock:"" };
   const missing = req.filter(t=>!est(t).ok).map(t=>MISS[t]).filter(Boolean);
   const rcol = pct>=100 ? "var(--green,#22c079)" : "#f0a92b";
-  // Degradado de la barra y del %: azul→violeta mientras avanza, verde al llegar al 100%.
-  const grad = pct>=100 ? "linear-gradient(90deg,#22c079,#12b76a)" : "linear-gradient(90deg,#2b7fff,#a855f7)";
-  const gradGlow = pct>=100 ? "rgba(34,192,121,.45)" : "rgba(124,92,255,.45)";
+  // Degradado de la barra y del %: mismo tono que la sección IA (violeta→fucsia)
+  // mientras avanza, verde al llegar al 100%.
+  const grad = pct>=100 ? "linear-gradient(90deg,#22c079,#12b76a)" : "linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
+  const gradGlow = pct>=100 ? "rgba(34,192,121,.45)" : "rgba(168,85,247,.45)";
 
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
