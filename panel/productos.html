@@ -2251,6 +2251,17 @@ async function generarFlujoFisico(flowId, N, E){
   const nPedirAdel=await N("mensaje","Pedir el adelanto",{
     bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *S/ {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque." }],
   },false,1520,640);
+  // ¿El cliente YA pagó el adelanto ANTES de dar sus datos? El motor lo enganchó
+  // al crear el pedido (engancharPrepagoAdelanto) y marcó `adelanto_prepagado`. Si
+  // es así, NO le pedimos pagar de nuevo: le confirmamos que estamos verificando
+  // (el pedido ya quedó en Pagos por validar con su comprobante).
+  const nPrepagoCk=await N("condicion","¿Ya pagó el adelanto?",{
+    rutas:[{ nombre:"Ya pagó", handle:"ruta:yapago", match:"todas",
+             condiciones:[{ op:"campo_igual", campo:"adelanto_prepagado", valor:"si" }] }],
+  },false,1520,500);
+  const nYaPago=await N("mensaje","Ya pagó — verificando",{
+    bubbles:[{ text:"¡Recibí tu pago y tus datos! ✅ Estoy verificando tu adelanto y en un momento te confirmo el despacho. 🙌" }],
+  },false,1800,500);
 
   // ORDEN CRÍTICO: se escucha → la IA extrae → RECIÉN AHÍ se evalúa si están
   // los datos. Si las condiciones fueran antes del nodo de IA, evaluarían el
@@ -2281,26 +2292,39 @@ async function generarFlujoFisico(flowId, N, E){
   if(extras.length) await buildRideAlongExtras(N,E,nConfLima,nFin,extras,catX,esperaSeg,240);
   else await E(nConfLima,"continuar",nFin);
 
-  // Provincia:
+  // Provincia: crear pedido → ¿ya pagó el adelanto? → (no: pedirlo) / (sí:
+  // verificando) → esperar. La bifurcación nPrepagoCk evita re-pedir el pago a
+  // quien ya lo mandó antes de dar sus datos.
   if(!extras.length){
-    await E(nCrearProv,"continuar",nPedirAdel);
+    await E(nCrearProv,"continuar",nPrepagoCk);
+    await E(nPrepagoCk,"si_no_cumple",nPedirAdel);
+    await E(nPrepagoCk,"ruta:yapago",nYaPago);
     await E(nPedirAdel,"continuar",nEsperar);
+    await E(nYaPago,"continuar",nEsperar);
   }else if(!provPost){
-    // PRE: se ofrece entre crear el pedido y pedir el adelanto (ya sube el saldo).
-    await buildRideAlongExtras(N,E,nCrearProv,nPedirAdel,extras,catX,esperaSeg,640);
+    // PRE: se ofrece el extra entre crear el pedido y pedir el adelanto (ya sube el
+    // saldo); la bifurcación de prepago va DESPUÉS de los extras, antes de pedir.
+    await buildRideAlongExtras(N,E,nCrearProv,nPrepagoCk,extras,catX,esperaSeg,640);
+    await E(nPrepagoCk,"si_no_cumple",nPedirAdel);
+    await E(nPrepagoCk,"ruta:yapago",nYaPago);
     await E(nPedirAdel,"continuar",nEsperar);
+    await E(nYaPago,"continuar",nEsperar);
   }else{
-    // POST (recomendado): crear → pedir adelanto → ESPERAR el adelanto en un nodo
-    // marcado post_adelanto que VUELVE a sí mismo si el cliente escribe (así el run
-    // queda parqueado ahí, confiable). Al validarse el pago (auto o aprobado por
-    // ti), el motor reanuda por "post_adelanto" → "¡recibido!" → ofrecimiento.
-    await E(nCrearProv,"continuar",nPedirAdel);
+    // POST (recomendado): crear → ¿ya pagó? → pedir adelanto (o "verificando") →
+    // ESPERAR el adelanto en un nodo marcado post_adelanto que VUELVE a sí mismo si
+    // el cliente escribe (así el run queda parqueado ahí, confiable). Al validarse
+    // el pago (auto o aprobado por ti), el motor reanuda por "post_adelanto" →
+    // "¡recibido!" → ofrecimiento. Si ya prepagó, entra a ese mismo nodo de espera.
+    await E(nCrearProv,"continuar",nPrepagoCk);
     const nEsperarAdel=await N("pregunta","Esperar el adelanto",{ text:"", post_adelanto:true },false,1520,780);
     const nRespAdel=await N("ia","Responder mientras espera el adelanto",{
       operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
       prompt:"El cliente ya tiene su pedido creado y le pediste el adelanto; está por pagarlo. Responde su duda breve (cómo pagar, cuánto es, cuándo llega) sin presionar. NO ofrezcas nada nuevo: solo espera su comprobante.",
     },false,1800,920);
+    await E(nPrepagoCk,"si_no_cumple",nPedirAdel);
+    await E(nPrepagoCk,"ruta:yapago",nYaPago);
     await E(nPedirAdel,"continuar",nEsperarAdel);
+    await E(nYaPago,"continuar",nEsperarAdel);   // ya pagó → parqueado esperando tu validación
     await E(nEsperarAdel,"continuar",nRespAdel); // escribe (aún no paga)
     await E(nRespAdel,"exito",nEsperarAdel);     // vuelve a esperar → parqueado ahí
     const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"¡Adelanto recibido! 🎉 Ya empiezo a preparar tu despacho." }] },false,1520,640);

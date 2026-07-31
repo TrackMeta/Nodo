@@ -2669,6 +2669,11 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
     },
   }).eq("id", orderId);
   await logEvent(db, run.channel_id, run.contact_id, "nota", "Adelanto (pagado antes de los datos) enganchado — a validar");
+  // Marca para que el flujo NO le pida pagar de nuevo: la condición
+  // "¿Ya pagó el adelanto?" (generarFlujoFisico) rutea a "verificando" en vez de
+  // al mensaje "confírmalo con un adelanto de...". Se lee de ctx en el mismo ciclo.
+  run.vars.adelanto_prepagado = "si";
+  ctx.adelanto_prepagado = "si";
   await avisar(db, run.channel_id, run.contact_id, "adelanto_validar", {
     monto_leido: Number.isFinite(monto) ? monto : "", monto_esperado: Number.isFinite(esperado) ? esperado : "",
     operacion: oper ?? "", motivo: "pagó antes de dar sus datos",
