@@ -1942,7 +1942,7 @@ async function renderInicio(){
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
     : fisico ? "Producto físico · envíos" : "Producto digital · entrega al instante";
-  const emojiBox = `<span style="width:52px;height:52px;flex:none;border-radius:14px;background:linear-gradient(135deg,#f0609a,#f7a34b);color:#fff;font-size:26px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px -6px rgba(240,96,154,.5)">${st.prod.emoji?esc(st.prod.emoji):"📦"}</span>`;
+  const emojiBox = `<span style="width:52px;height:52px;flex:none;border-radius:14px;background:#fff;border:1px solid var(--border);font-size:26px;display:flex;align-items:center;justify-content:center">${st.prod.emoji?esc(st.prod.emoji):"📦"}</span>`;
   const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
   const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${esRegalo?"0":"14px"}">
       ${emojiBox}
@@ -2001,29 +2001,12 @@ async function renderInicio(){
   const rIA = rowHtml("ia",{label:"La IA sabe venderlo",sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto",warn:!est("ia").ok});
   const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").ok?"Palabra clave + mensajes listos":"Falta una palabra clave",warn:!est("activacion").ok});
 
-  // Vista previa: así vende el bot
-  const pvPrecio = priced[0] ? `S/ ${esc(priced[0].precio)}` : "S/ —";
-  const pvEmoji = st.prod.emoji ? " "+esc(st.prod.emoji) : "";
-  const pvNom = esc(st.prod.nombre||"tu producto");
-  const pvText = fisico
-    ? `¡Hola! El <b>${pvNom}</b> está a <b>${pvPrecio}</b>${pvEmoji}. ¿Te lo mando a <b>Lima</b> o a <b>provincia</b>?`
-    : `¡Hola! El <b>${pvNom}</b> cuesta <b>${pvPrecio}</b>${pvEmoji}. Te lo entrego al instante apenas confirmes el pago 🙌`;
-  const bub=(txt,me)=>`<div style="align-self:${me?"flex-end":"flex-start"};max-width:82%;background:${me?"var(--surface-2)":"rgba(34,192,121,.14)"};border:1px solid ${me?"var(--border)":"transparent"};border-radius:13px;border-top-${me?"right":"left"}-radius:3px;padding:9px 12px;font-size:12.5px;color:var(--text);line-height:1.5">${txt}</div>`;
-  const convo = fisico
-    ? [bub(pvText,false), bub("A provincia 🙌",true), bub("¡Genial! Te llega por agencia 🚚. ¿Me pasas tu <b>nombre</b> y <b>DNI</b> para armar el envío?",false)]
-    : [bub(pvText,false), bub("Ya te yapeo 🙌",true), bub("¡Perfecto! Apenas reciba tu comprobante te mando el acceso al instante ✅",false)];
-  const previewCard = `<div class="card" style="margin-bottom:0">
-      <div style="font-size:11px;color:var(--faint);margin-bottom:12px;display:flex;align-items:center;gap:6px">${icon("eye")} Vista previa · así lo vende el bot</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${convo.join("")}</div>
-    </div>`;
-
-  // Columna derecha: poner a vender
+  // Poner a vender
   const faltanTxt = pct>=100 ? "Todo listo — ya puede vender solo." : `Falta${missing.length===1?"":"n"} ${missing.length} cosa${missing.length===1?"":"s"} para que venda solo.`;
-  const sellCard = `<div class="card sell-card" style="margin-bottom:0;display:flex;flex-direction:column">
+  const sellCard = `<div class="card sell-card" style="margin-bottom:0">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${faltanTxt}</div>
       <div id="saludBox"></div>
-      <button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:auto">${fVenta?"Regenerar flujo de venta":"Poner a vender"}</button>
-      <a class="btn" href="probar.html" style="height:42px;width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none">Probar el chat ↗</a>
+      <button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">${fVenta?"Regenerar flujo de venta":"Poner a vender"}</button>
       ${fVenta && fVenta.estado!=="activo" ? `
         <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.5">
           <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
@@ -2068,7 +2051,7 @@ async function renderInicio(){
       ${group("Tu producto",[qEs,qCuesta,qVar])}
       ${group("Tu venta",[rIA,rAct])}
       ${mas}
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:18px">${previewCard}${sellCard}</div>`;
+      <div style="margin-top:18px">${sellCard}</div>`;
   }
 
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
