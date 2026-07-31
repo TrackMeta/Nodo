@@ -3215,14 +3215,25 @@ export async function armarProducto(
     "- Si el brief no dice si es físico o digital, decídelo por sentido común.\n" +
     "- `atributos` = detalles que la IA PREGUNTA y que NO cambian el precio (talla, color, modelo, nombre para el certificado…). `presentaciones` = lo comprable con distinto precio (1 par / 2 pares, Básico / Premium, packs). Si el producto es simple, deja UNA presentación llamada \"Única\".\n" +
     "- `ia.estilo_venta` debe ser uno de: consultivo, directo, educativo, urgencia, objeciones (o vacío).\n" +
-    "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, en la voz del negocio.\n" +
-    "- `resumen_cambios`: una sola frase de qué llenaste.\n" +
-    "Responde SOLO con el JSON del esquema, sin texto extra.";
+    "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
+    "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
+    "## Formato de salida — usa EXACTAMENTE estas claves, NO las renombres ni las traduzcas:\n" +
+    "{\n" +
+    '  "nombre": "...", "emoji": "un emoji",\n' +
+    '  "tipo": "fisico"  (SIN tilde) o "digital",\n' +
+    '  "presentaciones": [{"nombre":"1 par","descripcion":"","cantidad":1}]  (precio NO, lo pone el dueño),\n' +
+    '  "atributos": [{"nombre":"Talla","valores":"38, 39, 40"}]  (ARRAY de objetos, NUNCA un objeto {talla:[...]}; valores = texto separado por comas),\n' +
+    '  "ia": {"resumen":"pitch corto de venta","detalle":"","reglas_producto":"","limites":"","estilo_venta":"consultivo","proceso":"","tecnicas":""},\n' +
+    '  "faq": [{"q":"...","a":"..."}],\n' +
+    '  "faltan": ["Precio real de cada presentación", "..."],\n' +
+    '  "resumen_cambios": "una frase"\n' +
+    "}\n" +
+    "Responde SOLO con ese JSON, sin texto extra.";
 
   const content =
     `## Brief del producto (lo que dijo el dueño)\n"${brief}"\n\n` +
     `Tipo sugerido: ${tipoHint === "fisico" || tipoHint === "digital" ? tipoHint : "decídelo tú (fisico o digital)"}.\n` +
-    "Arma el borrador completo del producto.";
+    "Arma el borrador completo del producto con las claves EXACTAS indicadas.";
 
   const schema = {
     type: "object",
@@ -3267,12 +3278,29 @@ export async function armarNegocio(
     "## Reglas duras (MUY IMPORTANTE)\n" +
     "- NUNCA inventes datos que no puedes saber: número de Yape/Plin/cuenta, horarios exactos si no los da, direcciones, links, precios. Los métodos de pago exactos NO van aquí (se ponen en IA → Validador de comprobantes): en `pagos` describe solo la modalidad general (ej. \"contraentrega en Lima, adelanto para provincia\"). Lo que no sepas, anótalo en `faltan` (ej. \"Horario de atención real\", \"Tu Yape / cuentas (van en el Validador)\").\n" +
     "- `tono` debe ser uno de: cercano, formal, directo, divertido, ventas.\n" +
-    "- `faq`: 3 a 6 preguntas frecuentes reales del negocio con su respuesta ideal.\n" +
+    "- `faq`: 3 a 6 preguntas frecuentes reales del negocio, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
     "- Redacta cada campo claro y útil, como lo diría el propio dueño, sin relleno.\n" +
-    "- `resumen_cambios`: una sola frase de qué llenaste.\n" +
-    "Responde SOLO con el JSON del esquema, sin texto extra.";
+    "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
+    "## Formato de salida — usa EXACTAMENTE estas claves, NO las renombres ni las traduzcas:\n" +
+    "{\n" +
+    '  "nombre": "nombre del negocio",\n' +
+    '  "rubro": "qué vende el negocio",\n' +
+    '  "publico": "cliente ideal / a quién le vende",\n' +
+    '  "propuesta": "propuesta de valor, por qué comprarle a él",\n' +
+    '  "horario": "horario de atención",\n' +
+    '  "transferir": "cuándo pasar la conversación a un humano",\n' +
+    '  "pagos": "modalidad general de pago (no el Yape exacto)",\n' +
+    '  "entrega": "cómo entrega/envía",\n' +
+    '  "politicas": "garantías, devoluciones, cambios",\n' +
+    '  "no_hacer": "qué NO debe hacer o decir el bot",\n' +
+    '  "tono": "cercano | formal | directo | divertido | ventas",\n' +
+    '  "faq": [{"q":"...","a":"..."}],\n' +
+    '  "faltan": ["dato que el dueño debe completar", "..."],\n' +
+    '  "resumen_cambios": "una frase"\n' +
+    "}\n" +
+    "Responde SOLO con ese JSON, sin texto extra.";
 
-  const content = `## Brief del negocio (lo que dijo el dueño)\n"${brief}"\n\nArma el borrador del conocimiento del negocio.`;
+  const content = `## Brief del negocio (lo que dijo el dueño)\n"${brief}"\n\nArma el borrador del conocimiento del negocio con las claves EXACTAS indicadas.`;
 
   const schema = {
     type: "object",
@@ -3304,14 +3332,34 @@ export async function armarNegocio(
   let parsed: any;
   try { parsed = m ? JSON.parse(m[0]) : JSON.parse(raw); }
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
-  // Mismo motivo que en el producto: la IA suele devolver la FAQ como
-  // {pregunta,respuesta} y el panel espera {q,a} → se perdía entera.
-  if (parsed && Array.isArray(parsed.faq)) {
-    parsed.faq = parsed.faq
+  return normalizarDraftNegocio(parsed);
+}
+
+// Normaliza el borrador del NEGOCIO a las claves que aplica el panel (negocio.html
+// armAplicar). Igual que el producto, la IA no ve el jsonSchema (runAI no lo
+// fuerza) y renombra campos a sinónimos naturales: `actividad`→rubro,
+// `publico_objetivo`→publico, `descripcion`→propuesta, `envios`→entrega… → esos
+// campos NO se aplicaban. Mapea los alias y normaliza la FAQ a {q,a}.
+function normalizarDraftNegocio(d: any): any {
+  if (!d || typeof d !== "object") return d;
+  const alias = (target: string, ...srcs: string[]) => {
+    if (d[target] != null && String(d[target]).trim() !== "") return;
+    for (const s of srcs) { if (d[s] != null && String(d[s]).trim() !== "") { d[target] = d[s]; return; } }
+  };
+  alias("rubro", "actividad", "que_vende", "que_venden", "rubro_negocio", "giro");
+  alias("publico", "publico_objetivo", "cliente_ideal", "clientes", "target", "audiencia");
+  alias("propuesta", "propuesta_valor", "descripcion", "valor", "diferencial", "por_que");
+  alias("entrega", "envios", "envio", "despacho", "delivery");
+  alias("politicas", "politica", "garantias", "garantia", "devoluciones");
+  alias("no_hacer", "limites", "restricciones", "prohibido");
+  alias("transferir", "escalar", "transferencia", "derivar");
+  // faq: acepta {q,a} o {pregunta,respuesta} (o question/answer).
+  if (Array.isArray(d.faq)) {
+    d.faq = d.faq
       .map((f: any) => ({ q: String(f?.q ?? f?.pregunta ?? f?.question ?? "").trim(), a: String(f?.a ?? f?.respuesta ?? f?.answer ?? "").trim() }))
       .filter((f: any) => f.q && f.a);
   }
-  return parsed;
+  return d;
 }
 
 // ── Asesor IA (capas Mide + Aconseja): razona sobre los números REALES del ──
