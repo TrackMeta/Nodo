@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -174,6 +174,13 @@ Deno.serve(async (req) => {
   // "¡recibido!") en vez del aviso normal. Si no aplica, cae al aviso de siempre.
   let extrasOfrecidos = false;
   if (newEstado === "adelanto_validado" && (order as any).contact_id) {
+    // 📦 Provincia solo aparta stock cuando el adelanto queda validado (acá, a
+    // mano). Descuenta el plan guardado al crear el pedido. Idempotente.
+    try {
+      await reservarStockPedido(db, order.id, (order as any).channel_id);
+    } catch (e) {
+      console.error("[order-update] reservar stock:", (e as any)?.message ?? e);
+    }
     try {
       extrasOfrecidos = await resumeIntoExtras(db, (order as any).channel_id, (order as any).contact_id);
     } catch (e) {

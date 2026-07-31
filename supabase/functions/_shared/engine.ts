@@ -471,7 +471,11 @@ async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
   try {
     const oid = (run.vars as any)?._order_id;
     if (!oid) return;
-    const { data: o } = await db.from("orders").select("order_bumps, shipping").eq("id", oid).maybeSingle();
+    const { data: o } = await db.from("orders").select("estado, order_bumps, shipping").eq("id", oid).maybeSingle();
+    // Provincia esperando el adelanto: no se aparta stock (ni el del regalo/extra)
+    // mientras el cliente no pague. Se reconcilia después, ya con el adelanto
+    // validado (reservarStockPedido + el próximo turno de conversación).
+    if ((o as any)?.estado === "esperando_adelanto") return;
     const bumps = ((o as any)?.order_bumps ?? []) as any[];
     const pend = bumps.filter((b) => b?.stock_pendiente && b?.product_id);
     if (!pend.length) return;
@@ -2153,11 +2157,20 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
           if (b?.product_id && b?.digital !== true && !b?.stock_pendiente) mov.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
         }
         if (mov.length) {
-          const alerts = await aplicarStock(db, mov, -1);
-          await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", (ord as any).id);
-          for (const al of alerts) {
-            const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
-            await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+          // Provincia esperando el adelanto: NO se aparta stock todavía — no le
+          // quitamos inventario a un comprador real por alguien que aún no paga.
+          // Se guarda el plan y se descuenta al VALIDAR el adelanto
+          // (reservarStockPedido). Lima (contraentrega) y ventas ya confirmadas
+          // reservan al crear: ahí el cliente ya está comprometido.
+          if (a.estado === "esperando_adelanto") {
+            await db.from("orders").update({ shipping: { ...ship, stock_mov_plan: mov } }).eq("id", (ord as any).id);
+          } else {
+            const alerts = await aplicarStock(db, mov, -1);
+            await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", (ord as any).id);
+            for (const al of alerts) {
+              const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
+              await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+            }
           }
         }
       }
@@ -2165,6 +2178,32 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
   }
+}
+
+// Reserva (descuenta) el stock que quedó PLANIFICADO al crear un pedido, cuando
+// el pago se confirma. Provincia NO aparta inventario mientras espera el adelanto
+// (no le quitamos stock a un comprador real por alguien que quizá no pague): al
+// crear el pedido `crearPedido` guarda `shipping.stock_mov_plan` y recién acá —al
+// validar el adelanto— se descuenta de verdad. Lima (contraentrega) reserva al
+// crear, así que no deja plan y esto no hace nada. Idempotente por
+// `stock_descontado`. Se llama desde los DOS caminos de validación del adelanto:
+// automático (OCR, maybePagoAdelanto) y manual (order-update).
+export async function reservarStockPedido(db: SupabaseClient, orderId: string, channelId: string): Promise<void> {
+  try {
+    const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+    const ship = ((o as any)?.shipping ?? {}) as any;
+    if (ship.stock_descontado) return;                          // ya reservado
+    const plan = Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : [];
+    if (!plan.length) return;                                   // nada planificado (Lima ya reservó, o sin stock)
+    const alerts = await aplicarStock(db, plan, -1);
+    const nship: any = { ...ship, stock_mov: plan, stock_descontado: true };
+    delete nship.stock_mov_plan;
+    await db.from("orders").update({ shipping: nship }).eq("id", orderId);
+    for (const al of alerts) {
+      const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
+      await notifyAdmin(db, { channel_id: channelId } as Run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+    }
+  } catch (e) { console.error("[reservarStockPedido]", (e as any)?.message ?? e); }
 }
 
 // Acción actualizar_pedido: { estado?, monto?, datos? } — actúa sobre el
@@ -2645,6 +2684,9 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
         ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos, adelanto_abonado: ab.total } : {}) },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
+    // 📦 Recién ahora que pagó el adelanto se aparta su stock (en provincia no se
+    // reserva antes: ver reservarStockPedido). Idempotente.
+    await reservarStockPedido(db, (order as any).id, channelId).catch(() => {});
     await syncPedidoSheet(db, (order as any).id);
     // Si el producto ofrece la venta extra DESPUÉS del adelanto, se reanuda la
     // conversación hacia el ofrecimiento (que saluda "¡recibido!"). Si no aplica
