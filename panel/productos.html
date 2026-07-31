@@ -603,7 +603,7 @@ function renderProducto(host){
   // presentaciones". Acá "Producto" es lo físico: identidad, variantes y stock.
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">${tipo==="fisico"
-      ? "Las <b>tallas/colores</b> y el <b>stock</b> de tu producto. El <b>nombre</b> y el <b>emoji</b> los cambias arriba, en el encabezado; el <b>precio</b> vive en <b>Precio y presentaciones</b>."
+      ? "Las <b>tallas/colores</b> (si tiene) y <b>cuántas unidades</b> te quedan. Nombre y emoji se editan arriba; el precio, en <b>¿Cuánto cuesta?</b>."
       : "Lo básico: nombre, <b>tu costo</b> y los detalles que la IA pregunta. El <b>precio</b> y las <b>presentaciones</b> van en <b>Presentaciones y precios</b>; la <b>entrega</b> y cómo lo <b>vende la IA</b>, en sus pestañas."}</p>
     ${tipo==="digital"?`
     <div class="card">
@@ -797,7 +797,7 @@ function stockUI(b, c, explicOn){
       </tr>`;
     }).join("");
     cuerpo=`<div class="card">
-      <h4 style="margin-top:0">Unidades por variante</h4>
+      <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("box")} Unidades por variante</h4>
       <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Una fila por cada combinación de tus atributos (${stockAxes(c.atributos).map(a=>esc(a.nombre)).join(" × ")}). Vacío = no llevas la cuenta de esa variante.</div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
         <thead><tr><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Variante</th><th style="text-align:right;padding:6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Stock</th></tr></thead>
@@ -805,7 +805,7 @@ function stockUI(b, c, explicOn){
   } else {
     const k="_"; const val=c.stock[k];
     cuerpo=`<div class="card">
-      <h4 style="margin-top:0">Unidades disponibles</h4>
+      <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("box")} Unidades disponibles</h4>
       <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Este producto no tiene variantes (talla/color), así que es un solo número. ${(c.atributos||[]).length?"Si quieres llevar el stock por talla/color, agrega esos atributos con sus valores en <b>Producto → Detalles a preguntar</b>.":""}</div>
       <input class="in stkV" data-k="_" type="number" step="1" value="${val==null?"":esc(val)}" placeholder="—" style="width:140px"/>
       ${val!=null&&Number(val)<=0?'<div style="color:var(--red,#e2564a);font-weight:700;font-size:12.5px;margin-top:6px">Agotado</div>':(val!=null&&Number(val)<=Number(umbral)?'<div style="color:var(--amber,#f0a92b);font-weight:700;font-size:12.5px;margin-top:6px">Stock bajo</div>':'')}${umbralRow}</div>`;
@@ -849,9 +849,9 @@ function renderEntrega(host){
   const tipo=st.prod.tipo||"digital";
   if(tipo==="digital"){
     b.innerHTML=`
-      <p class="hint" style="margin:0 0 14px">Cómo le llega al cliente lo que compró.</p>
+      <p class="hint" style="margin:0 0 14px">Cómo recibe el cliente lo que compró, apenas confirma el pago.</p>
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px">${icon("message")} Cómo se envía</h4>
+        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("message")} Cómo se entrega</h4>
         <label style="margin-top:0">Mensaje de entrega</label>
         <input class="in" id="pEntMsg" value="${esc(c.entrega_mensaje||"")}" placeholder="¡Pago confirmado! 🎉 Acá tienes tu acceso:"/>
         <div style="font-size:11px;color:var(--faint);margin-top:7px">El saludo que abre la entrega (general). Cada presentación puede tener además su propio mensajito.</div>
@@ -1188,7 +1188,7 @@ async function renderRemarketing(host){
   const opciones=(st.versions||[]).filter(v=>v.precio!=null&&v.precio!=="");
 
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no llegó a comprar. Es una serie de mensajes por <b>silencio</b>: cada paso espera un tiempo sin respuesta y manda un mensaje (texto y multimedia). Si el cliente responde, se pausa sola; si compra, sale.</p>
+    <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no compró. Manda mensajes por <b>silencio</b> (cada paso espera un tiempo sin respuesta): si el cliente responde, se pausa sola; si compra, sale.</p>
 
     <div class="card" data-noguard>
       <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 8px">${icon("clock")} Horario de envío <span style="font-size:11px;color:var(--faint);font-weight:400">· aplica a TODO el remarketing del bot</span></h4>
@@ -1779,7 +1779,7 @@ async function renderExtras(host){
     </div>`:""}
 
     <div class="card" style="border-color:var(--brand-border)">
-      <h4 style="margin-top:0">Ventas extra</h4>
+      <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("dollar")} Ventas extra <span style="font-size:11px;font-weight:400;color:var(--faint)">— sube el ticket</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
         ${esFisico
           ? `Después de cerrar el pedido, ofrecerle algo más para <b>sumar al mismo envío</b>. El extra <b>no se paga aparte</b>: se cobra junto con el pedido (contraentrega en Lima, o al saldo en provincia). Cada extra es una <b>presentación</b> existente. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`
