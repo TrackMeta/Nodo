@@ -112,15 +112,24 @@ export async function mountFolders(opts){
   }
 
   function chip(v, label, meta){
-    const on = S.current===v ? " on" : "";
-    let inner = "";
+    const active = S.current===v;
+    const on = active ? " on" : "";
+    let inner = "", style = "";
     if (meta){
       if (meta.color) inner += `<span class="fdot" style="background:${esc(meta.color)}"></span>`;
       else inner += icon("folder");
       if (meta.emoji) inner += `<span class="femo">${esc(meta.emoji)}</span>`;
+      // La carpeta BRILLA en su propio color: glow fuerte cuando está activa,
+      // sutil cuando no (para que se reconozca por su color de un vistazo).
+      if (meta.color){
+        const c = esc(meta.color);
+        style = active
+          ? `background:${c}1f;border-color:${c};box-shadow:0 0 0 1px ${c}66, 0 0 14px ${c}66`
+          : `border-color:${c}55;box-shadow:0 0 7px ${c}30`;
+      }
     }
     inner += esc(label);
-    return `<button class="nodo-folder${on}" data-f="${esc(v)}">${inner}<span class="cnt">${count(v)}</span></button>`;
+    return `<button class="nodo-folder${on}" data-f="${esc(v)}"${style?` style="${style}"`:""}>${inner}<span class="cnt">${count(v)}</span></button>`;
   }
 
   function extraChip(t){
