@@ -2180,7 +2180,11 @@ async function generarFlujoFisico(flowId, N, E){
            "apenas estén sus datos, el sistema le manda el monto exacto y los datos de pago.\n"+
            "· Lima (contraentrega): NO hay adelanto ni pago por adelantado. Paga TODO al recibir el pedido. "+
            "Nunca le menciones adelantos, Yape ni datos de pago a alguien de Lima.\n"+
-           "Si todavía no sabes de dónde es, no hables de pagos.",
+           "Si todavía no sabes de dónde es, no hables de pagos."+
+           // Si el cliente YA mandó el comprobante del adelanto antes de dar sus
+           // datos, esta nota (la arma buildContext desde _prepago_adel_url) le
+           // dice a la IA que NO lo vuelva a pedir. Vacía en el caso normal.
+           "{{adelanto_prepago_nota}}",
   },false,80,240);
   const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },true,380,240);
   const nFin=await N("fin","Fin",{},false,2080,240);

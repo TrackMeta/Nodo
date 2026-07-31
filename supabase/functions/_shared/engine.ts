@@ -5464,6 +5464,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
   Object.assign(ctx, run.vars);
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
 
+  // {{adelanto_prepago_nota}}: si el cliente YA mandó el comprobante del adelanto
+  // ANTES de dar sus datos (stashPrepagoAdelanto lo guardó en _prepago_adel_url),
+  // la IA de venta (nVender) NO debe pedírselo de nuevo ni mencionar datos de
+  // pago. Vacía en el caso normal. El mensaje FIJO del flujo ya se suprime por la
+  // condición "¿Ya pagó el adelanto?"; esto pule el turno de la IA previo.
+  ctx.adelanto_prepago_nota = String(ctx._prepago_adel_url ?? "").trim()
+    ? "\n\n⚠️ EL CLIENTE YA TE MANDÓ EL COMPROBANTE DEL ADELANTO (lo estás verificando). NO le pidas pagar de nuevo, NO menciones el monto del adelanto ni datos de pago (Yape). Solo dile que recibiste su pago y que estás terminando de registrar su pedido para despacharlo."
+    : "";
+
   // 4.5) Veredictos del OCR en limpio. `pago_resultado` (y `pago_extra_N`) traen
   // un token técnico —PAGO_OK / PAGO_NO— y el JSON que el OCR agrega con lo que
   // leyó. La Condición NECESITA el token, pero el cliente no debería verlo: los
