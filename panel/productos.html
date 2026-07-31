@@ -635,25 +635,7 @@ function renderProducto(){
       <div id="atList"></div>
       <button class="btn" id="atAdd" style="margin-top:8px">+ ${tipo==="fisico"?"Variante (talla, color…)":"Detalle"}</button>
     </div>
-    ${tipo==="fisico"?'<div id="pStock" style="margin-bottom:12px"></div>':""}
-    <details style="margin-bottom:12px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados</summary>
-      <label style="margin-top:10px">Tipo de producto</label>
-      <select class="sel" id="pTipo" style="width:100%">
-        <option value="digital" ${tipo==="digital"?"selected":""}>Digital (entrega por link)</option>
-        <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (envíos Lima / provincia)</option>
-      </select>
-      <div style="font-size:11px;color:var(--faint);margin-top:5px">Se define al crear el producto. Cambiarlo afecta cómo lo vende el bot — deberás <b>regenerar el flujo</b> después de guardar.</div>
-      ${st.tipoGuardado && st.tipoGuardado!==tipo ? `
-      <div style="margin-top:10px;border:1px solid var(--amber,#f0a92b);background:rgba(240,169,43,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55;color:var(--muted)">
-        <b style="color:var(--amber,#f0a92b)">Cambiaste el tipo de producto.</b>
-        El flujo de venta que ya existe sigue vendiéndolo como <b>${st.tipoGuardado==="fisico"?"físico":"digital"}</b>:
-        ${st.tipoGuardado==="fisico" ? "le va a seguir pidiendo dirección y cobrando contraentrega." : "le va a seguir entregando un link al confirmar el pago."}
-        Después de guardar, <b>regenera el flujo</b> en la pestaña Receta.
-      </div>` : ""}
-      <label style="margin-top:14px">Config del producto (se genera desde los formularios)</label>
-      <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
-    </details>`;
+    ${tipo==="fisico"?'<div id="pStock" style="margin-bottom:12px"></div>':""}`;
   // Margen en vivo (físico): precio − costo, con la presentación más barata si hay varias.
   const updateMargen=()=>{
     const el=$("pMargen"); if(!el) return;
@@ -668,8 +650,6 @@ function renderProducto(){
   $("pCosto").onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateMargen(); };
   $("pNombre").oninput=(e)=>st.prod.nombre=e.target.value;
   const goOpc=$("goOpc2"); if(goOpc) goOpc.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
-  const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(); }catch(_){ toast("JSON inválido",true); } };
-  const pt=$("pTipo"); if(pt) pt.onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
   // Precio inline (físico): 1 presentación = un input; varias = un input por presentación. Edita la versión y se guarda con el producto.
   const pu=$("pPrecioUni"); if(pu) pu.onchange=(e)=>{ if(v0) v0.precio=e.target.value.trim(); updateMargen(); };
   b.querySelectorAll(".pPrecioV").forEach(inp=> inp.onchange=(e)=>{ const v=(st.versions||[]).find(x=>String(x.id)===inp.dataset.vid); if(v) v.precio=e.target.value.trim(); updateMargen(); });
