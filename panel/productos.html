@@ -2002,7 +2002,34 @@ async function renderInicio(){
   // Producto "vacío" (sin conocimiento IA ni precio) → hero para armarlo con IA.
   // Un regalo no se vende con IA → nunca muestra ese hero.
   const vacio = !esRegalo && !est("ia").ok && !est("opciones").ok;
+  // ── Medidor "Listo para vender": de los pasos REQUERIDOS, cuántos están ok ──
+  const req = esRegalo ? [] : (esExtra ? ["producto","ia"] : ["producto","ia","activacion"]);
+  const reqDone = req.filter(t=>est(t).ok).length;
+  const pct = req.length ? Math.round(reqDone/req.length*100) : 100;
+  const MISS={ producto:fisico?"el precio":"su precio", ia:"que la IA sepa venderlo", activacion:"una palabra clave" };
+  const missing = req.filter(t=>!est(t).ok).map(t=>MISS[t]||NM[t]);
+  const rcol = pct>=100 ? "var(--green,#22c079)" : "#f0a92b";
+  const readyBanner = esRegalo ? "" : `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;color:var(--muted);font-weight:600">Listo para vender</span><span style="margin-left:auto;font-size:22px;font-weight:800;color:${rcol}">${pct}%</span></div>
+      <div style="height:8px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:9px 0 8px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${rcol};transition:width .35s ease"></div></div>
+      <div style="font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px">${pct>=100 ? `<span style="color:var(--green,#22c079);display:inline-flex">${icon("check")}</span> Todo listo — ya puedes ponerlo a vender.` : `<span style="display:inline-flex;color:#f0a92b">${icon("alert")}</span> Te falta ${missing.map(m=>`<b style="color:var(--text)">${m}</b>`).join(" y ")}.`}</div>
+    </div>`;
+  // ── Vista previa: así presenta el bot el producto en el chat ──
+  const pv0 = (st.versions||[]).find(v=>Number(v.precio)>0);
+  const pvPrecio = pv0 ? `S/ ${esc(pv0.precio)}` : "S/ —";
+  const pvEmoji = st.prod.emoji ? " "+esc(st.prod.emoji) : "";
+  const pvNom = esc(st.prod.nombre||"tu producto");
+  const pvText = fisico
+    ? `¡Hola! El <b>${pvNom}</b> está a <b>${pvPrecio}</b>${pvEmoji}. ¿Te lo mando a <b>Lima</b> o a <b>provincia</b>?`
+    : `¡Hola! El <b>${pvNom}</b> cuesta <b>${pvPrecio}</b>${pvEmoji}. Te lo entrego al instante apenas confirmes el pago 🙌`;
+  const previewCard = esRegalo ? "" : `
+    <div class="card">
+      <div style="font-size:11px;color:var(--faint);margin-bottom:10px;display:flex;align-items:center;gap:6px">${icon("eye")} Vista previa · así lo presenta el bot</div>
+      <div style="background:rgba(34,192,121,.12);border-radius:13px;border-top-left-radius:3px;padding:10px 13px;font-size:13px;color:var(--text);line-height:1.5;max-width:84%">${pvText}</div>
+    </div>`;
   b.innerHTML=`
+    ${readyBanner}
     ${vacio?`<div class="armhero">
       <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Descríbelo en una frase y la IA rellena las fases por ti (tú revisas y guardas).</div></div>
@@ -2020,7 +2047,7 @@ async function renderInicio(){
           <h4 style="margin-top:0">Este es un complemento</h4>
           <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende solo: se ofrece <b>enganchado a un producto principal</b> (en la pestaña <b>Ventas extra</b> de ese principal). No necesita su propio flujo — con completar lo de arriba basta.</div>
         </div>`
-      : `<div class="card sell-card">
+      : `${previewCard}<div class="card sell-card">
           <div class="sell-hd"><span class="sell-ico">${icon("node")}</span><span class="sell-tt">Poner a vender</span></div>
           <div id="saludBox" style="margin-top:12px"></div>
           <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
