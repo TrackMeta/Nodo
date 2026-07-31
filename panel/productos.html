@@ -51,6 +51,14 @@
   .hdr-name:hover{background:var(--surface-2)}
   #emojiBtn{transition:transform .1s}
   #emojiBtn:hover{transform:scale(1.04)}
+  /* Acordeón: cada fila del hub despliega su sección debajo (varias a la vez) */
+  .acc-hd .ini-chev{transition:transform .18s}
+  .acc.open>.acc-hd .ini-chev{transform:rotate(90deg);color:var(--brand)}
+  .acc-body{display:none}
+  .acc.open>.acc-body{display:block;padding:8px 6px 14px;animation:accIn .18s ease}
+  @keyframes accIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .acc-body .card:last-child{margin-bottom:0}
+  .acc-body>.hint:first-child{margin-top:0}
   /* Cabecera de sección (sin barra de pestañas) */
   .pdet-h1{margin:0 0 18px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px}
   .pdet-xbadge{font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px}
@@ -583,8 +591,8 @@ function prodSync(){
 function prodSetC(k,v){ const c=st.prod.config; if(v==null||v==="") delete c[k]; else c[k]=v; prodSync(); }
 
 // ── Pestaña PRODUCTO: lo básico (identidad + tu costo + detalles a preguntar) ──
-function renderProducto(){
-  const b=$("tabBody");
+function renderProducto(host){
+  const b=host||$("tabBody");
   if(st.prod.clase==="regalo") return renderRegaloProducto(b);
   // La carpeta se elige con el picker de folder-bar (se monta más abajo).
   const c=st.prod.config=st.prod.config||{};
@@ -596,19 +604,6 @@ function renderProducto(){
     <p class="hint" style="margin:0 0 14px">${tipo==="fisico"
       ? "Las <b>tallas/colores</b> y el <b>stock</b> de tu producto. El <b>nombre</b> y el <b>emoji</b> los cambias arriba, en el encabezado; el <b>precio</b> vive en <b>Precio y presentaciones</b>."
       : "Lo básico: nombre, <b>tu costo</b> y los detalles que la IA pregunta. El <b>precio</b> y las <b>presentaciones</b> van en <b>Presentaciones y precios</b>; la <b>entrega</b> y cómo lo <b>vende la IA</b>, en sus pestañas."}</p>
-    ${tipo!=="fisico"?`
-    <div class="card">
-      <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Identidad del producto</h4>
-      <div class="row" style="align-items:flex-start;margin-top:10px">
-        <div style="flex:0 0 auto"><label style="margin-top:0">Emoji</label>
-          <div><button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("plus")}</button></div>
-          <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:4px"></div>
-        </div>
-        <div style="flex:1;min-width:180px"><label style="margin-top:0">Nombre del producto</label>
-          <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
-      </div>
-      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">El emoji identifica el producto en la Bandeja (al lado del contacto que entró por él).</div>
-    </div>`:""}
     ${tipo==="digital"?`
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Tu costo <span style="font-weight:400;color:var(--faint);font-size:12px">— opcional</span></h4>
@@ -637,16 +632,14 @@ function renderProducto(){
     </div>
     ${tipo==="fisico"?'<div id="pStock" style="margin-bottom:12px"></div>':""}`;
   const pc=$("pCosto"); if(pc) pc.onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
-  const pn=$("pNombre"); if(pn) pn.oninput=(e)=>st.prod.nombre=e.target.value;
-  const goOpc=$("goOpc2"); if(goOpc) goOpc.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
-  wireEmojiPicker();
+  const goOpc=$("goOpc2"); if(goOpc) goOpc.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
   // Detalles / variantes (tallas/colores) — movidos aquí desde Presentaciones.
   paintAtributos();
   const refreshStock=()=>{ if(tipo==="fisico"){ const sc=$("pStock"); if(sc) stockUI(sc, c, false); } };
   $("atAdd").onclick=()=>{ c.atributos.push({ nombre:"", clave:"", obligatorio:true, valores:"", ayuda:"", media:[] }); paintAtributos(); refreshStock(); };
   // Al editar una talla/color, la grilla de stock de abajo se regenera sola.
   const atl=$("atList"); if(atl && tipo==="fisico") atl.addEventListener("change", refreshStock);
-  const gA=$("atGoOp"); if(gA) gA.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
+  const gA=$("atGoOp"); if(gA) gA.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
   refreshStock(); // pinta el stock inline (físico)
 }
 
@@ -719,8 +712,8 @@ function renderRegaloProducto(b){
   // Descripción del regalo para la IA: se guarda directo (sin prodSync, que
   // recompilaría contexto_producto y la pisaría). La lee el principal al mencionar.
   const rd=$("pRegDesc"); if(rd) rd.oninput=(e)=>{ const v=e.target.value.trim(); if(v) c.regalo_desc=v; else delete c.regalo_desc; };
-  $("pTipo").onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(); };
-  const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(); }catch(_){ toast("JSON inválido",true); } };
+  const pt=$("pTipo"); if(pt) pt.onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(b); };
+  const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(b); }catch(_){ toast("JSON inválido",true); } };
   wireEmojiPicker();
   // Entrega digital: se edita sobre la 1ª versión del regalo (la que lee el motor).
   if(tipo==="digital"){
@@ -760,8 +753,8 @@ function stockKey(atributos, vals){
   const parts=stockAxes(atributos).map(a=>a.nombre+"="+String((vals&&vals[a.nombre])??"").trim().toLowerCase());
   return parts.length?parts.join("|"):"_";
 }
-function renderStock(){
-  const b=$("tabBody");
+function renderStock(host){
+  const b=host||$("tabBody");
   const c=st.prod.config=st.prod.config||{};
   stockUI(b, c, true);
 }
@@ -849,8 +842,8 @@ function wireEmojiPicker(){
 }
 
 // ── Pestaña ENTREGA: cómo le llega al cliente ──────────────────────
-function renderEntrega(){
-  const b=$("tabBody");
+function renderEntrega(host){
+  const b=host||$("tabBody");
   const c=st.prod.config=st.prod.config||{};
   const tipo=st.prod.tipo||"digital";
   if(tipo==="digital"){
@@ -883,7 +876,7 @@ function renderEntrega(){
     const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);
     const eu=$("pEntUna"); if(eu) eu.onclick=()=>{ const on=!c.entrega_burbuja_unica; c.entrega_burbuja_unica=on; prodSetC("entrega_burbuja_unica", on||undefined); eu.classList.toggle("on", on); };
     const vp=$("pValPago"); if(vp) vp.onchange=(e)=>prodSetC("validacion_pago", e.target.value||undefined);
-    const g=$("goOpc3"); if(g) g.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
+    const g=$("goOpc3"); if(g) g.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
     return;
   }
   // Físico: TODA la logística (zonas, agencias, envío gratis, costos, adelanto
@@ -950,8 +943,8 @@ function renderEntrega(){
 }
 
 // ── Pestaña CÓMO LO VENDE LA IA: conocimiento del producto ─────────
-function renderProductoIA(){
-  const b=$("tabBody");
+function renderProductoIA(host){
+  const b=host||$("tabBody");
   const c=st.prod.config=st.prod.config||{};
   if(!Array.isArray(c.faq_items)) c.faq_items=parseFaq(c.faq);
   const ia=c.ia=c.ia||{};
@@ -1056,7 +1049,7 @@ function renderProductoIA(){
   const g=$("pEmojis"); if(g) g.oninput=(e)=>setC("emojis", e.target.value.trim());
   const mn=$("pMemoriaNivel"); if(mn) mn.onchange=(e)=>setC("memoria_nivel", e.target.value);
   b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; prodSync(); }; });
-  const goOp=$("goOpciones"); if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); st.tab="opciones"; renderDetail(); };
+  const goOp=$("goOpciones"); if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
   const paintEj=()=>{
     const box=$("ejList"); box.innerHTML="";
     if(!ia.ejemplos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin ejemplos.</div>`; }
@@ -1177,8 +1170,8 @@ function remStepText(paso){
   return bub?.text||"";
 }
 
-async function renderRemarketing(){
-  const b=$("tabBody");
+async function renderRemarketing(host){
+  const b=host||$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
   const [{ data:seqs, error }, { data:ch }]=await Promise.all([
     supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
@@ -1751,8 +1744,8 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
 // Un extra NO es un concepto nuevo: es una Opción de compra (de este producto
 // o de otro), así que ya trae su nombre, su precio y su entrega. Acá solo se
 // elige cuál ofrecer, con qué mensaje y en qué momento.
-async function renderExtras(){
-  const b=$("tabBody");
+async function renderExtras(host){
+  const b=host||$("tabBody");
   b.innerHTML=`<div class="empty">Cargando…</div>`;
   const cfg=st.prod.config=st.prod.config||{};
   if(!Array.isArray(cfg.extras)) cfg.extras=[];
@@ -1828,7 +1821,7 @@ async function renderExtras(){
     <button class="btn" id="exAdd" ${cat.length?"":"disabled"}>+ Venta extra</button>
     ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay presentaciones con precio en este bot. Crea primero una presentación con precio (en este producto o en otro).</div>`}`;
 
-  b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(); });
+  b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(b); });
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
   const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
   $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
@@ -1906,6 +1899,30 @@ function paintExtras(){
 // (cada una con su progreso) + "Poner a vender" (generar/activar el flujo).
 // Reemplaza a la vieja "Receta": ahora es lo primero que ve el usuario.
 // ═══════════════════════════════════════════════════════════════════
+
+// ── Acordeón del hub: cada fila despliega su sección inline (varias a la vez).
+// Reusa las funciones de sección pasándoles el panel (.acc-body) como contenedor.
+const ACC_RENDER={ producto:renderProducto, opciones:renderOpciones, entrega:renderEntrega,
+  ia:renderProductoIA, activacion:renderActivacion, extras:renderExtras, remarketing:renderRemarketing, stock:renderStock };
+function accToggle(wrap){
+  if(!wrap) return;
+  const t=wrap.dataset.t, body=wrap.querySelector(".acc-body");
+  if(wrap.classList.contains("open")){ wrap.classList.remove("open"); return; } // oculta, conserva el DOM
+  wrap.classList.add("open");
+  // Render perezoso: se dibuja una sola vez; al reabrir se muestra el mismo DOM.
+  if(body && !body.dataset.rendered){ const fn=ACC_RENDER[t]; if(fn){ fn(body); body.dataset.rendered="1"; } }
+}
+function accOpen(t){
+  const wrap=document.querySelector('.acc[data-t="'+t+'"]'); if(!wrap) return;
+  const d=wrap.closest("details"); if(d) d.open=true; // abre "Más opciones" si aplica
+  if(!wrap.classList.contains("open")) accToggle(wrap);
+  wrap.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function accRerender(t){
+  const wrap=document.querySelector('.acc[data-t="'+t+'"]');
+  if(wrap && wrap.classList.contains("open")){ const fn=ACC_RENDER[t]; if(fn) fn(wrap.querySelector(".acc-body")); }
+}
+
 async function renderInicio(){
   const b=$("tabBody");
   b.innerHTML=`<div class="empty">Cargando…</div>`;
@@ -2002,11 +2019,14 @@ async function renderInicio(){
     const subStyle=(!isOk&&o.warn)?'color:var(--muted);font-weight:600':'color:var(--muted)';
     const optTag=o.opt?` <span style="font-size:11px;color:var(--faint);font-weight:600">· opcional</span>`:'';
     const cls=isOk?' ok-'+tone:'';
-    return `<button class="ini-item${cls}" data-t="${t}">
-      <span class="ini-ico ${isOk?'done':''}" ${icoStyle}>${o.ico||IC[t]||''}</span>
-      <span class="ini-item-nm">${o.label}${optTag}</span>
-      <span class="ini-item-msg" style="${subStyle}">${o.sub||''}</span>
-      <span class="ini-chev">›</span></button>`; };
+    return `<div class="acc" data-t="${t}">
+      <button class="ini-item acc-hd${cls}" type="button">
+        <span class="ini-ico ${isOk?'done':''}" ${icoStyle}>${o.ico||IC[t]||''}</span>
+        <span class="ini-item-nm">${o.label}${optTag}</span>
+        <span class="ini-item-msg" style="${subStyle}">${o.sub||''}</span>
+        <span class="ini-chev">›</span></button>
+      <div class="acc-body"></div>
+    </div>`; };
   const group=(title,rows)=>`<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:22px 6px 9px">${title}</div><div class="ini-ph" style="padding:6px"><div class="ini-items">${rows.join("")}</div></div>`;
 
   // Subtítulos con el dato REAL del producto
@@ -2083,7 +2103,7 @@ async function renderInicio(){
   }
 
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
-  b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
+  b.querySelectorAll(".acc-hd").forEach(hd=> hd.onclick=()=>accToggle(hd.closest(".acc")));
   // Encabezado: emoji (selector) + nombre editable inline.
   wireEmojiPicker();
   const startNameEdit=()=>{
@@ -2708,8 +2728,8 @@ async function enlazarInicialesConVenta(flowId){
 // sistema las tres tienen la misma forma: algo comprable, con nombre, precio y
 // algo que entrega. Es lo que la IA detecta del texto libre del cliente y lo
 // que el validador de pagos usa como MONTO ESPERADO. Ver migración 0029.
-function renderOpciones(){
-  const b=$("tabBody");
+function renderOpciones(host){
+  const b=host||$("tabBody");
   const fisico=(st.prod.tipo||"digital")==="fisico";
   const cfg=st.prod.config=st.prod.config||{};
   if(!Array.isArray(cfg.atributos)) cfg.atributos=[];
@@ -2840,7 +2860,7 @@ function paintOpciones(fisico){
     const oef=el.querySelector(".oef");
     if(oef) oef.onclick=()=>pickEntregaFile(v,()=>paintEntrega(el,v,fisico));
     const oge=el.querySelector(".oGoExtra");
-    if(oge) oge.onclick=(e)=>{ e.preventDefault(); st.tab="extras"; renderDetail(); };
+    if(oge) oge.onclick=(e)=>{ e.preventDefault(); accOpen("extras"); };
     if(el.querySelector(".oe")) paintEntrega(el,v,fisico);
     box.appendChild(el);
   });
@@ -3061,8 +3081,8 @@ async function renderFlujos(){
 function newVariant(idx){
   return { id:crypto.randomUUID(), nombre:"Variante "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] };
 }
-async function renderActivacion(){
-  const b=$("tabBody");
+async function renderActivacion(host){
+  const b=host||$("tabBody");
   b.innerHTML=`<div id="actroot"><div class="empty">Cargando…</div></div>`;
   const root=$("actroot");
   const { data:flow } = await supa.from("flows").select("id,nombre,estado,role")
@@ -3100,7 +3120,7 @@ async function createWelcome(){
   }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await supa.from("flow_nodes").insert({ flow_id:flow.id, tipo:"rotador", nombre:"Mensajes iniciales", es_inicial:true, config:{activo:true,variantes:[newVariant(0)],despues:{modo:"nada"}}, pos_x:80, pos_y:80 });
-  toast("Mensajes iniciales creados ✓"); renderActivacion();
+  toast("Mensajes iniciales creados ✓"); accRerender("activacion");
 }
 
 // Lee los valores editables del DOM a memoria (antes de re-render o guardar).
@@ -3306,7 +3326,7 @@ async function saveWelcome(){
   await saveTrigger("keyword", "kw", kwArr.length?{keywords:kwArr,match}:null);
   const adArr=($("actAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
   await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
-  toast("Guardado ✓"); renderActivacion();
+  toast("Guardado ✓"); accRerender("activacion");
 }
 async function saveTrigger(tipo, key, config){
   const existing=st.act[key];
