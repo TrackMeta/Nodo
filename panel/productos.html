@@ -1951,7 +1951,7 @@ async function renderInicio(){
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
     : fisico ? "Producto físico · envíos" : "Producto digital · entrega al instante";
-  const emojiBox = `<span style="width:52px;height:52px;flex:none;border-radius:14px;background:#fff;border:1px solid var(--border);font-size:26px;display:flex;align-items:center;justify-content:center">${st.prod.emoji?esc(st.prod.emoji):"📦"}</span>`;
+  const emojiBox = `<span style="width:52px;height:52px;flex:none;border-radius:14px;background:#fff;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center">${st.prod.emoji?esc(st.prod.emoji):"📦"}</span>`;
   const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
   const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${esRegalo?"0":"14px"}">
       ${emojiBox}
@@ -1982,7 +1982,7 @@ async function renderInicio(){
       <span class="ini-item-nm">${o.label}${optTag}</span>
       <span class="ini-item-msg" style="${subStyle}">${o.sub||''}</span>
       <span class="ini-chev">›</span></button>`; };
-  const group=(title,rows)=>`<div style="font-size:12px;font-weight:700;color:var(--faint);margin:20px 4px 8px">${title}</div><div class="ini-ph" style="padding:6px"><div class="ini-items">${rows.join("")}</div></div>`;
+  const group=(title,rows)=>`<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:22px 6px 9px">${title}</div><div class="ini-ph" style="padding:6px"><div class="ini-items">${rows.join("")}</div></div>`;
 
   // Subtítulos con el dato REAL del producto
   const emo = st.prod.emoji?esc(st.prod.emoji)+" ":"";
@@ -1998,7 +1998,7 @@ async function renderInicio(){
   const stockSub = (atrs||totStock) ? `${atrs?atrs+" variante(s) · ":""}${totStock} unidad(es) en stock` : "Sin variantes · agrega cuántas tienes";
 
   const qEs = rowHtml("producto",{label:"¿Qué es?",sub:`${emo}${esc(st.prod.nombre||"tu producto")} · ${fisico?"físico":"digital"}`,ico:IC.producto,ok:true});
-  const qCuesta = rowHtml("opciones",{label:"¿Cuánto cuesta?",sub:precioSub,warn:precioWarn});
+  const qCuesta = rowHtml("opciones",{label:"¿Cuánto cuesta?",sub:precioSub,warn:precioWarn,ico:icon("dollar")});
   const qVar = fisico
     ? rowHtml("producto",{label:"Variantes y stock",sub:stockSub,ico:icon("productos"),opt:true,ok:(atrs>0||totStock>0)})
     : rowHtml("entrega",{label:"¿Cómo se entrega?",sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo",warn:!est("entrega").ok});
