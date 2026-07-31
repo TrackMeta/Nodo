@@ -1758,9 +1758,7 @@ async function renderExtras(host){
   if(!cfg.extras_prov_momento) cfg.extras_prov_momento="post";
 
   const cat=await cargarCatalogoExtras();
-  const regCat=await cargarCatalogoRegalos();
   const esFisico=(st.prod.tipo==="fisico");
-  const esPrincipal=(st.prod.clase!=="extra" && st.prod.clase!=="regalo");
 
   const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${cfg.extras_momento===v?'var(--brand)':'var(--border)'};
     background:${cfg.extras_momento===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
@@ -1768,16 +1766,6 @@ async function renderExtras(host){
     <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>`;
 
   b.innerHTML=`
-    ${esPrincipal?`
-    <div class="card" style="border-color:rgba(168,85,247,.4)">
-      <h4 style="margin-top:0">🎁 Regalo con la compra</h4>
-      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Un obsequio <b>gratis</b> que se entrega solo al <b>cerrar la venta</b> de este producto — no se cobra ni se pregunta. El <b>digital</b> le llega al chat; el <b>físico</b> viaja en el mismo paquete. ${esFisico?"":"<b>Ojo:</b> como este producto es digital, elige regalos digitales (un regalo físico necesitaría su propio envío)."}</div>
-      <div id="regList" style="margin-top:12px"></div>
-      <button class="btn" id="regAdd" ${regCat.length?"":"disabled"} style="margin-top:8px">+ Agregar regalo</button>
-      ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>🎁 Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
-      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="regMenc" ${cfg.regalo_mencionar?"checked":""}/> Mencionar el regalo durante la venta (la IA lo usa de gancho para cerrar)</label>
-    </div>`:""}
-
     <div class="card" style="border-color:var(--brand-border)">
       <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("dollar")} Ventas extra <span style="font-size:11px;font-weight:400;color:var(--faint)">— sube el ticket</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
@@ -1828,10 +1816,29 @@ async function renderExtras(host){
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
   const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
   $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
+  paintExtras();
+}
+// Sección propia "Regalo con la compra" (antes vivía dentro de Ventas extra).
+// Solo aplica a productos PRINCIPALES.
+async function renderRegaloVenta(host){
+  const b=host||$("tabBody");
+  b.innerHTML=`<div class="empty">Cargando…</div>`;
+  const cfg=st.prod.config=st.prod.config||{};
+  if(!Array.isArray(cfg.regalos)) cfg.regalos=[];
+  const regCat=await cargarCatalogoRegalos();
+  const esFisico=(st.prod.tipo==="fisico");
+  b.innerHTML=`
+    <div class="card" style="border-color:rgba(168,85,247,.4);margin-bottom:0">
+      <h4 style="margin-top:0">🎁 Regalo con la compra</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Un obsequio <b>gratis</b> que se entrega solo al <b>cerrar la venta</b> de este producto — no se cobra ni se pregunta. El <b>digital</b> le llega al chat; el <b>físico</b> viaja en el mismo paquete. ${esFisico?"":"<b>Ojo:</b> como este producto es digital, elige regalos digitales (un regalo físico necesitaría su propio envío)."}</div>
+      <div id="regList" style="margin-top:12px"></div>
+      <button class="btn" id="regAdd" ${regCat.length?"":"disabled"} style="margin-top:8px">+ Agregar regalo</button>
+      ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>🎁 Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="regMenc" ${cfg.regalo_mencionar?"checked":""}/> Mencionar el regalo durante la venta (la IA lo usa de gancho para cerrar)</label>
+    </div>`;
   const ra=$("regAdd"); if(ra) ra.onclick=()=>{ const c=regCat[0]; if(!c) return; cfg.regalos.push({ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }); paintRegalos(); };
   const rm=$("regMenc"); if(rm) rm.onchange=(e)=>{ cfg.regalo_mencionar=e.target.checked; };
   paintRegalos();
-  paintExtras();
 }
 // Catálogo de productos de clase "regalo" (todas sus versiones activas, sin
 // importar precio — un regalo vale 0). Alimenta el selector de "Regalo con la compra".
@@ -1906,7 +1913,8 @@ function paintExtras(){
 // ── Acordeón del hub: cada fila despliega su sección inline (varias a la vez).
 // Reusa las funciones de sección pasándoles el panel (.acc-body) como contenedor.
 const ACC_RENDER={ producto:renderProducto, opciones:renderOpciones, entrega:renderEntrega,
-  ia:renderProductoIA, activacion:renderActivacion, extras:renderExtras, remarketing:renderRemarketing, stock:renderStock };
+  ia:renderProductoIA, activacion:renderActivacion, extras:renderExtras, remarketing:renderRemarketing,
+  regalos:renderRegaloVenta, stock:renderStock };
 function accToggle(wrap){
   if(!wrap) return;
   const t=wrap.dataset.t, body=wrap.querySelector(".acc-body");
@@ -1977,6 +1985,7 @@ async function renderInicio(){
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
     if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
     if(t==="remarketing"){ const ok=!!c.remarketing_seq_id; return {ok,opt:true,msg:ok?"Secuencia enlazada":"Sin remarketing (opcional)"}; }
+    if(t==="regalos"){ const n=(c.regalos||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} regalo(s)`:"Sin regalo (opcional)"}; }
     if(t==="flujos") return {ok:true,opt:true,msg:"Editor visual (avanzado)"};
     if(t==="stock"){ const s=(c.stock&&typeof c.stock==="object")?c.stock:{}; const ks=Object.keys(s); const tot=ks.reduce((a,k)=>a+(Number(s[k])||0),0); return {ok:ks.length>0,opt:true,msg:ks.length?`${tot} unidad(es) en stock`:"Sin stock cargado (opcional)"}; }
     return {ok:false,msg:""};
@@ -2083,8 +2092,9 @@ async function renderInicio(){
 
   // Más opciones (colapsable): ventas extra, remarketing, flujos
   const mas = `<details style="margin-top:16px">
-      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· ventas extra, remarketing</span></summary>
+      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· regalo, ventas extra, remarketing</span></summary>
       <div class="ini-ph" style="padding:6px;margin-top:6px"><div class="ini-items">
+        ${rowHtml("regalos",{label:"Regalo con la compra",sub:est("regalos").msg,opt:true,tone:"gold",ico:"🎁"})}
         ${rowHtml("extras",{label:"Ventas extra",sub:est("extras").msg,opt:true,tone:"gold"})}
         ${rowHtml("remarketing",{label:"Remarketing",sub:est("remarketing").msg,opt:true,tone:"gold"})}
       </div></div>
@@ -2153,6 +2163,7 @@ async function renderInicio(){
     if(t==="entrega"){ return { ok:est("entrega").ok, tone:"green", sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo", warn:!est("entrega").ok }; }
     if(t==="extras"){ return { ok:est("extras").ok, tone:"gold", sub:est("extras").msg }; }
     if(t==="remarketing"){ return { ok:est("remarketing").ok, tone:"gold", sub:est("remarketing").msg }; }
+    if(t==="regalos"){ return { ok:est("regalos").ok, tone:"gold", sub:est("regalos").msg }; }
     return null;
   };
   const applyRow=(t)=>{
