@@ -1933,6 +1933,7 @@ async function refreshActivacionRow(){
     st.receta.flows=flows||[]; st.receta.fIni=fIni; st.receta.trigs=trigs; st.receta.fVenta=(flows||[]).find(f=>f.role==="venta");
   }
   if(st._refreshRow) st._refreshRow("activacion");
+  if(st._refreshMeter) st._refreshMeter();
 }
 
 async function renderInicio(){
@@ -2007,13 +2008,13 @@ async function renderInicio(){
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:22px;font-weight:800;letter-spacing:-.3px"><span id="hdrName" class="hdr-name" title="Clic para renombrar">${esc(st.prod.nombre||"Producto")}</span><span id="hdrEdit" title="Renombrar" style="cursor:pointer;color:var(--faint);display:inline-flex">${PENCIL}</span>${badge}</div>
         <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${tipoTxt}</div>
       </div>
-      ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div style="font-size:28px;font-weight:800;background:${grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.15">${pct}%</div></div>`}
+      ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div id="hubPct" style="font-size:28px;font-weight:800;background:${grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.15">${pct}%</div></div>`}
     </div>`;
   const headCard = esRegalo
     ? `<div style="margin-bottom:16px">${bannerTop}</div>`
     : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:16px">
         ${bannerTop}
-        <div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:4px 0 2px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease"></div></div>
+        <div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:4px 0 2px;border:1px solid var(--border)"><div id="hubBar" style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease,background .3s ease"></div></div>
       </div>`;
 
   // "¿Lo armo por ti?" vive en el FAB flotante de abajo a la derecha (armFab),
@@ -2161,7 +2162,18 @@ async function renderInicio(){
     if(msg){ msg.textContent=r.sub||''; msg.setAttribute('style', (!r.ok&&r.warn)?'color:var(--muted);font-weight:600':'color:var(--muted)'); }
   };
   st._refreshRow=applyRow;
-  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc) applyRow(acc.dataset.t); };
+  // Medidor "Listo para vender" en vivo (barra + %): recalcula desde los mismos
+  // pasos requeridos y actualiza la barra/número sin redibujar el hub.
+  const refreshMeter=()=>{
+    if(!req.length) return;
+    const p=Math.round(req.filter(t=>est(t).ok).length/req.length*100);
+    const g=p>=100?"linear-gradient(90deg,#22c079,#12b76a)":"linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
+    const gl=p>=100?"rgba(34,192,121,.45)":"rgba(168,85,247,.45)";
+    const bar=$("hubBar"); if(bar){ bar.style.width=p+"%"; bar.style.background=g; bar.style.boxShadow="0 0 12px -1px "+gl; }
+    const pe=$("hubPct"); if(pe){ pe.textContent=p+"%"; pe.style.background=g; pe.style.webkitBackgroundClip="text"; pe.style.backgroundClip="text"; pe.style.webkitTextFillColor="transparent"; }
+  };
+  st._refreshMeter=refreshMeter;
+  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc){ applyRow(acc.dataset.t); refreshMeter(); } };
   b.addEventListener('input', onEdit);
   b.addEventListener('change', onEdit);
 
