@@ -2700,8 +2700,8 @@ function paintOpciones(fisico){
           <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}"/></div>
         ${simple?"":`<div style="flex:0 0 115px"><label style="margin-top:0">Costo <span style="font-weight:400;color:var(--faint);text-transform:none">opcional</span></label>
           <input class="in ocosto" type="number" step="0.01" min="0" value="${esc(v.costo??"")}" placeholder="del prod." title="Vacío = usa el costo del producto"/></div>`}
-        ${fisico?`<div style="flex:0 0 95px"><label style="margin-top:0">Unidades</label>
-          <input class="in oc" type="number" min="1" value="${esc(v.cantidad??1)}"/></div>`:""}
+        ${fisico?`<div style="flex:0 0 120px"><label style="margin-top:0">Unidades por venta</label>
+          <input class="in oc" type="number" min="1" value="${esc(v.cantidad??1)}" title="Cuántas unidades del producto lleva ESTA presentación (es lo que descuenta del stock). Producto simple: 1. Pack de 2: 2."/></div>`:""}
         ${simple?"":`<label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>
         <button class="iconbtn odel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>`}
       </div>
