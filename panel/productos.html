@@ -55,8 +55,9 @@
   .acc-hd .ini-chev{transition:transform .18s}
   .acc.open>.acc-hd .ini-chev{transform:rotate(90deg);color:var(--brand)}
   .acc-body{display:none}
-  .acc.open>.acc-body{display:block;padding:8px 6px 14px;animation:accIn .18s ease}
-  @keyframes accIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .acc.open>.acc-body{display:block;padding:8px 6px 14px;animation:accIn .28s cubic-bezier(.22,.61,.36,1)}
+  @keyframes accIn{from{opacity:0;transform:translateY(-10px) scale(.99)}to{opacity:1;transform:none}}
+  .acc-hd{transition:background .15s}
   .acc-body .card:last-child{margin-bottom:0}
   .acc-body>.hint:first-child{margin-top:0}
   /* Cabecera de sección (sin barra de pestañas) */
@@ -1922,6 +1923,17 @@ function accRerender(t){
   const wrap=document.querySelector('.acc[data-t="'+t+'"]');
   if(wrap && wrap.classList.contains("open")){ const fn=ACC_RENDER[t]; if(fn) fn(wrap.querySelector(".acc-body")); }
 }
+// "Cómo llegan los clientes" depende de flujos/triggers que viven en la BD; tras
+// guardar hay que recargarlos para que la fila brille sin recargar la página.
+async function refreshActivacionRow(){
+  if(st.prod && st.receta){
+    const { data:flows } = await supa.from("flows").select("id,nombre,role,estado").eq("product_id",st.prod.id);
+    const fIni=(flows||[]).find(f=>f.role==="mensajes_iniciales");
+    let trigs=[]; if(fIni){ const { data:tt } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=tt||[]; }
+    st.receta.flows=flows||[]; st.receta.fIni=fIni; st.receta.trigs=trigs; st.receta.fVenta=(flows||[]).find(f=>f.role==="venta");
+  }
+  if(st._refreshRow) st._refreshRow("activacion");
+}
 
 async function renderInicio(){
   const b=$("tabBody");
@@ -2121,6 +2133,38 @@ async function renderInicio(){
   };
   const nmEl=$("hdrName"); if(nmEl) nmEl.onclick=startNameEdit;
   const penEl=$("hdrEdit"); if(penEl) penEl.onclick=startNameEdit;
+
+  // ── Brillo EN VIVO de las filas: al editar dentro de una sección, su fila
+  // se actualiza (verde/IA/dorado) sin redibujar el hub ni recargar la página.
+  const TONE_ICO_R={ green:"background:rgba(34,192,121,.16);border-color:transparent;color:#22c079",
+    ia:"background:rgba(168,85,247,.16);border-color:transparent;color:var(--ia1,#a855f7)",
+    gold:"background:rgba(230,168,20,.20);border-color:transparent;color:#c88a04" };
+  const recompRow=(t)=>{
+    if(t==="opciones"){ const a=(st.versions||[]).filter(v=>v.activo!==false); const pr=a.filter(v=>Number(v.precio)>0); const prc=pr.map(v=>Number(v.precio)); const co=Number(c.costo)||0;
+      let s,w=false; if(!pr.length){ s="Falta ponerle precio"; w=true; } else if(a.length===1){ s=`S/ ${prc[0]} · 1 presentación`; if(co>0&&prc[0]>co) s+=` · ganas S/ ${Math.round(prc[0]-co)}`; } else s=`${a.length} presentaciones · desde S/ ${Math.min(...prc)}`;
+      return { ok:pr.length>0, tone:"green", sub:s, warn:w }; }
+    if(t==="producto"){ if(!fisico) return null; const sk=(c.stock&&typeof c.stock==="object")?c.stock:{}; const tot=Object.keys(sk).reduce((x,k)=>x+(Number(sk[k])||0),0); const at=(c.atributos||[]).length;
+      return { ok:(at>0||tot>0), tone:"green", sub:(at||tot)?`${at?at+" variante(s) · ":""}${tot} unidad(es) en stock`:"Sin variantes · agrega cuántas tienes" }; }
+    if(t==="ia"){ return { ok:est("ia").ok, tone:"ia", sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto", warn:!est("ia").ok }; }
+    if(t==="activacion"){ return { ok:est("activacion").ok, tone:"ia", sub:est("activacion").ok?"Palabra clave + mensajes listos":"Falta una palabra clave", warn:!est("activacion").ok }; }
+    if(t==="entrega"){ return { ok:est("entrega").ok, tone:"green", sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo", warn:!est("entrega").ok }; }
+    if(t==="extras"){ return { ok:est("extras").ok, tone:"gold", sub:est("extras").msg }; }
+    if(t==="remarketing"){ return { ok:est("remarketing").ok, tone:"gold", sub:est("remarketing").msg }; }
+    return null;
+  };
+  const applyRow=(t)=>{
+    const wrap=b.querySelector('.acc[data-t="'+t+'"]'); if(!wrap) return;
+    const r=recompRow(t); if(!r) return;
+    const hd=wrap.querySelector('.acc-hd'), ico=hd.querySelector('.ini-ico'), msg=hd.querySelector('.ini-item-msg');
+    hd.classList.remove('ok-green','ok-ia','ok-gold'); if(r.ok) hd.classList.add('ok-'+r.tone);
+    if(ico){ ico.className='ini-ico'+(r.ok?' done':''); ico.setAttribute('style', r.ok?TONE_ICO_R[r.tone]:''); }
+    if(msg){ msg.textContent=r.sub||''; msg.setAttribute('style', (!r.ok&&r.warn)?'color:var(--muted);font-weight:600':'color:var(--muted)'); }
+  };
+  st._refreshRow=applyRow;
+  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc) applyRow(acc.dataset.t); };
+  b.addEventListener('input', onEdit);
+  b.addEventListener('change', onEdit);
+
   if(!esExtra && !esRegalo){
     renderSalud(pct>=100);
     const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
@@ -3120,7 +3164,7 @@ async function createWelcome(){
   }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await supa.from("flow_nodes").insert({ flow_id:flow.id, tipo:"rotador", nombre:"Mensajes iniciales", es_inicial:true, config:{activo:true,variantes:[newVariant(0)],despues:{modo:"nada"}}, pos_x:80, pos_y:80 });
-  toast("Mensajes iniciales creados ✓"); accRerender("activacion");
+  toast("Mensajes iniciales creados ✓"); accRerender("activacion"); refreshActivacionRow();
 }
 
 // Lee los valores editables del DOM a memoria (antes de re-render o guardar).
@@ -3326,7 +3370,7 @@ async function saveWelcome(){
   await saveTrigger("keyword", "kw", kwArr.length?{keywords:kwArr,match}:null);
   const adArr=($("actAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
   await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
-  toast("Guardado ✓"); accRerender("activacion");
+  toast("Guardado ✓"); accRerender("activacion"); refreshActivacionRow();
 }
 async function saveTrigger(tipo, key, config){
   const existing=st.act[key];
