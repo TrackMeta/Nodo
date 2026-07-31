@@ -2175,6 +2175,14 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         }
       }
     } catch (e) { console.error("[crearPedido] stock:", (e as any)?.message ?? e); }
+    // 💰 ¿El cliente ya había pagado el adelanto ANTES de dar sus datos? Se
+    // guardó en el contacto (stashPrepagoAdelanto). Ahora que existe el pedido, se
+    // engancha el comprobante → entra a "Pagos por validar" (recién acá, con el
+    // pedido creado; no cuando mandó la captura, porque ahí no había a qué atarlo).
+    if (a.estado === "esperando_adelanto" && String(ctx._prepago_adel_url ?? "").trim()) {
+      try { await engancharPrepagoAdelanto(db, run, (ord as any).id, ctx); }
+      catch (e) { console.error("[crearPedido] prepago adelanto:", (e as any)?.message ?? e); }
+    }
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
   }
@@ -2598,6 +2606,79 @@ function evaluarAbono(
 }
 function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }
 
+// El cliente mandó el comprobante del adelanto ANTES de completar sus datos, así
+// que todavía no hay pedido `esperando_adelanto` al cual atarlo. En vez de
+// ignorarlo (y pedirle pagar de nuevo cuando el pedido nazca), lo RECONOCEMOS: si
+// el OCR confirma que es un pago, lo guardamos en el contacto (`_prepago_adel_*`)
+// y `crearPedido` lo engancha solo al pedido cuando el cliente complete sus datos
+// → recién ahí entra a "Pagos por validar". Si NO es un pago (foto cualquiera),
+// no interceptamos: la IA de venta sigue atendiendo normal.
+async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
+  if (!url) return false;
+  let parsed: any = null;
+  try {
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (ai?.api_key) {
+      const { data: ch } = await db.from("channels").select("ocr_config").eq("id", channelId).maybeSingle();
+      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, "PEN")
+        ?? "Eres un validador experto de comprobantes de pago de Perú.") +
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
+      const raw = await runAI({
+        provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
+        content: [imageBlock(url), { type: "text", text: "¿Es un comprobante de pago? Extrae el monto pagado y el nº de operación." }],
+        maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
+      });
+      parsed = JSON.parse(raw);
+    }
+  } catch (_) { parsed = null; }
+  // Solo intervenimos si el OCR CONFIRMA que es un pago (es_pago true). Sin
+  // confirmación (foto random, o sin IA configurada) NO interceptamos.
+  if (!parsed || parsed.es_pago !== true) return false;
+  await setField(db, channelId, contactId, "_prepago_adel_url", url);
+  await setField(db, channelId, contactId, "_prepago_adel_monto", String(Number(parsed?.monto) || ""));
+  await setField(db, channelId, contactId, "_prepago_adel_oper", parsed?.operacion ? String(parsed.operacion).trim() : "");
+  await setField(db, channelId, contactId, "_prepago_adel_ok", parsed?.valido ? "si" : "no");
+  await logEvent(db, channelId, contactId, "nota", "Pago del adelanto recibido ANTES de sus datos", "Guardado — se engancha al crear el pedido");
+  await deliverMessage(db, channelId, contactId,
+    "¡Recibí tu pago! 🙌 Para despachar tu pedido a la agencia solo me falta confirmar tus datos: tu *nombre completo*, tu *DNI* y la *sede/oficina Shalom* donde lo recoges. Pásamelos y lo dejo en camino. 😊").catch(() => {});
+  return true;
+}
+
+// Engancha al pedido recién creado un adelanto que el cliente pagó ANTES de dar
+// sus datos (lo guardó stashPrepagoAdelanto). Le suma el comprobante + la lectura
+// del OCR y lo deja en "Pagos por validar" (NO se auto-aprueba: un pago fuera de
+// orden mejor lo revisas tú), avisa por Telegram con botón y limpia el prepago.
+async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: string, ctx: any): Promise<void> {
+  const url = String(ctx._prepago_adel_url ?? "").trim();
+  if (!url) return;
+  const monto = Number(ctx._prepago_adel_monto);
+  const oper = String(ctx._prepago_adel_oper ?? "").trim() || null;
+  const okIa = String(ctx._prepago_adel_ok ?? "") === "si";
+  const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+  const ship = ((o as any)?.shipping ?? {}) as any;
+  const esperado = Number(ship.adelanto);
+  const cuadra = okIa && Number.isFinite(esperado) && Number.isFinite(monto) && monto >= esperado - 1;
+  await db.from("orders").update({
+    shipping: {
+      ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
+      adelanto_revisar: "pagó el adelanto antes de dar sus datos — revísalo",
+      adelanto_monto_leido: Number.isFinite(monto) ? monto : null,
+      adelanto_operacion_leida: oper, adelanto_ok_ia: cuadra,
+    },
+  }).eq("id", orderId);
+  await logEvent(db, run.channel_id, run.contact_id, "nota", "Adelanto (pagado antes de los datos) enganchado — a validar");
+  await avisar(db, run.channel_id, run.contact_id, "adelanto_validar", {
+    monto_leido: Number.isFinite(monto) ? monto : "", monto_esperado: Number.isFinite(esperado) ? esperado : "",
+    operacion: oper ?? "", motivo: "pagó antes de dar sus datos",
+  }, { foto: url, botones: [[{ text: "✅ Aprobar el adelanto", data: `adel_ok:${orderId}` }]] });
+  for (const k of ["_prepago_adel_url", "_prepago_adel_monto", "_prepago_adel_oper", "_prepago_adel_ok"]) {
+    await setField(db, run.channel_id, run.contact_id, k, "");
+    delete ctx[k];
+  }
+}
+
 // Comprobante del ADELANTO (provincia). Mismo patrón que el saldo, porque es
 // la misma decisión: ¿la IA aprueba sola o te consulta?
 //   · manual (default): el OCR igual lo analiza —te ahorra leerlo— pero NO
@@ -2611,7 +2692,9 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     .select("id, estado, amount, currency, shipping")
     .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "esperando_adelanto")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!order) return false;
+  // Sin pedido todavía: el cliente pagó ANTES de dar sus datos. Se guarda el
+  // comprobante y se engancha al crear el pedido (no se pierde ni se ignora).
+  if (!order) return await stashPrepagoAdelanto(db, channelId, contactId, event);
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
 
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config").eq("id", channelId).maybeSingle();
