@@ -506,6 +506,9 @@ function compileProductoIA(c,tipo){
   if(ia.proceso&&ia.proceso.trim()) cv.push("Proceso de venta:\n"+ia.proceso.trim());
   if(ia.tecnicas&&ia.tecnicas.trim()) cv.push("Técnicas de venta:\n"+ia.tecnicas.trim());
   if(cv.length) L.push("## Cómo vender este producto\n"+cv.join("\n\n"));
+  // Objeciones: la munición del vendedor. Se compila prominente para que la IA
+  // las tenga a la mano y rebata con tacto (no discutir), sin inventar.
+  if(ia.objeciones&&ia.objeciones.trim()) L.push("## Objeciones frecuentes y cómo responderlas\nCuando el cliente ponga una de estas dudas o pegas, responde en esta línea (con tacto, nunca discutas ni presiones de más; si no aplica, sé honesto):\n"+ia.objeciones.trim());
   add("Resumen del producto",ia.resumen);
   add("Descripción / detalle",ia.detalle);
   add("Reglas del producto",ia.reglas_producto);
@@ -1016,6 +1019,11 @@ function renderProductoIA(){
           ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
         </div>
       </details>
+      <div style="border:1px solid var(--brand,#2b7fff);border-radius:12px;padding:13px;margin-top:12px;background:color-mix(in srgb, var(--brand,#2b7fff) 5%, transparent)">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">Objeciones y cómo responderlas <span style="font-weight:400;color:var(--faint)">— lo que más ayuda a cerrar</span></div>
+        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 8px;line-height:1.5">Las dudas o pegas típicas del cliente, cada una con tu mejor respuesta. La IA las tendrá a la mano para rebatir con tacto (no discute ni presiona de más). Escribe una por línea, «duda → respuesta». Ejemplos:<br><span style="color:var(--faint)">"Está caro" → Te dura años y el envío va incluido; además pagas al recibir.<br>"Lo pienso" → Claro 🙂 ¿qué te haría decidir? Hoy tengo stock en tu talla.<br>"¿Es original / de confianza?" → Sí, y pagas contraentrega / te mando fotos reales.</span></div>
+        ${taField("objeciones","","«Está caro» → tu respuesta\n«Lo pienso» → tu respuesta\n«No confío» → tu respuesta",5)}
+      </div>
       <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">Qué es el producto</div>
         ${taField("resumen","Información resumida (pitch corto)","En 1-2 frases: qué es y por qué conviene.",2)}
@@ -2164,7 +2172,14 @@ async function generarFlujoFisico(flowId, N, E){
   const nVender=await N("ia","La IA vende y toma datos",{
     operacion:"generar_texto", enviar:true, usar_conocimiento:true,
     detectar_opcion:true, detectar_zona:true, campos,
-    prompt:"Continúa la conversación de forma natural: responde dudas, explica el valor y guía a la compra. "+
+    prompt:"Eres un vendedor experto por WhatsApp: cálido, seguro y orientado a CERRAR (sin ser pesado). "+
+           "Continúa la conversación de forma natural: responde dudas, explica el valor y guía a la compra.\n"+
+           "CÓMO VENDER (aplícalo con tacto, la venta manda):\n"+
+           "· Habla en BENEFICIOS, no en características ('no te van a doler los pies' > 'suela de EVA').\n"+
+           "· Ante una objeción ('está caro', 'lo pienso', 'no confío', '¿es original?'), NO te rindas ni discutas: reconoce, rebate con valor/garantía/prueba y reencamina al cierre. Si el producto tiene una sección de objeciones o FAQ, úsala.\n"+
+           "· CIERRE ASUMIDO: en vez de '¿lo quieres?', avanza dando por hecha la compra ('¿te lo mando hoy o mañana?', '¿a qué dirección te lo despacho?').\n"+
+           "· UNA sola cosa a la vez: un mensaje corto, una pregunta. Nada de listas largas ni interrogatorios.\n"+
+           "· Usa la prueba social, la urgencia real (stock, regalo, envío incluido) y la multimedia SOLO si el conocimiento del producto te la dio. NUNCA inventes datos, precios, reseñas ni escasez.\n"+
            "Pregúntale a dónde se lo enviamos para saber cómo despacharlo. Pide los datos que falten de a uno, "+
            "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.\n"+
            // El adelanto lo fija el negocio y lo pide un mensaje FIJO del flujo,
@@ -2401,9 +2416,15 @@ async function generarFlujoVenta(){
     // entra acá por palabra clave: se entra desde el rotador.
     const nVender=await N("ia","La IA vende",{
       operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:true,
-      prompt:"Continúa la conversación con el cliente de forma natural. Responde sus dudas, explica el valor del producto, "+
-             "maneja sus objeciones y guíalo a la compra. Cuando decida comprar, dile el precio de la opción que eligió y "+
-             "pásale los datos de pago ({{datos_pago}}). No inventes precios ni promesas.",
+      prompt:"Eres un vendedor experto por WhatsApp: cálido, seguro y orientado a CERRAR (sin ser pesado). "+
+             "Continúa la conversación de forma natural. Responde sus dudas, explica el valor y guíalo a la compra.\n"+
+             "CÓMO VENDER (con tacto, la venta manda):\n"+
+             "· Habla en BENEFICIOS, no en características.\n"+
+             "· Ante una objeción ('está caro', 'lo pienso', 'no confío'), NO te rindas ni discutas: reconoce, rebate con valor/garantía/prueba y reencamina al cierre. Usa la sección de objeciones o FAQ del producto si la tiene.\n"+
+             "· CIERRE ASUMIDO: da por hecha la compra ('¿te paso los datos de pago para enviártelo al toque?') en vez de '¿lo quieres?'.\n"+
+             "· UNA sola cosa a la vez: mensaje corto, una pregunta.\n"+
+             "· Prueba social/urgencia/multimedia SOLO si el conocimiento del producto te la dio. NUNCA inventes datos, precios, reseñas ni escasez.\n"+
+             "Cuando decida comprar, dile el precio de la opción que eligió y pásale los datos de pago ({{datos_pago}}). No inventes precios ni promesas.",
     },false,80,220);
     const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },true,380,220);
     const nEsImg=await N("condicion","¿Mandó comprobante?",{
