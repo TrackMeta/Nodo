@@ -2789,18 +2789,71 @@ function renderOpciones(host){
   const fisico=(st.prod.tipo||"digital")==="fisico";
   const cfg=st.prod.config=st.prod.config||{};
   if(!Array.isArray(cfg.atributos)) cfg.atributos=[];
+  // Siempre debe haber al menos una presentación con precio: "¿cuánto cuesta?"
+  // arranca mostrando el precio, no un estado vacío.
+  if(!st.versions.length) st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:0 });
+  const multi = st.versions.length>1;
+  const cur=cfg.moneda||"PEN";
+  const sym=(CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1];
+  const monedaSel=`<select class="sel" id="opMoneda" style="width:auto;min-width:210px;height:36px;font-size:12.5px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cur===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>`;
+
+  // ── PRODUCTO SIMPLE (1 presentación): una tarjeta limpia, precio primero ──
+  if(!multi){
+    const v=st.versions[0];
+    b.innerHTML=`
+      <div class="card">
+        <div class="row" style="align-items:flex-end;gap:16px">
+          <div style="flex:0 0 200px"><label style="margin-top:0;font-size:12.5px">Precio de venta</label>
+            <div style="position:relative">
+              <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:800;font-size:16px;pointer-events:none">${esc(sym)}</span>
+              <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}" placeholder="0" style="padding-left:38px;font-size:20px;font-weight:800;height:52px"/>
+            </div></div>
+          ${fisico?`<div style="flex:0 0 150px"><label style="margin-top:0;font-size:12.5px">Tu costo <span style="font-weight:400;color:var(--faint);text-transform:none">(por unidad)</span></label>
+            <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="0" style="height:52px"/></div>`:""}
+          <div id="opMargen" style="flex:1;min-width:0;font-size:14.5px;font-weight:700;color:var(--green,#22c079);display:none;align-items:center;gap:7px;padding-bottom:14px"></div>
+        </div>
+        ${fisico?`<div style="font-size:11.5px;color:var(--faint);margin-top:8px">El <b>costo</b> es lo que te cuesta una unidad — el cliente nunca lo ve; sirve para calcular tu ganancia real.</div>`:""}
+        ${!fisico?`
+          <label style="margin-top:18px">Qué entrega <span style="color:var(--faint);font-weight:400">(links, archivos, imágenes o videos — se envían al confirmar el pago)</span></label>
+          <div class="oe" style="margin-top:5px"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn oel" style="height:32px">${icon("link")} Link</button>
+            <button class="btn oef" style="height:32px">${icon("file")} Archivo / imagen / video</button>
+          </div>
+          <label style="margin-top:14px">Mensaje de apertura <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+          <input class="in oemsg" value="${esc(v.entrega_mensaje||"")}" placeholder="Ej. ¡Bienvenido! 🌟 Acá tienes todo:"/>
+        `:`<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">Este producto se <b>envía</b>: la venta termina cuando se crea el pedido (no entrega nada por el chat). ¿Regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>.</div>`}
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 4px 14px;font-size:12.5px;color:var(--muted)">
+        <span style="font-weight:700">Moneda</span>${monedaSel}<span style="font-size:11.5px;color:var(--faint)">Aplica a todo el producto.</span>
+      </div>
+      <details>
+        <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--brand);padding:8px 4px">＋ ¿Vendes en packs o varias versiones?</summary>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.6;padding:2px 4px 8px">Ej. <b>1 par / 2 pares</b>, <b>Básico / Premium</b>, packs. Cada versión con su propio precio; la IA detecta cuál pidió el cliente aunque lo escriba a su manera.
+          <div style="margin-top:9px"><button class="btn" id="opAdd" style="height:34px">+ Agregar una versión</button></div>
+        </div>
+      </details>`;
+    const opEl=b.querySelector(".op"); if(opEl) opEl.oninput=(e)=>{ v.precio=e.target.value; updateOpMargen(); };
+    const oc2=$("opCosto"); if(oc2) oc2.onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateOpMargen(); };
+    const oem=b.querySelector(".oemsg"); if(oem) oem.oninput=(e)=>{ v.entrega_mensaje=e.target.value; };
+    const oel=b.querySelector(".oel"); if(oel) oel.onclick=()=>{ v.entrega=Array.isArray(v.entrega)?v.entrega:[]; v.entrega.push({tipo:"link",url:"",nombre:""}); paintEntrega(b,v,fisico); const f=b.querySelectorAll(".oe .eu"); if(f[f.length-1]) f[f.length-1].focus(); };
+    const oef=b.querySelector(".oef"); if(oef) oef.onclick=()=>pickEntregaFile(v,()=>paintEntrega(b,v,fisico));
+    const oge=b.querySelector(".oGoExtra"); if(oge) oge.onclick=(e)=>{ e.preventDefault(); accOpen("extras"); };
+    if(b.querySelector(".oe")) paintEntrega(b,v,fisico);
+    $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value); renderOpciones(b); };
+    $("opAdd").onclick=()=>{ st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length }); renderOpciones(b); };
+    updateOpMargen();
+    return;
+  }
+
+  // ── VARIAS PRESENTACIONES (packs / versiones): la lista completa ──
   b.innerHTML=`
     <div class="card" style="border-color:var(--brand-border)">
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("productos")} Presentaciones y precios</h4>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        Aquí vive <b>el precio</b>. Si vendes <b>una sola cosa</b>, deja una presentación con su precio.
-        Si vendes <b>variantes con distinto precio</b> (1 par / 2 pares, Básico / Premium, packs), agrega más.
-        La IA detecta cuál eligió el cliente aunque lo escriba a su manera, y el validador de pagos usa ese precio como <b>monto esperado</b>.
-      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">Cada versión con su propio precio (1 par / 2 pares, Básico / Premium, packs). La IA detecta cuál eligió el cliente aunque lo escriba a su manera, y el validador de pagos usa ese precio como <b>monto esperado</b>.</div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Moneda</label>
-        <select class="sel" id="opMoneda" style="width:auto;min-width:230px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${(cfg.moneda||"PEN")===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>
-        <span style="font-size:11.5px;color:var(--faint)">Aplica a todas las presentaciones.</span>
+        <label style="margin:0;font-size:12.5px;font-weight:700">Moneda</label>${monedaSel}
+        <span style="font-size:11.5px;color:var(--faint)">Aplica a todas.</span>
       </div>
     </div>
     ${fisico?`
