@@ -46,24 +46,6 @@
   .ini-item.ok-ia:hover{background:rgba(168,85,247,.16)}
   .ini-item.ok-gold{background:rgba(230,168,20,.13);box-shadow:0 0 11px -3px rgba(230,168,20,.50)}
   .ini-item.ok-gold:hover{background:rgba(230,168,20,.20)}
-  /* Checklist desplegable "Listo para vender" (debajo de la barra) */
-  .ready-det{margin-top:2px}
-  .ready-det>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);padding:2px 0}
-  .ready-det>summary::-webkit-details-marker{display:none}
-  .ready-cnt{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.02em;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px}
-  .ready-chev{display:inline-flex;transition:transform .2s;color:var(--faint)}
-  .ready-det[open] .ready-chev{transform:rotate(180deg)}
-  .ready-chev svg{width:15px;height:15px}
-  .ready-body{margin-top:11px;padding-top:11px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:3px}
-  .ck-item{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:transparent;border:none;border-radius:9px;padding:7px 8px;cursor:pointer;font:inherit;color:var(--text);transition:background .12s}
-  .ck-item:hover{background:var(--surface-2)}
-  .ck-dot{width:20px;height:20px;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
-  .ck-item.done .ck-dot{background:rgba(34,192,121,.16);color:var(--green,#22c079)}
-  .ck-item:not(.done) .ck-dot{background:var(--ia-bg,rgba(168,85,247,.14));color:var(--ia1,#a855f7)}
-  .ck-lb{font-size:13px;font-weight:600;flex:1}
-  .ck-item.done .ck-lb{color:var(--muted);font-weight:500}
-  .ck-st{font-size:11.5px;color:var(--green,#22c079);font-weight:700}
-  .ck-go{font-size:12px;color:var(--ia1,#a855f7);font-weight:700}
   /* Cabecera de sección (sin barra de pestañas) */
   .pdet-h1{margin:0 0 18px;font-size:23px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px}
   .pdet-xbadge{font-size:11px;font-weight:700;color:#0e9f6e;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);padding:3px 10px;border-radius:20px}
@@ -1966,32 +1948,10 @@ async function renderInicio(){
   const req = esRegalo ? [] : (esExtra ? ["opciones","ia"]
     : (fisico ? ["producto","opciones","stock","ia","activacion"] : ["producto","opciones","entrega","ia","activacion"]));
   const pct = req.length ? Math.round(req.filter(t=>est(t).ok).length/req.length*100) : 100;
-  const MISS={ opciones:"el precio", ia:"que la IA sepa venderlo", activacion:"una palabra clave", entrega:"la entrega", producto:"los datos del producto", stock:"" };
-  const missing = req.filter(t=>!est(t).ok).map(t=>MISS[t]).filter(Boolean);
-  const rcol = pct>=100 ? "var(--green,#22c079)" : "#f0a92b";
   // Degradado de la barra y del %: mismo tono que la sección IA (violeta→fucsia)
   // mientras avanza, verde al llegar al 100%.
   const grad = pct>=100 ? "linear-gradient(90deg,#22c079,#12b76a)" : "linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
   const gradGlow = pct>=100 ? "rgba(34,192,121,.45)" : "rgba(168,85,247,.45)";
-
-  // ── Checklist "Listo para vender" (desplegable, debajo de la barra) ──
-  // Cada paso requerido con su estado; los pendientes saltan a su sección.
-  const CHEVDOWN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
-  const PASO_LBL={ producto:"Qué es", opciones:"Precio", stock:"Stock", entrega:"Entrega", ia:"La IA sabe venderlo", activacion:"Palabra clave" };
-  const reqDone = req.filter(t=>est(t).ok).length;
-  const checklist = req.map(t=>{ const ok=est(t).ok; return `<button class="ck-item${ok?' done':''}" data-t="${t}">
-      <span class="ck-dot">${ok?'✓':''}</span>
-      <span class="ck-lb">${PASO_LBL[t]||t}</span>
-      ${ok?'<span class="ck-st">Listo</span>':'<span class="ck-go">Completar →</span>'}
-    </button>`; }).join("");
-  const readyBlock = req.length ? `<details class="ready-det">
-      <summary>
-        ${pct>=100 ? `<span style="color:var(--green,#22c079);display:inline-flex">${icon("check")}</span> <span>Todo listo — ya puedes ponerlo a vender.</span>` : `<span style="display:inline-flex;color:var(--ia1,#a855f7)">${icon("alert")}</span> <span>Te falta ${missing.map(m=>`<b style="color:var(--text)">${m}</b>`).join(" y ")}.</span>`}
-        <span class="ready-cnt">${reqDone}/${req.length} listas</span>
-        <span class="ready-chev">${CHEVDOWN}</span>
-      </summary>
-      <div class="ready-body">${checklist}</div>
-    </details>` : "";
 
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
@@ -2010,8 +1970,7 @@ async function renderInicio(){
     ? `<div style="margin-bottom:16px">${bannerTop}</div>`
     : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:16px">
         ${bannerTop}
-        <div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:2px 0 12px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease"></div></div>
-        ${readyBlock}
+        <div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:4px 0 2px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease"></div></div>
       </div>`;
 
   // "¿Lo armo por ti?" vive en el FAB flotante de abajo a la derecha (armFab),
@@ -2057,7 +2016,7 @@ async function renderInicio(){
   const rIA = rowHtml("ia",{label:"La IA sabe venderlo",sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto",warn:!est("ia").ok,tone:"ia"});
   const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").ok?"Palabra clave + mensajes listos":"Falta una palabra clave",warn:!est("activacion").ok,tone:"ia"});
 
-  // Poner a vender (el "qué falta" ahora vive en el checklist de arriba)
+  // Poner a vender
   const sellTxt = pct>=100 ? "Todo listo — genera el flujo y tu bot empieza a vender." : "Genera el flujo de venta con IA: vende, toma los datos conversando y crea el pedido.";
   const sellCard = `<div class="card sell-card" style="margin-bottom:0">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${sellTxt}</div>
@@ -2111,7 +2070,6 @@ async function renderInicio(){
 
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
-  b.querySelectorAll(".ck-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
   if(!esExtra && !esRegalo){
     renderSalud(pct>=100);
     const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
