@@ -133,7 +133,9 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-top">${q.color?`<span style="width:11px;height:11px;border-radius:50%;background:${qrColor(q.color)};flex:none"></span>`:''}<span class="c-tt">${esc(q.titulo)}</span>${q.atajo?`<span class="atajo">${esc(q.atajo)}</span>`:''}</div>
       <div class="qbody">${esc(q.cuerpo||"(vacío)")}</div>
-      <div style="margin-top:10px;display:flex;gap:12px;font-size:11.5px;color:var(--faint)">${q.folder?`<span>${icon("folder")} ${esc(q.folder)}</span>`:''}${nMedia?`<span>${icon("image")} ${nMedia}</span>`:''}</div>`;
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--faint)"><span data-cardfolder></span>${nMedia?`<span style="margin-left:auto">${icon("image")} ${nMedia}</span>`:''}</div>`;
+    const fslot=el.querySelector("[data-cardfolder]");
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:q.folder||null, onPick:async(v)=>{ const { error }=await supa.from("quick_replies").update({ folder:v }).eq("id",q.id); if(error){ toast(error.message,true); return; } q.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openQR(q.id); box.appendChild(el);
   });
 }
@@ -153,7 +155,6 @@ function renderDetail(){
       <div class="row">
         <div class="f"><label>Título</label><input class="in" id="q_titulo" value="${esc(q.titulo)}"/></div>
         <div class="f"><label>Atajo (opcional)</label><input class="in" id="q_atajo" value="${esc(q.atajo||'')}" placeholder="/precio"/></div>
-        <div class="f"><label>Carpeta</label><div id="q_folder_slot"></div></div>
       </div>
       <label>Color identificador</label>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" id="q_palette"></div>
@@ -178,7 +179,6 @@ function renderDetail(){
     +`<label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer"><span style="width:26px;height:26px;border-radius:50%;background:${cur&&!PALETTE.includes(cur)?cur:'var(--surface-2)'};border:2px solid ${cur&&!PALETTE.includes(cur)?'var(--text)':'var(--border)'};display:inline-flex;align-items:center;justify-content:center;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><input type="color" id="q_colorCustom" value="${qrColor(cur)}" style="width:0;height:0;opacity:0;position:absolute"/></label>`
     +`<button class="btn qClearC" style="height:30px;padding:0 10px;font-size:12px">Sin color</button>`;
   // Preserva ediciones del formulario al re-renderizar por cambio de color.
-  if(Fbar){ const slot=$("q_folder_slot"); if(slot){ slot.innerHTML=""; slot.appendChild(Fbar.picker({ current:q.folder||null, onPick:(v)=>{ q.folder=v; } })); } }
   const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value; st.qr.cuerpo=$("q_cuerpo").value; };
   const setColor=(c)=>{ harvest(); q.color=c||null; renderDetail(); };
   pal.querySelectorAll(".qsw").forEach(s=> s.onclick=()=>setColor(s.dataset.c));

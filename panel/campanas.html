@@ -79,7 +79,6 @@
 <div class="modal" id="modal"><div class="mbox">
   <h3 id="mTitle">Nueva campaña</h3><p class="ms">Envía un mensaje masivo con una <b>plantilla de WhatsApp aprobada</b> a un grupo de contactos. Ideal para promos, recordatorios o novedades.</p>
   <label>Nombre de la campaña</label><input class="in" id="m_nombre" placeholder="Ej. Promo de octubre"/>
-  <label>Carpeta <span style="color:var(--faint);font-weight:400">(para organizar tus campañas)</span></label><select class="sel" id="m_folder"></select>
   <label>Plantilla a enviar</label><select class="sel" id="m_tpl"></select>
   <div style="font-size:11.5px;color:var(--faint);margin-top:5px">Solo aparecen tus plantillas aprobadas por Meta. Se gestionan en la sección <b>Plantillas</b>.</div>
 
@@ -153,11 +152,14 @@ function renderGrid(){
       ${c.estado!=="borrador"?`<div class="bars"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div>
         <div class="meta">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
       <div class="cacts">
+        <span data-cardfolder></span>
         ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">${icon("play")} Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
         ${(c.estado==="programada"||c.estado==="enviando")?`<button class="btn danger" data-a="cancel">Cancelar</button>`:""}
         <button class="btn danger" data-a="del" style="margin-left:auto">Eliminar</button>
       </div>`;
     el.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>action(b.dataset.a,c));
+    const fslot=el.querySelector("[data-cardfolder]");
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:c.folder||null, onPick:async(v)=>{ const { error }=await supa.from("campaigns").update({ folder:v }).eq("id",c.id); if(error){ toast(error.message,true); return; } c.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderGrid(); } }); fslot.appendChild(pk); }
     box.appendChild(el);
   });
 }
@@ -176,9 +178,6 @@ function openModal(c){
   st.editing=c||null;
   $("mTitle").textContent=c?"Editar campaña":"Nueva campaña";
   $("m_nombre").value=c?.nombre||"";
-  const folders=(Fbar?Fbar.metas().map(m=>m.nombre):[]);
-  $("m_folder").innerHTML=`<option value="">Sin carpeta</option>`+folders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join("");
-  $("m_folder").value=c?.folder||((Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:"");
   $("m_tpl").innerHTML=`<option value="">— elige —</option>`+st.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.language)})</option>`).join("");
   $("m_tpl").value=c?.template_id||"";
   const seg=c?.segmento||{};
@@ -200,7 +199,7 @@ async function saveCampaign(){
   const nombre=$("m_nombre").value.trim();
   if(!nombre){ toast("Escribe un nombre",true); return; }
   const segmento={ tags:[...st.pickTags], stage:[...st.pickStages], order_estados:[...st.pickOStates], modo:$("m_modo").value };
-  const row={ channel_id:st.channelId, nombre, folder:$("m_folder").value||null, template_id:$("m_tpl").value||null,
+  const row={ channel_id:st.channelId, nombre, folder:(st.editing?st.editing.folder:((Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:null))||null, template_id:$("m_tpl").value||null,
     segmento, programada_at:$("m_prog").value?new Date($("m_prog").value).toISOString():null };
   let error;
   if(st.editing){ ({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id)); }

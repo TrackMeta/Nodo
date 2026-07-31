@@ -229,7 +229,9 @@ function renderCards(){
       <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="nodo-pill ${on?'on':'off'}">${on?'Activa':'Pausada'}</span></div>
       <div class="c-sub">${n} paso${n===1?'':'s'} · reenganche por silencio</div>
       ${miniTimeline(s.pasos)}
-      <div class="c-foot">${s.segmento&&s.segmento!=="general"?`<span style="color:var(--amber)">${esc(segLabel(s.segmento).replace(/·.*/,"").trim())}</span>`:''}${s.folder?`<span>${icon("folder")} ${esc(s.folder)}</span>`:'<span>Sin carpeta</span>'}</div>`;
+      <div class="c-foot">${s.segmento&&s.segmento!=="general"?`<span style="color:var(--amber)">${esc(segLabel(s.segmento).replace(/·.*/,"").trim())}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
+    const fslot=el.querySelector("[data-cardfolder]");
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
   box.appendChild(add);
@@ -258,8 +260,6 @@ function renderDetail(){
       <div><label style="margin:0 0 4px">¿A quién va dirigida?</label>
         <select class="sel" id="s_segmento" style="min-width:300px">${SEGMENTOS.map(([v,l])=>`<option value="${v}" ${(s.segmento||"general")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
         <div id="s_segdesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:420px;line-height:1.5">${esc(segDesc(s.segmento||"general"))}</div></div>
-      <div><label style="margin:0 0 4px">Carpeta</label>
-        <div id="s_folder_slot"></div></div>
     </div>
     <div class="banner">Cada paso espera su tiempo <b>desde que se envió el paso anterior</b> (el primero, desde el último mensaje del cliente). Si el cliente <b>responde</b>, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras haya conversación.</div>
     <div class="editwrap">
@@ -267,7 +267,6 @@ function renderDetail(){
       <button class="addstep" id="addStep">+ Añadir paso</button>
     </div>`;
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
-  if(Fbar){ const slot=$("s_folder_slot"); if(slot){ slot.innerHTML=""; slot.appendChild(Fbar.picker({ current:s.folder||null, onPick:(v)=>{ s.folder=v; } })); } }
   $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; $("s_segdesc").textContent=segDesc(s.segmento); };
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
   const steps=$("steps");
