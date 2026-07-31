@@ -428,8 +428,7 @@ function renderDetail(){
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
   d.innerHTML = onHub
-    ? `<h1 class="pdet-h1">${esc(st.prod.nombre)}${esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:""}</h1>
-       <div id="tabBody"></div>`
+    ? `<div id="tabBody"></div>`
     : `<div class="pdet-secbar">
          <button class="pdet-back" id="backHub">${CHEV}Inicio</button>
          <span class="pdet-crumb">${esc(st.prod.nombre)}</span><span class="pdet-crumb-sep">›</span><span class="pdet-crumb-cur">${SEC[st.tab]||""}</span>
@@ -1926,110 +1925,148 @@ async function renderInicio(){
     if(t==="stock"){ const s=(c.stock&&typeof c.stock==="object")?c.stock:{}; const ks=Object.keys(s); const tot=ks.reduce((a,k)=>a+(Number(s[k])||0),0); return {ok:ks.length>0,opt:true,msg:ks.length?`${tot} unidad(es) en stock`:"Sin stock cargado (opcional)"}; }
     return {ok:false,msg:""};
   };
-  const NM={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega", ia:"Venta con IA",
-    activacion:"Cómo llegan los clientes", extras:"Ventas extra", remarketing:"Remarketing", flujos:"Flujos (editor avanzado)", stock:"Stock (inventario)" };
-  if(esRegalo){ NM.producto="El regalo · qué es y qué entrega"; }
   const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>';
   const IC={ producto:icon("box"), opciones:icon("productos"), entrega:fisico?icon("truck"):icon("link"),
     ia:IA_SPARK, activacion:icon("activity"), extras:icon("dollar"), remarketing:icon("secuencias"), flujos:icon("flujos"), stock:icon("productos") };
-  // Físico: precio, tallas y stock viven TODOS dentro de "Producto" (todo junto),
-  // así que la fase muestra un solo ítem. Digital mantiene sus secciones.
-  const fase1 = fisico ? ["producto","opciones"] : ["producto","opciones","entrega"];
-  const PH = esRegalo
-    ? [["1","El regalo",fisico?"Qué es, cuánto tienes y cómo llega":"Qué es y qué se entrega (el link o archivo)",["producto"]]]
-    : esExtra
-    ? [["1","El producto",fisico?"Precio, presentaciones, tallas y stock":"Lo que vendes, su precio y cómo se entrega",fase1],
-       ["2","La venta","El contexto para que la IA lo ofrezca bien",["ia"]]]
-    : [["1","El producto",fisico?"Precio, presentaciones, tallas y stock":"Lo que vendes, precios y entrega",fase1],
-       ["2","La venta","La venta con IA, cómo llegan los clientes y qué más ofreces",["ia","activacion","extras","remarketing"]],
-       ["3","Avanzado","Editar el flujo a mano (opcional)",["flujos"]]];
-  // Color por fase: ① azul (producto) · ② violeta IA (venta) · ③ gris (avanzado).
-  const PHCOL={ "1":{c:"var(--brand,#2b7fff)",bg:"rgba(43,127,255,.12)"},
-    "2":{c:"var(--ia1,#a855f7)",bg:"rgba(168,85,247,.14)"},
-    "3":{c:"var(--muted)",bg:"var(--surface-2)"} };
-  const item=(t,col)=>{ const e=est(t);
-    const ico=e.ok?'':`style="background:${col.bg};border-color:transparent;color:${col.c}"`;
-    return `<button class="ini-item" data-t="${t}">
-    <span class="ini-ico ${e.ok?'done':''}" ${ico}>${IC[t]||''}</span>
-    <span class="ini-item-nm">${NM[t]}</span><span class="ini-item-msg">${e.msg}</span><span class="ini-chev">›</span></button>`; };
-  const phCard=([num,tt,sub,ids])=>{ const done=ids.filter(t=>est(t).ok).length; const col=PHCOL[num]||PHCOL["1"]; const full=done===ids.length;
-    const prog=full?"background:rgba(34,192,121,.14);color:var(--green,#22c079)":"background:rgba(240,169,43,.14);color:#f0a92b";
-    return `<div class="ini-ph">
-      <div class="ini-ph-hd" data-first="${ids[0]}"><span class="ini-ph-num" style="background:${col.bg};color:${col.c}">${num}</span>
-        <div style="flex:1;min-width:0"><div class="ini-ph-tt">${tt}</div><div class="ini-ph-sub">${sub}</div></div>
-        <span class="ini-ph-prog" style="${prog};border-color:transparent">${done}/${ids.length}</span></div>
-      <div class="ini-items">${ids.map(t=>item(t,col)).join("")}</div></div>`; };
 
-  // Producto "vacío" (sin conocimiento IA ni precio) → hero para armarlo con IA.
-  // Un regalo no se vende con IA → nunca muestra ese hero.
-  const vacio = !esRegalo && !est("ia").ok && !est("opciones").ok;
   // ── Medidor "Listo para vender": de los pasos REQUERIDOS, cuántos están ok ──
-  const req = esRegalo ? [] : (esExtra ? ["opciones","ia"] : ["opciones","ia","activacion"]);
-  const reqDone = req.filter(t=>est(t).ok).length;
-  const pct = req.length ? Math.round(reqDone/req.length*100) : 100;
-  const MISS={ opciones:"el precio", ia:"que la IA sepa venderlo", activacion:"una palabra clave" };
-  const missing = req.filter(t=>!est(t).ok).map(t=>MISS[t]||NM[t]);
+  const req = esRegalo ? [] : (esExtra ? ["opciones","ia"]
+    : (fisico ? ["producto","opciones","stock","ia","activacion"] : ["producto","opciones","entrega","ia","activacion"]));
+  const pct = req.length ? Math.round(req.filter(t=>est(t).ok).length/req.length*100) : 100;
+  const MISS={ opciones:"el precio", ia:"que la IA sepa venderlo", activacion:"una palabra clave", entrega:"la entrega", producto:"los datos del producto", stock:"" };
+  const missing = req.filter(t=>!est(t).ok).map(t=>MISS[t]).filter(Boolean);
   const rcol = pct>=100 ? "var(--green,#22c079)" : "#f0a92b";
-  const readyBanner = esRegalo ? "" : `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:16px">
-      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;color:var(--muted);font-weight:600">Listo para vender</span><span style="margin-left:auto;font-size:22px;font-weight:800;color:${rcol}">${pct}%</span></div>
-      <div style="height:8px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:9px 0 8px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${rcol};transition:width .35s ease"></div></div>
-      <div style="font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px">${pct>=100 ? `<span style="color:var(--green,#22c079);display:inline-flex">${icon("check")}</span> Todo listo — ya puedes ponerlo a vender.` : `<span style="display:inline-flex;color:#f0a92b">${icon("alert")}</span> Te falta ${missing.map(m=>`<b style="color:var(--text)">${m}</b>`).join(" y ")}.`}</div>
+
+  // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
+  const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
+    : fisico ? "Producto físico · envíos" : "Producto digital · entrega al instante";
+  const emojiBox = `<span style="width:52px;height:52px;flex:none;border-radius:14px;background:linear-gradient(135deg,#f0609a,#f7a34b);color:#fff;font-size:26px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px -6px rgba(240,96,154,.5)">${st.prod.emoji?esc(st.prod.emoji):"📦"}</span>`;
+  const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
+  const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${esRegalo?"0":"14px"}">
+      ${emojiBox}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:22px;font-weight:800;letter-spacing:-.3px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">${esc(st.prod.nombre||"Producto")}${badge}</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${tipoTxt}</div>
+      </div>
+      ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div style="font-size:26px;font-weight:800;color:${rcol};line-height:1.15">${pct}%</div></div>`}
     </div>`;
-  // ── Vista previa: así presenta el bot el producto en el chat ──
-  const pv0 = (st.versions||[]).find(v=>Number(v.precio)>0);
-  const pvPrecio = pv0 ? `S/ ${esc(pv0.precio)}` : "S/ —";
+  const headCard = esRegalo
+    ? `<div style="margin-bottom:16px">${bannerTop}</div>`
+    : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:16px">
+        ${bannerTop}
+        <div style="height:9px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:2px 0 10px;border:1px solid var(--border)"><div style="width:${pct}%;height:100%;background:${rcol};transition:width .35s ease"></div></div>
+        <div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px">${pct>=100 ? `<span style="color:var(--green,#22c079);display:inline-flex">${icon("check")}</span> Todo listo — ya puedes ponerlo a vender.` : `<span style="display:inline-flex;color:#f0a92b">${icon("alert")}</span> Te falta ${missing.map(m=>`<b style="color:var(--text)">${m}</b>`).join(" y ")}.`}</div>
+      </div>`;
+
+  // ── Tarjeta "¿Lo armo por ti?" (abre el asistente Armar con IA) ─────
+  const armCard = (esRegalo || pct>=100) ? "" : `
+    <div style="display:flex;align-items:center;gap:13px;border:1px solid var(--brand-border,rgba(43,127,255,.4));background:radial-gradient(120% 140% at 0% 0%,rgba(43,127,255,.12),transparent 62%),var(--surface);border-radius:14px;padding:14px 16px;margin-bottom:18px">
+      <span style="width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;display:flex;align-items:center;justify-content:center">${IA_SPARK}</span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px;color:var(--brand)">¿Lo armo por ti?</div><div style="font-size:12.5px;color:var(--muted);margin-top:2px">Descríbelo en una frase y relleno todo — tú solo revisas.</div></div>
+      <button id="armHeroBtn" class="btn primary" style="flex:none;height:40px;padding:0 22px">Probar</button>
+    </div>`;
+
+  // ── Filas del hub ──────────────────────────────────────────────────
+  const rowHtml=(t,o)=>{ const e=est(t); const isOk=o.ok!==undefined?o.ok:e.ok;
+    const icoStyle=isOk?'':(o.warn?`style="background:rgba(240,169,43,.14);border-color:transparent;color:#f0a92b"`:'');
+    const subStyle=(!isOk&&o.warn)?'color:#f0a92b;font-weight:600':'color:var(--muted)';
+    const optTag=o.opt?` <span style="font-size:11px;color:var(--faint);font-weight:600">· opcional</span>`:'';
+    return `<button class="ini-item" data-t="${t}">
+      <span class="ini-ico ${isOk?'done':''}" ${icoStyle}>${o.ico||IC[t]||''}</span>
+      <span class="ini-item-nm">${o.label}${optTag}</span>
+      <span class="ini-item-msg" style="${subStyle}">${o.sub||''}</span>
+      <span class="ini-chev">›</span></button>`; };
+  const group=(title,rows)=>`<div style="font-size:12px;font-weight:700;color:var(--faint);margin:20px 4px 8px">${title}</div><div class="ini-ph" style="padding:6px"><div class="ini-items">${rows.join("")}</div></div>`;
+
+  // Subtítulos con el dato REAL del producto
+  const emo = st.prod.emoji?esc(st.prod.emoji)+" ":"";
+  const active=(st.versions||[]).filter(v=>v.activo!==false);
+  const priced=active.filter(v=>Number(v.precio)>0); const prices=priced.map(v=>Number(v.precio));
+  const costo=Number(c.costo)||0;
+  let precioSub, precioWarn=false;
+  if(!priced.length){ precioSub="Falta ponerle precio"; precioWarn=true; }
+  else if(active.length===1){ precioSub=`S/ ${prices[0]} · 1 presentación`; if(costo>0&&prices[0]>costo) precioSub+=` · ganas S/ ${Math.round(prices[0]-costo)}`; }
+  else precioSub=`${active.length} presentaciones · desde S/ ${Math.min(...prices)}`;
+  const sStock=(c.stock&&typeof c.stock==="object")?c.stock:{}; const totStock=Object.keys(sStock).reduce((a,k)=>a+(Number(sStock[k])||0),0);
+  const atrs=(c.atributos||[]).length;
+  const stockSub = (atrs||totStock) ? `${atrs?atrs+" variante(s) · ":""}${totStock} unidad(es) en stock` : "Sin variantes · agrega cuántas tienes";
+
+  const qEs = rowHtml("producto",{label:"¿Qué es?",sub:`${emo}${esc(st.prod.nombre||"tu producto")} · ${fisico?"físico":"digital"}`,ico:IC.producto,ok:true});
+  const qCuesta = rowHtml("opciones",{label:"¿Cuánto cuesta?",sub:precioSub,warn:precioWarn});
+  const qVar = fisico
+    ? rowHtml("producto",{label:"Variantes y stock",sub:stockSub,ico:icon("productos"),opt:true,ok:(atrs>0||totStock>0)})
+    : rowHtml("entrega",{label:"¿Cómo se entrega?",sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo",warn:!est("entrega").ok});
+  const rIA = rowHtml("ia",{label:"La IA sabe venderlo",sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto",warn:!est("ia").ok});
+  const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").ok?"Palabra clave + mensajes listos":"Falta una palabra clave",warn:!est("activacion").ok});
+
+  // Vista previa: así vende el bot
+  const pvPrecio = priced[0] ? `S/ ${esc(priced[0].precio)}` : "S/ —";
   const pvEmoji = st.prod.emoji ? " "+esc(st.prod.emoji) : "";
   const pvNom = esc(st.prod.nombre||"tu producto");
   const pvText = fisico
     ? `¡Hola! El <b>${pvNom}</b> está a <b>${pvPrecio}</b>${pvEmoji}. ¿Te lo mando a <b>Lima</b> o a <b>provincia</b>?`
     : `¡Hola! El <b>${pvNom}</b> cuesta <b>${pvPrecio}</b>${pvEmoji}. Te lo entrego al instante apenas confirmes el pago 🙌`;
-  const previewCard = esRegalo ? "" : `
-    <div class="card">
-      <div style="font-size:11px;color:var(--faint);margin-bottom:10px;display:flex;align-items:center;gap:6px">${icon("eye")} Vista previa · así lo presenta el bot</div>
-      <div style="background:rgba(34,192,121,.12);border-radius:13px;border-top-left-radius:3px;padding:10px 13px;font-size:13px;color:var(--text);line-height:1.5;max-width:84%">${pvText}</div>
+  const previewCard = `<div class="card" style="margin-bottom:0">
+      <div style="font-size:11px;color:var(--faint);margin-bottom:10px;display:flex;align-items:center;gap:6px">${icon("eye")} Vista previa · así lo vende el bot</div>
+      <div style="background:rgba(34,192,121,.12);border-radius:13px;border-top-left-radius:3px;padding:10px 13px;font-size:13px;color:var(--text);line-height:1.5">${pvText}</div>
     </div>`;
-  b.innerHTML=`
-    ${readyBanner}
-    ${vacio?`<div class="armhero">
-      <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
-      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Descríbelo en una frase y la IA rellena las fases por ti (tú revisas y guardas).</div></div>
-      <button id="armHeroBtn" style="flex:none;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-weight:700;font-size:13px;padding:10px 15px">Armar con IA ✨</button>
-    </div>`:""}
-    <p class="hint" style="margin:0 0 16px">Arma tu producto por partes. Toca una sección para completarla; las que aparecen en <b style="color:var(--green,#22c079)">verde</b> ya están listas.</p>
-    ${PH.map(phCard).join("")}
-    ${esRegalo
-      ? `<div class="card" style="border-color:rgba(168,85,247,.4)">
-          <h4 style="margin-top:0">🎁 Esto es un regalo</h4>
-          <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende ni tiene flujo propio: se <b>regala gratis al comprar un producto principal</b>. Ve a ese principal → pestaña <b>Ventas extra</b> → <b>Regalo con la compra</b> y elígelo ahí. ${fisico?"Como es físico, viaja en el mismo paquete del pedido.":"Como es digital, configura arriba el link o archivo que se entrega."}</div>
-        </div>`
-      : esExtra
-      ? `<div class="card" style="border-color:var(--brand-border)">
-          <h4 style="margin-top:0">Este es un complemento</h4>
-          <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende solo: se ofrece <b>enganchado a un producto principal</b> (en la pestaña <b>Ventas extra</b> de ese principal). No necesita su propio flujo — con completar lo de arriba basta.</div>
-        </div>`
-      : `${previewCard}<div class="card sell-card">
-          <div class="sell-hd"><span class="sell-ico">${icon("node")}</span><span class="sell-tt">Poner a vender</span></div>
-          <div id="saludBox" style="margin-top:12px"></div>
-          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin:10px 0">
-            ${fisico
-              ? `Genera el flujo: la IA vende, detecta la zona sin botones, toma los datos conversando, crea el pedido y (en provincia) pide y valida el adelanto. Despachar, guía, saldo y clave los operas tú desde Pedidos.`
-              : `Genera el flujo: la IA vende y responde, detecta el comprobante, lo valida contra el precio exacto y entrega solo. Si el pago no cuadra, lo vuelve a pedir.`}
-          </div>
-          <button class="btn primary" id="genFlow" style="height:46px;font-size:14.5px;padding:0 22px">${fVenta?"Regenerar flujo de venta":"Generar flujo y poner a vender"}</button>
-          ${fVenta?`<div style="font-size:12px;color:var(--faint);margin-top:8px">Ya existe "${esc(fVenta.nombre)}". Regenerar lo reescribe por completo (aplica lo que cambiaste arriba).</div>`:""}
-          ${fVenta && fVenta.estado!=="activo" ? `
-          <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.55">
-            <b style="color:var(--red,#e2564a)">En pausa (borrador): este producto NO vende.</b> El bot manda el saludo y se queda callado.
-            <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Poner a vender</button></div>
-          </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px">
-            <span style="font-size:12.5px;color:var(--green,#22c079);font-weight:600">● Activo — este producto ya vende.</span>
-            <button class="btn" id="pausarVenta" style="height:30px;padding:0 12px;font-size:12.5px">Pausar</button>
-          </div>`:"")}
-        </div>`}`;
+
+  // Columna derecha: poner a vender
+  const faltanTxt = pct>=100 ? "Todo listo — ya puede vender solo." : `Falta${missing.length===1?"":"n"} ${missing.length} cosa${missing.length===1?"":"s"} para que venda solo.`;
+  const sellCard = `<div class="card sell-card" style="margin-bottom:0;display:flex;flex-direction:column">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${faltanTxt}</div>
+      <div id="saludBox"></div>
+      <button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:10px">${fVenta?"Regenerar flujo de venta":"Poner a vender"}</button>
+      <a class="btn" href="probar.html" style="height:42px;width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none">Probar el chat ↗</a>
+      ${fVenta && fVenta.estado!=="activo" ? `
+        <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.5">
+          <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
+          <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Poner a vender</button></div>
+        </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+          <span style="font-size:12.5px;color:var(--green,#22c079);font-weight:600">● Activo — ya vende.</span>
+          <button class="btn" id="pausarVenta" style="height:30px;padding:0 12px;font-size:12.5px">Pausar</button>
+        </div>`:"")}
+    </div>`;
+
+  // Más opciones (colapsable): ventas extra, remarketing, flujos
+  const mas = `<details style="margin-top:16px">
+      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· ventas extra, remarketing, flujos</span></summary>
+      <div class="ini-ph" style="padding:6px;margin-top:6px"><div class="ini-items">
+        ${rowHtml("extras",{label:"Ventas extra",sub:est("extras").msg,opt:true})}
+        ${rowHtml("remarketing",{label:"Remarketing",sub:est("remarketing").msg,opt:true})}
+        ${rowHtml("flujos",{label:"Flujos (editor avanzado)",sub:"Editor visual del flujo de venta",opt:true})}
+      </div></div>
+    </details>`;
+
+  // ── Ensamblado por clase ───────────────────────────────────────────
+  if(esRegalo){
+    b.innerHTML=`${headCard}
+      ${group(fisico?"El regalo":"El regalo y su entrega",[
+        rowHtml("producto",{label:"¿Qué es el regalo?",sub:`${emo}${esc(st.prod.nombre||"regalo")}`,ico:IC.producto,ok:true}),
+        ...(fisico?[]:[rowHtml("opciones",{label:"¿Qué se entrega?",sub:est("opciones").ok?"Entrega lista":"Falta el link o archivo",warn:!est("opciones").ok})])
+      ])}
+      <div class="card" style="border-color:rgba(168,85,247,.4);margin-top:14px">
+        <h4 style="margin-top:0">🎁 Esto es un regalo</h4>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende ni tiene flujo propio: se <b>regala gratis al comprar un producto principal</b>. Ve a ese principal → pestaña <b>Ventas extra</b> → <b>Regalo con la compra</b> y elígelo ahí. ${fisico?"Como es físico, viaja en el mismo paquete del pedido.":"Como es digital, configura arriba el link o archivo que se entrega."}</div>
+      </div>`;
+  } else if(esExtra){
+    b.innerHTML=`${headCard}${armCard}
+      ${group("Tu producto",[qEs,qCuesta,qVar])}
+      ${group("Tu venta",[rIA])}
+      <div class="card" style="border-color:var(--brand-border);margin-top:14px">
+        <h4 style="margin-top:0">Este es un complemento</h4>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende solo: se ofrece <b>enganchado a un producto principal</b> (en la pestaña <b>Ventas extra</b> de ese principal). No necesita su propio flujo — con completar lo de arriba basta.</div>
+      </div>`;
+  } else {
+    b.innerHTML=`${headCard}${armCard}
+      ${group("Tu producto",[qEs,qCuesta,qVar])}
+      ${group("Tu venta",[rIA,rAct])}
+      ${mas}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:18px">${previewCard}${sellCard}</div>`;
+  }
+
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".ini-item").forEach(x=> x.onclick=()=>{ st.tab=x.dataset.t; renderDetail(); });
-  b.querySelectorAll(".ini-ph-hd").forEach(h=> h.onclick=(ev)=>{ if(ev.target.closest(".ini-item"))return; st.tab=h.dataset.first; renderDetail(); });
   if(!esExtra && !esRegalo){
     renderSalud();
     const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
