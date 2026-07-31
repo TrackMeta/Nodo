@@ -147,8 +147,12 @@ const NAV_GROUPS = [
     { id:"palabras",    label:"Palabras clave",       href:"palabras-clave.html", icon:"palabras" },
     { id:"plantillas",  label:"Plantillas",           href:"plantillas.html", icon:"plantillas" },
     { id:"probar",      label:"Probar flujos",        href:"probar.html",     icon:"probar" },
-    { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
     { id:"etiquetas",   label:"Etiquetas",            href:"etiquetas.html",  icon:"etiquetas" },
+  ]},
+  // Avanzado: plomería que el dueño casi nunca toca (los campos se crean solos).
+  // Arranca colapsado para no abrumar; vive acá y no en el menú principal.
+  { key:"avanzado", sec:"Avanzado", items:[
+    { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
   ]},
   { key:"conf", sec:"Configuración", items:[
     { id:"canales",     label:"Canales",              href:"canales.html",    icon:"canales" },
@@ -163,7 +167,7 @@ function closedGroups() {
   // para no abrumar. Si el usuario ya tocó grupos, se respeta su elección.
   try {
     const raw = localStorage.getItem("nodo.navClosed");
-    if (raw == null) return ["auto"];
+    if (raw == null) return ["auto", "avanzado"];
     return JSON.parse(raw);
   } catch { return []; }
 }
