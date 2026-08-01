@@ -497,7 +497,9 @@ function renderProvinciaAhora(cs){
   if(total===0){ panel.style.display="none"; return; }
   panel.style.display="";
   const max=Math.max(1,...rows.map(r=>r.n));
-  el.innerHTML=rows.filter(r=>r.n>0).map(r=>`<div class="drow">
+  // Se muestran TODAS las barras (los 6 pasos), aunque estén en 0: así ves de un
+  // vistazo dónde están tus pedidos y qué pasos están vacíos.
+  el.innerHTML=rows.map(r=>`<div class="drow">
     <div class="dhead"><span class="ddot" style="background:${r.color}"></span><div><div class="dname">${esc(r.label)}</div><div class="dsub">${esc(r.desc)}</div></div></div>
     <div class="dbarwrap"><div class="dbar" style="width:${Math.round(r.n/max*100)}%;background:${r.color}"></div></div>
     <div class="dn">${nf.format(r.n)}</div>
