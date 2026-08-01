@@ -2094,7 +2094,7 @@ async function renderInicio(){
   const mas = `<details style="margin-top:16px">
       <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· regalo, ventas extra, remarketing</span></summary>
       <div class="ini-ph" style="padding:6px;margin-top:6px"><div class="ini-items">
-        ${rowHtml("regalos",{label:"Regalo con la compra",sub:est("regalos").msg,opt:true,tone:"gold",ico:"🎁"})}
+        ${rowHtml("regalos",{label:"Regalo con la compra",sub:est("regalos").msg,opt:true,tone:"gold",ico:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>'})}
         ${rowHtml("extras",{label:"Ventas extra",sub:est("extras").msg,opt:true,tone:"gold"})}
         ${rowHtml("remarketing",{label:"Remarketing",sub:est("remarketing").msg,opt:true,tone:"gold"})}
       </div></div>
@@ -2937,12 +2937,12 @@ function paintOpciones(fisico){
         </label>
         <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}" style="margin-top:7px;border-color:rgba(168,85,247,.35)"/>
       </div>`}
-      ${fisico ? `
+      ${fisico ? (i===0 ? `
       <div style="margin-top:12px;font-size:11.5px;color:var(--faint);line-height:1.55">
         Este producto se <b>envía</b>, así que no entrega nada por el chat: la venta termina cuando se crea el pedido.
         ¿Quieres regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>,
         que sí lo manda cuando el pedido está pagado del todo.
-      </div>`
+      </div>` : "")
       : `
       <label style="margin-top:12px">Qué entrega <span style="color:var(--faint);font-weight:400">(links, archivos, imágenes o videos — se envían al confirmar el pago)</span></label>
       <div class="oe" style="margin-top:5px"></div>
