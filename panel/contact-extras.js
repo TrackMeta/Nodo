@@ -973,21 +973,6 @@ export async function openEditarPedido(o, deps) {
     ? `<span class="pm-zona prov">${icon("building")} Provincia · agencia</span>`
     : `<span class="pm-zona lima">${icon("truck")} Lima · contraentrega</span>`;
 
-  // Variantes del producto (talla/color) para poder corregir lo capturado.
-  let atrDefs = [];
-  try {
-    const { data: pr } = await supa.from("products").select("config").eq("id", o.product_id).maybeSingle();
-    atrDefs = (((pr || {}).config || {}).atributos || [])
-      .map((a) => ({ nombre: a.nombre, vals: Array.isArray(a.valores) ? a.valores : String(a.valores || "").split(",").map((x) => x.trim()).filter(Boolean) }))
-      .filter((a) => a.nombre && a.vals.length);
-  } catch (_) { /* sin variantes */ }
-  const atrHtml = atrDefs.length ? `
-        <div class="pm-sec">
-          <div class="pm-sec-h">${icon("box")} Variante del producto</div>
-          ${atrDefs.map((a, i) => `<label>${esc(a.nombre)}</label>
-            <select id="eAtr${i}"><option value="">— sin especificar —</option>${a.vals.map((val) => `<option${String((s.atributos || {})[a.nombre] || "") === String(val) ? " selected" : ""}>${esc(val)}</option>`).join("")}</select>`).join("")}
-          <div class="hint">Corrige la talla/color si la IA lo anotó mal. Va al rótulo y a la agencia. (El stock no se reajusta solo.)</div>
-        </div>` : "";
 
   // Catálogo del canal → permite CAMBIAR el producto del pedido y AGREGAR
   // extras/regalos a mano. channel_id/version_id no vienen en latestOrder: se leen.
@@ -1000,11 +985,32 @@ export async function openEditarPedido(o, deps) {
   if (channelId) {
     try {
       const { data: prods } = await supa.from("products")
-        .select("id, nombre, emoji, tipo, product_versions(id, nombre, precio)")
+        .select("id, nombre, emoji, tipo, config, product_versions(id, nombre, precio)")
         .eq("channel_id", channelId).order("nombre");
       catalogo = Array.isArray(prods) ? prods : [];
     } catch (_) { /* sin catálogo → no se ofrece cambiar de producto */ }
   }
+  // Ejes de variante (talla/color…) de un producto del catálogo.
+  const ejesDe = (pid) => {
+    const pr = catalogo.find((x) => String(x.id) === String(pid));
+    const atrs = (pr && pr.config && Array.isArray(pr.config.atributos)) ? pr.config.atributos : [];
+    return atrs.map((a) => ({ nombre: a.nombre, vals: Array.isArray(a.valores) ? a.valores : String(a.valores || "").split(",").map((s) => s.trim()).filter(Boolean) }))
+      .filter((a) => a.nombre && a.vals.length);
+  };
+  // stock_key "Talla=m|Color=rojo" → { Talla:"m", Color:"rojo" } (valores en minúscula).
+  const parseKey = (key) => { const o = {}; String(key || "").split("|").forEach((p) => { const i = p.indexOf("="); if (i > 0) o[p.slice(0, i)] = p.slice(i + 1); }); return o; };
+  // Selects de variante para un producto: clase `cls` para recolectarlos, valores
+  // actuales `sel` ({Eje:valor}) preseleccionados por coincidencia sin distinguir may/min.
+  const varSelectsHtml = (pid, sel, cls) => ejesDe(pid).map((a) =>
+    `<select class="${cls}" data-eje="${esc(a.nombre)}" style="min-width:82px;font-size:12px"><option value="">${esc(a.nombre)}…</option>${a.vals.map((val) => `<option${String((sel || {})[a.nombre] || "").toLowerCase() === String(val).toLowerCase() ? " selected" : ""}>${esc(val)}</option>`).join("")}</select>`).join("");
+  // Variante del producto PRINCIPAL (talla/color) → shipping.atributos. Se re-renderiza
+  // si se cambia el producto. Cambiarla ahora SÍ ajusta el stock (reconciliación).
+  const atrHtml = `
+        <div class="pm-sec" id="eAtrSec" ${ejesDe(o.product_id).length ? "" : 'style="display:none"'}>
+          <div class="pm-sec-h">${icon("box")} Variante del producto</div>
+          <div id="eAtrWrap" style="display:flex;gap:8px;flex-wrap:wrap">${varSelectsHtml(o.product_id, s.atributos || {}, "eatr-ppal")}</div>
+          <div class="hint">Corrige la talla/color: ahora ajusta el stock (devuelve la vieja, descuenta la nueva).</div>
+        </div>`;
   const versionsFor = (pid) => { const pr = catalogo.find((x) => String(x.id) === String(pid)); return (pr && Array.isArray(pr.product_versions)) ? pr.product_versions : []; };
   const precioVer = (pid, vid) => { const vv = versionsFor(pid).find((x) => String(x.id) === String(vid)); return vv && vv.precio != null && vv.precio !== "" ? Number(vv.precio) : null; };
   const verOpts = (pid, selVid) => `<option value="">— sin presentación —</option>` + versionsFor(pid).map((vv) => `<option value="${esc(vv.id)}"${String(vv.id) === String(selVid) ? " selected" : ""}>${esc(vv.nombre || "Única")}${vv.precio != null && vv.precio !== "" ? ` · S/ ${esc(vv.precio)}` : ""}</option>`).join("");
@@ -1015,7 +1021,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Producto</label><select id="eProd">${catalogo.map((pr) => `<option value="${esc(pr.id)}"${String(pr.id) === String(o.product_id) ? " selected" : ""}>${esc([pr.emoji, pr.nombre].filter(Boolean).join(" "))}</option>`).join("")}</select></div>
             <div><label>Presentación</label><select id="eVer">${verOpts(o.product_id, versionId)}</select></div>
           </div>
-          <div class="hint">Cambiar el producto o la presentación recalcula el <b>precio base</b> (edítalo abajo si hace falta). El stock y el saldo no se reajustan solos.</div>
+          <div class="hint">Cambiar el producto o la presentación recalcula el <b>precio base</b> (edítalo abajo si hace falta) y <b>ajusta el stock</b> (devuelve el del producto viejo, descuenta el nuevo). El saldo lo ajustas a mano.</div>
         </div>` : "";
 
   // Ventas extra y regalos (order_bumps): quitar/corregir los existentes + AGREGAR nuevos a mano.
@@ -1028,11 +1034,15 @@ export async function openEditarPedido(o, deps) {
   const bumpRow = (b, i) => {
     const esRegalo = b.regalo === true || Number(b.precio || 0) === 0;
     const nom = String(b.nombre || (esRegalo ? "Regalo" : "Extra")).replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "").replace(/\s*\((?:extra|regalo)\)\s*/ig, " ").trim();
-    return `<div class="eb-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+    // Si el producto del bump tiene variantes, muestra sus selects (preseleccionados
+    // desde su stock_key) para poder corregir la talla/color y reajustar el stock.
+    const varSel = (b.product_id && !b.stock_pendiente) ? varSelectsHtml(b.product_id, parseKey(b.stock_key), "ebx-var") : "";
+    return `<div class="eb-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap">
       <span>${esRegalo ? "🎁" : "➕"}</span>
       <span style="flex:1;min-width:0;font-size:13px">${esc(nom)}${esRegalo ? ` <span style="color:var(--green)">Gratis</span>` : ""}</span>
       ${esRegalo ? "" : `<span style="font-size:12px;color:var(--muted)">S/</span><input class="eb-precio" type="number" step="0.1" value="${esc(b.precio ?? "")}" style="width:72px"/>`}
       <button type="button" class="eb-del" title="Quitar del pedido" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
+      ${varSel ? `<div class="ebx-vars" style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;padding-left:24px">${varSel}</div>` : ""}
     </div>`;
   };
   // <option>s del catálogo para las filas nuevas (autocompletan nombre + precio).
@@ -1047,6 +1057,7 @@ export async function openEditarPedido(o, deps) {
       <span style="font-size:12px;color:var(--muted)">S/</span><input class="ebn-precio" type="number" step="0.1" placeholder="0" style="width:60px"/>
       <label style="display:flex;align-items:center;gap:3px;font-size:12px;white-space:nowrap"><input type="checkbox" class="ebn-regalo"/> Regalo</label>
       <button type="button" class="ebn-del" title="Quitar" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
+      <div class="ebn-vars" style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;padding-left:2px"></div>
     </div>`;
   const bumpHtml = `
         <div class="pm-sec">
@@ -1054,7 +1065,7 @@ export async function openEditarPedido(o, deps) {
           <div id="eBumps">${bumps0.map((b, i) => bumpRow(b, i)).join("")}</div>
           <div id="eBumpsNew"></div>
           <button type="button" id="eAddBump" style="margin-top:2px;border:1px dashed var(--line,#d0d0d0);background:transparent;color:var(--accent,#2563eb);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px">＋ Agregar extra o regalo</button>
-          <div class="hint">Agrega un extra/regalo a mano, quita (✕) uno puesto por error o corrige su precio. El <b>saldo se recalcula solo</b>; el stock no se reajusta.</div>
+          <div class="hint">Agrega un extra/regalo a mano, quita (✕) uno puesto por error o corrige su precio. El <b>saldo se recalcula solo</b>; si el extra es un producto del catálogo con talla/color, elige la variante y el <b>stock se ajusta</b>.</div>
         </div>`;
 
   return new Promise((resolve) => {
@@ -1159,7 +1170,13 @@ export async function openEditarPedido(o, deps) {
       const inp = g("#eAmountL");
       if (pr != null && inp) inp.value = pr;
     };
-    if (g("#eProd")) g("#eProd").onchange = () => { const pid = g("#eProd").value; g("#eVer").innerHTML = verOpts(pid, ""); sugerirImporte(); };
+    if (g("#eProd")) g("#eProd").onchange = () => {
+      const pid = g("#eProd").value; g("#eVer").innerHTML = verOpts(pid, ""); sugerirImporte();
+      // Re-render de la variante del principal para el nuevo producto (vacía).
+      const ej = ejesDe(pid);
+      if (g("#eAtrSec")) g("#eAtrSec").style.display = ej.length ? "" : "none";
+      if (g("#eAtrWrap")) g("#eAtrWrap").innerHTML = varSelectsHtml(pid, {}, "eatr-ppal");
+    };
     if (g("#eVer")) g("#eVer").onchange = sugerirImporte;
 
     // Agregar extra/regalo a mano: fila con producto del catálogo (autocompleta
@@ -1169,6 +1186,9 @@ export async function openEditarPedido(o, deps) {
       sel.onchange = () => {
         const opt = sel.selectedOptions[0];
         if (opt && opt.value) { if (!nom.value) nom.value = opt.dataset.nom || opt.textContent.trim(); if (!reg.checked && pre.value === "" && opt.dataset.precio) pre.value = opt.dataset.precio; }
+        // Producto con variantes → mostrar sus selects (obligatorios al guardar).
+        const vwrap = row.querySelector(".ebn-vars");
+        if (vwrap) vwrap.innerHTML = (opt && opt.value) ? varSelectsHtml(opt.value, {}, "ebnx-var") : "";
         recalcSaldo();
       };
       reg.onchange = () => { if (reg.checked) { pre.value = ""; pre.disabled = true; } else { pre.disabled = false; } recalcSaldo(); };
@@ -1183,10 +1203,11 @@ export async function openEditarPedido(o, deps) {
     g(".save").onclick = async () => {
       const numU = (id) => { const x = g(id).value; return x === "" ? null : Number(x); };
       const ship = { cliente: g("#eNom").value.trim(), tel: g("#eTel").value.trim(), zona };
-      // Variante (talla/color) corregida → shipping.atributos (va al rótulo/agencia).
-      if (atrDefs.length) {
+      // Variante (talla/color) del principal → shipping.atributos (rótulo/agencia/stock).
+      const ejesP = ejesDe(g("#eProd") ? g("#eProd").value : o.product_id);
+      if (ejesP.length) {
         const at = { ...(s.atributos || {}) };
-        atrDefs.forEach((a, i) => { const el = g("#eAtr" + i); const v = el ? el.value.trim() : ""; if (v) at[a.nombre] = v; else delete at[a.nombre]; });
+        ov.querySelectorAll(".eatr-ppal").forEach((sl) => { const v = sl.value.trim(); if (v) at[sl.dataset.eje] = v; else delete at[sl.dataset.eje]; });
         ship.atributos = at;
       }
       let amount;
@@ -1221,30 +1242,55 @@ export async function openEditarPedido(o, deps) {
       }
       if (amount !== undefined) body.amount = amount;
       // Ventas extra / regalos: las que quedaron (las quitadas con ✕ ya no están en
-      // el DOM, con el precio corregido) + las AGREGADAS a mano. Un extra/regalo
-      // manual va sin product_id a propósito: NO descuenta stock (se ajusta aparte).
+      // el DOM, con el precio corregido) + las AGREGADAS a mano. La variante elegida
+      // va en `_attrs`; order-update la traduce a stock_key y ajusta el inventario.
+      // Un extra de producto del catálogo lleva product_id → descuenta stock; uno
+      // escrito a mano (sin product_id) no toca inventario.
       const kept = [];
+      let faltaVar = false;
+      const leerVars = (row, cls) => {
+        const sels = row.querySelectorAll("." + cls);
+        if (!sels.length) return null;
+        const at = {};
+        sels.forEach((sl) => { const v = sl.value.trim(); if (v) at[sl.dataset.eje] = v; else faltaVar = true; });
+        return at;
+      };
       ov.querySelectorAll("#eBumps .eb-row").forEach((row) => {
         const b = { ...bumps0[Number(row.dataset.idx)] };
         const pin = row.querySelector(".eb-precio");
         if (pin) b.precio = pin.value === "" ? 0 : Number(pin.value);
+        const at = leerVars(row, "ebx-var");
+        if (at) b._attrs = at;
         kept.push(b);
       });
       ov.querySelectorAll("#eBumpsNew .eb-new").forEach((row) => {
         const regalo = row.querySelector(".ebn-regalo").checked;
         const selOpt = row.querySelector(".ebn-prod").selectedOptions[0];
-        const fromProd = (selOpt && selOpt.value) ? (selOpt.dataset.nom || selOpt.textContent.trim()) : "";
+        const pid = (selOpt && selOpt.value) ? selOpt.value : "";
+        const fromProd = pid ? (selOpt.dataset.nom || selOpt.textContent.trim()) : "";
         const nombre = row.querySelector(".ebn-nom").value.trim() || fromProd;
         if (!nombre) return;
         const precio = regalo ? 0 : (Number(row.querySelector(".ebn-precio").value) || 0);
-        kept.push({ nombre, precio, regalo, manual: true });
+        const nuevo = { nombre, precio, regalo, manual: true };
+        if (pid) nuevo.product_id = pid;
+        const at = leerVars(row, "ebnx-var");
+        if (at) nuevo._attrs = at;
+        kept.push(nuevo);
       });
+      if (faltaVar) { toast("Elige la talla/color de los productos con variante", true); return; }
       // Solo mando order_bumps si había antes (aunque los borre todos → []) o si
       // agregué algo. Así no piso con [] un pedido que nunca tuvo extras.
       if (bumps0.length || kept.length) body.order_bumps = kept;
       const btn = g(".save"); btn.disabled = true; btn.textContent = "Guardando…";
       const { data, error } = await supa.functions.invoke("order-update", { body });
-      if (!error && !(data && data.error)) { toast("Pedido actualizado ✓"); cerrar(true); }
+      if (!error && !(data && data.error)) {
+        const al = (data && Array.isArray(data.stock_alerts)) ? data.stock_alerts : [];
+        if (al.length) {
+          const txt = al.map((x) => `${x.nombre}${x.key !== "_" ? " (" + String(x.key).replace(/=/g, " ").replace(/\|/g, " · ") + ")" : ""}: ${x.agotado ? "AGOTADO" : "quedan " + x.restante}`).join("; ");
+          toast("📦 Stock bajo — " + txt, true);
+        } else { toast("Pedido actualizado ✓"); }
+        cerrar(true);
+      }
       else { toast((error && error.message) || (data && data.error) || "No se pudo actualizar", true); btn.disabled = false; btn.textContent = "Guardar cambios"; }
     };
     document.body.appendChild(ov);

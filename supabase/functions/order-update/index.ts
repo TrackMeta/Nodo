@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
 
   const { data: order } = await db.from("orders")
-    .select("id, channel_id, contact_id, estado, shipping, amount, currency")
+    .select("id, channel_id, contact_id, estado, shipping, amount, currency, product_id, order_bumps")
     .eq("id", body.order_id).maybeSingle();
   if (!order) return json({ error: "no_existe" }, 404);
   // Multi-tenant: si entra un humano (no el service-role interno del Copiloto),
@@ -318,6 +318,21 @@ Deno.serve(async (req) => {
     }
   }
 
+  // 📦 Reconciliar stock desde "Editar pedido": si cambió la variante del principal,
+  // se agregó/quitó un extra o se editó la variante de un regalo/extra, ajusta el
+  // inventario (descuenta lo nuevo, devuelve lo removido). Idempotente y con guardias
+  // adentro (no toca pedidos no reservados ni perdidos). No bloquea la respuesta.
+  let stockAlerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
+  if (body.shipping || Array.isArray(body.order_bumps) || body.product_id) {
+    try {
+      const shipFinal = (patch.shipping as any) ?? (order as any).shipping;
+      const bumpsFinal = Array.isArray(body.order_bumps) ? body.order_bumps : ((order as any).order_bumps ?? []);
+      const prodFinal = (patch.product_id as string) ?? (order as any).product_id ?? null;
+      const estadoFinal = String(newEstado ?? (order as any).estado);
+      stockAlerts = await reconciliarStockManual(db, order.id, estadoFinal, shipFinal, bumpsFinal, prodFinal);
+    } catch (e) { console.error("[order-update] reconciliar stock:", (e as any)?.message ?? e); }
+  }
+
   return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected,
-    aviso_enviado: avisoEnviado, aviso_error: avisoError });
+    aviso_enviado: avisoEnviado, aviso_error: avisoError, stock_alerts: stockAlerts });
 });

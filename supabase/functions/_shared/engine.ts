@@ -511,6 +511,99 @@ async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
   } catch (e) { console.error("[reconciliarStockExtras]", (e as any)?.message ?? e); }
 }
 
+// Reconciliación de stock desde "Editar pedido" (panel). Reconstruye el stock
+// DESEADO del pedido (el principal por su variante + cada bump físico por la suya)
+// y lo compara contra shipping.stock_mov para aplicar SOLO la diferencia: descuenta
+// lo nuevo (extra agregado, variante cambiada) y devuelve lo que se quitó/cambió.
+// Un mecanismo para los tres (principal, regalos, extras). Idempotente: si nada
+// cambió, el diff es vacío y no se toca inventario. NO reconcilia pedidos que aún
+// no reservaron (esperando_adelanto), ya devueltos o perdidos. No bloquea por falta
+// de stock (regla de Rodrigo): descuenta igual y devuelve las alertas para avisar.
+// El panel manda la variante elegida en cada bump como `_attrs` ({Eje: valor}); acá
+// se traduce a stock_key con la MISMA función del motor (stockKeyEngine).
+export async function reconciliarStockManual(
+  db: SupabaseClient,
+  orderId: string,
+  estado: string,
+  shipping: any,
+  bumps: any[],
+  productId: string | null,
+): Promise<Array<{ nombre: string; key: string; restante: number; agotado: boolean }>> {
+  const ship = shipping || {};
+  const cfgCache = new Map<string, any>();
+  const cfgDe = async (pid: string) => {
+    if (cfgCache.has(pid)) return cfgCache.get(pid);
+    const { data } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+    const cfg = (data as any)?.config || {};
+    cfgCache.set(pid, cfg);
+    return cfg;
+  };
+
+  // Resolver SIEMPRE la variante elegida (_attrs) → stock_key, aunque no toquemos
+  // stock: así no quedan `_attrs` colgando en los bumps guardados.
+  const nb = Array.isArray(bumps) ? bumps.map((b) => ({ ...b })) : [];
+  for (const b of nb) {
+    if (b && b._attrs && b.product_id) {
+      const cfg = await cfgDe(b.product_id);
+      const eatrs = normalizeAtributos(cfg.atributos).filter((a: any) => a.valores?.length);
+      b.stock_key = stockKeyEngine(eatrs, b._attrs);
+    }
+    if (b) delete b._attrs;
+  }
+
+  // ¿Se puede tocar el inventario? Solo si el pedido YA reservó y sigue vivo.
+  const noStock = !ship.stock_descontado || ship.stock_devuelto ||
+    ["esperando_adelanto", "cancelado", "anulada", "rechazado", "no_recogido"].includes(String(estado));
+
+  let alerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
+  let stockMov = Array.isArray(ship.stock_mov) ? ship.stock_mov : [];
+
+  if (!noStock) {
+    const actual: Array<{ product_id: string; key: string; unidades: number }> =
+      (Array.isArray(ship.stock_mov) ? ship.stock_mov : []).filter((m: any) => m?.product_id && m?.key);
+    const deseado: Array<{ product_id: string; key: string; unidades: number }> = [];
+    // Principal (si es físico con stock). Cantidad = la que ya tenía (default 1).
+    if (productId) {
+      const cfg = await cfgDe(productId);
+      if (cfg.stock && typeof cfg.stock === "object" && !Array.isArray(cfg.stock)) {
+        const prev = actual.find((m) => m.product_id === productId);
+        const uds = prev && Number(prev.unidades) > 1 ? Number(prev.unidades) : 1;
+        deseado.push({ product_id: productId, key: stockKeyEngine(cfg.atributos, ship.atributos), unidades: uds });
+      }
+    }
+    // Bumps físicos que descuentan (regalos y extras; no digitales, no pendientes de talla).
+    for (const b of nb) {
+      if (b?.product_id && b?.digital !== true && !b?.stock_pendiente) {
+        deseado.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
+      }
+    }
+    // Diff por (product_id, key): lo que falta se descuenta, lo que sobra se devuelve.
+    // Agrupa por (product_id, key). El id del Map es solo para agrupar; las partes
+    // van en el VALOR para no re-parsear (el key puede contener cualquier carácter).
+    const agg = (list: typeof actual) => {
+      const m = new Map<string, { product_id: string; key: string; unidades: number }>();
+      for (const x of list) {
+        const id = JSON.stringify([x.product_id, x.key]);
+        const cur = m.get(id);
+        if (cur) cur.unidades += Number(x.unidades) || 0;
+        else m.set(id, { product_id: x.product_id, key: x.key, unidades: Number(x.unidades) || 0 });
+      }
+      return m;
+    };
+    const A = agg(actual), D = agg(deseado);
+    const desc: typeof actual = [], dev: typeof actual = [];
+    for (const [id, d] of D) { const av = A.get(id)?.unidades || 0; if (d.unidades > av) desc.push({ product_id: d.product_id, key: d.key, unidades: d.unidades - av }); }
+    for (const [id, a] of A) { const dv = D.get(id)?.unidades || 0; if (a.unidades > dv) dev.push({ product_id: a.product_id, key: a.key, unidades: a.unidades - dv }); }
+    if (desc.length) alerts = await aplicarStock(db, desc, -1);
+    if (dev.length) await aplicarStock(db, dev, 1);
+    stockMov = deseado;
+  }
+
+  // Persistir: bumps con stock_key resuelto (sin _attrs) + el stock_mov reconciliado.
+  await db.from("orders").update({ order_bumps: nb, shipping: { ...ship, stock_mov: stockMov } }).eq("id", orderId);
+  return alerts;
+}
+
 // ── Pasar la conversación a un humano ──────────────────────────────
 // Dos disparadores distintos, porque son dos cosas distintas:
 //   · Lo PIDE explícito → lista de frases, determinista. Si alguien pide hablar
