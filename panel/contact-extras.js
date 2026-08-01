@@ -288,7 +288,11 @@ export function printRotulo(o, remitente) {
   const c = o.contact || {}, p = o.product || {}, v = o.version || {}, s = o.shipping || {};
   const zona = O.zonaDe(o);
   const rem = (remitente || "").trim() || "Remitente";
-  const tel = c.wa_id ? "+" + c.wa_id : "—";
+  // Teléfono del rótulo: el CAPTURADO (shipping.tel) manda — es el que el courier
+  // llama. Clave para el cliente sin número (username/BSUID): ahí c.wa_id es un
+  // BSUID, no un teléfono. Cae a telefono/wa_id real solo si no hay capturado.
+  const telNum = s.tel || c.telefono || (c.wa_id === "webchat-test" ? "" : c.wa_id);
+  const tel = telNum ? "+" + telNum : "—";
   const pedido = [p.emoji, p.nombre, v.nombre ? "· " + v.nombre : ""].filter(Boolean).join(" ");
   const nro = (o.order_id || o.id || "").toString().slice(0, 8).toUpperCase();
   const row = (k, val, big) => val ? `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}">${esc(val)}</td></tr>` : "";
