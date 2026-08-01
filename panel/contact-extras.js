@@ -965,6 +965,42 @@ export async function openEditarPedido(o, deps) {
   const zonaBadge = zona === "provincia"
     ? `<span class="pm-zona prov">${icon("building")} Provincia · agencia</span>`
     : `<span class="pm-zona lima">${icon("truck")} Lima · contraentrega</span>`;
+
+  // Variantes del producto (talla/color) para poder corregir lo capturado.
+  let atrDefs = [];
+  try {
+    const { data: pr } = await supa.from("products").select("config").eq("id", o.product_id).maybeSingle();
+    atrDefs = (((pr || {}).config || {}).atributos || [])
+      .map((a) => ({ nombre: a.nombre, vals: Array.isArray(a.valores) ? a.valores : String(a.valores || "").split(",").map((x) => x.trim()).filter(Boolean) }))
+      .filter((a) => a.nombre && a.vals.length);
+  } catch (_) { /* sin variantes */ }
+  const atrHtml = atrDefs.length ? `
+        <div class="pm-sec">
+          <div class="pm-sec-h">${icon("box")} Variante del producto</div>
+          ${atrDefs.map((a, i) => `<label>${esc(a.nombre)}</label>
+            <select id="eAtr${i}"><option value="">— sin especificar —</option>${a.vals.map((val) => `<option${String((s.atributos || {})[a.nombre] || "") === String(val) ? " selected" : ""}>${esc(val)}</option>`).join("")}</select>`).join("")}
+          <div class="hint">Corrige la talla/color si la IA lo anotó mal. Va al rótulo y a la agencia. (El stock no se reajusta solo.)</div>
+        </div>` : "";
+
+  // Ventas extra y regalos (order_bumps): quitar los puestos por error o corregir precio.
+  const bumps0 = Array.isArray(o.order_bumps) ? o.order_bumps.map((b) => ({ ...b })) : [];
+  const bumpRow = (b, i) => {
+    const esRegalo = b.regalo === true || Number(b.precio || 0) === 0;
+    const nom = String(b.nombre || (esRegalo ? "Regalo" : "Extra")).replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "").replace(/\s*\((?:extra|regalo)\)\s*/ig, " ").trim();
+    return `<div class="eb-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+      <span>${esRegalo ? "🎁" : "➕"}</span>
+      <span style="flex:1;min-width:0;font-size:13px">${esc(nom)}${esRegalo ? ` <span style="color:var(--green)">Gratis</span>` : ""}</span>
+      ${esRegalo ? "" : `<span style="font-size:12px;color:var(--muted)">S/</span><input class="eb-precio" type="number" step="0.1" value="${esc(b.precio ?? "")}" style="width:72px"/>`}
+      <button type="button" class="eb-del" title="Quitar del pedido" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
+    </div>`;
+  };
+  const bumpHtml = bumps0.length ? `
+        <div class="pm-sec">
+          <div class="pm-sec-h">➕ Ventas extra y regalos</div>
+          <div id="eBumps">${bumps0.map((b, i) => bumpRow(b, i)).join("")}</div>
+          <div class="hint">Quita (✕) un extra puesto por error o corrige su precio. Si quitas algo, ajusta el saldo a mano; el stock no se reajusta solo.</div>
+        </div>` : "";
+
   return new Promise((resolve) => {
     const ov = document.createElement("div"); ov.className = "overlay";
     ov.innerHTML = `<div class="modal"><div class="pedmodal">
@@ -981,6 +1017,8 @@ export async function openEditarPedido(o, deps) {
             <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel || c.wa_id || "")}"/></div>
           </div>
         </div>
+        ${atrHtml}
+        ${bumpHtml}
         <div class="pm-sec" id="eLima" ${zona === "provincia" ? 'style="display:none"' : ""}>
           <div class="pm-sec-h">${icon("pin")} Entrega en Lima</div>
           <label>Dirección</label><input id="eDir" value="${esc(s.direccion || "")}"/>
@@ -1038,9 +1076,16 @@ export async function openEditarPedido(o, deps) {
     const cerrar = (val) => { ov.remove(); resolve(val); };
     ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
     g(".cancel").onclick = () => cerrar(false);
+    ov.querySelectorAll(".eb-del").forEach((btn) => { btn.onclick = () => { const r = btn.closest(".eb-row"); if (r) r.remove(); }; });
     g(".save").onclick = async () => {
       const numU = (id) => { const x = g(id).value; return x === "" ? null : Number(x); };
       const ship = { cliente: g("#eNom").value.trim(), tel: g("#eTel").value.trim(), zona };
+      // Variante (talla/color) corregida → shipping.atributos (va al rótulo/agencia).
+      if (atrDefs.length) {
+        const at = { ...(s.atributos || {}) };
+        atrDefs.forEach((a, i) => { const el = g("#eAtr" + i); const v = el ? el.value.trim() : ""; if (v) at[a.nombre] = v; else delete at[a.nombre]; });
+        ship.atributos = at;
+      }
       let amount;
       if (zona === "provincia") {
         const dst = g("#eDestino").value.trim();
@@ -1058,6 +1103,18 @@ export async function openEditarPedido(o, deps) {
       }
       const body = { order_id: o.id, shipping: ship };
       if (amount !== undefined) body.amount = amount;
+      // Ventas extra / regalos: manda las que quedaron (las quitadas con ✕ ya no
+      // están en el DOM), con el precio corregido.
+      if (bumps0.length) {
+        const kept = [];
+        ov.querySelectorAll("#eBumps .eb-row").forEach((row) => {
+          const b = { ...bumps0[Number(row.dataset.idx)] };
+          const pin = row.querySelector(".eb-precio");
+          if (pin) b.precio = pin.value === "" ? 0 : Number(pin.value);
+          kept.push(b);
+        });
+        body.order_bumps = kept;
+      }
       const btn = g(".save"); btn.disabled = true; btn.textContent = "Guardando…";
       const { data, error } = await supa.functions.invoke("order-update", { body });
       if (!error && !(data && data.error)) { toast("Pedido actualizado ✓"); cerrar(true); }

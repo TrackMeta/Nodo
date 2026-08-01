@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
 
   let body: {
     order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number; resume?: boolean;
+    order_bumps?: unknown[];
     reject?: string; reject_motivo?: string;
     // Cómo avisarle al cliente este cambio (lo elige el humano al mover el pedido).
     aviso?: { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
@@ -69,6 +70,10 @@ Deno.serve(async (req) => {
     patch.shipping = { ...((order as any).shipping ?? {}), ...body.shipping };
   }
   if (typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount >= 0) patch.amount = body.amount;
+  // Editar los order_bumps a mano desde "Editar pedido" (quitar un extra puesto
+  // por error, corregir un precio). OJO: no reconcilia stock ni el saldo — eso lo
+  // ajusta el operador aparte.
+  if (Array.isArray(body.order_bumps)) patch.order_bumps = body.order_bumps;
   const newEstado = body.estado && body.estado !== (order as any).estado ? body.estado : null;
   if (newEstado) {
     patch.estado = newEstado;
