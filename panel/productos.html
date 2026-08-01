@@ -1238,11 +1238,14 @@ async function renderRemarketing(host){
   };
 
   // ── Secuencias por audiencia (mapa por producto) ──
+  // "Provincia sin adelanto" es un segmento FÍSICO (pedido a provincia con
+  // adelanto). En digital no existe (se entrega al instante) → no se muestra.
+  const fisicoRem=(st.prod.tipo||"digital")==="fisico";
   const REM_SEG=[
     ["general","🌐 General (comodín)","Para cualquiera que se interesó. La red de seguridad."],
     ["solo_inicio","🌱 Curioso","Solo tiró la palabra clave y no volvió."],
     ["interactuo","💬 Interactuó","Conversó o dejó un dato, pero no compró."],
-    ["provincia_sin_adelanto","📦 Provincia sin adelanto","Se activa apenas el cliente da su DNI (aunque todavía no complete el pedido): así también persigues al que se va antes de dar la sede. No le escribe mientras siga conversando, y sale solo apenas paga el adelanto."],
+    ...(fisicoRem ? [["provincia_sin_adelanto","📦 Provincia sin adelanto","Se activa apenas el cliente da su DNI (aunque todavía no complete el pedido): así también persigues al que se va antes de dar la sede. No le escribe mientras siga conversando, y sale solo apenas paga el adelanto."]] : []),
   ];
   const remMap=()=>{ c.remarketing_seqs=(c.remarketing_seqs&&typeof c.remarketing_seqs==="object")?c.remarketing_seqs:{}; return c.remarketing_seqs; };
   // Compat: la general vieja vivía en remarketing_seq_id.
