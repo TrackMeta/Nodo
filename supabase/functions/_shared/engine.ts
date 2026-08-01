@@ -561,9 +561,10 @@ export async function reconciliarStockManual(
   const reservado = ship.stock_descontado && !perdido && !esperando;
 
   let alerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
-  const patchShip: any = { ...ship };
+  const upd: any = { order_bumps: nb };
 
   if (reservado || (esperando && !perdido)) {
+    const patchShip: any = { ...ship };
     // Stock DESEADO del pedido: principal (por su variante) + bumps físicos.
     const base = reservado ? (Array.isArray(ship.stock_mov) ? ship.stock_mov : []) : (Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : []);
     const actual: Array<{ product_id: string; key: string; unidades: number }> = base.filter((m: any) => m?.product_id && m?.key);
@@ -608,10 +609,13 @@ export async function reconciliarStockManual(
       // esperando_adelanto: no se descuenta todavía; se guarda el PLAN actualizado.
       patchShip.stock_mov_plan = deseado;
     }
+    upd.shipping = patchShip;
   }
 
-  // Persistir: bumps con stock_key resuelto (sin _attrs) + el stock reconciliado.
-  await db.from("orders").update({ order_bumps: nb, shipping: patchShip }).eq("id", orderId);
+  // Persistir: bumps con stock_key resuelto (sin _attrs). El shipping SOLO se toca si
+  // reconciliamos stock; así no pisamos stock_devuelto/otros cambios de shipping que
+  // haya hecho el patch principal o una cancelación en la misma llamada.
+  await db.from("orders").update(upd).eq("id", orderId);
   return alerts;
 }
 

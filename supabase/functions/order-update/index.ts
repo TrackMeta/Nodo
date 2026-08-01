@@ -76,8 +76,8 @@ Deno.serve(async (req) => {
   // ajusta el operador aparte.
   if (Array.isArray(body.order_bumps)) patch.order_bumps = body.order_bumps;
   // Cambiar el producto del pedido desde "Editar pedido". Se valida que el nuevo
-  // producto pertenezca al MISMO canal del pedido (no colar uno ajeno). El stock y
-  // el saldo NO se reconcilian solos: los ajusta el operador (el amount va aparte).
+  // producto pertenezca al MISMO canal del pedido (no colar uno ajeno). El stock se
+  // reconcilia abajo (reconciliarStockManual); el saldo/amount los ajusta el operador.
   if (typeof body.product_id === "string" && body.product_id) {
     const { data: prod } = await db.from("products").select("id")
       .eq("id", body.product_id).eq("channel_id", (order as any).channel_id).maybeSingle();
