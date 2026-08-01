@@ -1425,7 +1425,7 @@ export function copilotoCardHtml(o, et, fallbackImg) {
     <div class="cx-cop2-amt"><span class="cx-cop2-lbl">${esc(montoLbl)}</span><span class="cx-cop2-val">${monto != null && monto !== "" ? sym + " " + esc(monto) : "—"}</span></div>
     ${s.clave_recojo ? `<div class="cx-cop2-amt"><span class="cx-cop2-lbl">Clave de recojo</span><span class="cx-cop2-val" style="font-size:15px;color:var(--green)">${esc(s.clave_recojo)}</span></div>` : ""}
     ${ocrVerdictHtml(o, et, sym)}
-    ${needClave ? `<div class="cx-cop2-warn">${ROBOT}<span>Este pedido no tiene clave de recojo — ponla antes de aprobar.</span></div>` : ""}
+    ${needClave ? `<div style="margin-top:8px"><label style="display:block;font-size:11.5px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">🔑 Clave de recojo — escríbela y aprueba</label><input class="cx-clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface,transparent);color:var(--text);box-sizing:border-box"/></div>` : ""}
     <div class="cx-cop2-acts">${copilotoBtns(et)}</div>
   </div>`;
 }
@@ -1444,9 +1444,9 @@ export function wireCopiloto(root, o, et, deps) {
     if (data && data.error) { toast(data.error, true); return null; }
     return data;
   };
-  const aprobar = async (nuevo, titulo, detalle) => {
+  const aprobar = async (nuevo, titulo, detalle, extraShip) => {
     if (!await confirmDialog({ title: titulo, message: `${c.nombre || "Cliente"} — ${detalle}`, confirmText: "Confirmar" })) return;
-    const r = await update({ order_id: o.id, estado: nuevo });
+    const r = await update({ order_id: o.id, estado: nuevo, ...(extraShip ? { shipping: extraShip } : {}) });
     if (r) { toast(r.flow_started ? "Listo ✓ · el bot le está escribiendo" : "Listo ✓"); reload && reload(); }
   };
   const aprobarExtra = async () => {
@@ -1495,7 +1495,21 @@ export function wireCopiloto(root, o, et, deps) {
   if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }
   else if (et.id === "extra") { b("ok").onclick = aprobarExtra; b("no").onclick = () => rechazar("extra"); }
   else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para despachar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
-  else if (et.id === "saldo") { b("ok").onclick = () => aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente."); b("no").onclick = () => rechazar("saldo"); }
+  else if (et.id === "saldo") {
+    b("ok").onclick = () => {
+      // Si el pedido aún no tiene clave, se escribe en el input del propio card y
+      // se guarda junto con la aprobación (un solo paso, sin abrir "Editar pedido").
+      const claveIn = el.querySelector(".cx-clave-in");
+      let extraShip;
+      if (claveIn) {
+        const v = claveIn.value.trim();
+        if (!v) { toast("Escribe la clave de recojo antes de aprobar", true); claveIn.focus(); return; }
+        extraShip = { clave_recojo: v };
+      }
+      aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", extraShip);
+    };
+    b("no").onclick = () => rechazar("saldo");
+  }
   else if (et.id === "despachar") { b("desp").onclick = despachar; }
   else { b("lleg").onclick = avisarLlegada; }
 }

@@ -277,7 +277,7 @@ function card(o,et){
       </div>
       ${iaBox}
       ${dudas.map(d=>`<div class="flag">${icon("alert")} ${esc(d)}</div>`).join("")}
-      ${(et.id==="saldo"&&!s.clave_recojo)?`<div class="flag">${icon("alert")} Este pedido no tiene clave de recojo cargada — ponela antes de aprobar.</div>`:""}
+      ${(et.id==="saldo"&&!s.clave_recojo)?`<div style="margin-top:10px"><label style="display:block;font-size:12px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">🔑 Clave de recojo — escríbela y aprueba</label><input class="clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;max-width:220px;background:var(--surface,transparent);color:var(--text)"/></div>`:""}
       ${datos.length?`<div class="copybox"><div>${datos.map(([k,v])=>`${k}: <b>${esc(v)}</b>`).join("<br>")}</div>
         <button class="btn" data-copy style="flex:none;height:32px">${icon("file")} Copiar</button></div>`:""}
       <div class="mrow">${acts.html}</div>
@@ -326,8 +326,13 @@ function botones(o,et){
           <button class="btn danger" data-a="no">Rechazar</button>
           <a class="btn" href="pedidos.html">Ver en Pedidos</a>`,
     wire:(el,o)=>{
-      el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"saldo_pagado","Aprobar el saldo",
-        "El bot le envía la clave de recojo al cliente.");
+      el.querySelector('[data-a="ok"]').onclick=()=>{
+        // Si falta la clave, se escribe en el input del card y se guarda junto con
+        // la aprobación (un solo paso, sin salir a "Editar pedido").
+        const claveIn=el.querySelector(".clave-in"); let extraShip;
+        if(claveIn){ const v=claveIn.value.trim(); if(!v){ toast("Escribe la clave de recojo antes de aprobar",true); claveIn.focus(); return; } extraShip={clave_recojo:v}; }
+        aprobar(o,"saldo_pagado","Aprobar el saldo","El bot le envía la clave de recojo al cliente.",extraShip);
+      };
       el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"saldo");
     }};
   return { html:"", wire:()=>{} };
@@ -340,10 +345,10 @@ async function updateOrder(body){
   return data;
 }
 
-async function aprobar(o,nuevo,titulo,detalle){
+async function aprobar(o,nuevo,titulo,detalle,extraShip){
   const c=o.contact||{};
   if(!await confirmDialog({ title:titulo, message:`${c.nombre||"Cliente"} — ${detalle}`, confirmText:"Confirmar" })) return;
-  const r=await updateOrder({ order_id:o.id, estado:nuevo });
+  const r=await updateOrder({ order_id:o.id, estado:nuevo, ...(extraShip?{shipping:extraShip}:{}) });
   if(r){ toast(r.flow_started?"Listo ✓ · el bot le está escribiendo":"Listo ✓"); await load(); }
 }
 
