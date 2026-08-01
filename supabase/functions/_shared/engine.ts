@@ -2740,7 +2740,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (oper) {
     const { data: dup } = await db.from("orders").select("id")
       .eq("channel_id", channelId).eq("shipping->>adelanto_operacion", oper).limit(1).maybeSingle();
-    reuse = !!dup;
+    // Ledger UNIFICADO anti-reúso (payment_operations): impide reusar una misma
+    // operación ENTRE tipos de pago (digital ↔ adelanto ↔ saldo), no solo dentro
+    // del adelanto. Sin esto, un mismo Yape auto-aprobaba un pago digital Y un
+    // adelanto porque cada tipo miraba un registro distinto.
+    reuse = !!dup || await operacionYaUsada(db, channelId, oper);
   }
   const tol = Math.max(0, Number(cfg.tolerancia ?? 1));
   // Fraude/legibilidad lo juzgó el modelo (`valido`); la matemática del monto y la
@@ -2771,6 +2775,9 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
         ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos, adelanto_abonado: ab.total } : {}) },
     }).eq("id", (order as any).id);
+    // Registra la operación en el ledger unificado → no se podrá reusar como
+    // pago digital ni como saldo de otro pedido.
+    if (oper) await registrarOperacion(db, channelId, oper, (order as any).id, "adelanto").catch(() => {});
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     // 📦 Recién ahora que pagó el adelanto se aparta su stock (en provincia no se
     // reserva antes: ver reservarStockPedido). Idempotente.
@@ -2872,7 +2879,9 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   if (oper) {
     const { data: dup } = await db.from("orders").select("id")
       .eq("channel_id", channelId).eq("shipping->>saldo_operacion", oper).limit(1).maybeSingle();
-    reuse = !!dup;
+    // Ledger UNIFICADO anti-reúso (payment_operations): ver maybeAdelanto. Cierra
+    // el reúso de una misma operación entre digital ↔ adelanto ↔ saldo.
+    reuse = !!dup || await operacionYaUsada(db, channelId, oper);
   }
   const legit = parsed.es_pago !== false && !!parsed.valido && !reuse && Number.isFinite(monto) && monto > 0;
   const ab = legit ? evaluarAbono(ship, "saldo", saldo, monto, oper, tol) : null;
@@ -2900,6 +2909,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
         ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
     }).eq("id", (order as any).id);
+    // Registra la operación en el ledger unificado (anti-reúso entre tipos).
+    if (oper) await registrarOperacion(db, channelId, oper, (order as any).id, "saldo").catch(() => {});
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await moverEtapa(db, channelId, contactId, "comprado");
     await syncPedidoSheet(db, (order as any).id);
@@ -2933,7 +2944,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
     shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo, saldo_metodo: metodo,
-      saldo_monto_leido: montoLeido, ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
+      saldo_monto_leido: montoLeido, saldo_operacion_leida: oper,
+      ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
   }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "Comprobante de saldo por aprobar", motivo);
   await avisar(db, channelId, contactId, "saldo_validar", {
@@ -4562,7 +4574,7 @@ async function operacionYaUsada(db: SupabaseClient, channelId: string, op: strin
     .eq("channel_id", channelId).eq("operacion", n).maybeSingle();
   return !!data;
 }
-async function registrarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<void> {
+export async function registrarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<void> {
   const n = normOperacion(op);
   if (n.length < 4) return;
   await db.from("payment_operations").insert({

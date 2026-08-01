@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, registrarOperacion } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -174,6 +174,12 @@ Deno.serve(async (req) => {
   // "¡recibido!") en vez del aviso normal. Si no aplica, cae al aviso de siempre.
   let extrasOfrecidos = false;
   if (newEstado === "adelanto_validado" && (order as any).contact_id) {
+    // 🔒 Anti-reúso: al aprobar el adelanto a mano, registra su operación en el
+    // ledger unificado (payment_operations) → no se podrá reusar como pago
+    // digital, como saldo, ni como adelanto de otro pedido. Idempotente.
+    const shipA = ((order as any).shipping || {}) as any;
+    const opA = String(shipA.adelanto_operacion || shipA.adelanto_operacion_leida || "").trim();
+    if (opA) await registrarOperacion(db, (order as any).channel_id, opA, order.id, "adelanto").catch((e) => console.error("[order-update] registrar op adelanto:", (e as any)?.message ?? e));
     // 📦 Provincia solo aparta stock cuando el adelanto queda validado (acá, a
     // mano). Descuenta el plan guardado al crear el pedido. Idempotente.
     try {
@@ -186,6 +192,14 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("[order-update] resume extras:", (e as any)?.message ?? e);
     }
+  }
+
+  // 🔒 Anti-reúso: al aprobar el saldo a mano (o al cerrar el pedido cobrado),
+  // registra su operación en el ledger unificado. Idempotente.
+  if (newEstado === "saldo_pagado" && (order as any).contact_id) {
+    const shipS = ((order as any).shipping || {}) as any;
+    const opS = String(shipS.saldo_operacion || shipS.saldo_operacion_leida || "").trim();
+    if (opS) await registrarOperacion(db, (order as any).channel_id, opS, order.id, "saldo").catch((e) => console.error("[order-update] registrar op saldo:", (e as any)?.message ?? e));
   }
 
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
