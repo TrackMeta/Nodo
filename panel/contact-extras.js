@@ -989,7 +989,36 @@ export async function openEditarPedido(o, deps) {
           <div class="hint">Corrige la talla/color si la IA lo anotó mal. Va al rótulo y a la agencia. (El stock no se reajusta solo.)</div>
         </div>` : "";
 
-  // Ventas extra y regalos (order_bumps): quitar los puestos por error o corregir precio.
+  // Catálogo del canal → permite CAMBIAR el producto del pedido y AGREGAR
+  // extras/regalos a mano. channel_id/version_id no vienen en latestOrder: se leen.
+  let channelId = o.channel_id || null, versionId = o.version_id || null;
+  try {
+    const { data: od } = await supa.from("orders").select("channel_id, version_id").eq("id", o.id).maybeSingle();
+    if (od) { channelId = od.channel_id; if (versionId == null) versionId = od.version_id; }
+  } catch (_) { /* usa lo que haya */ }
+  let catalogo = [];
+  if (channelId) {
+    try {
+      const { data: prods } = await supa.from("products")
+        .select("id, nombre, emoji, tipo, product_versions(id, nombre, precio)")
+        .eq("channel_id", channelId).order("nombre");
+      catalogo = Array.isArray(prods) ? prods : [];
+    } catch (_) { /* sin catálogo → no se ofrece cambiar de producto */ }
+  }
+  const versionsFor = (pid) => { const pr = catalogo.find((x) => String(x.id) === String(pid)); return (pr && Array.isArray(pr.product_versions)) ? pr.product_versions : []; };
+  const precioVer = (pid, vid) => { const vv = versionsFor(pid).find((x) => String(x.id) === String(vid)); return vv && vv.precio != null && vv.precio !== "" ? Number(vv.precio) : null; };
+  const verOpts = (pid, selVid) => `<option value="">— sin presentación —</option>` + versionsFor(pid).map((vv) => `<option value="${esc(vv.id)}"${String(vv.id) === String(selVid) ? " selected" : ""}>${esc(vv.nombre || "Única")}${vv.precio != null && vv.precio !== "" ? ` · S/ ${esc(vv.precio)}` : ""}</option>`).join("");
+  const prodHtml = catalogo.length ? `
+        <div class="pm-sec">
+          <div class="pm-sec-h">${icon("box")} Producto del pedido</div>
+          <div class="row2">
+            <div><label>Producto</label><select id="eProd">${catalogo.map((pr) => `<option value="${esc(pr.id)}"${String(pr.id) === String(o.product_id) ? " selected" : ""}>${esc([pr.emoji, pr.nombre].filter(Boolean).join(" "))}</option>`).join("")}</select></div>
+            <div><label>Presentación</label><select id="eVer">${verOpts(o.product_id, versionId)}</select></div>
+          </div>
+          <div class="hint">Cambiar el producto o la presentación recalcula el <b>precio base</b> (edítalo abajo si hace falta). El stock y el saldo no se reajustan solos.</div>
+        </div>` : "";
+
+  // Ventas extra y regalos (order_bumps): quitar/corregir los existentes + AGREGAR nuevos a mano.
   const bumps0 = Array.isArray(o.order_bumps) ? o.order_bumps.map((b) => ({ ...b })) : [];
   const bumpRow = (b, i) => {
     const esRegalo = b.regalo === true || Number(b.precio || 0) === 0;
@@ -1001,12 +1030,27 @@ export async function openEditarPedido(o, deps) {
       <button type="button" class="eb-del" title="Quitar del pedido" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
     </div>`;
   };
-  const bumpHtml = bumps0.length ? `
+  // <option>s del catálogo para las filas nuevas (autocompletan nombre + precio).
+  const bumpProdOpts = `<option value="">— escribir a mano —</option>` + catalogo.map((pr) => {
+    const vs = Array.isArray(pr.product_versions) ? pr.product_versions : [];
+    const precio = vs.length && vs[0].precio != null ? vs[0].precio : "";
+    return `<option value="${esc(pr.id)}" data-nom="${esc(pr.nombre || "")}" data-precio="${esc(precio)}">${esc([pr.emoji, pr.nombre].filter(Boolean).join(" "))}</option>`;
+  }).join("");
+  const bumpNewRowHtml = `<div class="eb-new" style="display:flex;align-items:center;gap:6px;margin-bottom:7px;flex-wrap:wrap">
+      <select class="ebn-prod" style="flex:1;min-width:130px">${bumpProdOpts}</select>
+      <input class="ebn-nom" placeholder="Nombre" style="flex:1;min-width:100px"/>
+      <span style="font-size:12px;color:var(--muted)">S/</span><input class="ebn-precio" type="number" step="0.1" placeholder="0" style="width:60px"/>
+      <label style="display:flex;align-items:center;gap:3px;font-size:12px;white-space:nowrap"><input type="checkbox" class="ebn-regalo"/> Regalo</label>
+      <button type="button" class="ebn-del" title="Quitar" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
+    </div>`;
+  const bumpHtml = `
         <div class="pm-sec">
           <div class="pm-sec-h">➕ Ventas extra y regalos</div>
           <div id="eBumps">${bumps0.map((b, i) => bumpRow(b, i)).join("")}</div>
-          <div class="hint">Quita (✕) un extra puesto por error o corrige su precio. Si quitas algo, ajusta el saldo a mano; el stock no se reajusta solo.</div>
-        </div>` : "";
+          <div id="eBumpsNew"></div>
+          <button type="button" id="eAddBump" style="margin-top:2px;border:1px dashed var(--line,#d0d0d0);background:transparent;color:var(--accent,#2563eb);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px">＋ Agregar extra o regalo</button>
+          <div class="hint">Agrega un extra/regalo a mano, quita (✕) uno puesto por error o corrige su precio. Ajusta el <b>saldo/importe</b> a mano; el stock no se reajusta solo.</div>
+        </div>`;
 
   return new Promise((resolve) => {
     const ov = document.createElement("div"); ov.className = "overlay";
@@ -1024,6 +1068,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel || c.wa_id || "")}"/></div>
           </div>
         </div>
+        ${prodHtml}
         ${atrHtml}
         ${bumpHtml}
         <div class="pm-sec" id="eLima" ${zona === "provincia" ? 'style="display:none"' : ""}>
@@ -1084,6 +1129,35 @@ export async function openEditarPedido(o, deps) {
     ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
     g(".cancel").onclick = () => cerrar(false);
     ov.querySelectorAll(".eb-del").forEach((btn) => { btn.onclick = () => { const r = btn.closest(".eb-row"); if (r) r.remove(); }; });
+
+    // Cambiar de producto: al elegir otro producto, repueblo las presentaciones;
+    // al cambiar la presentación, sugiero su precio en el importe editable (Lima).
+    const sugerirImporte = () => {
+      const pid = g("#eProd") ? g("#eProd").value : "";
+      const vid = g("#eVer") ? g("#eVer").value : "";
+      const pr = precioVer(pid, vid);
+      const inp = g("#eAmountL");
+      if (pr != null && inp) inp.value = pr;
+    };
+    if (g("#eProd")) g("#eProd").onchange = () => { const pid = g("#eProd").value; g("#eVer").innerHTML = verOpts(pid, ""); sugerirImporte(); };
+    if (g("#eVer")) g("#eVer").onchange = sugerirImporte;
+
+    // Agregar extra/regalo a mano: fila con producto del catálogo (autocompleta
+    // nombre+precio) o nombre libre. NO toca stock; el saldo/importe se ajusta aparte.
+    const wireNewRow = (row) => {
+      const sel = row.querySelector(".ebn-prod"), nom = row.querySelector(".ebn-nom"), pre = row.querySelector(".ebn-precio"), reg = row.querySelector(".ebn-regalo");
+      sel.onchange = () => {
+        const opt = sel.selectedOptions[0];
+        if (opt && opt.value) { if (!nom.value) nom.value = opt.dataset.nom || opt.textContent.trim(); if (!reg.checked && pre.value === "" && opt.dataset.precio) pre.value = opt.dataset.precio; }
+      };
+      reg.onchange = () => { if (reg.checked) { pre.value = ""; pre.disabled = true; } else { pre.disabled = false; } };
+      row.querySelector(".ebn-del").onclick = () => row.remove();
+    };
+    if (g("#eAddBump")) g("#eAddBump").onclick = () => {
+      const wrap = g("#eBumpsNew"); const tmp = document.createElement("div"); tmp.innerHTML = bumpNewRowHtml.trim();
+      const row = tmp.firstElementChild; wrap.appendChild(row); wireNewRow(row); row.querySelector(".ebn-nom").focus();
+    };
+
     g(".save").onclick = async () => {
       const numU = (id) => { const x = g(id).value; return x === "" ? null : Number(x); };
       const ship = { cliente: g("#eNom").value.trim(), tel: g("#eTel").value.trim(), zona };
@@ -1109,19 +1183,40 @@ export async function openEditarPedido(o, deps) {
         const a = g("#eAmountL").value; if (a !== "") amount = Number(a);
       }
       const body = { order_id: o.id, shipping: ship };
-      if (amount !== undefined) body.amount = amount;
-      // Ventas extra / regalos: manda las que quedaron (las quitadas con ✕ ya no
-      // están en el DOM), con el precio corregido.
-      if (bumps0.length) {
-        const kept = [];
-        ov.querySelectorAll("#eBumps .eb-row").forEach((row) => {
-          const b = { ...bumps0[Number(row.dataset.idx)] };
-          const pin = row.querySelector(".eb-precio");
-          if (pin) b.precio = pin.value === "" ? 0 : Number(pin.value);
-          kept.push(b);
-        });
-        body.order_bumps = kept;
+      // Cambio de producto / presentación → product_id + version_id (order-update
+      // valida que el producto sea del canal). Provincia no tiene campo de importe
+      // visible: si cambió y la presentación tiene precio, ajusta el amount base.
+      if (g("#eProd")) {
+        const pid = g("#eProd").value, vid = g("#eVer") ? g("#eVer").value : "";
+        if (pid && (String(pid) !== String(o.product_id) || String(vid || "") !== String(versionId || ""))) {
+          body.product_id = pid;
+          body.version_id = vid || null;
+          if (zona === "provincia") { const pr = precioVer(pid, vid); if (pr != null) amount = pr; }
+        }
       }
+      if (amount !== undefined) body.amount = amount;
+      // Ventas extra / regalos: las que quedaron (las quitadas con ✕ ya no están en
+      // el DOM, con el precio corregido) + las AGREGADAS a mano. Un extra/regalo
+      // manual va sin product_id a propósito: NO descuenta stock (se ajusta aparte).
+      const kept = [];
+      ov.querySelectorAll("#eBumps .eb-row").forEach((row) => {
+        const b = { ...bumps0[Number(row.dataset.idx)] };
+        const pin = row.querySelector(".eb-precio");
+        if (pin) b.precio = pin.value === "" ? 0 : Number(pin.value);
+        kept.push(b);
+      });
+      ov.querySelectorAll("#eBumpsNew .eb-new").forEach((row) => {
+        const regalo = row.querySelector(".ebn-regalo").checked;
+        const selOpt = row.querySelector(".ebn-prod").selectedOptions[0];
+        const fromProd = (selOpt && selOpt.value) ? (selOpt.dataset.nom || selOpt.textContent.trim()) : "";
+        const nombre = row.querySelector(".ebn-nom").value.trim() || fromProd;
+        if (!nombre) return;
+        const precio = regalo ? 0 : (Number(row.querySelector(".ebn-precio").value) || 0);
+        kept.push({ nombre, precio, regalo, manual: true });
+      });
+      // Solo mando order_bumps si había antes (aunque los borre todos → []) o si
+      // agregué algo. Así no piso con [] un pedido que nunca tuvo extras.
+      if (bumps0.length || kept.length) body.order_bumps = kept;
       const btn = g(".save"); btn.disabled = true; btn.textContent = "Guardando…";
       const { data, error } = await supa.functions.invoke("order-update", { body });
       if (!error && !(data && data.error)) { toast("Pedido actualizado ✓"); cerrar(true); }

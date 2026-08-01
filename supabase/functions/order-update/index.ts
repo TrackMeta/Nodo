@@ -48,6 +48,7 @@ Deno.serve(async (req) => {
   let body: {
     order_id?: string; estado?: string; shipping?: Record<string, unknown>; amount?: number; resume?: boolean;
     order_bumps?: unknown[];
+    product_id?: string; version_id?: string | null;
     reject?: string; reject_motivo?: string;
     // Cómo avisarle al cliente este cambio (lo elige el humano al mover el pedido).
     aviso?: { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
@@ -74,6 +75,16 @@ Deno.serve(async (req) => {
   // por error, corregir un precio). OJO: no reconcilia stock ni el saldo — eso lo
   // ajusta el operador aparte.
   if (Array.isArray(body.order_bumps)) patch.order_bumps = body.order_bumps;
+  // Cambiar el producto del pedido desde "Editar pedido". Se valida que el nuevo
+  // producto pertenezca al MISMO canal del pedido (no colar uno ajeno). El stock y
+  // el saldo NO se reconcilian solos: los ajusta el operador (el amount va aparte).
+  if (typeof body.product_id === "string" && body.product_id) {
+    const { data: prod } = await db.from("products").select("id")
+      .eq("id", body.product_id).eq("channel_id", (order as any).channel_id).maybeSingle();
+    if (!prod) return json({ error: "producto_ajeno" }, 400);
+    patch.product_id = body.product_id;
+    patch.version_id = (typeof body.version_id === "string" && body.version_id) ? body.version_id : null;
+  }
   const newEstado = body.estado && body.estado !== (order as any).estado ? body.estado : null;
   if (newEstado) {
     patch.estado = newEstado;
