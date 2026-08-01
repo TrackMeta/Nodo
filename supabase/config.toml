@@ -76,6 +76,13 @@ verify_jwt = true
 [functions.scheduler]
 verify_jwt = false
 
+# ads-sync: baja el gasto de Meta (cron cada ~3h). Lo dispara pg_cron con
+# net.http_post pasando SOLO el header x-scheduler-secret (sin JWT), igual que
+# scheduler → DEBE ser verify_jwt=false o el gateway rechaza la llamada del cron.
+# (ads-schedule, que lo reprograma desde el panel, sí va con JWT → queda en true.)
+[functions.ads-sync]
+verify_jwt = false
+
 # order-update: el Kanban de Pedidos avanza estados y dispara flujos pedido_estado.
 [functions.order-update]
 verify_jwt = true

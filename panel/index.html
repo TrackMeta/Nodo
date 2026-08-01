@@ -1366,10 +1366,14 @@ function statusTick(s, animate){
   if(s==="failed")    return `<span class="tick fail" title="No se pudo entregar">⚠</span>`;
   return `<span class="tick pend" title="Enviando…">${_TK_CLOCK}</span>`;
 }
+// Solo dejamos pasar http(s) y data: al href/src. Un media_url con esquema
+// javascript:/vbscript: (aunque hoy siempre viene de Meta/Storage) no debe
+// llegar nunca a un atributo — defensa en profundidad contra XSS.
+function safeUrl(u){ return /^\s*(https?:|data:)/i.test(String(u||"")) ? String(u) : "#"; }
 function mediaHtml(m){
   const url = m.content?.media_url; if(!url) return null;
   const cap = m.content?.caption ? `<div style="margin-top:5px">${esc(m.content.caption)}</div>` : "";
-  const u = esc(url);
+  const u = esc(safeUrl(url));
   if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" alt=""/></a>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
