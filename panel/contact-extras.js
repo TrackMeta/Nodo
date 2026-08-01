@@ -1287,7 +1287,10 @@ export function copilotoEtapa(o) {
   if (o.estado === "pendiente" && s.digital_pendiente) return { id: "digital", titulo: "Pago digital por validar", pill: "dig" };
   if (s.extra_pendiente) return { id: "extra", titulo: "Venta extra por validar", pill: "ext" };
   if (o.estado === "esperando_adelanto") return { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" };
-  if (o.estado === "en_agencia") return { id: "saldo", titulo: "Saldo por validar", pill: "saldo" };
+  // en_agencia es "Saldo por validar" SOLO si el cliente ya pagó el saldo (llegó
+  // su comprobante). En agencia sin pago = esperando que paguen: no hay nada que
+  // aprobar y NO se muestra el comprobante del ADELANTO como si fuera el del saldo.
+  if (o.estado === "en_agencia") return (s.saldo_comprobante || s.saldo_recibido_at) ? { id: "saldo", titulo: "Saldo por validar", pill: "saldo" } : null;
   if (o.estado === "adelanto_validado" || o.estado === "por_despachar") return { id: "despachar", titulo: "Listo para despachar", pill: "desp" };
   if (o.estado === "despachado") return { id: "camino", titulo: "En camino a la agencia", pill: "camino" };
   return null;
@@ -1321,7 +1324,7 @@ export function copilotoCardHtml(o, et, fallbackImg) {
   const s = o.shipping || {};
   const sym = o.currency === "USD" ? "$" : "S/";
   const img = et.id === "adelanto" ? (s.adelanto_comprobante || fallbackImg)
-    : et.id === "saldo" ? (s.saldo_comprobante || fallbackImg)
+    : et.id === "saldo" ? s.saldo_comprobante
     : et.id === "digital" ? (s.digital_comprobante || fallbackImg)
     : et.id === "extra" ? (s.extra_comprobante || fallbackImg) : null;
   const monto = et.id === "adelanto" ? s.adelanto : et.id === "saldo" ? s.saldo
