@@ -150,13 +150,13 @@ export function origenLabel(source) {
 // relaciones (mismo patrón resiliente que pedidos.html).
 export async function latestOrder(supa, contactId) {
   if (!contactId) return null;
-  const sel = "id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
+  const sel = "id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,product_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   try {
     const { data, error } = await supa.from("orders").select(sel).eq("contact_id", contactId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!error) return data || null;
   } catch (_) { /* cae al intento simple */ }
   try {
-    const { data } = await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,shipping,product:product_id(nombre,emoji,tipo),version:version_id(nombre)").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data } = await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,shipping,product_id,product:product_id(nombre,emoji,tipo),version:version_id(nombre)").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     return data || null;
   } catch (_) { return null; }
 }
