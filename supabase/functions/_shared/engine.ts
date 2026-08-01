@@ -4872,7 +4872,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         L.push(`El cliente es de **${ctx.zona_nombre || "Lima"}** → entrega en Lima, CONTRAENTREGA (paga al recibir).`);
         L.push(ctx.entrega_hoy === "si"
           ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo."
-          : `NO alcanza para hoy${ctx.entrega_motivo ? ` (${ctx.entrega_motivo})` : ""}: ofrécele el día siguiente con amabilidad. ` +
+          : `SÍ entregamos en su distrito, pero HOY ya no alcanza${ctx.entrega_motivo ? ` porque ${ctx.entrega_motivo}` : ""} → le llega el **día siguiente**. ` +
+            `Explícale ese motivo real de horario/día de reparto con amabilidad. ` +
+            `PROHIBIDO decirle que "no hacemos entrega en tu zona" o dar a entender que no cubrimos su distrito: sí lo cubrimos, solo que no en el mismo día. ` +
             `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
       } else {
         L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);

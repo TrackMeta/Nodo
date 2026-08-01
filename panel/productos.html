@@ -2405,7 +2405,10 @@ async function generarFlujoFisico(flowId, N, E){
       // = precio + envío). Con {{precio}} ahí, cobrar envío en Lima significaba
       // regalarlo: el pedido decía 130 y el motorizado cobraba 120.
       { tipo:"crear_pedido", estado:"confirmado", monto:"{{precio}}",
-        datos:{ zona:"lima", zona_nombre:"{{zona_nombre}}", direccion:"{{direccion}}", referencia:"{{referencia}}",
+        // `distrito` = el distrito reconocido (mismo valor que zona_nombre); `provincia`
+        // siempre Lima (para el rótulo/ficha en formato peruano distrito→provincia).
+        datos:{ zona:"lima", zona_nombre:"{{zona_nombre}}", distrito:"{{zona_nombre}}", provincia:"Lima",
+                direccion:"{{direccion}}", referencia:"{{referencia}}",
                 cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{total_cobrar}}", entrega_hoy:"{{entrega_hoy}}",
                 tel:"{{telefono}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },

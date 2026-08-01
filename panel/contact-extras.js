@@ -306,8 +306,14 @@ export function pedidoResumenHtml(o) {
     if (!s.destino && s.ciudad && s.sede) cliLines.push(mkLine("Ciudad", esc(cap(s.ciudad))));
     if (s.mercaderia) cliLines.push(mkLine("Medida", esc(s.mercaderia)));
   } else if (zona === "lima") {
+    // El distrito se captura en `zona_nombre` (resolverZonaAccion). Los pedidos
+    // viejos no tienen `distrito`, así que caemos a `zona_nombre`. "Lima" a secas
+    // es la ciudad genérica, no un distrito → no lo mostramos como distrito.
+    const dist = s.distrito || s.zona_nombre || "";
+    const distReal = dist && dist.toLowerCase() !== "lima" ? dist : "";
     cliLines.push(mkLine("Dirección", s.direccion ? esc(s.direccion) : ""));
-    cliLines.push(mkLine("Distrito", s.distrito ? esc(cap(s.distrito)) : ""));
+    cliLines.push(mkLine("Distrito", distReal ? esc(cap(distReal)) : ""));
+    cliLines.push(mkLine("Provincia", esc(s.provincia || "Lima")));
     cliLines.push(mkLine("Referencia", s.referencia ? esc(s.referencia) : ""));
   }
 
@@ -362,7 +368,8 @@ export function printRotulo(o, remitente) {
       row("Destinatario", c.nombre || s.cliente || "", true) +
       row("Teléfono", tel) +
       row("Dirección", s.direccion || "", true) +
-      row("Distrito", s.distrito || "") +
+      row("Distrito", (() => { const d = s.distrito || s.zona_nombre || ""; return d && d.toLowerCase() !== "lima" ? cap(d) : ""; })()) +
+      row("Provincia", s.provincia || "Lima") +
       row("Referencia", s.referencia || "") +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
