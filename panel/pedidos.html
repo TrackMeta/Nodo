@@ -452,7 +452,10 @@ function render(){
   // bueno. Va acá arriba para no recorrer las columnas (ni la otra pantalla)
   // para saberlo. Cuenta solo lo del tablero físico; los pagos digitales no
   // viven acá, pero sí en la sección de destino.
-  const nTurno=st.list.filter(o=>isFisico(o) && TURNO_STATES.has(o.estado)).length;
+  const nTurno=st.list.filter(o=>{ if(!isFisico(o)) return false; const s=o.shipping||{};
+    // en_agencia cuenta como "pago por validar" solo si YA llegó el saldo (mismo
+    // criterio que la tarjeta); esperando_adelanto cuenta como antes.
+    return o.estado==="en_agencia" ? !!(s.saldo_comprobante||s.saldo_recibido_at) : TURNO_STATES.has(o.estado); }).length;
   const zbar=$("kbzona");
   zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv)
     +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
