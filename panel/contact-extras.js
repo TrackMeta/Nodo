@@ -200,16 +200,23 @@ function pedidoProgresoHtml(o) {
   if (NEG[estado]) {
     return `<div style="margin:10px 2px 4px;font-size:12px;font-weight:700;color:var(--red,#dc2626)">⛔ ${esc(NEG[estado])}</div>`;
   }
+  // "Saldo" (Pagaron saldo) se cumple apenas el cliente MANDA el comprobante
+  // (aunque esté por validar); "Clave" (Clave enviada) recién al aprobarlo
+  // (saldo_pagado). Mismos 6 pasos que el panel "Dónde están ahora · provincia".
+  const s = o.shipping || {};
+  const inc = (...e) => e.includes(estado);
+  const saldoRecibido = !!(s.saldo_comprobante || s.saldo_recibido_at) || inc("saldo_pagado", "recogido");
   const pasos = zona === "provincia"
-    ? [["Adelanto", ["adelanto_validado", "por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido"]],
-       ["Despacho", ["despachado", "en_agencia", "saldo_pagado", "recogido"]],
-       ["Agencia", ["en_agencia", "saldo_pagado", "recogido"]],
-       ["Saldo", ["saldo_pagado", "recogido"]],
-       ["Recojo", ["recogido"]]]
-    : [["Confirmado", ["confirmado", "en_reparto", "reprogramado", "entregado_cobrado"]],
-       ["En reparto", ["en_reparto", "reprogramado", "entregado_cobrado"]],
-       ["Entregado", ["entregado_cobrado"]]];
-  const done = pasos.map(([, ests]) => ests.includes(estado));
+    ? [["Adelanto", inc("adelanto_validado", "por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido")],
+       ["Despacho", inc("despachado", "en_agencia", "saldo_pagado", "recogido")],
+       ["Agencia", inc("en_agencia", "saldo_pagado", "recogido")],
+       ["Saldo", saldoRecibido],
+       ["Clave", inc("saldo_pagado", "recogido")],
+       ["Recojo", inc("recogido")]]
+    : [["Confirmado", inc("confirmado", "en_reparto", "reprogramado", "entregado_cobrado")],
+       ["En reparto", inc("en_reparto", "reprogramado", "entregado_cobrado")],
+       ["Entregado", inc("entregado_cobrado")]];
+  const done = pasos.map(([, d]) => d);
   const curIdx = done.lastIndexOf(true); // último hito alcanzado
   const parts = [];
   pasos.forEach((p, i) => {
