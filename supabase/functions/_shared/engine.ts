@@ -1307,6 +1307,12 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   if (bubble.media_id) content.media_id = bubble.media_id;
   if (isInteractive) content.buttons = btns;
 
+  // Nada que enviar: burbuja sin texto, sin botones válidos y sin media. No
+  // insertes un mensaje en blanco. Pasaba con "mensajes iniciales" cuyo texto
+  // quedó vacío (producto recién generado sin saludo): el bot abría la
+  // conversación con una burbuja vacía.
+  if (!content.text && !isInteractive && !content.media_id) return;
+
   let wamid = ""; let status = "sent"; let error: any = null;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (text || isInteractive)) {
     try {
@@ -4487,6 +4493,19 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   const r = ocr.reglas ?? {};
   const p: string[] = [];
   p.push("Eres un validador experto de comprobantes de pago de Perú (Yape, Plin, y transferencias de BCP, BBVA, Interbank, Scotiabank, etc.). Analiza la captura con el máximo detalle y criterio anti-fraude.");
+  // Ancla de fecha: sin decirle qué día es HOY, el modelo asume que el año en
+  // curso es el de su entrenamiento y marca como "futuro/sospechoso" un
+  // comprobante con la fecha real (ej. un Yape de 2026). Le damos el presente
+  // en hora de Perú para que juzgue la antigüedad contra la fecha correcta.
+  const tzLima = "America/Lima";
+  const ahoraLima = new Date();
+  let hoyStr = ahoraLima.toISOString();
+  let anioActual = String(ahoraLima.getUTCFullYear());
+  try {
+    hoyStr = ahoraLima.toLocaleString("es-PE", { timeZone: tzLima, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    anioActual = ahoraLima.toLocaleDateString("es-PE", { timeZone: tzLima, year: "numeric" });
+  } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
+  p.push(`## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora de Perú). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy.`);
   if (metodos.length) {
     p.push("## Métodos de pago VÁLIDOS de este negocio\nEl pago solo es válido si va dirigido a uno de estos destinatarios:\n" +
       metodos.map((m: any) => "- " + [m.app && `App/Banco: ${m.app}`, m.titular && `Titular esperado: ${m.titular}`, m.numero && `Número/cuenta: ${m.numero}`, m.notas && `(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
@@ -4509,7 +4528,7 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
       reglas.push("Extrae el monto pagado y verifica que cubra el monto acordado con el cliente" + (tol ? ` (tolerancia ±${tol}).` : "."));
     }
   }
-  if (r.verificar_fecha) reglas.push(`La fecha/hora del comprobante debe ser reciente (no más de ${Number(r.fecha_max_horas ?? 48)} horas). Si es antigua, márcalo como sospechoso.`);
+  if (r.verificar_fecha) reglas.push(`Respecto a la fecha de HOY indicada arriba, la fecha/hora del comprobante no debe superar las ${Number(r.fecha_max_horas ?? 48)} horas de antigüedad. Solo márcalo sospechoso si es realmente ANTERIOR a esa ventana; un comprobante fechado hoy o en las últimas horas es VÁLIDO aunque el año sea ${anioActual}.`);
   if (r.operacion_unica) reglas.push("Extrae el número de operación/constancia. Es la clave anti-reuso: si falta o es ilegible, desconfía.");
   if (r.rechazar_editados) reglas.push("Detecta señales de edición/montaje (tipografías inconsistentes, recortes, píxeles alterados, datos que no cuadran). Ante duda razonable, INVÁLIDO.");
   const nivel = r.exigencia === "alta" ? "ALTA (rechaza ante cualquier duda)" : r.exigencia === "baja" ? "BAJA (aprueba si lo esencial coincide)" : "MEDIA (equilibrio entre seguridad y fluidez)";
