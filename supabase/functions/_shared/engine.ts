@@ -2113,6 +2113,18 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars._order_id = (ord as any).id;
     run.vars.pedido_id = (ord as any).id; // {{pedido_id}}: la llave de la fila en Sheets
     ctx.pedido_id = (ord as any).id;
+    // 🔒 Idempotencia anti-duplicado: se marca el pedido como creado AQUÍ, apenas
+    // se insertó la fila, y NO recién en el set_field que el flujo corre DESPUÉS de
+    // esta acción. Si algo entre el insert y ese set_field lanza (un error
+    // transitorio en logEvent/moverEtapa/regalos/stock…), el pedido quedaba SIN la
+    // bandera y el siguiente mensaje del cliente volvía a cumplir la condición
+    // "crea si pedido_creado vacío" → nacía un pedido DUPLICADO. Se persiste con
+    // setField (en el contacto, precedencia alta en buildContext) además de en
+    // run.vars, para que la Condición la vea aunque el run no llegue a guardarse.
+    // La recompra la vuelve a limpiar en resetItemFields para poder crear otro.
+    ctx.pedido_creado = "si";
+    run.vars.pedido_creado = "si";
+    await setField(db, run.channel_id, run.contact_id, "pedido_creado", "si").catch(() => {});
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
     await moverEtapa(db, run.channel_id, run.contact_id, stageDeEstado(a.estado || "carrito"));
     // Etiqueta automática de zona/tipo (filtrable en la Bandeja): Lima/Provincia
@@ -3006,7 +3018,10 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
   try {
     const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
     const attrs = normalizeAtributos((p as any)?.config?.atributos);
-    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos"];
+    // "pedido_creado" TAMBIÉN se limpia: el pedido anterior lo dejó en "si" (candado
+    // anti-duplicado) y sin resetearlo la Condición "crea si pedido_creado vacío"
+    // nunca volvería a dispararse → la recompra no podría crear el pedido nuevo.
+    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos", "pedido_creado"];
     for (const k of claves) await setField(db, channelId, contactId, k, null);
   } catch (e) { console.error("[resetItemFields]", (e as any)?.message ?? e); }
 }
