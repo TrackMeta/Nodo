@@ -5325,9 +5325,11 @@ async function buildContext(db: SupabaseClient, run: Run) {
   const fFecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
   const fHora = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" }).format(now);
   const ctx: any = {
-    // {{telefono}} = número REAL (col telefono de 0062) o, en su defecto, la llave
-    // wa_id (que para clientes con número ES su número). {{username}} = @handle.
-    nombre: c?.nombre ?? "", telefono: (c?.telefono ?? c?.wa_id) ?? "", wa_id: c?.wa_id ?? "",
+    // {{telefono}} = número REAL conocido (col telefono de 0062) o VACÍO. NO cae a
+    // wa_id: si cayera, para un cliente sin número {{telefono}} sería el BSUID y el
+    // campo de captura `telefono` (misma clave) se vería "ya lleno" → nunca se
+    // pediría. Vacío ⇒ el flujo lo pide (sin_numero=si); lleno ⇒ se salta.
+    nombre: c?.nombre ?? "", telefono: c?.telefono ?? "", wa_id: c?.wa_id ?? "",
     username: (c as any)?.username ?? "",
     stage: c?.stage ?? "", last_input: c?.last_input ?? "",
     last_input_type: (c as any)?.last_input_type ?? "",
