@@ -1016,6 +1016,13 @@ export async function openEditarPedido(o, deps) {
             <div><label>Adelanto (S/)</label><input id="eAdel" type="number" step="0.1" value="${esc(s.adelanto || "")}"/></div>
             <div><label>Saldo por cobrar (S/)</label><input id="eSaldo" type="number" step="0.1" value="${esc(s.saldo || "")}"/></div>
           </div>
+          <div class="pm-sec-h" style="margin-top:14px">${icon("truck")} Guía y clave de recojo</div>
+          <div class="row2">
+            <div><label>N° de guía</label><input id="eGuia" value="${esc(s.guia || "")}" placeholder="Ej. 034-123456"/></div>
+            <div><label>Código de envío</label><input id="eCodigo" value="${esc(s.codigo_envio || "")}" placeholder="Ej. SH-77120"/></div>
+          </div>
+          <label>Clave de recojo</label><input id="eClave" value="${esc(s.clave_recojo || "")}" placeholder="La pones tú; el cliente la usa para recoger"/>
+          <div class="hint">Puedes ponerla o corregirla en cualquier momento, aunque ya hayas despachado.</div>
         </div>
       </div>
       <div class="pm-foot">
@@ -1036,7 +1043,8 @@ export async function openEditarPedido(o, deps) {
         Object.assign(ship, { dni: g("#eDni").value.trim(), ciudad: g("#eCiudad").value.trim(),
           destino: dst, mercaderia: g("#eMerc").value,
           alto: numU("#eAlto"), ancho: numU("#eAncho"), largo: numU("#eLargo"), peso: numU("#ePeso"),
-          adelanto: g("#eAdel").value, saldo: g("#eSaldo").value });
+          adelanto: g("#eAdel").value, saldo: g("#eSaldo").value,
+          guia: g("#eGuia").value.trim(), codigo_envio: g("#eCodigo").value.trim(), clave_recojo: g("#eClave").value.trim() });
         if (dst) ship.sede_por_confirmar = null;
       } else {
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
