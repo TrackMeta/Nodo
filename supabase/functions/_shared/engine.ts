@@ -2584,6 +2584,12 @@ export function mensajeEstadoDefault(
     return `📦 ¡Tu pedido ya va en camino a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
       `${guia ? `Tu guía es *${guia}*. ` : ""}Te aviso apenas llegue para que puedas recogerlo. 🙌`;
   }
+  if (estado === "en_agencia") {
+    const saldo = (s.saldo != null && s.saldo !== "") ? s.saldo : (amount != null ? amount : null);
+    return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
+      `${saldo != null ? `Para recogerlo, paga el saldo de *${sym} ${saldo}* ` : "Para recogerlo, paga el saldo "}` +
+      `y mándame la captura — apenas lo verifique te paso tu clave de recojo. 🙌`;
+  }
   if (estado === "saldo_pagado") {
     const clave = String(s.clave_recojo || "").trim();
     if (!clave) return null;
