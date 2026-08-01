@@ -2799,6 +2799,7 @@ async function enlazarInicialesConVenta(flowId){
 // que el validador de pagos usa como MONTO ESPERADO. Ver migración 0029.
 function renderOpciones(host){
   const b=host||$("tabBody");
+  st._opHost=b; // para re-dibujar la sección entera (ej. al borrar y volver a simple)
   const fisico=(st.prod.tipo||"digital")==="fisico";
   const cfg=st.prod.config=st.prod.config||{};
   if(!Array.isArray(cfg.atributos)) cfg.atributos=[];
@@ -2962,7 +2963,9 @@ function paintOpciones(fisico){
     const odel=el.querySelector(".odel"); if(odel) odel.onclick=async()=>{
       if(!await confirmDialog({title:"Eliminar opción",message:`¿Eliminar "${esc(v.nombre||"esta opción")}"? Los pedidos ya hechos con ella no se tocan.`,confirmText:"Eliminar",danger:true})) return;
       if(v.id) st.delVersions.push(v.id);
-      st.versions.splice(i,1); paintOpciones(fisico);
+      st.versions.splice(i,1);
+      // Si quedó 1 (o 0), volver al layout SIMPLE limpio en vez del híbrido multi.
+      if(st.versions.length<=1 && st._opHost) renderOpciones(st._opHost); else paintOpciones(fisico);
     };
     // Agrega una fila vacía y pone el cursor en el link. Antes eran DOS ventanas
     // seguidas (primero el link, después el nombre) para una sola acción — y el
