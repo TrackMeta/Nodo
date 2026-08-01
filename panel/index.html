@@ -59,15 +59,37 @@
   .err{color:var(--red);font-size:13px;margin-top:14px;min-height:18px}
 
   /* ── App shell ── */
-  #app{height:100%;display:flex}
+  #app{height:100%;display:flex;position:relative}
   .rail{width:60px;flex:none;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:8px}
   .rail img{width:36px;height:36px;border-radius:10px;margin-bottom:10px}
   .rail .icn{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px}
   .rail .icn.active{background:var(--brand-bg);color:var(--brand)}
   .rail .bottom{margin-top:auto;display:flex;flex-direction:column;gap:8px;align-items:center}
 
-  /* Panel de filtros (izquierda) */
-  .filters{width:216px;flex:none;border-right:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px 10px 24px}
+  /* Panel de filtros — drawer que se desliza sobre la lista (se abre con el botón
+     «Filtros»; los filtros activos quedan como chips sobre la lista). */
+  .filters{position:absolute;left:60px;top:0;bottom:0;width:238px;z-index:41;border-right:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:14px 10px 24px;transform:translateX(-112%);transition:transform .22s cubic-bezier(.4,0,.2,1)}
+  .filters.open{transform:translateX(0);box-shadow:10px 0 30px -10px rgba(0,0,0,.32)}
+  .filters-ov{position:absolute;inset:0 0 0 60px;background:rgba(15,23,42,.28);opacity:0;visibility:hidden;transition:opacity .22s;z-index:40}
+  .filters-ov.open{opacity:1;visibility:visible}
+  .filters .ftx{position:absolute;top:11px;right:10px;width:28px;height:28px;border:none;background:transparent;color:var(--muted);border-radius:8px;font-size:19px;line-height:1;cursor:pointer}
+  .filters .ftx:hover{background:var(--surface-2);color:var(--text)}
+  /* Botón que abre el drawer + badge con el nº de filtros activos */
+  .filtersbtn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:border-color .12s,background .12s,color .12s}
+  .filtersbtn:hover{border-color:var(--brand-border);color:var(--brand);background:var(--brand-bg)}
+  .filtersbtn.has{border-color:var(--brand-border);color:var(--brand-2);background:var(--brand-bg)}
+  .filtersbtn svg{width:15px;height:15px}
+  .filtersbtn .fbadge{min-width:18px;height:18px;padding:0 5px;border-radius:20px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;display:none;align-items:center;justify-content:center}
+  .filtersbtn.has .fbadge{display:inline-flex}
+  /* Chips de filtros activos (sobre la lista) */
+  .fchips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px}
+  .fchips:empty{display:none}
+  .fchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 5px 0 10px;border-radius:20px;font-size:12px;font-weight:600;background:var(--brand-bg);color:var(--brand-2);border:1px solid var(--brand-border)}
+  .fchip .fchip-dot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.12) inset}
+  .fchip .fchip-x{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:13px;line-height:1}
+  .fchip .fchip-x:hover{color:var(--red);background:var(--surface)}
+  .fchip.clearall{background:transparent;border-style:dashed;color:var(--muted);cursor:pointer;padding:0 11px}
+  .fchip.clearall:hover{border-color:var(--brand-border);color:var(--brand)}
   .filters .ft{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--brand);display:flex;align-items:center;gap:8px;margin:2px 6px 12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
   .filters .ft svg{width:15px;height:15px}
   .filters h4{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin:16px 8px 5px;font-weight:700}
@@ -435,6 +457,7 @@
 
 <!-- ── APP ── -->
 <div id="app" class="hidden">
+  <div class="filters-ov" id="filtersOv"></div>
   <aside class="filters" id="filters"></aside>
   <div class="list">
     <div class="top" style="gap:8px;flex-wrap:wrap">
@@ -442,6 +465,10 @@
         <button class="modebtn" data-mode="humano">Humano</button>
         <button class="modebtn active" data-mode="bot">Bot</button>
       </div>
+      <button class="filtersbtn" id="filtersBtn" type="button" title="Filtros">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        Filtros<span class="fbadge" id="fBadge"></span>
+      </button>
     </div>
     <div class="searchwrap" id="searchWrap">
       <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -453,6 +480,7 @@
       <select class="sel" id="flowTestSel" style="flex:1;max-width:none"></select>
       <button class="testbtn" id="testBtn">🗑 Borrar chat</button>
     </div>
+    <div class="fchips" id="filterChips"></div>
     <div id="convList" style="overflow-y:auto;flex:1"></div>
   </div>
 
@@ -536,7 +564,7 @@ injectExtrasCss();
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {},
-  filters: { sinResponder:false, seguimiento:false, anuncio:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[] };
+  filters: { sinResponder:false, seguimiento:false, anuncio:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map() };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -601,6 +629,18 @@ async function loadInboxFlows(){
 // Estados de un pedido "en curso" (ni cerrado ni perdido). Si un contacto YA es
 // comprador (dorado) y tiene un pedido en uno de estos, es una RECOMPRA en curso.
 const RECOMPRA_ESTADOS = ["carrito","pendiente","esperando_adelanto","confirmado","en_reparto","reprogramado","adelanto_validado","por_despachar","despachado","en_agencia"];
+// Embudo de entrega · Provincia como filtro (por estado ACTUAL del pedido). Mismos
+// nombres/colores que las barras de embudo.html; cada grupo es excluyente (un pedido
+// está en un solo punto). Espejo de la fuente en embudo.html.
+const ENTREGA_PROV = [
+  { k:"con_adelanto", lbl:"Con adelanto",  color:"#8b5cf6", estados:["adelanto_validado","por_despachar"] },
+  { k:"en_camino",    lbl:"En camino",     color:"#3b82f6", estados:["despachado"] },
+  { k:"en_agencia",   lbl:"En agencia",    color:"#0ea5e9", estados:["en_agencia"] },
+  { k:"clave",        lbl:"Clave enviada", color:"#10b981", estados:["saldo_pagado"] },
+  { k:"recogido",     lbl:"Recogido",      color:"#16a34a", estados:["recogido"] },
+];
+const ENTREGA_ESTADO_K = Object.fromEntries(ENTREGA_PROV.flatMap(g => g.estados.map(e => [e, g.k])));
+const ENTREGA_LBL = Object.fromEntries(ENTREGA_PROV.map(g => [g.k, g]));
 // Comprador (dorado) que además tiene un pedido vivo = recompra en curso.
 const esRecompra = (c)=> !!c && c.stage==="comprado" && !!state.recompraSet && state.recompraSet.has(c.id);
 async function loadConversations() {
@@ -621,6 +661,19 @@ async function loadConversations() {
       .eq("channel_id", state.channelId).in("estado", RECOMPRA_ESTADOS);
     state.recompraSet = new Set((ro||[]).map(o=>o.contact_id));
   } catch(_){ state.recompraSet = state.recompraSet || new Set(); }
+  // Embudo de entrega · Provincia: mapa contact_id → grupo del estado ACTUAL de su
+  // pedido de provincia (el más reciente). Alimenta el filtro y sus contadores.
+  try {
+    const estados = Object.keys(ENTREGA_ESTADO_K);
+    const { data: eo } = await supa.from("orders").select("contact_id,estado,shipping,created_at")
+      .eq("channel_id", state.channelId).in("estado", estados).order("created_at", { ascending: false });
+    const m = new Map();
+    for (const o of (eo||[])) {
+      if ((o.shipping||{}).zona !== "provincia") continue; // solo provincia (agencia)
+      if (!m.has(o.contact_id)) m.set(o.contact_id, ENTREGA_ESTADO_K[o.estado]); // el más reciente gana
+    }
+    state.entregaMap = m;
+  } catch(_){ state.entregaMap = state.entregaMap || new Map(); }
   renderConversations();
 }
 
@@ -634,12 +687,42 @@ async function loadFilters(){
   state.tags = tg.data||[];
   state.savedFilters = loadSavedFilters();
   renderFilters();
+  // Wiring del drawer (elementos estáticos → una vez basta; onclick es idempotente).
+  const fb=$("filtersBtn"), ov=$("filtersOv");
+  if(fb) fb.onclick=openFilters;
+  if(ov) ov.onclick=closeFilters;
+  renderFilterChips(); updateFilterBadge();
+}
+// ── Drawer de filtros + chips activos ──
+function openFilters(){ const d=$("filters"),o=$("filtersOv"); if(d)d.classList.add("open"); if(o)o.classList.add("open"); }
+function closeFilters(){ const d=$("filters"),o=$("filtersOv"); if(d)d.classList.remove("open"); if(o)o.classList.remove("open"); }
+function filtrosActivos(){ const f=state.filters; return (f.sinResponder?1:0)+(f.seguimiento?1:0)+(f.anuncio?1:0)+(f.archivado?1:0)+(f.recomprando?1:0)+(f.producto?1:0)+f.tags.size+f.stages.size+f.entrega.size; }
+function updateFilterBadge(){ const btn=$("filtersBtn"); if(!btn) return; const n=filtrosActivos(); btn.classList.toggle("has", n>0); const b=$("fBadge"); if(b) b.textContent=n||""; }
+function limpiarFiltros(){ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); }
+function renderFilterChips(){
+  const box=$("filterChips"); if(!box) return;
+  const f=state.filters, chips=[];
+  const add=(label,color,onDel)=>chips.push({label,color,onDel});
+  if(f.sinResponder) add("Sin responder",null,()=>f.sinResponder=false);
+  if(f.seguimiento)  add("Seguimiento",null,()=>f.seguimiento=false);
+  if(f.anuncio)      add("Llegó por anuncio",null,()=>f.anuncio=false);
+  if(f.recomprando)  add("Recomprando",null,()=>f.recomprando=false);
+  if(f.archivado)    add("Archivados",null,()=>f.archivado=false);
+  f.stages.forEach(k=>{ const s=EMBUDO_STAGES.find(x=>x.k===k); add(s?s.label:k, s?s.color:null, ()=>f.stages.delete(k)); });
+  f.entrega.forEach(k=>{ const g=ENTREGA_LBL[k]; add(g?g.lbl:k, g?g.color:null, ()=>f.entrega.delete(k)); });
+  f.tags.forEach(id=>{ const t=state.tags.find(x=>x.id===id); add(t?t.nombre:"etiqueta", t?tagHex(t.color):null, ()=>f.tags.delete(id)); });
+  if(f.producto){ const p=state.products.find(x=>x.id===f.producto); add(p?p.nombre:"Producto", null, ()=>f.producto=""); }
+  box.innerHTML = chips.map((c,i)=>`<span class="fchip">${c.color?`<span class="fchip-dot" style="background:${c.color}"></span>`:""}${esc(c.label)}<span class="fchip-x" data-ci="${i}" title="Quitar">×</span></span>`).join("")
+    + (chips.length>1?`<span class="fchip clearall" id="chipClear">Limpiar todo</span>`:"");
+  box.querySelectorAll("[data-ci]").forEach(x=> x.onclick=()=>{ chips[+x.dataset.ci].onDel(); renderFilters(); renderConversations(); });
+  const ca=$("chipClear"); if(ca) ca.onclick=limpiarFiltros;
 }
 function renderFilters(){
   const f = state.filters;
   const box = $("filters");
   const saved = state.savedFilters || [];
   box.innerHTML = `
+    <button class="ftx" id="fClose" type="button" title="Cerrar filtros">×</button>
     <div class="ft">${svgFilter()} FILTROS</div>
     ${saved.length ? `<h4>Mis filtros</h4><div class="myfilters">${
       saved.map((s,i)=>`<button class="mfchip" data-mf="${i}" type="button" title="Aplicar este filtro"><span class="ftg-nm">${esc(s.name)}</span><span class="mfx" data-mfdel="${i}" title="Eliminar filtro">×</span></button>`).join("")
@@ -652,6 +735,8 @@ function renderFilters(){
     <button class="ftog ${f.archivado?"on":""}" id="fArch" type="button"><span class="ftg-nm">${icon("archive")} Archivados</span><span class="fcount" id="cArch"></span></button>
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
+    <h4>Entrega · Provincia</h4>
+    ${ENTREGA_PROV.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}
     <h4>Etiquetas</h4>
     <div class="tagf" id="fTags">${
       state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<button class="ftog tagtog ${f.tags.has(t.id)?"on":""}" data-tag="${t.id}" type="button"><span class="tagdot" style="background:${c}"></span><span class="ftg-nm">${esc(t.nombre)}</span><span class="fcount" data-tagcount="${t.id}"></span></button>`; }).join("")
@@ -667,11 +752,13 @@ function renderFilters(){
   $("fRec").onclick=()=>{ f.recomprando=!f.recomprando; $("fRec").classList.toggle("on",f.recomprando); renderConversations(); };
   $("fArch").onclick=()=>{ f.archivado=!f.archivado; $("fArch").classList.toggle("on",f.archivado); renderConversations(); };
   box.querySelectorAll("[data-stage]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); btn.classList.toggle("on"); renderConversations(); });
+  box.querySelectorAll("[data-entrega]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.entrega; f.entrega.has(k)?f.entrega.delete(k):f.entrega.add(k); btn.classList.toggle("on"); renderConversations(); });
+  $("fClose").onclick=closeFilters;
   $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
   box.querySelectorAll(".mfchip").forEach(btn=> btn.onclick=(e)=>{ if(e.target.closest("[data-mfdel]")){ delSavedFilter(+e.target.closest("[data-mfdel]").dataset.mfdel); return; } applySavedFilter(+btn.dataset.mf); });
   $("fCreate").onclick=saveCurrentFilter;
-  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set() }; renderFilters(); renderConversations(); };
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); };
   updateFilterCounts();
 }
 // ── Filtros guardados (presets por canal, en localStorage) ──
@@ -680,18 +767,18 @@ function loadSavedFilters(){ try{ return JSON.parse(localStorage.getItem(savedFi
 function persistSavedFilters(){ try{ localStorage.setItem(savedFiltersKey(), JSON.stringify(state.savedFilters||[])); }catch(_){}}
 async function saveCurrentFilter(){
   const f=state.filters;
-  const active=f.sinResponder||f.seguimiento||f.anuncio||f.archivado||f.recomprando||f.producto||f.tags.size||f.stages.size;
+  const active=f.sinResponder||f.seguimiento||f.anuncio||f.archivado||f.recomprando||f.producto||f.tags.size||f.stages.size||f.entrega.size;
   if(!active){ toast("Selecciona al menos un filtro para guardarlo",true); return; }
   const name=await askText({ title:"Guardar filtro", message:"Ponle un nombre a esta combinación de filtros para reusarla con un toque.", placeholder:"Ej. Interesados por anuncio", confirmText:"Guardar" });
   if(!name) return;
   state.savedFilters=state.savedFilters||[];
-  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, archivado:f.archivado, recomprando:f.recomprando, producto:f.producto, tags:[...f.tags], stages:[...f.stages] } });
+  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, archivado:f.archivado, recomprando:f.recomprando, producto:f.producto, tags:[...f.tags], stages:[...f.stages], entrega:[...f.entrega] } });
   persistSavedFilters(); renderFilters(); toast("Filtro guardado ✓");
 }
 function applySavedFilter(i){
   const s=(state.savedFilters||[])[i]; if(!s) return; const g=s.f||{};
-  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, archivado:!!g.archivado, recomprando:!!g.recomprando, producto:g.producto||"", tags:new Set(g.tags||[]), stages:new Set(g.stages||[]) };
-  renderFilters(); renderConversations();
+  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, archivado:!!g.archivado, recomprando:!!g.recomprando, producto:g.producto||"", tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
+  closeFilters(); renderFilters(); renderConversations();
 }
 async function delSavedFilter(i){
   const s=(state.savedFilters||[])[i]; if(!s) return;
@@ -710,6 +797,7 @@ function updateFilterCounts(){
   set("cArch", convs.filter(cv=>cv.archivada).length);
   const sbox=$("filters");
   if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.stage||"nuevo")===k).length; });
+  if(sbox) sbox.querySelectorAll("[data-entregacount]").forEach(el=>{ const k=el.dataset.entregacount; el.textContent=convs.filter(cv=>!cv.archivada && state.entregaMap.get(cv.contact.id)===k).length; });
   const box=$("fTags");
   if(box) box.querySelectorAll("[data-tagcount]").forEach(el=>{ const id=el.dataset.tagcount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.contact_tags||[]).some(t=>t.tag_id===id)).length; });
 }
@@ -836,6 +924,7 @@ function applyFilters(cv){
   if (f.seguimiento && !cv.requiere_humano) return false;
   if (f.recomprando && !esRecompra(c)) return false;
   if (f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
+  if (f.entrega.size){ const k=state.entregaMap.get(c.id); if(!k || !f.entrega.has(k)) return false; }
   if (f.anuncio && !c.source) return false;
   if (f.producto && c.product_id !== f.producto) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
@@ -846,8 +935,8 @@ function renderConversations(){
   const isBot = (cv)=> cv.contact.bot_activo !== false;
   const list = state.convs.filter(cv => (state.mode==="bot" ? isBot(cv) : !isBot(cv)) && applyFilters(cv));
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+" Bot"; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+" Humano"; }
-  updateFilterCounts();
-  const anyFilter = state.filters.sinResponder||state.filters.seguimiento||state.filters.anuncio||state.filters.archivado||state.filters.recomprando||state.filters.producto||state.filters.tags.size||state.filters.stages.size;
+  updateFilterCounts(); renderFilterChips(); updateFilterBadge();
+  const anyFilter = state.filters.sinResponder||state.filters.seguimiento||state.filters.anuncio||state.filters.archivado||state.filters.recomprando||state.filters.producto||state.filters.tags.size||state.filters.stages.size||state.filters.entrega.size;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${state.search?`Ningún contacto coincide con “${esc(state.search)}”`:(anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano"))}</div>`; return; }
   list.forEach(cv => {
     const c = cv.contact;
