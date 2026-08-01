@@ -2327,6 +2327,11 @@ async function generarFlujoFisico(flowId, N, E){
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
     { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
     { clave:"sede", label:"Sede de la agencia", detalle:"la oficina EXACTA donde lo va a recoger (ej. «Av. España»), NO la ciudad", requerido:true, validar:"sede", solo_si_zona:"provincia" },
+    // Teléfono: SOLO se le pide al cliente que llegó por "nombre de usuario" de
+    // WhatsApp y no compartió su número (sin_numero=si). Al que tiene número no se
+    // le molesta (ya lo tenemos). El courier necesita SÍ o SÍ un celular para
+    // coordinar la entrega. Ver migración 0062 / {{sin_numero}}.
+    { clave:"telefono", label:"Número de celular para la entrega", detalle:"9 dígitos; el courier lo llama para coordinar el envío", requerido:true, solo_si_sin_numero:true },
     // VA ÚLTIMO y solo en LIMA: tener los datos NO es lo mismo que querer
     // comprar. En Lima el pedido nace "confirmado" y sale un motorizado, así que
     // un mensaje de consulta bien completo ("¿tienen talla 38? soy Juan Pérez,
@@ -2401,7 +2406,8 @@ async function generarFlujoFisico(flowId, N, E){
       // regalarlo: el pedido decía 130 y el motorizado cobraba 120.
       { tipo:"crear_pedido", estado:"confirmado", monto:"{{precio}}",
         datos:{ zona:"lima", zona_nombre:"{{zona_nombre}}", direccion:"{{direccion}}", referencia:"{{referencia}}",
-                cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{total_cobrar}}", entrega_hoy:"{{entrega_hoy}}" } },
+                cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{total_cobrar}}", entrega_hoy:"{{entrega_hoy}}",
+                tel:"{{telefono}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
       { tipo:"add_tag", valor:"Compra" },
       // El texto vive en el catálogo de avisos (Canales → Avisos de Telegram),
@@ -2433,7 +2439,7 @@ async function generarFlujoFisico(flowId, N, E){
         // El saldo es lo que falta TRAS el adelanto ({{saldo}} = precio − adelanto).
         // Con {{precio}} acá se le cobraba el adelanto dos veces al cliente.
         datos:{ zona:"provincia", ciudad:"{{ciudad}}", sede:"{{sede}}", dni:"{{dni}}", cliente:"{{nombre_completo}}",
-                opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{saldo}}" } },
+                opcion:"{{opcion}}", adelanto:"{{adelanto}}", saldo:"{{saldo}}", tel:"{{telefono}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
       { tipo:"notify_admin", plantilla:"pedido_provincia" },
     ],

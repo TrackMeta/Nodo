@@ -34,7 +34,7 @@ function filasEva(orders) {
   return orders.map((o) => {
     const c = o.contact || {}, s = o.shipping || {}, f = [];
     f[1] = s.cliente || c.nombre || "";        // B DESTINATARIO (editable: shipping.cliente manda)
-    f[2] = tel9(s.tel || c.wa_id);             // C CELULAR (9 díg; shipping.tel puede overridear)
+    f[2] = tel9(s.tel || c.telefono || c.wa_id); // C CELULAR (shipping.tel captura al cliente sin número; c.wa_id es legacy)
     f[3] = (s.distrito || "").toUpperCase();    // D DISTRITO ENTREGA
     f[4] = s.direccion || "";                   // E DIRECCIÓN
     f[5] = s.referencia || "";                  // F REFERENCIA
@@ -71,7 +71,7 @@ function filasShalom(orders, cfg, listas) {
   return orders.map((o) => {
     const c = o.contact || {}, s = o.shipping || {}, f = [];
     f[0] = s.dni || "";                                            // A DESTINATARIO (DOC)
-    f[1] = tel9(s.tel || c.wa_id);                                 // B TELF. DESTINATARIO
+    f[1] = tel9(s.tel || c.telefono || c.wa_id);                   // B TELF. DESTINATARIO
     f[5] = (sh.origen || "").toUpperCase();                        // F ORIGEN (agencia, de la config)
     // G DESTINO: agencia elegida → SUGERIDA (match de la lista con lo que dijo el
     // cliente) → sede/ciudad en crudo. Así el Excel sale con la agencia oficial.

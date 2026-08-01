@@ -241,8 +241,12 @@ export function pedidoResumenHtml(o) {
   // El contacto de prueba tiene wa_id literal "webchat-test" (no es un número):
   // se muestra como tal, sin el "+" que insinúa un teléfono real.
   const esPrueba = c.wa_id === "webchat-test";
+  // Prefiere el número capturado (shipping.tel) — clave para el cliente que llegó
+  // por "nombre de usuario" de WhatsApp sin compartir su número: ahí wa_id es un
+  // BSUID, no un teléfono, y el que sirve para el courier es el que dio en el chat.
+  const telReal = s.tel || (esPrueba ? "" : c.telefono) || (esPrueba ? "" : c.wa_id);
   const telHtml = esPrueba ? `<span class="pd-muted">Web Chat (prueba)</span>`
-    : (c.wa_id ? `<b class="mono">+${esc(c.wa_id)}</b>` : "");
+    : (telReal ? `<b class="mono">+${esc(telReal)}</b>` : "");
   cliLines.push(mkLine("Teléfono", telHtml));
   if (zona === "provincia") {
     cliLines.push(mkLine("DNI", s.dni ? `<b class="mono">${esc(s.dni)}</b>` : ""));

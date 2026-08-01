@@ -66,8 +66,15 @@ export async function sendCapiEvent(
   // Datos de canal y contacto.
   const { data: channel } = await db.from("channels")
     .select("pixel_id, page_id").eq("id", channelId).maybeSingle();
-  const { data: contact } = await db.from("contacts")
-    .select("wa_id, ctwa_clid, nombre").eq("id", contactId).maybeSingle();
+  // Defensivo por la col telefono (0062): número REAL para el match de Meta.
+  let contact: any = null, hasTel = true;
+  {
+    const r = await db.from("contacts").select("wa_id, ctwa_clid, nombre, telefono").eq("id", contactId).maybeSingle();
+    if (r.error && /telefono|column/i.test(r.error.message)) {
+      hasTel = false;
+      contact = (await db.from("contacts").select("wa_id, ctwa_clid, nombre").eq("id", contactId).maybeSingle()).data;
+    } else contact = r.data;
+  }
   if (!channel?.pixel_id) return { ok: false, error: "canal sin pixel_id" };
 
   // ctwa CONGELADO del pedido primero; el del contacto solo como respaldo.
@@ -105,7 +112,11 @@ export async function sendCapiEvent(
   // Quality). Todo lo personal va HASHEADO; el ctwa_clid va en claro (es un id
   // de clic, no un dato personal).
   const userData: Record<string, unknown> = {};
-  if (contact?.wa_id) userData.ph = [await sha256Hex(String(contact.wa_id).replace(/\D/g, ""))];
+  // Número REAL para el hash: post-migración usa `telefono` (null = cliente sin
+  // número → no se hashea un BSUID como si fuera teléfono); pre-migración cae a
+  // wa_id (compat, hoy todos los contactos son números).
+  const phReal = hasTel ? contact?.telefono : contact?.wa_id;
+  if (phReal) userData.ph = [await sha256Hex(String(phReal).replace(/\D/g, ""))];
   if (hasCtwa) userData.ctwa_clid = ctwa;
   // Nombre: preferimos el que dio para el envío (opts.match.fullName), y si no,
   // el del perfil. Se parte en nombre/apellido.

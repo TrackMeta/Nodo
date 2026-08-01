@@ -4107,6 +4107,9 @@ type CampoDato = {
   // (provincia), pero para un envío en Lima con contraentrega no sirve de nada
   // y pedirlo sería fricción gratis.
   solo_si_zona?: "lima" | "provincia";
+  // Solo se pide/valida cuando el cliente NO compartió su número (username/BSUID):
+  // el teléfono para el courier, que a un cliente con número ya lo tenemos.
+  solo_si_sin_numero?: boolean;
   // La talla de un EXTRA ride-along se extrae SOLO del último mensaje del
   // cliente (su respuesta a "¿qué talla?"), nunca del historial: si no, hereda
   // un valor que dio para OTRO atributo que comparte valores (gorra M/L ←
@@ -4179,7 +4182,11 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   const todos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
   // Los datos que aplican dependen del camino: mientras no sepamos la zona, se
   // piden solo los comunes (no vamos a pedirle el DNI a alguien de Lima).
-  const campos = todos.filter((c) => !c.solo_si_zona || c.solo_si_zona === ctx.zona_entrega);
+  const campos = todos.filter((c) =>
+    (!c.solo_si_zona || c.solo_si_zona === ctx.zona_entrega) &&
+    // `solo_si_sin_numero`: campo (ej. el teléfono para el courier) que SOLO se
+    // pide/valida cuando el cliente no compartió su número (username/BSUID).
+    (!(c as any).solo_si_sin_numero || ctx.sin_numero === "si"));
   const texto = String(ctx.last_input ?? "");
   if (!campos.length || !texto) return;
 
@@ -5296,9 +5303,21 @@ function normalizeAtributos(raw: any): Atributo[] {
 // igual, pero deja de estar a un clic). Las {{pedido_*}} y los campos del canal se
 // listan solos y no hace falta tocarlos.
 async function buildContext(db: SupabaseClient, run: Run) {
-  const { data: c } = await db.from("contacts")
-    .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at")
-    .eq("id", run.contact_id).maybeSingle();
+  // Defensivo por las columnas de la 0062 (username/telefono): si aún no está la
+  // migración, se relee sin ellas.
+  let c: any = null, hasNewCols = true;
+  {
+    const r = await db.from("contacts")
+      .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at, username, telefono")
+      .eq("id", run.contact_id).maybeSingle();
+    if (r.error && /username|telefono|column/i.test(r.error.message)) {
+      hasNewCols = false;
+      const r2 = await db.from("contacts")
+        .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at")
+        .eq("id", run.contact_id).maybeSingle();
+      c = r2.data;
+    } else c = r.data;
+  }
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id);
   // Fecha/hora actuales en la zona del negocio (para {{fecha}}, {{fecha_hora}}).
@@ -5306,7 +5325,10 @@ async function buildContext(db: SupabaseClient, run: Run) {
   const fFecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
   const fHora = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" }).format(now);
   const ctx: any = {
-    nombre: c?.nombre ?? "", telefono: c?.wa_id ?? "", wa_id: c?.wa_id ?? "",
+    // {{telefono}} = número REAL (col telefono de 0062) o, en su defecto, la llave
+    // wa_id (que para clientes con número ES su número). {{username}} = @handle.
+    nombre: c?.nombre ?? "", telefono: (c?.telefono ?? c?.wa_id) ?? "", wa_id: c?.wa_id ?? "",
+    username: (c as any)?.username ?? "",
     stage: c?.stage ?? "", last_input: c?.last_input ?? "",
     last_input_type: (c as any)?.last_input_type ?? "",
     // Atribución del anuncio (Click-to-WhatsApp) capturada en el primer mensaje.
@@ -5314,6 +5336,11 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // Fecha/hora de AHORA (para sellar {{fecha}} de compra con un set_field).
     fecha: fFecha, hora: fHora, fecha_hora: `${fFecha} ${fHora}`,
   };
+  // {{sin_numero}} = "si" cuando el cliente NO compartió su número (usa username
+  // de WhatsApp → llegó por BSUID). El flujo físico lo usa para pedirle el número
+  // SOLO a estos (a los demás no se les molesta). Pre-migración (sin la col
+  // telefono) ⇒ "no", para no pedírselo a nadie hasta que la 0062 esté aplicada.
+  ctx.sin_numero = hasNewCols ? (String(c?.telefono ?? "").trim() ? "no" : "si") : "no";
   // PRECEDENCIA (de menos a más específico; lo de abajo pisa a lo de arriba):
   //   Campos del Bot (global) → datos del Producto → run.vars → Campos del
   //   contacto. Así lo específico gana: el dato de un producto pisa al global,
@@ -5555,6 +5582,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // cuando todavía no dio ninguno.
   ctx.cliente = String(ctx.nombre_completo ?? "").trim()
              || String(ctx.nombre ?? "").trim()
+             || String(ctx.username ?? "").trim()   // @handle si no dio nombre (mejor que el BSUID)
              || String(ctx.wa_id ?? "");
 
   // Último pedido del contacto → variables {{pedido_*}} para los flujos de

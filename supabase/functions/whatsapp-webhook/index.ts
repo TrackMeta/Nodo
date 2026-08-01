@@ -99,10 +99,20 @@ async function processPayload(channel: { id: string; buffer_default_seg?: number
         continue;
       }
       const value = change.value ?? {};
-      const profileName = value.contacts?.[0]?.profile?.name as string | undefined;
+      // Remitente. Con "nombres de usuario" de WhatsApp (BSUID), contacts[0]
+      // trae user_id (BSUID, siempre), username (@handle) y wa_id (el número,
+      // solo si lo comparte). Se pasa todo para keyar bien e identificar al
+      // cliente sin número. Ver migración 0062.
+      const c0 = (value.contacts?.[0] ?? {}) as any;
+      const sender = {
+        profileName: c0.profile?.name as string | undefined,
+        phone: c0.wa_id as string | undefined,
+        bsuid: c0.user_id as string | undefined,
+        username: c0.username as string | undefined,
+      };
 
       for (const msg of value.messages ?? []) {
-        await processInbound(channel, msg, profileName);
+        await processInbound(channel, msg, sender);
       }
       for (const st of value.statuses ?? []) {
         await processStatus(st);
@@ -128,10 +138,13 @@ async function processTemplateStatus(channelId: string, value: any) {
 async function processInbound(
   channel: { id: string; buffer_default_seg?: number },
   msg: any,
-  profileName?: string,
+  sender: { profileName?: string; phone?: string; bsuid?: string; username?: string },
 ) {
   const channelId = channel.id;
-  const waId: string = msg.from;
+  // Llave del contacto: el NÚMERO cuando el usuario lo comparte (compat con todos
+  // los contactos existentes), el BSUID cuando usa username sin número, y msg.from
+  // como respaldo legacy. Así los contactos de siempre no se re-keyan.
+  const waId: string = sender.phone || sender.bsuid || msg.from;
   const { text, type, content } = extractContent(msg);
   const ref = msg.referral; // Click-to-WhatsApp (oro para atribución)
 
@@ -144,7 +157,14 @@ async function processInbound(
     ultimo_mensaje_at: new Date().toISOString(),
     ultimo_mensaje_cliente_at: new Date().toISOString(),
   };
-  if (profileName) patch.nombre = profileName;
+  if (sender.profileName) patch.nombre = sender.profileName;
+  // BSUID / username / número real (migración 0062). `telefono` se setea SOLO
+  // cuando el número llega (no se pisa con null): telefono==null ⇒ cliente sin
+  // número ⇒ el flujo físico se lo pide. El upsert de abajo es defensivo por si
+  // la 0062 aún no se aplicó.
+  if (sender.bsuid) patch.user_id = sender.bsuid;
+  if (sender.username) patch.username = sender.username;
+  if (sender.phone) patch.telefono = sender.phone;
   if (ref) {
     patch.ad_id = ref.source_id ?? null;
     patch.ctwa_clid = ref.ctwa_clid ?? null;
@@ -154,12 +174,19 @@ async function processInbound(
     patch.fep_hasta = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
   }
 
-  const { data: contact, error: upErr } = await db
+  let { data: contact, error: upErr } = await db
     .from("contacts")
     .upsert(patch, { onConflict: "channel_id,wa_id" })
     .select("id, bot_activo, fep_hasta")
     .single();
-  if (upErr) throw new Error(`upsert contact: ${upErr.message}`);
+  if (upErr && /user_id|username|telefono|column/i.test(upErr.message)) {
+    // Migración 0062 aún no aplicada → reintenta sin las columnas nuevas.
+    const { user_id: _u, username: _n, telefono: _t, ...base } = patch as any;
+    ({ data: contact, error: upErr } = await db
+      .from("contacts").upsert(base, { onConflict: "channel_id,wa_id" })
+      .select("id, bot_activo, fep_hasta").single());
+  }
+  if (upErr || !contact) throw new Error(`upsert contact: ${upErr?.message ?? "sin contacto"}`);
 
   // Asegurar la conversación y refrescar la ventana ANTES de insertar el
   // mensaje (el trigger de no_leidos necesita la fila). La ventana efectiva
