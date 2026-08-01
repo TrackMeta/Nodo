@@ -2853,7 +2853,11 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   // 2) ¿Modo automático activado en IA · Pedidos?
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config").eq("id", channelId).maybeSingle();
   const log = (ch as any)?.pedidos_config?.log ?? {};
-  if (log.modo !== "auto") return false;
+  // NO se corta en modo manual: igual que el ADELANTO, el comprobante del saldo
+  // SIEMPRE se lee (OCR) y se adjunta al pedido para que aparezca en "Saldo por
+  // validar" con el trabajo hecho. Lo único que el modo "auto" habilita es la
+  // APROBACIÓN automática (soltar la clave sin tu visto bueno); ver `puedeAuto`.
+  // Antes, en manual, el saldo del cliente se ignoraba y el botón nunca salía.
 
   // 3) Sube el comprobante a storage propio → URL pública (IA + Telegram).
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
@@ -2918,7 +2922,9 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     return true;
   }
   const cubre = ab ? ab.cubre : false;
-  const puedeAuto = cubre && !reuse && !!clave;
+  // Auto-aprobar (soltar la clave solo) SOLO en modo "auto". En manual se adjunta
+  // y espera tu visto bueno (cae al bloque de "Saldo por validar" de abajo).
+  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave;
 
   if (puedeAuto) {
     // ✅ Todo cuadra → saldo_pagado (guarda la operación) + dispara la entrega de clave.

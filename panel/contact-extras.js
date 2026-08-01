@@ -202,10 +202,10 @@ function pedidoProgresoHtml(o) {
   }
   const pasos = zona === "provincia"
     ? [["Adelanto", ["adelanto_validado", "por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido"]],
-       ["Despachado", ["despachado", "en_agencia", "saldo_pagado", "recogido"]],
-       ["En agencia", ["en_agencia", "saldo_pagado", "recogido"]],
+       ["Despacho", ["despachado", "en_agencia", "saldo_pagado", "recogido"]],
+       ["Agencia", ["en_agencia", "saldo_pagado", "recogido"]],
        ["Saldo", ["saldo_pagado", "recogido"]],
-       ["Recogido", ["recogido"]]]
+       ["Recojo", ["recogido"]]]
     : [["Confirmado", ["confirmado", "en_reparto", "reprogramado", "entregado_cobrado"]],
        ["En reparto", ["en_reparto", "reprogramado", "entregado_cobrado"]],
        ["Entregado", ["entregado_cobrado"]]];
@@ -221,13 +221,13 @@ function pedidoProgresoHtml(o) {
     const lbl = isDone ? "var(--text)" : isNext ? "var(--brand)" : "var(--faint)";
     if (i > 0) {
       const on = done[i]; // la línea se pinta si el hito de la derecha ya se alcanzó
-      parts.push(`<div style="flex:1;height:2px;margin:0 3px 15px;background:${on ? "var(--green,#16a34a)" : "var(--border)"}"></div>`);
+      parts.push(`<div style="flex:0 0 6px;height:2px;margin-top:7px;background:${on ? "var(--green,#16a34a)" : "var(--border)"}"></div>`);
     }
-    parts.push(`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 0 auto">
-      <span style="width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;${dot}">${isDone ? "✓" : ""}</span>
-      <span style="font-size:9.5px;font-weight:${isNext ? "700" : "500"};color:${lbl};white-space:nowrap">${esc(p[0])}</span></div>`);
+    parts.push(`<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1 1 0;min-width:0">
+      <span style="width:15px;height:15px;flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;${dot}">${isDone ? "✓" : ""}</span>
+      <span style="font-size:8.5px;line-height:1.05;text-align:center;font-weight:${isNext ? "700" : "500"};color:${lbl};word-break:break-word">${esc(p[0])}</span></div>`);
   });
-  return `<div style="display:flex;align-items:flex-start;margin:12px 2px 4px">${parts.join("")}</div>`;
+  return `<div style="display:flex;align-items:flex-start;margin:12px 0 4px">${parts.join("")}</div>`;
 }
 
 export function pedidoResumenHtml(o) {
