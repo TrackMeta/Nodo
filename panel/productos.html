@@ -644,23 +644,7 @@ function renderRegaloProducto(b){
   const tipo=st.prod.tipo||"digital";
   const v0=(st.versions&&st.versions[0])||null;
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">Un <b>regalo</b> no se vende: se entrega gratis al comprar un principal. Solo necesitas <b>qué es</b>${tipo==="digital"?", <b>qué se entrega</b>":""} y (opcional) <b>lo que te cuesta</b>.</p>
-    <div class="card">
-      <h4 style="display:flex;align-items:center;gap:7px">${icon("box")} Qué es el regalo</h4>
-      <div class="row" style="align-items:flex-start;margin-top:10px">
-        <div style="flex:0 0 auto"><label style="margin-top:0">Emoji</label>
-          <div><button class="btn" id="emojiBtn" style="width:52px;height:44px;font-size:22px;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("plus")}</button></div>
-          <div id="emojiPop" style="display:none;position:absolute;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:4px"></div>
-        </div>
-        <div style="flex:1;min-width:180px"><label style="margin-top:0">Nombre del regalo</label>
-          <input class="in" id="pNombre" value="${esc(st.prod.nombre)}"/></div>
-      </div>
-      <div style="margin-top:12px"><label style="margin-top:0">Tipo de regalo</label>
-        <select class="sel" id="pTipo" style="width:100%">
-          <option value="digital" ${tipo==="digital"?"selected":""}>Digital (link o archivo)</option>
-          <option value="fisico" ${tipo==="fisico"?"selected":""}>Físico (va en el paquete)</option>
-        </select></div>
-    </div>
+    <p class="hint" style="margin:0 0 14px">Un <b>regalo</b> no se vende: se entrega gratis al comprar un principal. El nombre y el emoji se editan arriba; acá defines ${tipo==="digital"?"<b>qué se entrega</b>":"<b>cómo llega</b>"} y (opcional) lo que te cuesta.</p>
     ${tipo==="digital" ? `
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("link")} Qué se entrega</h4>
@@ -693,19 +677,11 @@ function renderRegaloProducto(b){
       <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="${tipo==="fisico"?"Ej. 8":"Ej. 0"}" style="margin-top:8px"/>
       <div style="font-size:11px;color:var(--faint);margin-top:5px">Cuánto te cuesta regalar una unidad. El Dashboard lo descuenta de tu ganancia (el regalo no se cobra, pero te cuesta). El cliente nunca lo ve. En digital suele ser 0.</div>
     </div>
-    <details style="margin-bottom:12px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px">Ajustes avanzados (config JSON)</summary>
-      <label style="margin-top:6px">Config del producto</label>
-      <textarea class="ta" id="pConfig">${esc(JSON.stringify(st.prod.config||{},null,2))}</textarea>
-    </details>`;
-  $("pCosto").onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
-  const pn=$("pNombre"); if(pn) pn.oninput=(e)=>st.prod.nombre=e.target.value;
+    `;
+  const pc=$("pCosto"); if(pc) pc.onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
   // Descripción del regalo para la IA: se guarda directo (sin prodSync, que
   // recompilaría contexto_producto y la pisaría). La lee el principal al mencionar.
   const rd=$("pRegDesc"); if(rd) rd.oninput=(e)=>{ const v=e.target.value.trim(); if(v) c.regalo_desc=v; else delete c.regalo_desc; };
-  const pt=$("pTipo"); if(pt) pt.onchange=(e)=>{ st.prod.tipo=e.target.value; renderProducto(b); };
-  const cfgT=$("pConfig"); if(cfgT) cfgT.onchange=(e)=>{ try{ st.prod.config=JSON.parse(e.target.value); renderProducto(b); }catch(_){ toast("JSON inválido",true); } };
-  wireEmojiPicker();
   // Entrega digital: se edita sobre la 1ª versión del regalo (la que lee el motor).
   if(tipo==="digital"){
     const host=b.querySelector(".oe");
@@ -2113,9 +2089,8 @@ async function renderInicio(){
   // ── Ensamblado por clase ───────────────────────────────────────────
   if(esRegalo){
     b.innerHTML=`${headCard}
-      ${group(fisico?"El regalo":"El regalo y su entrega",[
-        rowHtml("producto",{label:"¿Qué es el regalo?",sub:`${emo}${esc(st.prod.nombre||"regalo")}`,ico:IC.producto,ok:true}),
-        ...(fisico?[]:[rowHtml("opciones",{label:"¿Qué se entrega?",sub:est("opciones").ok?"Entrega lista":"Falta el link o archivo",warn:!est("opciones").ok})])
+      ${group("El regalo",[
+        rowHtml("producto",{label:"El regalo",sub:fisico?`${emo}${esc(st.prod.nombre||"regalo")} · físico`:(est("producto").ok?"Entrega lista":"Falta el link o archivo"),ico:IC.producto,warn:!fisico&&!est("producto").ok,ok:fisico||est("producto").ok})
       ])}
       <div class="card" style="border-color:rgba(168,85,247,.4);margin-top:14px">
         <h4 style="margin-top:0">🎁 Esto es un regalo</h4>
