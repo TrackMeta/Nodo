@@ -2562,23 +2562,46 @@ async function triggerPedidoEstado(
   return started;
 }
 
-// Manda la clave de recojo al cliente con un mensaje por DEFECTO. Se usa cuando el
-// pedido llega a saldo_pagado y NADIE más le avisó (ni un aviso configurado en
-// Pagos y atención, ni un flujo pedido_estado): "Aprobar y dar clave" promete que
-// la clave sale, así que no debe depender de que el negocio configure algo. Sale
-// solo si el pedido tiene clave cargada. Devuelve true si la mandó.
+// Mensaje al cliente por DEFECTO para cada cambio de estado del pedido. Se usa
+// cuando NADIE más le avisó (ni un aviso configurado en Pagos y atención, ni un
+// flujo pedido_estado): así ningún paso queda MUDO por tener la config vacía. El
+// negocio puede sobrescribir cada uno con su propio texto/plantilla. Devuelve
+// null si ese estado no manda nada por defecto (o le falta el dato clave).
+export function mensajeEstadoDefault(
+  estado: string, shipping: Record<string, any> | null, amount?: number | null, moneda?: string | null,
+): string | null {
+  const s = shipping || {};
+  const sym = moneda === "USD" ? "$" : "S/";
+  const sede = String(s.destino || s.sede || s.ciudad || "").trim();
+  if (estado === "en_reparto") {
+    const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : (amount != null ? amount : null);
+    const dir = String(s.direccion || "").trim();
+    return `🛵 ¡Tu pedido ya salió! El motorizado va en camino${dir ? ` a ${dir}` : ""}. ` +
+      `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir. ` : ""}¡Gracias por tu compra! 🎉`;
+  }
+  if (estado === "despachado") {
+    const guia = String(s.guia || "").trim();
+    return `📦 ¡Tu pedido ya va en camino a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
+      `${guia ? `Tu guía es *${guia}*. ` : ""}Te aviso apenas llegue para que puedas recogerlo. 🙌`;
+  }
+  if (estado === "saldo_pagado") {
+    const clave = String(s.clave_recojo || "").trim();
+    if (!clave) return null;
+    return `¡Listo! ✅ Confirmé tu pago del saldo.\n\n🔑 Tu *clave de recojo* es *${clave}*.\n` +
+      `Muéstrala en la agencia Shalom${sede ? ` de ${sede}` : ""} para recoger tu pedido. ¡Gracias por tu compra! 🎉`;
+  }
+  return null;
+}
+
+// Manda la clave de recojo por defecto (envoltorio del anterior, usado por el
+// camino AUTOMÁTICO del saldo). Devuelve true si la mandó.
 export async function enviarClaveRecojo(
   db: SupabaseClient, channelId: string, contactId: string, shipping: Record<string, any>,
 ): Promise<boolean> {
-  try {
-    const s = shipping || {};
-    const clave = String(s.clave_recojo ?? "").trim();
-    if (!clave) return false;
-    const sede = String(s.destino || s.sede || s.ciudad || "").trim();
-    const txt = `¡Listo! ✅ Confirmé tu pago del saldo.\n\n🔑 Tu *clave de recojo* es *${clave}*.\nMuéstrala en la agencia Shalom${sede ? " de " + sede : ""} para recoger tu pedido. ¡Gracias por tu compra! 🎉`;
-    await deliverMessage(db, channelId, contactId, txt);
-    return true;
-  } catch (e) { console.error("[enviarClaveRecojo]", (e as any)?.message ?? e); return false; }
+  const txt = mensajeEstadoDefault("saldo_pagado", shipping);
+  if (!txt) return false;
+  try { await deliverMessage(db, channelId, contactId, txt); return true; }
+  catch (e) { console.error("[enviarClaveRecojo]", (e as any)?.message ?? e); return false; }
 }
 
 // Cierra la conversación de VENTA de un contacto (cancela su run activo). Se usa

@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, registrarOperacion, enviarClaveRecojo } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -292,14 +292,19 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 🔑 Clave de recojo por DEFECTO: si el pedido pasó a saldo_pagado y NADIE le
-  // avisó al cliente (ni un aviso configurado en Pagos y atención, ni un flujo
-  // pedido_estado), igual hay que mandarle la clave — es lo que promete "Aprobar y
-  // dar clave". Sale solo si el pedido tiene clave cargada (incluye la recién
-  // guardada en esta misma llamada, vía patch.shipping).
-  if (newEstado === "saldo_pagado" && !avisoEnviado && !flowStarted && (order as any).contact_id) {
+  // Aviso al cliente por DEFECTO: si el pedido cambió de estado y NADIE le avisó
+  // (ni un aviso configurado en Pagos y atención, ni un flujo pedido_estado),
+  // mandamos un mensaje por defecto para que el paso no quede MUDO. Cubre "en
+  // reparto" (Lima: salió el motorizado), "despachado" (provincia: va a la
+  // agencia + guía) y "saldo pagado" (clave de recojo). Usa el shipping ya
+  // fusionado (incluye lo recién guardado en esta misma llamada).
+  if (newEstado && !avisoEnviado && !flowStarted && (order as any).contact_id) {
     const ship2 = { ...((order as any).shipping ?? {}), ...((patch.shipping as any) ?? {}) };
-    if (await enviarClaveRecojo(db, (order as any).channel_id, (order as any).contact_id, ship2)) avisoEnviado = "clave_default";
+    const txt = mensajeEstadoDefault(newEstado, ship2, (patch.amount as number) ?? (order as any).amount, (order as any).currency);
+    if (txt) {
+      try { await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }); avisoEnviado = "default"; }
+      catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
+    }
   }
 
   return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected,
