@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, registrarOperacion } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, registrarOperacion, enviarClaveRecojo } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -291,6 +291,17 @@ Deno.serve(async (req) => {
       }
     }
   }
+
+  // 🔑 Clave de recojo por DEFECTO: si el pedido pasó a saldo_pagado y NADIE le
+  // avisó al cliente (ni un aviso configurado en Pagos y atención, ni un flujo
+  // pedido_estado), igual hay que mandarle la clave — es lo que promete "Aprobar y
+  // dar clave". Sale solo si el pedido tiene clave cargada (incluye la recién
+  // guardada en esta misma llamada, vía patch.shipping).
+  if (newEstado === "saldo_pagado" && !avisoEnviado && !flowStarted && (order as any).contact_id) {
+    const ship2 = { ...((order as any).shipping ?? {}), ...((patch.shipping as any) ?? {}) };
+    if (await enviarClaveRecojo(db, (order as any).channel_id, (order as any).contact_id, ship2)) avisoEnviado = "clave_default";
+  }
+
   return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected,
     aviso_enviado: avisoEnviado, aviso_error: avisoError });
 });

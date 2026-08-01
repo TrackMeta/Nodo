@@ -2548,6 +2548,7 @@ async function triggerPedidoEstado(
   const { data: trigs } = await db.from("flow_triggers")
     .select("flow_id, config, interrumpe, flows!inner(id, estado)")
     .eq("channel_id", channelId).eq("tipo", "pedido_estado").eq("activo", true);
+  let started = false;
   for (const t of trigs ?? []) {
     const estados: string[] = ((t as any).config?.estados ?? []).map(String);
     if (!estados.includes(estado)) continue;
@@ -2555,9 +2556,29 @@ async function triggerPedidoEstado(
     try {
       const ok = await startFlowRun(db, channelId, contactId, (t as any).flow_id,
         { force: forzar || !!(t as any).interrumpe });
-      if (ok) break;
+      if (ok) { started = true; break; }
     } catch (e) { console.error("[triggerPedidoEstado]", (e as any)?.message ?? e); }
   }
+  return started;
+}
+
+// Manda la clave de recojo al cliente con un mensaje por DEFECTO. Se usa cuando el
+// pedido llega a saldo_pagado y NADIE más le avisó (ni un aviso configurado en
+// Pagos y atención, ni un flujo pedido_estado): "Aprobar y dar clave" promete que
+// la clave sale, así que no debe depender de que el negocio configure algo. Sale
+// solo si el pedido tiene clave cargada. Devuelve true si la mandó.
+export async function enviarClaveRecojo(
+  db: SupabaseClient, channelId: string, contactId: string, shipping: Record<string, any>,
+): Promise<boolean> {
+  try {
+    const s = shipping || {};
+    const clave = String(s.clave_recojo ?? "").trim();
+    if (!clave) return false;
+    const sede = String(s.destino || s.sede || s.ciudad || "").trim();
+    const txt = `¡Listo! ✅ Confirmé tu pago del saldo.\n\n🔑 Tu *clave de recojo* es *${clave}*.\nMuéstrala en la agencia Shalom${sede ? " de " + sede : ""} para recoger tu pedido. ¡Gracias por tu compra! 🎉`;
+    await deliverMessage(db, channelId, contactId, txt);
+    return true;
+  } catch (e) { console.error("[enviarClaveRecojo]", (e as any)?.message ?? e); return false; }
 }
 
 // Cierra la conversación de VENTA de un contacto (cancela su run activo). Se usa
@@ -2950,7 +2971,10 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     // Venta cerrada → cede el paso al soporte post-venta (la clave la manda el
     // flujo pedido_estado de la línea siguiente).
     await cerrarConversacionVenta(db, contactId);
-    await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
+    const claveFlow = await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
+    // Si no había un flujo pedido_estado que mandara la clave, la mandamos por
+    // defecto (el saldo se aprobó solo, pero el cliente igual necesita su clave).
+    if (!claveFlow) await enviarClaveRecojo(db, channelId, contactId, { ...ship, saldo_operacion: oper });
     // Pedido pagado del todo → recién ahora se entregan las ventas extra
     // digitales que viajaban en él (link/archivo).
     await entregarExtrasDigitales(db, channelId, contactId, (order as any).id);
