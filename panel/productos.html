@@ -488,6 +488,16 @@ function parseFaq(txt){
   return items;
 }
 function compileFaq(items){ return (items||[]).filter(x=>x&&(x.q||x.a)).map(x=>`P: ${(x.q||"").trim()}\nR: ${(x.a||"").trim()}`).join("\n\n"); }
+// Objeciones estructuradas ↔ texto "«objeción» → respuesta" (lo que ya lee el prompt).
+function parseObj(txt){
+  if(!txt||!txt.trim()) return [];
+  return txt.split(/\n+/).map(line=>{
+    const m=line.match(/^\s*[«"']?\s*(.*?)\s*[»"']?\s*(?:→|->|=>|:)\s*([\s\S]*)$/);
+    if(m && m[1]) return { o:m[1].trim(), r:(m[2]||"").trim() };
+    const t=line.trim(); return t?{o:t,r:""}:null;
+  }).filter(Boolean);
+}
+function compileObj(items){ return (items||[]).filter(x=>x&&(x.o||x.r)).map(x=>`«${(x.o||"").trim()}» → ${(x.r||"").trim()}`).join("\n"); }
 
 // ── Conocimiento del producto para la IA ────────────────────────────
 // Igual que negocio_form→negocio en ia.html: los campos guiados viven en
@@ -934,6 +944,7 @@ function renderProductoIA(host){
   if(st.prod.clase==="extra"){ renderExtraIA(b,c,ia); return; }
   if(!Array.isArray(ia.ejemplos)) ia.ejemplos=[];
   if(!Array.isArray(c.ia_multimedia)) c.ia_multimedia=[];
+  if(!Array.isArray(ia.objeciones_items)) ia.objeciones_items=parseObj(ia.objeciones); // objeciones estructuradas
   const P="#a855f7";
   const fisico=(st.prod.tipo||"digital")==="fisico"; // ejemplos/placeholders acordes al tipo
   const taField=(k,label,ph,rows)=>`<label>${label}</label><textarea class="in ia-f" data-k="${k}" rows="${rows||2}" style="min-height:${(rows||2)*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
@@ -956,10 +967,9 @@ function renderProductoIA(host){
       </div>
       <div style="border:1px solid var(--brand,#2b7fff);border-radius:12px;padding:13px;margin-top:12px;background:color-mix(in srgb, var(--brand,#2b7fff) 5%, transparent)">
         <div style="font-weight:700;font-size:13px;margin-bottom:2px">2 · Objeciones y cómo responderlas <span style="font-weight:400;color:var(--faint)">— lo que más ayuda a cerrar</span></div>
-        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 8px;line-height:1.5">Las dudas o pegas típicas del cliente, cada una con tu mejor respuesta. La IA las tendrá a la mano para rebatir con tacto (no discute ni presiona de más). Escribe una por línea, «duda → respuesta». Ejemplos:<br><span style="color:var(--faint)">${fisico
-          ? `"Está caro" → Te dura años y el envío va incluido; además pagas al recibir.<br>"Lo pienso" → Claro 🙂 ¿qué te haría decidir? Hoy tengo stock en tu talla.<br>"¿Es original / de confianza?" → Sí, y pagas contraentrega / te mando fotos reales.`
-          : `"Está caro" → Es acceso de por vida con actualizaciones gratis; se paga una sola vez.<br>"Lo pienso" → Claro 🙂 ¿qué te haría decidir? Apenas pagas te llega el acceso al instante.<br>"¿Es confiable?" → Sí — mira los testimonios, y si no te sirve te devuelvo tu dinero.`}</span></div>
-        ${taField("objeciones","","«Está caro» → tu respuesta\n«Lo pienso» → tu respuesta\n«No confío» → tu respuesta",5)}
+        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 10px;line-height:1.5">Cuando el cliente pone una pega para no comprar, la IA usa tu mejor respuesta para rebatirla con tacto (sin discutir ni presionar de más). Agrega una por una.</div>
+        <div id="objList"></div>
+        <button class="btn" id="objAdd" style="margin-top:6px;height:34px">+ Agregar objeción</button>
         <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
           <div style="font-weight:700;font-size:12.5px;margin-bottom:2px">Preguntas frecuentes <span style="font-weight:400;color:var(--faint)">— duda concreta → respuesta ideal</span></div>
           <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Como "${fisico?"¿hacen envíos a provincia?":"¿cómo recibo el acceso?"}". La IA responderá con estas.</div>
@@ -1074,6 +1084,27 @@ function renderProductoIA(host){
   };
   paintMM();
   b.querySelectorAll(".mmAdd").forEach(btn=> btn.onclick=()=>pickProdMedia(btn.dataset.k, paintMM, prodSync));
+  // Objeciones estructuradas: "Dice" (la pega) / "Respondes" (tu rebate).
+  const objEx = fisico
+    ? ["Está caro","Te dura años y el envío va incluido; además pagas al recibir."]
+    : ["Está caro","Es acceso de por vida y pago único — se paga solo con lo que aprendes."];
+  const paintObj=()=>{
+    const box=$("objList"); if(!box) return; box.innerHTML="";
+    if(!ia.objeciones_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin objeciones todavía. Agrega las pegas típicas ("está caro", "lo pienso", "no confío"…).</div>`; }
+    ia.objeciones_items.forEach((ob,i)=>{
+      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+      el.innerHTML=`
+        <div style="display:flex;align-items:center;gap:8px"><span style="flex:0 0 66px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.03em">Dice</span><input class="in oo" style="flex:1" value="${esc(ob.o||"")}" placeholder="${esc(objEx[0])}"/><button class="iconbtn odl" style="flex:0 0 auto" title="Eliminar">${icon("trash")}</button></div>
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-top:8px"><span style="flex:0 0 66px;font-size:11px;font-weight:700;color:var(--ia1,#a855f7);text-transform:uppercase;letter-spacing:.03em;margin-top:10px">Respondes</span><textarea class="in orr" rows="2" style="flex:1;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(objEx[1])}">${esc(ob.r||"")}</textarea></div>`;
+      const sync=()=>{ ia.objeciones=compileObj(ia.objeciones_items); prodSync(); };
+      el.querySelector(".oo").oninput=(e)=>{ ob.o=e.target.value; sync(); };
+      el.querySelector(".orr").oninput=(e)=>{ ob.r=e.target.value; sync(); };
+      el.querySelector(".odl").onclick=()=>{ ia.objeciones_items.splice(i,1); ia.objeciones=compileObj(ia.objeciones_items); prodSync(); paintObj(); };
+      box.appendChild(el);
+    });
+  };
+  paintObj();
+  $("objAdd").onclick=()=>{ ia.objeciones_items.push({o:"",r:""}); paintObj(); };
   const paintFaq=()=>{
     const box=$("faqList"); box.innerHTML="";
     if(!c.faq_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin preguntas todavía.</div>`; }
