@@ -396,17 +396,21 @@ function renderEntrega(cs){
   if(!(st.tipo==="fisico" && st.zona==="provincia")){ panel.style.display="none"; return; }
   panel.style.display="";
   const ids=new Set(cs.map(c=>c.id));
-  const cnt={}; let fleteCaido=0;
+  const cnt={}; let fleteCaido=0, agConPago=0;
   Object.entries(st.ordersBy).forEach(([cid,ords])=>{ if(!ids.has(cid)) return;
     ords.forEach(o=>{ if(!O.esFisico(o) || O.zonaDe(o)!=="provincia") return;
-      const e=o.estado; cnt[e]=(cnt[e]||0)+1;
-      if(e==="no_recogido") fleteCaido+=Number((o.shipping||{}).flete||0); }); });
+      const e=o.estado, s=o.shipping||{}; cnt[e]=(cnt[e]||0)+1;
+      // "Pagaron saldo" incluye a los que ya mandaron el comprobante estando en
+      // agencia (aún por validar), no solo a los ya aprobados (saldo_pagado).
+      if(e==="en_agencia" && (s.saldo_comprobante||s.saldo_recibido_at)) agConPago++;
+      if(e==="no_recogido") fleteCaido+=Number(s.flete||0); }); });
   const g=(k)=>cnt[k]||0;
   // Niveles acumulados (cada uno incluye a los que ya pasaron de largo).
   const conAdelanto = g("adelanto_validado")+g("por_despachar")+g("despachado")+g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");
   const despachados = g("despachado")+g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");
   const enAgencia   = g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");
-  const pagaronSaldo= g("saldo_pagado")+g("recogido");
+  const pagaronSaldo= agConPago + g("saldo_pagado")+g("recogido"); // pagaron (validado o por validar)
+  const claveEnviada= g("saldo_pagado")+g("recogido");             // saldo aprobado → clave enviada
   const recogieron  = g("recogido");
   const noRecogido  = g("no_recogido");
   const enRiesgo    = g("en_agencia"); // llegó a la agencia, aún no paga/recoge
@@ -435,9 +439,10 @@ function renderEntrega(cs){
     { lbl:"Despachados",  n:despachados,  c:"#3b82f6" },
     { lbl:"En agencia",   n:enAgencia,    c:"#0ea5e9" },
     { lbl:"Pagaron saldo",n:pagaronSaldo, c:"#f59e0b" },
+    { lbl:"Clave enviada",n:claveEnviada, c:"#10b981" },
     { lbl:"Recogieron",   n:recogieron,   c:"#16a34a" },
   ];
-  const pasos=[pct(despachados,conAdelanto), pct(enAgencia,despachados), pct(pagaronSaldo,enAgencia), pct(recogieron,pagaronSaldo)];
+  const pasos=[pct(despachados,conAdelanto), pct(enAgencia,despachados), pct(pagaronSaldo,enAgencia), pct(claveEnviada,pagaronSaldo), pct(recogieron,claveEnviada)];
   const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
   let html="";
   niveles.forEach((lv,i)=>{
@@ -465,19 +470,28 @@ function renderEntrega(cs){
 // (no personas) de los contactos ya filtrados. Se oculta si no hay provincia.
 function renderProvinciaAhora(cs){
   const panel=$("provAhoraPanel"), el=$("provAhora");
+  // Solo en el toggle de Provincia (igual que el Embudo de entrega).
+  if(!(st.tipo==="fisico" && st.zona==="provincia")){ panel.style.display="none"; return; }
   const ids=new Set(cs.map(c=>c.id));
-  const cnt={};
+  // Snapshot del paso ACTUAL. "En agencia" = llegó y no ha pagado; "Pagaron saldo"
+  // = mandó el comprobante y está por validar; "Clave enviada" = ya lo aprobaste.
+  let conAdel=0,desp=0,enAg=0,pagoSaldo=0,clave=0,recojo=0;
   Object.entries(st.ordersBy).forEach(([cid,ords])=>{ if(!ids.has(cid)) return;
-    ords.forEach(o=>{ if(!O.esFisico(o) || O.zonaDe(o)!=="provincia") return; cnt[o.estado]=(cnt[o.estado]||0)+1; }); });
-  const g=(...ks)=>ks.reduce((s,k)=>s+(cnt[k]||0),0);
+    ords.forEach(o=>{ if(!O.esFisico(o) || O.zonaDe(o)!=="provincia") return;
+      const e=o.estado, s=o.shipping||{};
+      if(e==="adelanto_validado"||e==="por_despachar") conAdel++;
+      else if(e==="despachado") desp++;
+      else if(e==="en_agencia") ((s.saldo_comprobante||s.saldo_recibido_at)?pagoSaldo++:enAg++);
+      else if(e==="saldo_pagado") clave++;
+      else if(e==="recogido") recojo++;
+    }); });
   const rows=[
-    { label:"Esperando adelanto",           desc:"Dieron sus datos; falta que paguen el adelanto",  color:"#f0a92b", n:g("esperando_adelanto") },
-    { label:"Por despachar",                 desc:"Adelanto pagado; listos para enviar a la agencia", color:"#8b5cf6", n:g("adelanto_validado","por_despachar") },
-    { label:"En camino a la agencia",        desc:"Despachados; viajando a destino",                  color:"#2b7fff", n:g("despachado") },
-    { label:"En agencia · por cobrar saldo", desc:"Llegaron; esperan que paguen el saldo y recojan",  color:"#06b6d4", n:g("en_agencia") },
-    { label:"Saldo pagado · clave enviada",  desc:"Pagaron el saldo; ya tienen su clave de recojo",   color:"#10b981", n:g("saldo_pagado") },
-    { label:"Recogido",                      desc:"Recogieron su pedido — cerrado ✓",                 color:"#16a34a", n:g("recogido") },
-    { label:"No recogido",                   desc:"No fueron a recoger — flete perdido",              color:"#94a3b8", n:g("no_recogido") },
+    { label:"Con adelanto",  desc:"Adelanto pagado; listos para despachar a la agencia", color:"#8b5cf6", n:conAdel },
+    { label:"Despachados",   desc:"Ya salieron; viajando a la agencia de destino",       color:"#3b82f6", n:desp },
+    { label:"En agencia",    desc:"Llegaron; esperando que paguen el saldo",             color:"#0ea5e9", n:enAg },
+    { label:"Pagaron saldo", desc:"Mandaron el comprobante del saldo — por validar",     color:"#f59e0b", n:pagoSaldo },
+    { label:"Clave enviada", desc:"Saldo aprobado; ya tienen su clave de recojo",        color:"#10b981", n:clave },
+    { label:"Recojo",        desc:"Recogieron su pedido — cerrado ✓",                    color:"#16a34a", n:recojo },
   ];
   const total=rows.reduce((s,r)=>s+r.n,0);
   if(total===0){ panel.style.display="none"; return; }
