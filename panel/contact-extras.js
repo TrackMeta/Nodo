@@ -1020,6 +1020,11 @@ export async function openEditarPedido(o, deps) {
 
   // Ventas extra y regalos (order_bumps): quitar/corregir los existentes + AGREGAR nuevos a mano.
   const bumps0 = Array.isArray(o.order_bumps) ? o.order_bumps.map((b) => ({ ...b })) : [];
+  // Para recalcular el saldo al vuelo: saldo actual guardado + cuánto sumaban los
+  // extras al abrir. El saldo nuevo = base + (extras de ahora − extras de antes),
+  // así el envío/precio base quedan intactos y solo se mueve lo que cambió.
+  const sumaBumpsVieja = bumps0.reduce((a, b) => a + Number(b.precio || 0), 0);
+  const saldoBase = Number(s.saldo || 0);
   const bumpRow = (b, i) => {
     const esRegalo = b.regalo === true || Number(b.precio || 0) === 0;
     const nom = String(b.nombre || (esRegalo ? "Regalo" : "Extra")).replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "").replace(/\s*\((?:extra|regalo)\)\s*/ig, " ").trim();
@@ -1049,7 +1054,7 @@ export async function openEditarPedido(o, deps) {
           <div id="eBumps">${bumps0.map((b, i) => bumpRow(b, i)).join("")}</div>
           <div id="eBumpsNew"></div>
           <button type="button" id="eAddBump" style="margin-top:2px;border:1px dashed var(--line,#d0d0d0);background:transparent;color:var(--accent,#2563eb);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px">＋ Agregar extra o regalo</button>
-          <div class="hint">Agrega un extra/regalo a mano, quita (✕) uno puesto por error o corrige su precio. Ajusta el <b>saldo/importe</b> a mano; el stock no se reajusta solo.</div>
+          <div class="hint">Agrega un extra/regalo a mano, quita (✕) uno puesto por error o corrige su precio. El <b>saldo se recalcula solo</b>; el stock no se reajusta.</div>
         </div>`;
 
   return new Promise((resolve) => {
@@ -1128,7 +1133,22 @@ export async function openEditarPedido(o, deps) {
     const cerrar = (val) => { ov.remove(); resolve(val); };
     ov.onclick = (e) => { if (e.target === ov) cerrar(false); };
     g(".cancel").onclick = () => cerrar(false);
-    ov.querySelectorAll(".eb-del").forEach((btn) => { btn.onclick = () => { const r = btn.closest(".eb-row"); if (r) r.remove(); }; });
+
+    // Suma actual de los extras (existentes con precio corregido + nuevos que no
+    // son regalo). Los regalos y las filas sin precio no suman.
+    const sumaExtras = () => {
+      let sum = 0;
+      ov.querySelectorAll("#eBumps .eb-row").forEach((row) => { const pin = row.querySelector(".eb-precio"); if (pin) sum += Number(pin.value) || 0; });
+      ov.querySelectorAll("#eBumpsNew .eb-new").forEach((row) => { if (!row.querySelector(".ebn-regalo").checked) sum += Number(row.querySelector(".ebn-precio").value) || 0; });
+      return sum;
+    };
+    // Saldo nuevo = saldo guardado + lo que cambiaron los extras. Solo aplica si el
+    // pedido tiene un saldo (provincia siempre; Lima cuando se cobra contraentrega)
+    // y hay campo visible (#eSaldo, provincia). Lima lo sincroniza al guardar.
+    const saldoNuevo = () => saldoBase + (sumaExtras() - sumaBumpsVieja);
+    const recalcSaldo = () => { const inp = g("#eSaldo"); if (inp && saldoBase > 0) inp.value = +(saldoNuevo().toFixed(2)); };
+    ov.querySelectorAll(".eb-del").forEach((btn) => { btn.onclick = () => { const r = btn.closest(".eb-row"); if (r) r.remove(); recalcSaldo(); }; });
+    ov.querySelectorAll("#eBumps .eb-precio").forEach((inp) => { inp.oninput = recalcSaldo; });
 
     // Cambiar de producto: al elegir otro producto, repueblo las presentaciones;
     // al cambiar la presentación, sugiero su precio en el importe editable (Lima).
@@ -1149,9 +1169,11 @@ export async function openEditarPedido(o, deps) {
       sel.onchange = () => {
         const opt = sel.selectedOptions[0];
         if (opt && opt.value) { if (!nom.value) nom.value = opt.dataset.nom || opt.textContent.trim(); if (!reg.checked && pre.value === "" && opt.dataset.precio) pre.value = opt.dataset.precio; }
+        recalcSaldo();
       };
-      reg.onchange = () => { if (reg.checked) { pre.value = ""; pre.disabled = true; } else { pre.disabled = false; } };
-      row.querySelector(".ebn-del").onclick = () => row.remove();
+      reg.onchange = () => { if (reg.checked) { pre.value = ""; pre.disabled = true; } else { pre.disabled = false; } recalcSaldo(); };
+      pre.oninput = recalcSaldo;
+      row.querySelector(".ebn-del").onclick = () => { row.remove(); recalcSaldo(); };
     };
     if (g("#eAddBump")) g("#eAddBump").onclick = () => {
       const wrap = g("#eBumpsNew"); const tmp = document.createElement("div"); tmp.innerHTML = bumpNewRowHtml.trim();
@@ -1181,6 +1203,9 @@ export async function openEditarPedido(o, deps) {
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
           referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL") });
         const a = g("#eAmountL").value; if (a !== "") amount = Number(a);
+        // Lima no muestra campo de saldo, pero la ficha lo lee de shipping.saldo:
+        // lo sincronizo con el delta de los extras para que no quede desfasado.
+        if (saldoBase > 0) ship.saldo = +(saldoNuevo().toFixed(2));
       }
       const body = { order_id: o.id, shipping: ship };
       // Cambio de producto / presentación → product_id + version_id (order-update
