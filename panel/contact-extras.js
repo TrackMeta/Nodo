@@ -1323,7 +1323,15 @@ function ocrVerdictHtml(o, et, sym) {
   if (et.id === "digital" && (s.digital_ok_ia != null || s.digital_monto_leido != null)) return line(s.digital_ok_ia === true, s.digital_monto_leido, s.digital_operacion, s.digital_revisar);
   if (et.id === "extra" && (s.extra_ok_ia != null || s.extra_monto_leido != null)) return line(s.extra_ok_ia === true, s.extra_monto_leido, s.extra_operacion, null);
   if (et.id === "adelanto" && (s.adelanto_revisar || s.adelanto_monto_leido != null)) return line(s.adelanto_ok_ia === true, s.adelanto_monto_leido, s.adelanto_operacion_leida, s.adelanto_revisar);
-  if (et.id === "saldo" && s.saldo_revisar) return `<div class="cx-cop2-ia duda">${ROBOT}<span>La IA no validó el saldo sola: <b>${esc(s.saldo_revisar)}</b></span></div>`;
+  if (et.id === "saldo" && s.saldo_revisar) {
+    // La nota queda CONGELADA desde que se leyó el comprobante. Si el único motivo
+    // era "no tiene clave de recojo" y ya la cargaste, el motivo se resolvió (el
+    // pago era legítimo) → muestra que quedó listo, no la advertencia vieja.
+    if (/clave de recojo/i.test(s.saldo_revisar) && s.clave_recojo) {
+      return `<div class="cx-cop2-ia ok">${ROBOT}<span>La IA leyó el saldo y cuadra${s.saldo_monto_leido != null ? ` · leyó <b>${sym} ${esc(s.saldo_monto_leido)}</b>` : ""} · clave lista, puedes aprobar</span></div>`;
+    }
+    return `<div class="cx-cop2-ia duda">${ROBOT}<span>La IA no validó el saldo sola: <b>${esc(s.saldo_revisar)}</b></span></div>`;
+  }
   return "";
 }
 

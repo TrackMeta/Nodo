@@ -234,7 +234,12 @@ function card(o,et){
       s.adelanto_revisar?`<br>${esc(s.adelanto_revisar)}`:""}</div></div>`;
   }
   if(et.id==="saldo" && s.saldo_revisar){
-    iaBox=`<div class="ia duda">${icon("robot")}<div>La IA no validó el saldo sola: <b>${esc(s.saldo_revisar)}</b></div></div>`;
+    // Nota CONGELADA: si el único motivo era "no tiene clave" y ya la cargaste,
+    // el pago era legítimo → muéstralo como listo, no la advertencia vieja.
+    if(/clave de recojo/i.test(s.saldo_revisar) && s.clave_recojo)
+      iaBox=`<div class="ia ok">${icon("robot")}<div>La IA leyó el saldo y cuadra${s.saldo_monto_leido!=null?` · leyó <b>${sym(o)} ${esc(s.saldo_monto_leido)}</b>`:""} · clave lista, puedes aprobar</div></div>`;
+    else
+      iaBox=`<div class="ia duda">${icon("robot")}<div>La IA no validó el saldo sola: <b>${esc(s.saldo_revisar)}</b></div></div>`;
   }
 
   // Datos copiables: después de aprobar los vas a tipear en el sistema de la
