@@ -551,16 +551,22 @@ export async function reconciliarStockManual(
     if (b) delete b._attrs;
   }
 
-  // ¿Se puede tocar el inventario? Solo si el pedido YA reservó y sigue vivo.
-  const noStock = !ship.stock_descontado || ship.stock_devuelto ||
-    ["esperando_adelanto", "cancelado", "anulada", "rechazado", "no_recogido"].includes(String(estado));
+  // Tres situaciones del pedido frente al inventario:
+  //  · perdido/devuelto  → NO se toca el stock (la venta se cayó).
+  //  · esperando_adelanto → aún no reservó; se ACTUALIZA el plan (stock_mov_plan)
+  //    para que reservarStockPedido descuente el extra recién agregado al validar.
+  //  · reservado (vivo, ya descontó) → se reconcilia contra stock_mov (diff).
+  const perdido = ship.stock_devuelto || ["cancelado", "anulada", "rechazado", "no_recogido"].includes(String(estado));
+  const esperando = String(estado) === "esperando_adelanto";
+  const reservado = ship.stock_descontado && !perdido && !esperando;
 
   let alerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
-  let stockMov = Array.isArray(ship.stock_mov) ? ship.stock_mov : [];
+  const patchShip: any = { ...ship };
 
-  if (!noStock) {
-    const actual: Array<{ product_id: string; key: string; unidades: number }> =
-      (Array.isArray(ship.stock_mov) ? ship.stock_mov : []).filter((m: any) => m?.product_id && m?.key);
+  if (reservado || (esperando && !perdido)) {
+    // Stock DESEADO del pedido: principal (por su variante) + bumps físicos.
+    const base = reservado ? (Array.isArray(ship.stock_mov) ? ship.stock_mov : []) : (Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : []);
+    const actual: Array<{ product_id: string; key: string; unidades: number }> = base.filter((m: any) => m?.product_id && m?.key);
     const deseado: Array<{ product_id: string; key: string; unidades: number }> = [];
     // Principal (si es físico con stock). Cantidad = la que ya tenía (default 1).
     if (productId) {
@@ -577,30 +583,35 @@ export async function reconciliarStockManual(
         deseado.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
       }
     }
-    // Diff por (product_id, key): lo que falta se descuenta, lo que sobra se devuelve.
-    // Agrupa por (product_id, key). El id del Map es solo para agrupar; las partes
-    // van en el VALOR para no re-parsear (el key puede contener cualquier carácter).
-    const agg = (list: typeof actual) => {
-      const m = new Map<string, { product_id: string; key: string; unidades: number }>();
-      for (const x of list) {
-        const id = JSON.stringify([x.product_id, x.key]);
-        const cur = m.get(id);
-        if (cur) cur.unidades += Number(x.unidades) || 0;
-        else m.set(id, { product_id: x.product_id, key: x.key, unidades: Number(x.unidades) || 0 });
-      }
-      return m;
-    };
-    const A = agg(actual), D = agg(deseado);
-    const desc: typeof actual = [], dev: typeof actual = [];
-    for (const [id, d] of D) { const av = A.get(id)?.unidades || 0; if (d.unidades > av) desc.push({ product_id: d.product_id, key: d.key, unidades: d.unidades - av }); }
-    for (const [id, a] of A) { const dv = D.get(id)?.unidades || 0; if (a.unidades > dv) dev.push({ product_id: a.product_id, key: a.key, unidades: a.unidades - dv }); }
-    if (desc.length) alerts = await aplicarStock(db, desc, -1);
-    if (dev.length) await aplicarStock(db, dev, 1);
-    stockMov = deseado;
+    if (reservado) {
+      // Diff por (product_id, key): lo que falta se descuenta, lo que sobra se devuelve.
+      // El id del Map es solo para agrupar; las partes van en el VALOR para no
+      // re-parsear (el key puede contener cualquier carácter).
+      const agg = (list: typeof actual) => {
+        const m = new Map<string, { product_id: string; key: string; unidades: number }>();
+        for (const x of list) {
+          const id = JSON.stringify([x.product_id, x.key]);
+          const cur = m.get(id);
+          if (cur) cur.unidades += Number(x.unidades) || 0;
+          else m.set(id, { product_id: x.product_id, key: x.key, unidades: Number(x.unidades) || 0 });
+        }
+        return m;
+      };
+      const A = agg(actual), D = agg(deseado);
+      const desc: typeof actual = [], dev: typeof actual = [];
+      for (const [id, d] of D) { const av = A.get(id)?.unidades || 0; if (d.unidades > av) desc.push({ product_id: d.product_id, key: d.key, unidades: d.unidades - av }); }
+      for (const [id, a] of A) { const dv = D.get(id)?.unidades || 0; if (a.unidades > dv) dev.push({ product_id: a.product_id, key: a.key, unidades: a.unidades - dv }); }
+      if (desc.length) alerts = await aplicarStock(db, desc, -1);
+      if (dev.length) await aplicarStock(db, dev, 1);
+      patchShip.stock_mov = deseado;
+    } else {
+      // esperando_adelanto: no se descuenta todavía; se guarda el PLAN actualizado.
+      patchShip.stock_mov_plan = deseado;
+    }
   }
 
-  // Persistir: bumps con stock_key resuelto (sin _attrs) + el stock_mov reconciliado.
-  await db.from("orders").update({ order_bumps: nb, shipping: { ...ship, stock_mov: stockMov } }).eq("id", orderId);
+  // Persistir: bumps con stock_key resuelto (sin _attrs) + el stock reconciliado.
+  await db.from("orders").update({ order_bumps: nb, shipping: patchShip }).eq("id", orderId);
   return alerts;
 }
 
