@@ -348,33 +348,37 @@ export const EXTRAS_CSS = `
   /* Acento IA (violeta/fucsia) para la Memoria IA — disponible donde se inyecte */
   :root{--ia:#a855f7;--ia-2:#ec4899;--ia-bg:rgba(168,85,247,.12);--ia-border:rgba(168,85,247,.4)}
   /* ── Memoria IA (piel de la sección IA) ── */
-  .cpanel .mia{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:14px;padding:13px 13px 11px;margin:14px 0 6px;
-    background:radial-gradient(120% 130% at 0% 0%,rgba(168,85,247,.20),transparent 55%),radial-gradient(120% 130% at 100% 100%,rgba(236,72,153,.14),transparent 55%),var(--surface-2)}
-  .cpanel .mia::after{content:"";position:absolute;right:-38px;top:-38px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,.30),transparent 70%);filter:blur(20px);pointer-events:none}
-  .cpanel .mia-hd{position:relative;display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
-  .cpanel .mia-badge{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ia);background:var(--ia-bg);border:1px solid var(--ia-border);border-radius:999px;padding:4px 10px}
-  .cpanel .mia-badge svg{width:13px;height:13px}
-  .cpanel .mia-cap{font-size:10px;color:var(--faint)}
-  .cpanel .mia-lyr{position:relative;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:0 0 5px}
+  .cpanel .mia{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:16px;padding:15px 14px 12px;margin:14px 0 6px;
+    background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.22),transparent 55%),radial-gradient(120% 140% at 100% 100%,rgba(236,72,153,.16),transparent 55%),var(--surface-2)}
+  .cpanel .mia::after{content:"";position:absolute;right:-42px;top:-42px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,.34),transparent 70%);filter:blur(22px);pointer-events:none}
+  .cpanel .mia-hd{position:relative;display:flex;align-items:center;gap:10px;margin-bottom:15px}
+  .cpanel .mia-ico{width:32px;height:32px;flex:none;border-radius:9px;background:linear-gradient(135deg,var(--ia),var(--ia-2));color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(168,85,247,.4)}
+  .cpanel .mia-ico svg{width:17px;height:17px}
+  .cpanel .mia-htx{display:flex;flex-direction:column;min-width:0}
+  .cpanel .mia-title{font-size:15.5px;font-weight:800;letter-spacing:-.2px;line-height:1.1;background:linear-gradient(90deg,var(--ia),var(--ia-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .cpanel .mia-cap{font-size:10.5px;color:var(--faint);margin-top:2px}
+  .cpanel .mia-lyr{position:relative;display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#c9b6e8;font-weight:700;margin:0 0 6px}
+  .cpanel .mia-lyr::before{content:"";width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,var(--ia),var(--ia-2));flex:none}
   .cpanel .mia-lyr .mia-sub{color:var(--faint);text-transform:none;letter-spacing:0;font-weight:400}
-  .cpanel .mia-chips{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin-bottom:13px}
-  .cpanel .mia-chip{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid transparent;line-height:1;font-family:inherit}
+  .cpanel .mia-chips{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+  .cpanel .mia-chip{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid transparent;line-height:1;font-family:inherit}
   .cpanel .mia-chip.sell{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.5);color:#e9d5ff;cursor:pointer}
-  .cpanel .mia-chip.ghost{background:rgba(168,85,247,.05);border:1px dashed var(--ia-border);color:var(--muted);cursor:pointer}
-  .cpanel .mia-chip.who{background:rgba(236,72,153,.12);border-color:rgba(236,72,153,.45);color:#f9a8d4}
-  .cpanel .mia-chip.how{background:rgba(168,85,247,.05);border:1px dashed #4a3a63;color:#9a8bb0}
+  .cpanel .mia-chip.ghost{background:rgba(168,85,247,.06);border:1px dashed var(--ia-border);color:var(--muted);cursor:pointer}
+  .cpanel .mia-chip.who{background:rgba(236,72,153,.15);border-color:rgba(236,72,153,.5);color:#f9a8d4}
+  .cpanel .mia-chip.how{background:rgba(139,110,247,.15);border-color:rgba(139,110,247,.45);color:#c4b5fd}
   .cpanel .mia-chip.sell:hover,.cpanel .mia-chip.ghost:hover{filter:brightness(1.14)}
   .cpanel .mia-chip svg{width:11px;height:11px;vertical-align:-1px;opacity:.7}
   .cpanel .mia-none{font-size:11.5px;color:var(--faint)}
   .cpanel .mia-edit{font-size:12px;height:28px;border-radius:999px;background:var(--surface);border:1px solid var(--ia);color:var(--text);padding:0 11px;outline:none;min-width:90px;font-family:inherit}
-  .cpanel .mia-foot{position:relative;display:flex;align-items:center;justify-content:space-between;margin-top:2px;padding-top:10px;border-top:1px solid var(--border)}
+  .cpanel .mia-foot{position:relative;display:flex;align-items:center;justify-content:space-between;margin-top:2px;padding-top:10px;border-top:1px solid rgba(168,85,247,.18)}
   .cpanel .mia-hint{font-size:10.5px;color:var(--faint)}
   .cpanel .mia-mini{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;margin:10px 0 2px}
   .cpanel .mia-mini:first-child{margin-top:0}
   /* Tema claro: los chips llevan texto oscuro (el claro se lee mal sobre el tinte pálido) */
+  html[data-theme=light] .cpanel .mia-lyr{color:#7c3aed}
   html[data-theme=light] .cpanel .mia-chip.sell{color:#6b21a8}
   html[data-theme=light] .cpanel .mia-chip.who{color:#9d174d}
-  html[data-theme=light] .cpanel .mia-chip.how{color:#6d28d9}
+  html[data-theme=light] .cpanel .mia-chip.how{background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.35);color:#6d28d9}
   html[data-theme=light] .cpanel .mia-edit{color:var(--text)}
   /* Secciones desplegables (acordeón) */
   .cpanel .cx-sec{border-top:1px solid var(--border)}

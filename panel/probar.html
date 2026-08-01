@@ -532,7 +532,7 @@ function renderContactPanel(){
   const sellChips = userFields.filter(f=>esValorPresentable(vals[f.id]))
     .map(f=>`<button type="button" class="mia-chip sell" data-field="${f.id}" data-name="${esc(f.nombre)}" title="${esc(f.nombre)} — toca para editar">${esc(String(vals[f.id]).trim())}</button>`).join("");
   const miaCard = `<div class="mia">
-      <div class="mia-hd"><span class="mia-badge">${spark} Memoria IA</span><span class="mia-cap">la IA la mantiene sola</span></div>
+      <div class="mia-hd"><span class="mia-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span><span class="mia-htx"><span class="mia-title">Memoria IA</span><span class="mia-cap">la IA la mantiene sola</span></span></div>
       <div class="mia-lyr">Para vender</div>
       <div class="mia-chips" id="pFields">${sellChips || '<span class="mia-none">Aún sin datos — la IA los irá capturando al conversar</span>'}</div>
       ${miaWho.length?`<div class="mia-lyr">Quién es <span class="mia-sub">· detectado</span></div><div class="mia-chips">${miaWho.map((t,i)=>`<button type="button" class="mia-chip who" data-mlayer="quien_es" data-midx="${i}" title="Toca para editar · vacía para borrar">${esc(t)}</button>`).join("")}<button type="button" class="mia-chip ghost mia-add" data-mlayer="quien_es" title="Agregar">+</button></div>`:""}
