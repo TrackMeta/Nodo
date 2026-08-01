@@ -5740,6 +5740,11 @@ export async function moverEtapa(db: SupabaseClient, channelId: string, contactI
       return;
     }
     await db.from("contacts").update({ stage: target }).eq("id", contactId);
+    // La ETIQUETA "Compra" marca una compra REAL: se pone al llegar a "comprado"
+    // (Lima entregado_cobrado / provincia saldo_pagado o recogido / digital
+    // confirmada), NO al crear el pedido. Así un pedido aún en camino/por cobrar
+    // no la tiene. Antes la ponía un add_tag del flujo al crear el pedido.
+    if (target === "comprado" && channelId) await addTag(db, channelId, contactId, "Compra").catch(() => {});
     if (channelId) await logEvent(db, channelId, contactId, "nota", "Etapa (auto): " + target).catch(() => {});
   } catch (_) { /* la columna puede faltar; no romper la venta */ }
 }

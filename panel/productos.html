@@ -2409,7 +2409,6 @@ async function generarFlujoFisico(flowId, N, E){
                 cliente:"{{nombre_completo}}", opcion:"{{opcion}}", saldo:"{{total_cobrar}}", entrega_hoy:"{{entrega_hoy}}",
                 tel:"{{telefono}}" } },
       { tipo:"set_field", key:"pedido_creado", valor:"si" },
-      { tipo:"add_tag", valor:"Compra" },
       // El texto vive en el catálogo de avisos (Canales → Avisos de Telegram),
       // no acá: así se puede apagar o reescribir sin regenerar el flujo, y
       // regenerarlo no pisa lo que el operador haya editado.
@@ -2632,8 +2631,7 @@ async function generarFlujoVenta(){
     // digital no existía en ningún reporte.
     const nRegistrar=await N("accion","Registrar la venta",{
       acciones:[
-        { tipo:"add_tag", valor:"Compra" },
-        { tipo:"crear_pedido", una_vez:"venta_{{opcion_id}}", estado:"confirmada", monto:"{{precio}}",
+          { tipo:"crear_pedido", una_vez:"venta_{{opcion_id}}", estado:"confirmada", monto:"{{precio}}",
           datos:{ opcion:"{{opcion}}", comprobante:"{{ultima_imagen}}" } },
         { tipo:"notify_admin", una_vez:"aviso_{{opcion_id}}", foto:"{{ultima_imagen}}",
           plantilla:"venta_digital" },
