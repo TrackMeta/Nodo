@@ -454,7 +454,7 @@ function renderDetail(){
   if(esRegalo) SEC.opciones="Qué se entrega";
   // En físico la sección "producto" ya no tiene identidad (se edita en el
   // encabezado): solo variantes + stock, así que el breadcrumb lo refleja.
-  if((st.prod.tipo||"digital")==="fisico") SEC.producto="Variantes y stock";
+  if((st.prod.tipo||"digital")==="fisico") SEC.producto="Variantes y stock"; else SEC.producto="Detalles a preguntar";
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
   // "¿Lo armo por ti?" es este FAB de abajo a la derecha, visible en todo el editor.
@@ -604,17 +604,7 @@ function renderProducto(host){
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">${tipo==="fisico"
       ? "Las <b>tallas/colores</b> (si tiene) y <b>cuántas unidades</b> te quedan. Nombre y emoji se editan arriba; el precio, en <b>¿Cuánto cuesta?</b>."
-      : "Lo básico: nombre, <b>tu costo</b> y los detalles que la IA pregunta. El <b>precio</b> y las <b>presentaciones</b> van en <b>Presentaciones y precios</b>; la <b>entrega</b> y cómo lo <b>vende la IA</b>, en sus pestañas."}</p>
-    ${tipo==="digital"?`
-    <div class="card">
-      <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Tu costo <span style="font-weight:400;color:var(--faint);font-size:12px">— opcional</span></h4>
-      <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="Ej. 0" style="margin-top:6px"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:5px">Lo que te cuesta cada venta (comisión de la pasarela, licencias…). El Dashboard lo usa para tu ganancia real (precio − costo). En un digital suele ser 0. El cliente nunca lo ve.</div>
-      <div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.55">
-        <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("dollar")}</span>
-        <div>El <b>precio de venta</b> vive en <a href="#" id="goOpc2" style="color:var(--brand)">Presentaciones y precios →</a> — ahí pones el precio, sea una sola presentación o varias. Queda disponible en tus flujos como <b style="color:var(--brand)">{{precio}}</b>.</div>
-      </div>
-    </div>`:""}
+      : "Datos que la IA le <b>pregunta al cliente</b> antes de cerrar (nombre para el certificado, idioma…). El <b>precio</b> va en <b>¿Cuánto cuesta?</b> y la <b>entrega</b> en <b>¿Cómo se entrega?</b>."}</p>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} ${tipo==="fisico"?"Tallas, colores y variantes":"Detalles a preguntar"} <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px">${tipo==="fisico"
@@ -848,26 +838,34 @@ function renderEntrega(host){
   const c=st.prod.config=st.prod.config||{};
   const tipo=st.prod.tipo||"digital";
   if(tipo==="digital"){
+    const simple = st.versions.length<=1;
+    let v = st.versions[0]; if(!v){ v={ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:0 }; st.versions.push(v); }
     b.innerHTML=`
       <p class="hint" style="margin:0 0 14px">Cómo recibe el cliente lo que compró, apenas confirma el pago.</p>
+      ${simple ? `
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("message")} Cómo se entrega</h4>
-        <label style="margin-top:0">Mensaje de entrega</label>
+        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("link")} Qué recibe el cliente</h4>
+        <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">El <b>link, archivo, imagen o video</b> que se envía al confirmar el pago. Disponible en flujos como <b style="color:var(--brand)">{{link_entrega}}</b>.</div>
+        <div class="oe"></div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn oel" style="height:32px">${icon("link")} Link</button>
+          <button class="btn oef" style="height:32px">${icon("file")} Archivo / imagen / video</button>
+        </div>
+      </div>` : `
+      <div class="card"><div style="font-size:12.5px;color:var(--muted);line-height:1.6">Tienes <b>varias presentaciones</b> y cada una entrega lo suyo. Configura el link/archivo de cada una en <a href="#" id="goEntOpc" style="color:var(--brand)">¿Cuánto cuesta? →</a>.</div></div>`}
+      <div class="card">
+        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("message")} El mensaje de entrega</h4>
+        <label style="margin-top:6px">Mensaje que abre la entrega</label>
         <input class="in" id="pEntMsg" value="${esc(c.entrega_mensaje||"")}" placeholder="¡Pago confirmado! 🎉 Acá tienes tu acceso:"/>
-        <div style="font-size:11px;color:var(--faint);margin-top:7px">El saludo que abre la entrega (general). Cada presentación puede tener además su propio mensajito.</div>
         <label class="chk" style="margin-top:16px;justify-content:space-between">
           <span style="font-weight:600;font-size:13px">Entregar todo en una sola burbuja</span>
           <span class="sw ${c.entrega_burbuja_unica?'on':''}" id="pEntUna"></span>
         </label>
-        <div style="font-size:11px;color:var(--faint);margin-top:7px">Junta el saludo + todos los links en un mismo mensaje. Los <b>archivos adjuntos</b> salen aparte (regla de WhatsApp). Si hay ventas extra “antes”, se entregan junto con el principal.</div>
-        <div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.5">
-          <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("link")}</span>
-          <div>Los <b>links y archivos</b> que recibe el cliente se ponen en <a href="#" id="goOpc3" style="color:var(--brand)">Presentaciones y precios → Qué entrega</a> — cada presentación entrega lo suyo. Disponibles en flujos como <b style="color:var(--brand)">{{link_entrega}}</b>.</div>
-        </div>
+        <div style="font-size:11px;color:var(--faint);margin-top:7px">Junta el saludo + todos los links en un mismo mensaje. Los <b>archivos adjuntos</b> salen aparte (regla de WhatsApp).</div>
       </div>
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px">${icon("shield")} Validación del pago <span style="font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);padding:2px 8px;border-radius:20px">ajuste de pago</span></h4>
-        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Es un ajuste de <b>pago</b> (cuándo se entrega tras cobrar), no de entrega. Por defecto sigue lo del canal en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>; acá lo cambias <b>solo para este producto</b>.</div>
+        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("shield")} Validación del pago <span style="font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);padding:2px 8px;border-radius:20px">ajuste de pago</span></h4>
+        <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega tras cobrar. Por defecto sigue lo del canal en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>; acá lo cambias <b>solo para este producto</b>.</div>
         <select class="in" id="pValPago" style="max-width:320px">
           <option value="" ${!c.validacion_pago?"selected":""}>Usar el default del canal</option>
           <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>⚡ Automático — entrega al toque si el monto cuadra</option>
@@ -877,7 +875,11 @@ function renderEntrega(host){
     const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);
     const eu=$("pEntUna"); if(eu) eu.onclick=()=>{ const on=!c.entrega_burbuja_unica; c.entrega_burbuja_unica=on; prodSetC("entrega_burbuja_unica", on||undefined); eu.classList.toggle("on", on); };
     const vp=$("pValPago"); if(vp) vp.onchange=(e)=>prodSetC("validacion_pago", e.target.value||undefined);
-    const g=$("goOpc3"); if(g) g.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
+    if(simple){
+      const oel=b.querySelector(".oel"); if(oel) oel.onclick=()=>{ v.entrega=Array.isArray(v.entrega)?v.entrega:[]; v.entrega.push({tipo:"link",url:"",nombre:""}); paintEntrega(b,v,false); const f=b.querySelectorAll(".oe .eu"); if(f[f.length-1]) f[f.length-1].focus(); };
+      const oef=b.querySelector(".oef"); if(oef) oef.onclick=()=>pickEntregaFile(v,()=>paintEntrega(b,v,false));
+      if(b.querySelector(".oe")) paintEntrega(b,v,false);
+    } else { const g=$("goEntOpc"); if(g) g.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); }; }
     return;
   }
   // Físico: TODA la logística (zonas, agencias, envío gratis, costos, adelanto
@@ -2066,7 +2068,9 @@ async function renderInicio(){
   const atrs=(c.atributos||[]).length;
   const stockSub = (atrs||totStock) ? `${atrs?atrs+" variante(s) · ":""}${totStock} unidad(es) en stock` : "Sin variantes · agrega cuántas tienes";
 
-  const qEs = rowHtml("producto",{label:"¿Qué es?",sub:`${emo}${esc(st.prod.nombre||"tu producto")} · ${fisico?"físico":"digital"}`,ico:IC.producto,ok:true});
+  // Digital: "producto" ya no es identidad (eso va en el encabezado) — es solo
+  // "Detalles a preguntar" (datos que la IA pide antes de cerrar). Opcional.
+  const qEs = rowHtml("producto",{label:"Detalles a preguntar",sub:(c.atributos||[]).length?`${(c.atributos||[]).length} dato(s) que la IA pide`:"Datos que la IA pide antes de cerrar (opcional)",ico:icon("edit"),opt:true,ok:(c.atributos||[]).length>0});
   const qCuesta = rowHtml("opciones",{label:"¿Cuánto cuesta?",sub:precioSub,warn:precioWarn,ico:icon("dollar")});
   const qVar = fisico
     ? rowHtml("producto",{label:"Variantes y stock",sub:stockSub,ico:icon("productos"),opt:true,ok:(atrs>0||totStock>0)})
@@ -2113,7 +2117,7 @@ async function renderInicio(){
       </div>`;
   } else if(esExtra){
     b.innerHTML=`${headCard}
-      ${group("Tu producto",fisico?[qCuesta,qVar]:[qEs,qCuesta,qVar])}
+      ${group("Tu producto",fisico?[qCuesta,qVar]:[qCuesta,qVar,qEs])}
       ${group("Tu venta",[rIA])}
       <div class="card" style="border-color:var(--brand-border);margin-top:14px">
         <h4 style="margin-top:0">Este es un complemento</h4>
@@ -2121,7 +2125,7 @@ async function renderInicio(){
       </div>`;
   } else {
     b.innerHTML=`${headCard}
-      ${group("Tu producto",fisico?[qCuesta,qVar]:[qEs,qCuesta,qVar])}
+      ${group("Tu producto",fisico?[qCuesta,qVar]:[qCuesta,qVar,qEs])}
       ${group("Tu venta",[rIA,rAct])}
       ${mas}
       <div style="margin-top:18px">${sellCard}</div>`;
@@ -2822,21 +2826,14 @@ function renderOpciones(host){
               <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:800;font-size:16px;pointer-events:none">${esc(sym)}</span>
               <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}" placeholder="0" style="padding-left:38px;font-size:20px;font-weight:800;height:52px"/>
             </div></div>
-          ${fisico?`<div style="flex:0 0 150px"><label style="margin-top:0;font-size:12.5px">Tu costo <span style="font-weight:400;color:var(--faint);text-transform:none">(por unidad)</span></label>
-            <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="0" style="height:52px"/></div>`:""}
+          <div style="flex:0 0 150px"><label style="margin-top:0;font-size:12.5px">Tu costo <span style="font-weight:400;color:var(--faint);text-transform:none">(${fisico?"por unidad":"opcional"})</span></label>
+            <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="0" style="height:52px"/></div>
           <div id="opMargen" style="flex:1;min-width:0;font-size:14.5px;font-weight:700;color:var(--green,#22c079);display:none;align-items:center;gap:7px;padding-bottom:14px"></div>
         </div>
-        ${fisico?`<div style="font-size:11.5px;color:var(--faint);margin-top:8px">El <b>costo</b> es lo que te cuesta una unidad — el cliente nunca lo ve; sirve para calcular tu ganancia real.</div>`:""}
-        ${!fisico?`
-          <label style="margin-top:18px">Qué entrega <span style="color:var(--faint);font-weight:400">(links, archivos, imágenes o videos — se envían al confirmar el pago)</span></label>
-          <div class="oe" style="margin-top:5px"></div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="btn oel" style="height:32px">${icon("link")} Link</button>
-            <button class="btn oef" style="height:32px">${icon("file")} Archivo / imagen / video</button>
-          </div>
-          <label style="margin-top:14px">Mensaje de apertura <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-          <input class="in oemsg" value="${esc(v.entrega_mensaje||"")}" placeholder="Ej. ¡Bienvenido! 🌟 Acá tienes todo:"/>
-        `:`<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">Este producto se <b>envía</b>: la venta termina cuando se crea el pedido (no entrega nada por el chat). ¿Regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>.</div>`}
+        <div style="font-size:11.5px;color:var(--faint);margin-top:8px">El <b>costo</b> es lo que te cuesta ${fisico?"una unidad":"cada venta"} — el cliente nunca lo ve; sirve para calcular tu ganancia real.${fisico?"":" En un digital suele ser 0."}</div>
+        ${fisico
+          ? `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">Este producto se <b>envía</b>: la venta termina cuando se crea el pedido (no entrega nada por el chat). ¿Regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>.</div>`
+          : `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">El <b>link o archivo</b> que recibe el cliente lo configuras en <a href="#" class="oGoEnt" style="color:var(--brand)">¿Cómo se entrega? →</a>.</div>`}
       </div>
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 4px 14px;font-size:12.5px;color:var(--muted)">
         <span style="font-weight:700">Moneda</span>${monedaSel}<span style="font-size:11.5px;color:var(--faint)">Aplica a todo el producto.</span>
@@ -2849,11 +2846,8 @@ function renderOpciones(host){
       </details>`;
     const opEl=b.querySelector(".op"); if(opEl) opEl.oninput=(e)=>{ v.precio=e.target.value; updateOpMargen(); };
     const oc2=$("opCosto"); if(oc2) oc2.onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateOpMargen(); };
-    const oem=b.querySelector(".oemsg"); if(oem) oem.oninput=(e)=>{ v.entrega_mensaje=e.target.value; };
-    const oel=b.querySelector(".oel"); if(oel) oel.onclick=()=>{ v.entrega=Array.isArray(v.entrega)?v.entrega:[]; v.entrega.push({tipo:"link",url:"",nombre:""}); paintEntrega(b,v,fisico); const f=b.querySelectorAll(".oe .eu"); if(f[f.length-1]) f[f.length-1].focus(); };
-    const oef=b.querySelector(".oef"); if(oef) oef.onclick=()=>pickEntregaFile(v,()=>paintEntrega(b,v,fisico));
     const oge=b.querySelector(".oGoExtra"); if(oge) oge.onclick=(e)=>{ e.preventDefault(); accOpen("extras"); };
-    if(b.querySelector(".oe")) paintEntrega(b,v,fisico);
+    const ogEnt=b.querySelector(".oGoEnt"); if(ogEnt) ogEnt.onclick=(e)=>{ e.preventDefault(); accOpen("entrega"); };
     $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value); renderOpciones(b); };
     $("opAdd").onclick=()=>{ st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length }); renderOpciones(b); };
     updateOpMargen();
