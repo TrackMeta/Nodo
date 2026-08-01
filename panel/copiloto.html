@@ -181,6 +181,11 @@ function render(){
     // (lo dejó el motor al parquear el pago). Otros 'pendiente' no se muestran.
     if(et.id==="digital") items=items.filter(o=>(o.shipping||{}).digital_pendiente);
     if(et.id==="extra")   items=st.list.filter(o=>(o.shipping||{}).extra_pendiente);
+    // "Saldo por validar" SOLO si el cliente YA pagó el saldo (llegó su
+    // comprobante). Un pedido en agencia SIN pago de saldo está "esperando que
+    // paguen", no "por validar": no debe pedir aprobar+dar clave ni mostrar el
+    // comprobante del ADELANTO como si fuera el del saldo.
+    if(et.id==="saldo")   items=items.filter(o=>{ const s=o.shipping||{}; return s.saldo_comprobante||s.saldo_recibido_at; });
     if(!items.length) return;
     const h=document.createElement("div"); h.className="sect";
     h.textContent=`${et.titulo} · ${items.length}`;
@@ -197,7 +202,8 @@ function card(o,et){
   const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
   const el=document.createElement("div"); el.className="acard";
   const img = et.id==="adelanto" ? (s.adelanto_comprobante || st.imgs[o.contact_id])
-            : et.id==="saldo"    ? (s.saldo_comprobante   || st.imgs[o.contact_id])
+            : et.id==="saldo"    ? s.saldo_comprobante
+
             : et.id==="digital"  ? (s.digital_comprobante  || st.imgs[o.contact_id])
             : et.id==="extra"    ? (s.extra_comprobante    || st.imgs[o.contact_id])
             : null;

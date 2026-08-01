@@ -189,6 +189,47 @@ const TONO_COLOR = { ok: "var(--green)", warn: "var(--amber)", bad: "var(--red)"
 // teléfono) con lo que edites (agencia CONFIRMADA `destino`, guía, clave…).
 // Devuelve solo el HTML interior; el <h4> y el botón de rótulo los pone quien la
 // usa. Necesita `o.contact` (nombre, wa_id): latestOrder lo trae en el join.
+// Progreso logístico del pedido (dónde está AHORA): stepper con los hitos del
+// recorrido. Provincia: Adelanto → Despachado → En agencia → Saldo → Recogido.
+// Lima: Confirmado → En reparto → Entregado. Digital no lleva logística.
+function pedidoProgresoHtml(o) {
+  const zona = O.zonaDe(o);
+  if (zona !== "provincia" && zona !== "lima") return "";
+  const estado = o.estado;
+  const NEG = { cancelado: "Cancelado", no_recogido: "No se recogió", rechazado: "Rechazado" };
+  if (NEG[estado]) {
+    return `<div style="margin:10px 2px 4px;font-size:12px;font-weight:700;color:var(--red,#dc2626)">⛔ ${esc(NEG[estado])}</div>`;
+  }
+  const pasos = zona === "provincia"
+    ? [["Adelanto", ["adelanto_validado", "por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido"]],
+       ["Despachado", ["despachado", "en_agencia", "saldo_pagado", "recogido"]],
+       ["En agencia", ["en_agencia", "saldo_pagado", "recogido"]],
+       ["Saldo", ["saldo_pagado", "recogido"]],
+       ["Recogido", ["recogido"]]]
+    : [["Confirmado", ["confirmado", "en_reparto", "reprogramado", "entregado_cobrado"]],
+       ["En reparto", ["en_reparto", "reprogramado", "entregado_cobrado"]],
+       ["Entregado", ["entregado_cobrado"]]];
+  const done = pasos.map(([, ests]) => ests.includes(estado));
+  const curIdx = done.lastIndexOf(true); // último hito alcanzado
+  const parts = [];
+  pasos.forEach((p, i) => {
+    const isDone = done[i], isNext = !isDone && i === curIdx + 1;
+    const dot = isDone
+      ? `background:var(--green,#16a34a);color:#fff;border:0`
+      : isNext ? `background:transparent;color:var(--brand);border:2px solid var(--brand)`
+               : `background:transparent;color:var(--faint);border:1.5px solid var(--border)`;
+    const lbl = isDone ? "var(--text)" : isNext ? "var(--brand)" : "var(--faint)";
+    if (i > 0) {
+      const on = done[i]; // la línea se pinta si el hito de la derecha ya se alcanzó
+      parts.push(`<div style="flex:1;height:2px;margin:0 3px 15px;background:${on ? "var(--green,#16a34a)" : "var(--border)"}"></div>`);
+    }
+    parts.push(`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 0 auto">
+      <span style="width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;${dot}">${isDone ? "✓" : ""}</span>
+      <span style="font-size:9.5px;font-weight:${isNext ? "700" : "500"};color:${lbl};white-space:nowrap">${esc(p[0])}</span></div>`);
+  });
+  return `<div style="display:flex;align-items:flex-start;margin:12px 2px 4px">${parts.join("")}</div>`;
+}
+
 export function pedidoResumenHtml(o) {
   if (!o) return "";
   const c = o.contact || {}, p = o.product || {}, v = o.version || {}, s = o.shipping || {};
@@ -273,6 +314,7 @@ export function pedidoResumenHtml(o) {
         <span class="pd-badge" style="color:${col};background:${col}1e;border-color:${col}55">${esc(O.label(o.estado))}</span>
         <span class="pd-money">${moneyLine}</span>
       </div>
+      ${pedidoProgresoHtml(o)}
       ${linesHtml(prodLines.filter(Boolean))}
       ${bumpRows ? `<div class="pd-sub">Ventas extra y regalos</div><div class="pd-bumps">${bumpRows}</div>` : ""}
       <div class="pd-sub">Datos del cliente</div>

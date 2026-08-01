@@ -494,6 +494,11 @@ function primaryAction(o){
     case "adelanto_validado":
     case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
     case "despachado": return { label:"Avisar que llegó a agencia", estado:"en_agencia", modal:"llegada" };
+    // en_agencia SIN comprobante de saldo: acción manual del operador (el cliente
+    // pagó en efectivo/en la agencia). La clave ya se cargó en el despacho, así que
+    // pasar a saldo_pagado dispara el envío de la clave. Si llegó un comprobante,
+    // la tarjeta muestra "Validar el pago" (enTurno) en vez de esto.
+    case "en_agencia": return { label:"Cobré el saldo → dar clave", estado:"saldo_pagado" };
     case "saldo_pagado": return { label:"Recogido", estado:"recogido" };
     case "en_reparto": return { label:"Entregado y cobrado", estado:"entregado_cobrado", co:true };
     case "reprogramado": return { label:"Salió a reparto", estado:"en_reparto" };
@@ -517,7 +522,12 @@ function kcard(o){
     ? `${adel?`Adelanto <b>${money(adel,o.currency)}</b>`:""}${adel&&saldo?" · ":""}${saldo?`Saldo <b>${money(saldo,o.currency)}</b>`:""}`
     : `Total <b>${money(total(o),o.currency)}</b>`;
   const act=primaryAction(o);
-  const enTurno=TURNO_STATES.has(o.estado);
+  // "PAGO POR VALIDAR" (turno) solo cuando de verdad hay un pago esperando tu OK.
+  // en_agencia SOLO si ya llegó el comprobante del SALDO; antes todo pedido en
+  // agencia decía "validar el pago" y mostraba el ADELANTO aunque el saldo no se
+  // hubiera pagado. Si no llegó, la acción es manual ("Cobré el saldo → dar clave").
+  const saldoPend = !!(s.saldo_comprobante || s.saldo_recibido_at);
+  const enTurno = o.estado==="en_agencia" ? saldoPend : TURNO_STATES.has(o.estado);
   // Antigüedad "sin pagar" para los pedidos en espera del adelanto: se resalta en
   // rojo a partir de 2 días para que la columna no se llene de leads muertos sin
   // que nadie lo note (la auto-limpieza es opt-in a propósito — auto-cancelar
