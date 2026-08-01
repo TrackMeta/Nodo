@@ -163,6 +163,12 @@
       <div class="dist" id="dist"></div>
     </div>
 
+    <div class="panel" id="provAhoraPanel" style="display:none">
+      <h3>Dónde están tus pedidos de provincia · ahora</h3>
+      <p class="ps">Después de confirmar, en qué paso del envío está cada pedido de provincia <b>en este momento</b>. Los que se te quedan en "por cobrar saldo" son la plata que falta cerrar.</p>
+      <div class="dist" id="provAhora"></div>
+    </div>
+
     <div class="panel" id="prodPanel" style="display:none">
       <h3>Embudo por producto</h3>
       <p class="ps">Qué producto convierte mejor. Cada uno con su Efectividad (de sus conversaciones de venta, cuántas cierran) y su Conversión (de sus contactos, cuántos compran).</p>
@@ -279,6 +285,7 @@ function render(){
   renderFunnel(F);
   renderPlata(cs);
   renderEntrega(cs);
+  renderProvinciaAhora(cs);
   renderDist(F);
   renderProductos();
   const rl=rangeLabel(st.range);
@@ -450,6 +457,38 @@ function renderEntrega(cs){
   } else if(enRiesgo>0){
     fugaEl.innerHTML=`<div class="neck ok">${icon("check")}<div><b>${nf.format(enRiesgo)}</b> esperando en la agencia y ninguno caído aún. Avísales que paguen el saldo para cerrar el recojo.</div></div>`;
   } else fugaEl.innerHTML="";
+}
+
+// "Dónde están ahora" pero de los PEDIDOS de provincia por su paso logístico
+// ACTUAL (snapshot, no acumulado): cuántos hay ahora mismo esperando adelanto,
+// por despachar, en camino, en agencia (por cobrar saldo), etc. Cuenta pedidos
+// (no personas) de los contactos ya filtrados. Se oculta si no hay provincia.
+function renderProvinciaAhora(cs){
+  const panel=$("provAhoraPanel"), el=$("provAhora");
+  const ids=new Set(cs.map(c=>c.id));
+  const cnt={};
+  Object.entries(st.ordersBy).forEach(([cid,ords])=>{ if(!ids.has(cid)) return;
+    ords.forEach(o=>{ if(!O.esFisico(o) || O.zonaDe(o)!=="provincia") return; cnt[o.estado]=(cnt[o.estado]||0)+1; }); });
+  const g=(...ks)=>ks.reduce((s,k)=>s+(cnt[k]||0),0);
+  const rows=[
+    { label:"Esperando adelanto",           desc:"Dieron sus datos; falta que paguen el adelanto",  color:"#f0a92b", n:g("esperando_adelanto") },
+    { label:"Por despachar",                 desc:"Adelanto pagado; listos para enviar a la agencia", color:"#8b5cf6", n:g("adelanto_validado","por_despachar") },
+    { label:"En camino a la agencia",        desc:"Despachados; viajando a destino",                  color:"#2b7fff", n:g("despachado") },
+    { label:"En agencia · por cobrar saldo", desc:"Llegaron; esperan que paguen el saldo y recojan",  color:"#06b6d4", n:g("en_agencia") },
+    { label:"Saldo pagado · clave enviada",  desc:"Pagaron el saldo; ya tienen su clave de recojo",   color:"#10b981", n:g("saldo_pagado") },
+    { label:"Recogido",                      desc:"Recogieron su pedido — cerrado ✓",                 color:"#16a34a", n:g("recogido") },
+    { label:"No recogido",                   desc:"No fueron a recoger — flete perdido",              color:"#94a3b8", n:g("no_recogido") },
+  ];
+  const total=rows.reduce((s,r)=>s+r.n,0);
+  if(total===0){ panel.style.display="none"; return; }
+  panel.style.display="";
+  const max=Math.max(1,...rows.map(r=>r.n));
+  el.innerHTML=rows.filter(r=>r.n>0).map(r=>`<div class="drow">
+    <div class="dhead"><span class="ddot" style="background:${r.color}"></span><div><div class="dname">${esc(r.label)}</div><div class="dsub">${esc(r.desc)}</div></div></div>
+    <div class="dbarwrap"><div class="dbar" style="width:${Math.round(r.n/max*100)}%;background:${r.color}"></div></div>
+    <div class="dn">${nf.format(r.n)}</div>
+    <div class="dpct">${pct(r.n,total)!=null?pct(r.n,total)+"%":""}</div>
+  </div>`).join("");
 }
 
 function renderDist(F){
