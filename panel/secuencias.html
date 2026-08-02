@@ -56,42 +56,14 @@
   .ex-tx b{font-size:13px;font-weight:700;display:block;margin-bottom:2px;color:var(--text)}
   .ex-tx span{font-size:11.5px;color:var(--muted);line-height:1.5}
   .editwrap{max-width:760px}
-  .tl{position:relative;padding-left:40px}
-  .tl::before{content:"";position:absolute;left:15px;top:8px;bottom:30px;width:2px;background:var(--border)}
-  .step{position:relative;margin-bottom:16px}
-  .dot{position:absolute;left:-40px;top:2px;width:32px;height:32px;border-radius:50%;background:var(--brand-bg);color:var(--brand);border:3px solid var(--bg);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
-  .scard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
-  .srow{display:flex;align-items:center;gap:8px}
-  .delay{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-weight:500}
   label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
   .in,.ta,.sel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
   .in,.ta{width:100%} .ta{min-height:64px;resize:vertical} .in:focus,.ta:focus,.sel:focus{border-color:var(--brand)}
-  .num{max-width:80px;text-align:center} .unit{min-width:110px}
-  .del{background:transparent;border:none;color:var(--faint);margin-left:auto;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px}
-  .del:hover{color:var(--red)} .del svg{width:14px;height:14px}
-  .addstep{border:1.5px dashed var(--border);border-radius:14px;padding:14px;width:100%;color:var(--muted);font-weight:700;background:transparent;font-size:13.5px}
-  .addstep:hover{border-color:var(--brand);color:var(--brand)}
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{border-color:var(--brand)} .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .iconbtn{width:30px;height:30px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
   .iconbtn:hover{color:var(--text);border-color:var(--brand)} .iconbtn svg{width:15px;height:15px}
-  /* Composer de mensaje (igual que mensajes iniciales) */
-  .msgbox{border:1px solid var(--border);border-radius:12px;background:var(--surface-2);padding:12px 13px;margin-top:4px}
-  .msghd{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-  .msghd .t{flex:1;font-size:12.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px}
-  .msghd .rot{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);font-weight:600}
-  .variant{border:1px solid var(--border);border-radius:11px;padding:12px;background:var(--surface)}
-  .variant+.variant{margin-top:10px}
-  .vhd{display:flex;align-items:center;gap:8px;margin-bottom:9px}
-  .vname{flex:1;font-weight:700;height:32px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0 10px;font-size:13px;outline:none}
-  .vpeso{width:54px;height:32px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none}
-  .bubbles{display:flex;flex-direction:column;gap:8px}
-  .bub{border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface-2)}
-  .bub .bhd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-  .bub .bhd .bt{font-size:11px;color:var(--muted);font-weight:600;flex:1;display:flex;align-items:center;gap:6px}
-  .addb{height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;font-weight:600}
-  .addb:hover{border-color:var(--brand);color:var(--brand)}
 </style>
 </head>
 <body>
