@@ -1201,12 +1201,17 @@ function remStepText(paso){
 async function renderRemarketing(host){
   const b=host||$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
-  const [{ data:seqs, error }, { data:ch }]=await Promise.all([
+  const [{ data:seqs, error }, { data:ch }, { data:angs }]=await Promise.all([
     supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
     supa.from("channels").select("remarketing").eq("id",st.channelId).maybeSingle(),
+    supa.from("angulos").select("nombre,slug").eq("product_id",st.prod.id).order("orden"),
   ]);
   if(error){ b.innerHTML=`<div class="card"><p class="hint">No se pudieron cargar las secuencias.</p></div>`; return; }
   const list=(seqs||[]);
+  // Ángulos del producto para el selector "Responde al ángulo" del editor inline de
+  // pasos (dedupe por slug). Sin tabla angulos (pre-0063) o sin ángulos → vacío → el
+  // selector no aparece. Lo lee remComposer.
+  { const seen=new Set(); st.remAngulos=(angs||[]).filter(a=>a&&a.slug&&!seen.has(a.slug)&&seen.add(a.slug)); }
   const c=st.prod.config=st.prod.config||{};
   const seq=list.find(s=>s.id===c.remarketing_seq_id)||null;
   const rm=(ch?.remarketing && typeof ch.remarketing==="object") ? {...ch.remarketing} : {};
@@ -1427,7 +1432,7 @@ function remComposer(box, paso){
         <span style="font-size:11.5px;color:var(--muted);font-weight:600">Rotar versiones</span>
         <div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?"El bot elige una versión por peso cada vez que envía este paso.":"Una o varias burbujas (texto y multimedia). Activa la rotación para variar el copy."}</div>
+      <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?("El bot elige una versión por peso cada vez que envía este paso."+((st.remAngulos||[]).length?" Asigna un ángulo a una versión y el cliente recibirá la de su anuncio (las General son el respaldo).":"")):"Una o varias burbujas (texto y multimedia). Activa la rotación para variar el copy."}</div>
       <div data-varlist></div>
       ${rot?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
     </div>`;
@@ -1450,10 +1455,18 @@ function remComposer(box, paso){
           <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
           <button class="iconbtn" data-vdel title="Eliminar versión">${icon("trash")}</button>
         </div>
+        ${(st.remAngulos||[]).length?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
+          <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
+          <select class="in" data-vangulo style="height:34px;padding:0 10px;flex:1;max-width:240px">
+            <option value="">General · cualquier cliente</option>
+            ${st.remAngulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
+          </select>
+        </div>`:``}
         <div data-bubbles style="display:flex;flex-direction:column;gap:8px"></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${remAddBtns()}</div>`;
       card.querySelector("[data-vname]").oninput=(e)=>v.nombre=e.target.value;
       card.querySelector("[data-vpeso]").oninput=(e)=>v.peso=Math.max(0,Number(e.target.value)||0);
+      { const ag=card.querySelector("[data-vangulo]"); if(ag) ag.onchange=(e)=>v.angulo=e.target.value; }
       card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; remComposer(box,paso); };
       card.querySelector("[data-vdel]").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); remComposer(box,paso); };
     } else {
