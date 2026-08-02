@@ -1189,32 +1189,6 @@ function renderExtraIA(b,c,ia){
 // El motor de remarketing vive en Secuencias (drip por silencio, lo corre el
 // scheduler). Acá se ve/gestiona la secuencia de ESTE producto sin salir de su
 // ficha; el editor de pasos avanzado sigue en Secuencias.
-// Duración ↔ segundos, para el editor simple de pasos.
-function remSplitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
-function remUid(){ return (crypto.randomUUID?crypto.randomUUID():"v"+Math.random().toString(36).slice(2)); }
-// Texto del primer mensaje de un paso (soporta variantes nuevas y {mensaje} viejo).
-function remStepText(paso){
-  if(paso.mensaje) return String(paso.mensaje);
-  const v=(paso.variantes||[])[0]; const bub=(v?.bubbles||[])[0];
-  return bub?.text||"";
-}
-
-function remSample(t){ return String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{\s*ciudad\s*\}\}/gi,"Lima").replace(/\{\{[^}]*\}\}/g,"…"); }
-function remPreview(paso){
-  const vs=(paso&&Array.isArray(paso.variantes)?paso.variantes:[]).filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
-  const v=vs[0]||(paso&&paso.variantes&&paso.variantes[0]);
-  const bubs=((v&&v.bubbles)||[]).filter(b=> b && (b.media_url||(b.text&&b.text.trim())));
-  if(!bubs.length) return `<div style="font-size:12px;color:#cfe9d8">Escribe el mensaje para ver cómo llega…</div>`;
-  return bubs.map(b=>{
-    let media='';
-    if(b.media_url&&b.media_kind==='image') media=`<img src="${esc(b.media_url)}" style="max-width:150px;border-radius:6px;display:block;margin-bottom:${b.text?'5px':'0'}">`;
-    else if(b.media_url&&b.media_kind==='video') media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▶ video</div>`;
-    else if(b.media_url&&b.media_kind==='audio') media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">♪ audio</div>`;
-    else if(b.media_url) media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▤ archivo</div>`;
-    const txt=b.text?remSample(esc(b.text)).replace(/\n/g,"<br>"):'';
-    return `<div style="background:#DCF8C6;color:#0b3b2e;border-radius:8px;padding:6px 9px;font-size:12.5px;line-height:1.45;max-width:210px;margin-bottom:6px;word-break:break-word">${media}${txt}<div style="font-size:9.5px;color:#3a6b52;text-align:right;margin-top:2px">10:24 ✓✓</div></div>`;
-  }).join('');
-}
 async function renderRemarketing(host){
   const b=host||$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
@@ -1227,7 +1201,7 @@ async function renderRemarketing(host){
   const list=(seqs||[]);
   // Ángulos del producto para el selector "Responde al ángulo" del editor inline de
   // pasos (dedupe por slug). Sin tabla angulos (pre-0063) o sin ángulos → vacío → el
-  // selector no aparece. Lo lee remComposer.
+  // selector no aparece. Lo lee el editor compartido (seq-editor.js).
   { const seen=new Set(); st.remAngulos=(angs||[]).filter(a=>a&&a.slug&&!seen.has(a.slug)&&seen.add(a.slug)); }
   const c=st.prod.config=st.prod.config||{};
   const seq=list.find(s=>s.id===c.remarketing_seq_id)||null;
@@ -1376,165 +1350,6 @@ async function renderRemarketing(host){
   renderSlots();
 }
 
-// ── Descuento / oferta identificada del paso ───────────────────────
-// El paso puede pegarle al cliente una oferta para una opción concreta
-// (config.oferta = {version_id, precio, vence_horas}). El motor la lee al validar
-// el pago: el {{precio}} sale rebajado y el OCR valida contra ese precio.
-function remOferta(box, paso, opciones){
-  const on=!!paso.oferta;
-  const opts=opciones.map(o=>`<option value="${o.id}" ${paso.oferta?.version_id===o.id?"selected":""}>${esc(o.nombre)} (S/ ${esc(o.precio)})</option>`).join("");
-  box.innerHTML=`
-    <div style="display:flex;align-items:center;gap:10px">
-      <span class="sw ${on?'on':''}" data-oftog></span>
-      <span style="font-size:12.5px;font-weight:600">${icon("dollar")} Incluir un descuento (el sistema lo valida al pagar)</span>
-    </div>
-    ${on?(opciones.length?`
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:11px">
-      <select class="in" data-ofopt style="min-width:150px">${opts}</select>
-      <span style="font-size:12px;color:var(--muted)">a S/</span>
-      <input class="in" data-ofprecio type="number" min="0" step="0.5" value="${esc(paso.oferta.precio??"")}" style="width:100px" placeholder="precio"/>
-      <span style="font-size:12px;color:var(--muted)">· vence en</span>
-      <input class="in" data-ofvence type="number" min="0" step="1" value="${esc(paso.oferta.vence_horas??48)}" style="width:80px"/>
-      <span style="font-size:12px;color:var(--muted)">horas</span>
-    </div>
-    <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. 0 horas = sin caducidad. Al pagar, el bot valida contra este precio (no el de lista).</div>`
-    :`<div style="font-size:11.5px;color:var(--amber,#f0a92b);margin-top:9px">Primero crea al menos una presentación con precio para poder ofrecer un descuento.</div>`):""}`;
-  box.querySelector("[data-oftog]").onclick=()=>{
-    if(paso.oferta){ delete paso.oferta; }
-    else { paso.oferta={ version_id:(opciones[0]?.id||""), precio:opciones[0]?.precio??"", vence_horas:48 }; }
-    remOferta(box,paso,opciones);
-  };
-  const so=box.querySelector("[data-ofopt]"); if(so) so.onchange=(e)=>{ paso.oferta.version_id=e.target.value; };
-  const sp=box.querySelector("[data-ofprecio]"); if(sp) sp.oninput=(e)=>{ paso.oferta.precio=e.target.value===""?"":Number(e.target.value); };
-  const sv=box.querySelector("[data-ofvence]"); if(sv) sv.oninput=(e)=>{ paso.oferta.vence_horas=Math.max(0,Number(e.target.value)||0); };
-}
-
-// ── Compositor de pasos de remarketing (multimedia + rotación) ─────
-// Versión autocontenida (escribe directo a los objetos; re-render solo en cambios
-// estructurales, así el texto no pierde foco). Paridad con el editor de Secuencias.
-function remNewVariant(idx){ return { id:remUid(), nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
-function remAddBtns(){
-  return ["text","image","video","audio"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio"})[k]}</button>`).join("");
-}
-function remComposer(box, paso){
-  if(!Array.isArray(paso.variantes)||!paso.variantes.length){
-    const first = paso.mensaje ? [{text:String(paso.mensaje)}] : (Array.isArray(paso.bubbles)&&paso.bubbles.length?paso.bubbles:[{text:""}]);
-    paso.variantes=[{ ...remNewVariant(0), bubbles:first }];
-  }
-  delete paso.mensaje; delete paso.bubbles;
-  if(paso.rotacion===undefined) paso.rotacion=false;
-  const rot=paso.rotacion===true && paso.variantes.length>0;
-  const activeVars=paso.variantes.filter(v=>v.activo!==false);
-  const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
-  box.innerHTML=`
-    <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-        <span style="flex:1;min-width:135px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
-        ${(st.remAngulos||[]).length?`
-        <div style="display:inline-flex;border:0.5px solid var(--border);border-radius:999px;padding:3px;gap:2px">
-          <button class="rmode" data-mode="todos" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${!rot?'var(--ia1,#8b5cf6)':'transparent'};color:${!rot?'#fff':'var(--muted)'}">El mismo para todos</button>
-          <button class="rmode" data-mode="angulo" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${rot?'var(--ia1,#8b5cf6)':'transparent'};color:${rot?'#fff':'var(--muted)'}">Según el anuncio</button>
-        </div>`:`
-        <span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span>
-        <div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
-      </div>
-      <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?((st.remAngulos||[]).length?"Cada versión responde a un ángulo del anuncio; el cliente recibe la suya. Deja una en <b>General</b> como respaldo.":"El bot elige una versión por peso cada vez que envía este paso."):"Un solo mensaje para todos los clientes de este público."}</div>
-      <div data-varlist></div>
-      ${rot?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
-    </div>`;
-  box.querySelectorAll(".rmode").forEach(b=> b.onclick=()=>{ const ang=(b.dataset.mode==="angulo"); paso.rotacion=ang; if(!ang && paso.variantes[0]) delete paso.variantes[0].angulo; remComposer(box,paso); });
-  const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; remComposer(box,paso); };
-  const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(remNewVariant(paso.variantes.length)); remComposer(box,paso); };
-  const vl=box.querySelector("[data-varlist]");
-  const listv = rot ? paso.variantes : paso.variantes.slice(0,1);
-  listv.forEach((v,vi)=>{
-    if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
-    const card=document.createElement("div");
-    if(rot){
-      card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
-      const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoTotal*100):0;
-      card.innerHTML=`
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
-          <input class="in" data-vname style="flex:1;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
-          <span style="font-size:11px;color:var(--muted)">Peso</span>
-          <input class="in" data-vpeso type="number" min="0" step="1" style="width:54px;height:32px;text-align:center" value="${Number(v.peso??1)}"/>
-          <span style="font-size:11px;color:var(--brand);font-weight:700;min-width:32px">${v.activo!==false?share+'%':'—'}</span>
-          <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
-          <button class="iconbtn" data-vdel title="Eliminar versión">${icon("trash")}</button>
-        </div>
-        ${(st.remAngulos||[]).length?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
-          <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
-          <select class="in" data-vangulo style="height:34px;padding:0 10px;flex:1;max-width:240px">
-            <option value="">General · cualquier cliente</option>
-            ${st.remAngulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
-          </select>
-        </div>`:``}
-        <div data-bubbles style="display:flex;flex-direction:column;gap:8px"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${remAddBtns()}</div>`;
-      card.querySelector("[data-vname]").oninput=(e)=>v.nombre=e.target.value;
-      card.querySelector("[data-vpeso]").oninput=(e)=>v.peso=Math.max(0,Number(e.target.value)||0);
-      { const ag=card.querySelector("[data-vangulo]"); if(ag) ag.onchange=(e)=>v.angulo=e.target.value; }
-      card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; remComposer(box,paso); };
-      card.querySelector("[data-vdel]").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); remComposer(box,paso); };
-    } else {
-      card.innerHTML=`<div data-bubbles style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${remAddBtns()}</div>`;
-    }
-    const bb=card.querySelector("[data-bubbles]");
-    v.bubbles.forEach((bub,bi)=> bb.appendChild(remBubble(box,paso,v,bub,bi)));
-    card.querySelectorAll("[data-addb]").forEach(btn=> btn.onclick=()=>{
-      const k=btn.dataset.addb;
-      if(k==="text"){ v.bubbles.push({text:""}); remComposer(box,paso); }
-      else remPickMedia(box,paso,v,k);
-    });
-    vl.appendChild(card);
-  });
-}
-function remBubble(box,paso,v,bub,bi){
-  const el=document.createElement("div");
-  el.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
-  const kind=bub.media_kind||"text";
-  const tIco={text:"note",image:"image",video:"video",audio:"mic",document:"file"}[kind]||"note";
-  let preview="";
-  if(kind==="image") preview=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
-  else if(kind==="video") preview=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
-  else if(kind==="audio") preview=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
-  else if(kind==="document") preview=`<div style="font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"documento")}</div>`;
-  el.innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <span style="display:inline-flex;color:var(--muted)">${icon(tIco)}</span>
-      <span style="font-size:11px;color:var(--muted);font-weight:600;flex:1">${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
-      <button class="iconbtn" data-bup title="Subir">▲</button>
-      <button class="iconbtn" data-bdown title="Bajar">▼</button>
-      <button class="iconbtn" data-bdel title="Quitar">${icon("trash")}</button>
-    </div>
-    ${preview}
-    ${kind==="text"
-      ? `<textarea class="in" data-btext style="field-sizing:content;min-height:58px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
-      : (kind!=="audio"?`<input class="in" data-bcap placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
-  if(kind==="text") wireBotones(el,bub,()=>remComposer(box,paso));
-  const tx=el.querySelector("[data-btext]"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
-  const cp=el.querySelector("[data-bcap]"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
-  el.querySelector("[data-bdel]").onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); remComposer(box,paso); };
-  el.querySelector("[data-bup]").onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; remComposer(box,paso); };
-  el.querySelector("[data-bdown]").onclick=()=>{ if(bi>=v.bubbles.length-1)return; [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; remComposer(box,paso); };
-  return el;
-}
-function remPickMedia(box,paso,v,kind){
-  const accept={image:"image/*",video:"video/*",audio:"audio/*"}[kind]||"*/*";
-  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
-  inp.onchange=async()=>{
-    const file=inp.files&&inp.files[0]; if(!file) return;
-    toast("Subiendo…");
-    try{
-      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
-      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
-      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
-      v.bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
-      toast("Archivo agregado ✓"); remComposer(box,paso);
-    }catch(e){ toast("Error al subir",true); }
-  };
-  inp.click();
-}
 
 // Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
 // enviará sola). Reusa la Edge Function media-upload igual que pickMedia.
