@@ -206,8 +206,8 @@ html[data-theme="light"]{ --glass:rgba(255,255,255,.7); --glass-nav:rgba(255,255
 /* Burbujas de chat (Bandeja, Probar flujos). En oscuro los fondos translúcidos al
    10-15% casi no se despegaban del fondo (#0B1120); acá van más contrastados. En
    claro se mantienen suaves. Consumidas por .in-m/.out-m/.out-m.bot. */
-html:not([data-theme="light"]){ --bubble-in:#253451; --bubble-out:rgba(0,125,253,.32); --bubble-bot:rgba(139,92,246,.24); --bubble-out-meta:#9db8e6 }
-html[data-theme="light"]{ --bubble-in:var(--surface-2); --bubble-out:var(--brand-bg); --bubble-bot:rgba(168,85,247,.12); --bubble-out-meta:#6f92c8 }
+html:not([data-theme="light"]){ --bubble-in:#253451; --bubble-out:rgba(0,125,253,.42); --bubble-out-brd:rgba(0,125,253,.5); --bubble-bot:linear-gradient(135deg,rgba(168,85,247,.42),rgba(236,72,153,.30)); --bubble-bot-brd:rgba(168,85,247,.5); --bubble-out-meta:#9db8e6 }
+html[data-theme="light"]{ --bubble-in:var(--surface-2); --bubble-out:rgba(0,125,253,.14); --bubble-out-brd:rgba(0,125,253,.30); --bubble-bot:linear-gradient(135deg,rgba(168,85,247,.16),rgba(236,72,153,.12)); --bubble-bot-brd:rgba(168,85,247,.32); --bubble-out-meta:#6f92c8 }
 /* (el fondo glass del sidebar va en la regla base .nodo-nav, más abajo,
    para no ser pisado por su background opaco) */
 body.nodo-shelled .nodo-card,
