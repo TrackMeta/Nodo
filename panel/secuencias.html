@@ -154,7 +154,7 @@ async function load(){
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
     supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre"),
     supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
-    supa.from("products").select("id,nombre,emoji,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("products").select("id,nombre,emoji,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
     supa.from("angulos").select("nombre,slug").eq("channel_id",st.channelId).order("orden"),
   ]);
   st.seqs=seqs||[]; st.flows=flows||[]; st.templates=tpl||[];
@@ -166,6 +166,9 @@ async function load(){
   st.products=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji,
     opciones:(p.product_versions||[]).filter(v=>v.activo!==false && v.precio!=null && v.precio!=="").map(v=>({ id:v.id, nombre:v.nombre, precio:v.precio })) }))
     .filter(p=>p.opciones.length);
+  // Todos los productos + su config (para vincular la secuencia a un producto/segmento).
+  st.allProducts=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji }));
+  st.prodConfig=new Map((prods||[]).map(p=>[p.id, (p.config&&typeof p.config==="object")?p.config:{}]));
   if(!Fbar){
     Fbar=await mountFolders({ el:$("folders"), tipo:"sequence", table:"sequences", channelId:st.channelId, items:()=>st.seqs, onChange:renderCards, labelAll:"Todas" });
   } else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
@@ -225,18 +228,56 @@ async function openSeq(id){
   st.seq=data; if(!Array.isArray(st.seq.pasos)) st.seq.pasos=[];
   renderDetail(); showDetail();
 }
+// ¿A qué producto/segmento está vinculada esta secuencia? (busca en products.config
+// .remarketing_seqs[seg]===seqId, o el legacy remarketing_seq_id → general).
+function findSeqLink(seqId){
+  for(const [pid,cfg] of (st.prodConfig||new Map())){
+    const rs=(cfg&&cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
+    for(const seg of Object.keys(rs)){ if(rs[seg]===seqId) return { productId:pid, segmento:seg }; }
+    if(cfg && cfg.remarketing_seq_id===seqId) return { productId:pid, segmento:"general" };
+  }
+  return null;
+}
+// Escribe el vínculo elegido (st.seqProduct + s.segmento) en products.config, y
+// quita el vínculo anterior si cambió de producto/segmento (una secuencia = un enlace
+// desde acá; múltiples enlaces se manejan desde cada producto).
+async function syncSeqLink(seqId){
+  const orig=st.seqOrigLink, newPid=st.seqProduct||"", newSeg=(st.seq.segmento||"general");
+  if(orig && (orig.productId!==newPid || orig.segmento!==newSeg)){
+    const cfg={ ...(st.prodConfig.get(orig.productId)||{}) }; const rs={ ...(cfg.remarketing_seqs||{}) };
+    if(rs[orig.segmento]===seqId) delete rs[orig.segmento];
+    cfg.remarketing_seqs=rs;
+    if(orig.segmento==="general" && cfg.remarketing_seq_id===seqId) delete cfg.remarketing_seq_id;
+    await supa.from("products").update({ config:cfg }).eq("id",orig.productId);
+    st.prodConfig.set(orig.productId,cfg);
+  }
+  if(newPid){
+    const cfg={ ...(st.prodConfig.get(newPid)||{}) }; const rs={ ...(cfg.remarketing_seqs||{}) };
+    rs[newSeg]=seqId; cfg.remarketing_seqs=rs;
+    if(newSeg==="general") cfg.remarketing_seq_id=seqId;
+    await supa.from("products").update({ config:cfg }).eq("id",newPid);
+    st.prodConfig.set(newPid,cfg); st.seqOrigLink={ productId:newPid, segmento:newSeg };
+  } else { st.seqOrigLink=null; }
+}
 function renderDetail(){
   const d=$("detail"); if(!st.seq) return;
   const s=st.seq;
+  const curLink=findSeqLink(s.id); st.seqOrigLink=curLink; st.seqProduct=curLink?curLink.productId:"";
   d.innerHTML=`
     <div class="dhead">
       <input id="s_nombre" value="${esc(s.nombre||"")}" placeholder="Nombre de la secuencia"/>
       <div class="toggle"><span id="s_state">${s.activo!==false?"Activa":"Pausada"}</span><div class="sw ${s.activo!==false?'on':''}" id="s_toggle"></div></div>
     </div>
-    <div class="toolbar">
+    <div class="toolbar" style="align-items:flex-start">
+      <div><label style="margin:0 0 4px">¿De qué producto?</label>
+        <select class="sel" id="s_producto" style="min-width:230px">
+          <option value="">— Ninguno (lo vinculo luego) —</option>
+          ${st.allProducts.map(p=>`<option value="${p.id}" ${curLink&&curLink.productId===p.id?"selected":""}>${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")}
+        </select>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:280px;line-height:1.5">Al guardar, se enlaza a ese producto para el público de abajo.</div></div>
       <div><label style="margin:0 0 4px">¿A quién va dirigida?</label>
-        <select class="sel" id="s_segmento" style="min-width:300px">${SEGMENTOS.map(([v,l])=>`<option value="${v}" ${(s.segmento||"general")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
-        <div id="s_segdesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:420px;line-height:1.5">${esc(segDesc(s.segmento||"general"))}</div></div>
+        <select class="sel" id="s_segmento" style="min-width:260px">${SEGMENTOS.map(([v,l])=>`<option value="${v}" ${(s.segmento||"general")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
+        <div id="s_segdesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:360px;line-height:1.5">${esc(segDesc(s.segmento||"general"))}</div></div>
     </div>
     <div class="banner">Cada paso espera su tiempo <b>desde que se envió el paso anterior</b> (el primero, desde el último mensaje del cliente). Si el cliente <b>responde</b>, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras haya conversación.</div>
     <div class="editwrap">
@@ -244,6 +285,7 @@ function renderDetail(){
     </div>`;
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
   $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; $("s_segdesc").textContent=segDesc(s.segmento); };
+  $("s_producto").onchange=(e)=>{ st.seqProduct=e.target.value; };
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
   // Editor de pasos COMPARTIDO (mismo módulo que la sección Reenganche del producto).
   st.stepsEd = mountStepsEditor($("steps"), {
@@ -259,7 +301,10 @@ async function saveSeq(){
   if(error && /segmento|column/.test(error.message)){ delete row.segmento; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0057 para segmentos)"); }
   if(error && /folder|column/.test(error.message)){ delete row.folder; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0016 para carpetas)"); }
   if(error){ toast(error.message,true); return; }
-  toast("Guardado ✓"); await load();
+  let linkErr=null;
+  try{ await syncSeqLink(st.seq.id); }catch(e){ linkErr=e; console.warn("[seqlink]",e); }
+  toast(linkErr?"Guardada, pero falló el enlace al producto":"Guardado ✓", !!linkErr);
+  await load();
 }
 boot();
 </script>
