@@ -1489,7 +1489,7 @@ function remBubble(box,paso,v,bub,bi){
     </div>
     ${preview}
     ${kind==="text"
-      ? `<textarea class="in" data-btext rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
+      ? `<textarea class="in" data-btext style="field-sizing:content;min-height:58px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in" data-bcap placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
   if(kind==="text") wireBotones(el,bub,()=>remComposer(box,paso));
   const tx=el.querySelector("[data-btext]"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
@@ -3519,12 +3519,9 @@ function renderBubble(v,vi,bub,bi){
     </div>
     ${preview}
     ${kind==="text"
-      ? `<textarea class="in btext" rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
+      ? `<textarea class="in btext" style="field-sizing:content;min-height:58px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
   if(kind==="text") wireBotones(el,bub,()=>{ harvest(); renderComposer(); });
-  // El textarea del mensaje crece con el contenido (no recorta el texto largo).
-  const btx=el.querySelector(".btext");
-  if(btx){ const grow=()=>{ btx.style.height="auto"; btx.style.height=Math.max(52,btx.scrollHeight)+"px"; }; btx.addEventListener("input",grow); setTimeout(grow,0); }
   el.querySelector(".bdel").onclick=()=>{ harvest(); v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderComposer(); };
   el.querySelector(".bup").onclick=()=>{ if(bi===0)return; harvest(); [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderComposer(); };
   el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; harvest(); [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderComposer(); };
