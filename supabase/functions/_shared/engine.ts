@@ -1549,8 +1549,18 @@ export async function deliverStep(db: SupabaseClient, channelId: string, contact
   let bubbles: any[] = [];
   const variantes = Array.isArray(paso?.variantes) ? paso.variantes : null;
   if (variantes && variantes.length) {
-    const active = variantes.filter((v: any) => v.activo !== false && (v.bubbles?.length));
+    let active = variantes.filter((v: any) => v.activo !== false && (v.bubbles?.length));
     if (active.length) {
+      // Ángulo del creativo: si el cliente llegó por un anuncio con ángulo y hay
+      // variante(s) para ESE ángulo, se usa(n) esas (continuidad del gancho en el
+      // remarketing). Si no hay para su ángulo, o no vino por anuncio → variantes
+      // GENERAL (sin ángulo); si tampoco, todas (compat con secuencias viejas).
+      // Mismo criterio que el rotador del mensaje inicial. ctx.angulo_slug ya viene
+      // de buildContext (arriba).
+      const slug = String((ctx as any)?.angulo_slug ?? "").trim();
+      const delAngulo = slug ? active.filter((v: any) => String(v.angulo ?? "") === slug) : [];
+      const generales = active.filter((v: any) => !String(v.angulo ?? "").trim());
+      active = delAngulo.length ? delAngulo : (generales.length ? generales : active);
       const rotOn = paso.rotacion !== false && active.length > 1;
       const chosen = rotOn ? pickWeighted(active) : active[0];
       bubbles = chosen.bubbles ?? [];

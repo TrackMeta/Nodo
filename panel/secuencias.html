@@ -146,7 +146,7 @@ import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], folder:"__all", localFolders:new Set() };
+const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], angulos:[], folder:"__all", localFolders:new Set() };
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 // ¿A quién va dirigida la secuencia? El motor mete a cada cliente en la del
 // segmento que le corresponde según qué tan lejos llegó (ver "Cómo trabajan").
@@ -178,13 +178,18 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function load(){
-  const [{ data:seqs },{ data:flows },{ data:tpl },{ data:prods }]=await Promise.all([
+  const [{ data:seqs },{ data:flows },{ data:tpl },{ data:prods },{ data:angs }]=await Promise.all([
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
     supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre"),
     supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("products").select("id,nombre,emoji,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("angulos").select("nombre,slug").eq("channel_id",st.channelId).order("orden"),
   ]);
   st.seqs=seqs||[]; st.flows=flows||[]; st.templates=tpl||[];
+  // Ángulos del canal (para el selector "Responde al ángulo" por variante). Dedupe
+  // por slug — dos productos pueden compartir un slug; el match del motor es por slug.
+  // Sin tabla angulos (pre-0063) → angs null → lista vacía → el selector no aparece.
+  { const seen=new Set(); st.angulos=(angs||[]).filter(a=>a&&a.slug&&!seen.has(a.slug)&&seen.add(a.slug)); }
   // Productos con sus opciones de compra (para el descuento por paso).
   st.products=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji,
     opciones:(p.product_versions||[]).filter(v=>v.activo!==false && v.precio!=null && v.precio!=="").map(v=>({ id:v.id, nombre:v.nombre, precio:v.precio })) }))
@@ -392,7 +397,7 @@ function renderMsgComposer(box,paso){
         <div class="t">${icon("message")} Mensaje del paso</div>
         <div class="rot"><span>Rotar versiones</span><div class="sw sm ${rot?'on':''}" id="rotSw" title="Enviar una versión distinta cada vez (evita repetir el mismo copy)"></div></div>
       </div>
-      ${rot?`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">El bot elige una versión por peso cada vez que envía este paso.</div>`
+      ${rot?`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">El bot elige una versión por peso cada vez que envía este paso.${st.angulos.length?` Asigna un ángulo a una versión y el cliente recibirá la de su anuncio (las <b style="color:var(--ia1,#8b5cf6)">General</b> son el respaldo).`:``}</div>`
            :`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">Un mensaje con una o varias burbujas (texto y multimedia). Activa la rotación para variar el copy.</div>`}
       <div id="varList"></div>
       ${rot?`<button class="addb" id="addVar" style="margin-top:10px">+ Agregar versión</button>`:``}
@@ -416,10 +421,18 @@ function renderMsgComposer(box,paso){
           <div class="sw sm ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
           <button class="iconbtn vdel" title="Eliminar versión">${icon("trash")}</button>
         </div>
+        ${st.angulos.length?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
+          <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
+          <select class="in vangulo" style="height:36px;padding:0 10px;flex:1;max-width:260px">
+            <option value="">General · cualquier cliente</option>
+            ${st.angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
+          </select>
+        </div>`:``}
         <div class="bubbles"></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
       card.querySelector(".vname").oninput=(e)=>v.nombre=e.target.value;
       card.querySelector(".vpeso").oninput=(e)=>v.peso=Math.max(0,Number(e.target.value)||0);
+      { const ag=card.querySelector(".vangulo"); if(ag) ag.onchange=(e)=>v.angulo=e.target.value; }
       card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; renderMsgComposer(box,paso); };
       card.querySelector(".vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); renderMsgComposer(box,paso); };
     } else {
