@@ -3471,7 +3471,7 @@ function renderComposer(){
       </div>
       ${(st.act.angulos&&st.act.angulos.length)?`<div style="display:flex;align-items:center;gap:7px;margin:-2px 0 10px">
         <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
-        <select class="in vangulo" style="height:32px;flex:1;max-width:260px">
+        <select class="in vangulo" style="height:36px;padding:0 10px;flex:1;max-width:260px">
           <option value="">General · cualquier cliente</option>
           ${st.act.angulos.filter(a=>a.slug).map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
         </select></div>`:``}
