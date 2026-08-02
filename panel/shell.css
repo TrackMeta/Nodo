@@ -203,6 +203,11 @@ html[data-ia="on"] .nfx-aurora{opacity:.12;transition:opacity .7s ease}
    el texto siga legible sobre la aurora. */
 html:not([data-theme="light"]){ --glass:rgba(19,27,46,.66); --glass-nav:rgba(14,21,38,.6); --glass-brd:rgba(255,255,255,.10) }
 html[data-theme="light"]{ --glass:rgba(255,255,255,.7); --glass-nav:rgba(255,255,255,.64); --glass-brd:rgba(15,23,42,.06) }
+/* Burbujas de chat (Bandeja, Probar flujos). En oscuro los fondos translúcidos al
+   10-15% casi no se despegaban del fondo (#0B1120); acá van más contrastados. En
+   claro se mantienen suaves. Consumidas por .in-m/.out-m/.out-m.bot. */
+html:not([data-theme="light"]){ --bubble-in:#253451; --bubble-out:rgba(0,125,253,.32); --bubble-bot:rgba(139,92,246,.24); --bubble-out-meta:#9db8e6 }
+html[data-theme="light"]{ --bubble-in:var(--surface-2); --bubble-out:var(--brand-bg); --bubble-bot:rgba(168,85,247,.12); --bubble-out-meta:#6f92c8 }
 /* (el fondo glass del sidebar va en la regla base .nodo-nav, más abajo,
    para no ser pisado por su background opaco) */
 body.nodo-shelled .nodo-card,
