@@ -463,7 +463,7 @@ function renderDetail(){
   // abre a pantalla completa con un botón para volver (navegación hub ↔ sección).
   const SEC={ producto:"Producto", opciones:"Presentaciones y precios", entrega:"Entrega",
     ia:"Venta con IA", activacion:"Cómo llegan los clientes", extras:"Ventas extra",
-    remarketing:"Remarketing", flujos:"Flujos", stock:"Stock (inventario)" };
+    remarketing:"Reenganche", flujos:"Flujos", stock:"Stock (inventario)" };
   if(esRegalo) SEC.opciones="Qué se entrega";
   // En físico la sección "producto" ya no tiene identidad (se edita en el
   // encabezado): solo variantes + stock, así que el breadcrumb lo refleja.
@@ -1198,6 +1198,22 @@ function remStepText(paso){
   return bub?.text||"";
 }
 
+function remSample(t){ return String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{\s*ciudad\s*\}\}/gi,"Lima").replace(/\{\{[^}]*\}\}/g,"…"); }
+function remPreview(paso){
+  const vs=(paso&&Array.isArray(paso.variantes)?paso.variantes:[]).filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
+  const v=vs[0]||(paso&&paso.variantes&&paso.variantes[0]);
+  const bubs=((v&&v.bubbles)||[]).filter(b=> b && (b.media_url||(b.text&&b.text.trim())));
+  if(!bubs.length) return `<div style="font-size:12px;color:#cfe9d8">Escribe el mensaje para ver cómo llega…</div>`;
+  return bubs.map(b=>{
+    let media='';
+    if(b.media_url&&b.media_kind==='image') media=`<img src="${esc(b.media_url)}" style="max-width:150px;border-radius:6px;display:block;margin-bottom:${b.text?'5px':'0'}">`;
+    else if(b.media_url&&b.media_kind==='video') media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▶ video</div>`;
+    else if(b.media_url&&b.media_kind==='audio') media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">♪ audio</div>`;
+    else if(b.media_url) media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▤ archivo</div>`;
+    const txt=b.text?remSample(esc(b.text)).replace(/\n/g,"<br>"):'';
+    return `<div style="background:#DCF8C6;color:#0b3b2e;border-radius:8px;padding:6px 9px;font-size:12.5px;line-height:1.45;max-width:210px;margin-bottom:6px;word-break:break-word">${media}${txt}<div style="font-size:9.5px;color:#3a6b52;text-align:right;margin-top:2px">10:24 ✓✓</div></div>`;
+  }).join('');
+}
 async function renderRemarketing(host){
   const b=host||$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
@@ -1274,6 +1290,17 @@ async function renderRemarketing(host){
     ["solo_inicio","🌱 Curioso","Solo tiró la palabra clave y no volvió."],
     ["interactuo","💬 Interactuó","Conversó o dejó un dato, pero no compró."],
     ...(fisicoRem ? [["provincia_sin_adelanto","📦 Provincia sin adelanto","Se activa apenas el cliente da su DNI (aunque todavía no complete el pedido): así también persigues al que se va antes de dar la sede. No le escribe mientras siga conversando, y sale solo apenas paga el adelanto."]] : []),
+  ];
+  const REM_PRESETS=[
+    { nombre:"Recordatorio suave", desc:"3 toques · Día 1, 3 y 7", pasos:[
+      [86400,"¡Hola {{nombre}}! ¿Aún te interesa? Cualquier duda te ayudo 😊"],
+      [172800,"Te sigo guardando tu pedido 👀 ¿Lo cerramos hoy?"],
+      [345600,"Última oportunidad — luego libero tu cupo. ¿Te animas?"],
+    ]},
+    { nombre:"Oferta directa", desc:"2 toques · Día 1 y 4", pasos:[
+      [86400,"{{nombre}}, te reservé una oferta especial por hoy 🎁"],
+      [259200,"Tu oferta vence hoy. ¿La aprovechas?"],
+    ]},
   ];
   const remMap=()=>{ c.remarketing_seqs=(c.remarketing_seqs&&typeof c.remarketing_seqs==="object")?c.remarketing_seqs:{}; return c.remarketing_seqs; };
   // Compat: la general vieja vivía en remarketing_seq_id.
@@ -1355,7 +1382,28 @@ async function renderRemarketing(host){
     };
     const paintOne=()=>{
       stepsBox.innerHTML="";
-      if(!seq.pasos.length){ stepsBox.innerHTML=`<div style="font-size:12.5px;color:var(--faint);padding:10px 2px">Sin toques todavía. Toca <b>+ añadir</b> arriba para crear el primero.</div>`; return; }
+      if(!seq.pasos.length){
+        stepsBox.innerHTML=`<div style="border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--surface,#151a21)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px">Empieza con una plantilla</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Te dejamos los toques listos; luego editas los mensajes a tu gusto.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px">
+            ${REM_PRESETS.map((p,pi)=>`<button class="btn" data-preset="${pi}" style="text-align:left;height:auto;padding:11px 12px;display:block">
+              <div style="font-size:13px;font-weight:700">${esc(p.nombre)}</div>
+              <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(p.desc)}</div>
+            </button>`).join("")}
+            <button class="btn" data-preset="blank" style="text-align:left;height:auto;padding:11px 12px;display:block">
+              <div style="font-size:13px;font-weight:700">Desde cero</div>
+              <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Un toque en blanco</div>
+            </button>
+          </div></div>`;
+        stepsBox.querySelectorAll("[data-preset]").forEach(btn=> btn.onclick=()=>{
+          const p=btn.dataset.preset;
+          if(p==="blank"){ seq.pasos=[{ umbral_silencio_seg:86400, rotacion:false, variantes:[remNewVariant(0)] }]; }
+          else { const pr=REM_PRESETS[+p]; seq.pasos=pr.pasos.map(([sec,txt])=>({ umbral_silencio_seg:sec, rotacion:false, variantes:[{ ...remNewVariant(0), bubbles:[{text:txt}] }] })); }
+          sel=0; paintJourney(); paintOne();
+        });
+        return;
+      }
       if(sel>=seq.pasos.length) sel=seq.pasos.length-1;
       const i=sel, paso=seq.pasos[i];
       const { val,u }=remSplitDur(paso.umbral_silencio_seg);
@@ -1375,13 +1423,21 @@ async function renderRemarketing(host){
           <span style="flex:1"></span>
           <button class="iconbtn rdel" title="Quitar toque" style="flex:none">${icon("trash")}</button>
         </div>
-        <div class="remComp"></div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(165px,205px);gap:12px;align-items:start">
+          <div class="remComp"></div>
+          <div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Así le llega al cliente</div>
+            <div class="remPrev" style="background:#075E54;border-radius:12px;padding:10px;min-height:56px"></div>
+          </div>
+        </div>
         <div class="remOfer" style="margin-top:11px;border-top:1px dashed var(--border);padding-top:11px"></div>`;
       const setDur=()=>{ paso.umbral_silencio_seg=Math.max(1,Number(el.querySelector(".rnum").value||1))*Number(el.querySelector(".runit").value); paintJourney(); };
       el.querySelector(".rnum").onchange=setDur; el.querySelector(".runit").onchange=setDur;
       el.querySelector(".rdel").onclick=async()=>{ if(!await confirmDialog({title:"Quitar toque",message:"¿Eliminar este toque?",confirmText:"Eliminar",danger:true})) return; seq.pasos.splice(i,1); if(sel>0)sel--; paintJourney(); paintOne(); };
       remComposer(el.querySelector(".remComp"), paso);
       remOferta(el.querySelector(".remOfer"), paso, opciones);
+      const prev=el.querySelector(".remPrev"); const updPrev=()=>{ if(prev) prev.innerHTML=remPreview(paso); };
+      updPrev(); el.addEventListener("input", updPrev); el.addEventListener("click", ()=>setTimeout(updPrev,0));
       stepsBox.appendChild(el);
     };
     paintJourney(); paintOne();
@@ -1449,16 +1505,22 @@ function remComposer(box, paso){
   const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
   box.innerHTML=`
     <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="flex:1;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
-        <span style="font-size:11.5px;color:var(--muted);font-weight:600">Rotar versiones</span>
-        <div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="flex:1;min-width:135px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
+        ${(st.remAngulos||[]).length?`
+        <div style="display:inline-flex;border:0.5px solid var(--border);border-radius:999px;padding:3px;gap:2px">
+          <button class="rmode" data-mode="todos" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${!rot?'var(--ia1,#8b5cf6)':'transparent'};color:${!rot?'#fff':'var(--muted)'}">El mismo para todos</button>
+          <button class="rmode" data-mode="angulo" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${rot?'var(--ia1,#8b5cf6)':'transparent'};color:${rot?'#fff':'var(--muted)'}">Según el anuncio</button>
+        </div>`:`
+        <span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span>
+        <div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?("El bot elige una versión por peso cada vez que envía este paso."+((st.remAngulos||[]).length?" Asigna un ángulo a una versión y el cliente recibirá la de su anuncio (las General son el respaldo).":"")):"Una o varias burbujas (texto y multimedia). Activa la rotación para variar el copy."}</div>
+      <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?((st.remAngulos||[]).length?"Cada versión responde a un ángulo del anuncio; el cliente recibe la suya. Deja una en <b>General</b> como respaldo.":"El bot elige una versión por peso cada vez que envía este paso."):"Un solo mensaje para todos los clientes de este público."}</div>
       <div data-varlist></div>
       ${rot?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
     </div>`;
-  box.querySelector("[data-rot]").onclick=()=>{ paso.rotacion=!rot; remComposer(box,paso); };
+  box.querySelectorAll(".rmode").forEach(b=> b.onclick=()=>{ const ang=(b.dataset.mode==="angulo"); paso.rotacion=ang; if(!ang && paso.variantes[0]) delete paso.variantes[0].angulo; remComposer(box,paso); });
+  const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; remComposer(box,paso); };
   const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(remNewVariant(paso.variantes.length)); remComposer(box,paso); };
   const vl=box.querySelector("[data-varlist]");
   const listv = rot ? paso.variantes : paso.variantes.slice(0,1);
@@ -2047,7 +2109,7 @@ async function renderInicio(){
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
     if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
-    if(t==="remarketing"){ const ok=!!c.remarketing_seq_id; return {ok,opt:true,msg:ok?"Secuencia enlazada":"Sin remarketing (opcional)"}; }
+    if(t==="remarketing"){ const ok=!!c.remarketing_seq_id; return {ok,opt:true,msg:ok?"Secuencia enlazada":"Sin reenganche (opcional)"}; }
     if(t==="regalos"){ const n=(c.regalos||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} regalo(s)`:"Sin regalo (opcional)"}; }
     if(t==="flujos") return {ok:true,opt:true,msg:"Editor visual (avanzado)"};
     if(t==="stock"){ const s=(c.stock&&typeof c.stock==="object")?c.stock:{}; const ks=Object.keys(s); const tot=ks.reduce((a,k)=>a+(Number(s[k])||0),0); return {ok:ks.length>0,opt:true,msg:ks.length?`${tot} unidad(es) en stock`:"Sin stock cargado (opcional)"}; }
@@ -2157,11 +2219,11 @@ async function renderInicio(){
 
   // Más opciones (colapsable): ventas extra, remarketing, flujos
   const mas = `<details style="margin-top:16px">
-      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· regalo, ventas extra, remarketing</span></summary>
+      <summary style="cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 4px">＋ Más opciones <span style="color:var(--faint);font-weight:400">· regalo, ventas extra, reenganche</span></summary>
       <div class="ini-ph" style="padding:6px;margin-top:6px"><div class="ini-items">
         ${rowHtml("regalos",{label:"Regalo con la compra",sub:est("regalos").msg,opt:true,tone:"gold",ico:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>'})}
         ${rowHtml("extras",{label:"Ventas extra",sub:est("extras").msg,opt:true,tone:"gold"})}
-        ${rowHtml("remarketing",{label:"Remarketing",sub:est("remarketing").msg,opt:true,tone:"gold"})}
+        ${rowHtml("remarketing",{label:"Reenganche",sub:est("remarketing").msg,opt:true,tone:"gold"})}
       </div></div>
     </details>`;
 
