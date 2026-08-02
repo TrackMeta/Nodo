@@ -143,6 +143,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
+import { mountStepsEditor } from "./seq-editor.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -268,15 +269,16 @@ function renderDetail(){
     </div>
     <div class="banner">Cada paso espera su tiempo <b>desde que se envió el paso anterior</b> (el primero, desde el último mensaje del cliente). Si el cliente <b>responde</b>, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras haya conversación.</div>
     <div class="editwrap">
-      <div class="tl" id="steps"></div>
-      <button class="addstep" id="addStep">+ Añadir paso</button>
+      <div id="steps"></div>
     </div>`;
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
   $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; $("s_segdesc").textContent=segDesc(s.segmento); };
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
-  const steps=$("steps");
-  s.pasos.forEach((p,i)=>steps.appendChild(stepCard(p,i)));
-  $("addStep").onclick=()=>{ s.pasos.push({ umbral_silencio_seg:3600, variantes:[newVariant(0)], rotacion:false }); renderDetail(); };
+  // Editor de pasos COMPARTIDO (mismo módulo que la sección Reenganche del producto).
+  st.stepsEd = mountStepsEditor($("steps"), {
+    seq:s, channelId:st.channelId, angulos:st.angulos,
+    ofertaProducts:st.products, actions:{ enabled:true, flows:st.flows, templates:st.templates },
+  });
 }
 // Descuento del paso: fija una oferta (opción + precio + vencimiento) al contacto.
 // El motor la lee → {{precio}} sale rebajado y el OCR valida contra ese precio.
@@ -512,7 +514,8 @@ function cleanSteps(pasos){
 }
 async function saveSeq(){
   if(!st.seq){ toast("No hay secuencia abierta",true); return; }
-  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:cleanSteps(st.seq.pasos||[]), folder:st.seq.folder||null, segmento:st.seq.segmento||"general" };
+  if(st.stepsEd) st.stepsEd.normalize();
+  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null, segmento:st.seq.segmento||"general" };
   let { error }=await supa.from("sequences").update(row).eq("id",st.seq.id);
   if(error && /segmento|column/.test(error.message)){ delete row.segmento; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0057 para segmentos)"); }
   if(error && /folder|column/.test(error.message)){ delete row.folder; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0016 para carpetas)"); }
