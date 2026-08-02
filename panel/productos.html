@@ -220,6 +220,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, ma
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
+import { mountStepsEditor } from "./seq-editor.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set() };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -1351,98 +1352,20 @@ async function renderRemarketing(host){
   };
   // Editor de pasos INLINE de una casilla (se guarda directo a la secuencia).
   const paintEditor=(seq, wrap)=>{
-    // Recorrido visual: anuncio → no compró → los toques (por día), y editas UNO a la
-    // vez tocando su nodo. Reemplaza la lista de pasos apilados (menos abrumador).
-    let sel=0;
-    wrap.innerHTML=`<div class="remJourney" style="overflow-x:auto;padding:2px 2px 10px"></div>
-      <div class="remStepsBox"></div>
+    // Editor de pasos COMPARTIDO (mismo módulo que la página Secuencias). El producto
+    // usa mensaje-only (actions.enabled=false) y su propio producto para el descuento.
+    wrap.innerHTML=`<div class="se-mount"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">
         <button class="btn primary" data-remsave style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar pasos</button>
       </div>`;
-    const jBox=wrap.querySelector(".remJourney");
-    const stepsBox=wrap.querySelector(".remStepsBox");
-    const cumSec=(i)=>seq.pasos.slice(0,i+1).reduce((a,p)=>a+Math.max(0,Number(p.umbral_silencio_seg||0)),0);
-    const jLabel=(sec)=>{ if(sec>=86400){ const d=sec/86400; return "Día "+(Number.isInteger(d)?d:Math.round(d)); } if(sec>=3600) return Math.round(sec/3600)+" h"; return Math.max(1,Math.round(sec/60))+" min"; };
-    const jNode=(inner,sub,o={})=>`<div style="text-align:center;min-width:${o.min||64}px;flex:none">
-        <div ${o.data||""} style="width:40px;height:40px;margin:0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;${o.click?"cursor:pointer;":""}${o.style||"background:var(--surface-2);color:var(--muted)"}">${inner}</div>
-        <div style="font-size:11px;color:${o.subcol||"var(--muted)"};margin-top:5px;line-height:1.25">${sub}</div>
-      </div>`;
-    const jDash=`<div style="flex:none;width:20px;height:0;align-self:flex-start;margin-top:20px;border-top:1.5px dashed var(--border)"></div>`;
-    const paintJourney=()=>{
-      const anchors = jNode("📣","llegó por<br>un anuncio",{min:70}) + jDash + jNode("💤","no compró",{min:58}) + jDash;
-      const steps = seq.pasos.map((p,i)=>{
-        const on=i===sel;
-        const stl=on?"background:var(--brand,#2b7fff);color:#fff;font-weight:700":"background:var(--surface-2);color:var(--brand,#2b7fff);border:1.5px solid var(--brand,#2b7fff);font-weight:700";
-        return jNode(String(i+1), jLabel(cumSec(i)), { click:true, data:`data-jstep="${i}"`, style:stl, subcol:on?"var(--text)":"var(--muted)" });
-      }).join("");
-      const add = jNode("+","añadir",{ click:true, data:"data-jadd", style:"border:1.5px dashed var(--border);color:var(--muted)", min:54 });
-      jBox.innerHTML=`<div style="display:flex;align-items:flex-start;gap:8px">${anchors}${steps}${add}</div>`;
-      jBox.querySelectorAll("[data-jstep]").forEach(n=> n.onclick=()=>{ sel=+n.dataset.jstep; paintJourney(); paintOne(); });
-      const a=jBox.querySelector("[data-jadd]"); if(a) a.onclick=()=>{ seq.pasos.push({ umbral_silencio_seg:86400, rotacion:false, variantes:[remNewVariant(0)] }); sel=seq.pasos.length-1; paintJourney(); paintOne(); };
-    };
-    const paintOne=()=>{
-      stepsBox.innerHTML="";
-      if(!seq.pasos.length){
-        stepsBox.innerHTML=`<div style="border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--surface,#151a21)">
-          <div style="font-size:13px;font-weight:700;margin-bottom:3px">Empieza con una plantilla</div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Te dejamos los toques listos; luego editas los mensajes a tu gusto.</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px">
-            ${REM_PRESETS.map((p,pi)=>`<button class="btn" data-preset="${pi}" style="text-align:left;height:auto;padding:11px 12px;display:block">
-              <div style="font-size:13px;font-weight:700">${esc(p.nombre)}</div>
-              <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(p.desc)}</div>
-            </button>`).join("")}
-            <button class="btn" data-preset="blank" style="text-align:left;height:auto;padding:11px 12px;display:block">
-              <div style="font-size:13px;font-weight:700">Desde cero</div>
-              <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Un toque en blanco</div>
-            </button>
-          </div></div>`;
-        stepsBox.querySelectorAll("[data-preset]").forEach(btn=> btn.onclick=()=>{
-          const p=btn.dataset.preset;
-          if(p==="blank"){ seq.pasos=[{ umbral_silencio_seg:86400, rotacion:false, variantes:[remNewVariant(0)] }]; }
-          else { const pr=REM_PRESETS[+p]; seq.pasos=pr.pasos.map(([sec,txt])=>({ umbral_silencio_seg:sec, rotacion:false, variantes:[{ ...remNewVariant(0), bubbles:[{text:txt}] }] })); }
-          sel=0; paintJourney(); paintOne();
-        });
-        return;
-      }
-      if(sel>=seq.pasos.length) sel=seq.pasos.length-1;
-      const i=sel, paso=seq.pasos[i];
-      const { val,u }=remSplitDur(paso.umbral_silencio_seg);
-      const el=document.createElement("div");
-      el.style.cssText="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:4px;background:var(--surface,#151a21)";
-      el.innerHTML=`
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="width:24px;height:24px;border-radius:50%;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex:none">${i+1}</span>
-          <span style="font-size:12.5px;color:var(--muted)">Espera</span>
-          <input class="in rnum" type="number" min="1" value="${val}" style="width:70px;height:34px"/>
-          <select class="sel runit" style="height:34px">
-            <option value="60" ${u==="60"?"selected":""}>minutos</option>
-            <option value="3600" ${u==="3600"?"selected":""}>horas</option>
-            <option value="86400" ${u==="86400"?"selected":""}>días</option>
-          </select>
-          <span style="font-size:12.5px;color:var(--muted)">desde el paso anterior</span>
-          <span style="flex:1"></span>
-          <button class="iconbtn rdel" title="Quitar toque" style="flex:none">${icon("trash")}</button>
-        </div>
-        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(165px,205px);gap:12px;align-items:start">
-          <div class="remComp"></div>
-          <div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Así le llega al cliente</div>
-            <div class="remPrev" style="background:#075E54;border-radius:12px;padding:10px;min-height:56px"></div>
-          </div>
-        </div>
-        <div class="remOfer" style="margin-top:11px;border-top:1px dashed var(--border);padding-top:11px"></div>`;
-      const setDur=()=>{ paso.umbral_silencio_seg=Math.max(1,Number(el.querySelector(".rnum").value||1))*Number(el.querySelector(".runit").value); paintJourney(); };
-      el.querySelector(".rnum").onchange=setDur; el.querySelector(".runit").onchange=setDur;
-      el.querySelector(".rdel").onclick=async()=>{ if(!await confirmDialog({title:"Quitar toque",message:"¿Eliminar este toque?",confirmText:"Eliminar",danger:true})) return; seq.pasos.splice(i,1); if(sel>0)sel--; paintJourney(); paintOne(); };
-      remComposer(el.querySelector(".remComp"), paso);
-      remOferta(el.querySelector(".remOfer"), paso, opciones);
-      const prev=el.querySelector(".remPrev"); const updPrev=()=>{ if(prev) prev.innerHTML=remPreview(paso); };
-      updPrev(); el.addEventListener("input", updPrev); el.addEventListener("click", ()=>setTimeout(updPrev,0));
-      stepsBox.appendChild(el);
-    };
-    paintJourney(); paintOne();
+    if(!Array.isArray(seq.pasos)) seq.pasos=[];
+    const ed=mountStepsEditor(wrap.querySelector(".se-mount"), {
+      seq, channelId:st.channelId, angulos:st.remAngulos, presets:REM_PRESETS,
+      ofertaProducts:[{ id:st.prod.id, nombre:st.prod.nombre, opciones }],
+      actions:{ enabled:false },
+    });
     wrap.querySelector("[data-remsave]").onclick=async(e)=>{
-      seq.pasos.forEach(p=>{ if(Array.isArray(p.variantes)){ p.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(bu=> bu.media_url || (bu.text&&bu.text.trim()))); }); p.variantes=p.variantes.filter(v=> v.bubbles.length); if(!p.variantes.length) p.variantes=[remNewVariant(0)]; } });
+      ed.normalize();
       const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
       const { error }=await supa.from("sequences").update({ pasos:seq.pasos }).eq("id",seq.id);
       btn.disabled=false; btn.textContent=old;
