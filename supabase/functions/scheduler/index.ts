@@ -21,6 +21,15 @@ const db = serviceClient();
 // suprime el nudge automático de ese día). Los avisos transaccionales de pedido
 // (guía, clave, "llegó a agencia") NO cuentan: son mensajes que el cliente espera.
 const ANTISPAM_MS = 18 * 3600 * 1000;
+// Un flow_run 'esperando' cuenta como "conversación activa" (y pausa el
+// remarketing) SOLO mientras sea RECIENTE. Los flujos de venta terminan en un nodo
+// `pregunta`/`ia` esperando la respuesta del cliente y NO ponen timeout que cierre
+// el run: si el cliente se va tras el saludo, ese run quedaría 'esperando' para
+// siempre y bloquearía su remarketing PARA SIEMPRE — justo al lead silencioso al
+// que apunta la secuencia. Pasado este tope de inactividad, un 'esperando' rancio
+// se considera conversación abandonada y ya NO bloquea. (El propio temporizador del
+// paso ya garantiza que el cliente lleva ≥ umbral callado antes de llegar acá.)
+const RUN_STALE_MS = 3 * 3600 * 1000;
 const tocoMktReciente = (c: any, now: number) =>
   !!c?.ultimo_auto_msg_at && (now - new Date(c.ultimo_auto_msg_at).getTime()) < ANTISPAM_MS;
 async function marcarTocoMkt(contactId: string) {
@@ -386,10 +395,20 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const umbral = Number(paso.umbral_silencio_seg ?? paso.delay_seg ?? 0);
   if (silenceSec < umbral) return false; // aún no toca
 
-  // No interrumpir una conversación activa → reintentar en el próximo tick.
-  const { data: active } = await db.from("flow_runs").select("id")
+  // No interrumpir una conversación GENUINAMENTE activa → reintentar en el próximo
+  // tick. Un run 'activo' se está ejecutando ahora → siempre espera. Uno 'esperando'
+  // bloquea solo si su última actividad es reciente (más nueva que lo que el paso
+  // lleva esperando, con tope RUN_STALE_MS); si quedó 'esperando' hace rato (cliente
+  // que abandonó tras el saludo, sin timeout que cierre el run) YA NO bloquea, así la
+  // secuencia por fin alcanza al silencioso. (Solo puede haber UN run activo/esperando
+  // por contacto: índice único parcial idx_runs_lock.)
+  const { data: active } = await db.from("flow_runs").select("estado, updated_at")
     .eq("contact_id", s.contact_id).in("estado", ["activo", "esperando"]).maybeSingle();
-  if (active) return false;
+  if (active) {
+    const idleMs = now - new Date((active as any).updated_at).getTime();
+    const graceMs = Math.min(umbral * 1000, RUN_STALE_MS);
+    if ((active as any).estado === "activo" || idleMs < graceMs) return false;
+  }
 
   // Anti-spam: no encimar envíos automáticos. Si ya recibió un toque de marketing
   // (otra secuencia, un nudge, o una campaña) dentro de la ventana de enfriamiento,
