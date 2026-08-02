@@ -3262,7 +3262,73 @@ async function renderActivacion(host){
   if(node.config.activo===undefined) node.config.activo=true;
   node.config.despues=node.config.despues||{modo:"nada"};
   st.act={ flow, node, kw:(trigs||[]).find(t=>t.tipo==="keyword")||null, ad:(trigs||[]).find(t=>t.tipo==="referral")||null, others:others||[] };
+  // Ángulos del producto + anuncios reales de Meta (para elegirlos por nombre).
+  // Defensivo: si la migración 0063 aún no está, quedan vacíos (la card lo avisa).
+  st.act.angulos=[]; st.act.angulosOrig=[]; st.act.adsMeta=[]; st.act.angulosOk=true;
+  try {
+    const { data:angs, error:ea } = await supa.from("angulos").select("id,nombre,slug,ad_ids,gancho_ia,orden").eq("product_id",st.prod.id).order("orden");
+    if(ea) throw ea;
+    st.act.angulos=(angs||[]).map(a=>({...a, ad_ids:Array.isArray(a.ad_ids)?a.ad_ids:[]}));
+    st.act.angulosOrig=(angs||[]).map(a=>a.id);
+  } catch(_){ st.act.angulosOk=false; }
+  try {
+    const { data:adsm } = await supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name");
+    st.act.adsMeta=adsm||[];
+  } catch(_){ st.act.adsMeta=[]; }
   renderComposer();
+}
+// slug estable a partir del nombre del ángulo.
+function anguloSlug(nombre){ return String(nombre||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40)||("ang"+Date.now()); }
+// Pinta las filas de ángulos (nombre + gancho IA + anuncios). Los anuncios se
+// eligen de ads_meta (por nombre) si Meta está conectado; si no, se pegan IDs.
+function renderAngList(){
+  const host=$("angList"); if(!host) return;
+  const angs=st.act.angulos||[]; const adsMeta=st.act.adsMeta||[];
+  if(!angs.length){ host.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0 10px">Aún no hay ángulos. Agrega el primero (ej. "Dolor / calambres").</div>`; return; }
+  host.innerHTML=angs.map((a,i)=>{
+    const adsHtml = adsMeta.length
+      ? `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="ang-ad" value="${esc(m.ad_id)}"${(a.ad_ids||[]).map(String).includes(String(m.ad_id))?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}</span></label>`).join("")}</div>`
+      : `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">IDs de anuncio (separados por coma o salto de línea) — o conecta Meta Ads en Ajustes para elegirlos por nombre</div><textarea class="in ang-adids" style="width:100%;min-height:50px;font-size:12px">${esc((a.ad_ids||[]).join(", "))}</textarea>`;
+    return `<div class="ang-row" data-ai="${i}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="in ang-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
+        <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
+      </div>
+      <input class="in ang-gancho" style="width:100%;margin-top:8px" placeholder="Gancho para la IA (ej. vino por un anuncio sobre calambres nocturnos)" value="${esc(a.gancho_ia||'')}"/>
+      ${adsHtml}
+    </div>`;
+  }).join("");
+  host.querySelectorAll(".ang-del").forEach(btn=> btn.onclick=()=>{ harvestAngulos(); const ai=+btn.closest(".ang-row").dataset.ai; st.act.angulos.splice(ai,1); renderAngList(); });
+}
+// Lee las filas de ángulos del DOM a st.act.angulos (preserva id/slug por índice).
+function harvestAngulos(){
+  const rows=[...document.querySelectorAll("#angList .ang-row")];
+  st.act.angulos=rows.map(row=>{
+    const orig=st.act.angulos[+row.dataset.ai]||{};
+    const checks=row.querySelectorAll(".ang-ad");
+    let ad_ids;
+    if(checks.length) ad_ids=[...checks].filter(c=>c.checked).map(c=>c.value);
+    else { const ta=row.querySelector(".ang-adids"); ad_ids=ta?ta.value.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean):(orig.ad_ids||[]); }
+    return { id:orig.id, slug:orig.slug, nombre:row.querySelector(".ang-nombre").value.trim(), gancho_ia:row.querySelector(".ang-gancho").value.trim(), ad_ids };
+  });
+}
+// Persiste los ángulos: upsert de los que tienen nombre, delete de los borrados.
+async function saveAngulos(){
+  harvestAngulos();
+  const angs=st.act.angulos.filter(a=>a.nombre);
+  const usados=new Set();
+  angs.forEach((a,i)=>{ let s=a.slug||anguloSlug(a.nombre); let base=s,n=2; while(usados.has(s)){ s=base+"-"+(n++); } usados.add(s); a.slug=s; a.orden=i; });
+  try{
+    for(const a of angs){
+      const payload={ channel_id:st.channelId, product_id:st.prod.id, nombre:a.nombre, slug:a.slug, ad_ids:a.ad_ids||[], gancho_ia:a.gancho_ia||null, orden:a.orden };
+      if(a.id){ const {error}=await supa.from("angulos").update(payload).eq("id",a.id); if(error) throw error; }
+      else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
+    }
+    const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
+    for(const id of (st.act.angulosOrig||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
+    st.act.angulos=angs; st.act.angulosOrig=angs.map(a=>a.id);
+    toast("Ángulos guardados ✓"); renderComposer();
+  }catch(e){ toast(e.message||"No se pudo guardar los ángulos",true); }
 }
 async function createWelcome(){
   const { data:flow, error } = await supa.from("flows").insert({
@@ -3281,6 +3347,7 @@ function harvest(){
     const vi=+vc.dataset.vi; const v=cfg.variantes[vi]; if(!v) return;
     const nm=vc.querySelector(".vname"); if(nm) v.nombre=nm.value;
     const pw=vc.querySelector(".vpeso"); if(pw) v.peso=Math.max(0,Number(pw.value)||0);
+    const ag=vc.querySelector(".vangulo"); if(ag) v.angulo=ag.value;
     vc.querySelectorAll("[data-bi]").forEach(bc=>{
       const bi=+bc.dataset.bi; const bub=v.bubbles[bi]; if(!bub) return;
       const tx=bc.querySelector(".btext"); if(tx) bub.text=tx.value;
@@ -3317,6 +3384,15 @@ function renderComposer(){
     </div>
 
     <div class="card">
+      <h4>🎯 Ángulos del creativo</h4>
+      <div style="font-size:12px;color:var(--faint);margin:4px 0 12px;line-height:1.55">Agrupa tus anuncios por gancho (Dolor, Energía, Oferta…). Abajo, en cada versión del mensaje inicial, eliges a qué ángulo responde: el bot muestra el saludo que <b>retoma el anuncio del que vino</b> el cliente. El gancho también lo usa la IA durante la venta.</div>
+      ${st.act.angulosOk?`<div id="angList"></div>
+      <button class="btn" id="addAngulo" style="margin-top:2px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar ángulo</button>
+      <div style="margin-top:12px"><button class="btn primary" id="saveAngulos">Guardar ángulos</button></div>`
+      :`<div style="font-size:12.5px;color:var(--amber);line-height:1.5">Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`}
+    </div>
+
+    <div class="card">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="flex:1"><h4 style="margin:0">${icon("message")}Mensajes iniciales</h4>
           <div style="font-size:12px;color:var(--faint);margin-top:3px">El saludo con el que arranca el chat. ${cfg.variantes.length>1?"El bot rota entre versiones por peso.":"Puedes agregar otra versión para variar el copy (ayuda contra el baneo)."}</div></div>
@@ -3346,6 +3422,13 @@ function renderComposer(){
   $("actMatch").onchange=avisarKeywords;
   avisarKeywords();
 
+  // Ángulos
+  if($("angList")){
+    renderAngList();
+    $("addAngulo").onclick=()=>{ harvestAngulos(); st.act.angulos.push({nombre:"",gancho_ia:"",ad_ids:[]}); renderAngList(); };
+    $("saveAngulos").onclick=saveAngulos;
+  }
+
   // Variantes
   const vl=$("varList");
   cfg.variantes.forEach((v,vi)=>{
@@ -3361,6 +3444,12 @@ function renderComposer(){
         <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
         <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
       </div>
+      ${(st.act.angulos&&st.act.angulos.length)?`<div style="display:flex;align-items:center;gap:7px;margin:-2px 0 10px">
+        <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
+        <select class="in vangulo" style="height:32px;flex:1;max-width:260px">
+          <option value="">General · cualquier cliente</option>
+          ${st.act.angulos.filter(a=>a.slug).map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
+        </select></div>`:``}
       <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
         <button class="btn addb" data-k="text" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Texto</button>

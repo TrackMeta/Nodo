@@ -60,6 +60,21 @@ async function soloAnunciosBloquea(
   return !deAnuncio;
 }
 
+// Resuelve y CONGELA el ángulo del creativo del contacto la 1ª vez que llega con un
+// ad_id que pertenece a un ángulo. Idempotente: si ya tiene ángulo o no vino por
+// anuncio, sale al toque. El slug queda en contacts.angulo; nombre/gancho se leen
+// en vivo de `angulos` (así editarlos no desincroniza a los ya clasificados).
+// Defensivo: si la migración 0063 aún no está, el try/catch lo deja pasar.
+async function resolverAnguloContacto(db: SupabaseClient, channelId: string, contactId: string): Promise<void> {
+  try {
+    const { data: c } = await db.from("contacts").select("ad_id, angulo").eq("id", contactId).maybeSingle();
+    if (!c || (c as any).angulo || !(c as any).ad_id) return;
+    const { data: a } = await db.from("angulos").select("slug")
+      .eq("channel_id", channelId).contains("ad_ids", [String((c as any).ad_id)]).limit(1).maybeSingle();
+    if ((a as any)?.slug) await db.from("contacts").update({ angulo: (a as any).slug }).eq("id", contactId);
+  } catch (e) { console.error("[resolverAnguloContacto]", (e as any)?.message ?? e); }
+}
+
 export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
@@ -69,6 +84,10 @@ export async function runEngine(
   // ya quedó guardado y visible en la Bandeja para que lo tome un humano.
   // El contacto de Probar flujos queda exento para no romper las pruebas.
   if (await soloAnunciosBloquea(db, channelId, contactId)) return;
+
+  // Congela el ángulo del creativo (por su ad_id) para mensajes iniciales / IA /
+  // reportes / remarketing. Idempotente y defensivo.
+  await resolverAnguloContacto(db, channelId, contactId);
 
   // BOTÓN = ATAJO QUE ESCRIBE POR EL CLIENTE. Salvo que el flujo esté esperando
   // justo ese botón (ruteo determinista por arista `boton:<id>`, que solo usan
@@ -1198,12 +1217,21 @@ async function execute(db: SupabaseClient, run: Run) {
           await emit(db, run, { text: "¡Hola de nuevo! 🎉 Con gusto te preparo tu nuevo pedido. ¿Qué necesitas esta vez?" }, ctx);
         } else {
           const all = (node.config?.variantes ?? []) as any[];
-          const active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
+          let active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
+          // Ángulo del creativo: si el cliente llegó por un anuncio con ángulo y hay
+          // variante(s) para ESE ángulo, se usa(n) esas (retoma el gancho del anuncio).
+          // Si no hay variante para su ángulo, o no vino por anuncio → variantes
+          // GENERAL (sin ángulo asignado) y, si tampoco hay, todas (compat).
+          const slug = String((ctx as any)?.angulo_slug ?? "").trim();
           if (active.length) {
+            const delAngulo = slug ? active.filter((v) => String(v.angulo ?? "") === slug) : [];
+            const generales = active.filter((v) => !String(v.angulo ?? "").trim());
+            active = delAngulo.length ? delAngulo : (generales.length ? generales : active);
             const rotOn = node.config?.activo !== false && active.length > 1;
             const chosen = rotOn ? pickWeighted(active) : active[0];
             for (const b of (chosen.bubbles ?? [])) await emit(db, run, b, ctx);
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial", chosen.nombre ?? "");
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial",
+              (chosen.nombre ?? "") + (delAngulo.length ? ` · ángulo ${slug}` : ""));
           }
         }
         // "Y después": tras el saludo, el bot CONTINÚA SOLO a vender. Ya no se le
@@ -4912,6 +4940,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
     if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
+    // Ángulo del creativo: el cliente llegó por un anuncio con cierto gancho —
+    // la IA debe MANTENER ese enfoque en toda la conversación (continuidad de mensaje).
+    if (String(ctx.angulo_gancho ?? "").trim()) {
+      parts.push(`## Ángulo del anuncio que trajo al cliente\nEste cliente llegó por un anuncio de ángulo **${ctx.angulo || "(sin nombre)"}**: ${ctx.angulo_gancho}. Retoma y sostén ese enfoque/gancho durante toda la conversación; no lo contradigas ni cambies de tema de venta.`);
+    }
     // Opciones de compra: la IA tiene que conocerlas para venderlas y para que
     // el cliente pueda elegir ESCRIBIENDO. Le decimos explícitamente que no dé
     // por elegida ninguna hasta que el cliente decida (preguntar ≠ elegir).
@@ -5511,7 +5544,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
   let c: any = null, hasNewCols = true;
   {
     const r = await db.from("contacts")
-      .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at, username, telefono")
+      .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at, username, telefono, angulo")
       .eq("id", run.contact_id).maybeSingle();
     if (r.error && /username|telefono|column/i.test(r.error.message)) {
       hasNewCols = false;
@@ -5546,6 +5579,19 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // SOLO a estos (a los demás no se les molesta). Pre-migración (sin la col
   // telefono) ⇒ "no", para no pedírselo a nadie hasta que la 0062 esté aplicada.
   ctx.sin_numero = hasNewCols ? (String(c?.telefono ?? "").trim() ? "no" : "si") : "no";
+  // Ángulo del creativo: {{angulo}} = nombre visible, {{angulo_gancho}} = frase que
+  // la IA retoma. El slug vive congelado en contacts.angulo; nombre/gancho se leen
+  // en vivo de `angulos`. Vacíos si el contacto no vino por un anuncio con ángulo.
+  ctx.angulo = ""; ctx.angulo_gancho = ""; ctx.angulo_slug = (c as any)?.angulo ?? "";
+  if ((c as any)?.angulo) {
+    try {
+      let q = db.from("angulos").select("nombre, gancho_ia").eq("channel_id", run.channel_id).eq("slug", (c as any).angulo);
+      if (c?.product_id) q = q.eq("product_id", c.product_id);
+      const { data: ang } = await q.limit(1).maybeSingle();
+      ctx.angulo = (ang as any)?.nombre ?? "";
+      ctx.angulo_gancho = (ang as any)?.gancho_ia ?? "";
+    } catch (_) { /* sin tabla angulos (pre-0063) → vacíos */ }
+  }
   // PRECEDENCIA (de menos a más específico; lo de abajo pisa a lo de arriba):
   //   Campos del Bot (global) → datos del Producto → run.vars → Campos del
   //   contacto. Así lo específico gana: el dato de un producto pisa al global,
