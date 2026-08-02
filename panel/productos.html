@@ -3288,7 +3288,11 @@ function renderAngList(){
   host.innerHTML=angs.map((a,i)=>{
     const adsHtml = adsMeta.length
       ? `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="ang-ad" value="${esc(m.ad_id)}"${(a.ad_ids||[]).map(String).includes(String(m.ad_id))?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}</span></label>`).join("")}</div>`
-      : `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">IDs de anuncio (separados por coma o salto de línea) — o conecta Meta Ads en Ajustes para elegirlos por nombre</div><textarea class="in ang-adids" style="width:100%;min-height:50px;font-size:12px">${esc((a.ad_ids||[]).join(", "))}</textarea>`;
+      : `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y presiona Enter. (Conecta Meta Ads en Ajustes para elegirlos por su nombre.)</div>
+         <div class="ang-chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:40px">
+           ${(a.ad_ids||[]).map(id=>`<span class="ad-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)"><span class="mono">${esc(id)}</span><button class="ad-chip-x" data-id="${esc(id)}" title="Quitar" style="border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button></span>`).join("")}
+           <input class="ad-chip-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:160px;color:var(--text);height:24px" placeholder="Pega un ID de anuncio y Enter"/>
+         </div>`;
     return `<div class="ang-row" data-ai="${i}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
       <div style="display:flex;gap:8px;align-items:center">
         <input class="in ang-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
@@ -3298,7 +3302,28 @@ function renderAngList(){
       ${adsHtml}
     </div>`;
   }).join("");
-  host.querySelectorAll(".ang-del").forEach(btn=> btn.onclick=()=>{ harvestAngulos(); const ai=+btn.closest(".ang-row").dataset.ai; st.act.angulos.splice(ai,1); renderAngList(); });
+  host.querySelectorAll(".ang-del").forEach(btn=> btn.onclick=()=>{
+    harvest(); harvestAngulos();
+    const ai=+btn.closest(".ang-row").dataset.ai;
+    const elim=st.act.angulos[ai]; st.act.angulos.splice(ai,1);
+    // Limpia las variantes que apuntaban al ángulo borrado (si no, el selector
+    // "Responde al ángulo" seguía ofreciéndolo). renderComposer re-pinta los selects.
+    if(elim&&elim.slug) (st.act.node.config.variantes||[]).forEach(v=>{ if(v.angulo===elim.slug) v.angulo=""; });
+    renderComposer();
+  });
+  // Chips de anuncios (fallback sin Meta): agregar con Enter, quitar con ✕.
+  host.querySelectorAll(".ad-chip-in").forEach(inp=> inp.onkeydown=(e)=>{
+    if(e.key!=="Enter") return; e.preventDefault();
+    const ai=+inp.closest(".ang-row").dataset.ai, val=inp.value.trim(); if(!val) return;
+    harvestAngulos(); const a=st.act.angulos[ai]; a.ad_ids=a.ad_ids||[];
+    val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!a.ad_ids.includes(id)) a.ad_ids.push(id); });
+    renderAngList(); const ni=host.querySelectorAll(".ad-chip-in")[ai]; if(ni) ni.focus();
+  });
+  host.querySelectorAll(".ad-chip-x").forEach(btn=> btn.onclick=()=>{
+    const ai=+btn.closest(".ang-row").dataset.ai; harvestAngulos();
+    const a=st.act.angulos[ai]; a.ad_ids=(a.ad_ids||[]).filter(id=>String(id)!==String(btn.dataset.id));
+    renderAngList();
+  });
 }
 // Lee las filas de ángulos del DOM a st.act.angulos (preserva id/slug por índice).
 function harvestAngulos(){
@@ -3497,6 +3522,9 @@ function renderBubble(v,vi,bub,bi){
       ? `<textarea class="in btext" rows="2" style="height:auto;min-height:52px;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
   if(kind==="text") wireBotones(el,bub,()=>{ harvest(); renderComposer(); });
+  // El textarea del mensaje crece con el contenido (no recorta el texto largo).
+  const btx=el.querySelector(".btext");
+  if(btx){ const grow=()=>{ btx.style.height="auto"; btx.style.height=Math.max(52,btx.scrollHeight)+"px"; }; btx.addEventListener("input",grow); setTimeout(grow,0); }
   el.querySelector(".bdel").onclick=()=>{ harvest(); v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderComposer(); };
   el.querySelector(".bup").onclick=()=>{ if(bi===0)return; harvest(); [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderComposer(); };
   el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; harvest(); [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderComposer(); };
