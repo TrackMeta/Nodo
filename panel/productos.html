@@ -2901,9 +2901,11 @@ function renderOpciones(host){
       <div class="row" style="align-items:flex-end;gap:14px">
         <div style="flex:0 0 180px"><label style="margin-top:0"><span style="color:var(--green);vertical-align:-2px">${icon("dollar")}</span> Tu costo <span style="font-weight:400;color:var(--faint);text-transform:none">(por unidad)</span></label>
           <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="Ej. 60"/></div>
+        <div style="flex:0 0 180px"><label style="margin-top:0">📦 Empaque <span style="font-weight:400;color:var(--faint);text-transform:none">(por pedido)</span></label>
+          <input class="in" id="opEmpaque" type="number" min="0" step="0.5" value="${esc(cfg.empaque??"")}" placeholder="Ej. 2"/></div>
         <div id="opMargen" style="flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--green,#22c079);display:none;align-items:center;gap:7px"></div>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Lo que te cuesta <b>una unidad</b>. El Dashboard lo usa para tu ganancia real; en un pack de 2 se multiplica solo. El cliente nunca lo ve.</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">El <b>costo</b> es lo que te cuesta una unidad (en un pack de 2 se multiplica solo). El <b>empaque</b> (caja, bolsa, etiqueta) es un costo fijo por pedido. Ambos se descuentan de tu ganancia real; el cliente nunca los ve.</div>
     </div>`:""}
     <div id="opList"></div>
     <div id="opWarn"></div>
@@ -2911,6 +2913,7 @@ function renderOpciones(host){
   paintOpciones(fisico);
   $("opMoneda").onchange=(e)=>prodSetC("moneda", e.target.value);
   const oc2=$("opCosto"); if(oc2) oc2.onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateOpMargen(); };
+  const oe2=$("opEmpaque"); if(oe2) oe2.onchange=(e)=>prodSetC("empaque", e.target.value.trim()===""?undefined:Number(e.target.value));
   $("opAdd").onclick=()=>{
     st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length });
     paintOpciones(fisico);

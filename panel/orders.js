@@ -133,14 +133,22 @@ export function costoProducto(o, prod, cantidad = 1){
   return Number(unit) * (Number(cantidad) || 1) + reg;
 }
 
-// Ganancia real = lo cobrado − mercadería − envío. Devuelve null si falta algún
-// dato: preferimos no mostrar margen a mostrar uno inventado.
+// Costo de empaque/embalaje del pedido. Snapshot del producto (config.empaque) al
+// crear, editable en "Editar pedido". Es OPCIONAL: vacío = 0 y NO bloquea el margen
+// (a diferencia del flete). Se descuenta de la ganancia real.
+export function empaque(o){
+  const v = o?.shipping?.empaque;
+  return v === "" || v == null ? 0 : Number(v) || 0;
+}
+
+// Ganancia real = lo cobrado − mercadería − envío − empaque. Devuelve null si falta
+// algún dato: preferimos no mostrar margen a mostrar uno inventado.
 export function margen(o, prod, cantidad = 1){
   const cp = costoProducto(o, prod, cantidad);
   const f  = flete(o);
   if (cp == null) return null;
   if (esFisico(o) && f == null) return null; // físico sin flete registrado
-  return cobrado(o) - cp - (f ?? 0);
+  return cobrado(o) - cp - (f ?? 0) - empaque(o);
 }
 
 // Costo de reparto configurado para una zona de Lima. Cascada: zona → grupo →

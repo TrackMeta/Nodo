@@ -1098,7 +1098,11 @@ export async function openEditarPedido(o, deps) {
             <div><label>Maps / GPS <span style="color:var(--faint,var(--muted));font-weight:400">(opcional)</span></label><input id="eGps" value="${esc(s.gps || "")}" placeholder="URL de Maps o lat, long"/></div>
             <div><label>Importe a cobrar (S/)</label><input id="eAmountL" type="number" step="0.1" value="${esc(o.amount ?? "")}"/></div>
           </div>
-          <label>Costo del envío (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(lo que te costó el motorizado; el cliente no lo ve)</span></label><input id="eFleteL" type="number" step="0.1" value="${esc(s.flete ?? "")}" placeholder="0.00"/>
+          <div class="row2">
+            <div><label>Costo del envío (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(motorizado)</span></label><input id="eFleteL" type="number" step="0.1" value="${esc(s.flete ?? "")}" placeholder="0.00"/></div>
+            <div><label>Costo de empaque (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(caja, bolsa…)</span></label><input id="eEmpaqueL" type="number" step="0.1" value="${esc(s.empaque ?? "")}" placeholder="0.00"/></div>
+          </div>
+          <div class="hint" style="margin-top:2px">El envío y el empaque son tus costos (el cliente no los ve); se descuentan de tu ganancia real.</div>
         </div>
         <div class="pm-sec" id="eProv" ${zona === "provincia" ? "" : 'style="display:none"'}>
           <div class="pm-sec-h">${icon("building")} Envío por agencia (Shalom)</div>
@@ -1132,7 +1136,8 @@ export async function openEditarPedido(o, deps) {
             <div><label>Clave de recojo</label><input id="eClave" value="${esc(s.clave_recojo || "")}" placeholder="La pones tú; el cliente la usa"/></div>
             <div><label>Costo del envío (S/)</label><input id="eFlete" type="number" step="0.1" value="${esc(s.flete ?? "")}" placeholder="0.00"/></div>
           </div>
-          <div class="hint">La clave y el costo del envío los puedes poner/corregir en cualquier momento, aunque ya hayas despachado. El costo es para tu ganancia real; el cliente no lo ve.</div>
+          <label style="margin-top:10px">Costo de empaque (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(caja, bolsa, etiqueta; el cliente no lo ve)</span></label><input id="eEmpaqueP" type="number" step="0.1" value="${esc(s.empaque ?? "")}" placeholder="0.00"/>
+          <div class="hint">La clave, el envío y el empaque los puedes poner/corregir en cualquier momento. Envío y empaque son tus costos (el cliente no los ve): se descuentan de tu ganancia real.</div>
         </div>
       </div>
       <div class="pm-foot">
@@ -1218,11 +1223,11 @@ export async function openEditarPedido(o, deps) {
           alto: numU("#eAlto"), ancho: numU("#eAncho"), largo: numU("#eLargo"), peso: numU("#ePeso"),
           adelanto: g("#eAdel").value, saldo: g("#eSaldo").value,
           guia: g("#eGuia").value.trim(), codigo_envio: g("#eCodigo").value.trim(), clave_recojo: g("#eClave").value.trim(),
-          flete: numU("#eFlete") });
+          flete: numU("#eFlete"), empaque: numU("#eEmpaqueP") });
         if (dst) ship.sede_por_confirmar = null;
       } else {
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
-          referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL") });
+          referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
         const a = g("#eAmountL").value; if (a !== "") amount = Number(a);
         // Lima no muestra campo de saldo, pero la ficha lo lee de shipping.saldo:
         // lo sincronizo con el delta de los extras para que no quede desfasado.

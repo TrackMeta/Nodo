@@ -2218,6 +2218,17 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       }
     } catch { /* sin costo → el Dashboard lo marca como "faltan datos" */ }
 
+    // Costo de empaque/embalaje: snapshot del producto (config.empaque) al pedido,
+    // para que descuente del margen. Editable después en "Editar pedido". Vacío = 0.
+    try {
+      const pidE = (c as any)?.product_id;
+      if (pidE) {
+        const { data: pe } = await db.from("products").select("config").eq("id", pidE).maybeSingle();
+        const emp = (pe as any)?.config?.empaque;
+        if (emp != null && emp !== "" && Number.isFinite(Number(emp))) ship.empaque = +Number(emp).toFixed(2);
+      }
+    } catch { /* sin empaque → 0 */ }
+
     // Modelo "acepta y tú confirmas": si la sede de provincia se ve imprecisa, se
     // marca para confirmarla en Pedidos antes de despachar (el bot no interroga al
     // cliente). La bandera se limpia al confirmar la sede en el panel.
