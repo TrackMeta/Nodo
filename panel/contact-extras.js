@@ -1021,7 +1021,8 @@ export async function openEditarPedido(o, deps) {
             <div><label>Producto</label><select id="eProd">${catalogo.map((pr) => `<option value="${esc(pr.id)}"${String(pr.id) === String(o.product_id) ? " selected" : ""}>${esc([pr.emoji, pr.nombre].filter(Boolean).join(" "))}</option>`).join("")}</select></div>
             <div><label>Presentación</label><select id="eVer">${verOpts(o.product_id, versionId)}</select></div>
           </div>
-          <div class="hint">Cambiar el producto o la presentación recalcula el <b>precio base</b> (edítalo abajo si hace falta) y <b>ajusta el stock</b> (devuelve el del producto viejo, descuenta el nuevo). El saldo lo ajustas a mano.</div>
+          <label style="margin-top:10px">Costo del producto (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(la mercadería; el cliente no lo ve · vacío = usa el del producto)</span></label><input id="eCostoProd" type="number" step="0.1" value="${esc(s.costo_producto ?? "")}" placeholder="usa el costo del producto"/>
+          <div class="hint">Cambiar el producto o la presentación recalcula el <b>precio base</b> (edítalo abajo si hace falta) y <b>ajusta el stock</b>. El <b>costo del producto</b> se descuenta de tu ganancia real. El saldo lo ajustas a mano.</div>
         </div>` : "";
 
   // Ventas extra y regalos (order_bumps): quitar/corregir los existentes + AGREGAR nuevos a mano.
@@ -1102,8 +1103,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Costo del envío (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(motorizado)</span></label><input id="eFleteL" type="number" step="0.1" value="${esc(s.flete ?? "")}" placeholder="0.00"/></div>
             <div><label>Costo de empaque (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(caja, bolsa…)</span></label><input id="eEmpaqueL" type="number" step="0.1" value="${esc(s.empaque ?? "")}" placeholder="0.00"/></div>
           </div>
-          <label style="margin-top:8px">Costo del producto (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(la mercadería; vacío = usa el del producto)</span></label><input id="eCostoProdL" type="number" step="0.1" value="${esc(s.costo_producto ?? "")}" placeholder="usa el costo del producto"/>
-          <div class="hint" style="margin-top:2px">Envío, empaque y costo del producto son tus costos (el cliente no los ve); se descuentan de tu ganancia real.</div>
+          <div class="hint" style="margin-top:2px">El envío y el empaque son tus costos (el cliente no los ve); se descuentan de tu ganancia real.</div>
         </div>
         <div class="pm-sec" id="eProv" ${zona === "provincia" ? "" : 'style="display:none"'}>
           <div class="pm-sec-h">${icon("building")} Envío por agencia (Shalom)</div>
@@ -1137,10 +1137,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Clave de recojo</label><input id="eClave" value="${esc(s.clave_recojo || "")}" placeholder="La pones tú; el cliente la usa"/></div>
             <div><label>Costo del envío (S/)</label><input id="eFlete" type="number" step="0.1" value="${esc(s.flete ?? "")}" placeholder="0.00"/></div>
           </div>
-          <div class="row2">
-            <div><label style="margin-top:10px">Costo de empaque (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(caja, bolsa…)</span></label><input id="eEmpaqueP" type="number" step="0.1" value="${esc(s.empaque ?? "")}" placeholder="0.00"/></div>
-            <div><label style="margin-top:10px">Costo del producto (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(vacío = usa el del producto)</span></label><input id="eCostoProdP" type="number" step="0.1" value="${esc(s.costo_producto ?? "")}" placeholder="usa el del producto"/></div>
-          </div>
+          <label style="margin-top:10px">Costo de empaque (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(caja, bolsa…)</span></label><input id="eEmpaqueP" type="number" step="0.1" value="${esc(s.empaque ?? "")}" placeholder="0.00"/>
           <div class="hint">La clave, el envío, el empaque y el costo del producto los puedes poner/corregir en cualquier momento. Son tus costos (el cliente no los ve): se descuentan de tu ganancia real.</div>
         </div>
       </div>
@@ -1227,16 +1224,18 @@ export async function openEditarPedido(o, deps) {
           alto: numU("#eAlto"), ancho: numU("#eAncho"), largo: numU("#eLargo"), peso: numU("#ePeso"),
           adelanto: g("#eAdel").value, saldo: g("#eSaldo").value,
           guia: g("#eGuia").value.trim(), codigo_envio: g("#eCodigo").value.trim(), clave_recojo: g("#eClave").value.trim(),
-          flete: numU("#eFlete"), empaque: numU("#eEmpaqueP"), costo_producto: numU("#eCostoProdP") });
+          flete: numU("#eFlete"), empaque: numU("#eEmpaqueP") });
         if (dst) ship.sede_por_confirmar = null;
       } else {
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
-          referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL"), costo_producto: numU("#eCostoProdL") });
+          referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
         const a = g("#eAmountL").value; if (a !== "") amount = Number(a);
         // Lima no muestra campo de saldo, pero la ficha lo lee de shipping.saldo:
         // lo sincronizo con el delta de los extras para que no quede desfasado.
         if (saldoBase > 0) ship.saldo = +(saldoNuevo().toFixed(2));
       }
+      // Costo del producto: campo común dentro de "Producto del pedido" (vacío = usa el del producto).
+      if (g("#eCostoProd")) ship.costo_producto = numU("#eCostoProd");
       const body = { order_id: o.id, shipping: ship };
       // Cambio de producto / presentación → product_id + version_id (order-update
       // valida que el producto sea del canal). Provincia no tiene campo de importe
