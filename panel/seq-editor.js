@@ -13,13 +13,11 @@ import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const esc = (s)=> (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const uid = ()=> "v"+Math.random().toString(36).slice(2,9);
 export function newVariant(idx){ return { id:uid(), nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
-// "Peso" en cristiano: 3 niveles rápidos (Poco/Normal/Mucho) + el % EDITABLE a
-// mano al lado. Por debajo todo es `peso` (el motor normaliza por la suma). Solo
-// se muestra cuando 2+ versiones compiten en el mismo grupo (mismo ángulo).
-export function pesoBucket(p){ p=Math.max(0,Number(p??1)); return p<=1?"poco":(p>=3?"mucho":"normal"); }
-export function pesoFromBucket(b){ return b==="mucho"?3:(b==="poco"?1:2); }
-// El usuario escribió un % para ESTA versión: se traduce a un peso que da ese %
-// dejando a las otras con su reparto actual del resto. peso = sumaOtras·P/(100-P).
+// Frecuencia de una versión = su % editable a mano. Por debajo es `peso` (el
+// motor normaliza por la suma). Solo se muestra cuando 2+ versiones compiten en
+// el mismo grupo (mismo ángulo). El usuario escribió un % para ESTA versión: se
+// traduce a un peso que da ese % dejando a las otras con su reparto actual del
+// resto. peso = sumaOtras·P/(100-P).
 export function pesoFromShare(othersSum, pct){
   pct=Math.max(0,Math.min(100,Number(pct)||0));
   const os=othersSum>0?othersSum:1;
@@ -27,13 +25,9 @@ export function pesoFromShare(othersSum, pct){
   if(pct<=0) return 0;
   return os*pct/(100-pct);
 }
-// `sharePct` = % actual de esta versión dentro del grupo; `nActive` = cuántas
-// compiten (para deducir qué bucket resaltar respecto al reparto parejo).
-export function freqControlHtml(v, sharePct, nActive){
-  const eq = nActive>0 ? 100/nActive : 100;
-  const b = sharePct < eq*0.75 ? "poco" : (sharePct > eq*1.5 ? "mucho" : "normal");
-  const seg=(k,l)=>`<button data-freq="${k}" type="button" style="border:none;background:${b===k?'var(--ia1,#8b5cf6)':'transparent'};color:${b===k?'#fff':'var(--muted)'};font:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer">${l}</button>`;
-  return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span><span style="display:inline-flex;align-items:center;gap:2px"><input class="se-share-num" type="number" min="0" max="100" value="${Math.round(sharePct)}" title="% exacto (a mano)" style="width:42px;height:28px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;color:var(--brand);font-weight:700;font-size:11.5px;outline:none;font-family:inherit"/><span style="font-size:11px;color:var(--brand);font-weight:700">%</span></span>`;
+// `sharePct` = % actual de esta versión dentro del grupo.
+export function freqControlHtml(v, sharePct){
+  return `<span style="font-size:11px;color:var(--muted)">Sale el</span><span style="display:inline-flex;align-items:center;gap:2px"><input class="se-share-num" type="number" min="0" max="100" value="${Math.round(sharePct)}" title="% que sale esta versión (a mano)" style="width:48px;height:30px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--brand);font-weight:700;font-size:13px;outline:none;font-family:inherit"/><span style="font-size:12px;color:var(--brand);font-weight:700">%</span></span><span style="font-size:11px;color:var(--muted)">de las veces</span>`;
 }
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
@@ -279,7 +273,7 @@ export function mountStepsEditor(el, opts){
       if(rot){
         card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
         const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
-        const freq = compite ? freqControlHtml(v, share, (groupActiveVs||[]).length) : "";
+        const freq = compite ? freqControlHtml(v, share) : "";
         card.innerHTML=`
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:${compite?'8px':'9px'}">
             <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
@@ -296,7 +290,6 @@ export function mountStepsEditor(el, opts){
           <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
-        card.querySelectorAll("[data-freq]").forEach(btn=> btn.onclick=()=>{ v.peso=pesoFromBucket(btn.dataset.freq); composer(box,paso); });
         { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
         card.querySelector(".se-vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
