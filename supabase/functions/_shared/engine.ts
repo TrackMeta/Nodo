@@ -886,17 +886,20 @@ async function pasarAHumano(
 // RESPETARLO. Esto es a propósito determinista (una lista de frases, no la IA):
 // para algo así no se puede depender de que un modelo "interprete bien" — el
 // costo de equivocarse es seguir spameando a quien te pidió que pares.
-// SOLO frases inequívocas de "no me contacten más". Se sacaron a propósito los
-// declives normales de una venta ("no gracias", "no, gracias", "no me interesa",
-// "ya no quiero", "no quiero nada"): un cliente que dice "no gracias, solo el
-// producto" al declinar un EXTRA no está pidiendo baja del remarketing — y
-// marcarlo silenciaba a compradores buenos sin forma de deshacerlo.
+// SOLO frases inequívocas de "no me contacten / no más publicidad". Se sacaron a
+// propósito los declives normales de una venta ("no gracias", "no, gracias",
+// "no me interesa", "ya no quiero", "no quiero nada") y "dar de baja" (ambigua:
+// "dar de baja mi PEDIDO" = cancelar la compra, no bajarse de los mensajes). Un
+// cliente que dice "no gracias, solo el producto" al declinar un EXTRA NO está
+// pidiendo baja del remarketing — marcarlo silenciaba a compradores buenos.
 const OPT_OUT = [
   "no escriban", "no me escriban", "no escribas", "no me escribas", "dejen de escribir",
   "no molesten", "no me molesten", "no me contacten", "no me contacte",
   "dejame en paz", "déjame en paz", "no me vuelvan a escribir", "no me vuelvas a escribir",
   "eliminar mi numero", "eliminen mi numero", "borrenme", "bórrenme", "bajenme de la lista",
-  "stop", "unsubscribe", "dar de baja",
+  "no quiero mas mensajes", "no me manden mas mensajes", "no me envien mas mensajes",
+  "no quiero mas publicidad", "no mas publicidad", "no quiero promociones", "no mas promociones",
+  "stop", "unsubscribe",
 ];
 // Reusa normalize() (el helper que ya tiene el motor: minúsculas + sin tildes)
 // y además saca la puntuación, para que "¡No, gracias!" == "no gracias".
