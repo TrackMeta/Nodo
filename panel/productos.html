@@ -252,7 +252,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, ma
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js";
+import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromBucket } from "./seq-editor.js";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -3536,16 +3536,19 @@ function renderComposer(){
       ang.querySelectorAll(".ad-chip-x").forEach(btn=> btn.onclick=()=>{ harvest(); harvestAngulos(); const a=st.act.angulos[angIdx]; a.ad_ids=(a.ad_ids||[]).filter(id=>String(id)!==String(btn.dataset.id)); renderComposer(); });
     }
     const list=tabVars();
+    // El peso "en cristiano" (Poco/Normal/Mucho) + % REAL dentro de la pestaña
+    // (la pestaña = el grupo del ángulo; el % solo compara versiones del mismo).
+    const pesoTab=list.reduce((a,{v})=>a+Math.max(0,Number(v.peso??1)),0)||1;
     list.forEach(({v,i},li)=>{
       const grid=document.createElement("div"); grid.dataset.vi=i;
       grid.style.cssText="border:1px solid var(--border);border-radius:12px;padding:13px;background:var(--surface-2,rgba(255,255,255,.02));margin-bottom:12px";
+      const sharePct=Math.round(Math.max(0,Number(v.peso??1))/pesoTab*100);
       grid.innerHTML=`
-        ${list.length>1?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <input class="in vname" style="flex:1;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+li)))}"/>
-          <span style="font-size:11px;color:var(--muted)">Peso</span>
-          <input class="in vpeso" type="number" min="0" step="1" style="width:54px;height:32px;text-align:center" value="${Number(v.peso??1)}"/>
+        ${list.length>1?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <input class="in vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+li)))}"/>
           <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
-        </div>`:``}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${freqControlHtml(v)}<span style="font-size:11px;color:var(--brand);font-weight:700;min-width:34px;text-align:right">${sharePct}%</span></div>`:``}
         <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:12px;align-items:start">
           <div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">El saludo${angActivo?" para este ángulo":""}</div>
             <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -3556,7 +3559,7 @@ function renderComposer(){
       (v.bubbles||[]).forEach((bub,bi)=> bb.appendChild(renderBubble(v,i,bub,bi)));
       grid.querySelectorAll(".addb").forEach(btn=> btn.onclick=()=>{ harvest(); const k=btn.dataset.k; if(k==="text"){ v.bubbles.push({text:""}); renderComposer(); } else pickMedia(i,k); });
       if(list.length>1){
-        grid.querySelector(".vpeso").oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); };
+        grid.querySelectorAll("[data-freq]").forEach(btn=> btn.onclick=()=>{ harvest(); v.peso=pesoFromBucket(btn.dataset.freq); renderComposer(); });
         grid.querySelector(".vdelVar").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true}))return; harvest(); cfg.variantes.splice(i,1); renderComposer(); };
       }
       const prev=grid.querySelector(".wprev"); const upd=()=>{ if(prev) prev.innerHTML=welcomePreview(v); };

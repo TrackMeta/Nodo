@@ -16,9 +16,9 @@ export function newVariant(idx){ return { id:uid(), nombre:"Versión "+String.fr
 // "Peso" en cristiano: en vez de un número técnico, 3 niveles de frecuencia
 // (Poco/Normal/Mucho) que se traducen a peso 1/2/3. Solo se muestra cuando 2+
 // versiones compiten en el mismo grupo (mismo ángulo); si es una sola, no sale.
-function pesoBucket(p){ p=Math.max(0,Number(p??1)); return p<=1?"poco":(p>=3?"mucho":"normal"); }
-function pesoFromBucket(b){ return b==="mucho"?3:(b==="poco"?1:2); }
-function freqControlHtml(v){
+export function pesoBucket(p){ p=Math.max(0,Number(p??1)); return p<=1?"poco":(p>=3?"mucho":"normal"); }
+export function pesoFromBucket(b){ return b==="mucho"?3:(b==="poco"?1:2); }
+export function freqControlHtml(v){
   const b=pesoBucket(v.peso);
   const seg=(k,l)=>`<button data-freq="${k}" type="button" style="border:none;background:${b===k?'var(--ia1,#8b5cf6)':'transparent'};color:${b===k?'#fff':'var(--muted)'};font:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer">${l}</button>`;
   return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span>`;
