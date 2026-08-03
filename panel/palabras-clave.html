@@ -154,7 +154,21 @@
 <div class="app">
   <div class="wrap">
     <h1>Palabras clave</h1>
-    <p class="lead">Cómo empieza cada chat. Cuando un cliente escribe la frase de tu anuncio (ej. <i>“Hola, quiero más información del producto”</i>) se activa el flujo del producto correcto. Y si escribe a su manera, el <b>IA Router</b> detecta la intención y lo guía igual.</p>
+    <p class="lead">Cómo empieza cada chat: el bot decide en 3 pasos qué producto atiende al cliente que escribe.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin:2px 0 22px">
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 13px;background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="width:22px;height:22px;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none">1</span><span style="font-size:12.5px;font-weight:700">Tu palabra clave o anuncio</span></div>
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.45">Escribe tu frase (o llega por tu anuncio) → abre ese producto.</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 13px;background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="width:22px;height:22px;border-radius:50%;background:rgba(139,92,246,.15);color:var(--ia1,#8b5cf6);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none">2</span><span style="font-size:12.5px;font-weight:700">La IA entiende la intención</span></div>
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.45">Si escribe a su manera, la IA elige el producto que calza.</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 13px;background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="width:22px;height:22px;border-radius:50%;background:var(--amber-bg,#2c2311);color:var(--amber);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none">3</span><span style="font-size:12.5px;font-weight:700">Flujo de respaldo</span></div>
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.45">Si nada calza, un menú lo guía (no lo deja en visto).</div>
+      </div>
+    </div>
 
     <!-- SIMULADOR -->
     <div class="sim">
@@ -178,23 +192,24 @@
       <div class="panel">
         <h3>Nueva palabra clave</h3>
         <p class="sub">Elige el <b>producto</b> que se activa y las frases que lo disparan. Se conectan al flujo de venta de ese producto, así que también las verás en su ficha.</p>
-        <div class="row">
-          <div style="flex:1.2"><label>Producto a activar</label><select class="in" id="nProd"></select></div>
-          <div style="flex:none;width:160px"><label>Coincidencia</label>
-            <select class="in" id="nMatch">
-              <option value="contiene">Contiene la frase</option>
-              <option value="empieza">Empieza con</option>
-              <option value="exacta">Exacta</option>
-            </select>
-          </div>
-        </div>
+        <div><label>Producto a activar</label><select class="in" id="nProd"></select></div>
         <div style="margin-top:12px"><label>Palabras / frases clave</label>
           <div class="chipbox" id="nChipBox">
             <input class="chipin" id="nChipIn" placeholder="Escribe una frase y pulsa Enter…"/>
             <button class="chipadd" id="nChipAdd" type="button"><span id="plusIc"></span> Agregar</button>
           </div>
-          <div class="hint">Agrega tantas frases como quieras (Enter o “Agregar”). Se normalizan (sin distinguir mayúsculas ni tildes). “Contiene” es lo más flexible para anuncios.</div>
+          <div class="hint">Agrega tantas frases como quieras (Enter o “Agregar”). Se normalizan (sin distinguir mayúsculas ni tildes).</div>
         </div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;list-style:none">＋ Opciones avanzadas</summary>
+          <div style="margin-top:10px;max-width:240px"><label>Cómo debe coincidir</label>
+            <select class="in" id="nMatch">
+              <option value="contiene">La contiene (lo más flexible)</option>
+              <option value="empieza">Empieza con ella</option>
+              <option value="exacta">Exacta</option>
+            </select>
+          </div>
+        </details>
         <div style="margin-top:14px"><button class="btn" id="addBtn"><span id="saveIc"></span> Guardar palabra clave</button></div>
       </div>
 
