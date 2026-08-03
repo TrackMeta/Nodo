@@ -3285,7 +3285,7 @@ function renderComposer(){
         ${angs.filter(a=>a.slug).map(a=>`<button class="ang-tab" data-tab="${esc(a.slug)}" style="${actTabBtn(tab===a.slug)}">${esc(a.nombre||a.slug)}</button>`).join("")}
         <button class="ang-tab" data-addang style="${actTabBtn(false)};border-style:dashed;color:var(--muted)">＋ ángulo</button>
       </div>
-      <div id="tabBody"></div>`}
+      <div id="actTabBody"></div>`}
     </div>
 
     <div class="card" style="display:flex;align-items:flex-start;gap:10px;background:var(--ia-bg,rgba(139,92,246,.08));border-color:var(--ia-brd,rgba(139,92,246,.3))">
@@ -3309,7 +3309,7 @@ function renderComposer(){
     st.act.tab=anguloSlug(nombre); renderComposer();
   };
 
-  const body=$("tabBody");
+  const body=$("actTabBody");
   if(body){
     if(angActivo){
       const adsMeta=st.act.adsMeta||[];
