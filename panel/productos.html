@@ -165,6 +165,20 @@
   }
   .ia-card .in:focus,.ia-card .ta:focus,.ia-card textarea:focus,.ia-card .sel:focus{
     border-color:var(--ia1);box-shadow:0 0 0 3px var(--ia-bg)}
+  /* Hub de Ángulos */
+  .hub-prod{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:14px}
+  .hub-prod-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+  .hub-prod-em{flex:none;width:40px;height:40px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:21px}
+  .hub-prod-nm{font-weight:750;font-size:16px;letter-spacing:-.2px}
+  .hub-prod-sub{font-size:12px;color:var(--muted);margin-top:1px}
+  .hub-count{flex:none;font-size:11.5px;font-weight:700;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:3px 11px}
+  .hub-ang{border:1px solid var(--border);border-radius:11px;padding:12px;margin-top:10px;background:var(--surface-2)}
+  .hub-ang.dup{border-color:var(--amber);box-shadow:inset 0 0 0 1px rgba(240,169,43,.3)}
+  .hub-warn{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--amber);background:rgba(240,169,43,.08);border:1px solid rgba(240,169,43,.28);border-radius:10px;padding:10px 12px;line-height:1.5;margin-top:10px}
+  .hub-warn svg{width:15px;height:15px;flex:none;margin-top:1px}
+  .hub-empty-ads{font-size:11.5px;color:var(--faint);margin-top:8px}
+  .ad-chip2{display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)}
+  .ad-chip2.dup{background:rgba(240,169,43,.14);border-color:rgba(240,169,43,.4);color:var(--amber)}
 </style>
 </head>
 <body>
@@ -181,6 +195,7 @@
           <button class="nodo-btn primary" id="addProduct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo producto</button>
         </div>
       </div>
+      <div id="gvToggle" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 16px"></div>
       <div id="pSearchWrap" style="position:relative;max-width:340px;margin:0 0 13px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="pSearch" placeholder="Buscar producto…" autocomplete="off" style="width:100%;height:40px;background:var(--surface);border:1px solid var(--border);border-radius:11px;color:var(--text);padding:0 12px 0 36px;font-size:13.5px;outline:none;font-family:inherit"/>
@@ -188,6 +203,7 @@
       <div id="claseSeg" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 14px"></div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
+      <div id="angHub" style="display:none"></div>
     </div>
     <!-- VISTA DETALLE -->
     <div id="detailView" style="display:none">
@@ -226,7 +242,7 @@ let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js";
 const $ = (id) => document.getElementById(id);
-const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set() };
+const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
 function prodFolder(){ return ((st.prod?.emoji?st.prod.emoji+" ":"")+(st.prod?.nombre||"")).slice(0,60); }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -256,7 +272,164 @@ async function boot(){
   $("backBtn").onclick = ()=>{ st.prod=null; showGrid(); loadProducts(); };
   await loadProducts();
 }
-function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; const f=$("armFab"); if(f) f.style.display="none"; armClose(); }
+function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; const f=$("armFab"); if(f) f.style.display="none"; armClose(); renderGvToggle(); applyGvMode(); }
+// Toggle Catálogo | Ángulos (nivel grilla). Ángulos = hub central de ángulos+anuncios.
+function renderGvToggle(){
+  const el=$("gvToggle"); if(!el) return;
+  const seg=(v,ic,l)=>`<button data-gv="${v}" style="display:inline-flex;align-items:center;gap:6px;border:none;background:${st.gv===v?'var(--brand)':'transparent'};color:${st.gv===v?'#fff':'var(--muted)'};font:inherit;font-size:12.5px;font-weight:600;padding:7px 15px;border-radius:8px;cursor:pointer">${ic} ${l}</button>`;
+  el.innerHTML=seg("catalogo",icon("box"),"Catálogo")+seg("angulos","🎯","Ángulos");
+  el.querySelectorAll("[data-gv]").forEach(b=> b.onclick=()=>{ if(st.gv===b.dataset.gv) return; st.gv=b.dataset.gv; renderGvToggle(); applyGvMode(); });
+}
+// Muestra el panel del modo activo (catálogo o hub de ángulos).
+function applyGvMode(){
+  const cat=st.gv==="catalogo";
+  ["pSearchWrap","claseSeg","folders","cards"].forEach(id=>{ const e=$(id); if(!e) return; e.style.display = cat ? (id==="pSearchWrap" ? (st.list.length?"":"none") : "") : "none"; });
+  const hub=$("angHub"); if(hub) hub.style.display=cat?"none":"";
+  if(cat){ renderCards(); } else { if(st.hub) renderAngHub(); else loadAngHub(); }
+}
+
+// ── Hub de Ángulos: todos los productos principales + sus ángulos y anuncios en
+//    un solo lugar. Comparte la tabla `angulos` con el editor por-producto de
+//    "Cómo llegan" (mismos campos/slug/guardado), así no divergen. ──
+const HUB_WARN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+async function loadAngHub(){
+  const host=$("angHub"); if(!host) return;
+  host.innerHTML=`<div class="empty">Cargando ángulos…</div>`;
+  const gen=(st.hubGen=(st.hubGen||0)+1);
+  const prods=(st.list||[]).filter(p=>p.clase!=="extra"&&p.clase!=="regalo");
+  let angs=[], angOk=true, adsMeta=[];
+  try{
+    const { data, error }=await supa.from("angulos").select("id,product_id,nombre,slug,ad_ids,gancho_ia,orden").eq("channel_id",st.channelId).order("orden");
+    if(error) throw error;
+    angs=(data||[]).map(a=>({...a, ad_ids:Array.isArray(a.ad_ids)?a.ad_ids.map(String):[]}));
+  }catch(_){ angOk=false; }
+  try{
+    const { data }=await supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name");
+    adsMeta=(data||[]).map(m=>({...m, ad_id:String(m.ad_id)}));
+  }catch(_){ adsMeta=[]; }
+  if(gen!==st.hubGen) return;
+  const byProd={}, orig={};
+  prods.forEach(p=>{ byProd[p.id]=[]; });
+  angs.forEach(a=>{ (byProd[a.product_id]=byProd[a.product_id]||[]).push(a); });
+  prods.forEach(p=>{ orig[p.id]=(byProd[p.id]||[]).map(a=>a.id).filter(Boolean); });
+  st.hub={ prods, byProd, adsMeta, angOk, orig };
+  renderAngHub();
+}
+function renderAngHub(){
+  const host=$("angHub"); if(!host||!st.hub) return;
+  const { prods, byProd, adsMeta, angOk }=st.hub;
+  const adName=(id)=>{ const m=adsMeta.find(x=>x.ad_id===String(id)); return m?(m.ad_name||m.ad_id):id; };
+  let html=`<div class="card" style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">
+    <span style="font-size:26px;line-height:1">🎯</span>
+    <div><div style="font-weight:750;font-size:15px;letter-spacing:-.2px">Ángulos de tus anuncios</div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px">Un <b>ángulo</b> agrupa los anuncios que atacan la misma idea (ej. “Dolor / calambres”). Cuando un cliente llega desde uno de esos anuncios —aunque no escriba tu palabra clave— el bot lo rutea al producto correcto y lo saluda con el mensaje de ese ángulo.</div></div>
+  </div>`;
+  if(!angOk){ host.innerHTML=html+`<div class="hub-warn">${HUB_WARN}Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`; return; }
+  if(!prods.length){ host.innerHTML=html+`<div class="nodo-empty"><p>Aún no tienes productos principales. Crea uno en el Catálogo para configurar sus ángulos.</p></div>`; return; }
+  // Colisiones: un mismo anuncio en 2+ ángulos hace el ruteo ambiguo.
+  const adMap={};
+  prods.forEach(p=> (byProd[p.id]||[]).forEach(a=> (a.ad_ids||[]).forEach(id=>{ (adMap[id]=adMap[id]||[]).push({ ang:a.nombre||a.slug||"(sin nombre)" }); })));
+  const dups=Object.entries(adMap).filter(([,arr])=>arr.length>1);
+  const dupIds=new Set(dups.map(([id])=>id));
+  if(dups.length){
+    html+=`<div class="hub-warn" style="margin-bottom:14px">${HUB_WARN}<div><b>Anuncios repetidos en varios ángulos.</b> El bot rutea al primero que encuentre; conviene que cada anuncio viva en un solo ángulo:${dups.map(([id,arr])=>`<div style="margin-top:4px;color:var(--text)">· <span class="mono">${esc(adName(id))}</span> → ${arr.map(x=>esc(x.ang)).join(" · ")}</div>`).join("")}</div></div>`;
+  }
+  prods.forEach(p=>{
+    const angs=byProd[p.id]||[];
+    const nAds=angs.reduce((s,a)=>s+(a.ad_ids||[]).length,0);
+    const em = p.emoji ? esc(p.emoji) : "📦";
+    html+=`<div class="hub-prod" data-prod="${p.id}">
+      <div class="hub-prod-hd">
+        <div class="hub-prod-em">${em}</div>
+        <div style="flex:1;min-width:0"><div class="hub-prod-nm">${esc(p.nombre)}</div><div class="hub-prod-sub">${angs.length?`${angs.length} ángulo${angs.length>1?"s":""} · ${nAds} anuncio${nAds!==1?"s":""}`:"Sin ángulos todavía"}</div></div>
+        <span class="hub-count">${angs.length}</span>
+      </div>`;
+    if(!angs.length){
+      html+=`<div class="hub-warn">${HUB_WARN}Este producto no tiene ángulos: un cliente que llegue de un anuncio suyo sin escribir la palabra clave caerá en el menú de respaldo o en la IA. Agrega al menos uno.</div>`;
+    }
+    angs.forEach((a,ai)=>{
+      const adsUI = adsMeta.length
+        ? `<div style="font-size:11px;color:var(--muted);margin:9px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="hub-ad-ck" value="${esc(m.ad_id)}"${(a.ad_ids||[]).includes(m.ad_id)?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}${dupIds.has(m.ad_id)&&(a.ad_ids||[]).includes(m.ad_id)?` <span style="color:var(--amber);font-size:11px">· repetido</span>`:''}</span></label>`).join("")}</div>`
+        : `<div style="font-size:11px;color:var(--muted);margin:9px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y Enter. <span style="color:var(--faint)">(Conecta Meta Ads en Ajustes para elegirlos por su nombre.)</span></div>
+           <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:38px;background:var(--surface)">
+             ${(a.ad_ids||[]).map(id=>`<span class="ad-chip2${dupIds.has(id)?" dup":""}"><span class="mono">${esc(id)}</span><button class="hub-ad-x" data-id="${esc(id)}" title="Quitar" style="border:0;background:transparent;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0;opacity:.7">✕</button></span>`).join("")}
+             <input class="hub-ad-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:150px;color:var(--text);height:24px" placeholder="Pega un ID y Enter"/>
+           </div>`;
+      html+=`<div class="hub-ang${(a.ad_ids||[]).some(id=>dupIds.has(id))?" dup":""}" data-pid="${p.id}" data-ai="${ai}">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="in hub-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
+          <button class="iconbtn hub-del" title="Eliminar ángulo">${icon("trash")}</button>
+        </div>
+        <input class="in hub-gancho" style="width:100%;margin-top:8px" placeholder="Gancho para la IA (ej. vino por un anuncio sobre calambres nocturnos)" value="${esc(a.gancho_ia||'')}"/>
+        ${adsUI}
+      </div>`;
+    });
+    html+=`<div style="display:flex;gap:10px;align-items:center;margin-top:12px">
+        <button class="btn hub-add" style="height:34px;padding:0 13px;font-size:12.5px;background:transparent;border:1px dashed var(--border);color:var(--text)">＋ Ángulo</button>
+        <button class="btn primary hub-save" style="height:34px;padding:0 16px;font-size:12.5px;margin-left:auto">Guardar</button>
+      </div>
+    </div>`;
+  });
+  host.innerHTML=html;
+
+  host.querySelectorAll(".hub-prod").forEach(card=>{
+    const pid=card.dataset.prod;
+    card.querySelector(".hub-add").onclick=async()=>{
+      hubHarvest();
+      const nombre=await askText({title:"Nuevo ángulo", placeholder:"Ej. Dolor / calambres", confirmText:"Crear"});
+      if(!nombre) return;
+      (st.hub.byProd[pid]=st.hub.byProd[pid]||[]).push({ nombre, gancho_ia:"", ad_ids:[], slug:anguloSlug(nombre) });
+      renderAngHub();
+    };
+    card.querySelector(".hub-save").onclick=()=>hubSaveProduct(pid);
+  });
+  host.querySelectorAll(".hub-ang[data-pid]").forEach(row=>{
+    const pid=row.dataset.pid, ai=+row.dataset.ai;
+    const a=(st.hub.byProd[pid]||[])[ai]; if(!a) return;
+    row.querySelector(".hub-del").onclick=()=>{ hubHarvest(); st.hub.byProd[pid].splice(ai,1); renderAngHub(); };
+    row.querySelectorAll(".hub-ad-ck").forEach(ck=> ck.onchange=()=>{
+      hubHarvest(); a.ad_ids=a.ad_ids||[];
+      if(ck.checked){ if(!a.ad_ids.includes(ck.value)) a.ad_ids.push(ck.value); }
+      else a.ad_ids=a.ad_ids.filter(id=>id!==ck.value);
+      renderAngHub();
+    });
+    const inp=row.querySelector(".hub-ad-in");
+    if(inp) inp.onkeydown=(e)=>{
+      if(e.key!=="Enter") return; e.preventDefault();
+      const val=inp.value.trim(); if(!val) return; hubHarvest(); a.ad_ids=a.ad_ids||[];
+      val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!a.ad_ids.includes(id)) a.ad_ids.push(id); });
+      renderAngHub(); const rows=host.querySelectorAll(`.hub-ang[data-pid="${pid}"][data-ai="${ai}"] .hub-ad-in`); if(rows[0]) rows[0].focus();
+    };
+    row.querySelectorAll(".hub-ad-x").forEach(btn=> btn.onclick=()=>{ hubHarvest(); a.ad_ids=(a.ad_ids||[]).filter(id=>id!==btn.dataset.id); renderAngHub(); });
+  });
+}
+// Lee nombre+gancho de las filas del hub a memoria (los ad_ids ya se mantienen en memoria).
+function hubHarvest(){
+  if(!st.hub) return;
+  document.querySelectorAll("#angHub .hub-ang[data-pid]").forEach(row=>{
+    const a=(st.hub.byProd[row.dataset.pid]||[])[+row.dataset.ai]; if(!a) return;
+    const nm=row.querySelector(".hub-nombre"); if(nm) a.nombre=nm.value.trim();
+    const gn=row.querySelector(".hub-gancho"); if(gn) a.gancho_ia=gn.value.trim();
+  });
+}
+// Persiste los ángulos de un producto (mismo upsert/delete que saveAngulos).
+async function hubSaveProduct(pid){
+  hubHarvest();
+  const angs=(st.hub.byProd[pid]||[]).filter(a=>a.nombre);
+  const usados=new Set();
+  angs.forEach((a,i)=>{ let s=a.slug||anguloSlug(a.nombre); let base=s,n=2; while(usados.has(s)){ s=base+"-"+(n++); } usados.add(s); a.slug=s; a.orden=i; });
+  try{
+    for(const a of angs){
+      const payload={ channel_id:st.channelId, product_id:pid, nombre:a.nombre, slug:a.slug, ad_ids:a.ad_ids||[], gancho_ia:a.gancho_ia||null, orden:a.orden };
+      if(a.id){ const {error}=await supa.from("angulos").update(payload).eq("id",a.id); if(error) throw error; }
+      else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
+    }
+    const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
+    for(const id of (st.hub.orig[pid]||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
+    st.hub.byProd[pid]=angs; st.hub.orig[pid]=angs.map(a=>a.id);
+    toast("Ángulos guardados ✓"); renderAngHub();
+  }catch(e){ toast(e.message||"No se pudo guardar los ángulos",true); }
+}
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); /* el FAB lo controla renderDetail según si estás en el hub */ }
 
 async function loadProducts(){
@@ -268,7 +441,7 @@ async function loadProducts(){
   if(error){ ({ data, error } = await supa.from("products").select("id,nombre,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at")); }
   if(error){ ({ data } = await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).order("created_at")); }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
-  st.list=data||[];
+  st.list=data||[]; st.hub=null; // los productos cambiaron → recargar el hub de ángulos
   if(!Fbar){
     Fbar=await mountFolders({ el:$("folders"), tipo:"product", table:"products", channelId:st.channelId, items:()=>st.list, onChange:renderCards });
   } else if(Fbar.channelId()!==st.channelId){
@@ -276,7 +449,7 @@ async function loadProducts(){
   } else {
     await Fbar.reload();
   }
-  renderCards();
+  renderGvToggle(); applyGvMode();
 }
 // Opciones activas de un producto (para las tarjetas del grid).
 function opcionesDe(p){ return (p.product_versions||[]).filter(v=>v.activo!==false); }
