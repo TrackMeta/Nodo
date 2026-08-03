@@ -144,8 +144,12 @@ export async function runEngine(
       }
       // "Caliente": 4+ mensajes entrantes = conversó mucho, súper enganchado (más que
       // solo "interactuar" una vez), aún sin comprar → priorizarlo. moverEtapa es
-      // forward-only por rango, así que nunca baja a un confirmado/comprado.
-      if (n >= 4) await moverEtapa(db, channelId, contactId, "caliente");
+      // forward-only por rango, así que nunca baja a un confirmado/comprado. Además
+      // gradúa a su propio remarketing (secuencia más directa que la de "interactuo").
+      if (n >= 4) {
+        await moverEtapa(db, channelId, contactId, "caliente");
+        await enrolarSegmento(db, channelId, contactId, "caliente");
+      }
     } catch (_) { /* best-effort */ }
   }
 
@@ -2538,7 +2542,7 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
 // segmento más profundo), nunca retrocede: un provincia-sin-adelanto no vuelve a
 // "curioso" porque el motor le escriba en un campo.
 const SEG_RANK: Record<string, number> = {
-  solo_inicio: 1, general: 1, interactuo: 2, provincia_sin_adelanto: 3,
+  solo_inicio: 1, general: 1, interactuo: 2, caliente: 3, provincia_sin_adelanto: 4,
 };
 // Enrola al contacto en la secuencia de remarketing de un SEGMENTO (audiencia).
 // El remarketing es POR PRODUCTO: la secuencia sale del mapa del producto del
