@@ -181,6 +181,10 @@
           <button class="nodo-btn primary" id="addProduct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo producto</button>
         </div>
       </div>
+      <div id="pSearchWrap" style="position:relative;max-width:340px;margin:0 0 13px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="pSearch" placeholder="Buscar producto…" autocomplete="off" style="width:100%;height:40px;background:var(--surface);border:1px solid var(--border);border-radius:11px;color:var(--text);padding:0 12px 0 36px;font-size:13.5px;outline:none;font-family:inherit"/>
+      </div>
       <div id="claseSeg" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 14px"></div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
@@ -246,6 +250,7 @@ async function boot(){
   guardUnsaved(".nodo-page"); // avisa si sales con la ficha del producto a medio editar
   shell.onChannel(id=>{ st.channelId=id; st.prod=null; showGrid(); loadProducts(); });
   $("addProduct").onclick = createProduct;
+  $("pSearch").oninput = renderCards;
   $("saveBtn").onclick = saveProduct;
   $("delBtn").onclick = deleteProduct;
   $("backBtn").onclick = ()=>{ st.prod=null; showGrid(); loadProducts(); };
@@ -287,16 +292,20 @@ function renderCards(){
     segEl.innerHTML=seg("todos","Todos")+seg("principal","Principales")+seg("extra","Extras")+(counts.regalo?seg("regalo","Regalos"):"");
     segEl.querySelectorAll("[data-clase]").forEach(b=> b.onclick=()=>{ st.claseFilter=b.dataset.clase; renderCards(); });
   }
+  const sw=$("pSearchWrap"); if(sw) sw.style.display=st.list.length?"":"none";
   let list=st.list;
   if(st.claseFilter==="principal") list=list.filter(esPrin);
   else if(st.claseFilter==="extra") list=list.filter(esEx);
   else if(st.claseFilter==="regalo") list=list.filter(esReg);
   if(Fbar) list=Fbar.filter(list);
+  const query=($("pSearch")?.value||"").trim().toLowerCase();
+  if(query) list=list.filter(p=>(p.nombre||"").toLowerCase().includes(query));
   const box=$("cards");
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div><h3>Aún no hay productos</h3><p>Crea tu primer producto para configurar sus versiones, precios y flujos de venta.</p></div>`;
     return;
   }
+  if(!list.length){ box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><p>${query?`Nada coincide con “${esc(query)}”.`:"Sin productos en esta vista."}</p></div>`; return; }
   box.innerHTML="";
   list.forEach(p=>{
     const el=document.createElement("div"); el.className="nodo-card pcard";
