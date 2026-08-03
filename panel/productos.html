@@ -342,6 +342,16 @@ function hubAssign(pid, adId, angIdx){
   (st.hub.byProd[pid]||[]).forEach(a=>{ a.ad_ids=(a.ad_ids||[]).filter(id=>id!==adId); });
   if(angIdx>=0){ const a=(st.hub.byProd[pid]||[])[angIdx]; if(a){ a.ad_ids=a.ad_ids||[]; if(!a.ad_ids.includes(adId)) a.ad_ids.push(adId); } }
 }
+// ¿Un anuncio de Meta "coincide" con un producto? Si su nombre o campaña menciona
+// el nombre del producto (o su 1ª palabra ≥4 letras). Normaliza (minúsculas/tildes).
+function hubNorm(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
+function hubMatchAd(m, nombre){
+  const hay=hubNorm((m.ad_name||"")+" "+(m.campaign_name||""));
+  const n=hubNorm(nombre).trim(); if(!n) return false;
+  if(hay.includes(n)) return true;
+  const w=n.split(/\s+/).find(x=>x.length>=4);
+  return w?hay.includes(w):false;
+}
 function renderAngHub(){
   const host=$("angHub"); if(!host||!st.hub) return;
   const { prods, byProd, bank, adsMeta, angOk }=st.hub;
@@ -390,8 +400,20 @@ function renderAngHub(){
       </div>`;
     });
     const metaLibres=adsMeta.filter(m=>!bk.includes(m.ad_id));
+    const sugeridos=metaLibres.filter(m=>hubMatchAd(m,p.nombre));
+    const otros=metaLibres.filter(m=>!sugeridos.includes(m));
+    if(sugeridos.length){
+      html+=`<div style="border:1px solid var(--ia-brd,rgba(168,85,247,.4));border-radius:11px;padding:11px 12px;margin-top:10px;background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.10),transparent 58%),var(--surface)">
+        <div style="font-size:11.5px;font-weight:800"><span style="background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">✨ Sugeridos de Meta</span> <span style="font-weight:500;color:var(--faint)">— mencionan «${esc(p.nombre)}»</span></div>
+        <div style="font-size:11px;color:var(--muted);margin:2px 0 8px">Anuncios de Meta cuyo nombre o campaña menciona este producto. Desmarca los que no quieras.</div>
+        <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto">
+          ${sugeridos.map(m=>`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="hub-sug" value="${esc(m.ad_id)}" checked/> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:""}</span></label>`).join("")}
+        </div>
+        <button class="btn primary hub-sug-add" style="height:30px;padding:0 13px;font-size:12px;margin-top:9px">＋ Agregar los marcados</button>
+      </div>`;
+    }
     html+=`<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-      ${adsMeta.length?`<select class="sel hub-addmeta" style="height:34px;font-size:12px;flex:1;min-width:180px"><option value="">＋ Elegir un anuncio de Meta…</option>${metaLibres.map(m=>`<option value="${esc(m.ad_id)}">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` · ${esc(m.campaign_name)}`:""}</option>`).join("")}</select>`:``}
+      ${otros.length?`<select class="sel hub-addmeta" style="height:34px;font-size:12px;flex:1;min-width:180px"><option value="">＋ Elegir otro anuncio de Meta…</option>${otros.map(m=>`<option value="${esc(m.ad_id)}">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` · ${esc(m.campaign_name)}`:""}</option>`).join("")}</select>`:``}
       <input class="in hub-addid" style="height:34px;flex:1;min-width:160px" placeholder="${adsMeta.length?"…o pega un ID y Enter":"Pega un ID de anuncio y Enter"}"/>
     </div>
     <div style="display:flex;margin-top:14px"><button class="btn primary hub-save" style="height:34px;padding:0 18px;font-size:12.5px;margin-left:auto">Guardar</button></div>
@@ -410,6 +432,7 @@ function renderAngHub(){
     };
     card.querySelector(".hub-save").onclick=()=>hubSaveProduct(pid);
     const am=card.querySelector(".hub-addmeta"); if(am) am.onchange=()=>{ const id=am.value; if(!id) return; hubHarvest(); st.hub.bank[pid]=st.hub.bank[pid]||[]; if(!st.hub.bank[pid].includes(id)) st.hub.bank[pid].push(id); renderAngHub(); };
+    const sa=card.querySelector(".hub-sug-add"); if(sa) sa.onclick=()=>{ hubHarvest(); st.hub.bank[pid]=st.hub.bank[pid]||[]; card.querySelectorAll(".hub-sug:checked").forEach(ck=>{ if(!st.hub.bank[pid].includes(ck.value)) st.hub.bank[pid].push(ck.value); }); renderAngHub(); };
     const ain=card.querySelector(".hub-addid"); if(ain) ain.onkeydown=(e)=>{
       if(e.key!=="Enter") return; e.preventDefault(); const val=ain.value.trim(); if(!val) return; hubHarvest();
       st.hub.bank[pid]=st.hub.bank[pid]||[];
