@@ -13,18 +13,27 @@ import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const esc = (s)=> (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const uid = ()=> "v"+Math.random().toString(36).slice(2,9);
 export function newVariant(idx){ return { id:uid(), nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
-// "Peso" en cristiano: en vez de un número técnico, 3 niveles de frecuencia
-// (Poco/Normal/Mucho) que se traducen a peso 1/2/3. Solo se muestra cuando 2+
-// versiones compiten en el mismo grupo (mismo ángulo); si es una sola, no sale.
+// "Peso" en cristiano: 3 niveles rápidos (Poco/Normal/Mucho) + el % EDITABLE a
+// mano al lado. Por debajo todo es `peso` (el motor normaliza por la suma). Solo
+// se muestra cuando 2+ versiones compiten en el mismo grupo (mismo ángulo).
 export function pesoBucket(p){ p=Math.max(0,Number(p??1)); return p<=1?"poco":(p>=3?"mucho":"normal"); }
 export function pesoFromBucket(b){ return b==="mucho"?3:(b==="poco"?1:2); }
-export function freqControlHtml(v){
-  const b=pesoBucket(v.peso);
+// El usuario escribió un % para ESTA versión: se traduce a un peso que da ese %
+// dejando a las otras con su reparto actual del resto. peso = sumaOtras·P/(100-P).
+export function pesoFromShare(othersSum, pct){
+  pct=Math.max(0,Math.min(100,Number(pct)||0));
+  const os=othersSum>0?othersSum:1;
+  if(pct>=100) return os*10000; // domina (las otras ~0%)
+  if(pct<=0) return 0;
+  return os*pct/(100-pct);
+}
+// `sharePct` = % actual de esta versión dentro del grupo; `nActive` = cuántas
+// compiten (para deducir qué bucket resaltar respecto al reparto parejo).
+export function freqControlHtml(v, sharePct, nActive){
+  const eq = nActive>0 ? 100/nActive : 100;
+  const b = sharePct < eq*0.75 ? "poco" : (sharePct > eq*1.5 ? "mucho" : "normal");
   const seg=(k,l)=>`<button data-freq="${k}" type="button" style="border:none;background:${b===k?'var(--ia1,#8b5cf6)':'transparent'};color:${b===k?'#fff':'var(--muted)'};font:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer">${l}</button>`;
-  // Poco/Normal/Mucho para el común, + un campo de peso EXACTO a mano al lado
-  // (por si quieres un reparto fino, ej. 5 vs 2). El bucket resaltado se deduce
-  // del número. Los dos editan el mismo `peso`.
-  return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span><input class="se-vpeso-num" type="number" min="0" step="1" value="${Number(v.peso??1)}" title="Peso exacto (a mano)" style="width:44px;height:28px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:11.5px;outline:none;font-family:inherit"/>`;
+  return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span><span style="display:inline-flex;align-items:center;gap:2px"><input class="se-share-num" type="number" min="0" max="100" value="${Math.round(sharePct)}" title="% exacto (a mano)" style="width:42px;height:28px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;color:var(--brand);font-weight:700;font-size:11.5px;outline:none;font-family:inherit"/><span style="font-size:11px;color:var(--brand);font-weight:700">%</span></span>`;
 }
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
@@ -264,21 +273,20 @@ export function mountStepsEditor(el, opts){
     // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
     // grupo → recién ahí aparece el control de frecuencia (Poco/Normal/Mucho) y
     // el % REAL dentro del grupo. Con una sola, nada de eso (no aplica).
-    function renderCard(v, vi, compite, pesoG){
+    function renderCard(v, vi, compite, pesoG, groupActiveVs){
       if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
       const card=document.createElement("div");
       if(rot){
         card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
         const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
-        const freq = compite ? freqControlHtml(v) : "";
-        const shareHtml = compite ? `<span class="se-share" style="font-size:11px;color:var(--brand);font-weight:700;min-width:36px;text-align:right">${v.activo!==false?share+'%':'—'}</span>` : "";
+        const freq = compite ? freqControlHtml(v, share, (groupActiveVs||[]).length) : "";
         card.innerHTML=`
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:${compite?'8px':'9px'}">
             <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
             <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
             <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
           </div>
-          ${compite?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">${freq}${shareHtml}</div>`:``}
+          ${compite?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">${freq}</div>`:``}
           ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
             <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
             <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
@@ -289,7 +297,7 @@ export function mountStepsEditor(el, opts){
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
         card.querySelectorAll("[data-freq]").forEach(btn=> btn.onclick=()=>{ v.peso=pesoFromBucket(btn.dataset.freq); composer(box,paso); });
-        { const np=card.querySelector(".se-vpeso-num"); if(np){ np.oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); }; np.onchange=()=>composer(box,paso); } }
+        { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
         card.querySelector(".se-vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
         { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
@@ -337,7 +345,8 @@ export function mountStepsEditor(el, opts){
         gh.innerHTML=`<div style="font-size:12.5px;font-weight:800;letter-spacing:-.01em">${titulo}</div><div style="font-size:11px;color:var(--faint);margin-top:2px;line-height:1.45">${hintBase}${hintMas}</div>`;
         vl.appendChild(gh);
       }
-      g.items.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, compite, pesoG)));
+      const groupActiveVs=activeInGroup.map(x=>x.v);
+      g.items.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, compite, pesoG, groupActiveVs)));
       if(hasAng){
         const add=document.createElement("button");
         add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";

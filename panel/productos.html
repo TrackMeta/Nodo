@@ -252,7 +252,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, ma
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromBucket } from "./seq-editor.js?v=4";
+import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromBucket, pesoFromShare } from "./seq-editor.js?v=5";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -3537,7 +3537,7 @@ function renderComposer(){
           <input class="in vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+li)))}"/>
           <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${freqControlHtml(v)}<span style="font-size:11px;color:var(--brand);font-weight:700;min-width:34px;text-align:right">${sharePct}%</span></div>`:``}
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${freqControlHtml(v, sharePct, list.length)}</div>`:``}
         <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:12px;align-items:start">
           <div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">El saludo${angActivo?" para este ángulo":""}</div>
             <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -3549,7 +3549,7 @@ function renderComposer(){
       grid.querySelectorAll(".addb").forEach(btn=> btn.onclick=()=>{ harvest(); const k=btn.dataset.k; if(k==="text"){ v.bubbles.push({text:""}); renderComposer(); } else pickMedia(i,k); });
       if(list.length>1){
         grid.querySelectorAll("[data-freq]").forEach(btn=> btn.onclick=()=>{ harvest(); v.peso=pesoFromBucket(btn.dataset.freq); renderComposer(); });
-        { const np=grid.querySelector(".se-vpeso-num"); if(np){ np.oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); }; np.onchange=()=>{ harvest(); renderComposer(); }; } }
+        { const sn=grid.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ harvest(); const others=list.map(x=>x.v).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); renderComposer(); }; } }
         grid.querySelector(".vdelVar").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true}))return; harvest(); cfg.variantes.splice(i,1); renderComposer(); };
       }
       const prev=grid.querySelector(".wprev"); const upd=()=>{ if(prev) prev.innerHTML=welcomePreview(v); };
