@@ -183,8 +183,8 @@
   .ia-gancho{margin-top:9px;border:1px solid var(--ia-brd);border-radius:11px;padding:10px 11px;
     background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.12),transparent 58%),var(--surface)}
   .ia-gancho-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap}
-  .ia-gancho-gl{width:21px;height:21px;flex:none;border-radius:6px;display:grid;place-items:center;
-    background:linear-gradient(135deg,var(--ia1),var(--ia2));color:#fff;box-shadow:0 3px 8px -3px rgba(168,85,247,.6)}
+  .ia-gancho-gl{width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;font-size:13px;line-height:1;
+    background:linear-gradient(135deg,var(--ia1),var(--ia2));box-shadow:0 3px 8px -3px rgba(168,85,247,.6)}
   .ia-gancho-gl svg{width:12px;height:12px}
   .ia-gancho-tt{font-size:11.5px;font-weight:800;letter-spacing:-.01em;
     background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
@@ -3317,7 +3317,7 @@ async function renderActivacion(host){
 const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>';
 function ganchoIAHtml(value, cls){
   return `<div class="ia-gancho">
-    <div class="ia-gancho-hd"><span class="ia-gancho-gl">${IA_SPARK}</span><span class="ia-gancho-tt">Gancho para la IA</span><span class="ia-gancho-ds">desde qué idea le vende a este cliente</span></div>
+    <div class="ia-gancho-hd"><span class="ia-gancho-gl">🤖</span><span class="ia-gancho-tt">Gancho para la IA</span><span class="ia-gancho-ds">desde qué idea le vende a este cliente</span></div>
     <input class="in ia-in ${cls}" placeholder="Ej. vino por un anuncio sobre calambres nocturnos" value="${esc(value||'')}"/>
   </div>`;
 }
