@@ -13,6 +13,16 @@ import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 const esc = (s)=> (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const uid = ()=> "v"+Math.random().toString(36).slice(2,9);
 export function newVariant(idx){ return { id:uid(), nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
+// "Peso" en cristiano: en vez de un número técnico, 3 niveles de frecuencia
+// (Poco/Normal/Mucho) que se traducen a peso 1/2/3. Solo se muestra cuando 2+
+// versiones compiten en el mismo grupo (mismo ángulo); si es una sola, no sale.
+function pesoBucket(p){ p=Math.max(0,Number(p??1)); return p<=1?"poco":(p>=3?"mucho":"normal"); }
+function pesoFromBucket(b){ return b==="mucho"?3:(b==="poco"?1:2); }
+function freqControlHtml(v){
+  const b=pesoBucket(v.peso);
+  const seg=(k,l)=>`<button data-freq="${k}" type="button" style="border:none;background:${b===k?'var(--ia1,#8b5cf6)':'transparent'};color:${b===k?'#fff':'var(--muted)'};font:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer">${l}</button>`;
+  return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span>`;
+}
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 
@@ -234,8 +244,6 @@ export function mountStepsEditor(el, opts){
     delete paso.mensaje; delete paso.bubbles;
     if(paso.rotacion===undefined) paso.rotacion=false;
     const rot=paso.rotacion===true && paso.variantes.length>0;
-    const activeVars=paso.variantes.filter(v=>v.activo!==false);
-    const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
     const hasAng=angulos.length>0;
     box.innerHTML=`
       <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
@@ -246,43 +254,46 @@ export function mountStepsEditor(el, opts){
             <button class="se-mode" data-mode="angulo" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${rot?'var(--ia1,#8b5cf6)':'transparent'};color:${rot?'#fff':'var(--muted)'}">Según el anuncio</button>
           </div>`:`<span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span><div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
         </div>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?(hasAng?"Cada versión responde a un ángulo del anuncio; el cliente recibe la suya. Deja una en <b>General</b> como respaldo.":"El bot elige una versión por peso cada vez que envía este paso."):"Un solo mensaje para todos los clientes de este público."}</div>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?(hasAng?"Cada versión responde a un ángulo del anuncio; el cliente recibe la del ángulo por el que vino. Deja una en <b>Respaldo general</b> para quien no calce en ninguno.":"El bot va alternando entre las versiones. Con 2+ puedes ajustar cuánto sale cada una."):"Un solo mensaje para todos los clientes de este público."}</div>
         <div class="se-varlist"></div>
-        ${rot?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
+        ${rot&&!hasAng?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
       </div>`;
     box.querySelectorAll(".se-mode").forEach(b=> b.onclick=()=>{ const ang=(b.dataset.mode==="angulo"); paso.rotacion=ang; if(!ang && paso.variantes[0]) delete paso.variantes[0].angulo; composer(box,paso); });
     const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; composer(box,paso); };
     const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(newVariant(paso.variantes.length)); composer(box,paso); };
     const vl=box.querySelector(".se-varlist");
-    const listv = rot ? paso.variantes : paso.variantes.slice(0,1);
-    listv.forEach((v,vi)=>{
+
+    // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
+    // grupo → recién ahí aparece el control de frecuencia (Poco/Normal/Mucho) y
+    // el % REAL dentro del grupo. Con una sola, nada de eso (no aplica).
+    function renderCard(v, vi, compite, pesoG){
       if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
       const card=document.createElement("div");
       if(rot){
         card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
-        const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoTotal*100):0;
+        const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
+        const freq = compite ? freqControlHtml(v) : "";
+        const shareHtml = compite ? `<span class="se-share" style="font-size:11px;color:var(--brand);font-weight:700;min-width:36px;text-align:right">${v.activo!==false?share+'%':'—'}</span>` : "";
         card.innerHTML=`
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
-            <input class="in se-vname" style="flex:1;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
-            <span style="font-size:11px;color:var(--muted)">Peso</span>
-            <input class="in se-vpeso" type="number" min="0" step="1" style="width:54px;height:32px;text-align:center" value="${Number(v.peso??1)}"/>
-            <span style="font-size:11px;color:var(--brand);font-weight:700;min-width:32px">${v.activo!==false?share+'%':'—'}</span>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap">
+            <input class="in se-vname" style="flex:1;min-width:120px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
+            ${freq}${shareHtml}
             <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
             <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
           </div>
           ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
-            <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
-            <select class="in se-vangulo" style="height:34px;padding:0 10px;flex:1;max-width:240px">
-              <option value="">General · cualquier cliente</option>
-              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
+            <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
+            <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
+              <option value="">🌐 Respaldo general</option>
+              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>🎯 ${esc(a.nombre||a.slug)}</option>`).join("")}
             </select></div>`:``}
           <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
-        card.querySelector(".se-vpeso").oninput=(e)=>v.peso=Math.max(0,Number(e.target.value)||0);
+        card.querySelectorAll("[data-freq]").forEach(btn=> btn.onclick=()=>{ v.peso=pesoFromBucket(btn.dataset.freq); composer(box,paso); });
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
         card.querySelector(".se-vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
-        { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>v.angulo=e.target.value; }
+        { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
       } else {
         card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
       }
@@ -293,7 +304,48 @@ export function mountStepsEditor(el, opts){
         if(k==="text"){ v.bubbles.push({text:""}); composer(box,paso); }
         else pickMedia(box,paso,v,k);
       });
-      vl.appendChild(card);
+      return card;
+    }
+
+    if(!rot){ vl.appendChild(renderCard(paso.variantes[0], 0, false, 1)); return; }
+
+    // ROTACIÓN: agrupar por ángulo. Cada ángulo compite por su cuenta (el filtro
+    // por ángulo del motor ocurre ANTES del sorteo por peso), así el peso solo
+    // importa entre versiones del MISMO grupo. Sin ángulos → un solo grupo (A/B).
+    const withIdx = paso.variantes.map((v,vi)=>({v,vi}));
+    let groups;
+    if(hasAng){
+      const order=[...angulos.map(a=>a.slug), ""]; // Respaldo general al final
+      const known=new Set(order);
+      groups=order.map(slug=>({ slug, items: withIdx.filter(x=>(x.v.angulo||"")===slug) }));
+      const orphans=withIdx.filter(x=> x.v.angulo && !known.has(x.v.angulo)); // ángulo borrado
+      if(orphans.length){ const gen=groups.find(g=>g.slug===""); gen.items.push(...orphans); }
+      groups=groups.filter(g=>g.items.length);
+    } else {
+      groups=[{ slug:"__all", items: withIdx }];
+    }
+    groups.forEach(g=>{
+      const activeInGroup=g.items.filter(x=>x.v.activo!==false);
+      const compite=activeInGroup.length>1;
+      const pesoG=activeInGroup.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
+      if(hasAng){
+        const ang=angulos.find(a=>a.slug===g.slug);
+        const titulo = g.slug==="" ? "🌐 Respaldo general" : ("🎯 "+esc(ang?.nombre||g.slug));
+        const hintBase = g.slug==="" ? "Para clientes que no vinieron de un ángulo con versión propia." : "Para clientes que llegaron por este ángulo.";
+        const hintMas = compite ? " Rota entre estas versiones — ajusta cuánto sale cada una." : " Sale siempre a estos clientes.";
+        const gh=document.createElement("div");
+        gh.style.cssText="margin-top:15px";
+        gh.innerHTML=`<div style="font-size:12.5px;font-weight:800;letter-spacing:-.01em">${titulo}</div><div style="font-size:11px;color:var(--faint);margin-top:2px;line-height:1.45">${hintBase}${hintMas}</div>`;
+        vl.appendChild(gh);
+      }
+      g.items.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, compite, pesoG)));
+      if(hasAng){
+        const add=document.createElement("button");
+        add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
+        add.textContent="＋ Otra versión aquí";
+        add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(g.slug!=="__all"&&g.slug!=="") nv.angulo=g.slug; paso.variantes.push(nv); composer(box,paso); };
+        vl.appendChild(add);
+      }
     });
   }
 
