@@ -470,6 +470,9 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
   background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.30) 50%,transparent 62%);
   transform:translateX(-120%);animation:ctaShine 5.5s ease-in-out infinite;
 }
+/* La Bandeja (CTA) ya se ve seleccionada por su relleno azul; el bracito
+   azul del ::before de .active sobra encima de ella → se quita SOLO en la CTA. */
+.nodo-link.nodo-cta.active::before{display:none}
 .nodo-link.nodo-cta > svg,.nodo-link.nodo-cta > .lbl,.nodo-link.nodo-cta > .cta-dot{position:relative;z-index:1}
 .nodo-link.nodo-cta svg{width:21px;height:21px;stroke-width:2.3}
 .nodo-link.nodo-cta:hover{filter:brightness(1.06)}

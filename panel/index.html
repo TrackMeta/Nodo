@@ -560,6 +560,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
+import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js";
 import * as O from "./orders.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm } from "./shell.js";
@@ -568,7 +569,7 @@ injectExtrasCss();
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {},
-  filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map() };
+  filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map() };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -700,13 +701,14 @@ async function loadFilters(){
 // ── Drawer de filtros + chips activos ──
 function openFilters(){ const d=$("filters"),o=$("filtersOv"); if(d)d.classList.add("open"); if(o)o.classList.add("open"); }
 function closeFilters(){ const d=$("filters"),o=$("filtersOv"); if(d)d.classList.remove("open"); if(o)o.classList.remove("open"); }
-function filtrosActivos(){ const f=state.filters; return (f.sinResponder?1:0)+(f.seguimiento?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.conimg?1:0)+(f.archivado?1:0)+(f.recomprando?1:0)+(f.producto?1:0)+f.tags.size+f.stages.size+f.entrega.size; }
+function filtrosActivos(){ const f=state.filters; return (f.sinResponder?1:0)+(f.seguimiento?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.conimg?1:0)+(f.range?1:0)+(f.archivado?1:0)+(f.recomprando?1:0)+(f.producto?1:0)+f.tags.size+f.stages.size+f.entrega.size; }
 function updateFilterBadge(){ const btn=$("filtersBtn"); if(!btn) return; const n=filtrosActivos(); btn.classList.toggle("has", n>0); const b=$("fBadge"); if(b) b.textContent=n||""; }
-function limpiarFiltros(){ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); }
+function limpiarFiltros(){ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); }
 function renderFilterChips(){
   const box=$("filterChips"); if(!box) return;
   const f=state.filters, chips=[];
   const add=(label,color,onDel)=>chips.push({label,color,onDel});
+  if(f.range)        add("📅 "+rangeLabel(f.range),"#2b7fff",()=>f.range=null);
   if(f.sinResponder) add("Sin responder",null,()=>f.sinResponder=false);
   if(f.seguimiento)  add("Seguimiento",null,()=>f.seguimiento=false);
   if(f.anuncio)      add("Llegó por anuncio",null,()=>f.anuncio=false);
@@ -731,6 +733,8 @@ function renderFilters(){
   box.innerHTML = `
     <button class="ftx" id="fClose" type="button" title="Cerrar filtros">×</button>
     <div class="ft">${svgFilter()} FILTROS</div>
+    <h4>Fechas · última actividad</h4>
+    <div id="dateHost" style="margin-bottom:2px"></div>
     ${saved.length ? `<h4>Mis filtros</h4><div class="myfilters">${
       saved.map((s,i)=>`<button class="mfchip" data-mf="${i}" type="button" title="Aplicar este filtro"><span class="ftg-nm">${esc(s.name)}</span><span class="mfx" data-mfdel="${i}" title="Eliminar filtro">×</span></button>`).join("")
     }</div>`:""}
@@ -771,7 +775,10 @@ function renderFilters(){
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
   box.querySelectorAll(".mfchip").forEach(btn=> btn.onclick=(e)=>{ if(e.target.closest("[data-mfdel]")){ delSavedFilter(+e.target.closest("[data-mfdel]").dataset.mfdel); return; } applySavedFilter(+btn.dataset.mf); });
   $("fCreate").onclick=saveCurrentFilter;
-  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); };
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); };
+  // Rango de fechas (por última actividad). "Máximo" = sin filtro de fecha.
+  const dhost=$("dateHost");
+  if(dhost) mountDateRange(dhost, { valor: state.filters.range || computePreset("max"), nota:"Por última actividad · Hora de Lima", onChange:(r)=>{ state.filters.range = (r.preset==="max") ? null : r; renderConversations(); } });
   updateFilterCounts();
 }
 // ── Filtros guardados (presets por canal, en localStorage) ──
@@ -790,7 +797,7 @@ async function saveCurrentFilter(){
 }
 function applySavedFilter(i){
   const s=(state.savedFilters||[])[i]; if(!s) return; const g=s.f||{};
-  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, organico:!!g.organico, sinprod:!!g.sinprod, conimg:!!g.conimg, archivado:!!g.archivado, recomprando:!!g.recomprando, producto:g.producto||"", tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
+  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, organico:!!g.organico, sinprod:!!g.sinprod, conimg:!!g.conimg, archivado:!!g.archivado, recomprando:!!g.recomprando, producto:g.producto||"", range:null, tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
   closeFilters(); renderFilters(); renderConversations();
 }
 async function delSavedFilter(i){
@@ -1039,6 +1046,7 @@ function applyFilters(cv){
   if (f.organico && !!c.source) return false;
   if (f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
   if (f.conimg && !c.ultima_imagen_at) return false;
+  if (f.range && cv.updated_at){ const dd=ymd(new Date(cv.updated_at)); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
   if (f.producto && c.product_id !== f.producto) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
   return true;
@@ -1049,7 +1057,7 @@ function renderConversations(){
   const list = state.convs.filter(cv => (state.mode==="bot" ? isBot(cv) : !isBot(cv)) && applyFilters(cv));
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+" Bot"; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+" Humano"; }
   updateFilterCounts(); renderFilterChips(); updateFilterBadge();
-  const anyFilter = state.filters.sinResponder||state.filters.seguimiento||state.filters.anuncio||state.filters.organico||state.filters.sinprod||state.filters.conimg||state.filters.archivado||state.filters.recomprando||state.filters.producto||state.filters.tags.size||state.filters.stages.size||state.filters.entrega.size;
+  const anyFilter = state.filters.sinResponder||state.filters.seguimiento||state.filters.anuncio||state.filters.organico||state.filters.sinprod||state.filters.conimg||state.filters.range||state.filters.archivado||state.filters.recomprando||state.filters.producto||state.filters.tags.size||state.filters.stages.size||state.filters.entrega.size;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${state.search?`Ningún contacto coincide con “${esc(state.search)}”`:(anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano"))}</div>`; return; }
   list.forEach(cv => {
     const c = cv.contact;
