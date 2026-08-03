@@ -275,12 +275,12 @@ export function mountStepsEditor(el, opts){
         const freq = compite ? freqControlHtml(v) : "";
         const shareHtml = compite ? `<span class="se-share" style="font-size:11px;color:var(--brand);font-weight:700;min-width:36px;text-align:right">${v.activo!==false?share+'%':'—'}</span>` : "";
         card.innerHTML=`
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap">
-            <input class="in se-vname" style="flex:1;min-width:120px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
-            ${freq}${shareHtml}
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:${compite?'8px':'9px'}">
+            <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
             <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
             <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
           </div>
+          ${compite?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">${freq}${shareHtml}</div>`:``}
           ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
             <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
             <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
