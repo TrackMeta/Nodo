@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
       primera_interaccion: new Date().toISOString(),
       ultimo_mensaje_at: new Date().toISOString(),
       ultimo_mensaje_cliente_at: null,
+      ultima_imagen_at: null,
     }).eq("id", contactId);
     return json({ ok: true, reset: true, contact_id: contactId });
   }
