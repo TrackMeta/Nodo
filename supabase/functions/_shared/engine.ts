@@ -212,7 +212,14 @@ export async function runEngine(
     const adIdRuteo = event.adId ?? (await db.from("contacts").select("ad_id").eq("id", contactId).maybeSingle()).data?.ad_id ?? undefined;
     const decision = await routeDecision(db, channelId, event.text, adIdRuteo);
     const flow = decision.flow;
-    if (!flow) return; // ningún flujo maneja este mensaje (ni por IA)
+    if (!flow) {
+      // Sin producto claro (hola / anuncio sin banco / mensaje vago): la RECEPCIÓN
+      // con IA lo recibe y lo encamina a un producto. Si está apagada o no hay IA,
+      // no responde y queda en la Bandeja para un humano (comportamiento anterior).
+      try { await runReception(db, channelId, contactId, event); }
+      catch (e) { console.error("[recepcion]", (e as any)?.message ?? e); }
+      return;
+    }
     // Registrar en la Timeline si el ruteo lo decidió la IA (transparencia).
     if (decision.tier === "ia" || decision.tier === "fallback") {
       await logEvent(db, channelId, contactId, "nota", "🧭 Ruteo por IA", decision.reason ?? "").catch(() => {});
@@ -1141,6 +1148,71 @@ export async function routeDecision(db: SupabaseClient, channelId: string, text:
   const ia = await aiRoute(db, channelId, text);
   if (ia) return ia;
   return { tier: "none", flow: null };
+}
+
+// Productos "de entrada" del canal (los que un cliente puede pedir), con su
+// intención/descripción — para que la RECEPCIÓN sepa qué ofrecer y encaminar.
+async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ label: string; intent: string }[]> {
+  const { data: trg } = await db.from("flow_triggers")
+    .select("tipo, flows!inner(id, nombre, estado, product_id, descripcion)")
+    .eq("channel_id", channelId).eq("activo", true).in("tipo", ["keyword", "entrada"]);
+  const flows = new Map<string, any>();
+  for (const t of trg ?? []) { const f = (t as any).flows; if (f && f.estado === "activo" && !flows.has(f.id)) flows.set(f.id, f); }
+  const prodIds = [...new Set([...flows.values()].map((f) => f.product_id).filter(Boolean))];
+  const prods = new Map<string, any>();
+  if (prodIds.length) { const { data: ps } = await db.from("products").select("id, nombre, config").in("id", prodIds); for (const p of ps ?? []) prods.set((p as any).id, p); }
+  return [...flows.values()].map((f) => {
+    const p = f.product_id ? prods.get(f.product_id) : null;
+    const c = (p as any)?.config ?? {};
+    const intent = c.intencion || c.contexto_producto || c.faq || f.descripcion || "";
+    return { label: (p as any)?.nombre || f.nombre || "Producto", intent: String(intent).slice(0, 300) };
+  });
+}
+
+// RECEPCIÓN con IA: cuando el ruteo NO encontró producto (un "hola", un anuncio
+// sin banco, un mensaje vago), un "recepcionista" con IA recibe al cliente, cuenta
+// qué se vende y lo guía a un producto — en vez de dejarlo sin respuesta. En el
+// SIGUIENTE mensaje, si ya quedó claro, el IA Router lo rutea a la venta de ese
+// producto. Configurable en channels.ia_router.recepcion {activo, saludo[], prompt}.
+async function runReception(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  if (event.type !== "message") return false;
+  const { data: ch } = await db.from("channels").select("ia_router").eq("id", channelId).maybeSingle();
+  const rec = (ch as any)?.ia_router?.recepcion ?? {};
+  if (rec.activo === false) return false; // recepción apagada → a la Bandeja (humano)
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) return false; // sin IA configurada → a la Bandeja
+  const run: any = { id: null, channel_id: channelId, contact_id: contactId, flow_id: null, current_node_id: null, vars: { last_input: event.text ?? "" } };
+  const ctx = await buildContext(db, run);
+  ctx.last_input = event.text ?? "";
+  // Saludo de apertura: SOLO la primera vez (si el bot aún no le ha escrito nunca).
+  const { count: outCount } = await db.from("messages").select("id", { count: "exact", head: true })
+    .eq("contact_id", contactId).eq("direction", "out");
+  if (!outCount && Array.isArray(rec.saludo)) {
+    for (const b of rec.saludo) { if (b && (b.text || b.media_url)) await emit(db, run, b, ctx); }
+  }
+  const info = await channelIaInfo(db, run);
+  const cands = await receptionCands(db, channelId);
+  const parts: string[] = [];
+  parts.push("## Tu rol AHORA: RECEPCIÓN\n" + (String(rec.prompt || "").trim() ||
+    "Eres la recepción de este negocio. Saluda con calidez, cuenta brevemente qué vendemos y ayuda al cliente a decir qué producto le interesa."));
+  if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
+  if (cands.length) {
+    parts.push("## Productos que vendemos\n" + cands.map((c) => `- ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
+      "\n\nGuía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
+  } else {
+    parts.push("Aún no hay productos configurados; responde con amabilidad y ofrece tomar sus datos.");
+  }
+  const hist = await historial(db, run, 10);
+  const content = `El cliente escribe:\n"${event.text ?? ""}"` +
+    (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje, breve y cálido.` : "");
+  let result = "";
+  try {
+    result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
+  } catch (e) { console.error("[recepcion/ai]", (e as any)?.message ?? e); return false; }
+  await logEvent(db, channelId, contactId, "nota", "👋 Recepción (IA)", (event.text ?? "").slice(0, 80)).catch(() => {});
+  await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
+  return true;
 }
 
 async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any, initialVars: Record<string, unknown> = {}): Promise<Run | null> {

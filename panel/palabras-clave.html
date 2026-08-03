@@ -235,12 +235,20 @@
             <div style="margin-bottom:16px">
               <label>Confianza mínima para rutear: <span class="umbralval" id="rUmbralVal">60%</span></label>
               <input type="range" id="rUmbral" min="30" max="95" step="5" value="60"/>
-              <div class="hint">Más alto = más estricto (menos errores, pero cae más seguido al flujo de respaldo).</div>
+              <div class="hint">Más alto = más estricto (menos errores, pero cae más seguido a la recepción).</div>
             </div>
-            <div style="margin-bottom:4px">
-              <label>Flujo de respaldo (cuando la IA no está segura)</label>
-              <select class="in" id="rFallback"></select>
-              <div class="hint">Ideal: un flujo tipo “menú” que pregunta “¿de qué producto quieres info?”. Si no eliges ninguno, el bot no responde ante mensajes ambiguos.</div>
+            <div style="margin-bottom:4px;border-top:1px solid var(--border);padding-top:14px">
+              <div class="switchline" style="margin-bottom:10px">
+                <div class="txt"><div class="t">👋 Recepción con IA</div><div class="d">Cuando la IA no sabe qué producto quiere el cliente (un “hola”, algo vago), un recepcionista con IA lo recibe, cuenta qué vendes y lo guía al producto correcto — en vez de dejarlo sin respuesta.</div></div>
+                <div class="sw" id="rRecActivo"></div>
+              </div>
+              <div id="rRecBody">
+                <label>Saludo de apertura <span style="font-weight:400;color:var(--faint)">(lo primero que recibe · opcional)</span></label>
+                <textarea class="in" id="rSaludo" rows="2" placeholder="Ej. ¡Hola! 👋 Bienvenido a [tu negocio]. ¿En qué te puedo ayudar hoy?"></textarea>
+                <label style="margin-top:14px">Cómo debe recibir y guiar <span style="font-weight:400;color:var(--faint)">(instrucciones para la IA)</span></label>
+                <textarea class="in" id="rPrompt" rows="4" placeholder="Ej. Eres la recepción de [negocio]. Saluda con calidez, cuenta breve qué vendemos y ayuda al cliente a decir qué producto le interesa. No inventes productos ni precios; si pide algo que no vendemos, dilo con amabilidad."></textarea>
+                <div class="hint">La IA usa esto + tu lista de productos para recibir y encaminar. Cuando el cliente deja claro qué quiere, lo pasa a la venta de ese producto. Si lo dejas vacío, usa un saludo genérico.</div>
+              </div>
             </div>
           </div>
           <div><button class="btn" id="saveRouter">Guardar IA Router</button></div>
@@ -289,7 +297,9 @@ async function boot(){
     if(e.key==="Enter"){ e.preventDefault(); addNewChip(); }
     else if(e.key==="Backspace" && !e.target.value && st.newKws.length){ st.newKws.pop(); renderNewChips(); }
   });
-  $("rActivo").onclick=()=>{ st.router.activo=!st.router.activo; renderRouter(); };
+  const harvestRec=()=>{ st.router.recepcion=st.router.recepcion||{}; const t=($("rSaludo")?.value||"").trim(); st.router.recepcion.saludo=t?[{text:t}]:[]; st.router.recepcion.prompt=($("rPrompt")?.value||"").trim(); };
+  $("rActivo").onclick=()=>{ harvestRec(); st.router.activo=!st.router.activo; renderRouter(); };
+  $("rRecActivo").onclick=()=>{ harvestRec(); st.router.recepcion.activo=!$("rRecActivo").classList.contains("on"); renderRouter(); };
   $("rUmbral").oninput=e=>{ $("rUmbralVal").textContent=e.target.value+"%"; };
   $("saveRouter").onclick=saveRouter;
   await loadAll();
@@ -324,9 +334,6 @@ function renderFlowSelects(){
   $("nProd").innerHTML = st.prodList?.length
     ? st.prodList.map(p=>`<option value="${p.id}">${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")
     : `<option value="">— No hay productos —</option>`;
-  const act=st.flows.filter(f=>f.estado==="activo");
-  $("rFallback").innerHTML=`<option value="">— Ninguno (no responder) —</option>`+
-    act.map(f=>`<option value="${f.id}"${st.router.fallback_flow_id===f.id?" selected":""}>${esc(flowLabel(f))}</option>`).join("");
   renderNewChips();
 }
 // Flujo de venta de un producto (el que activa la palabra clave).
@@ -460,13 +467,28 @@ function renderRouter(){
   $("rBody").classList.toggle("disabled",!st.router.activo);
   const um=Math.round((Number(st.router.umbral)||0.6)*100);
   $("rUmbral").value=um; $("rUmbralVal").textContent=um+"%";
+  // Recepción con IA (default: encendida)
+  const rec=st.router.recepcion||{};
+  const recOn = rec.activo!==false;
+  $("rRecActivo").classList.toggle("on",recOn);
+  $("rRecBody").classList.toggle("disabled",!recOn);
+  const sal=Array.isArray(rec.saludo)?rec.saludo.map(b=>b&&b.text||"").filter(Boolean).join("\n"):(typeof rec.saludo==="string"?rec.saludo:"");
+  $("rSaludo").value=sal||"";
+  $("rPrompt").value=rec.prompt||"";
 }
 async function saveRouter(){
+  const saludoTxt=($("rSaludo")?.value||"").trim();
+  const recepcion={
+    activo:$("rRecActivo").classList.contains("on"),
+    saludo:saludoTxt?[{text:saludoTxt}]:[],
+    prompt:($("rPrompt")?.value||"").trim(),
+  };
   const router={
     activo:!!st.router.activo,
     umbral:Number($("rUmbral").value)/100,
-    fallback_flow_id:$("rFallback").value||null,
     perfil:st.router.perfil||"extraccion",
+    recepcion,
+    fallback_flow_id:null, // reemplazado por la Recepción con IA
   };
   const { error }=await supa.from("channels").update({ ia_router:router }).eq("id",st.channelId);
   if(error){ toast(error.message,true); return; }
