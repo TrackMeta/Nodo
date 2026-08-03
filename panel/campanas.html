@@ -46,6 +46,22 @@
   .cacts{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
   .cacts .btn{height:32px;font-size:12px;padding:0 11px}
   .empty{text-align:center;color:var(--faint);padding:50px;border:1px dashed var(--border);border-radius:14px}
+  .cc{transition:transform .12s ease, border-color .12s ease, box-shadow .12s ease}
+  .cc:hover{border-color:#2e3a49;box-shadow:0 6px 18px rgba(0,0,0,.22)}
+  .tplrow{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;max-width:100%;overflow:hidden}
+  .tplrow svg{width:13px;height:13px;color:var(--muted);flex:none} .tplrow b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .segchips{display:flex;flex-wrap:wrap;gap:5px;margin:9px 0 2px}
+  .segchip{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+  .segall{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin:9px 0 2px}
+  .cprog{display:flex;align-items:center;gap:9px;margin-top:12px}
+  .cprog .pct{font-size:12px;font-weight:700;color:var(--green);min-width:34px;text-align:right}
+  .cstat{font-size:11.5px;color:var(--muted);margin-top:5px}
+  .cstat b{color:var(--text)}
+  /* Buscador */
+  .csearch{position:relative;max-width:360px;margin-bottom:16px}
+  .csearch svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none}
+  .csearch input{width:100%;height:40px;background:var(--surface);border:1px solid var(--border);border-radius:11px;color:var(--text);padding:0 12px 0 36px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .csearch input:focus{border-color:var(--brand)}
 
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
   .modal.show{display:flex}
@@ -71,6 +87,10 @@
       </div>
       <button class="btn primary" id="newBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva campaña</button>
     </div>
+    <div class="csearch" id="csearchWrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="cSearch" placeholder="Buscar por nombre o plantilla…" autocomplete="off"/>
+    </div>
     <div class="folders" id="folders"></div>
     <div class="grid" id="grid"></div>
   </div>
@@ -81,6 +101,7 @@
   <label>Nombre de la campaña</label><input class="in" id="m_nombre" placeholder="Ej. Promo de octubre"/>
   <label>Plantilla a enviar</label><select class="sel" id="m_tpl"></select>
   <div style="font-size:11.5px;color:var(--faint);margin-top:5px">Solo aparecen tus plantillas aprobadas por Meta. Se gestionan en la sección <b>Plantillas</b>.</div>
+  <div id="m_prev" style="margin-top:14px"></div>
 
   <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:16px">
     <div style="font-weight:700;font-size:13px">¿A quién se le envía? <span style="color:var(--faint);font-weight:400">(segmento)</span></div>
@@ -100,6 +121,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
 // Etapas reales del ciclo de vida del contacto (contacts.stage). Se quitaron
@@ -107,7 +129,10 @@ const $=(id)=>document.getElementById(id);
 const STAGES=[["nuevo","Nuevo"],["curioso","Curioso"],["interesado","Interesado"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
 // Estados del Kanban de Pedidos (orders.estado) para segmentar por logística.
 const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirmado (Lima)"],["en_reparto","En reparto"],["reprogramado","Reprogramado"],["entregado_cobrado","Entregado y cobrado"],["esperando_adelanto","Esperando adelanto"],["adelanto_validado","Adelanto validado"],["por_despachar","Por despachar"],["despachado","Despachado"],["en_agencia","En agencia"],["saldo_pagado","Saldo pagado"],["recogido","Recogido"],["no_recogido","No recogido"],["rechazado","Rechazado"]];
+const STAGE_LBL=Object.fromEntries(STAGES);
+const OSTATE_LBL=Object.fromEntries(ORDER_STATES);
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };
+let _campBrand={};
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
@@ -116,16 +141,19 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"campanas" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; load(); });
+  shell.onChannel(id=>{ st.channelId=id; seqBrand(id).then(b=>{ _campBrand=b; }); load(); });
   $("newBtn").onclick=()=>openModal();
   $("m_cancel").onclick=()=>$("modal").classList.remove("show");
   $("m_save").onclick=saveCampaign;
+  $("cSearch").oninput=renderGrid;
+  $("m_tpl").onchange=paintModalPreview;
+  seqBrand(st.channelId).then(b=>{ _campBrand=b; });
   await load();
 }
 async function load(){
   const [{ data:c },{ data:tpl },{ data:tg }]=await Promise.all([
     supa.from("campaigns").select("*").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
-    supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
+    supa.from("wa_templates").select("id,name,language,activa,body_preview,ejemplos").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
   ]);
   st.camps=c||[]; st.templates=tpl||[]; st.tags=tg||[];
@@ -134,23 +162,34 @@ async function load(){
   else { await Fbar.reload(); }
   renderGrid();
 }
+const TPL_ICON=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></svg>`;
 function renderGrid(){
+  const box=$("grid");
+  const sw=$("csearchWrap"); if(sw) sw.style.display=st.camps.length?"":"none";
   let list=st.camps;
   if(Fbar) list=Fbar.filter(list);
-  const box=$("grid");
-  if(!list.length){ box.innerHTML=`<div class="empty">No hay campañas en esta vista. Crea una con “Nueva campaña”.</div>`; return; }
+  const query=($("cSearch")?.value||"").trim().toLowerCase();
+  if(query) list=list.filter(c=>{ const tpl=st.templates.find(t=>t.id===c.template_id); return `${c.nombre||""} ${tpl?tpl.name:""}`.toLowerCase().includes(query); });
+  if(!list.length){ box.innerHTML=`<div class="empty">${query?`Nada coincide con “${esc(query)}”.`:(st.camps.length?"No hay campañas en esta vista.":"Aún no hay campañas. Crea una con “Nueva campaña”.")}</div>`; return; }
   box.innerHTML="";
   list.forEach(c=>{
     const tpl=st.templates.find(t=>t.id===c.template_id);
     const seg=c.segmento||{}; const total=c.total||0, sent=c.enviados||0, fail=c.fallidos||0;
+    const chips=[
+      ...(seg.tags||[]).map(t=>{ const tg=st.tags.find(x=>x.nombre===t); const h=tagHex(tg?.color); return `<span class="segchip" style="background:${h}1f;color:${h};border-color:${h}44">${esc(t)}</span>`; }),
+      ...(seg.stage||[]).map(s=>`<span class="segchip">${esc(STAGE_LBL[s]||s)}</span>`),
+      ...(seg.order_estados||[]).map(s=>`<span class="segchip">📦 ${esc(OSTATE_LBL[s]||s)}</span>`),
+    ];
+    const segHtml=chips.length?`<div class="segchips">${chips.join("")}</div>`:`<div class="segall">👥 Todos los contactos del canal</div>`;
+    const pct=total?Math.round(sent/total*100):0;
     const el=document.createElement("div"); el.className="cc";
     el.innerHTML=`
-      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${(c.estado||"").replace(/^./,c=>c.toUpperCase())}</span></div>
-      <div class="meta">Plantilla: <b>${tpl?esc(tpl.name):"—"}</b><br>
-        Segmento: <b>${(seg.tags||[]).length?esc((seg.tags||[]).join(", ")):"todos"}</b>${(seg.stage||[]).length?` · ${esc((seg.stage||[]).join(", "))}`:""}${(seg.order_estados||[]).length?` · 📦 ${esc((seg.order_estados||[]).join(", "))}`:""}<br>
-        ${c.programada_at?`Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:"Envío inmediato al activar"}</div>
-      ${c.estado!=="borrador"?`<div class="bars"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div>
-        <div class="meta">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
+      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${(c.estado||"").replace(/^./,ch=>ch.toUpperCase())}</span></div>
+      <div class="tplrow">${TPL_ICON}<b>${tpl?esc(tpl.name):"Sin plantilla"}</b></div>
+      ${segHtml}
+      <div class="cstat" style="margin-top:8px">${c.programada_at?`🗓 Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:"⚡ Envío inmediato al activar"}</div>
+      ${c.estado!=="borrador"?`<div class="cprog"><div class="bars" style="flex:1;margin:0"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div><span class="pct">${pct}%</span></div>
+        <div class="cstat">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
       <div class="cacts">
         <span data-cardfolder></span>
         ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">${icon("play")} Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
@@ -174,6 +213,17 @@ async function action(a, c){
     toast("Campaña activada — el envío empieza pronto"); return load();
   }
 }
+// Rellena {{1}},{{2}}… del cuerpo de la plantilla con sus ejemplos (o —).
+function fillTemplate(body, ejemplos){
+  return String(body||"").replace(/\{\{(\d+)\}\}/g,(m,n)=>{ const v=(ejemplos||[])[+n-1]; return (v!=null&&String(v).trim()!=="")?v:"—"; });
+}
+// Preview tipo WhatsApp del mensaje que enviará la campaña (la plantilla elegida).
+function paintModalPreview(){
+  const box=$("m_prev"); if(!box) return;
+  const tpl=st.templates.find(t=>t.id===$("m_tpl").value);
+  const bubbles=tpl?[{ text:fillTemplate(tpl.body_preview, tpl.ejemplos) }]:[];
+  box.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">Vista previa del mensaje</div><div style="max-width:250px">${waScreenHtml({ title:_campBrand.nombre, logoUrl:_campBrand.logo_url, bubblesHtml:waBubbles(bubbles), empty:tpl?"(esta plantilla no tiene cuerpo)":"Elige una plantilla para ver el mensaje" })}</div>`;
+}
 function openModal(c){
   st.editing=c||null;
   $("mTitle").textContent=c?"Editar campaña":"Nueva campaña";
@@ -193,6 +243,7 @@ function openModal(c){
   // hora corrida (5h en Lima) y al re-guardar la volvía a correr. Se arma con los
   // componentes locales. (El guardado ya convierte local→UTC con new Date(value).)
   $("m_prog").value=c?.programada_at?(d=>{const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;})(new Date(c.programada_at)):"";
+  paintModalPreview();
   $("modal").classList.add("show");
 }
 async function saveCampaign(){
