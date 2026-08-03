@@ -30,32 +30,65 @@ export const DEFAULT_PRESETS=[
 ];
 
 function sample(t){ return String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{\s*ciudad\s*\}\}/gi,"Lima").replace(/\{\{[^}]*\}\}/g,"…"); }
-// Papel tapiz clásico de WhatsApp (beige con garabatos tenues). Se aplica por
-// JS (element.style) para no pelear con las comillas del atributo style=.
-const WA_WALL="url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cg fill='none' stroke='%23000' stroke-opacity='.04' stroke-width='1.1'%3E%3Cpath d='M8 9h6M11 6v6'/%3E%3Ccircle cx='32' cy='13' r='3'/%3E%3Cpath d='M6 32q4-4 8 0'/%3E%3Cpath d='M28 31h6M31 28v6'/%3E%3C/g%3E%3C/svg%3E\")";
+// Papel tapiz clásico de WhatsApp (beige con garabatos tenues). Va embebido en el
+// atributo style=: url() SIN comillas y con las comillas del SVG como %27, así no
+// pelea con las comillas del atributo.
+const WA_WALL="url(data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2744%27%20height=%2744%27%3E%3Cg%20fill=%27none%27%20stroke=%27%23000%27%20stroke-opacity=%27.04%27%20stroke-width=%271.1%27%3E%3Cpath%20d=%27M8%209h6M11%206v6%27/%3E%3Ccircle%20cx=%2732%27%20cy=%2713%27%20r=%273%27/%3E%3Cpath%20d=%27M6%2032q4-4%208%200%27/%3E%3Cpath%20d=%27M28%2031h6M31%2028v6%27/%3E%3C/g%3E%3C/svg%3E)";
 const _brandCache={};
 
-// Devuelve SOLO las burbujas (van dentro del cuerpo con papel tapiz). Estilo
-// WhatsApp: verde saliente a la derecha, colita en la primera, sombra y ✓✓ azul.
-function previewHtml(paso){
-  const vs=(Array.isArray(paso?.variantes)?paso.variantes:[]).filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
-  const v=vs[0]||(paso&&paso.variantes&&paso.variantes[0]);
-  // Texto que se ve en la burbuja: las de texto usan .text; las de media guardan
-  // su pie en .caption. El motor manda `caption ?? text`, así que aquí igualamos
-  // con `text || caption` para que el caption de una imagen (p.ej. "MENSAJE 2") sí salga.
+// Nombre + logo del negocio para la cabecera de la preview (una consulta por
+// canal, cacheada). Exportada para que "Cómo llegan los clientes" use el mismo dato.
+export async function seqBrand(channelId){
+  if(_brandCache[channelId]) return _brandCache[channelId];
+  try{ const {data}=await supa.from("channels").select("nombre,logo_url").eq("id",channelId).single(); return _brandCache[channelId]=data||{}; }
+  catch(e){ return _brandCache[channelId]={}; }
+}
+
+// Burbujas estilo WhatsApp (verde saliente a la derecha, colita en la 1ª, sombra
+// y ✓✓ azul). `list` = burbujas {text|caption, media_url, media_kind}; `smp`
+// resuelve los {{campos}}. Texto = text||caption (el motor manda caption ?? text).
+export function waBubbles(list, smp){
+  smp = smp || (t=>String(t||""));
   const bText=b=>(b&&(b.text||b.caption))||'';
-  const bubs=((v&&v.bubbles)||[]).filter(b=> b && (b.media_url||bText(b).trim()));
-  if(!bubs.length) return `<div style="font-size:11.5px;color:#667781;text-align:center;padding:16px 6px">Escribe el mensaje para ver cómo llega…</div>`;
+  const bubs=(list||[]).filter(b=> b && (b.media_url||bText(b).trim()));
+  if(!bubs.length) return '';
   return bubs.map((b,i)=>{
     let media=''; const cap=bText(b);
     if(b.media_url&&b.media_kind==='image') media=`<img src="${esc(b.media_url)}" style="max-width:100%;border-radius:6px;display:block;margin-bottom:${cap?'4px':'0'}">`;
-    else if(b.media_url&&b.media_kind==='video') media=`<div style="background:#0b141a;border-radius:6px;padding:16px 0;text-align:center;color:#fff;font-size:16px;margin-bottom:${cap?'4px':'0'}">▶</div>`;
-    else if(b.media_url&&b.media_kind==='audio') media=`<div style="display:flex;align-items:center;gap:6px;color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}">🎤<span style="flex:1;height:3px;background:#a9d3ba;border-radius:3px"></span>0:07</div>`;
+    else if(b.media_url&&b.media_kind==='video') media=`<div style="position:relative;background:#0b141a;border-radius:6px;padding:20px 0;text-align:center;margin-bottom:${cap?'4px':'0'}"><span style="display:inline-flex;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.85);color:#0b141a;align-items:center;justify-content:center;font-size:13px">▶</span><span style="position:absolute;right:6px;bottom:4px;color:#fff;font-size:8.5px;background:rgba(0,0,0,.4);border-radius:4px;padding:0 4px">0:12</span></div>`;
+    else if(b.media_url&&b.media_kind==='audio') media=`<div style="display:flex;align-items:center;gap:6px;color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}"><span style="width:20px;height:20px;border-radius:50%;background:#c7e6d3;display:inline-flex;align-items:center;justify-content:center">🎤</span><span style="flex:1;height:3px;background:#a9d3ba;border-radius:3px;position:relative"><span style="position:absolute;left:0;top:-2.5px;width:8px;height:8px;border-radius:50%;background:#4fa97e"></span></span><span>0:07</span></div>`;
     else if(b.media_url) media=`<div style="color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}">📎 archivo</div>`;
-    const txt=cap?sample(esc(cap)).replace(/\n/g,"<br>"):'';
+    const txt=cap?smp(esc(cap)).replace(/\n/g,"<br>"):'';
     const tail=i===0?`<span style="position:absolute;top:0;right:-6px;width:0;height:0;border-top:7px solid #DCF8C6;border-right:7px solid transparent"></span>`:'';
     return `<div style="position:relative;align-self:flex-end;max-width:88%;background:#DCF8C6;color:#111b21;border-radius:8px 8px 3px 8px;padding:5px 8px 4px;font-size:12px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.13);word-break:break-word">${tail}${media}${txt}<div style="font-size:9px;color:#667781;text-align:right;margin-top:1px;line-height:1;white-space:nowrap">10:24 <span style="color:#53bdeb">✓✓</span></div></div>`;
   }).join('');
+}
+
+// Pantalla de WhatsApp completa: notch + cabecera (avatar/nombre/en línea) + cuerpo
+// con papel tapiz, separador "HOY" y las burbujas. La usan el editor de pasos y
+// "Cómo llegan los clientes" para verse idénticas.
+export function waScreenHtml({ title, logoUrl, emoji, bubblesHtml, empty }={}){
+  const ava = logoUrl ? `<img src="${esc(logoUrl)}" style="width:100%;height:100%;object-fit:cover">` : esc(emoji||"💬");
+  const body = bubblesHtml
+    ? `<div style="align-self:center;background:rgba(225,245,254,.92);color:#54656f;font-size:9px;font-weight:600;padding:2px 9px;border-radius:7px;box-shadow:0 1px 1px rgba(0,0,0,.08);margin-bottom:2px">HOY</div>${bubblesHtml}`
+    : `<div style="font-size:11.5px;color:#667781;text-align:center;padding:16px 6px">${esc(empty||"Escribe el mensaje para ver cómo llega…")}</div>`;
+  return `<div style="border-radius:16px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.28);border:1px solid rgba(0,0,0,.2)">
+    <div style="background:#075E54;display:flex;justify-content:center;padding-top:5px"><div style="width:52px;height:4px;border-radius:3px;background:rgba(0,0,0,.28)"></div></div>
+    <div style="background:#075E54;display:flex;align-items:center;gap:7px;padding:5px 9px 7px">
+      <span style="color:#e9f5ef;font-size:16px;line-height:1;margin-right:-3px">‹</span>
+      <div style="width:27px;height:27px;border-radius:50%;background:#128C7E;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;overflow:hidden;flex:none">${ava}</div>
+      <div style="flex:1;min-width:0"><div style="color:#fff;font-size:11.5px;font-weight:600;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title||"Tu negocio")}</div><div style="color:#a7d3c7;font-size:9px;line-height:1.2">en línea</div></div>
+      <span style="color:#cfe9d8;font-size:12px">📹</span><span style="color:#cfe9d8;font-size:12px">📞</span>
+    </div>
+    <div style="background-color:#E5DDD5;background-image:${WA_WALL};background-repeat:repeat;padding:9px 8px;display:flex;flex-direction:column;gap:5px;min-height:112px">${body}</div>
+  </div>`;
+}
+
+// Sólo las burbujas del paso (extrae la 1ª variante activa). Se envuelve con waScreenHtml.
+function previewHtml(paso){
+  const vs=(Array.isArray(paso?.variantes)?paso.variantes:[]).filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
+  const v=vs[0]||(paso&&paso.variantes&&paso.variantes[0]);
+  return waBubbles((v&&v.bubbles)||[], sample);
 }
 
 export function mountStepsEditor(el, opts){
@@ -173,28 +206,13 @@ export function mountStepsEditor(el, opts){
         actBody.innerHTML=`<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:12px;align-items:start;margin-top:2px">
             <div class="se-comp"></div>
             <div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">Así le llega al cliente</div>
-              <div class="se-prev" style="border-radius:16px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.28);border:1px solid rgba(0,0,0,.2)">
-                <div style="background:#075E54;display:flex;align-items:center;gap:7px;padding:7px 9px">
-                  <span style="color:#e9f5ef;font-size:16px;line-height:1;margin-right:-3px">‹</span>
-                  <div class="se-pv-ava" style="width:27px;height:27px;border-radius:50%;background:#128C7E;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;overflow:hidden;flex:none">💬</div>
-                  <div style="flex:1;min-width:0"><div class="se-pv-name" style="color:#fff;font-size:11.5px;font-weight:600;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Tu negocio</div><div style="color:#a7d3c7;font-size:9px;line-height:1.2">en línea</div></div>
-                  <span style="color:#cfe9d8;font-size:12px">📹</span><span style="color:#cfe9d8;font-size:12px">📞</span>
-                </div>
-                <div class="se-prevbody" style="background-color:#E5DDD5;background-repeat:repeat;padding:9px 8px;display:flex;flex-direction:column;gap:5px;min-height:98px"></div>
-              </div></div>
+              <div class="se-prev"></div></div>
           </div>`;
         composer(actBody.querySelector(".se-comp"), paso);
-        const prev=actBody.querySelector(".se-prevbody"); if(prev) prev.style.backgroundImage=WA_WALL;
-        const upd=()=>{ if(prev) prev.innerHTML=previewHtml(paso); };
+        const prev=actBody.querySelector(".se-prev");
+        const upd=()=>{ if(!prev) return; const b=_brandCache[channelId]||{}; prev.innerHTML=waScreenHtml({ title:b.nombre, logoUrl:b.logo_url, bubblesHtml:previewHtml(paso) }); };
         upd(); actBody.addEventListener("input", upd); actBody.addEventListener("click", ()=>setTimeout(upd,0));
-        // Rellena la cabecera con el nombre + logo real del negocio (una consulta, cacheada).
-        (async()=>{ try{
-          let b=_brandCache[channelId];
-          if(!b){ const {data}=await supa.from("channels").select("nombre,logo_url").eq("id",channelId).single(); b=_brandCache[channelId]=data||{}; }
-          const nm=actBody.querySelector(".se-pv-name"); if(nm&&b.nombre) nm.textContent=b.nombre;
-          const av=actBody.querySelector(".se-pv-ava");
-          if(av){ if(b.logo_url) av.innerHTML=`<img src="${esc(b.logo_url)}" style="width:100%;height:100%;object-fit:cover">`; else if(b.nombre) av.textContent=b.nombre.trim().charAt(0).toUpperCase(); }
-        }catch(e){} })();
+        seqBrand(channelId).then(upd); // rellena nombre/logo real y repinta
       }
     };
     const asel=el2.querySelector(".se-act");
