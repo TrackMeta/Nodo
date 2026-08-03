@@ -98,7 +98,9 @@
   .pc-mini span{display:block;height:100%}
   .pc-foot{font-size:11px;color:var(--faint);margin-top:8px}
   .hint{font-size:12px;color:var(--faint);margin-top:6px;display:flex;align-items:center;gap:7px;line-height:1.5}
-  .empty{color:var(--faint);font-size:13px;padding:22px 0;text-align:center;line-height:1.6}
+  .empty{color:var(--faint);font-size:13px;padding:34px 0;text-align:center;line-height:1.6}
+  .empty svg.eic{width:38px;height:38px;opacity:.55;margin-bottom:12px;color:var(--faint)}
+  .empty h4{margin:0 0 5px;font-size:15px;color:var(--text);font-weight:700}
   /* Embudo de entrega (provincia): KPIs de recojo */
   .dkpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
   .dkpi{flex:1;min-width:150px;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 15px}
@@ -352,7 +354,7 @@ function renderNeck(F){
 
 function renderFunnel(F){
   const el=$("fun");
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty">${filt?"No hay contactos que coincidan con los filtros elegidos.<br>Prueba con otro tipo, producto o rango de fechas.":"Aún no hay contactos en este canal.<br>Cuando lleguen mensajes, verás el embudo llenarse acá."}</div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>${filt?`<h4>Nada coincide</h4>No hay contactos que coincidan con los filtros elegidos. Prueba con otro tipo, producto o rango de fechas.`:`<h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.`}</div>`; return; }
   const N=F.niveles;
   const niveles=[
     { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
@@ -418,7 +420,7 @@ function renderEntrega(cs){
   const kEl=$("entregaKpis"), fEl=$("entregaFun"), fugaEl=$("entregaFuga");
   if(conAdelanto===0){
     kEl.innerHTML=""; fugaEl.innerHTML="";
-    fEl.innerHTML=`<div class="empty">Aún no hay pedidos de provincia con adelanto pagado en este período.<br>Cuando despaches a la agencia, verás aquí cuántos llegan a recoger.</div>`;
+    fEl.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><h4>Sin recojos todavía</h4>Aún no hay pedidos de provincia con adelanto pagado en este período. Cuando despaches a la agencia, verás aquí cuántos llegan a recoger.</div>`;
     return;
   }
   // Tasa de recojo = de los DESENLACES (recogió vs no recogió), cuántos recogieron.
