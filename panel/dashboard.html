@@ -95,7 +95,9 @@
   .srow .sbar{flex:1;height:22px;background:var(--surface-2);border-radius:7px;overflow:hidden}
   .srow .sbar span{display:block;height:100%;background:var(--brand);border-radius:7px;min-width:2px}
   .srow .sv{width:40px;text-align:right;font-weight:650;font-size:13px}
-  .empty{color:var(--faint);text-align:center;padding:30px}
+  .empty{color:var(--faint);text-align:center;padding:34px 0;line-height:1.6}
+  .empty svg.eic{width:38px;height:38px;opacity:.55;margin-bottom:12px;color:var(--faint)}
+  .empty h4{margin:0 0 5px;font-size:15px;color:var(--text);font-weight:700}
   /* Tablas de producto */
   .ptable{width:100%;border-collapse:collapse}
   .ptable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:0 12px 10px;border-bottom:1px solid var(--border)}
@@ -1007,7 +1009,7 @@ function renderFunnel(porStage){
   if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
   const total=STAGES.reduce((a,s)=>a+c[s.k],0);
   const pct=(n)=> total?Math.round(n/total*100):0;
-  if(!total){ $("funnel").innerHTML=`<div class="empty">Aún no hay contactos en este canal.</div>`; $("conv").innerHTML=""; return; }
+  if(!total){ $("funnel").innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.</div>`; $("conv").innerHTML=""; return; }
   const max=Math.max(1,...STAGES.map(s=>c[s.k]));
   $("funnel").innerHTML=STAGES.map(s=>{
     const n=c[s.k];
@@ -1167,7 +1169,7 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   });
   const list=Object.values(pmap).filter(p=>p.units>0);
   if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
-  if(!list.length){ box.innerHTML=`<div class="empty">Aún no hay ventas cerradas en este periodo.</div>`; return; }
+  if(!list.length){ box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><h4>Sin ventas todavía</h4>Aún no hay ventas cerradas en este período. Cuando cierres una, verás aquí el desempeño por producto.</div>`; return; }
   const MG=margenPorProd||{};
   list.forEach(p=>{ p.margen=MG[p.id]||0; });
   list.sort((a,b)=>b.ing-a.ing);
