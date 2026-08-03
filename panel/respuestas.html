@@ -33,6 +33,9 @@
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
+  .qdetail{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,260px);gap:20px;align-items:start}
+  .qprevcol{position:sticky;top:16px}
+  @media(max-width:820px){ .qdetail{grid-template-columns:1fr} .qprevcol{position:static;max-width:300px} }
 </style>
 </head>
 <body>
@@ -67,6 +70,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
@@ -151,7 +155,8 @@ function renderDetail(){
   const q=st.qr; if(!q) return;
   $("detail").innerHTML=`
     <h1 style="margin:0 0 16px;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(q.titulo)}</h1>
-    <div class="dcard">
+    <div class="qdetail">
+    <div class="dcard" style="max-width:none">
       <div class="row">
         <div class="f"><label>Título</label><input class="in" id="q_titulo" value="${esc(q.titulo)}"/></div>
         <div class="f"><label>Atajo (opcional)</label><input class="in" id="q_atajo" value="${esc(q.atajo||'')}" placeholder="/precio"/></div>
@@ -171,6 +176,12 @@ function renderDetail(){
         <button class="btn qmAdd" data-k="audio" style="height:34px">+ Audio</button>
         <button class="btn qmAdd" data-k="document" style="height:34px">+ Archivo</button>
       </div>
+    </div>
+    <div class="qprevcol">
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:7px;font-weight:700">Así le llega al cliente</div>
+      <div id="q_prev"></div>
+      <div class="hint" style="margin-top:9px">Vista previa. El nombre se reemplaza por el del cliente al enviar.</div>
+    </div>
     </div>`;
   // Paleta de color
   const cur=q.color||null;
@@ -188,7 +199,7 @@ function renderDetail(){
   // Multimedia
   const paintMedia=()=>{
     const box=$("q_media"); box.innerHTML="";
-    if(!(st.qr.media||[]).length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin archivos.</div>`; return; }
+    if(!(st.qr.media||[]).length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin archivos.</div>`; paintPreview(); return; }
     st.qr.media.forEach((m,i)=>{
       const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:10px;margin-bottom:8px;display:flex;gap:11px;align-items:center";
       let prev="";
@@ -199,9 +210,22 @@ function renderDetail(){
       el.querySelector(".qmDel").onclick=()=>{ st.qr.media.splice(i,1); paintMedia(); };
       box.appendChild(el);
     });
+    paintPreview();
   };
+  // ── Vista previa en vivo tipo WhatsApp (misma pantalla que el resto del panel) ──
+  const smpQr=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{[^}]*\}\}/g,"…");
+  let _brand={};
+  function paintPreview(){
+    const cuerpo=($("q_cuerpo")?.value)||"";
+    const bubbles=[];
+    if(cuerpo.trim()) bubbles.push({ text:cuerpo });
+    (st.qr.media||[]).forEach(m=> bubbles.push({ media_url:m.media_url, media_kind:m.media_kind, caption:m.caption }));
+    const box=$("q_prev"); if(box) box.innerHTML=waScreenHtml({ title:_brand.nombre, logoUrl:_brand.logo_url, bubblesHtml:waBubbles(bubbles,smpQr), empty:"Escribe el mensaje para ver cómo llega…" });
+  }
   paintMedia();
+  $("q_cuerpo").oninput=paintPreview;
   document.querySelectorAll(".qmAdd").forEach(btn=> btn.onclick=()=>pickQrMedia(btn.dataset.k, paintMedia));
+  seqBrand(st.channelId).then(b=>{ _brand=b; paintPreview(); });
 }
 async function saveQR(){
   if(!st.qr) return;
