@@ -3768,6 +3768,11 @@ function renderBubble(v,vi,bub,bi){
       ? `<textarea class="in btext" style="field-sizing:content;min-height:58px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
       : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
   if(kind==="text") wireBotones(el,bub,()=>{ harvest(); renderComposer(); });
+  // Actualizar el texto/caption EN CADA TECLA (como seq-editor): así la vista
+  // previa de WhatsApp (que lee bub.text) refleja en vivo lo que escribes. Sin
+  // esto, bub.text solo se refrescaba en harvest() → el preview salía desfasado.
+  { const tx=el.querySelector(".btext"); if(tx) tx.addEventListener("input",e=>{ bub.text=e.target.value; }); }
+  { const cp=el.querySelector(".bcap"); if(cp) cp.addEventListener("input",e=>{ bub.caption=e.target.value; }); }
   el.querySelector(".bdel").onclick=()=>{ harvest(); v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderComposer(); };
   el.querySelector(".bup").onclick=()=>{ if(bi===0)return; harvest(); [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderComposer(); };
   el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; harvest(); [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderComposer(); };
