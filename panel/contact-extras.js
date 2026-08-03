@@ -30,6 +30,7 @@ export const EMBUDO_STAGES = [
   { k: "nuevo",      label: "Nuevo",      color: "#378ADD", desc: "Llegó, aún genérico" },
   { k: "curioso",    label: "Curioso",    color: "#29B6D8", desc: "Solo tiró la palabra clave" },
   { k: "interesado", label: "Interesado", color: "#EF9F27", desc: "Interactuó, quiere más" },
+  { k: "caliente",   label: "Caliente",   color: "#F0612B", desc: "Volvió 3+ veces sin comprar — súper interesado 🔥" },
   { k: "confirmado", label: "Confirmado", color: "#8b5cf6", desc: "Confirmó recibir / adelanto validado" },
   { k: "comprado",   label: "Comprado",   color: "#1D9E75", desc: "Venta cerrada, plata dentro" },
   { k: "perdido",    label: "Perdido",    color: "#888780", desc: "Se cayó / no compró" },

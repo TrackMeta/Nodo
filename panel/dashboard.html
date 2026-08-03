@@ -882,7 +882,7 @@ async function load(){
   rank.sort((a,b)=>b.ganancia-a.ganancia);
   const ps=porStage;
   const comprado=Number(ps.comprado)||0;
-  const interesadosTot=(Number(ps.interesado)||0)+(Number(ps.confirmado)||0)+comprado;
+  const interesadosTot=(Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0)+comprado;
   asesorResumen={
     periodo: ($("dfLabel")?$("dfLabel").textContent:"")||"el periodo",
     tipo_filtro: tipo,
@@ -892,7 +892,7 @@ async function load(){
     ganancia: Math.round(bruta), ingresos: Math.round(vendido), ventas: compras,
     ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidos,
     embudo_por_etapa: ps,
-    interesados_sin_comprar: (Number(ps.interesado)||0)+(Number(ps.confirmado)||0),
+    interesados_sin_comprar: (Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0),
     conversion_pct: interesadosTot>0 ? Math.round(comprado/interesadosTot*100) : null,
     producto_estrella: rank[0]||null,
     producto_mas_flojo: rank.length>1?rank[rank.length-1]:null,
@@ -971,7 +971,7 @@ function renderBand(b){
 }
 // Dos métricas de conversión, foto EN VIVO (misma fuente que el Embudo):
 //  • Efectividad de venta = compras ÷ conversaciones de venta reales
-//    (interesado+confirmado+comprado+perdido). Mide qué tan bien CIERRA el bot;
+//    (interesado+caliente+confirmado+comprado+perdido). Mide qué tan bien CIERRA el bot;
 //    no cuenta a quien escribió y nunca entró a comprar ("nuevo").
 //  • Conversión a compra = compras ÷ TODOS los contactos (incluye "nuevo").
 //    Mide la conversión total del embudo (engancha + cierra).
@@ -980,12 +980,12 @@ function renderMetricas(porStage){
   const c={}; STAGES.forEach(s=>c[s.k]=Number(porStage[s.k]||0));
   if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
   const total=STAGES.reduce((a,s)=>a+c[s.k],0);
-  const conv=c.interesado+c.confirmado+c.comprado+c.perdido;
+  const conv=c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido;
   const comprado=c.comprado;
   // Efectividad (semáforo: cierra bien / regular / flojo)
   const eP = conv? Math.round(comprado/conv*100) : null;
   const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
-  const tEfec="Compras ÷ los que se interesaron de verdad (interesado, confirmado, comprado y perdido). No cuenta a los curiosos que solo escribieron. Mide qué tan bien cierra el bot.";
+  const tEfec="Compras ÷ los que se interesaron de verdad (interesado, caliente, confirmado, comprado y perdido). No cuenta a los curiosos que solo escribieron. Mide qué tan bien cierra el bot.";
   const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
     `<div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
     `<div class="mdesc">De los que se interesaron, cuántos terminas cerrando.</div>`+
@@ -1016,7 +1016,7 @@ function renderFunnel(porStage){
     return `<div class="frow" data-stage="${s.k}" style="cursor:pointer" title="Ver «${s.label}» en la Bandeja"><div class="flabel"><span style="width:9px;height:9px;border-radius:50%;background:${s.color};display:inline-block;flex:none"></span>${s.label}</div><div class="fbar"><span style="width:${Math.round(n/max*100)}%;background:${s.color}"></span></div><div class="fval">${n}<span style="color:var(--faint);font-weight:400;font-size:11px"> · ${pct(n)}%</span></div></div>`;
   }).join("");
   $("funnel").querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=> location.href="index.html?stage="+b.dataset.stage);
-  const interes=c.interesado+c.confirmado+c.comprado;
+  const interes=c.interesado+c.caliente+c.confirmado+c.comprado;
   $("conv").innerHTML=`<span class="convpill">Conversión a compra: <b>${pct(c.comprado)}%</b></span><span class="convpill">Mostraron interés: <b>${pct(interes)}%</b></span><span class="convpill">Se perdieron: <b>${pct(c.perdido)}%</b></span>`;
 }
 

@@ -265,16 +265,18 @@ function fillProdSel(){
 // ── El cálculo del embudo para un subconjunto de contactos ────────────
 const pct=(a,b)=> b>0 ? Math.round(a/b*100) : null;
 function funnelDe(cs){
-  const c={nuevo:0,curioso:0,interesado:0,confirmado:0,comprado:0,perdido:0};
+  const c={nuevo:0,curioso:0,interesado:0,caliente:0,confirmado:0,comprado:0,perdido:0};
   cs.forEach(x=>{ const k=(x.stage||"nuevo"); if(k in c) c[k]++; else c.nuevo++; });
   const total=cs.length;
-  const curiosos=c.curioso+c.interesado+c.confirmado+c.comprado+c.perdido; // engancharon un producto (palabra clave)
-  const interes=c.interesado+c.confirmado+c.comprado+c.perdido;            // interactuaron de verdad (más que la keyword)
+  // Acumulado: cada nivel = "esa etapa o MÁS adelante". Caliente va entre Interés y Confirmaron.
+  const curiosos=c.curioso+c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido; // engancharon un producto (palabra clave)
+  const interes=c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido;            // interactuaron de verdad (más que la keyword)
+  const calientes=c.caliente+c.confirmado+c.comprado;                                 // volvieron 3+ veces (o ya avanzaron más)
   const confirmaron=c.confirmado+c.comprado;
   const compraron=c.comprado;
   return { c, total,
-    niveles:{ llegaron:total, curiosos, interes, confirmaron, compraron },
-    paso:{ curiosos:pct(curiosos,total), interes:pct(interes,curiosos), confirmar:pct(confirmaron,interes), comprar:pct(compraron,confirmaron) },
+    niveles:{ llegaron:total, curiosos, interes, calientes, confirmaron, compraron },
+    paso:{ curiosos:pct(curiosos,total), interes:pct(interes,curiosos), caliente:pct(calientes,interes), confirmar:pct(confirmaron,calientes), comprar:pct(compraron,confirmaron) },
     efectividad: pct(compraron, interes),   // de los que interactuaron de verdad, cuántos cierran
     conversion: pct(compraron, total) };    // de todos los contactos, cuántos compran
 }
@@ -335,7 +337,8 @@ function renderNeck(F){
   const saltos=[
     { de:"que lleguen", a:"que enganchen un producto", arriba:F.niveles.llegaron, paso:F.paso.curiosos, tip:"el gancho: el anuncio y la palabra clave" },
     { de:"curiosos", a:"que se interesen", arriba:F.niveles.curiosos, paso:F.paso.interes, tip:"el mensaje inicial: que respondan, no que solo miren" },
-    { de:"interesados", a:"confirmar", arriba:F.niveles.interes, paso:F.paso.confirmar, tip:"la venta: precio, confianza, objeciones" },
+    { de:"interesados", a:"que vuelvan (calientes)", arriba:F.niveles.interes, paso:F.paso.caliente, tip:"el seguimiento y el reenganche: que insistan y regresen" },
+    { de:"calientes", a:"confirmar", arriba:F.niveles.calientes, paso:F.paso.confirmar, tip:"la venta: precio, confianza, objeciones" },
     { de:"confirmados", a:"comprar", arriba:F.niveles.confirmaron, paso:F.paso.comprar, tip:"el cierre: cobro, adelanto, entrega" },
   ].filter(s=> s.arriba>0 && s.paso!=null);
   if(!saltos.length){ el.innerHTML=""; return; }
@@ -360,10 +363,11 @@ function renderFunnel(F){
     { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
     { lbl:"Curiosos", n:N.curiosos, c:col("curioso") },
     { lbl:"Interés", n:N.interes, c:col("interesado") },
+    { lbl:"Caliente 🔥", n:N.calientes, c:col("caliente") },
     { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado") },
     { lbl:"Compraron", n:N.compraron, c:col("comprado") },
   ];
-  const pasos=[F.paso.curiosos, F.paso.interes, F.paso.confirmar, F.paso.comprar];
+  const pasos=[F.paso.curiosos, F.paso.interes, F.paso.caliente, F.paso.confirmar, F.paso.comprar];
   let html="";
   niveles.forEach((lv,i)=>{
     const w= N.llegaron>0 ? Math.max(12, Math.round(lv.n/N.llegaron*100)) : 12;

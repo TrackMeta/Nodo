@@ -133,12 +133,28 @@ export async function runEngine(
   // acaban de cancelar y re-enrolarlo sería contradictorio).
   if (event.type === "message" && !esOptOut(event.text)) {
     try {
-      const { data: ins } = await db.from("messages").select("id")
-        .eq("contact_id", contactId).eq("direction", "in").limit(2);
-      if ((ins ?? []).length >= 2) {
+      // Una sola lectura de los mensajes entrantes (con su hora) sirve para las
+      // dos graduaciones: "interesado" (2+ mensajes) y "caliente" (3+ VUELTAS).
+      const { data: ins } = await db.from("messages").select("ts")
+        .eq("contact_id", contactId).eq("direction", "in")
+        .order("ts", { ascending: true }).limit(60);
+      const msgs = ins ?? [];
+      if (msgs.length >= 2) {
         await moverEtapa(db, channelId, contactId, "interesado"); // etapa del embudo
         await enrolarSegmento(db, channelId, contactId, "interactuo"); // secuencia
       }
+      // "Caliente": el lead que INSISTE y VUELVE. No son 3 mensajes seguidos, sino
+      // escribir en 3 momentos distintos (sesiones separadas por ≥3h de silencio) sin
+      // comprar aún. Señal de intención alta → priorizarlo. moverEtapa no lo baja de
+      // confirmado/comprado (rango), así que solo aplica a leads que aún no cerraron.
+      const GAP_MS = 3 * 60 * 60 * 1000; // 3h sin escribir = una vuelta nueva
+      let sesiones = 0, prev = 0;
+      for (const m of msgs) {
+        const t = new Date((m as { ts: string }).ts).getTime();
+        if (!prev || (t - prev) >= GAP_MS) sesiones++;
+        prev = t;
+      }
+      if (sesiones >= 3) await moverEtapa(db, channelId, contactId, "caliente");
     } catch (_) { /* best-effort */ }
   }
 
@@ -5968,7 +5984,7 @@ export function stageDeEstado(estado?: string | null): string | null {
   if (STAGE_INTERESADO.has(e)) return "interesado";
   return null; // carrito u otros → no toca la etapa
 }
-const STAGE_RANK: Record<string, number> = { nuevo: 0, curioso: 1, interesado: 2, confirmado: 3, comprado: 4 };
+const STAGE_RANK: Record<string, number> = { nuevo: 0, curioso: 1, interesado: 2, caliente: 3, confirmado: 4, comprado: 5 };
 // Mueve la etapa SOLO hacia adelante (nunca retrocede), salvo a "perdido" y solo
 // si el contacto no era ya "comprado" (un comprador no se marca perdido por un
 // pedido posterior que se cayó). Silenciosa ante errores: nunca rompe la venta.
