@@ -88,7 +88,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
-import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=7";
+import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
@@ -103,6 +103,7 @@ function pickQrMedia(kind, onDone){
   const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
   inp.onchange=async()=>{
     const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
     toast("Subiendo…");
     try{
       const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });

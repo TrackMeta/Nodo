@@ -252,7 +252,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, ma
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare } from "./seq-editor.js?v=7";
+import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare } from "./seq-editor.js?v=8";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -1586,6 +1586,7 @@ function pickMediaTo(kind, arr, onDone, syncCfg, tagBase){
   const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
   inp.onchange=async()=>{
     const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
     toast("Subiendo…");
     try{
       const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
@@ -3115,6 +3116,7 @@ function pickEntregaFile(v,onDone){
   const inp=document.createElement("input"); inp.type="file";
   inp.onchange=async()=>{
     const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
     toast("Subiendo…");
     try{
       const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
@@ -3784,6 +3786,7 @@ function pickMedia(vi,kind){
   const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
   inp.onchange=async()=>{
     const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
     toast("Subiendo…");
     try{
       const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });

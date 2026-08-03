@@ -387,6 +387,7 @@ export function mountStepsEditor(el, opts){
     const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
     inp.onchange=async()=>{
       const file=inp.files&&inp.files[0]; if(!file) return;
+      if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
       toast("Subiendo…");
       try{
         const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
