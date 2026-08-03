@@ -805,7 +805,7 @@ function updateFilterCounts(){
   set("cRec", convs.filter(cv=>!cv.archivada && esRecompra(cv.contact)).length);
   set("cAds", convs.filter(cv=>!!cv.contact.source && !cv.archivada).length);
   set("cOrg", convs.filter(cv=>!cv.contact.source && !cv.archivada).length);
-  set("cSinP", convs.filter(cv=>!cv.contact.product_id && !cv.archivada).length);
+  set("cSinP", convs.filter(cv=>!cv.contact.product_id && cv.contact.stage!=="comprado" && cv.contact.stage!=="confirmado" && !cv.archivada).length);
   set("cArch", convs.filter(cv=>cv.archivada).length);
   const sbox=$("filters");
   if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.stage||"nuevo")===k).length; });
@@ -1033,7 +1033,7 @@ function applyFilters(cv){
   if (f.entrega.size){ const k=state.entregaMap.get(c.id); if(!k || !f.entrega.has(k)) return false; }
   if (f.anuncio && !c.source) return false;
   if (f.organico && !!c.source) return false;
-  if (f.sinprod && c.product_id) return false;
+  if (f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
   if (f.producto && c.product_id !== f.producto) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
   return true;

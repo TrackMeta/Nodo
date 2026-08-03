@@ -317,7 +317,7 @@ function filtered(){
     if(f.compro && !(ltvOf(c.id).count>0)) return false;
     if(f.anuncio && !isAd(c)) return false;
     if(f.organico && isAd(c)) return false;
-    if(f.sinprod && c.product_id) return false;
+    if(f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
     if(f.bloqueado && !c.bloqueado) return false;
     if(f.noremk && !c.no_remarketing) return false;
     return true;
@@ -344,7 +344,7 @@ function updateFilterCounts(){
   const all=st.contacts;
   EMBUDO_STAGES.forEach(s=>{ const el=$("fStages").querySelector(`[data-sc="${s.k}"]`); if(el) el.textContent=all.filter(c=>(c.stage||"nuevo")===s.k).length||""; });
   st.tags.forEach(t=>{ const el=$("fTags").querySelector(`[data-tc="${t.id}"]`); if(el) el.textContent=all.filter(c=>(c.contact_tags||[]).some(x=>x.tag_id===t.id)).length||""; });
-  const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, organico:all.filter(c=>!isAd(c)).length, sinprod:all.filter(c=>!c.product_id).length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:all.filter(isArchived).length };
+  const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, organico:all.filter(c=>!isAd(c)).length, sinprod:all.filter(c=>!c.product_id && c.stage!=="comprado" && c.stage!=="confirmado").length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:all.filter(isArchived).length };
   Object.entries(q).forEach(([k,v])=>{ const el=document.querySelector(`[data-qc="${k}"]`); if(el) el.textContent=v||""; });
   const active=f.stages.size+f.tags.size+(f.compro?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.bloqueado?1:0)+(f.noremk?1:0)+(f.archivado?1:0)+(f.source?1:0);
   const cnt=$("filtCnt"); cnt.textContent=active; cnt.style.display=active?"":"none"; $("filtBtn").classList.toggle("on",!!active);
