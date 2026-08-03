@@ -6054,6 +6054,11 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
   } catch (_) { /* sin remarketing / columnas pendientes → no pasa nada */ }
 }
 
+// Flags INTERNOS que el motor guarda como campo pero NO son un dato del cliente
+// (son estado del flujo). No deben graduar a "Interesado" — igual que los que
+// empiezan con "_". Antes, `datos_completos="no"` (que el motor setea temprano)
+// mandaba al contacto a Interesado en el primer mensaje, saltándose "Curioso".
+const INTERNAL_FIELDS = new Set(["datos_completos", "pedido_creado", "opcion_id", "opcion", "opcion_elegida"]);
 async function setField(db: SupabaseClient, channelId: string, contactId: string, key: string, value: string | null) {
   if (!key) return;
   let { data: f } = await db.from("custom_fields").select("id")
@@ -6078,7 +6083,7 @@ async function setField(db: SupabaseClient, channelId: string, contactId: string
   // El contacto dejó un dato REAL (no un candado interno del motor, que empieza
   // con "_") → "interesado activo": gradúa a esa secuencia si el negocio la
   // configuró. No-op si no la hay, y nunca degrada a quien ya está más profundo.
-  if (!key.startsWith("_") && value != null && String(value).trim() !== "") {
+  if (!key.startsWith("_") && !INTERNAL_FIELDS.has(key) && value != null && String(value).trim() !== "") {
     await moverEtapa(db, channelId, contactId, "interesado").catch(() => {}); // etapa del embudo
     await enrolarSegmento(db, channelId, contactId, "interactuo").catch(() => {}); // secuencia
   }
