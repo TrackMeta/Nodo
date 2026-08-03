@@ -3528,14 +3528,7 @@ function renderComposer(){
   const body=$("actTabBody");
   if(body){
     if(angActivo){
-      const adsMeta=st.act.adsMeta||[];
-      const adsHtml = adsMeta.length
-        ? `<div style="font-size:11px;color:var(--muted);margin:2px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="ang-ad" value="${esc(m.ad_id)}"${(angActivo.ad_ids||[]).map(String).includes(String(m.ad_id))?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}</span></label>`).join("")}</div>`
-        : `<div style="font-size:11px;color:var(--muted);margin:2px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y Enter. (Conecta Meta Ads para elegirlos por su nombre.)</div>
-           <div class="ang-chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:40px">
-             ${(angActivo.ad_ids||[]).map(id=>`<span class="ad-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)"><span class="mono">${esc(id)}</span><button class="ad-chip-x" data-id="${esc(id)}" style="border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button></span>`).join("")}
-             <input class="ad-chip-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:160px;color:var(--text);height:24px" placeholder="Pega un ID y Enter"/>
-           </div>`;
+      const nAds=(angActivo.ad_ids||[]).length;
       const ang=document.createElement("div"); ang.className="ang-row"; ang.dataset.ai=angIdx;
       ang.style.cssText="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px;background:var(--surface-2,rgba(255,255,255,.02))";
       ang.innerHTML=`
@@ -3544,11 +3537,9 @@ function renderComposer(){
           <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
         ${ganchoIAHtml(angActivo.gancho_ia, "ang-gancho")}
-        <div style="margin-top:10px">${adsHtml}</div>`;
+        <div style="font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5">📣 ${nAds?`<b style="color:var(--muted)">${nAds}</b> anuncio${nAds>1?"s":""} asignado${nAds>1?"s":""} a este ángulo.`:"Sin anuncios asignados."} Los anuncios se manejan en el <b style="color:var(--muted)">Banco de anuncios</b> (pestaña <b style="color:var(--muted)">Ángulos</b> del catálogo).</div>`;
       body.appendChild(ang);
       ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1); (cfg.variantes||[]).forEach(v=>{ if(v.angulo===slug) v.angulo=""; }); st.act.tab=""; renderComposer(); };
-      ang.querySelectorAll(".ad-chip-in").forEach(inp=> inp.onkeydown=(e)=>{ if(e.key!=="Enter")return; e.preventDefault(); const val=inp.value.trim(); if(!val)return; harvest(); harvestAngulos(); const a=st.act.angulos[angIdx]; a.ad_ids=a.ad_ids||[]; val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!a.ad_ids.includes(id)) a.ad_ids.push(id); }); renderComposer(); });
-      ang.querySelectorAll(".ad-chip-x").forEach(btn=> btn.onclick=()=>{ harvest(); harvestAngulos(); const a=st.act.angulos[angIdx]; a.ad_ids=(a.ad_ids||[]).filter(id=>String(id)!==String(btn.dataset.id)); renderComposer(); });
     }
     const list=tabVars();
     // El peso "en cristiano" (Poco/Normal/Mucho) + % REAL dentro de la pestaña
