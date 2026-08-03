@@ -21,7 +21,10 @@ export function pesoFromBucket(b){ return b==="mucho"?3:(b==="poco"?1:2); }
 export function freqControlHtml(v){
   const b=pesoBucket(v.peso);
   const seg=(k,l)=>`<button data-freq="${k}" type="button" style="border:none;background:${b===k?'var(--ia1,#8b5cf6)':'transparent'};color:${b===k?'#fff':'var(--muted)'};font:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer">${l}</button>`;
-  return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span>`;
+  // Poco/Normal/Mucho para el común, + un campo de peso EXACTO a mano al lado
+  // (por si quieres un reparto fino, ej. 5 vs 2). El bucket resaltado se deduce
+  // del número. Los dos editan el mismo `peso`.
+  return `<span style="font-size:10.5px;color:var(--muted)">Sale</span><span style="display:inline-flex;gap:1px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px">${seg("poco","Poco")}${seg("normal","Normal")}${seg("mucho","Mucho")}</span><input class="se-vpeso-num" type="number" min="0" step="1" value="${Number(v.peso??1)}" title="Peso exacto (a mano)" style="width:44px;height:28px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:11.5px;outline:none;font-family:inherit"/>`;
 }
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
@@ -286,6 +289,7 @@ export function mountStepsEditor(el, opts){
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
         card.querySelectorAll("[data-freq]").forEach(btn=> btn.onclick=()=>{ v.peso=pesoFromBucket(btn.dataset.freq); composer(box,paso); });
+        { const np=card.querySelector(".se-vpeso-num"); if(np){ np.oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); }; np.onchange=()=>composer(box,paso); } }
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
         card.querySelector(".se-vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
         { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
