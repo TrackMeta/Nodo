@@ -3478,16 +3478,9 @@ function renderComposer(){
             <option value="empieza"${match==="empieza"?" selected":""}>Empieza con ella</option>
             <option value="exacta"${match==="exacta"?" selected":""}>Exacta</option>
           </select>
-          <!-- El ad_id de ruteo ahora se pone en cada ángulo (rutea Y elige el saludo),
-               así que este campo va plegado por defecto — pero disponible. Se abre solo
-               si ya tiene un valor guardado, para que no quede oculto sin querer. -->
-          <details style="margin-top:14px"${ads?" open":""}>
-            <summary style="cursor:pointer;font-size:11.5px;color:var(--muted);font-weight:600;list-style:none">＋ Rutear por ID de anuncio (opcional)</summary>
-            <div style="margin-top:8px">
-              <input class="in" id="actAds" placeholder="120210..., 120211... (coma)" value="${esc(ads)}"/>
-              <div style="font-size:11px;color:var(--faint);margin-top:5px">Normalmente no hace falta: los anuncios se asignan a cada ángulo abajo. Úsalo solo si quieres rutear un anuncio que no está en ningún ángulo.</div>
-            </div>
-          </details>
+          <!-- El ruteo por ID de anuncio se retiró de aquí: ahora vive en el
+               Banco de anuncios del producto (pestaña Ángulos). Cualquier anuncio
+               del banco rutea, con o sin ángulo. -->
         </div>
       </details>
     </div>
@@ -3607,8 +3600,9 @@ async function saveActivacion(){
   const kwArr=(($("actKw")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);
   const matchV=($("actMatch")?.value)||"contiene";
   await saveTrigger("keyword","kw", kwArr.length?{keywords:kwArr,match:matchV}:null);
-  const adArr=(($("actAds")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);
-  await saveTrigger("referral","ad", adArr.length?{ad_ids:adArr}:null);
+  // El ruteo por ID de anuncio se maneja ahora en el Banco de anuncios del
+  // producto (products.config.ad_bank). Ya no se toca el disparador "referral"
+  // desde aquí: lo que exista se queda intacto y no se crea uno nuevo.
   toast("Guardado ✓"); accRerender("activacion"); refreshActivacionRow();
 }
 function _renderComposerOld(){
