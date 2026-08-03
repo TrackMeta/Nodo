@@ -434,7 +434,7 @@ function renderQrList(q){
     body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;
     folders[f].forEach(r=>{
       const col=r.color&&/^#/.test(r.color)?r.color:null;
-      const nM=Array.isArray(r.media)?r.media.length:0;
+      const nM=(Array.isArray(r.media)?r.media:[]).filter(m=>m&&m.media_url).length;
       body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">📎 ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
     });
   });
