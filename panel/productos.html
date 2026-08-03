@@ -252,7 +252,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, ma
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare } from "./seq-editor.js?v=6";
+import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare } from "./seq-editor.js?v=7";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -3466,7 +3466,7 @@ function welcomePreview(v){
   return waScreenHtml({ title:_welcomeBrand.nombre, logoUrl:_welcomeBrand.logo_url, bubblesHtml: waBubbles((v&&v.bubbles)||[], smp), empty:"Escribe el saludo para ver cómo llega…" });
 }
 function actTabBtn(active){ return `font-size:12.5px;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:${active?'700':'600'};border:${active?'none':'0.5px solid var(--border)'};background:${active?'var(--ia1,#8b5cf6)':'transparent'};color:${active?'#fff':'var(--muted)'}`; }
-function actAddBtns(){ return ["text","image","video","audio"].map(k=>`<button class="btn addb" data-k="${k}" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio"})[k]}</button>`).join(""); }
+function actAddBtns(){ return ["text","image","video","audio","document"].map(k=>`<button class="btn addb" data-k="${k}" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio",document:"Archivo"})[k]}</button>`).join(""); }
 
 // ── Sección "Cómo llegan los clientes" REDISEÑADA: llegada simple + saludo por
 //    ángulo (une ángulos + mensajes iniciales en pestañas) + un solo Guardar. ──

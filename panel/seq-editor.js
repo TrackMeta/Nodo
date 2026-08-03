@@ -350,7 +350,7 @@ export function mountStepsEditor(el, opts){
     });
   }
 
-  function addBtns(){ return ["text","image","video","audio"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio"})[k]}</button>`).join(""); }
+  function addBtns(){ return ["text","image","video","audio","document"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio",document:"Archivo"})[k]}</button>`).join(""); }
 
   function bubbleEl(box,paso,v,bub,bi){
     const el3=document.createElement("div");
