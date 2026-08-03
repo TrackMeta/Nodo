@@ -186,6 +186,7 @@
       <button class="bbtn" data-act="seq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg> Agregar a secuencia</button>
       <button class="bbtn" data-act="block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Bloquear</button>
       <button class="bbtn" data-act="unblock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear</button>
+      <button class="bbtn" data-act="nomk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0M18.63 13A17.9 17.9 0 0 1 18 8M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14M18 8a6 6 0 0 0-9.33-5M1 1l22 22"/></svg> Remarketing</button>
       <button class="bbtn" data-act="arch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg> Archivar</button>
       <button class="bbtn" data-act="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Exportar</button>
       <button class="bbtn danger" data-act="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg> Eliminar</button>
@@ -417,7 +418,7 @@ function rowEl(c){
     <div class="stcell stcellwrap">
       <span class="pill ${c.bot_activo?'':'off'}" title="Toca para ${c.bot_activo?'pausar':'activar'} el bot">${c.bot_activo?'Activo':'Pausado'}</span>
       ${c.bloqueado?`<span class="mini lock" title="Bloqueado">${LOCK}</span>`:""}
-      ${c.no_remarketing?`<span class="mini bell" title="Pidió no recibir remarketing">${BELL}</span>`:""}
+      ${c.no_remarketing?`<button class="mini bell" data-nomk title="Fuera del remarketing — toca para reactivar" style="border:none;cursor:pointer;padding:0">${BELL}</button>`:""}
     </div>
     <div class="actionscell"><button class="icobtn arch${arch?" on":""}" data-a="arch" title="${arch?"Desarchivar":"Archivar"}">${ARCH}</button><button class="icobtn" data-a="del" title="Eliminar">${TRASH}</button></div>`;
   renderTags(el.querySelector(".tagscell"), c);
@@ -431,6 +432,7 @@ function rowEl(c){
   el.querySelector(".stcell").onclick=(e)=>e.stopPropagation();
   el.querySelector('[data-a="arch"]').onclick=(e)=>{ e.stopPropagation(); setArchived([c.id], !arch); };
   el.querySelector('[data-a="del"]').onclick=(e)=>{ e.stopPropagation(); removeContact(c); };
+  const nmk=el.querySelector("[data-nomk]"); if(nmk) nmk.onclick=(e)=>{ e.stopPropagation(); setNoRemarketing([c.id], false); };
   // Click en la fila → abre el chat (deep-link de la Bandeja).
   el.onclick=(e)=>{ if(e.target.closest(".tagscell")||e.target.closest(".rowck")) return; location.href="index.html?c="+c.id; };
   return el;
@@ -483,6 +485,16 @@ async function toggleBot(c){
   const { error }=await supa.from("contacts").update({ bot_activo:nv }).eq("id",c.id);
   if(error){ toast(error.message,true); return; }
   c.bot_activo=nv; toast(nv?"Bot activado ✓":"Bot en pausa"); render();
+}
+// Excluir / volver a incluir en el remarketing (secuencias y reenganche). Se
+// prende solo cuando el cliente pide baja; acá se puede quitar o poner a mano.
+async function setNoRemarketing(ids, val){
+  const { error }=await supa.from("contacts").update({ no_remarketing:val }).in("id",ids);
+  if(error){ toast(error.message,true); return; }
+  toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing ✓`
+           :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing ✓`);
+  if(val) ids.forEach(id=>st.sel.delete(id));
+  await load();
 }
 
 // ── Crear / editar ──
@@ -546,6 +558,14 @@ async function bulk(act){
     const { error }=await supa.from("contacts").update({ bloqueado:on }).in("id",ids);
     if(error){ toast(error.message,true); return; }
     toast(on?`${ids.length} bloqueado(s) ✓`:`${ids.length} desbloqueado(s) ✓`); await load(); return;
+  }
+  if(act==="nomk"){
+    const mode=await askChoice({ title:`Remarketing · ${ids.length} contacto(s)`, options:[
+      { value:"off", label:"Excluir del remarketing", desc:"No recibirán secuencias ni reenganche." },
+      { value:"on",  label:"Volver a incluir",        desc:"Vuelven a recibir remarketing." },
+    ] });
+    if(!mode) return;
+    await setNoRemarketing(ids, mode==="off"); return;
   }
   if(act==="seq"){
     const { data:seqs }=await supa.from("sequences").select("id,nombre,activo").eq("channel_id",st.channelId).order("nombre");
