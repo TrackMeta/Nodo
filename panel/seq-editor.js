@@ -26,18 +26,10 @@ export function freqControlHtml(v){
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 
-// Plantillas de arranque por defecto (una página puede pasar las suyas).
-export const DEFAULT_PRESETS=[
-  { nombre:"Recordatorio suave", desc:"3 toques · Día 1, 3 y 7", pasos:[
-    [86400,"¡Hola {{nombre}}! ¿Aún te interesa? Cualquier duda te ayudo 😊"],
-    [172800,"Te sigo guardando tu pedido 👀 ¿Lo cerramos hoy?"],
-    [345600,"Última oportunidad — luego libero tu cupo. ¿Te animas?"],
-  ]},
-  { nombre:"Oferta directa", desc:"2 toques · Día 1 y 4", pasos:[
-    [86400,"{{nombre}}, te reservé una oferta especial por hoy 🎁"],
-    [259200,"Tu oferta vence hoy. ¿La aprovechas?"],
-  ]},
-];
+// Plantillas de arranque por defecto: VACÍO a propósito (Secuencias no muestra
+// plantillas — arranca directo con un toque en blanco). Una página puede pasar
+// las suyas por `opts.presets` (ej. Reenganche del producto sí las usa).
+export const DEFAULT_PRESETS=[];
 
 function sample(t){ return String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{\s*ciudad\s*\}\}/gi,"Lima").replace(/\{\{[^}]*\}\}/g,"…"); }
 // Papel tapiz clásico de WhatsApp (beige con garabatos tenues). Va embebido en el
@@ -144,6 +136,9 @@ export function mountStepsEditor(el, opts){
   function paintOne(){
     body.innerHTML="";
     if(!seq.pasos.length){
+      // Sin plantillas (ej. Secuencias): nada de pantalla de selección — arranca
+      // directo con un toque en blanco, listo para editar.
+      if(!presets.length){ seq.pasos=[{ umbral_silencio_seg:86400, rotacion:false, variantes:[newVariant(0)] }]; sel=0; paintJourney(); return paintOne(); }
       const box=document.createElement("div");
       box.innerHTML=`<div style="border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--surface,#151a21)">
         <div style="font-size:13px;font-weight:700;margin-bottom:3px">Empieza con una plantilla</div>
