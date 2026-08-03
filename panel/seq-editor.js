@@ -60,7 +60,12 @@ export function waBubbles(list, smp){
     else if(b.media_url) media=`<div style="color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}">📎 archivo</div>`;
     const txt=cap?smp(esc(cap)).replace(/\n/g,"<br>"):'';
     const tail=i===0?`<span style="position:absolute;top:0;right:-6px;width:0;height:0;border-top:7px solid #DCF8C6;border-right:7px solid transparent"></span>`:'';
-    return `<div style="position:relative;align-self:flex-end;max-width:88%;background:#DCF8C6;color:#111b21;border-radius:8px 8px 3px 8px;padding:5px 8px 4px;font-size:12px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.13);word-break:break-word">${tail}${media}${txt}<div style="font-size:9px;color:#667781;text-align:right;margin-top:1px;line-height:1;white-space:nowrap">10:24 <span style="color:#53bdeb">✓✓</span></div></div>`;
+    const bubble=`<div style="position:relative;background:#DCF8C6;color:#111b21;border-radius:8px 8px 3px 8px;padding:5px 8px 4px;font-size:12px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.13);word-break:break-word">${tail}${media}${txt}<div style="font-size:9px;color:#667781;text-align:right;margin-top:1px;line-height:1;white-space:nowrap">10:24 <span style="color:#53bdeb">✓✓</span></div></div>`;
+    // Botones = atajos de respuesta rápida de WhatsApp: filas blancas bajo la
+    // burbuja, texto azul centrado con flechita de respuesta (máx 3, 20 chars).
+    const btns=(Array.isArray(b.buttons)?b.buttons:[]).map(x=>(x&&(x.title||"").trim())).filter(Boolean).slice(0,3);
+    const btnsHtml=btns.length?`<div style="display:flex;flex-direction:column;gap:2px;margin-top:2px">${btns.map(t=>`<div style="background:#fff;border-radius:7px;box-shadow:0 1px 1px rgba(0,0,0,.13);padding:8px 6px;text-align:center;color:#00a5f4;font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:5px"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#00a5f4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h8a5 5 0 0 1 5 5v4"/></svg>${esc(t.slice(0,20))}</div>`).join("")}</div>`:'';
+    return `<div style="align-self:flex-end;max-width:88%;display:flex;flex-direction:column">${bubble}${btnsHtml}</div>`;
   }).join('');
 }
 
