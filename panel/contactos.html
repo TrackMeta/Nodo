@@ -101,8 +101,25 @@
   .icobtn.arch.on{color:var(--amber)}
   .icobtn svg{width:15px;height:15px}
   .empty{text-align:center;color:var(--faint);padding:50px}
+  .empty svg.eic{width:40px;height:40px;color:var(--faint);opacity:.7;margin-bottom:12px}
+  .empty h3{margin:0 0 5px;font-size:16px;color:var(--text)}
+  .empty p{margin:0 auto;font-size:13px;max-width:360px;line-height:1.55}
   .more{display:flex;justify-content:center;padding:14px}
   .foot{color:var(--faint);font-size:12px;text-align:center;padding:10px 0 4px}
+
+  /* Franja de resumen (KPIs clicables) */
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{flex:1;min-width:118px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 14px;cursor:pointer;transition:border-color .12s ease, transform .12s ease}
+  .stat:hover{border-color:var(--brand);transform:translateY(-1px)}
+  .stat.on{border-color:var(--brand);background:var(--brand-bg)}
+  .stat .sv{font-size:22px;font-weight:800;letter-spacing:-.5px;line-height:1}
+  .stat .sl{font-size:11.5px;color:var(--muted);margin-top:5px;display:flex;align-items:center;gap:6px}
+  .stat .sdot{width:8px;height:8px;border-radius:50%;flex:none}
+
+  /* Avatar del contacto */
+  .cli{display:flex;align-items:center;gap:11px;min-width:0}
+  .cli .cli-tx{min-width:0}
+  .ava{width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700}
 
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:50}
   .modal.show{display:flex}
@@ -127,6 +144,8 @@
   <div class="wrap">
     <h1>Contactos</h1>
     <p class="sub" id="sub">Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas.</p>
+
+    <div class="stats" id="stats"></div>
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -199,6 +218,9 @@ const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"2-digit",year:"numeric" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
+// Color estable del avatar a partir del nombre/número (como una lista de contactos).
+const AVA_COLORS=["#2b7fff","#22c079","#f0a92b","#e2564a","#9b6cf0","#18b7be","#e264a8","#e0803a","#6d8ea0","#7c8cf8"];
+function avaColor(s){ const str=String(s||"?"); let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return AVA_COLORS[h%AVA_COLORS.length]; }
 const PHONE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
 const ARCH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
@@ -212,11 +234,13 @@ function ago(iso){ if(!iso) return "—"; const s=(Date.now()-new Date(iso).getT
 // saldo_pagado·recogido), igual que la sección Compras y la etapa "Comprado".
 // Un pedido en curso (Lima confirmado contraentrega, adelanto de provincia) NO
 // cuenta como pagado —se muestra "En proceso"—; así el "gastado" no infla.
+let _ltvCache={};
 function ltvOf(cid){
+  if(_ltvCache[cid]) return _ltvCache[cid];
   const os=st.ordersBy[cid]||[];
   let paid=0, count=0, cur="PEN", proc=false;
   os.forEach(o=>{ const e=O.EST[o.estado]; if(e?.cobro==="todo"){ count++; paid+=O.total(o); cur=o.currency||cur; } else if(e && !e.perdido && o.estado!=="carrito"){ proc=true; } });
-  return { count, paid, cur, proc };
+  return _ltvCache[cid]={ count, paid, cur, proc };
 }
 
 async function boot(){
@@ -263,7 +287,7 @@ async function load(){
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó → no pintes datos viejos
   st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test");
   st.tags=tg||[];
-  st.ordersBy={};
+  st.ordersBy={}; _ltvCache={};
   (os||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   // Origen (con etiqueta legible).
   const sources=[...new Set(st.contacts.map(c=>c.source).filter(Boolean))];
@@ -321,10 +345,27 @@ function updateFilterCounts(){
   const cnt=$("filtCnt"); cnt.textContent=active; cnt.style.display=active?"":"none"; $("filtBtn").classList.toggle("on",!!active);
 }
 
+function renderStats(){
+  const box=$("stats"); if(!box) return;
+  const all=st.contacts;
+  const stats=[
+    { k:"total", v:all.length, label:"Contactos", color:"#2b7fff" },
+    { k:"compro", v:all.filter(c=>ltvOf(c.id).count>0).length, label:"Compraron", color:"#22c079" },
+    { k:"anuncio", v:all.filter(isAd).length, label:"Por anuncio", color:"#9b6cf0" },
+    { k:"bloqueado", v:all.filter(c=>c.bloqueado).length, label:"Bloqueados", color:"#e2564a" },
+  ];
+  box.innerHTML=stats.map(s=>`<div class="stat${(s.k!=="total"&&f[s.k])?" on":""}" data-stat="${s.k}"><div class="sv" style="color:${s.color}">${s.v}</div><div class="sl"><span class="sdot" style="background:${s.color}"></span>${s.label}</div></div>`).join("");
+  box.querySelectorAll("[data-stat]").forEach(el=> el.onclick=()=>{
+    const k=el.dataset.stat;
+    if(k==="total"){ clearFilters(); return; }
+    f[k]=!f[k]; renderFilterChips(); render();
+  });
+}
 function render(){
   const list=filtered();
-  $("sub").textContent=`Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas. ${st.contacts.length} contacto(s).`;
+  $("sub").textContent="Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas.";
   updateFilterCounts();
+  renderStats();
   // Barra de lote.
   const bulk=$("bulk"); bulk.classList.toggle("show", st.sel.size>0);
   $("bulkN").textContent=`${st.sel.size} seleccionado${st.sel.size!==1?"s":""}`;
@@ -333,7 +374,11 @@ function render(){
   ckAll.checked=list.length>0 && inList===list.length; ckAll.indeterminate=inList>0 && inList<list.length;
 
   const box=$("rows");
-  if(!list.length){ box.innerHTML=`<div class="empty">No hay contactos que coincidan.</div>`; $("foot").textContent=""; return; }
+  if(!list.length){
+    const noneAtAll=st.contacts.length===0;
+    box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>${noneAtAll?`<h3>Aún no tienes contactos</h3><p>Se agregan solos cuando alguien te escribe. También puedes importarlos desde un CSV o crear uno a mano.</p>`:`<h3>Nada coincide</h3><p>No hay contactos con estos filtros o esta búsqueda. Prueba limpiar los filtros.</p>`}</div>`;
+    $("foot").textContent=""; return;
+  }
   const show=list.slice(0, st.visible);
   box.innerHTML="";
   show.forEach(c=>box.appendChild(rowEl(c)));
@@ -353,12 +398,17 @@ function rowEl(c){
   const ltvHtml = lv.count? `<span class="ltv paid">${money(lv.paid,lv.cur)} <span class="u">· ${lv.count} compra${lv.count>1?"s":""}</span></span>`
     : lv.proc? `<span class="ltv proc">En proceso</span>` : `<span class="ltv none">—</span>`;
   const org=origenLabel(c.source);
+  const avaC=avaColor(c.nombre||c.wa_id);
+  const avaInner=c.product?.emoji?esc(c.product.emoji):esc((c.nombre||c.wa_id||"?").trim().charAt(0).toUpperCase()||"?");
   el.innerHTML=`
     <div class="ckcell"><input type="checkbox" class="ck rowck" ${st.sel.has(c.id)?"checked":""}/></div>
     <div class="cli">
-      <div class="nm">${c.product?.emoji?`<span class="emj">${esc(c.product.emoji)}</span>`:""}${esc(c.nombre||"Sin nombre")}</div>
-      <div class="ph">${PHONE}+${esc(c.wa_id)}</div>
-      <div class="org">${esc(org)}${c.product?.nombre?` · ${esc(c.product.nombre)}`:""}</div>
+      <div class="ava" style="background:${avaC}22;color:${avaC}">${avaInner}</div>
+      <div class="cli-tx">
+        <div class="nm">${esc(c.nombre||"Sin nombre")}</div>
+        <div class="ph">${PHONE}+${esc(c.wa_id)}</div>
+        <div class="org">${esc(org)}${c.product?.nombre?` · ${esc(c.product.nombre)}`:""}</div>
+      </div>
     </div>
     <div class="etapacell"><span class="stg" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</span></div>
     <div class="tags tagscell"></div>
