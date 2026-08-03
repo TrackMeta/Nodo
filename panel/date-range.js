@@ -48,7 +48,7 @@ const CSS = `
 .drtrigger{height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;cursor:pointer;font-family:inherit}
 .drtrigger:hover{border-color:var(--brand)}
 .drtrigger svg{width:14px;height:14px;color:var(--muted);flex:none}
-.drpop{position:absolute;top:calc(100% + 6px);left:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.45);display:none}
+.drpop{position:fixed;z-index:2200;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.45);display:none}
 .drpop.show{display:flex}
 /* Cuando el botón está pegado a la derecha, abrir hacia la izquierda para que
    los dos meses no se salgan de la pantalla (lo decide medirlo al abrir). */
@@ -103,6 +103,8 @@ export function mountDateRange(host, { valor = null, onChange = null, nota = "La
   const trigger = host.querySelector(".drtrigger");
   const label = host.querySelector(".drlabel");
   const pop = host.querySelector(".drpop");
+  pop._home = host; // para re-anclarlo al cerrar (se portaliza a <body> al abrir)
+  const cerrar = () => { pop.classList.remove("show"); if (pop.parentNode !== host) host.appendChild(pop); };
   // Los clics DENTRO del popover no deben llegar al detector global de "clic
   // afuera": al re-dibujarse (pinta()), el elemento tocado queda desprendido del
   // DOM y su closest(".drpicker") daría null → el picker se cerraría en cada
@@ -153,31 +155,37 @@ export function mountDateRange(host, { valor = null, onChange = null, nota = "La
       else { pk.to = pk.from; pk.from = date; }
       pk.preset = null; pinta();
     });
-    pop.querySelector('[data-dr="cancel"]').onclick = () => pop.classList.remove("show");
+    pop.querySelector('[data-dr="cancel"]').onclick = () => cerrar();
     pop.querySelector('[data-dr="apply"]').onclick = () => {
       if (!pk.from) return;
       if (!pk.to) pk.to = pk.from;
       rango = { from: pk.from, to: pk.to, preset: pk.preset };
-      pop.classList.remove("show"); pintaLabel();
+      cerrar(); pintaLabel();
       onChange && onChange(rango);
     };
   }
   trigger.onclick = (e) => {
     e.stopPropagation();
-    if (pop.classList.contains("show")) { pop.classList.remove("show"); return; }
+    if (pop.classList.contains("show")) { cerrar(); return; }
     pk = { from: rango.from, to: rango.to, preset: rango.preset || null,
            focus: new Date(rango.to.getFullYear(), rango.to.getMonth() - 1, 1) };
-    pinta(); pop.classList.add("show");
-    // ¿Se sale por la derecha? Entonces anclarlo a la derecha (abre a la izq).
-    pop.classList.remove("dr-right");
-    if (pop.getBoundingClientRect().right > window.innerWidth - 8) pop.classList.add("dr-right");
+    pinta();
+    // Portal a <body> + posición FIJA anclada al botón: así NINGÚN contenedor con
+    // overflow/transform (p.ej. el drawer de filtros de la Bandeja) lo recorta.
+    document.body.appendChild(pop); pop.classList.add("show");
+    const r = trigger.getBoundingClientRect();
+    pop.style.top = (r.bottom + 6) + "px"; pop.style.bottom = "auto";
+    pop.style.left = r.left + "px"; pop.style.right = "auto";
+    const pr = pop.getBoundingClientRect();
+    if (pr.right > window.innerWidth - 8) { pop.style.left = "auto"; pop.style.right = Math.max(8, window.innerWidth - r.right) + "px"; }
+    if (pr.bottom > window.innerHeight - 8 && r.top > window.innerHeight - r.bottom) { pop.style.top = "auto"; pop.style.bottom = (window.innerHeight - r.top + 6) + "px"; }
   };
   // Un solo listener global para todos los selectores de la página.
   if (!window.__drDocWired) {
     window.__drDocWired = true;
     document.addEventListener("click", (e) => {
-      if (e.target.closest(".drpicker")) return;
-      document.querySelectorAll(".drpop.show").forEach((p) => p.classList.remove("show"));
+      if (e.target.closest(".drpicker") || e.target.closest(".drpop")) return;
+      document.querySelectorAll(".drpop.show").forEach((p) => { p.classList.remove("show"); if (p._home && p.parentNode !== p._home) p._home.appendChild(p); });
     });
   }
   pintaLabel();
