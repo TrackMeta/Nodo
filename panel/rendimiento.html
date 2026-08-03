@@ -310,7 +310,7 @@ function renderKpis(){
     ["Ganancia neta",money(m.neta),m.neta<0?"var(--red)":"var(--green)","margen − gasto de ads"],
     ["ROAS",nf(m.roas,2)+"×","var(--green)",money0(m.ingresos)+" por "+money0(m.gasto)],
   ];
-  $("kpis").innerHTML=K.map(([k,v,c,s])=>`<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`).join("");
+  $("kpis").innerHTML=K.map(([k,v,c,s])=>`<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num" style="color:${c}">${v}</div><div class="s">${s}</div></div>`).join("");
 }
 function renderTable(){
   const rows=visibleRows();
@@ -427,7 +427,7 @@ function renderDetail(){
     }).join("")}</tbody></table></div></div>`;
   $("back").onclick=()=>{ st.sel=null; render(); };
 }
-function kpiMini(k,v,c){ return `<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num">${v}</div></div>`; }
+function kpiMini(k,v,c){ return `<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num" style="color:${c}">${v}</div></div>`; }
 
 // ── Gráficos SVG (sin librerías) ──
 const CW=440, CH=150, PX=6, PB=18;
