@@ -320,66 +320,81 @@ async function loadAngHub(){
     adsMeta=(data||[]).map(m=>({...m, ad_id:String(m.ad_id)}));
   }catch(_){ adsMeta=[]; }
   if(gen!==st.hubGen) return;
-  const byProd={}, orig={};
+  const byProd={}, orig={}, bank={};
   prods.forEach(p=>{ byProd[p.id]=[]; });
   angs.forEach(a=>{ (byProd[a.product_id]=byProd[a.product_id]||[]).push(a); });
-  prods.forEach(p=>{ orig[p.id]=(byProd[p.id]||[]).map(a=>a.id).filter(Boolean); });
-  st.hub={ prods, byProd, adsMeta, angOk, orig };
+  prods.forEach(p=>{
+    orig[p.id]=(byProd[p.id]||[]).map(a=>a.id).filter(Boolean);
+    // El BANCO del producto = fuente de ruteo. Union de config.ad_bank + lo que ya
+    // esté en sus ángulos (por si se agregó por "Cómo llegan"), para no perder nada.
+    const fromCfg=Array.isArray(p.config&&p.config.ad_bank)?p.config.ad_bank.map(String):[];
+    const fromAng=(byProd[p.id]||[]).flatMap(a=>a.ad_ids||[]).map(String);
+    bank[p.id]=[...new Set([...fromCfg, ...fromAng])];
+  });
+  st.hub={ prods, byProd, bank, adsMeta, angOk, orig };
   renderAngHub();
+}
+// Índice del ángulo (en byProd[pid]) que tiene ese anuncio, o -1 (sin ángulo).
+function hubAnguloDeAd(pid, adId){ return (st.hub.byProd[pid]||[]).findIndex(a=>(a.ad_ids||[]).includes(String(adId))); }
+// Asigna un anuncio a un ángulo (o -1 = sin ángulo): lo saca de todos y lo mete en el elegido.
+function hubAssign(pid, adId, angIdx){
+  adId=String(adId);
+  (st.hub.byProd[pid]||[]).forEach(a=>{ a.ad_ids=(a.ad_ids||[]).filter(id=>id!==adId); });
+  if(angIdx>=0){ const a=(st.hub.byProd[pid]||[])[angIdx]; if(a){ a.ad_ids=a.ad_ids||[]; if(!a.ad_ids.includes(adId)) a.ad_ids.push(adId); } }
 }
 function renderAngHub(){
   const host=$("angHub"); if(!host||!st.hub) return;
-  const { prods, byProd, adsMeta, angOk }=st.hub;
+  const { prods, byProd, bank, adsMeta, angOk }=st.hub;
   const adName=(id)=>{ const m=adsMeta.find(x=>x.ad_id===String(id)); return m?(m.ad_name||m.ad_id):id; };
   let html=`<div class="card" style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">
     <span style="font-size:26px;line-height:1">🎯</span>
-    <div><div style="font-weight:750;font-size:15px;letter-spacing:-.2px">Ángulos de tus anuncios</div>
-    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px">Un <b>ángulo</b> agrupa los anuncios que atacan la misma idea (ej. “Dolor / calambres”). Cuando un cliente llega desde uno de esos anuncios —aunque no escriba tu palabra clave— el bot lo rutea al producto correcto y lo saluda con el mensaje de ese ángulo.</div></div>
+    <div><div style="font-weight:750;font-size:15px;letter-spacing:-.2px">Ángulos y banco de anuncios</div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px">El <b>banco de anuncios</b> de cada producto es su lista de anuncios: cualquiera que esté ahí <b>rutea a ese producto</b> (aunque el cliente no escriba la palabra clave). A cada anuncio le eliges un <b>ángulo</b> para su saludo — o lo dejas sin ángulo y usa el saludo general.</div></div>
   </div>`;
   if(!angOk){ host.innerHTML=html+`<div class="hub-warn">${HUB_WARN}Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`; return; }
   if(!prods.length){ host.innerHTML=html+`<div class="nodo-empty"><p>Aún no tienes productos principales. Crea uno en el Catálogo para configurar sus ángulos.</p></div>`; return; }
-  // Colisiones: un mismo anuncio en 2+ ángulos hace el ruteo ambiguo.
-  const adMap={};
-  prods.forEach(p=> (byProd[p.id]||[]).forEach(a=> (a.ad_ids||[]).forEach(id=>{ (adMap[id]=adMap[id]||[]).push({ ang:a.nombre||a.slug||"(sin nombre)" }); })));
-  const dups=Object.entries(adMap).filter(([,arr])=>arr.length>1);
-  const dupIds=new Set(dups.map(([id])=>id));
-  if(dups.length){
-    html+=`<div class="hub-warn" style="margin-bottom:14px">${HUB_WARN}<div><b>Anuncios repetidos en varios ángulos.</b> El bot rutea al primero que encuentre; conviene que cada anuncio viva en un solo ángulo:${dups.map(([id,arr])=>`<div style="margin-top:4px;color:var(--text)">· <span class="mono">${esc(adName(id))}</span> → ${arr.map(x=>esc(x.ang)).join(" · ")}</div>`).join("")}</div></div>`;
-  }
   prods.forEach(p=>{
     const angs=byProd[p.id]||[];
-    const nAds=angs.reduce((s,a)=>s+(a.ad_ids||[]).length,0);
+    const bk=bank[p.id]||[];
+    const sinAng=bk.filter(id=> hubAnguloDeAd(p.id,id)<0);
     const em = p.emoji ? esc(p.emoji) : "📦";
     html+=`<div class="hub-prod" data-prod="${p.id}">
       <div class="hub-prod-hd">
         <div class="hub-prod-em">${em}</div>
-        <div style="flex:1;min-width:0"><div class="hub-prod-nm">${esc(p.nombre)}</div><div class="hub-prod-sub">${angs.length?`${angs.length} ángulo${angs.length>1?"s":""} · ${nAds} anuncio${nAds!==1?"s":""}`:"Sin ángulos todavía"}</div></div>
-        <span class="hub-count">${angs.length}</span>
+        <div style="flex:1;min-width:0"><div class="hub-prod-nm">${esc(p.nombre)}</div><div class="hub-prod-sub">${bk.length} anuncio${bk.length!==1?"s":""} · ${angs.length} ángulo${angs.length!==1?"s":""}${sinAng.length?` · <span style="color:var(--amber)">${sinAng.length} sin ángulo</span>`:""}</div></div>
       </div>`;
-    if(!angs.length){
-      html+=`<div class="hub-warn">${HUB_WARN}Este producto no tiene ángulos: un cliente que llegue de un anuncio suyo sin escribir la palabra clave caerá en el menú de respaldo o en la IA. Agrega al menos uno.</div>`;
-    }
+    // ── ÁNGULOS (los cajones: la idea + el saludo) ──
+    html+=`<div style="font-size:12px;font-weight:800;margin:14px 0 4px">🎯 Ángulos <span style="font-weight:500;color:var(--faint)">— la idea y su saludo</span></div>`;
+    if(!angs.length){ html+=`<div style="font-size:11.5px;color:var(--faint);padding:0 0 4px">Aún no hay ángulos. Sin ellos, los anuncios del banco rutean igual, pero con el saludo general.</div>`; }
     angs.forEach((a,ai)=>{
-      const adsUI = adsMeta.length
-        ? `<div style="font-size:11px;color:var(--muted);margin:9px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="hub-ad-ck" value="${esc(m.ad_id)}"${(a.ad_ids||[]).includes(m.ad_id)?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}${dupIds.has(m.ad_id)&&(a.ad_ids||[]).includes(m.ad_id)?` <span style="color:var(--amber);font-size:11px">· repetido</span>`:''}</span></label>`).join("")}</div>`
-        : `<div style="font-size:11px;color:var(--muted);margin:9px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y Enter. <span style="color:var(--faint)">(Conecta Meta Ads en Ajustes para elegirlos por su nombre.)</span></div>
-           <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:38px;background:var(--surface)">
-             ${(a.ad_ids||[]).map(id=>`<span class="ad-chip2${dupIds.has(id)?" dup":""}"><span class="mono">${esc(id)}</span><button class="hub-ad-x" data-id="${esc(id)}" title="Quitar" style="border:0;background:transparent;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0;opacity:.7">✕</button></span>`).join("")}
-             <input class="hub-ad-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:150px;color:var(--text);height:24px" placeholder="Pega un ID y Enter"/>
-           </div>`;
-      html+=`<div class="hub-ang${(a.ad_ids||[]).some(id=>dupIds.has(id))?" dup":""}" data-pid="${p.id}" data-ai="${ai}">
+      html+=`<div class="hub-ang" data-pid="${p.id}" data-ai="${ai}">
         <div style="display:flex;gap:8px;align-items:center">
           <input class="in hub-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
+          <span class="hub-count" title="anuncios en este ángulo">${(a.ad_ids||[]).length} 📣</span>
           <button class="iconbtn hub-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
         ${ganchoIAHtml(a.gancho_ia, "hub-gancho")}
-        ${adsUI}
       </div>`;
     });
-    html+=`<div style="display:flex;gap:10px;align-items:center;margin-top:12px">
-        <button class="btn hub-add" style="height:34px;padding:0 13px;font-size:12.5px;background:transparent;border:1px dashed var(--border);color:var(--text)">＋ Ángulo</button>
-        <button class="btn primary hub-save" style="height:34px;padding:0 16px;font-size:12.5px;margin-left:auto">Guardar</button>
-      </div>
+    html+=`<button class="btn hub-add" style="height:30px;padding:0 12px;font-size:12px;margin-top:8px;background:transparent;border:1px dashed var(--border);color:var(--text)">＋ Ángulo</button>`;
+    // ── BANCO DE ANUNCIOS (fuente de ruteo del producto) ──
+    const angOpts=(cur)=>`<option value="-1"${cur<0?" selected":""}>— Sin ángulo (saludo general) —</option>`+angs.map((a,ai)=>`<option value="${ai}"${cur===ai?" selected":""}>🎯 ${esc(a.nombre||a.slug||"(sin nombre)")}</option>`).join("");
+    html+=`<div style="font-size:12px;font-weight:800;margin:18px 0 4px">📣 Banco de anuncios <span style="font-weight:500;color:var(--faint)">— rutean a este producto</span></div>`;
+    if(!bk.length){ html+=`<div style="font-size:12px;color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:12px;text-align:center">Aún no hay anuncios. Agrega el ID de un anuncio abajo${adsMeta.length?" o elígelo de Meta":""}.</div>`; }
+    bk.forEach(id=>{
+      const ai=hubAnguloDeAd(p.id,id);
+      html+=`<div class="hub-adrow" data-pid="${p.id}" data-ad="${esc(id)}" style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-top:8px;background:var(--surface-2)">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${adsMeta.length?esc(adName(id)):`<span class="mono">${esc(id)}</span>`}${ai<0?` <span style="color:var(--amber);font-size:11px">· sin ángulo</span>`:""}</span>
+        <select class="sel hub-assign" style="height:32px;font-size:12px;max-width:230px">${angOpts(ai)}</select>
+        <button class="iconbtn hub-adx" title="Quitar del banco">${icon("trash")}</button>
+      </div>`;
+    });
+    const metaLibres=adsMeta.filter(m=>!bk.includes(m.ad_id));
+    html+=`<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      ${adsMeta.length?`<select class="sel hub-addmeta" style="height:34px;font-size:12px;flex:1;min-width:180px"><option value="">＋ Elegir un anuncio de Meta…</option>${metaLibres.map(m=>`<option value="${esc(m.ad_id)}">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` · ${esc(m.campaign_name)}`:""}</option>`).join("")}</select>`:``}
+      <input class="in hub-addid" style="height:34px;flex:1;min-width:160px" placeholder="${adsMeta.length?"…o pega un ID y Enter":"Pega un ID de anuncio y Enter"}"/>
+    </div>
+    <div style="display:flex;margin-top:14px"><button class="btn primary hub-save" style="height:34px;padding:0 18px;font-size:12.5px;margin-left:auto">Guardar</button></div>
     </div>`;
   });
   host.innerHTML=html;
@@ -394,25 +409,22 @@ function renderAngHub(){
       renderAngHub();
     };
     card.querySelector(".hub-save").onclick=()=>hubSaveProduct(pid);
+    const am=card.querySelector(".hub-addmeta"); if(am) am.onchange=()=>{ const id=am.value; if(!id) return; hubHarvest(); st.hub.bank[pid]=st.hub.bank[pid]||[]; if(!st.hub.bank[pid].includes(id)) st.hub.bank[pid].push(id); renderAngHub(); };
+    const ain=card.querySelector(".hub-addid"); if(ain) ain.onkeydown=(e)=>{
+      if(e.key!=="Enter") return; e.preventDefault(); const val=ain.value.trim(); if(!val) return; hubHarvest();
+      st.hub.bank[pid]=st.hub.bank[pid]||[];
+      val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!st.hub.bank[pid].includes(id)) st.hub.bank[pid].push(id); });
+      renderAngHub();
+    };
   });
   host.querySelectorAll(".hub-ang[data-pid]").forEach(row=>{
     const pid=row.dataset.pid, ai=+row.dataset.ai;
-    const a=(st.hub.byProd[pid]||[])[ai]; if(!a) return;
     row.querySelector(".hub-del").onclick=()=>{ hubHarvest(); st.hub.byProd[pid].splice(ai,1); renderAngHub(); };
-    row.querySelectorAll(".hub-ad-ck").forEach(ck=> ck.onchange=()=>{
-      hubHarvest(); a.ad_ids=a.ad_ids||[];
-      if(ck.checked){ if(!a.ad_ids.includes(ck.value)) a.ad_ids.push(ck.value); }
-      else a.ad_ids=a.ad_ids.filter(id=>id!==ck.value);
-      renderAngHub();
-    });
-    const inp=row.querySelector(".hub-ad-in");
-    if(inp) inp.onkeydown=(e)=>{
-      if(e.key!=="Enter") return; e.preventDefault();
-      const val=inp.value.trim(); if(!val) return; hubHarvest(); a.ad_ids=a.ad_ids||[];
-      val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!a.ad_ids.includes(id)) a.ad_ids.push(id); });
-      renderAngHub(); const rows=host.querySelectorAll(`.hub-ang[data-pid="${pid}"][data-ai="${ai}"] .hub-ad-in`); if(rows[0]) rows[0].focus();
-    };
-    row.querySelectorAll(".hub-ad-x").forEach(btn=> btn.onclick=()=>{ hubHarvest(); a.ad_ids=(a.ad_ids||[]).filter(id=>id!==btn.dataset.id); renderAngHub(); });
+  });
+  host.querySelectorAll(".hub-adrow").forEach(row=>{
+    const pid=row.dataset.pid, adId=row.dataset.ad;
+    row.querySelector(".hub-assign").onchange=(e)=>{ hubHarvest(); hubAssign(pid, adId, +e.target.value); renderAngHub(); };
+    row.querySelector(".hub-adx").onclick=()=>{ hubHarvest(); st.hub.bank[pid]=(st.hub.bank[pid]||[]).filter(x=>x!==adId); hubAssign(pid, adId, -1); renderAngHub(); };
   });
 }
 // Lee nombre+gancho de las filas del hub a memoria (los ad_ids ya se mantienen en memoria).
@@ -438,9 +450,16 @@ async function hubSaveProduct(pid){
     }
     const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
     for(const id of (st.hub.orig[pid]||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
+    // Guardar el BANCO en el config del producto (fuente de ruteo por ID).
+    const prod=(st.hub.prods||[]).find(p=>p.id===pid);
+    const cfg=(prod&&prod.config&&typeof prod.config==="object")?{...prod.config}:{};
+    cfg.ad_bank=st.hub.bank[pid]||[];
+    const { error:eCfg }=await supa.from("products").update({ config:cfg }).eq("id",pid);
+    if(eCfg) throw eCfg;
+    if(prod) prod.config=cfg;
     st.hub.byProd[pid]=angs; st.hub.orig[pid]=angs.map(a=>a.id);
-    toast("Ángulos guardados ✓"); renderAngHub();
-  }catch(e){ toast(e.message||"No se pudo guardar los ángulos",true); }
+    toast("Guardado ✓"); renderAngHub();
+  }catch(e){ toast(e.message||"No se pudo guardar",true); }
 }
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); /* el FAB lo controla renderDetail según si estás en el hub */ }
 

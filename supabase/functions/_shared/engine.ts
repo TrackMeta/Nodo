@@ -1107,7 +1107,16 @@ async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: stri
     const { data: ang } = await db.from("angulos")
       .select("product_id").eq("channel_id", channelId)
       .contains("ad_ids", [String(adId)]).limit(1).maybeSingle();
-    const productId = (ang as any)?.product_id;
+    let productId = (ang as any)?.product_id;
+    // Fuente de ruteo principal: el BANCO del producto (products.config.ad_bank).
+    // Atrapa también los anuncios SIN ángulo (que rutean pero con saludo general).
+    if (!productId) {
+      const { data: prods } = await db.from("products").select("id, config").eq("channel_id", channelId);
+      for (const pr of prods ?? []) {
+        const bank = (pr as any)?.config?.ad_bank;
+        if (Array.isArray(bank) && bank.map(String).includes(String(adId))) { productId = (pr as any).id; break; }
+      }
+    }
     if (!productId) return null;
     // El flujo de ENTRADA de ese producto (el que arranca la venta): un flow ACTIVO
     // del producto que sea punto de entrada (trigger keyword/entrada/referral).
