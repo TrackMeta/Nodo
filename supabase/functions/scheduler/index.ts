@@ -347,8 +347,12 @@ async function antispamOn(channelId: string): Promise<boolean> {
 }
 
 async function processSub(s: any, now: number): Promise<boolean> {
-  const { data: seq } = await db.from("sequences").select("pasos, activo").eq("id", s.sequence_id).maybeSingle();
+  const { data: seq } = await db.from("sequences").select("*").eq("id", s.sequence_id).maybeSingle();
   const pasos = Array.isArray((seq as any)?.pasos) ? (seq as any).pasos : [];
+  // Modo de disparo (0064). 'goteo' = programado: ignora el silencio y NO se
+  // reinicia con la respuesta del cliente; corre su calendario desde que se
+  // suscribió. 'reenganche' (default) = el de siempre (se ancla al silencio).
+  const esGoteo = (seq as any)?.modo === "goteo";
   if (!seq || !(seq as any).activo || s.paso_actual >= pasos.length) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
@@ -387,7 +391,11 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // mensaje es más reciente → el temporizador se REINICIA y no se le insiste
   // mientras haya conversación. (El paso 1 no tiene "paso anterior": updated_at
   // ≈ suscrito_at → cuenta desde que mostró interés / su último mensaje.)
-  const marcas = [(c as any).ultimo_mensaje_cliente_at, s.updated_at, s.suscrito_at]
+  // En 'goteo' el ancla NO incluye el mensaje del cliente → el reloj corre desde
+  // la suscripción / el paso anterior, sin reiniciarse si el cliente responde.
+  const marcas = (esGoteo
+    ? [s.updated_at, s.suscrito_at]
+    : [(c as any).ultimo_mensaje_cliente_at, s.updated_at, s.suscrito_at])
     .map((t) => (t ? new Date(t).getTime() : NaN))
     .filter((t) => Number.isFinite(t));
   const anchor = marcas.length ? Math.max(...marcas) : now;
@@ -407,7 +415,12 @@ async function processSub(s: any, now: number): Promise<boolean> {
   if (active) {
     const idleMs = now - new Date((active as any).updated_at).getTime();
     const graceMs = Math.min(umbral * 1000, RUN_STALE_MS);
-    if ((active as any).estado === "activo" || idleMs < graceMs) return false;
+    // Un run 'activo' se está ejecutando AHORA → nunca lo cortamos (en cualquier
+    // modo). El 'esperando' idle solo frena al reenganche (que respeta el
+    // silencio); el goteo lo ignora — su gracia es no meterse a mitad de una
+    // ejecución viva, no esperar a que el cliente se calle.
+    if ((active as any).estado === "activo") return false;
+    if (!esGoteo && idleMs < graceMs) return false;
   }
 
   // Anti-spam: no encimar envíos automáticos. Si ya recibió un toque de marketing

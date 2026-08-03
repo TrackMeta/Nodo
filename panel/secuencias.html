@@ -132,6 +132,16 @@ const SEGMENTOS=[
 ];
 const segLabel=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[1];
 const segDesc=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[2];
+// ¿Cómo se dispara? Reenganche (espera el silencio, se reinicia si responde) vs
+// Goteo (calendario fijo desde el primer contacto, ignora el silencio).
+const MODOS=[
+  ["reenganche","🎣 Reenganche (espera el silencio)","Recupera al que se enfrió: cada paso espera a que el cliente lleve un rato callado, y si RESPONDE el reloj se reinicia y la secuencia se pausa mientras haya conversación."],
+  ["goteo","💧 Goteo (calendario fijo)","Una serie programada desde el primer contacto: Día 1, 3, 7… corren pase lo que pase. IGNORA el silencio y NO se reinicia si el cliente responde. Ideal para bienvenida / educación / recordatorios de valor."],
+];
+const modoDesc=(v)=>(MODOS.find(m=>m[0]===v)||MODOS[0])[2];
+const bannerModo=(v)=> v==="goteo"
+  ? `Cada paso corre <b>desde que se envió el paso anterior</b> (el primero, desde que el cliente se suscribió). <b>Ignora el silencio</b>: se envía en su calendario aunque el cliente no responda —y <b>no se reinicia</b> si responde. Los pasos que caigan fuera de las 24h necesitan <b>plantilla</b> para alcanzar a un cliente callado.`
+  : `Cada paso espera su tiempo <b>desde que se envió el paso anterior</b> (el primero, desde el último mensaje del cliente). Si el cliente <b>responde</b>, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras haya conversación.`;
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 function durLabel(sec){ const {val,u}=splitDur(sec); const l={"60":"min","3600":"h","86400":"d"}[u]; return `${val}${l}`; }
@@ -208,7 +218,7 @@ function renderCards(){
     const el=document.createElement("div"); el.className="nodo-card qcard"+(on?"":" paused");
     el.innerHTML=`
       <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="nodo-pill ${on?'on':'off'}">${on?'Activa':'Pausada'}</span></div>
-      <div class="c-sub">${n} paso${n===1?'':'s'} · reenganche por silencio</div>
+      <div class="c-sub">${n} paso${n===1?'':'s'} · ${s.modo==="goteo"?"💧 goteo (calendario fijo)":"🎣 reenganche por silencio"}</div>
       ${miniTimeline(s.pasos)}
       <div class="c-foot">${s.segmento&&s.segmento!=="general"?`<span style="color:var(--amber)">${esc(segLabel(s.segmento).replace(/·.*/,"").trim())}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
@@ -279,13 +289,17 @@ function renderDetail(){
       <div><label style="margin:0 0 4px">¿A quién va dirigida?</label>
         <select class="sel" id="s_segmento" style="min-width:260px">${SEGMENTOS.map(([v,l])=>`<option value="${v}" ${(s.segmento||"general")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
         <div id="s_segdesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:360px;line-height:1.5">${esc(segDesc(s.segmento||"general"))}</div></div>
+      <div><label style="margin:0 0 4px">¿Cómo se envía?</label>
+        <select class="sel" id="s_modo" style="min-width:240px">${MODOS.map(([v,l])=>`<option value="${v}" ${(s.modo||"reenganche")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
+        <div id="s_mododesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:360px;line-height:1.5">${esc(modoDesc(s.modo||"reenganche"))}</div></div>
     </div>
-    <div class="banner">Cada paso espera su tiempo <b>desde que se envió el paso anterior</b> (el primero, desde el último mensaje del cliente). Si el cliente <b>responde</b>, el temporizador se <b>reinicia</b> y la secuencia se pausa mientras haya conversación.</div>
+    <div class="banner" id="s_banner">${bannerModo(s.modo||"reenganche")}</div>
     <div class="editwrap">
       <div id="steps"></div>
     </div>`;
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
   $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; $("s_segdesc").textContent=segDesc(s.segmento); };
+  $("s_modo").onchange=(e)=>{ s.modo=e.target.value; $("s_mododesc").textContent=modoDesc(s.modo); $("s_banner").innerHTML=bannerModo(s.modo); };
   $("s_producto").onchange=(e)=>{ st.seqProduct=e.target.value; };
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
   // Editor de pasos COMPARTIDO (mismo módulo que la sección Reenganche del producto).
@@ -297,8 +311,9 @@ function renderDetail(){
 async function saveSeq(){
   if(!st.seq){ toast("No hay secuencia abierta",true); return; }
   if(st.stepsEd) st.stepsEd.normalize();
-  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null, segmento:st.seq.segmento||"general" };
+  const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null, segmento:st.seq.segmento||"general", modo:st.seq.modo||"reenganche" };
   let { error }=await supa.from("sequences").update(row).eq("id",st.seq.id);
+  if(error && /modo|column/.test(error.message)){ delete row.modo; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0064 para el modo goteo)"); }
   if(error && /segmento|column/.test(error.message)){ delete row.segmento; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0057 para segmentos)"); }
   if(error && /folder|column/.test(error.message)){ delete row.folder; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0016 para carpetas)"); }
   if(error){ toast(error.message,true); return; }
