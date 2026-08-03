@@ -3164,15 +3164,16 @@ function renderAngList(){
   });
 }
 // Lee las filas de ángulos del DOM a st.act.angulos (preserva id/slug por índice).
+// Lee del DOM el ángulo ACTIVO (solo se renderiza uno a la vez en el rediseño por
+// pestañas) y lo actualiza EN SITIO en st.act.angulos (los demás viven en memoria).
+// Los ad_ids por chips ya se mantienen en memoria; solo los checkboxes se leen acá.
 function harvestAngulos(){
-  const rows=[...document.querySelectorAll("#angList .ang-row")];
-  st.act.angulos=rows.map(row=>{
-    const orig=st.act.angulos[+row.dataset.ai]||{};
+  document.querySelectorAll("#actroot .ang-row[data-ai]").forEach(row=>{
+    const ai=+row.dataset.ai; const a=st.act.angulos[ai]; if(!a) return;
+    const nm=row.querySelector(".ang-nombre"); if(nm) a.nombre=nm.value.trim();
+    const gn=row.querySelector(".ang-gancho"); if(gn) a.gancho_ia=gn.value.trim();
     const checks=row.querySelectorAll(".ang-ad");
-    let ad_ids;
-    if(checks.length) ad_ids=[...checks].filter(c=>c.checked).map(c=>c.value);
-    else { const ta=row.querySelector(".ang-adids"); ad_ids=ta?ta.value.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean):(orig.ad_ids||[]); }
-    return { id:orig.id, slug:orig.slug, nombre:row.querySelector(".ang-nombre").value.trim(), gancho_ia:row.querySelector(".ang-gancho").value.trim(), ad_ids };
+    if(checks.length) a.ad_ids=[...checks].filter(c=>c.checked).map(c=>c.value);
   });
 }
 // Persiste los ángulos: upsert de los que tienen nombre, delete de los borrados.
