@@ -207,7 +207,10 @@ export async function runEngine(
     // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
     try { if (await maybePostventa(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
-    const decision = await routeDecision(db, channelId, event.text, event.adId);
+    // Para el ruteo por anuncio: el ad_id del mensaje (referral) o, si no vino en
+    // este mensaje, el que ya quedó guardado en el contacto (vino de un anuncio antes).
+    const adIdRuteo = event.adId ?? (await db.from("contacts").select("ad_id").eq("id", contactId).maybeSingle()).data?.ad_id ?? undefined;
+    const decision = await routeDecision(db, channelId, event.text, adIdRuteo);
     const flow = decision.flow;
     if (!flow) return; // ningún flujo maneja este mensaje (ni por IA)
     // Registrar en la Timeline si el ruteo lo decidió la IA (transparencia).
@@ -963,7 +966,7 @@ async function saveRun(db: SupabaseClient, run: Run) {
 // Decide qué flujo arranca un mensaje entrante, en cascada de 3 niveles:
 //   1) referral (ad_id del anuncio)  2) keyword (frase clave, determinista)
 //   3) IA Router (intención) → si ninguno, flujo de respaldo o nada.
-export type RouteTier = "referral" | "keyword" | "entrada" | "ia" | "fallback" | "none";
+export type RouteTier = "referral" | "keyword" | "entrada" | "anuncio" | "ia" | "fallback" | "none";
 export interface RouteResult {
   tier: RouteTier;
   flow: { id: string; nombre?: string } | null;
@@ -1092,9 +1095,40 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
 
 // Cascada completa (niveles 1-3). La usan runEngine (para arrancar) y la
 // Edge Function route-test (simulador del panel, sin ejecutar nada).
+// Nivel 2.5 (entre keyword e IA): cliente que VINO DE UN ANUNCIO pero no escribió
+// la keyword. El anuncio ya nos dice el producto — está vinculado a un ÁNGULO de
+// ese producto (angulos.ad_ids). Así lo mandamos DETERMINÍSTICAMENTE al flujo de
+// venta de ese producto, sin depender de que la IA adivine por lo que escriba.
+// (El ángulo, además, elige la variante del mensaje — pero eso es aparte, en
+// resolverAnguloContacto/deliverStep. Acá solo decidimos el FLUJO.)
+async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: string): Promise<{ id: string; nombre?: string } | null> {
+  if (!adId) return null;
+  try {
+    const { data: ang } = await db.from("angulos")
+      .select("product_id").eq("channel_id", channelId)
+      .contains("ad_ids", [String(adId)]).limit(1).maybeSingle();
+    const productId = (ang as any)?.product_id;
+    if (!productId) return null;
+    // El flujo de ENTRADA de ese producto (el que arranca la venta): un flow ACTIVO
+    // del producto que sea punto de entrada (trigger keyword/entrada/referral).
+    const { data: trg } = await db.from("flow_triggers")
+      .select("flows!inner(id, nombre, estado, product_id)")
+      .eq("channel_id", channelId).in("tipo", ["keyword", "entrada", "referral"]);
+    for (const t of trg ?? []) {
+      const f = (t as any).flows;
+      if (f && f.estado === "activo" && f.product_id === productId) return { id: f.id, nombre: f.nombre };
+    }
+    return null;
+  } catch (_) { return null; }
+}
+
 export async function routeDecision(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
   const det = await matchTrigger(db, channelId, text, adId);
   if (det.flow) return det;
+  // Vino de un anuncio (aunque no escriba la keyword) → al flujo del producto de ese
+  // anuncio, por su ángulo. Determinístico; gana sobre el IA Router (que adivina).
+  const porAnuncio = await flowPorAnuncio(db, channelId, adId);
+  if (porAnuncio) return { tier: "anuncio", flow: porAnuncio };
   const ia = await aiRoute(db, channelId, text);
   if (ia) return ia;
   return { tier: "none", flow: null };
