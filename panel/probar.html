@@ -230,6 +230,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=6";
 import * as O from "./orders.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, stagePickerHtml } from "./contact-extras.js";
 injectExtrasCss();
@@ -439,7 +440,86 @@ function renderQrList(q){
     });
   });
   box.innerHTML=body;
-  box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ const r=st.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return; insertAtCursor(applyVars(r.cuerpo)); $("qrPop").classList.add("hidden"); });
+  box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{ const r=st.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return; $("qrPop").classList.add("hidden"); openQrSend(r); });
+}
+// ── Respuesta rápida: ventana de revisión/edición + envío en orden (modo prueba) ──
+function qrToBubbles(r){
+  const raw=Array.isArray(r.media)?r.media:[];
+  const hasText=raw.some(b=> b && typeof b.text==="string" && !b.media_url);
+  if(hasText) return raw.map(b=>({...b}));
+  const bubs=[]; if(r.cuerpo&&r.cuerpo.trim()) bubs.push({text:r.cuerpo});
+  raw.forEach(m=>{ if(m&&m.media_url) bubs.push({...m}); });
+  return bubs;
+}
+let _qrBrand=null;
+function qrRowsHtml(bubs){
+  return bubs.map((b,i)=>{
+    if(b.media_url){
+      let prev="";
+      if(b.media_kind==="image") prev=`<img src="${esc(b.media_url)}" style="max-width:100%;max-height:170px;border-radius:8px;display:block;margin-bottom:6px"/>`;
+      else if(b.media_kind==="video") prev=`<video src="${esc(b.media_url)}" style="max-width:100%;max-height:170px;border-radius:8px;display:block;margin-bottom:6px" controls></video>`;
+      else if(b.media_kind==="audio") prev=`<audio src="${esc(b.media_url)}" style="width:100%;margin-bottom:6px" controls></audio>`;
+      else prev=`<div style="font-size:13px;margin-bottom:6px">📎 ${esc(b.filename||"archivo")}</div>`;
+      return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px">${prev}${b.media_kind!=="audio"?`<input class="qrs-cap" data-i="${i}" placeholder="Texto sobre la imagen (opcional)" value="${esc(b.caption||"")}" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none"/>`:""}</div>`;
+    }
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px"><textarea class="qrs-txt" data-i="${i}" style="width:100%;min-height:64px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;resize:vertical;font-family:inherit">${esc(b.text||"")}</textarea></div>`;
+  }).join("");
+}
+function qrPrevBubbles(bubs){ return bubs.map(b=> b.media_url ? {media_url:b.media_url,media_kind:b.media_kind,caption:b.caption} : {text:b.text}); }
+function openQrSend(r){
+  const bubs=qrToBubbles(r).map(b=> b.media_url ? {...b, caption:applyVars(b.caption||"")} : {text:applyVars(b.text||"")});
+  const rows=qrRowsHtml(bubs);
+  const ov=document.createElement("div"); ov.style.cssText="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px";
+  const card=document.createElement("div"); card.style.cssText="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden";
+  card.innerHTML=`
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+      <div style="flex:1;font-weight:700;font-size:15px">Enviar respuesta rápida</div>
+      <button class="qrs-x" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div style="display:flex;flex:1;min-height:0;overflow:hidden;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px;padding:14px 16px;overflow-y:auto">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Revisa y edita antes de enviar. Se manda cada burbuja en orden.</div>
+        <div class="qrs-rows">${rows||'<div style="color:var(--faint);font-size:13px">Esta respuesta no tiene contenido.</div>'}</div>
+      </div>
+      <div style="width:262px;flex:none;border-left:1px solid var(--border);padding:14px;background:var(--surface-2);overflow-y:auto">
+        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">Así le llega al cliente</div>
+        <div class="qrs-prev"></div>
+      </div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
+      <button class="qrs-cancel" style="height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer">Cancelar</button>
+      <button class="qrs-send" style="height:40px;padding:0 18px;border-radius:11px;border:none;background:var(--brand);color:#fff;font-weight:700;cursor:pointer">Enviar respuesta rápida</button>
+    </div>`;
+  ov.appendChild(card); document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  const prevBox=card.querySelector(".qrs-prev");
+  const paint=()=>{ if(prevBox) prevBox.innerHTML=waScreenHtml({ title:_qrBrand?.nombre, logoUrl:_qrBrand?.logo_url, bubblesHtml:waBubbles(qrPrevBubbles(bubs)), empty:"Sin contenido" }); };
+  const sync=()=>{ card.querySelectorAll(".qrs-txt").forEach(t=>{ bubs[+t.dataset.i].text=t.value; }); card.querySelectorAll(".qrs-cap").forEach(c=>{ bubs[+c.dataset.i].caption=c.value; }); };
+  card.querySelectorAll(".qrs-txt,.qrs-cap").forEach(el=> el.addEventListener("input",()=>{ sync(); paint(); }));
+  paint();
+  if(_qrBrand===null){ seqBrand(st.channelId).then(b=>{ _qrBrand=b||{}; paint(); }); }
+  ov.onclick=e=>{ if(e.target===ov) close(); };
+  card.querySelector(".qrs-x").onclick=close;
+  card.querySelector(".qrs-cancel").onclick=close;
+  card.querySelector(".qrs-send").onclick=async()=>{
+    sync();
+    const btn=card.querySelector(".qrs-send"); btn.disabled=true; btn.textContent="Enviando…";
+    await sendQrBubbles(bubs); close();
+  };
+}
+// Envía las burbujas en orden en modo prueba (bot = insert directo; cliente = webchat).
+async function sendQrBubbles(bubs){
+  if(!st.contactId) return;
+  for(const b of (bubs||[])){
+    if(b.media_url){
+      if(st.testAs==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:b.media_kind, content:{ media_url:b.media_url, caption:b.caption||"", mime:b.mime||"", filename:b.filename||"" }, status:"sent" }); }
+      else { await callFn("webchat",{ channel_id:st.channelId, media:{ kind:b.media_kind, url:b.media_url, mime:b.mime||"", filename:b.filename||"", caption:b.caption||"" } }); }
+    } else {
+      const t=(b.text||"").trim(); if(!t) continue;
+      if(st.testAs==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{text:t}, status:"sent" }); }
+      else { await callFn("webchat",{ channel_id:st.channelId, text:t }); }
+    }
+  }
 }
 function toggleEmojiPop(){
   const pop=$("emojiPop"); $("qrPop").classList.add("hidden"); $("suggestPop").classList.add("hidden");
