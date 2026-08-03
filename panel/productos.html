@@ -179,6 +179,18 @@
   .hub-empty-ads{font-size:11.5px;color:var(--faint);margin-top:8px}
   .ad-chip2{display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)}
   .ad-chip2.dup{background:rgba(240,169,43,.14);border-color:rgba(240,169,43,.4);color:var(--amber)}
+  /* Campo "Gancho para la IA": destacado con el color/diseño de la sección IA */
+  .ia-gancho{margin-top:9px;border:1px solid var(--ia-brd);border-radius:11px;padding:10px 11px;
+    background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.12),transparent 58%),var(--surface)}
+  .ia-gancho-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap}
+  .ia-gancho-gl{width:21px;height:21px;flex:none;border-radius:6px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--ia1),var(--ia2));color:#fff;box-shadow:0 3px 8px -3px rgba(168,85,247,.6)}
+  .ia-gancho-gl svg{width:12px;height:12px}
+  .ia-gancho-tt{font-size:11.5px;font-weight:800;letter-spacing:-.01em;
+    background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ia-gancho-ds{font-size:10.5px;color:var(--muted)}
+  .ia-in{width:100%;background:var(--surface-2)}
+  .ia-in:focus{border-color:var(--ia1);box-shadow:0 0 0 3px var(--ia-bg)}
 </style>
 </head>
 <body>
@@ -360,7 +372,7 @@ function renderAngHub(){
           <input class="in hub-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
           <button class="iconbtn hub-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
-        <input class="in hub-gancho" style="width:100%;margin-top:8px" placeholder="Gancho para la IA (ej. vino por un anuncio sobre calambres nocturnos)" value="${esc(a.gancho_ia||'')}"/>
+        ${ganchoIAHtml(a.gancho_ia, "hub-gancho")}
         ${adsUI}
       </div>`;
     });
@@ -3298,6 +3310,17 @@ async function renderActivacion(host){
   } catch(_){ st.act.adsMeta=[]; }
   renderComposer();
 }
+// Campo "Gancho para la IA" con el look de la sección IA (violeta/rosa): deja
+// claro que ese texto es para la IA, no un dato del cliente. Reusado por el hub
+// de Ángulos y el editor "Cómo llegan" para que no diverjan. El input conserva
+// la clase que se le pase (hub-gancho / ang-gancho) para que el harvest siga igual.
+const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>';
+function ganchoIAHtml(value, cls){
+  return `<div class="ia-gancho">
+    <div class="ia-gancho-hd"><span class="ia-gancho-gl">${IA_SPARK}</span><span class="ia-gancho-tt">Gancho para la IA</span><span class="ia-gancho-ds">desde qué idea le vende a este cliente</span></div>
+    <input class="in ia-in ${cls}" placeholder="Ej. vino por un anuncio sobre calambres nocturnos" value="${esc(value||'')}"/>
+  </div>`;
+}
 // slug estable a partir del nombre del ángulo.
 function anguloSlug(nombre){ return String(nombre||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40)||("ang"+Date.now()); }
 // Pinta las filas de ángulos (nombre + gancho IA + anuncios). Los anuncios se
@@ -3319,7 +3342,7 @@ function renderAngList(){
         <input class="in ang-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
         <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
       </div>
-      <input class="in ang-gancho" style="width:100%;margin-top:8px" placeholder="Gancho para la IA (ej. vino por un anuncio sobre calambres nocturnos)" value="${esc(a.gancho_ia||'')}"/>
+      ${ganchoIAHtml(a.gancho_ia, "ang-gancho")}
       ${adsHtml}
     </div>`;
   }).join("");
@@ -3505,7 +3528,7 @@ function renderComposer(){
           <input class="in ang-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(angActivo.nombre||'')}"/>
           <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
-        <input class="in ang-gancho" style="width:100%;margin-top:8px" placeholder="El enfoque para la IA (ej. vino por calambres nocturnos)" value="${esc(angActivo.gancho_ia||'')}"/>
+        ${ganchoIAHtml(angActivo.gancho_ia, "ang-gancho")}
         <div style="margin-top:10px">${adsHtml}</div>`;
       body.appendChild(ang);
       ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1); (cfg.variantes||[]).forEach(v=>{ if(v.angulo===slug) v.angulo=""; }); st.act.tab=""; renderComposer(); };
