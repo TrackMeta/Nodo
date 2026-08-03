@@ -133,28 +133,19 @@ export async function runEngine(
   // acaban de cancelar y re-enrolarlo sería contradictorio).
   if (event.type === "message" && !esOptOut(event.text)) {
     try {
-      // Una sola lectura de los mensajes entrantes (con su hora) sirve para las
-      // dos graduaciones: "interesado" (2+ mensajes) y "caliente" (3+ VUELTAS).
-      const { data: ins } = await db.from("messages").select("ts")
-        .eq("contact_id", contactId).eq("direction", "in")
-        .order("ts", { ascending: true }).limit(60);
-      const msgs = ins ?? [];
-      if (msgs.length >= 2) {
+      // Una sola lectura de los mensajes entrantes sirve para las dos graduaciones:
+      // "interesado" (2+ mensajes) y "caliente" (4+ mensajes = súper enganchado).
+      const { data: ins } = await db.from("messages").select("id")
+        .eq("contact_id", contactId).eq("direction", "in").limit(4);
+      const n = (ins ?? []).length;
+      if (n >= 2) {
         await moverEtapa(db, channelId, contactId, "interesado"); // etapa del embudo
         await enrolarSegmento(db, channelId, contactId, "interactuo"); // secuencia
       }
-      // "Caliente": el lead que INSISTE y VUELVE. No son 3 mensajes seguidos, sino
-      // escribir en 3 momentos distintos (sesiones separadas por ≥3h de silencio) sin
-      // comprar aún. Señal de intención alta → priorizarlo. moverEtapa no lo baja de
-      // confirmado/comprado (rango), así que solo aplica a leads que aún no cerraron.
-      const GAP_MS = 3 * 60 * 60 * 1000; // 3h sin escribir = una vuelta nueva
-      let sesiones = 0, prev = 0;
-      for (const m of msgs) {
-        const t = new Date((m as { ts: string }).ts).getTime();
-        if (!prev || (t - prev) >= GAP_MS) sesiones++;
-        prev = t;
-      }
-      if (sesiones >= 3) await moverEtapa(db, channelId, contactId, "caliente");
+      // "Caliente": 4+ mensajes entrantes = conversó mucho, súper enganchado (más que
+      // solo "interactuar" una vez), aún sin comprar → priorizarlo. moverEtapa es
+      // forward-only por rango, así que nunca baja a un confirmado/comprado.
+      if (n >= 4) await moverEtapa(db, channelId, contactId, "caliente");
     } catch (_) { /* best-effort */ }
   }
 
