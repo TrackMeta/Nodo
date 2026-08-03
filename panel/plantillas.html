@@ -286,11 +286,13 @@ async function agregarReco(c, { enviar }){
   return true;
 }
 function renderCards(){
+  // Blindaje: renderCards puede correr antes de que #cards exista en el DOM (carrera
+  // en el arranque / cambio rápido de canal) → salir sin romper, como renderReco.
+  const box=$("cards"); if(!box) return;
   // La carpeta "Recomendadas" muestra el catálogo (lo pinta renderReco), no tus plantillas.
-  if(Fbar && Fbar.current==="__reco"){ $("cards").innerHTML=""; return; }
+  if(Fbar && Fbar.current==="__reco"){ box.innerHTML=""; return; }
   let list=st.list;
   if(Fbar) list=Fbar.filter(list);
-  const box=$("cards");
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8"/></svg></div><h3>Aún no hay plantillas</h3><p>Registra tu primera plantilla aprobada en Meta para usarla en campañas y secuencias.</p></div>`;
     return;
