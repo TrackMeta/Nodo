@@ -42,7 +42,8 @@
   .kb-empty{font-size:12px;color:var(--faint);text-align:center;padding:18px 8px;border:1px dashed var(--border);border-radius:11px}
   .kcard{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;transition:border-color .12s,box-shadow .12s}
   .kcard:hover{border-color:var(--muted)}
-  .kcard .kc-top{display:flex;align-items:flex-start;gap:8px}
+  .kcard .kc-top{display:flex;align-items:center;gap:9px}
+  .kcard .kc-ava{width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
   .kcard .kc-nm{font-weight:700;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .kcard .kc-dots{border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
   .kcard .kc-dots:hover{background:var(--surface)}
@@ -223,6 +224,11 @@ const TURNO_STATES=new Set(["esperando_adelanto","en_agencia"]);
 // copia con la lista de estados Lima escrita a mano.
 const zonaDe = O.zonaDe;
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
+// Color estable del avatar del cliente (a partir de su nombre).
+const AVA_COLORS=["#2b7fff","#22c079","#f0a92b","#e2564a","#9b6cf0","#18b7be","#e264a8","#e0803a","#6d8ea0","#7c8cf8"];
+function avaColor(s){ const str=String(s||"?"); let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return AVA_COLORS[h%AVA_COLORS.length]; }
+// Acento al costado de la tarjeta según el tono del estado (verde=bien, ámbar=en curso, rojo=problema).
+const TONE_COLOR={ok:"var(--green)",warn:"var(--amber)",bad:"var(--red)"};
 const total=O.total;
 function rel(iso){ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(s<90) return "hace 1 min"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
 function isFisico(o){ return (o.product&&o.product.tipo==="fisico") || FIS_STATES.has(o.estado) || (o.shipping&&Object.keys(o.shipping).length>0 && !!o.shipping.zona); }
@@ -466,7 +472,8 @@ function render(){
   if(!zList.length){
     const d=document.createElement("div");
     d.className="nodo-empty"; d.style.cssText="grid-column:1/-1;border:none";
-    d.innerHTML=`<h3>Sin pedidos ${st.kbZona==="lima"?"de Lima":"de provincia"}</h3>
+    d.innerHTML=`<div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V7a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 7v10a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 17"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+      <h3>Sin pedidos ${st.kbZona==="lima"?"de Lima":"de provincia"}</h3>
       <p>${st.kbZona==="lima"
         ? "Cuando un flujo cree un pedido con entrega en Lima (contraentrega), aparece acá."
         : "Cuando un flujo cree un pedido para enviar por agencia, aparece acá."}</p>`;
@@ -513,6 +520,10 @@ function kcard(o){
   const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
   const zona=zonaDe(o);
   const el=document.createElement("div"); el.className="kcard";
+  const nm=c.nombre||s.cliente||"Sin nombre";
+  const avaC=avaColor(nm);
+  const initial=esc(String(nm).trim().charAt(0).toUpperCase()||"?");
+  el.style.boxShadow=`inset 3px 0 0 0 ${TONE_COLOR[O.tono(o.estado)]||"var(--border)"}`;
   const shipBits=[];
   if(s.aereo) shipBits.push(`✈ <b>Aéreo</b>`);
   const agTxt=[s.agencia&&cap(s.agencia), s.destino||s.sede].filter(Boolean).join(" · ");
@@ -549,7 +560,8 @@ function kcard(o){
 
   el.innerHTML=`
     <div class="kc-top">
-      <div class="kc-nm">${esc(c.nombre||s.cliente||"Sin nombre")}</div>
+      <div class="kc-ava" style="background:${avaC}22;color:${avaC}">${initial}</div>
+      <div class="kc-nm">${esc(nm)}</div>
       <button class="kc-dots" title="Más acciones">⋮</button>
     </div>
     <div class="kc-sub">
