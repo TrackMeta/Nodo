@@ -33,15 +33,19 @@ function sample(t){ return String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana")
 function previewHtml(paso){
   const vs=(Array.isArray(paso?.variantes)?paso.variantes:[]).filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
   const v=vs[0]||(paso&&paso.variantes&&paso.variantes[0]);
-  const bubs=((v&&v.bubbles)||[]).filter(b=> b && (b.media_url||(b.text&&b.text.trim())));
+  // Texto que se ve en la burbuja: las de texto usan .text; las de media guardan
+  // su pie en .caption. El motor manda `caption ?? text`, así que aquí igualamos
+  // con `text || caption` para que el caption de una imagen (p.ej. "MENSAJE 2") sí salga.
+  const bText=b=>(b&&(b.text||b.caption))||'';
+  const bubs=((v&&v.bubbles)||[]).filter(b=> b && (b.media_url||bText(b).trim()));
   if(!bubs.length) return `<div style="font-size:12px;color:#cfe9d8">Escribe el mensaje para ver cómo llega…</div>`;
   return bubs.map(b=>{
-    let media='';
-    if(b.media_url&&b.media_kind==='image') media=`<img src="${esc(b.media_url)}" style="max-width:150px;border-radius:6px;display:block;margin-bottom:${b.text?'5px':'0'}">`;
+    let media=''; const cap=bText(b);
+    if(b.media_url&&b.media_kind==='image') media=`<img src="${esc(b.media_url)}" style="max-width:150px;border-radius:6px;display:block;margin-bottom:${cap?'5px':'0'}">`;
     else if(b.media_url&&b.media_kind==='video') media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▶ video</div>`;
     else if(b.media_url&&b.media_kind==='audio') media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">♪ audio</div>`;
     else if(b.media_url) media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▤ archivo</div>`;
-    const txt=b.text?sample(esc(b.text)).replace(/\n/g,"<br>"):'';
+    const txt=cap?sample(esc(cap)).replace(/\n/g,"<br>"):'';
     return `<div style="background:#DCF8C6;color:#0b3b2e;border-radius:8px;padding:6px 9px;font-size:12.5px;line-height:1.45;max-width:210px;margin-bottom:6px;word-break:break-word">${media}${txt}<div style="font-size:9.5px;color:#3a6b52;text-align:right;margin-top:2px">10:24 ✓✓</div></div>`;
   }).join('');
 }
