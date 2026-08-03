@@ -170,6 +170,8 @@
         <span class="fglabel">Rápidos</span>
         <button class="ftog" data-quick="compro" type="button"><span class="dot" style="background:#1D9E75"></span>Compró <span class="fc" data-qc="compro"></span></button>
         <button class="ftog" data-quick="anuncio" type="button"><span class="dot" style="background:#8b5cf6"></span>Llegó por anuncio <span class="fc" data-qc="anuncio"></span></button>
+        <button class="ftog" data-quick="organico" type="button"><span class="dot" style="background:#1D9E75"></span>🌱 Orgánico <span class="fc" data-qc="organico"></span></button>
+        <button class="ftog" data-quick="sinprod" type="button"><span class="dot" style="background:#f59e0b"></span>🤖 Sin producto aún <span class="fc" data-qc="sinprod"></span></button>
         <button class="ftog" data-quick="bloqueado" type="button"><span class="dot" style="background:#e2564a"></span>Bloqueados <span class="fc" data-qc="bloqueado"></span></button>
         <button class="ftog" data-quick="noremk" type="button"><span class="dot" style="background:#8a97a8"></span>No remarketing <span class="fc" data-qc="noremk"></span></button>
         <button class="ftog" data-quick="archivado" type="button"><span class="dot" style="background:#5c6675"></span>Archivados <span class="fc" data-qc="archivado"></span></button>
@@ -214,7 +216,7 @@ import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, contacts:[], tags:[], ordersBy:{}, sel:new Set(), visible:120, rt:null, editing:null };
-const f={ q:"", source:"", sort:"activity", stages:new Set(), tags:new Set(), compro:false, anuncio:false, bloqueado:false, noremk:false, archivado:false };
+const f={ q:"", source:"", sort:"activity", stages:new Set(), tags:new Set(), compro:false, anuncio:false, organico:false, sinprod:false, bloqueado:false, noremk:false, archivado:false };
 const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"2-digit",year:"numeric" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -314,6 +316,8 @@ function filtered(){
     if(f.tags.size){ const ids=(c.contact_tags||[]).map(x=>x.tag_id); if(![...f.tags].some(id=>ids.includes(id))) return false; }
     if(f.compro && !(ltvOf(c.id).count>0)) return false;
     if(f.anuncio && !isAd(c)) return false;
+    if(f.organico && isAd(c)) return false;
+    if(f.sinprod && c.product_id) return false;
     if(f.bloqueado && !c.bloqueado) return false;
     if(f.noremk && !c.no_remarketing) return false;
     return true;
@@ -340,9 +344,9 @@ function updateFilterCounts(){
   const all=st.contacts;
   EMBUDO_STAGES.forEach(s=>{ const el=$("fStages").querySelector(`[data-sc="${s.k}"]`); if(el) el.textContent=all.filter(c=>(c.stage||"nuevo")===s.k).length||""; });
   st.tags.forEach(t=>{ const el=$("fTags").querySelector(`[data-tc="${t.id}"]`); if(el) el.textContent=all.filter(c=>(c.contact_tags||[]).some(x=>x.tag_id===t.id)).length||""; });
-  const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:all.filter(isArchived).length };
+  const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, organico:all.filter(c=>!isAd(c)).length, sinprod:all.filter(c=>!c.product_id).length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:all.filter(isArchived).length };
   Object.entries(q).forEach(([k,v])=>{ const el=document.querySelector(`[data-qc="${k}"]`); if(el) el.textContent=v||""; });
-  const active=f.stages.size+f.tags.size+(f.compro?1:0)+(f.anuncio?1:0)+(f.bloqueado?1:0)+(f.noremk?1:0)+(f.archivado?1:0)+(f.source?1:0);
+  const active=f.stages.size+f.tags.size+(f.compro?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.bloqueado?1:0)+(f.noremk?1:0)+(f.archivado?1:0)+(f.source?1:0);
   const cnt=$("filtCnt"); cnt.textContent=active; cnt.style.display=active?"":"none"; $("filtBtn").classList.toggle("on",!!active);
 }
 
@@ -596,7 +600,7 @@ async function bulk(act){
 }
 
 function clearFilters(){
-  f.q=""; f.source=""; f.stages.clear(); f.tags.clear(); f.compro=f.anuncio=f.bloqueado=f.noremk=f.archivado=false;
+  f.q=""; f.source=""; f.stages.clear(); f.tags.clear(); f.compro=f.anuncio=f.organico=f.sinprod=f.bloqueado=f.noremk=f.archivado=false;
   $("q").value=""; $("fSource").value=""; renderFilterChips(); render();
 }
 
