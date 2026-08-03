@@ -1551,14 +1551,36 @@ async function renderRemarketing(host){
     if(edBox){ const s=seqSlot(edBox.dataset.ed); if(s){ if(!Array.isArray(s.pasos)) s.pasos=[]; paintEditor(s, edBox); } }
   };
   // Editor de pasos INLINE de una casilla (se guarda directo a la secuencia).
+  const remModoDesc=(v)=> v==="goteo"
+    ? "Serie programada desde el primer contacto: Día 1, 3, 7… corren pase lo que pase. Ignora el silencio y no se reinicia si el cliente responde. Los pasos fuera de las 24h necesitan plantilla."
+    : "Recupera al que se enfrió: cada paso espera a que el cliente lleve un rato callado, y si responde el reloj se reinicia y la secuencia se pausa mientras haya conversación.";
   const paintEditor=(seq, wrap)=>{
     // Editor de pasos COMPARTIDO (mismo módulo que la página Secuencias). El producto
     // usa mensaje-only (actions.enabled=false) y su propio producto para el descuento.
-    wrap.innerHTML=`<div class="se-mount"></div>
+    const modo0=seq.modo||"reenganche";
+    wrap.innerHTML=`
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px">¿Cómo se envía?</label>
+        <select class="remModo" style="min-width:240px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-size:12.5px">
+          <option value="reenganche" ${modo0==="reenganche"?"selected":""}>🎣 Reenganche (espera el silencio)</option>
+          <option value="goteo" ${modo0==="goteo"?"selected":""}>💧 Goteo (calendario fijo)</option>
+        </select>
+        <div class="remModoDesc" style="font-size:11px;color:var(--faint);margin-top:5px;line-height:1.45;max-width:420px">${remModoDesc(modo0)}</div>
+      </div>
+      <div class="se-mount"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">
         <button class="btn primary" data-remsave style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar pasos</button>
       </div>`;
     if(!Array.isArray(seq.pasos)) seq.pasos=[];
+    const modoSel=wrap.querySelector(".remModo");
+    modoSel.onchange=async(e)=>{
+      seq.modo=e.target.value;
+      wrap.querySelector(".remModoDesc").textContent=remModoDesc(seq.modo);
+      const { error }=await supa.from("sequences").update({ modo:seq.modo }).eq("id",seq.id);
+      if(error && /modo|column/.test(error.message)){ toast("Aplica la migración 0064 para el modo goteo",true); return; }
+      if(error){ toast(error.message,true); return; }
+      toast(seq.modo==="goteo"?"Modo goteo ✓":"Modo reenganche ✓");
+    };
     const ed=mountStepsEditor(wrap.querySelector(".se-mount"), {
       seq, channelId:st.channelId, angulos:st.remAngulos, presets:[],
       ofertaProducts:[{ id:st.prod.id, nombre:st.prod.nombre, opciones }],
