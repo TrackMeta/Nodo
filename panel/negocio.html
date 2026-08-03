@@ -266,6 +266,9 @@ function renderConocimiento(b){
 const GRUPOS=[["centro","Lima Centro"],["moderna","Lima Moderna"],["norte","Lima Norte"],
               ["sur","Lima Sur"],["este","Lima Este"],["callao","Callao"]];
 const DIAS=[["lun","L"],["mar","M"],["mie","M"],["jue","J"],["vie","V"],["sab","S"]];
+// Encabezado de card con chip de icono de color — unifica con la pestaña
+// Conocimiento (que ya usa .chd/.ico) y color-codea cada sección.
+const cardHd=(ic,title,color)=>`<div class="chd" style="margin-bottom:6px"><span class="ico" style="background:${color}22;color:${color}">${icon(ic)}</span><span class="nm">${title}</span></div>`;
 
 function renderEntregas(b){
   const e=st.channel.entregas;
@@ -297,14 +300,14 @@ function renderEntregas(b){
     <h2>Entrega y logística</h2>
     <p class="sub">Tus zonas de Lima, agencias de provincia y reglas de reparto. Es igual para <b>todos</b> tus productos físicos, por eso vive acá y no en cada producto.</p>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} ¿Cómo se cobra el envío?</h3>
+      ${cardHd("dollar","¿Cómo se cobra el envío?","#f0a92b")}
       <p class="sub">Es lo que el <b>cliente</b> paga (o no) por recibir su pedido. No lo confundas con el <b>costo de reparto</b> de más abajo, que es lo que te cuesta a ti y solo sirve para calcular tu ganancia.</p>
       <div id="envModos"></div>
       <div id="envMontos"></div>
       <div style="font-size:11.5px;color:var(--faint);margin-top:10px">Un producto puede llevar la contraria desde su ficha (pestaña <b>Entrega</b>). Si no la lleva, usa esta regla.</div>
     </div>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Reglas de entrega</h3>
+      ${cardHd("truck","Reglas de entrega","#2b7fff")}
       <p class="sub">Lo que configures acá es una <b>regla</b>: el sistema la calcula y la IA solo la comunica. Ella ni siquiera sabe qué hora es — de eso se encarga el motor.</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Hora de corte para entrega el mismo día</label>
@@ -331,7 +334,7 @@ function renderEntregas(b){
       <button class="btn" id="ferAdd" style="height:32px;margin-top:8px">+ Feriado</button>
     </div>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Adelanto de provincia</h3>
+      ${cardHd("dollar","Adelanto de provincia","#22c079")}
       <p class="sub">Cuánto pide el bot de <b>seña</b> para despachar un pedido a provincia. Es el valor por defecto para todos tus productos físicos; un producto puede pedir uno distinto desde su ficha.</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Adelanto por defecto</label>
@@ -341,7 +344,7 @@ function renderEntregas(b){
       </div>
     </div>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Envío aéreo (Shalom)</h3>
+      ${cardHd("truck","Envío aéreo (Shalom)","#8b5cf6")}
       <p class="sub">Para destinos muy alejados, Shalom despacha por <b>vía aérea</b> y llega mucho más rápido que el terrestre. Escribe acá esas zonas: cuando un cliente sea de una de ellas, el bot le ofrece el aéreo <b>como un beneficio</b> (mismo precio, sin recargo). En el pedido y el rótulo verás <b>“AÉREO”</b> para despacharlo por avión.</p>
       <label style="margin-top:4px">Destinos con envío aéreo <span style="color:var(--faint);font-weight:400">(uno por línea)</span></label>
       <textarea class="in" id="aerDest" rows="4" placeholder="Iquitos&#10;Pucallpa&#10;Puerto Maldonado&#10;Tarapoto" style="min-height:96px;line-height:1.5;font-family:var(--font);resize:vertical">${esc((E.aereo.destinos||[]).join("\n"))}</textarea>
@@ -350,7 +353,7 @@ function renderEntregas(b){
       <div style="font-size:11px;color:var(--faint);margin-top:6px">Preséntalo siempre como algo <b>bueno</b> para el cliente (llega más rápido), nunca como un costo extra. Vacío = el bot usa un mensaje cálido por defecto.</div>
     </div>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("truck")} Exportar a couriers (Excel)</h3>
+      ${cardHd("truck","Exportar a couriers (Excel)","#18b7be")}
       <p class="sub">Para bajar tus pedidos <b>por despachar</b> en el Excel de carga masiva de cada courier (botón <b>Exportar Excel</b> en <b>Pedidos</b>). <b>Eva Courier</b> (Lima) sale con lo que ya capturamos; <b>Shalom</b> (provincia) necesita estos datos tuyos:</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
         <label style="margin:0;font-size:12.5px;font-weight:700;min-width:150px">Oficina de origen (Shalom)</label>
@@ -371,7 +374,7 @@ function renderEntregas(b){
       <div style="font-size:11.5px;color:var(--faint);margin-top:6px">Si no las sabes, déjalas en 0 — Shalom las completa al pesar el paquete.</div>
     </div>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("dollar")} Costo de reparto</h3>
+      ${cardHd("dollar","Costo de reparto","#e0803a")}
       <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Costo para todo Lima</label>
@@ -380,7 +383,7 @@ function renderEntregas(b){
       </div>
     </div>
     <div class="card">
-      <h3 style="display:flex;align-items:center;gap:8px">${icon("pin")} Zonas de entrega</h3>
+      ${cardHd("pin","Zonas de entrega","#e264a8")}
       <p class="sub"><b>Cubro</b> = es Lima (contraentrega). <b>Mismo día</b> = puede llegar hoy si pide antes de la hora de corte. Todo lo que <b>no</b> esté acá (o esté destildado) va por <b>agencia a provincia</b>, automático. El <b>costo</b> vacío hereda del grupo, y el del grupo hereda de todo Lima.</p>
       <div id="zonas"></div>
     </div>
