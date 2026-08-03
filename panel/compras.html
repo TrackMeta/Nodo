@@ -22,9 +22,11 @@
   .nodo-btn.spin svg{animation:rspin .8s linear infinite}
   @keyframes rspin{to{transform:rotate(360deg)}}
   /* Resumen compacto */
-  .stats{display:flex;gap:22px;flex-wrap:wrap;margin:4px 0 20px}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 20px}
+  .stat{flex:1;min-width:132px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 14px}
   .stat .s-v{font-size:22px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
-  .stat .s-l{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:1px}
+  .stat .s-l{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:5px;display:flex;align-items:center;gap:6px}
+  .stat .sdot{width:8px;height:8px;border-radius:50%;flex:none}
   /* Toolbar */
   .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
   .search{flex:1;min-width:220px;position:relative}
@@ -141,6 +143,8 @@ function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<"
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
 function fecha(iso){ if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})+" · "+d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"}); }
 const cap=(s)=>{ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); };
+// Acento al costado de la tarjeta/fila según el tipo de venta (mismo color que el tag).
+const TIPO_COLOR={ digital:"#8b5cf6", lima:"#2b7fff", provincia:"#f0a92b" };
 
 // Una compra "cerrada al 100%" = el estado cobró TODO (misma fuente que el
 // Dashboard: orders.js). Digital confirmada, Lima entregado_cobrado, Provincia
@@ -299,7 +303,7 @@ function render(){
       <h3>Aún no hay compras cerradas</h3><p>Cuando una venta se complete al 100% —un digital pagado, un pedido de Lima entregado y cobrado, o un saldo de provincia pagado— aparece acá con su comprobante.</p></div>`;
     return;
   }
-  if(!list.length){ box.classList.remove("lista"); box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><p>Ninguna compra coincide con el filtro.</p></div>`; return; }
+  if(!list.length){ box.classList.remove("lista"); box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div><h3>Nada coincide</h3><p>Ninguna compra coincide con el filtro o la búsqueda. Prueba otro tipo o ampliar el rango de fechas.</p></div>`; return; }
   box.classList.toggle("lista", lista);
   box.innerHTML="";
   list.forEach(o=>box.appendChild(lista?row(o):card(o)));
@@ -312,13 +316,13 @@ function renderStats(){
   const porTipo=(t)=>list.filter(o=>tipoDe(o)===t).length;
   const verif=list.filter(o=>{ const vd=verifDe(o); return vd&&vd.full; }).length;
   const S=[
-    [String(list.length),"compras cerradas"],
-    [money(cobrado,cur),"cobrado en total"],
-    [`${verif}/${list.length}`,"verificadas"],
-    [String(porTipo("digital")),"digitales"],
-    [String(porTipo("lima")+porTipo("provincia")),"físicas"],
+    [String(list.length),"compras cerradas","#2b7fff"],
+    [money(cobrado,cur),"cobrado en total","#22c079"],
+    [`${verif}/${list.length}`,"verificadas","#18b7be"],
+    [String(porTipo("digital")),"digitales","#8b5cf6"],
+    [String(porTipo("lima")+porTipo("provincia")),"físicas","#f0a92b"],
   ];
-  $("stats").innerHTML=S.map(([v,l])=>`<div class="stat"><div class="s-v">${v}</div><div class="s-l">${l}</div></div>`).join("");
+  $("stats").innerHTML=S.map(([v,l,color])=>`<div class="stat"><div class="s-v" style="color:${color}">${v}</div><div class="s-l"><span class="sdot" style="background:${color}"></span>${l}</div></div>`).join("");
 }
 
 // Comprobantes por tipo: provincia = adelanto + saldo (2); digital = 1 (el que
@@ -342,6 +346,7 @@ function card(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const tipo=tipoDe(o);
   const el=document.createElement("div"); el.className="pcard";
+  el.style.boxShadow=`inset 3px 0 0 0 ${TIPO_COLOR[tipo]||"var(--border)"}`;
   const bumps=(o.order_bumps||[]).length;
 
   // Detalle chico según el tipo.
@@ -395,6 +400,7 @@ function row(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const tipo=tipoDe(o);
   const el=document.createElement("div"); el.className="lrow";
+  el.style.boxShadow=`inset 3px 0 0 0 ${TIPO_COLOR[tipo]||"var(--border)"}`;
   const nombre=c.nombre||s.cliente||"Sin nombre";
   const prod=[esc(p.nombre||"—"), v.nombre?esc(v.nombre):""].filter(Boolean).join(" · ");
   el.innerHTML=`
