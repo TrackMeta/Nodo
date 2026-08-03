@@ -3220,7 +3220,187 @@ function harvest(){
   // El "y después" ya no se pregunta: el motor continúa solo al flujo de venta.
 }
 
+// ── Vista previa tipo WhatsApp del saludo ──
+function welcomePreview(v){
+  const bubs=((v&&v.bubbles)||[]).filter(b=> b && (b.media_url||(b.text&&b.text.trim())));
+  if(!bubs.length) return `<div style="font-size:12px;color:#cfe9d8">Escribe el saludo para ver cómo llega…</div>`;
+  const smp=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{[^}]*\}\}/g,"…");
+  return bubs.map(b=>{
+    let media="";
+    if(b.media_url&&b.media_kind==="image") media=`<img src="${esc(b.media_url)}" style="max-width:150px;border-radius:6px;display:block;margin-bottom:${b.text?'5px':'0'}">`;
+    else if(b.media_url) media=`<div style="font-size:11px;color:#3a6b52;margin-bottom:4px">▤ archivo</div>`;
+    const txt=b.text?smp(esc(b.text)).replace(/\n/g,"<br>"):"";
+    return `<div style="background:#DCF8C6;color:#0b3b2e;border-radius:8px;padding:6px 9px;font-size:12.5px;line-height:1.45;max-width:210px;margin-bottom:6px;word-break:break-word">${media}${txt}<div style="font-size:9.5px;color:#3a6b52;text-align:right;margin-top:2px">10:24 ✓✓</div></div>`;
+  }).join("");
+}
+function actTabBtn(active){ return `font-size:12.5px;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:${active?'700':'600'};border:${active?'none':'0.5px solid var(--border)'};background:${active?'var(--ia1,#8b5cf6)':'transparent'};color:${active?'#fff':'var(--muted)'}`; }
+function actAddBtns(){ return ["text","image","video","audio"].map(k=>`<button class="btn addb" data-k="${k}" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio"})[k]}</button>`).join(""); }
+
+// ── Sección "Cómo llegan los clientes" REDISEÑADA: llegada simple + saludo por
+//    ángulo (une ángulos + mensajes iniciales en pestañas) + un solo Guardar. ──
 function renderComposer(){
+  const root=$("actroot"); const cfg=st.act.node.config;
+  const kws=st.act.kw?(st.act.kw.config?.keywords||[]).join(", "):"";
+  const match=st.act.kw?.config?.match||"contiene";
+  const ads=st.act.ad?(st.act.ad.config?.ad_ids||[]).join(", "):"";
+  const angs=(st.act.angulos||[]);
+  angs.forEach(a=>{ if(a.nombre && !a.slug) a.slug=anguloSlug(a.nombre); });
+  if(st.act.tab===undefined) st.act.tab="";
+  if(st.act.tab && !angs.some(a=>a.slug===st.act.tab)) st.act.tab="";
+  const tab=st.act.tab;
+  const tabVars=()=> cfg.variantes.map((v,i)=>({v,i})).filter(({v})=> tab? (v.angulo===tab) : !v.angulo);
+  if(!tabVars().length){ const nv=newVariant(cfg.variantes.length); if(tab) nv.angulo=tab; cfg.variantes.push(nv); }
+  const angActivo = tab? angs.find(a=>a.slug===tab) : null;
+  const angIdx = tab? angs.findIndex(a=>a.slug===tab) : -1;
+
+  root.innerHTML=`
+    <div class="card">
+      <h4>${icon("activity")}¿Cómo te encuentra el cliente?</h4>
+      <div style="font-size:12px;color:var(--faint);margin:4px 0 12px">La palabra o frase que el cliente escribe para empezar. (Si llega desde un anuncio, eso se maneja abajo, dentro de cada ángulo.)</div>
+      <label style="font-size:11.5px;color:var(--muted);font-weight:600">Palabras / frases clave</label>
+      <input class="in" id="actKw" style="margin-top:6px" placeholder="quiero info, precio, cuánto cuesta" value="${esc(kws)}"/>
+      <div id="kwAviso"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;list-style:none">＋ Opciones avanzadas</summary>
+        <div style="margin-top:10px">
+          <label style="font-size:11.5px;color:var(--muted);font-weight:600">Cómo debe coincidir la palabra</label>
+          <select class="sel" id="actMatch" style="margin-top:6px;max-width:220px">
+            <option value="contiene"${match==="contiene"?" selected":""}>La contiene</option>
+            <option value="empieza"${match==="empieza"?" selected":""}>Empieza con ella</option>
+            <option value="exacta"${match==="exacta"?" selected":""}>Exacta</option>
+          </select>
+          <label style="font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-top:12px">ID de anuncio para rutear a este producto (opcional)</label>
+          <input class="in" id="actAds" style="margin-top:6px" placeholder="120210..., 120211... (coma)" value="${esc(ads)}"/>
+          <div style="font-size:11px;color:var(--faint);margin-top:5px">Normalmente no hace falta: los anuncios se asignan a cada ángulo abajo.</div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h4>🎯 Tu saludo según el anuncio</h4>
+      <div style="font-size:12px;color:var(--faint);margin:4px 0 12px;line-height:1.55">Cada ángulo agrupa unos anuncios y tiene su propio saludo — el cliente recibe el que retoma el anuncio del que vino. El <b>General</b> es el respaldo.</div>
+      ${!st.act.angulosOk?`<div style="font-size:12.5px;color:var(--amber);line-height:1.5">Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`:`
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="ang-tab" data-tab="" style="${actTabBtn(!tab)}">General</button>
+        ${angs.filter(a=>a.slug).map(a=>`<button class="ang-tab" data-tab="${esc(a.slug)}" style="${actTabBtn(tab===a.slug)}">${esc(a.nombre||a.slug)}</button>`).join("")}
+        <button class="ang-tab" data-addang style="${actTabBtn(false)};border-style:dashed;color:var(--muted)">＋ ángulo</button>
+      </div>
+      <div id="tabBody"></div>`}
+    </div>
+
+    <div class="card" style="display:flex;align-items:flex-start;gap:10px;background:var(--ia-bg,rgba(139,92,246,.08));border-color:var(--ia-brd,rgba(139,92,246,.3))">
+      <span style="color:var(--ia1,#8b5cf6);flex:0 0 auto;display:inline-flex;margin-top:1px">${icon("secuencias")}</span>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.55">Después del saludo, <b>el bot continúa solo a vender</b> con la IA de este producto. No tienes que configurar nada.</div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
+      <button class="btn primary" id="saveAct">Guardar</button>
+      <a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">${icon("flujos")}Abrir en editor visual</a>
+    </div>`;
+
+  $("actKw").oninput=avisarKeywords; const am=$("actMatch"); if(am) am.onchange=avisarKeywords; avisarKeywords();
+  $("saveAct").onclick=saveActivacion;
+  root.querySelectorAll(".ang-tab[data-tab]").forEach(b=> b.onclick=()=>{ harvest(); harvestAngulos(); st.act.tab=b.dataset.tab; renderComposer(); });
+  const addA=root.querySelector("[data-addang]"); if(addA) addA.onclick=async()=>{
+    harvest(); harvestAngulos();
+    const nombre=await askText({title:"Nuevo ángulo", placeholder:"Ej. Dolor / calambres", confirmText:"Crear"});
+    if(!nombre) return;
+    st.act.angulos.push({ nombre, gancho_ia:"", ad_ids:[], slug:anguloSlug(nombre) });
+    st.act.tab=anguloSlug(nombre); renderComposer();
+  };
+
+  const body=$("tabBody");
+  if(body){
+    if(angActivo){
+      const adsMeta=st.act.adsMeta||[];
+      const adsHtml = adsMeta.length
+        ? `<div style="font-size:11px;color:var(--muted);margin:2px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="ang-ad" value="${esc(m.ad_id)}"${(angActivo.ad_ids||[]).map(String).includes(String(m.ad_id))?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}</span></label>`).join("")}</div>`
+        : `<div style="font-size:11px;color:var(--muted);margin:2px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y Enter. (Conecta Meta Ads para elegirlos por su nombre.)</div>
+           <div class="ang-chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:40px">
+             ${(angActivo.ad_ids||[]).map(id=>`<span class="ad-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)"><span class="mono">${esc(id)}</span><button class="ad-chip-x" data-id="${esc(id)}" style="border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button></span>`).join("")}
+             <input class="ad-chip-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:160px;color:var(--text);height:24px" placeholder="Pega un ID y Enter"/>
+           </div>`;
+      const ang=document.createElement("div"); ang.className="ang-row"; ang.dataset.ai=angIdx;
+      ang.style.cssText="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px;background:var(--surface-2,rgba(255,255,255,.02))";
+      ang.innerHTML=`
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="in ang-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(angActivo.nombre||'')}"/>
+          <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
+        </div>
+        <input class="in ang-gancho" style="width:100%;margin-top:8px" placeholder="El enfoque para la IA (ej. vino por calambres nocturnos)" value="${esc(angActivo.gancho_ia||'')}"/>
+        <div style="margin-top:10px">${adsHtml}</div>`;
+      body.appendChild(ang);
+      ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1); (cfg.variantes||[]).forEach(v=>{ if(v.angulo===slug) v.angulo=""; }); st.act.tab=""; renderComposer(); };
+      ang.querySelectorAll(".ad-chip-in").forEach(inp=> inp.onkeydown=(e)=>{ if(e.key!=="Enter")return; e.preventDefault(); const val=inp.value.trim(); if(!val)return; harvest(); harvestAngulos(); const a=st.act.angulos[angIdx]; a.ad_ids=a.ad_ids||[]; val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!a.ad_ids.includes(id)) a.ad_ids.push(id); }); renderComposer(); });
+      ang.querySelectorAll(".ad-chip-x").forEach(btn=> btn.onclick=()=>{ harvest(); harvestAngulos(); const a=st.act.angulos[angIdx]; a.ad_ids=(a.ad_ids||[]).filter(id=>String(id)!==String(btn.dataset.id)); renderComposer(); });
+    }
+    const list=tabVars();
+    list.forEach(({v,i},li)=>{
+      const grid=document.createElement("div"); grid.dataset.vi=i;
+      grid.style.cssText="border:1px solid var(--border);border-radius:12px;padding:13px;background:var(--surface-2,rgba(255,255,255,.02));margin-bottom:12px";
+      grid.innerHTML=`
+        ${list.length>1?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <input class="in vname" style="flex:1;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+li)))}"/>
+          <span style="font-size:11px;color:var(--muted)">Peso</span>
+          <input class="in vpeso" type="number" min="0" step="1" style="width:54px;height:32px;text-align:center" value="${Number(v.peso??1)}"/>
+          <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
+        </div>`:``}
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(165px,205px);gap:12px;align-items:start">
+          <div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">El saludo${angActivo?" para este ángulo":""}</div>
+            <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${actAddBtns()}</div></div>
+          <div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev" style="background:#075E54;border-radius:12px;padding:10px;min-height:56px"></div></div>
+        </div>`;
+      const bb=grid.querySelector(".bubbles");
+      (v.bubbles||[]).forEach((bub,bi)=> bb.appendChild(renderBubble(v,i,bub,bi)));
+      grid.querySelectorAll(".addb").forEach(btn=> btn.onclick=()=>{ harvest(); const k=btn.dataset.k; if(k==="text"){ v.bubbles.push({text:""}); renderComposer(); } else pickMedia(i,k); });
+      if(list.length>1){
+        grid.querySelector(".vpeso").oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); };
+        grid.querySelector(".vdelVar").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true}))return; harvest(); cfg.variantes.splice(i,1); renderComposer(); };
+      }
+      const prev=grid.querySelector(".wprev"); const upd=()=>{ if(prev) prev.innerHTML=welcomePreview(v); };
+      upd(); grid.addEventListener("input", upd); grid.addEventListener("click", ()=>setTimeout(upd,0));
+      body.appendChild(grid);
+    });
+    const addv=document.createElement("button"); addv.className="btn";
+    addv.style.cssText="margin-top:2px;background:transparent;border:1px solid var(--border);color:var(--text);height:32px;padding:0 12px;font-size:12.5px";
+    addv.textContent=list.length>1?"+ otra versión":"+ otra versión (el bot la rota)";
+    addv.onclick=()=>{ harvest(); const nv=newVariant(cfg.variantes.length); if(tab) nv.angulo=tab; cfg.variantes.push(nv); renderComposer(); };
+    body.appendChild(addv);
+  }
+}
+// Guardado ÚNICO de la sección: ángulos + nodo de mensajes iniciales + disparadores.
+async function saveActivacion(){
+  harvest(); harvestAngulos();
+  if(st.act.angulosOk){
+    try{
+      const angs=st.act.angulos.filter(a=>a.nombre);
+      const usados=new Set();
+      angs.forEach((a,i)=>{ let s=a.slug||anguloSlug(a.nombre); let base=s,n=2; while(usados.has(s)){ s=base+"-"+(n++); } usados.add(s); a.slug=s; a.orden=i; });
+      for(const a of angs){
+        const payload={ channel_id:st.channelId, product_id:st.prod.id, nombre:a.nombre, slug:a.slug, ad_ids:a.ad_ids||[], gancho_ia:a.gancho_ia||null, orden:a.orden };
+        if(a.id){ const {error}=await supa.from("angulos").update(payload).eq("id",a.id); if(error) throw error; }
+        else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
+      }
+      const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
+      for(const id of (st.act.angulosOrig||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
+      st.act.angulos=angs; st.act.angulosOrig=angs.map(a=>a.id);
+    }catch(e){ toast(e.message||"No se pudieron guardar los ángulos",true); return; }
+  }
+  const cfg=st.act.node.config;
+  cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
+  cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
+  if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
+  const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
+  if(eN){ toast(eN.message,true); return; }
+  const kwArr=(($("actKw")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);
+  const matchV=($("actMatch")?.value)||"contiene";
+  await saveTrigger("keyword","kw", kwArr.length?{keywords:kwArr,match:matchV}:null);
+  const adArr=(($("actAds")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);
+  await saveTrigger("referral","ad", adArr.length?{ad_ids:adArr}:null);
+  toast("Guardado ✓"); accRerender("activacion"); refreshActivacionRow();
+}
+function _renderComposerOld(){
   const root=$("actroot"); const cfg=st.act.node.config;
   const kws=st.act.kw?(st.act.kw.config?.keywords||[]).join(", "):"";
   const match=st.act.kw?.config?.match||"contiene";
