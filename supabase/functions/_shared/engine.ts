@@ -6145,7 +6145,25 @@ export async function moverEtapa(db: SupabaseClient, channelId: string, contactI
     // no la tiene. Antes la ponía un add_tag del flujo al crear el pedido.
     if (target === "comprado" && channelId) await addTag(db, channelId, contactId, "Compra").catch(() => {});
     if (channelId) await logEvent(db, channelId, contactId, "nota", "Etapa (auto): " + target).catch(() => {});
+    // 🤝 Perilla "pasar a humano al cerrar la venta": cuando el bot CONCRETA la
+    // venta (físico → "confirmado" = pedido asegurado; digital → "comprado" =
+    // pagado) le cede el chat a una persona, si el canal activó la opción. Una
+    // sola vez (si el bot ya está pausado/en humano, no re-hace ni re-avisa).
+    if ((target === "confirmado" || target === "comprado") && channelId) {
+      await handoffAlVender(db, channelId, contactId).catch(() => {});
+    }
   } catch (_) { /* la columna puede faltar; no romper la venta */ }
+}
+
+// Cede el chat a un humano al concretar la venta, SOLO si el canal encendió la
+// perilla `pedidos_config.humano.al_vender` (IA → Atención). Idempotente: si el
+// contacto ya no está con el bot (una persona ya lo tomó), no hace nada.
+async function handoffAlVender(db: SupabaseClient, channelId: string, contactId: string) {
+  const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+  if (!(ch as any)?.pedidos_config?.humano?.al_vender) return;
+  const { data: c } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
+  if ((c as any)?.bot_activo === false) return; // ya lo tomó un humano → no repetir
+  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)");
 }
 
 // Al ANULAR / perder un pedido, recalcula la etapa del contacto desde los

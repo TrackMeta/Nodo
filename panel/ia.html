@@ -305,6 +305,12 @@ function renderAtencion(b){
         <span class="sw ${p.humano.reclamos!==false?'on':''}" id="huRecSw" style="flex:none"></span>
       </div>
 
+      <div id="huVentaRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Pasar a un asesor cuando se concreta la venta</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apenas el bot cierra la venta (pedido confirmado en un físico, o pago validado en un digital) deja de responder y te cede el chat, para que tú hagas el cierre/seguimiento a mano. El soporte post-venta automático no corre en ese contacto. Apagado = el bot sigue atendiendo (soporte).</div></span>
+        <span class="sw ${p.humano.al_vender?'on':''}" id="huVentaSw" style="flex:none"></span>
+      </div>
+
       <div id="huHorRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Definir un horario de atención</span>
         <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Dentro del horario el bot dice “en un momento te atiende un asesor”. Fuera, le dice cuándo vuelves (ej. “mañana a las 9:00 a.m.”), sin dejarlo esperando en silencio. Apagado = siempre “en un momento”.</div></span>
@@ -358,6 +364,7 @@ function renderAtencion(b){
 
     <div class="acts"><button class="btn ia" id="atSave">Guardar cambios</button></div>`;
   $("huRecRow").onclick=()=>{ p.humano.reclamos=!(p.humano.reclamos!==false); $("huRecSw").classList.toggle("on",p.humano.reclamos!==false); };
+  $("huVentaRow").onclick=()=>{ p.humano.al_vender=!p.humano.al_vender; $("huVentaSw").classList.toggle("on",!!p.humano.al_vender); };
   $("huHorRow").onclick=()=>{ p.humano.horario.activo=!p.humano.horario.activo; $("huHorSw").classList.toggle("on",p.humano.horario.activo); const box=$("huHorBox"); if(box) box.style.display=p.humano.horario.activo?"block":"none"; };
   b.querySelectorAll(".hudia").forEach(x=> x.onclick=()=>{
     const k=x.dataset.dia; const on=!(p.humano.horario.dias[k]!==false); p.humano.horario.dias[k]=on;
