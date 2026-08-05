@@ -1772,8 +1772,9 @@ async function cargarCatalogoExtras(){
 // aparte, se suma al mismo envío (sube el saldo; el adelanto no cambia). Ofrecer
 // → si acepta (la IA lee el texto libre, sin botones) → sumar al pedido →
 // siguiente; si rechaza o no contesta → se corta la cadena y sale por exitNode.
-async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, esperaSeg, baseY){
+async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, esperaSeg, baseY, seguir){
   let prevExit=entryNode;
+  const conds=[], ofrecs=[];   // para cablear el rechazo DESPUÉS (puede ir al sgte extra)
   for(let i=0;i<extras.length;i++){
     const x=extras[i];
     const info=cat.find(c=>c.id===x.version_id);
@@ -1821,7 +1822,10 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     await E(nEsp,"timeout",exitNode);        // no contestó → sigue sin el extra
     await E(nEsp,"continuar",nClas);
     await E(nClas,"exito",nCond);
-    await E(nCond,"ruta:rechaza",exitNode);  // corta TODA la cadena
+    // El rechazo se cablea DESPUÉS del loop: con la perilla `extras_seguir` ON,
+    // rechazar un extra pasa a OFRECER el siguiente (solo el último cierra); OFF
+    // (default) corta toda la cadena por exitNode. El timeout SIEMPRE sale (si no
+    // contestó, está ido: no tiene sentido ofrecerle más).
     await E(nCond,"si_no_cumple",nResp);     // duda → responder → escuchar
     await E(nResp,"exito",nEsp);
     await E(nCond,"ruta:acepta",nAdd);
@@ -1852,9 +1856,15 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     }else{
       await E(nAdd,"continuar",nConfE);
     }
+    conds.push(nCond); ofrecs.push(nOfr);
     prevExit=nConfE;                          // el siguiente ofrecimiento cuelga de acá
   }
   await E(prevExit,"continuar",exitNode);
+  // Rechazo de cada extra: con `seguir` ON va al SIGUIENTE ofrecimiento; el último
+  // (o con la perilla OFF) cierra la cadena por exitNode.
+  for(let i=0;i<conds.length;i++){
+    await E(conds[i],"ruta:rechaza", (seguir && i+1<ofrecs.length) ? ofrecs[i+1] : exitNode);
+  }
 }
 
 // ── Ventas extra (order bump) ──────────────────────────────────────
@@ -1884,8 +1894,8 @@ async function renderExtras(host){
       <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("dollar")} Ventas extra <span style="font-size:11px;font-weight:400;color:var(--faint)">— sube el ticket</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
         ${esFisico
-          ? `Después de cerrar el pedido, ofrecerle algo más para <b>sumar al mismo envío</b>. El extra <b>no se paga aparte</b>: se cobra junto con el pedido (contraentrega en Lima, o al saldo en provincia). Cada extra es una <b>presentación</b> existente. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`
-          : `Después de que el cliente paga, ofrecerle algo más. Cada extra es una <b>presentación</b> ya existente (de este producto o de otro), así que se cobra, valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b>: si dice que no, se corta la cadena.`}
+          ? `Después de cerrar el pedido, ofrecerle algo más para <b>sumar al mismo envío</b>. El extra <b>no se paga aparte</b>: se cobra junto con el pedido (contraentrega en Lima, o al saldo en provincia). Cada extra es una <b>presentación</b> existente. Se ofrecen <b>en orden</b> (con la perilla de abajo eliges si un "no" corta la cadena o pasa al siguiente).`
+          : `Después de que el cliente paga, ofrecerle algo más. Cada extra es una <b>presentación</b> ya existente (de este producto o de otro), así que se cobra, valida y entrega con la misma maquinaria. Se ofrecen <b>en orden</b> (con la perilla de abajo eliges si un "no" corta la cadena o pasa al siguiente).`}
       </div>
     </div>
 
@@ -1922,6 +1932,16 @@ async function renderExtras(host){
     </div>
     `}
 
+    <div class="card">
+      <label for="exSeguir" style="display:flex;align-items:flex-start;gap:11px;cursor:pointer;margin:0">
+        <input type="checkbox" id="exSeguir" ${cfg.extras_seguir?"checked":""} style="width:17px;height:17px;flex:none;margin-top:1px"/>
+        <span>
+          <span style="font-weight:700;font-size:13px">Si rechaza un extra, ofrecer el siguiente igual</span>
+          <span style="display:block;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.55">Solo aplica cuando tienes <b>2 o más</b> ventas extra. <b>Activado:</b> si el cliente dice "no" a uno, se le ofrece el siguiente (solo el último "no" cierra). <b>Desactivado</b> (por defecto): un "no" corta la cadena y no se ofrecen los demás. Si no contesta, nunca se le insiste. <i>Cambia el flujo → regenéralo para aplicarlo.</i></span>
+        </span>
+      </label>
+    </div>`}
+
     <div id="exList"></div>
     <button class="btn" id="exAdd" ${cat.length?"":"disabled"}>+ Venta extra</button>
     ${cat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">No hay presentaciones con precio en este bot. Crea primero una presentación con precio (en este producto o en otro).</div>`}`;
@@ -1929,6 +1949,7 @@ async function renderExtras(host){
   b.querySelectorAll(".momopt").forEach(el=> el.onclick=()=>{ cfg.extras_momento=el.dataset.m; renderExtras(b); });
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
   const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
+  const esg=$("exSeguir"); if(esg) esg.onchange=(e)=>{ cfg.extras_seguir=e.target.checked; };
   $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
   paintExtras();
 }
@@ -2577,7 +2598,7 @@ async function generarFlujoFisico(flowId, N, E){
   const catX=st.extraCat||[];
 
   // Lima: se ofrece tras confirmar (no hay adelanto que esperar).
-  if(extras.length) await buildRideAlongExtras(N,E,nConfLima,nFin,extras,catX,esperaSeg,240);
+  if(extras.length) await buildRideAlongExtras(N,E,nConfLima,nFin,extras,catX,esperaSeg,240,cfg.extras_seguir);
   else await E(nConfLima,"continuar",nFin);
 
   // Provincia: crear pedido → ¿ya pagó el adelanto? → (no: pedirlo) / (sí:
@@ -2592,7 +2613,7 @@ async function generarFlujoFisico(flowId, N, E){
   }else if(!provPost){
     // PRE: se ofrece el extra entre crear el pedido y pedir el adelanto (ya sube el
     // saldo); la bifurcación de prepago va DESPUÉS de los extras, antes de pedir.
-    await buildRideAlongExtras(N,E,nCrearProv,nPrepagoCk,extras,catX,esperaSeg,640);
+    await buildRideAlongExtras(N,E,nCrearProv,nPrepagoCk,extras,catX,esperaSeg,640,cfg.extras_seguir);
     await E(nPrepagoCk,"si_no_cumple",nPedirAdel);
     await E(nPrepagoCk,"ruta:yapago",nYaPago);
     await E(nPedirAdel,"continuar",nEsperar);
@@ -2617,7 +2638,7 @@ async function generarFlujoFisico(flowId, N, E){
     await E(nRespAdel,"exito",nEsperarAdel);     // vuelve a esperar → parqueado ahí
     const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"¡Adelanto recibido! 🎉 Ya empiezo a preparar tu despacho." }] },false,1520,640);
     await E(nEsperarAdel,"post_adelanto",nRecibido); // el motor reanuda por acá al validar
-    await buildRideAlongExtras(N,E,nRecibido,nFin,extras,catX,esperaSeg,1040);
+    await buildRideAlongExtras(N,E,nRecibido,nFin,extras,catX,esperaSeg,1040,cfg.extras_seguir);
   }
 }
 
@@ -2786,7 +2807,7 @@ async function generarFlujoVenta(){
       // Dónde cae la cadena cuando termina (rechazo, timeout o extras agotados).
       const salida = antes ? nEntregar : nFin;
       const cat=st.extraCat||[];
-      const ofrecs=[], entregas=[];
+      const ofrecs=[], entregas=[], rechs=[];
       for(let i=0;i<extras.length;i++){
         const x=extras[i];
         const info=cat.find(c=>c.id===x.version_id);
@@ -2863,10 +2884,17 @@ async function generarFlujoVenta(){
         await E(nOkX,"si_no_cumple",nReX);
         await E(nReX,"continuar",nEsp);
         await E(nClas,"exito",nRech);
-        await E(nRech,"ruta:rechaza",salida);    // corte de TODA la cadena
+        // El rechazo se cablea DESPUÉS del loop: con la perilla `extras_seguir` ON
+        // pasa al SIGUIENTE ofrecimiento; OFF (default) corta por la salida.
         await E(nRech,"si_no_cumple",nResp);
         await E(nResp,"exito",nEsp);
-        ofrecs.push(nOfr); entregas.push(nDarX);
+        ofrecs.push(nOfr); entregas.push(nDarX); rechs.push(nRech);
+      }
+      // Rechazo de cada extra: con la perilla ON va al SIGUIENTE ofrecimiento; el
+      // último (o con la perilla OFF) cierra la cadena por la salida.
+      const seguirX = !!(st.prod.config?.extras_seguir);
+      for(let i=0;i<rechs.length;i++){
+        await E(rechs[i],"ruta:rechaza", (seguirX && i+1<ofrecs.length) ? ofrecs[i+1] : salida);
       }
       // Encadenado: pagar un extra lleva al ofrecimiento del siguiente; el
       // último cierra la cadena por la salida.
