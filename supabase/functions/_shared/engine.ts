@@ -5914,13 +5914,20 @@ async function buildContext(db: SupabaseClient, run: Run) {
           for (const b of pend) {
             const { data: ep } = await db.from("products").select("nombre, config").eq("id", b.product_id).maybeSingle();
             const eatrs = normalizeAtributos((ep as any)?.config?.atributos).filter((a: any) => a.valores?.length);
-            const pref = "xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10);
+            // El prefijo DEBE coincidir con el que lee reconciliarStockExtras (usa
+            // `b.talla_pref`): los REGALOS lo traen guardado (`rg<gi>`), los EXTRAS
+            // usan el `xt<vid>` calculado. Antes se hardcodeaba `xt<vid>` para TODOS
+            // → la talla del regalo se capturaba en `xt<vid>_talla` pero la
+            // reconciliación la buscaba en `rg<gi>_talla` y nunca la encontraba, así
+            // que el stock del REGALO físico con tallas NUNCA se descontaba.
+            const pref = b.talla_pref ?? ("xt" + String(b.version_id ?? b.product_id).replace(/-/g, "").slice(0, 10));
             // Nombre LIMPIO del producto para el atributo (no `b.nombre`, que es la
             // etiqueta con versión y precio, p.ej. "Gorra · Única — S/ 30"): la IA
             // veía "Única" en el nombre del atributo y capturaba eso como talla en
             // vez de M/L. Igual que el regalo, que usa el nombre del producto.
-            const eNom = String((ep as any)?.nombre || "").replace(/\s*\(extra\)\s*/i, "").trim() || "el extra";
-            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} de ${eNom} (extra que agregó)`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, solo_ultimo: true, media: Array.isArray(ea.media) ? ea.media : [] });
+            const kind = b.regalo ? "regalo" : "extra que agregó";
+            const eNom = String((ep as any)?.nombre || "").replace(/\s*\(extra\)\s*/i, "").trim() || (b.regalo ? "el regalo" : "el extra");
+            for (const ea of eatrs) extraAttrs.push({ nombre: `${ea.nombre} de ${eNom} (${kind})`, clave: `${pref}_${ea.clave}`, valores: ea.valores, ayuda: ea.ayuda, obligatorio: false, solo_ultimo: true, media: Array.isArray(ea.media) ? ea.media : [] });
           }
           if (extraAttrs.length) ctx._atributos = [...(Array.isArray(ctx._atributos) ? ctx._atributos : []), ...extraAttrs];
         }
