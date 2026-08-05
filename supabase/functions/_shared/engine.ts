@@ -2973,6 +2973,19 @@ function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperC
 // → recién ahí entra a "Pagos por validar". Si NO es un pago (foto cualquiera),
 // no interceptamos: la IA de venta sigue atendiendo normal.
 async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  // El adelanto / "sede Shalom" es SOLO para productos FÍSICOS de provincia. Si el
+  // producto activo del contacto es DIGITAL, NO interceptamos: el comprobante lo
+  // maneja el nodo "Validar el pago" del propio flujo digital (que entrega el link).
+  // Sin esta guarda, el interceptor físico secuestraba la venta digital y respondía
+  // "para despachar tu pedido a la agencia… tu DNI y la sede/oficina Shalom".
+  {
+    const { data: ct } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+    const pid = (ct as any)?.product_id;
+    if (pid) {
+      const { data: prod } = await db.from("products").select("tipo").eq("id", pid).maybeSingle();
+      if ((prod as any)?.tipo === "digital") return false;
+    }
+  }
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false;
   let parsed: any = null;
@@ -5091,7 +5104,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     // Formas de pago (fuente única = Validador de comprobantes): la IA sabe
     // responder "¿cómo pago?" sin repetir los datos en el Conocimiento.
-    const pm = (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
+    // 🔒 EXCEPTO en Lima contraentrega: ahí el cliente paga TODO al recibir, no por
+    // adelantado. Si le damos el Yape a la IA, lo termina soltando ("haz tu pago con
+    // Yape") aunque el prompt lo prohíba. En Lima NO se inyectan los datos de pago.
+    // (Digital no tiene zona_entrega → conserva sus datos de pago; provincia también.)
+    const pm = ctx.zona_entrega === "lima" ? [] : (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
       .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
     if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
@@ -5149,7 +5166,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ? `\n\nAún te falta capturar (OBLIGATORIO): **${faltan.map((a: any) => a.nombre).join(", ")}**. Pídelos con naturalidad, de a pocos, sin interrogar ni pedir todo de golpe, y no confirmes el pedido hasta tenerlos.`
         : "\n\nYa tienes todos los atributos obligatorios.";
       const cierreOpc = faltanOpc.length
-        ? `\n\nAntes de cerrar, pregunta UNA vez (no bloquean la venta, pero se necesitan para enviar la variante correcta del regalo/extra): **${faltanOpc.map((a: any) => a.nombre).join(", ")}**. Si el cliente no la sabe o le da igual, cierra el pedido igual sin insistir.`
+        ? `\n\nUn obsequio/añadido de este pedido necesita su TALLA/variante para enviar la correcta. OJO: lo marcado como "(regalo)" YA VA INCLUIDO GRATIS en el pedido — NO es algo que el cliente deba aceptar o rechazar, no lo ofrezcas como opción; solo pregunta su talla. Pregunta UNA vez, con naturalidad, usando EXACTAMENTE los valores que te di para cada uno (nunca digas "talla única" si te di una lista de tallas): **${faltanOpc.map((a: any) => a.nombre).join(", ")}**. Si el cliente no la sabe o le da igual, cierra el pedido igual sin insistir.`
         : "";
       parts.push("## Datos que debes capturar de este pedido\n" + L.join("\n") + apoyoTxt + cierreReq + cierreOpc);
     }
@@ -5800,8 +5817,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
               const gatrs = normalizeAtributos((gp as any)?.config?.atributos).filter((a: any) => a.valores?.length);
               if (!gatrs.length) continue;
               pc._atributos = pc._atributos || [];
+              // Nombre del regalo SIN el sufijo de presentación (" · Única"): si no,
+              // el label queda "Talla del regalo (🧦 Medias · Única)" y la IA lee
+              // "Única" como si fuera la talla → le dice al cliente "son talla única"
+              // cuando en verdad tiene tallas S/M. Se muestra solo el producto.
+              const gname = String(g?.nombre || "regalo").split(" · ")[0].trim() || "regalo";
               for (const ga of gatrs) {
-                pc._atributos.push({ nombre: `${ga.nombre} del regalo (${g.nombre || "regalo"})`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false, media: Array.isArray(ga.media) ? ga.media : [] });
+                pc._atributos.push({ nombre: `${ga.nombre} de ${gname} (regalo)`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false, media: Array.isArray(ga.media) ? ga.media : [] });
               }
             } catch { /* sin config → no se agregan */ }
           }

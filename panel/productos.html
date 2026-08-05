@@ -1787,12 +1787,14 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     const nOfr=await N("mensaje",`Ofrecer extra ${i+1}`,{ bubbles:[{ text:x.mensaje||`¿Le sumas ${label}? Te lo mando junto 🎁` }] },false,1800,y);
     const nEsp=await N("pregunta",`Esperar respuesta (extra ${i+1})`,{ text:"", timeout_seg:esperaSeg },false,2080,y);
     const nClas=await N("ia",`¿Lo quiere? (extra ${i+1})`,{
-      operacion:"clasificar", guardar_en:`extraf_${i+1}_resp`, default:"duda", umbral:0.6,
-      que:"Qué dice el cliente sobre sumar el producto adicional a su pedido",
+      operacion:"clasificar", guardar_en:`extraf_${i+1}_resp`, default:"duda", umbral:0.7,
+      que:`Si el cliente ACEPTA o RECHAZA sumar ${label} (un producto ADICIONAL) a su pedido. `+
+          `MUY IMPORTANTE: si el cliente solo responde una talla, color o dato de OTRO producto (por ejemplo la talla del regalo), o hace una pregunta, eso NO es aceptar el extra: es "duda". `+
+          `Solo marca "acepta" cuando el cliente dice claramente que SÍ quiere sumar ESTE producto. Cualquier negación es "rechaza".`,
       opciones:[
-        { clave:"acepta", label:"Acepta", detalle:"Dice que sí, que se lo sume, lo quiere" },
-        { clave:"rechaza", label:"Rechaza", detalle:"Dice que no, que solo lo que pidió, que no le interesa" },
-        { clave:"duda", label:"Duda o pregunta", detalle:"Pide más info, no decide todavía" },
+        { clave:"acepta", label:"Acepta", detalle:`Dice explícitamente que SÍ quiere sumar ${label} ("sí", "dale", "súmalo", "lo quiero", "agrégalo")` },
+        { clave:"rechaza", label:"Rechaza", detalle:`Dice que NO lo quiere, que así está bien, que solo lo que ya pidió ("no", "no gracias", "no lo quiero", "solo eso")` },
+        { clave:"duda", label:"Duda o pregunta", detalle:"Pide más info, responde otra cosa (una talla/color/dato de otro producto) o no decide todavía" },
       ],
     },false,2360,y);
     const nCond=await N("condicion",`¿Aceptó? (extra ${i+1})`,{
@@ -2299,7 +2301,11 @@ async function renderInicio(){
     const pe=$("hubPct"); if(pe){ pe.textContent=p+"%"; pe.style.background=g; pe.style.webkitBackgroundClip="text"; pe.style.backgroundClip="text"; pe.style.webkitTextFillColor="transparent"; }
   };
   st._refreshMeter=refreshMeter;
-  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc){ applyRow(acc.dataset.t); refreshMeter(); } };
+  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc){ applyRow(acc.dataset.t); refreshMeter();
+    // Refresca EN VIVO el recuadro "Esto impide vender": antes solo se dibujaba al
+    // renderizar el hub, así que al poner el precio/stock en el acordeón seguía
+    // mostrando "Ninguna presentación tiene precio" hasta recargar (engañoso).
+    if(!esExtra && !esRegalo){ const ok=req.length ? req.every(t=>est(t).ok) : true; renderSalud(ok); } } };
   b.addEventListener('input', onEdit);
   b.addEventListener('change', onEdit);
 
