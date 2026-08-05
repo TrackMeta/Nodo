@@ -2853,7 +2853,6 @@ async function generarFlujoVenta(){
                  `y ayúdalo a decidir, sin presionar. Si quiere, pásale los datos de pago ({{datos_pago}}).`,
         },false,1500,y+240);
 
-        primero.push(nOfr);
         await E(nOfr,"continuar",nEsp);
         await E(nEsp,"timeout",salida);          // no contestó → se entrega igual
         await E(nEsp,"continuar",nImg);
