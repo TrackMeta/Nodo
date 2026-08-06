@@ -83,6 +83,11 @@ export function porCobrar(o){
 
 export const esVenta   = (o) => !!EST[o?.estado]?.venta;
 export const esPerdido = (o) => !!EST[o?.estado]?.perdido;
+// Pedido CERRADO/COMPLETADO: se cobró TODO (digital pagado, Lima entregado y
+// cobrado, provincia recogido / saldo pagado). Es una venta terminada, no una en
+// curso. Se usa para permitir "Registrar OTRA venta a mano" (recompra) sobre un
+// cliente que ya cerró una compra, sin duplicar un pedido todavía activo.
+export const esCerrado = (o) => EST[o?.estado]?.cobro === "todo";
 // Ya salió físicamente y todavía no está cobrado del todo: es el riesgo vivo.
 // Es un SUBCONJUNTO de porCobrar — se muestra como desglose, no como KPI aparte
 // (dos números que se solapan sin decirlo confunden más de lo que informan).

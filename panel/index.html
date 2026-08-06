@@ -1298,7 +1298,7 @@ function renderContactPanel(){
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${order?`<div style="padding:0 2px">${ventaChipsHtml(order, capiEvt)}</div>`:""}
-    ${!isTest && (!order || O.esPerdido(order))?`<div class="cx-actions" style="margin-top:8px"><button class="cx-btn" id="pVentaManual" title="Registrar una venta que cerraste por fuera (llamada, otro número): crea el pedido, entrega el link si es digital y la atribuye a Meta">${icon("dollar")} Registrar venta a mano</button></div>`:""}
+    ${!isTest && (!order || O.esPerdido(order) || O.esCerrado(order))?`<div class="cx-actions" style="margin-top:8px"><button class="cx-btn" id="pVentaManual" title="${order&&O.esCerrado(order)?"Registrar una NUEVA venta (recompra) que cerraste por fuera, sin tocar el pedido anterior":"Registrar una venta que cerraste por fuera (llamada, otro número): crea el pedido, entrega el link si es digital y la atribuye a Meta"}">${icon("dollar")} ${order&&O.esCerrado(order)?"Registrar otra venta":"Registrar venta a mano"}</button></div>`:""}
     ${miaCard}
     ${sec("Etapa del embudo", stageBody, {open:true})}
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
