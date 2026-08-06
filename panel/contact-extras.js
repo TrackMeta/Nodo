@@ -1340,6 +1340,23 @@ export async function openEditarPedido(o, deps) {
     ? `<span class="pm-zona prov">${icon("building")} Provincia · agencia</span>`
     : `<span class="pm-zona lima">${icon("truck")} Lima · contraentrega</span>`;
 
+  // Estado del pedido FÍSICO editable desde acá (antes solo en el Kanban): para
+  // un usuario nuevo era confuso tener que ir a otro lado a cerrar la venta. Al
+  // cambiarlo, order-update dispara lo de siempre (Meta si es cierre real, embudo,
+  // stock si se cae). NO le manda mensaje al cliente (aviso "ninguno" en el save).
+  const estadoOpts = zona === "provincia"
+    ? [["esperando_adelanto", "Esperando adelanto (dio datos, no pagó)"], ["adelanto_validado", "Adelanto validado"], ["despachado", "Despachado"], ["en_agencia", "En agencia"], ["recogido", "Recogido y pagado (venta cerrada)"], ["saldo_pagado", "Saldo pagado (venta cerrada)"], ["no_recogido", "No recogido"], ["cancelado", "Cancelado"]]
+    : [["confirmado", "Confirmado · por entregar"], ["en_reparto", "En reparto"], ["entregado_cobrado", "Entregado y cobrado (venta cerrada)"], ["reprogramado", "Reprogramado"], ["rechazado", "Rechazado"], ["cancelado", "Cancelado"]];
+  const curEnLista = estadoOpts.some(([v]) => v === o.estado);
+  const estadoFisicoHtml = zona === "digital" ? "" : `
+        <div class="pm-sec">
+          <div class="pm-sec-h">${icon("flag")} Estado del pedido</div>
+          <select id="eEstadoF">
+            ${(!curEnLista && o.estado) ? `<option value="${esc(o.estado)}" selected>${esc(O.label ? O.label(o.estado) : o.estado)}</option>` : ""}
+            ${estadoOpts.map(([v, l]) => `<option value="${v}"${v === o.estado ? " selected" : ""}>${esc(l)}</option>`).join("")}
+          </select>
+          <div class="hint">Muévelo según avance la venta. Si te <b>pagó o recogió por fuera</b> (llamada, otro medio), márcalo como <b>cobrado/recogido</b>: cuenta en tus números y —si vino de anuncio— va a Meta. No le manda mensaje al cliente.</div>
+        </div>`;
 
   // Catálogo del canal → permite CAMBIAR el producto del pedido y AGREGAR
   // extras/regalos a mano. channel_id/version_id no vienen en latestOrder: se leen.
@@ -1452,6 +1469,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Teléfono</label><input id="eTel" value="${esc(s.tel || c.wa_id || "")}"/></div>
           </div>
         </div>
+        ${estadoFisicoHtml}
         ${prodHtml}
         <div class="pm-sec" id="eDigital" ${zona === "digital" ? "" : 'style="display:none"'}>
           <div class="pm-sec-h">${icon("dollar")} Pago digital</div>
@@ -1635,7 +1653,14 @@ export async function openEditarPedido(o, deps) {
         }
       }
       if (amount !== undefined) body.amount = amount;
-      if (estadoNuevo) body.estado = estadoNuevo;
+      // Estado del pedido FÍSICO (selector nuevo). El digital ya setea estadoNuevo arriba.
+      if (zona !== "digital") { const esF = g("#eEstadoF") ? g("#eEstadoF").value : ""; if (esF && esF !== o.estado) estadoNuevo = esF; }
+      if (estadoNuevo) {
+        body.estado = estadoNuevo;
+        // Cerrar/avanzar desde "Editar pedido" NO le manda mensaje al cliente (el
+        // Kanban es el que avisa). Acá solo registra el cambio y ajusta los números.
+        body.aviso = { modo: "ninguno" };
+      }
       // Ventas extra / regalos: las que quedaron (las quitadas con ✕ ya no están en
       // el DOM, con el precio corregido) + las AGREGADAS a mano. La variante elegida
       // va en `_attrs`; order-update la traduce a stock_key y ajusta el inventario.
