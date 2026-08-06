@@ -1169,7 +1169,7 @@ function injectVentaManualCss() {
   if (document.getElementById("vm-css")) return;
   const s = document.createElement("style"); s.id = "vm-css";
   s.textContent = `
-  .vm-ov{display:flex;align-items:center;justify-content:center}
+  .vm-ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:18px}
   .vm-card{background:var(--card,#fff);color:var(--text,#111);width:min(540px,94vw);max-height:90vh;display:flex;flex-direction:column;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;border:1px solid var(--border,#e5e7eb)}
   .vm-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border,#e5e7eb)}
   .vm-ico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--brand,#2b7fff) 16%,transparent);color:var(--brand,#2b7fff);flex:none}
