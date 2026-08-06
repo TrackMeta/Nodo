@@ -138,7 +138,7 @@ const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
-  const sel="id,amount,currency,estado,shipping,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)";
+  const sel="id,amount,currency,estado,shipping,order_bumps,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)";
   let { data, error }=await supa.from("orders").select(sel)
     .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true});
   if(error){ ({ data }=await supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
@@ -237,6 +237,27 @@ function renderStats(groups){
   box.innerHTML=cards.map(c=>`<div class="stat"><div class="s-v" style="color:${c.color}">${c.v}</div><div class="s-l"><span class="sdot" style="background:${c.color}"></span>${c.l}</div></div>`).join("");
 }
 
+// Resumen "si apruebas": cómo queda la venta y qué se manda a Meta. Le da al
+// humano el panorama completo antes del OK (el valor ya viene topado en el precio).
+function resumenAprobar(o){
+  const s=o.shipping||{};
+  const bumps=Array.isArray(o.order_bumps)?o.order_bumps:[];
+  let val=Number(o.amount)||0; bumps.forEach(b=> val+=Number(b?.precio)||0);
+  const pagos=bumps.filter(b=>Number(b?.precio)>0).length;
+  const ctwa=!!s.ctwa_clid; const leido=s.digital_monto_leido;
+  const dif=(leido!=null&&leido!==""&&Math.abs(Number(leido)-Number(o.amount))>0.01);
+  const sy=sym(o);
+  return `<div style="margin-top:11px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2,transparent)">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Si apruebas</div>
+    <div style="font-size:12.5px;color:var(--text);line-height:1.75">
+      • Se le entrega el acceso/producto al cliente<br>
+      • Cuenta <b>${sy} ${esc(val)}</b> en tus números${pagos?` (producto + ${pagos} extra${pagos>1?"s":""})`:""}<br>
+      • Meta: ${ctwa?`<b>Purchase ${sy} ${esc(val)}</b> · venta de anuncio`:`<span style="color:var(--faint)">no aplica (venta orgánica)</span>`}
+    </div>
+    ${dif?`<div style="margin-top:8px;font-size:12px;color:#b45309;background:color-mix(in srgb,#f59e0b 13%,transparent);border-radius:7px;padding:6px 9px;line-height:1.5">⚠️ El bot leyó <b>${sy} ${esc(leido)}</b>, pero el precio es <b>${sy} ${esc(o.amount)}</b>. El valor se <b>topa en el precio</b> — revisa el comprobante.</div>`:""}
+  </div>`;
+}
+
 function card(o,et){
   const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
   const el=document.createElement("div"); el.className="acard";
@@ -316,6 +337,7 @@ function card(o,et){
         ${s.clave_recojo?`<div><div class="klbl">Clave de recojo</div><div style="font-weight:800;padding-top:4px;color:var(--green)">${esc(s.clave_recojo)}</div></div>`:""}
       </div>
       ${iaBox}
+      ${(et.id==="digital")?resumenAprobar(o):""}
       ${dudas.map(d=>`<div class="flag">${icon("alert")} ${esc(d)}</div>`).join("")}
       ${(et.id==="saldo"&&!s.clave_recojo)?`<div style="margin-top:10px"><label style="display:block;font-size:12px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">🔑 Clave de recojo — escríbela y aprueba</label><input class="clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;max-width:220px;background:var(--surface,transparent);color:var(--text)"/></div>`:""}
       ${datos.length?`<div class="copybox"><div>${datos.map(([k,v])=>`${k}: <b>${esc(v)}</b>`).join("<br>")}</div>

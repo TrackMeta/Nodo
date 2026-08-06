@@ -2357,11 +2357,12 @@ function envioCobroDe(ctx: any, zona: string): number {
 // pero pagó el de lista), se registra lo que REALMENTE pagó y el excedente queda
 // como `vuelto` (saldo a favor del cliente). Si pagó lo justo, todo normal.
 function pagoRealYVuelto(run: Run, esperadoTotal: number): { amount: number; vuelto: number } {
+  // TOPE (decisión de Rodrigo, "topar en todo"): la venta cuenta SIEMPRE el precio
+  // del producto; si pagó (o el OCR leyó) de más, el excedente es VUELTO, no venta.
+  // Así ni el Dashboard ni Meta se inflan por un sobrepago o un misread del OCR.
   const pagado = Number(run.vars.pago_monto);
-  if (Number.isFinite(pagado) && pagado > esperadoTotal + 0.5) {
-    return { amount: +pagado.toFixed(2), vuelto: +(pagado - esperadoTotal).toFixed(2) };
-  }
-  return { amount: +esperadoTotal.toFixed(2), vuelto: 0 };
+  const vuelto = (Number.isFinite(pagado) && pagado > esperadoTotal + 0.5) ? +(pagado - esperadoTotal).toFixed(2) : 0;
+  return { amount: +esperadoTotal.toFixed(2), vuelto };
 }
 async function avisarVuelto(db: SupabaseClient, run: Run, amount: number, vuelto: number) {
   try {
@@ -5553,6 +5554,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // existe) y se avisa cuánto falta. Cuando la suma cubre, se limpia la bolsa
         // y sigue el camino normal (auto entrega / manual va al Copiloto).
         let esParcial = false;
+        // CAPA 1 (freno): si el OCR lee un monto MUY por encima del precio (ej. leyó
+        // S/1200 para un producto de S/120), no se aprueba solo aunque esté en
+        // automático — va a "Pagos por validar" para que un humano lo revise. El
+        // umbral (revisar_sobre_pct) es configurable en Pagos y atención; default 50%.
+        let sobrepagoSospechoso = false;
         if (!esExtra) {
           const esperadoB = Number(ctx.precio_esperado);
           const tolB = Number(cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 0) || 0;
@@ -5577,13 +5583,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // Cubre (de una o acumulado) → limpia la bolsa y guarda las partes.
               if (abonos.length > 1) run.vars._pago_abonos = abonos;
               if (String(ctx._bolsa_pago ?? "")) await setField(db, run.channel_id, run.contact_id, "_bolsa_pago", "").catch(() => {});
+              // Freno: ¿el monto leído está MUY por encima del precio? → revisar a mano.
+              const factorRev = 1 + (Number((info as any)?.pedidos?.digital?.revisar_sobre_pct ?? 50) / 100);
+              if (total > esperadoB * factorRev) sobrepagoSospechoso = true;
             }
           }
         }
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
         if (!esParcial && !yaParque) {
           const modo = await digitalPagoModo(db, run, info);
-          if (modo.digital && modo.manual) {
+          // Va a validación manual si el canal/producto lo pide (modo.manual) O si el
+          // freno detectó un sobrepago sospechoso (Capa 1), aunque esté en automático.
+          if (modo.digital && (modo.manual || sobrepagoSospechoso)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
@@ -5619,6 +5630,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // sospechosa una venta que se cobró por otro banco.
                 digital_metodo: run.vars.pago_metodo ?? null,
                 digital_ok_ia: true,
+                // Freno (Capa 1): nota para que el humano revise el sobrepago sospechoso.
+                ...(sobrepagoSospechoso ? { digital_revisar: `El bot leyó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto} para un precio de ${simboloMoneda(ctx.moneda as string)}${amount}. Revisa el comprobante antes de aprobar.` } : {}),
                 ...(run.vars._pago_abonos ? { digital_abonos: run.vars._pago_abonos } : {}),
               };
               // Atribución congelada desde que nace el pedido (ver crearPedido):
