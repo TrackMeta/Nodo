@@ -958,6 +958,77 @@ export async function openDespachoModal(o, deps) {
 // de destino Shalom con sugerencia, distrito Eva, medida Shalom). ÚNICO para toda
 // la app: lo abren el tablero de Pedidos y la ficha del chat. deps = { supa }.
 // Devuelve true si guardó (el que llama recarga), false si canceló.
+// Registrar una venta a MANO (cerrada por fuera: llamada, número personal). Crea
+// el pedido de cero contra ESTE contacto vía la Edge Function venta-manual, que
+// congela la atribución del anuncio, entrega el link digital, mueve el embudo y
+// dispara el Purchase a Meta si corresponde. Resuelve true si se registró.
+export function openVentaManual(contact, deps) {
+  const { supa, toast, channelId } = deps;
+  return new Promise(async (resolve) => {
+    const { data: prods } = await supa.from("products")
+      .select("id, nombre, emoji, tipo, clase, product_versions(id, nombre, precio)")
+      .eq("channel_id", channelId).order("nombre");
+    const cat = (prods || []).filter((p) => p.clase !== "regalo" && (p.product_versions || []).length);
+    if (!cat.length) { toast("No hay productos con precio para registrar una venta.", true); resolve(false); return; }
+    // Atribución del contacto (para el aviso de Meta).
+    let tieneAd = false;
+    try { const { data: ci } = await supa.from("contacts").select("ctwa_clid, source").eq("id", contact.id).maybeSingle(); tieneAd = !!(ci && (ci.ctwa_clid || ci.source === "ctwa")); } catch (_) {}
+    const ov = document.createElement("div"); ov.className = "overlay";
+    const prodOpts = cat.map((p) => `<option value="${p.id}">${esc((p.emoji ? p.emoji + " " : "") + p.nombre)} · ${p.tipo === "digital" ? "Digital" : "Físico"}</option>`).join("");
+    ov.innerHTML = `<div class="modal" style="max-width:440px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><span style="color:var(--brand)">${icon("dollar")}</span>
+        <div><div style="font-weight:700;font-size:15px">Registrar venta a mano</div>
+        <div style="font-size:12px;color:var(--muted)">${esc(contact.nombre || contact.wa_id || "Cliente")} · venta cerrada por fuera</div></div></div>
+      <label style="margin-top:10px">Producto</label>
+      <select class="in" id="vmProd">${prodOpts}</select>
+      <label style="margin-top:10px">Presentación</label>
+      <select class="in" id="vmVer"></select>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <div style="flex:1"><label>Monto cobrado (S/)</label><input class="in" id="vmMonto" type="number" min="0" step="0.5"/></div>
+        <div style="flex:1.4"><label>Estado</label><select class="in" id="vmEstado"></select></div>
+      </div>
+      <label id="vmEntWrap" style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;font-weight:400"><input type="checkbox" id="vmEnt" checked style="width:16px;height:16px"/> <span style="font-size:12.5px">Enviarle el link/acceso al cliente ahora</span></label>
+      <div id="vmNote" style="font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn" id="vmCancel">Cancelar</button>
+        <button class="btn primary" id="vmOk">Registrar venta</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const g = (s) => ov.querySelector(s);
+    const close = (val) => { ov.remove(); resolve(val); };
+    function refresh() {
+      const p = cat.find((x) => x.id === g("#vmProd").value);
+      const tipo = p?.tipo || "digital";
+      g("#vmVer").innerHTML = (p.product_versions || []).map((v) => `<option value="${v.id}" data-precio="${v.precio ?? ""}">${esc(v.nombre)} — S/ ${v.precio ?? 0}</option>`).join("");
+      g("#vmEstado").innerHTML = tipo === "digital"
+        ? `<option value="confirmada">Vendido / entregado</option>`
+        : `<option value="entregado_cobrado">Entregado y cobrado (venta cerrada)</option><option value="confirmado">Confirmado (aún por entregar)</option>`;
+      g("#vmEntWrap").style.display = tipo === "digital" ? "flex" : "none";
+      const vopt = g("#vmVer").selectedOptions[0]; g("#vmMonto").value = vopt?.dataset.precio || 0;
+      g("#vmNote").innerHTML = tieneAd
+        ? "🎯 Este cliente vino de un anuncio de Meta: la venta se atribuye al anuncio (se envía el Purchase si tienes el Pixel + token CAPI cargados)."
+        : "Este cliente no tiene atribución de anuncio: la venta cuenta en tus números, pero no se envía a Meta (no hay clic que acreditar).";
+    }
+    g("#vmProd").onchange = refresh;
+    g("#vmVer").onchange = () => { const vopt = g("#vmVer").selectedOptions[0]; g("#vmMonto").value = vopt?.dataset.precio || 0; };
+    refresh();
+    g("#vmCancel").onclick = () => close(false);
+    ov.onclick = (e) => { if (e.target === ov) close(false); };
+    g("#vmOk").onclick = async () => {
+      const btn = g("#vmOk"); btn.disabled = true; const old = btn.textContent; btn.textContent = "Registrando…";
+      const body = {
+        channel_id: channelId, contact_id: contact.id,
+        product_id: g("#vmProd").value, version_id: g("#vmVer").value,
+        amount: Number(g("#vmMonto").value) || 0, estado: g("#vmEstado").value, entregar: g("#vmEnt").checked,
+      };
+      let data, error;
+      try { ({ data, error } = await supa.functions.invoke("venta-manual", { body })); } catch (e) { error = e; }
+      if (error || !data?.ok) { toast("No se pudo: " + (data?.error || error?.message || "error"), true); btn.disabled = false; btn.textContent = old; return; }
+      toast("Venta registrada ✓"); close(true);
+    };
+  });
+}
+
 export async function openEditarPedido(o, deps) {
   const { supa } = deps;
   injectDespachoCss();

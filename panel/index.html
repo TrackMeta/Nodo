@@ -562,7 +562,7 @@ import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPAB
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js?v=2";
 import * as O from "./orders.js";
-import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm } from "./shell.js";
 injectExtrasCss();
 
@@ -1254,6 +1254,7 @@ function renderContactPanel(){
     ${!isTest && order && O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar los datos del pedido">${icon("edit")} Editar pedido</button><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
+    ${!isTest?`<div class="cx-actions" style="margin-top:8px"><button class="cx-btn" id="pVentaManual" title="Registrar una venta que cerraste por fuera (llamada, otro número): crea el pedido, entrega el link si es digital y la atribuye a Meta">${icon("dollar")} Registrar venta a mano</button></div>`:""}
     ${miaCard}
     ${sec("Etapa del embudo", stageBody, {open:true})}
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
@@ -1301,6 +1302,10 @@ function renderContactPanel(){
   });
   // Memoria IA · editar/borrar/agregar chips "Quién es" / "Cómo tratar"
   wireMemoriaChips(p, contact, { supa, toast, reRender: renderContactPanel });
+  const vmB=$("pVentaManual"); if(vmB) vmB.onclick=async()=>{
+    const ok=await openVentaManual(contact, { supa, toast, channelId:state.channelId });
+    if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }
+  };
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
     const ok=await openEditarPedido({...order, contact}, { supa });
     if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }
