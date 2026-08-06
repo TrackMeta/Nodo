@@ -958,6 +958,31 @@ export async function openDespachoModal(o, deps) {
 // de destino Shalom con sugerencia, distrito Eva, medida Shalom). ÚNICO para toda
 // la app: lo abren el tablero de Pedidos y la ficha del chat. deps = { supa }.
 // Devuelve true si guardó (el que llama recarga), false si canceló.
+// Dos chips por chat: ¿la venta cuenta en el sistema? y ¿se envió a Meta? Se
+// derivan del ESTADO del pedido + el evento CAPI del pedido. El de Meta puede
+// traer un "reintentar" (data-capi-retry) para las que no llegaron a Meta.
+const VM_CLOSED = new Set(["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"]);
+const VM_CANCEL = new Set(["cancelado", "anulado", "perdido", "no_recogido", "devuelto"]);
+export function ventaChipsHtml(order, capiEvent) {
+  const est = order ? String(order.estado || "") : null;
+  const ctwa = !!(order && order.shipping && order.shipping.ctwa_clid);
+  let sis;
+  if (!order) sis = { lbl: "Sin venta", dot: "#9ca3af" };
+  else if (VM_CLOSED.has(est)) sis = { lbl: "Contabilizada", dot: "#14b8a6" };
+  else if (VM_CANCEL.has(est)) sis = { lbl: "Anulada", dot: "#9ca3af" };
+  else sis = { lbl: "En proceso", dot: "#f59e0b" };
+  let meta;
+  if (!order || !ctwa) meta = { lbl: "Meta · no aplica", dot: "#9ca3af" };
+  else if (!VM_CLOSED.has(est)) meta = { lbl: "Meta · aún no", dot: "#9ca3af" };
+  else {
+    const ce = capiEvent && capiEvent.estado;
+    if (ce === "enviado") meta = { lbl: "Meta · enviado", dot: "#14b8a6" };
+    else meta = { lbl: ce === "fallido" ? "Meta · error" : "Meta · falta config", dot: "#ef4444", retry: true };
+  }
+  const chip = (c) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);color:var(--muted);white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${c.dot};flex:none"></span>${c.lbl}${c.retry ? ` <button data-capi-retry="${order.id}" title="Reintentar el envío a Meta" style="border:none;background:none;color:#e24b4a;cursor:pointer;font-size:11.5px;padding:0 0 0 4px;text-decoration:underline">reintentar</button>` : ""}</span>`;
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px" data-venta-chips>${chip(sis)}${chip(meta)}</div>`;
+}
+
 // Registrar una venta a MANO (cerrada por fuera: llamada, número personal). Crea
 // el pedido de cero contra ESTE contacto vía la Edge Function venta-manual, que
 // congela la atribución del anuncio, entrega el link digital, mueve el embudo y

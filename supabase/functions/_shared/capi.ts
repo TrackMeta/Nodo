@@ -191,6 +191,11 @@ export interface OrderLike {
 export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promise<CapiResult | null> {
   if (!order?.estado || !PURCHASE_STATES.has(order.estado)) return null;
   const ship = (order.shipping ?? {}) as Record<string, unknown>;
+  // Solo se envía a Meta lo que vino de un ANUNCIO (tiene ctwa_clid congelado). Una
+  // venta orgánica (el cliente no clickeó un ad) no se manda: no hay clic que
+  // atribuir y sumar Purchases genéricos ensucia el pixel. Cuenta en los números
+  // del sistema igual, pero Meta solo recibe conversiones de sus anuncios.
+  if (!ship.ctwa_clid) return null;
   // Valor de la conversión = precio del producto + ventas extra (order_bumps).
   // `amount` es solo el precio base; sin sumar los bumps, Meta recibía un valor
   // por debajo del real y subestimaba el ROAS. Los bumps se traen por id (el

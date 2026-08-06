@@ -562,14 +562,14 @@ import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPAB
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js?v=2";
 import * as O from "./orders.js";
-import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm } from "./shell.js";
 injectExtrasCss();
 
 const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {},
-  filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map() };
+  filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, metapend:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map(), metaPendSet:new Set(), metaSalud:{total:0,enviadas:0} };
 const $ = (id) => document.getElementById(id);
 
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
@@ -679,6 +679,26 @@ async function loadConversations() {
     }
     state.entregaMap = m;
   } catch(_){ state.entregaMap = state.entregaMap || new Map(); }
+  // Salud de atribución: pedidos de ANUNCIO (ctwa_clid) YA cerrados vs los que
+  // llegaron a Meta (capi_events enviado). Alimenta el filtro "Falta enviar a
+  // Meta" y el número de salud de la cabecera de filtros.
+  try {
+    const CERRADAS = ["confirmada","entregado_cobrado","recogido","saldo_pagado"];
+    const { data: co } = await supa.from("orders").select("id,contact_id,shipping")
+      .eq("channel_id", state.channelId).in("estado", CERRADAS);
+    const adOrders = (co||[]).filter(o => (o.shipping||{}).ctwa_clid);
+    const ids = adOrders.map(o=>o.id);
+    let sent = new Set();
+    if (ids.length) {
+      const { data: ce } = await supa.from("capi_events").select("order_id")
+        .eq("channel_id", state.channelId).eq("event_name","Purchase").eq("estado","enviado").in("order_id", ids);
+      sent = new Set((ce||[]).map(e=>e.order_id));
+    }
+    const pend = new Set();
+    for (const o of adOrders){ if(!sent.has(o.id)) pend.add(o.contact_id); }
+    state.metaPendSet = pend;
+    state.metaSalud = { total: adOrders.length, enviadas: sent.size };
+  } catch(_){ state.metaPendSet = state.metaPendSet || new Set(); state.metaSalud = state.metaSalud || { total:0, enviadas:0 }; }
   renderConversations();
 }
 
@@ -701,9 +721,9 @@ async function loadFilters(){
 // ── Drawer de filtros + chips activos ──
 function openFilters(){ const d=$("filters"),o=$("filtersOv"); if(d)d.classList.add("open"); if(o)o.classList.add("open"); }
 function closeFilters(){ const d=$("filters"),o=$("filtersOv"); if(d)d.classList.remove("open"); if(o)o.classList.remove("open"); }
-function filtrosActivos(){ const f=state.filters; return (f.sinResponder?1:0)+(f.seguimiento?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.conimg?1:0)+(f.range?1:0)+(f.archivado?1:0)+(f.recomprando?1:0)+(f.producto?1:0)+f.tags.size+f.stages.size+f.entrega.size; }
+function filtrosActivos(){ const f=state.filters; return (f.sinResponder?1:0)+(f.seguimiento?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.conimg?1:0)+(f.range?1:0)+(f.archivado?1:0)+(f.recomprando?1:0)+(f.metapend?1:0)+(f.producto?1:0)+f.tags.size+f.stages.size+f.entrega.size; }
 function updateFilterBadge(){ const btn=$("filtersBtn"); if(!btn) return; const n=filtrosActivos(); btn.classList.toggle("has", n>0); const b=$("fBadge"); if(b) b.textContent=n||""; }
-function limpiarFiltros(){ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); }
+function limpiarFiltros(){ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, metapend:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); }
 function renderFilterChips(){
   const box=$("filterChips"); if(!box) return;
   const f=state.filters, chips=[];
@@ -716,6 +736,7 @@ function renderFilterChips(){
   if(f.sinprod)      add("🤖 Sin producto aún","#f59e0b",()=>f.sinprod=false);
   if(f.conimg)       add("📷 Envió imagen","#0ea5e9",()=>f.conimg=false);
   if(f.recomprando)  add("Recomprando",null,()=>f.recomprando=false);
+  if(f.metapend)     add("Falta enviar a Meta","#ef4444",()=>f.metapend=false);
   if(f.archivado)    add("Archivados",null,()=>f.archivado=false);
   f.stages.forEach(k=>{ const s=EMBUDO_STAGES.find(x=>x.k===k); add(s?s.label:k, s?s.color:null, ()=>f.stages.delete(k)); });
   f.entrega.forEach(k=>{ const g=ENTREGA_LBL[k]; add(g?g.lbl:k, g?g.color:null, ()=>f.entrega.delete(k)); });
@@ -747,6 +768,9 @@ function renderFilters(){
     <button class="ftog ${f.conimg?"on":""}" id="fImg" type="button"><span class="ftg-nm">📷 Envió imagen</span><span class="fcount" id="cImg"></span></button>
     <button class="ftog ${f.recomprando?"on":""}" id="fRec" type="button"><span class="ftg-nm">${icon("refresh")} Recomprando</span><span class="fcount" id="cRec"></span></button>
     <button class="ftog ${f.archivado?"on":""}" id="fArch" type="button"><span class="ftg-nm">${icon("archive")} Archivados</span><span class="fcount" id="cArch"></span></button>
+    <h4>Atribución a Meta</h4>
+    <div id="metaHealthHost">${saludMetaHtml()}</div>
+    <button class="ftog ${f.metapend?"on":""}" id="fMeta" type="button" title="Ventas de anuncio ya cerradas que aún no llegaron a Meta (falló el envío o falta configurar el Pixel/token)"><span class="ftg-nm">⚠️ Falta enviar a Meta</span><span class="fcount" id="cMeta"></span></button>
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
     <h4>Entrega · Provincia</h4>
@@ -768,6 +792,7 @@ function renderFilters(){
   $("fImg").onclick=()=>{ f.conimg=!f.conimg; $("fImg").classList.toggle("on",f.conimg); renderConversations(); };
   $("fRec").onclick=()=>{ f.recomprando=!f.recomprando; $("fRec").classList.toggle("on",f.recomprando); renderConversations(); };
   $("fArch").onclick=()=>{ f.archivado=!f.archivado; $("fArch").classList.toggle("on",f.archivado); renderConversations(); };
+  $("fMeta").onclick=()=>{ f.metapend=!f.metapend; $("fMeta").classList.toggle("on",f.metapend); renderConversations(); };
   box.querySelectorAll("[data-stage]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); btn.classList.toggle("on"); renderConversations(); });
   box.querySelectorAll("[data-entrega]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.entrega; f.entrega.has(k)?f.entrega.delete(k):f.entrega.add(k); btn.classList.toggle("on"); renderConversations(); });
   $("fClose").onclick=closeFilters;
@@ -775,7 +800,7 @@ function renderFilters(){
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
   box.querySelectorAll(".mfchip").forEach(btn=> btn.onclick=(e)=>{ if(e.target.closest("[data-mfdel]")){ delSavedFilter(+e.target.closest("[data-mfdel]").dataset.mfdel); return; } applySavedFilter(+btn.dataset.mf); });
   $("fCreate").onclick=saveCurrentFilter;
-  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); };
+  $("fClear").onclick=()=>{ state.filters={ sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, metapend:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }; renderFilters(); renderConversations(); };
   // Rango de fechas (por última actividad). "Máximo" = sin filtro de fecha.
   const dhost=$("dateHost");
   if(dhost) mountDateRange(dhost, { valor: state.filters.range || computePreset("max"), nota:"Por última actividad · Hora de Lima", onChange:(r)=>{ state.filters.range = (r.preset==="max") ? null : r; renderConversations(); } });
@@ -787,17 +812,17 @@ function loadSavedFilters(){ try{ return JSON.parse(localStorage.getItem(savedFi
 function persistSavedFilters(){ try{ localStorage.setItem(savedFiltersKey(), JSON.stringify(state.savedFilters||[])); }catch(_){}}
 async function saveCurrentFilter(){
   const f=state.filters;
-  const active=f.sinResponder||f.seguimiento||f.anuncio||f.organico||f.sinprod||f.conimg||f.archivado||f.recomprando||f.producto||f.tags.size||f.stages.size||f.entrega.size;
+  const active=f.sinResponder||f.seguimiento||f.anuncio||f.organico||f.sinprod||f.conimg||f.archivado||f.recomprando||f.metapend||f.producto||f.tags.size||f.stages.size||f.entrega.size;
   if(!active){ toast("Selecciona al menos un filtro para guardarlo",true); return; }
   const name=await askText({ title:"Guardar filtro", message:"Ponle un nombre a esta combinación de filtros para reusarla con un toque.", placeholder:"Ej. Interesados por anuncio", confirmText:"Guardar" });
   if(!name) return;
   state.savedFilters=state.savedFilters||[];
-  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, organico:f.organico, sinprod:f.sinprod, conimg:f.conimg, archivado:f.archivado, recomprando:f.recomprando, producto:f.producto, tags:[...f.tags], stages:[...f.stages], entrega:[...f.entrega] } });
+  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, organico:f.organico, sinprod:f.sinprod, conimg:f.conimg, archivado:f.archivado, recomprando:f.recomprando, metapend:f.metapend, producto:f.producto, tags:[...f.tags], stages:[...f.stages], entrega:[...f.entrega] } });
   persistSavedFilters(); renderFilters(); toast("Filtro guardado ✓");
 }
 function applySavedFilter(i){
   const s=(state.savedFilters||[])[i]; if(!s) return; const g=s.f||{};
-  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, organico:!!g.organico, sinprod:!!g.sinprod, conimg:!!g.conimg, archivado:!!g.archivado, recomprando:!!g.recomprando, producto:g.producto||"", range:null, tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
+  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, organico:!!g.organico, sinprod:!!g.sinprod, conimg:!!g.conimg, archivado:!!g.archivado, recomprando:!!g.recomprando, metapend:!!g.metapend, producto:g.producto||"", range:null, tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
   closeFilters(); renderFilters(); renderConversations();
 }
 async function delSavedFilter(i){
@@ -818,6 +843,8 @@ function updateFilterCounts(){
   set("cSinP", convs.filter(cv=>!cv.contact.product_id && cv.contact.stage!=="comprado" && cv.contact.stage!=="confirmado" && !cv.archivada).length);
   set("cImg", convs.filter(cv=>!!cv.contact.ultima_imagen_at && !cv.archivada).length);
   set("cArch", convs.filter(cv=>cv.archivada).length);
+  set("cMeta", convs.filter(cv=>!cv.archivada && state.metaPendSet.has(cv.contact.id)).length);
+  const mh=$("metaHealthHost"); if(mh) mh.innerHTML=saludMetaHtml();
   const sbox=$("filters");
   if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.stage||"nuevo")===k).length; });
   if(sbox) sbox.querySelectorAll("[data-entregacount]").forEach(el=>{ const k=el.dataset.entregacount; el.textContent=convs.filter(cv=>!cv.archivada && state.entregaMap.get(cv.contact.id)===k).length; });
@@ -825,6 +852,18 @@ function updateFilterCounts(){
   if(box) box.querySelectorAll("[data-tagcount]").forEach(el=>{ const id=el.dataset.tagcount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.contact_tags||[]).some(t=>t.tag_id===id)).length; });
 }
 function svgFilter(){ return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>'; }
+// Número de salud de atribución: de las ventas de ANUNCIO ya cerradas, cuántas
+// llegaron a Meta. Verde 100% · ámbar si falta alguna · gris si aún no hay
+// ventas de anuncio cerradas.
+function saludMetaHtml(){
+  const s=state.metaSalud||{total:0,enviadas:0};
+  if(!s.total) return `<div class="metahealth" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--muted)"><span style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex:none"></span>Sin ventas de anuncio cerradas todavía</div>`;
+  const pct=Math.round((s.enviadas/s.total)*100);
+  const ok=s.enviadas===s.total;
+  const dot=ok?"#14b8a6":"#f59e0b";
+  const falta=s.total-s.enviadas;
+  return `<div class="metahealth" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text)"><span style="width:8px;height:8px;border-radius:50%;background:${dot};flex:none"></span><b style="color:${dot}">${pct}%</b> de ventas de anuncio en Meta<span style="color:var(--muted)">· ${s.enviadas}/${s.total}${ok?"":` · faltan ${falta}`}</span></div>`;
+}
 
 // ── Respuestas rápidas + emojis (compositor) ──
 async function loadQuickReplies(){
@@ -1042,6 +1081,7 @@ function applyFilters(cv){
   if (f.recomprando && !esRecompra(c)) return false;
   if (f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
   if (f.entrega.size){ const k=state.entregaMap.get(c.id); if(!k || !f.entrega.has(k)) return false; }
+  if (f.metapend && !state.metaPendSet.has(c.id)) return false;
   if (f.anuncio && !c.source) return false;
   if (f.organico && !!c.source) return false;
   if (f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
@@ -1159,9 +1199,12 @@ async function loadContactPanel(c){
     latestOrder(supa, c.id),
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
+  let capiEvt=null;
+  if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
   panelData = {
     contact: ctRes.data || c,
     order: orderRes || null,
+    capiEvt,
     allTags: tagsRes.data || [],
     assigned: new Set((ctagsRes.data||[]).map(r=>r.tag_id)),
     fields: fieldsRes.data || [],
@@ -1174,7 +1217,7 @@ async function loadContactPanel(c){
   renderContactPanel();
 }
 function renderContactPanel(){
-  const { contact, order, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
+  const { contact, order, capiEvt, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
   const p = $("cpanel");
   const isTest = contact.wa_id === "webchat-test";
   const userFields = fields.filter(f=>!esCampoInterno(f.key)); // datos del cliente
@@ -1254,6 +1297,7 @@ function renderContactPanel(){
     ${!isTest && order && O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar los datos del pedido">${icon("edit")} Editar pedido</button><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
+    ${order?`<div style="padding:0 2px">${ventaChipsHtml(order, capiEvt)}</div>`:""}
     ${!isTest?`<div class="cx-actions" style="margin-top:8px"><button class="cx-btn" id="pVentaManual" title="Registrar una venta que cerraste por fuera (llamada, otro número): crea el pedido, entrega el link si es digital y la atribuye a Meta">${icon("dollar")} Registrar venta a mano</button></div>`:""}
     ${miaCard}
     ${sec("Etapa del embudo", stageBody, {open:true})}
@@ -1306,6 +1350,14 @@ function renderContactPanel(){
     const ok=await openVentaManual(contact, { supa, toast, channelId:state.channelId });
     if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }
   };
+  p.querySelectorAll("[data-capi-retry]").forEach(b=> b.onclick=async()=>{
+    const oid=b.dataset.capiRetry; b.disabled=true; const prev=b.textContent; b.textContent="enviando…";
+    try{
+      const { data, error }=await supa.functions.invoke("capi-retry", { body:{ channel_id:state.channelId, order_id:oid } });
+      if(error||!data?.ok){ toast("No se envió a Meta: "+(data?.error||error?.message||"error"), true); b.disabled=false; b.textContent=prev; return; }
+      toast("Enviado a Meta ✓"); loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id });
+    }catch(e){ toast("No se envió a Meta: "+(e?.message||e), true); b.disabled=false; b.textContent=prev; }
+  });
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
     const ok=await openEditarPedido({...order, contact}, { supa });
     if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }
