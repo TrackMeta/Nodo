@@ -451,6 +451,85 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
   }
 }
 
+// ── Venta MANUAL: registra un pedido cerrado POR FUERA (llamada, número personal) ──
+// Mismo efecto que una venta del bot, pero disparada a mano desde la ficha del
+// contacto: crea el pedido (cuenta en Dashboard/Rendimiento), CONGELA la
+// atribución del anuncio del contacto en el pedido y dispara el Purchase a Meta
+// si el estado es un cierre real, entrega el link digital, mueve el embudo,
+// adjunta regalos y descuenta stock. Espeja los pasos de `crearPedido`.
+export async function crearVentaManual(
+  db: SupabaseClient, channelId: string, contactId: string,
+  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null },
+): Promise<{ orderId: string }> {
+  const { productId, versionId, estado } = opts;
+  const amount = Number(opts.amount) || 0;
+  const { data: prod } = await db.from("products").select("tipo, config").eq("id", productId).maybeSingle();
+  const tipo = String((prod as any)?.tipo || "digital");
+  const esFisico = tipo === "fisico";
+  const { data: ver } = await db.from("product_versions").select("id, entrega").eq("id", versionId).maybeSingle();
+  const { data: ct } = await db.from("contacts").select("ctwa_clid, ad_id").eq("id", contactId).maybeSingle();
+
+  const ship: Record<string, unknown> = { manual: true };
+  if (esFisico) ship.zona = "lima"; // venta física a mano = entrega directa (sin adelanto/agencia)
+  if (opts.atributos && Object.keys(opts.atributos).length) ship.atributos = opts.atributos;
+  // Atribución CONGELADA: el ctwa_clid del contacto (si vino de un anuncio) queda
+  // pegado a ESTA venta para que el Purchase se atribuya al anuncio correcto.
+  if ((ct as any)?.ctwa_clid) ship.ctwa_clid = (ct as any).ctwa_clid;
+  if ((ct as any)?.ad_id) ship.ad_id = (ct as any).ad_id;
+
+  const { data: ord, error } = await db.from("orders").insert({
+    channel_id: channelId, contact_id: contactId, product_id: productId, version_id: versionId,
+    amount, currency: "PEN", estado, shipping: ship,
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  const orderId = (ord as any).id;
+
+  await logEvent(db, channelId, contactId, "nota", "Venta registrada a mano", estado).catch(() => {});
+  await moverEtapa(db, channelId, contactId, stageDeEstado(estado)).catch(() => {});
+  await autoEtiquetaZona(db, channelId, contactId, esFisico ? "lima" : "digital").catch(() => {});
+  await addTag(db, channelId, contactId, "Venta manual").catch(() => {});
+
+  // Purchase a Meta: maybePurchase ignora lo que no sea cierre real; usa el
+  // ctwa_clid congelado. No lanza si el canal no tiene pixel/token.
+  try {
+    await maybePurchase(db, { id: orderId, channel_id: channelId, contact_id: contactId, estado, amount, currency: "PEN", shipping: ship });
+  } catch (e) { console.error("[ventaManual] capi:", (e as any)?.message ?? e); }
+
+  try { await adjuntarRegalos(db, channelId, contactId, orderId, productId, {}); } catch (e) { console.error("[ventaManual] regalos:", (e as any)?.message ?? e); }
+
+  // Entrega DIGITAL: el link del producto + los extras/regalos digitales.
+  if (!esFisico && opts.entregarLink !== false) {
+    const msg = String((prod as any)?.config?.entrega_mensaje || "¡Listo! 🎉 Acá tienes tu acceso:");
+    await deliverMessage(db, channelId, contactId, msg).catch(() => {});
+    for (const it of (Array.isArray((ver as any)?.entrega) ? (ver as any).entrega : [])) {
+      if (it?.url) await deliverMessage(db, channelId, contactId, (it.nombre ? String(it.nombre) + ":\n" : "") + String(it.url)).catch(() => {});
+    }
+    try { await entregarExtrasDigitales(db, channelId, contactId, orderId); } catch (e) { console.error("[ventaManual] extras dig:", (e as any)?.message ?? e); }
+  }
+
+  // Stock FÍSICO: descuenta el principal (por su variante) + regalos/extras físicos.
+  if (esFisico) {
+    try {
+      const cfgS = (prod as any)?.config || {};
+      const mov: Array<{ product_id: string; key: string; unidades: number }> = [];
+      if (cfgS.stock && typeof cfgS.stock === "object") {
+        mov.push({ product_id: productId, key: stockKeyEngine(cfgS.atributos, ship.atributos as any), unidades: 1 });
+      }
+      const { data: ob } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+      for (const b of ((ob as any)?.order_bumps ?? [])) {
+        if (b?.product_id && b?.digital !== true && !b?.stock_pendiente) mov.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
+      }
+      if (mov.length) {
+        await aplicarStock(db, mov, -1);
+        await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+      }
+    } catch (e) { console.error("[ventaManual] stock:", (e as any)?.message ?? e); }
+  }
+
+  await syncPedidoSheet(db, orderId).catch(() => {});
+  return { orderId };
+}
+
 // ── Stock / inventario ─────────────────────────────────────────────
 // Clave estable de una variante a partir de los atributos del producto (los que
 // tienen VALORES declarados) y lo capturado en el pedido. DEBE coincidir con
