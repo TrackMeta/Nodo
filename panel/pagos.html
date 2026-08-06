@@ -85,7 +85,7 @@ function defaultPedidos(){
     embudos:{ mensajeria:true, confirmaciones:true, logistica:true },
     // Digital: por defecto AUTOMÁTICO (así se comportó siempre). El default es
     // del canal; cada producto digital puede sobreescribirlo en su ficha.
-    digital:{ validacion:"auto", tolerancia:1, revisar_sobre_pct:50 },
+    digital:{ validacion:"auto", tolerancia:1, revisar_sobre_sol:50 },
     // Pago de más: qué hace el bot si el cliente reclama su vuelto.
     // modo: "tranquilizar" (responde y sigue) | "humano" (traspasa) | "off".
     vuelto:{ modo:"tranquilizar", mensaje:"" },
@@ -187,9 +187,11 @@ function render(b){
       </div>
       <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">🛡️ Revisar a mano si el pago supera el precio en más de</label>
-        <input class="in" id="pDigRev" type="number" min="0" step="10" value="${Number(p.digital.revisar_sobre_pct ?? 50)}" style="width:90px"/>
-        <span style="font-size:13px;font-weight:700">%</span>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Freno anti-error del OCR: si el bot lee un monto muy por encima del precio, no lo aprueba solo (aunque esté en automático) → va a <b>Pagos por validar</b>. Ej. 50% en un producto de S/120 = revisa si lee más de S/180.</span>
+        <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <span style="font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px 0 10px">S/</span>
+          <input class="in" id="pDigRev" type="number" min="0" step="5" value="${Number(p.digital.revisar_sobre_sol ?? 50)}" style="width:80px;border:none"/>
+        </div>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Freno anti-error del OCR: si el bot lee un monto que pasa el precio por más de esto, no lo aprueba solo (aunque esté en automático) → va a <b>Pagos por validar</b>. Ej. S/50 en un producto de S/120 = revisa si lee más de <b>S/170</b>. Ponlo en <b>S/0</b> para revisar cualquier sobrepago.</span>
       </div>
       <div class="snote" style="margin-top:12px"><span class="si">${IC.shield}</span><span>El valor de la venta <b>se topa siempre en el precio del producto</b>: si pagan (o el OCR lee) de más, el excedente cuenta como <b>vuelto</b>, no como venta — ni tu Dashboard ni Meta se inflan.</span></div>
     </div>
@@ -379,7 +381,7 @@ function render(b){
   };
   $("pedSave").onclick=async(e)=>{
     p.digital.tolerancia=Math.max(0,Number($("pDigTol").value)||0);
-    if($("pDigRev")) p.digital.revisar_sobre_pct=Math.max(0,Number($("pDigRev").value)||0);
+    if($("pDigRev")) p.digital.revisar_sobre_sol=Math.max(0,Number($("pDigRev").value)||0);
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     // Avisos de pedido: el mensaje que se manda dentro de la ventana y la

@@ -5554,10 +5554,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // existe) y se avisa cuánto falta. Cuando la suma cubre, se limpia la bolsa
         // y sigue el camino normal (auto entrega / manual va al Copiloto).
         let esParcial = false;
-        // CAPA 1 (freno): si el OCR lee un monto MUY por encima del precio (ej. leyó
-        // S/1200 para un producto de S/120), no se aprueba solo aunque esté en
-        // automático — va a "Pagos por validar" para que un humano lo revise. El
-        // umbral (revisar_sobre_pct) es configurable en Pagos y atención; default 50%.
+        // CAPA 1 (freno): si el OCR lee un monto que supera el precio por más de
+        // S/margen (ej. leyó S/1200 para un producto de S/120), no se aprueba solo
+        // aunque esté en automático — va a "Pagos por validar" para que un humano lo
+        // revise. El margen (revisar_sobre_sol, en soles) se configura en Pagos y
+        // atención; default S/50.
         let sobrepagoSospechoso = false;
         if (!esExtra) {
           const esperadoB = Number(ctx.precio_esperado);
@@ -5583,9 +5584,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // Cubre (de una o acumulado) → limpia la bolsa y guarda las partes.
               if (abonos.length > 1) run.vars._pago_abonos = abonos;
               if (String(ctx._bolsa_pago ?? "")) await setField(db, run.channel_id, run.contact_id, "_bolsa_pago", "").catch(() => {});
-              // Freno: ¿el monto leído está MUY por encima del precio? → revisar a mano.
-              const factorRev = 1 + (Number((info as any)?.pedidos?.digital?.revisar_sobre_pct ?? 50) / 100);
-              if (total > esperadoB * factorRev) sobrepagoSospechoso = true;
+              // Freno: ¿el monto leído supera el precio por más de S/margen? → revisar a
+              // mano. El margen es un monto fijo configurable (revisar_sobre_sol, default 50).
+              const margenRevRaw = Number((info as any)?.pedidos?.digital?.revisar_sobre_sol);
+              const margenRev = Number.isFinite(margenRevRaw) && margenRevRaw >= 0 ? margenRevRaw : 50;
+              if (total > esperadoB + margenRev) sobrepagoSospechoso = true;
             }
           }
         }
