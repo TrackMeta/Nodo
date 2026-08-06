@@ -1294,7 +1294,7 @@ function renderContactPanel(){
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
       ${isTest?"":`<div class="cph" style="margin-top:3px">${botTxt}</div>`}
     </div>
-    ${!isTest && order && O.zonaDe(order)!=="digital"?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar los datos del pedido">${icon("edit")} Editar pedido</button><button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button></div>`:""}
+    ${!isTest && order?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar el pedido (corregir monto, producto, extras…)">${icon("edit")} Editar pedido</button>${O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button>`:""}</div>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${order?`<div style="padding:0 2px">${ventaChipsHtml(order, capiEvt)}</div>`:""}

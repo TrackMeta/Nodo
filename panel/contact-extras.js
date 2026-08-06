@@ -1334,7 +1334,9 @@ export async function openEditarPedido(o, deps) {
   const atr = Object.entries(s.atributos || {}).map(([k, val]) => `${k}: ${val}`).join(" · ");
   const sug = (zona === "provincia" && !s.destino) ? sugerirAgencia(s.sede || s.ciudad, SH.destino) : "";
   const destVal = s.destino || sug || s.sede || "";
-  const zonaBadge = zona === "provincia"
+  const zonaBadge = zona === "digital"
+    ? `<span class="pm-zona lima">${icon("dollar")} Digital</span>`
+    : zona === "provincia"
     ? `<span class="pm-zona prov">${icon("building")} Provincia · agencia</span>`
     : `<span class="pm-zona lima">${icon("truck")} Lima · contraentrega</span>`;
 
@@ -1443,7 +1445,7 @@ export async function openEditarPedido(o, deps) {
         ${zonaBadge}
       </div>
       <div class="pm-body">
-        <div class="pm-sec">
+        <div class="pm-sec" id="eDestSec" ${zona === "digital" ? 'style="display:none"' : ""}>
           <div class="pm-sec-h">${icon("user")} Destinatario</div>
           <div class="row2">
             <div><label>Nombre</label><input id="eNom" value="${esc(s.cliente || c.nombre || "")}"/></div>
@@ -1451,9 +1453,20 @@ export async function openEditarPedido(o, deps) {
           </div>
         </div>
         ${prodHtml}
+        <div class="pm-sec" id="eDigital" ${zona === "digital" ? "" : 'style="display:none"'}>
+          <div class="pm-sec-h">${icon("dollar")} Pago digital</div>
+          <label>Monto cobrado (S/) <span style="color:var(--faint,var(--muted));font-weight:400">(corrige si el bot leyó mal el comprobante)</span></label>
+          <input id="eAmountD" type="number" step="0.1" value="${esc(o.amount ?? "")}"/>
+          <label style="margin-top:10px">Estado de la venta</label>
+          <select id="eEstadoD">
+            <option value="confirmada"${(o.estado || "confirmada") !== "anulada" ? " selected" : ""}>✅ Pagado / entregado (cuenta en tus números)</option>
+            <option value="anulada"${o.estado === "anulada" ? " selected" : ""}>🚫 Anular la venta (deja de contar)</option>
+          </select>
+          <div class="hint">Corrige el monto y el Dashboard/KPIs se ajustan al instante. Si ya se envió a Meta con el monto viejo, después toca <b>“reintentar”</b> en el chip de Meta del chat.</div>
+        </div>
         ${atrHtml}
         ${bumpHtml}
-        <div class="pm-sec" id="eLima" ${zona === "provincia" ? 'style="display:none"' : ""}>
+        <div class="pm-sec" id="eLima" ${zona !== "lima" ? 'style="display:none"' : ""}>
           <div class="pm-sec-h">${icon("pin")} Entrega en Lima</div>
           <label>Dirección</label><input id="eDir" value="${esc(s.direccion || "")}"/>
           <div class="row2">
@@ -1538,7 +1551,7 @@ export async function openEditarPedido(o, deps) {
       const pid = g("#eProd") ? g("#eProd").value : "";
       const vid = g("#eVer") ? g("#eVer").value : "";
       const pr = precioVer(pid, vid);
-      const inp = g("#eAmountL");
+      const inp = g("#eAmountL") || g("#eAmountD"); // Lima (importe) o digital (monto)
       if (pr != null && inp) inp.value = pr;
     };
     if (g("#eProd")) g("#eProd").onchange = () => {
@@ -1573,7 +1586,8 @@ export async function openEditarPedido(o, deps) {
 
     g(".save").onclick = async () => {
       const numU = (id) => { const x = g(id).value; return x === "" ? null : Number(x); };
-      const ship = { cliente: g("#eNom").value.trim(), tel: g("#eTel").value.trim(), zona };
+      const ship = { zona };
+      if (zona !== "digital") { ship.cliente = g("#eNom").value.trim(); ship.tel = g("#eTel").value.trim(); }
       // Variante (talla/color) del principal → shipping.atributos (rótulo/agencia/stock).
       const ejesP = ejesDe(g("#eProd") ? g("#eProd").value : o.product_id);
       if (ejesP.length) {
@@ -1581,8 +1595,12 @@ export async function openEditarPedido(o, deps) {
         ov.querySelectorAll(".eatr-ppal").forEach((sl) => { const v = sl.value.trim(); if (v) at[sl.dataset.eje] = v; else delete at[sl.dataset.eje]; });
         ship.atributos = at;
       }
-      let amount;
-      if (zona === "provincia") {
+      let amount, estadoNuevo;
+      if (zona === "digital") {
+        const a = g("#eAmountD").value; if (a !== "") amount = Number(a);
+        const es = g("#eEstadoD") ? g("#eEstadoD").value : "";
+        if (es && es !== o.estado) estadoNuevo = es;
+      } else if (zona === "provincia") {
         const dst = g("#eDestino").value.trim();
         Object.assign(ship, { dni: g("#eDni").value.trim(), ciudad: g("#eCiudad").value.trim(),
           destino: dst, mercaderia: g("#eMerc").value,
@@ -1614,6 +1632,7 @@ export async function openEditarPedido(o, deps) {
         }
       }
       if (amount !== undefined) body.amount = amount;
+      if (estadoNuevo) body.estado = estadoNuevo;
       // Ventas extra / regalos: las que quedaron (las quitadas con ✕ ya no están en
       // el DOM, con el precio corregido) + las AGREGADAS a mano. La variante elegida
       // va en `_attrs`; order-update la traduce a stock_key y ajusta el inventario.
