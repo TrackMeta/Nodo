@@ -459,7 +459,7 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
 // adjunta regalos y descuenta stock. Espeja los pasos de `crearPedido`.
 export async function crearVentaManual(
   db: SupabaseClient, channelId: string, contactId: string,
-  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null; extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean }> | null },
+  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null; extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean }> | null; envio?: { zona?: string; cliente?: string; tel?: string; dni?: string; direccion?: string; distrito?: string; referencia?: string; ciudad?: string; destino?: string } | null },
 ): Promise<{ orderId: string }> {
   const { productId, versionId, estado } = opts;
   const amount = Number(opts.amount) || 0;
@@ -470,7 +470,21 @@ export async function crearVentaManual(
   const { data: ct } = await db.from("contacts").select("ctwa_clid, ad_id").eq("id", contactId).maybeSingle();
 
   const ship: Record<string, unknown> = { manual: true };
-  if (esFisico) ship.zona = "lima"; // venta física a mano = entrega directa (sin adelanto/agencia)
+  if (esFisico) {
+    // Datos de entrega (Lima contraentrega o Provincia agencia). Vienen del modal
+    // pre-llenados con lo ya capturado del cliente → el pedido nace COMPLETO
+    // (rótulo/export funcionan). Sin envío, cae a Lima como antes.
+    const env = opts.envio || {};
+    ship.zona = (env.zona === "provincia" || env.zona === "lima") ? env.zona : "lima";
+    if (env.cliente) ship.cliente = env.cliente;
+    if (env.tel) ship.tel = env.tel;
+    if (env.dni) ship.dni = env.dni;
+    if (env.direccion) ship.direccion = env.direccion;
+    if (env.distrito) ship.distrito = env.distrito;
+    if (env.referencia) ship.referencia = env.referencia;
+    if (env.ciudad) ship.ciudad = env.ciudad;
+    if (env.destino) { ship.destino = env.destino; ship.sede = env.destino; } // agencia Shalom
+  }
   if (opts.atributos && Object.keys(opts.atributos).length) ship.atributos = opts.atributos;
   // Atribución CONGELADA: el ctwa_clid del contacto (si vino de un anuncio) queda
   // pegado a ESTA venta para que el Purchase se atribuya al anuncio correcto.
@@ -486,7 +500,7 @@ export async function crearVentaManual(
 
   await logEvent(db, channelId, contactId, "nota", "Venta registrada a mano", estado).catch(() => {});
   await moverEtapa(db, channelId, contactId, stageDeEstado(estado)).catch(() => {});
-  await autoEtiquetaZona(db, channelId, contactId, esFisico ? "lima" : "digital").catch(() => {});
+  await autoEtiquetaZona(db, channelId, contactId, esFisico ? String(ship.zona || "lima") : "digital").catch(() => {});
   await addTag(db, channelId, contactId, "Venta manual").catch(() => {});
 
   // Extras COBRADOS agregados a mano → order_bumps. Cuentan en el total, se

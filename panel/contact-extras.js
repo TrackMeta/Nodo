@@ -1000,6 +1000,41 @@ export function openVentaManual(contact, deps) {
     let tieneAd = false;
     try { const { data: ci } = await supa.from("contacts").select("ctwa_clid, source").eq("id", contact.id).maybeSingle(); tieneAd = !!(ci && (ci.ctwa_clid || ci.source === "ctwa")); } catch (_) {}
 
+    // Datos de entrega (solo venta FÍSICA): se PRE-COMPLETAN con lo que ya se
+    // capturó del cliente — sus campos guardados y el último pedido — para no
+    // re-tipear. `listas` alimenta los datalists de distrito (Eva) y agencia (Shalom).
+    const hayFisico = cat.some((p) => p.tipo === "fisico");
+    let listas = { shalom: {}, eva: {} };
+    const pre = {}; // { nombre, tel, dni, direccion, distrito, ciudad, sede, referencia }
+    if (hayFisico) {
+      try { const L = await cargarListas(); listas = { shalom: (L && L.shalom) || {}, eva: (L && L.eva) || {} }; } catch (_) {}
+      try {
+        const { data: fv } = await supa.from("contact_field_values").select("value, field:custom_fields(key,nombre)").eq("contact_id", contact.id);
+        for (const r of (fv || [])) {
+          const v = r?.value; if (v == null || String(v).trim() === "") continue;
+          const k = ((r.field?.key || "") + " " + (r.field?.nombre || "")).toLowerCase();
+          if (/dni|documento|ruc/.test(k)) pre.dni ??= v;
+          else if (/direcc/.test(k)) pre.direccion ??= v;
+          else if (/distrito/.test(k)) pre.distrito ??= v;
+          else if (/ciudad|departament|provincia|regi[oó]n/.test(k)) pre.ciudad ??= v;
+          else if (/agencia|sede|shalom|oficina|destino/.test(k)) pre.sede ??= v;
+          else if (/referen/.test(k)) pre.referencia ??= v;
+          else if (/nombre|full|complet/.test(k)) pre.nombre ??= v;
+          else if (/tel|celular|whatsapp|n[uú]mero|contacto/.test(k)) pre.tel ??= v;
+        }
+      } catch (_) {}
+      try {
+        const { data: lo } = await supa.from("orders").select("shipping").eq("contact_id", contact.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const sh = (lo && lo.shipping) || {};
+        pre.nombre ??= sh.cliente; pre.tel ??= sh.tel; pre.dni ??= sh.dni;
+        pre.direccion ??= sh.direccion; pre.distrito ??= sh.distrito; pre.referencia ??= sh.referencia;
+        pre.ciudad ??= sh.ciudad; pre.sede ??= (sh.destino || sh.sede);
+      } catch (_) {}
+    }
+    pre.nombre ??= contact.nombre || ""; pre.tel ??= contact.wa_id || "";
+    // Zona inicial: si hay pistas de provincia (agencia/DNI/ciudad ≠ Lima), arranca ahí.
+    let zona = (pre.sede || pre.dni || (pre.ciudad && !/lima/i.test(String(pre.ciudad)))) ? "provincia" : "lima";
+
     const money = (n) => "S/ " + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
     const prodOpts = (sel) => cat.map((p) => `<option value="${p.id}"${p.id === sel ? " selected" : ""}>${esc((p.emoji ? p.emoji + " " : "") + p.nombre)} · ${p.tipo === "digital" ? "Digital" : "Físico"}</option>`).join("");
     const verOpts = (p, sel) => (p.product_versions || []).map((v) => `<option value="${v.id}" data-precio="${v.precio ?? 0}"${v.id === sel ? " selected" : ""}>${esc(v.nombre)} — ${money(v.precio)}</option>`).join("");
@@ -1034,6 +1069,35 @@ export function openVentaManual(contact, deps) {
           <div class="vm-lbl">Extras cobrados <span class="vm-hint">(opcional)</span></div>
           <div id="vmExtras" class="vm-extras"></div>
           <button type="button" class="vm-add" id="vmAddExtra">${icon("plus")} Agregar extra</button>
+        </div>
+
+        <div class="vm-block vm-ship" id="vmShip" style="display:none">
+          <div class="vm-lbl">Datos de entrega</div>
+          <div class="vm-seg" id="vmZona">
+            <button type="button" class="vm-segb" data-z="lima">🛵 Lima · contraentrega</button>
+            <button type="button" class="vm-segb" data-z="provincia">🏢 Provincia · agencia</button>
+          </div>
+          <div class="vm-row" style="margin-top:8px">
+            <input class="vm-inp" id="vmNom" placeholder="Nombre de quien recibe"/>
+            <input class="vm-inp" id="vmTel" placeholder="Teléfono"/>
+          </div>
+          <div id="vmLima" style="margin-top:8px;flex-direction:column;gap:8px">
+            <input class="vm-inp" id="vmDir" placeholder="Dirección"/>
+            <div class="vm-row">
+              <input class="vm-inp" id="vmDist" list="vmDlDist" placeholder="Distrito"/>
+              <input class="vm-inp" id="vmRef" placeholder="Referencia (opcional)"/>
+            </div>
+            <datalist id="vmDlDist"></datalist>
+          </div>
+          <div id="vmProv" style="margin-top:8px;flex-direction:column;gap:8px">
+            <div class="vm-row">
+              <input class="vm-inp" id="vmDni" placeholder="DNI de quien recibe"/>
+              <input class="vm-inp" id="vmCiudad" placeholder="Ciudad"/>
+            </div>
+            <input class="vm-inp" id="vmDest" list="vmDlDest" placeholder="Agencia de destino (Shalom)"/>
+            <datalist id="vmDlDest"></datalist>
+          </div>
+          <div class="vm-shiphint">Se pre-llena con lo que ya diste del cliente. Después lo terminas de completar (guía, medidas, clave) en <b>Editar pedido</b>.</div>
         </div>
 
         <div class="vm-block">
@@ -1099,14 +1163,22 @@ export function openVentaManual(contact, deps) {
       });
     }
 
-    function renderSeg() {
+    function segOpts() {
       const tipo = selProd()?.tipo || "digital";
-      const opts = tipo === "digital"
-        ? [{ v: "confirmada", l: "Vendido / entregado" }]
-        : [{ v: "entregado_cobrado", l: "Entregado y cobrado" }, { v: "confirmado", l: "Por entregar" }];
+      if (tipo === "digital") return [{ v: "confirmada", l: "Vendido / entregado" }];
+      if (zona === "provincia") return [{ v: "recogido", l: "Recogido y pagado" }, { v: "confirmado", l: "Por entregar" }];
+      return [{ v: "entregado_cobrado", l: "Entregado y cobrado" }, { v: "confirmado", l: "Por entregar" }];
+    }
+    function renderSeg() {
+      const opts = segOpts();
       if (!opts.some((o) => o.v === estado)) estado = opts[0].v;
       g("#vmSeg").innerHTML = opts.map((o) => `<button type="button" class="vm-segb${o.v === estado ? " on" : ""}" data-v="${o.v}">${o.l}</button>`).join("");
       g("#vmSeg").querySelectorAll(".vm-segb").forEach((b) => b.onclick = () => { estado = b.dataset.v; renderSeg(); });
+    }
+    function renderZona() {
+      g("#vmZona").querySelectorAll(".vm-segb").forEach((b) => b.classList.toggle("on", b.dataset.z === zona));
+      g("#vmLima").style.display = zona === "lima" ? "flex" : "none";
+      g("#vmProv").style.display = zona === "provincia" ? "flex" : "none";
     }
 
     function refreshGiftAndNote() {
@@ -1127,7 +1199,19 @@ export function openVentaManual(contact, deps) {
       const p = selProd();
       g("#vmVer").innerHTML = verOpts(p);
       g("#vmMonto").value = g("#vmVer").selectedOptions[0]?.dataset.precio || 0;
+      g("#vmShip").style.display = (p?.tipo === "fisico") ? "flex" : "none";
       renderSeg(); refreshGiftAndNote(); recomputeTotal();
+    }
+
+    // Pre-llena los campos de entrega (una sola vez) + datalists + toggle de zona.
+    if (hayFisico) {
+      g("#vmNom").value = pre.nombre || ""; g("#vmTel").value = pre.tel || "";
+      g("#vmDir").value = pre.direccion || ""; g("#vmDist").value = pre.distrito || ""; g("#vmRef").value = pre.referencia || "";
+      g("#vmDni").value = pre.dni || ""; g("#vmCiudad").value = pre.ciudad || ""; g("#vmDest").value = pre.sede || "";
+      g("#vmDlDist").innerHTML = ((listas.eva && listas.eva.distrito) || []).map((x) => `<option value="${esc(x)}"></option>`).join("");
+      g("#vmDlDest").innerHTML = ((listas.shalom && listas.shalom.destino) || []).map((x) => `<option value="${esc(x)}"></option>`).join("");
+      g("#vmZona").querySelectorAll(".vm-segb").forEach((b) => b.onclick = () => { zona = b.dataset.z; renderZona(); renderSeg(); });
+      renderZona();
     }
 
     g("#vmProd").onchange = onProdChange;
@@ -1146,10 +1230,15 @@ export function openVentaManual(contact, deps) {
     ov.onclick = (e) => { if (e.target === ov) close(false); };
     g("#vmOk").onclick = async () => {
       const btn = g("#vmOk"); btn.disabled = true; const old = btn.textContent; btn.textContent = "Registrando…";
+      const t = (id) => (g(id)?.value || "").trim();
+      const fisico = (selProd()?.tipo) === "fisico";
+      const envio = !fisico ? null : (zona === "lima"
+        ? { zona: "lima", cliente: t("#vmNom"), tel: t("#vmTel"), direccion: t("#vmDir"), distrito: t("#vmDist"), referencia: t("#vmRef") }
+        : { zona: "provincia", cliente: t("#vmNom"), tel: t("#vmTel"), dni: t("#vmDni"), ciudad: t("#vmCiudad"), destino: t("#vmDest") });
       const body = {
         channel_id: channelId, contact_id: contact.id,
         product_id: g("#vmProd").value, version_id: g("#vmVer").value,
-        amount: Number(g("#vmMonto").value) || 0, estado, entregar: g("#vmEnt").checked,
+        amount: Number(g("#vmMonto").value) || 0, estado, entregar: g("#vmEnt").checked, envio,
         extras: extras.filter((e) => e.productId && e.versionId).map((e) => {
           const p = prodById(e.productId), v = (p?.product_versions || []).find((x) => x.id === e.versionId);
           return { productId: e.productId, versionId: e.versionId, nombre: (p?.emoji ? p.emoji + " " : "") + (p?.nombre || "extra") + (v && v.nombre && v.nombre !== "Única" ? " · " + v.nombre : ""), precio: Number(e.precio) || 0, digital: (p?.tipo || "digital") !== "fisico" };
@@ -1203,6 +1292,9 @@ function injectVentaManualCss() {
   .vm-add{margin-top:8px;border:1px dashed var(--border,#cbd5e1);background:none;color:var(--brand,#2b7fff);border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:inherit}
   .vm-add:hover{background:color-mix(in srgb,var(--brand,#2b7fff) 8%,transparent);border-color:var(--brand,#2b7fff)}
   .vm-add svg{width:14px;height:14px}
+  .vm-ship .vm-row .vm-inp{flex:1;min-width:0}
+  .vm-ship .vm-seg{margin-bottom:2px}
+  .vm-shiphint{font-size:11px;color:var(--faint,#9ca3af);line-height:1.5;margin-top:8px}
   .vm-seg{display:flex;gap:6px;background:var(--bg,#f3f4f6);padding:4px;border-radius:11px;border:1px solid var(--border,#e5e7eb)}
   .vm-segb{flex:1;border:none;background:none;color:var(--muted,#6b7280);padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .12s}
   .vm-segb.on{background:var(--card,#fff);color:var(--text,#111);box-shadow:0 1px 3px rgba(0,0,0,.12)}
