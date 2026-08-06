@@ -979,8 +979,103 @@ export function ventaChipsHtml(order, capiEvent) {
     if (ce === "enviado") meta = { lbl: "Meta · enviado", dot: "#14b8a6" };
     else meta = { lbl: ce === "fallido" ? "Meta · error" : "Meta · falta config", dot: "#ef4444", retry: true };
   }
-  const chip = (c) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);color:var(--muted);white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${c.dot};flex:none"></span>${c.lbl}${c.retry ? ` <button data-capi-retry="${order.id}" title="Reintentar el envío a Meta" style="border:none;background:none;color:#e24b4a;cursor:pointer;font-size:11.5px;padding:0 0 0 4px;text-decoration:underline">reintentar</button>` : ""}</span>`;
+  // El chip de Meta es CLICKEABLE si la venta es de anuncio (ctwa) → abre el
+  // detalle de qué se envió/enviaría a Meta (evento, valor, datos de match, respuesta).
+  if (ctwa && order) meta.detalle = order.id;
+  const chip = (c) => `<span ${c.detalle ? `data-meta-detalle="${c.detalle}" title="Ver el detalle de lo que se envía a Meta" ` : ""}style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);color:var(--muted);white-space:nowrap${c.detalle ? ";cursor:pointer" : ""}"><span style="width:7px;height:7px;border-radius:50%;background:${c.dot};flex:none"></span>${c.lbl}${c.detalle ? ` <span style="opacity:.6;font-size:10px">ⓘ</span>` : ""}${c.retry ? ` <button data-capi-retry="${order.id}" title="Reintentar el envío a Meta" style="border:none;background:none;color:#e24b4a;cursor:pointer;font-size:11.5px;padding:0 0 0 4px;text-decoration:underline">reintentar</button>` : ""}</span>`;
   return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px" data-venta-chips>${chip(sis)}${chip(meta)}</div>`;
+}
+
+// Detalle de lo que se envía / envió a Meta (Conversions API) para un pedido de
+// anuncio. Muestra el evento, el valor, los datos de match (que van HASHEADOS),
+// el estado y la respuesta cruda de Meta. Read-only + reintentar si no se envió.
+export function openMetaDetalle(order, capiEvent, contact, deps) {
+  const { supa, toast, channelId } = deps || {};
+  injectVentaManualCss();
+  const money = (n) => "S/ " + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
+  const ship = (order && order.shipping) || {};
+  const bumps = Array.isArray(order && order.order_bumps) ? order.order_bumps : [];
+  let val = Number(order && order.amount) || 0;
+  for (const b of bumps) val += Number(b && b.precio) || 0;
+  const est = capiEvent && capiEvent.estado;
+  const cerrado = VM_CLOSED.has(String((order && order.estado) || ""));
+  const head = est === "enviado" ? { lbl: "Enviado a Meta ✓", dot: "#14b8a6" }
+    : est === "fallido" ? { lbl: "Error al enviar", dot: "#ef4444" }
+    : !cerrado ? { lbl: "Aún no se envía — se enviará al cerrar la venta", dot: "#f59e0b" }
+    : { lbl: "Pendiente · falta cargar Pixel + token CAPI", dot: "#ef4444" };
+  const tel = (contact && (contact.telefono || contact.wa_id)) || "";
+  const nombre = ship.cliente || (contact && contact.nombre) || "";
+  const ciudad = ship.ciudad || "";
+  const ctwa = ship.ctwa_clid || "";
+  const eventId = (capiEvent && capiEvent.event_id) || ("Purchase:" + (order && order.id));
+  const actionSrc = (capiEvent && capiEvent.action_source) || "business_messaging";
+  const mr = capiEvent && capiEvent.meta_response;
+  let resp = ""; if (mr) { try { resp = typeof mr === "string" ? mr : JSON.stringify(mr, null, 2); } catch (_) { resp = String(mr); } }
+  const dt = (capiEvent && (capiEvent.updated_at || capiEvent.created_at)) || null;
+  const fecha = dt ? (() => { try { return new Intl.DateTimeFormat("es-PE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(dt)); } catch (_) { return String(dt); } })() : "—";
+
+  const row = (k, v, ok) => `<div class="mdt-row"><span class="mdt-k">${esc(k)}</span><span class="mdt-v">${v ? esc(String(v)) : `<span style="color:var(--faint,#9ca3af)">—</span>`}${(ok && v) ? ` <span style="color:#14b8a6">✓</span>` : ""}</span></div>`;
+
+  return new Promise((resolve) => {
+    const ov = document.createElement("div"); ov.className = "overlay vm-ov";
+    ov.innerHTML = `<div class="vm-card" role="dialog" aria-label="Detalle de envío a Meta" style="max-width:480px">
+      <div class="vm-head">
+        <div class="vm-ico" style="background:color-mix(in srgb,#1877F2 16%,transparent);color:#1877F2">${icon("megaphone") || "📢"}</div>
+        <div class="vm-htx"><div class="vm-title">Envío a Meta</div><div class="vm-sub">Purchase · pedido de anuncio</div></div>
+        <button class="vm-x" id="mdX" title="Cerrar">×</button>
+      </div>
+      <div class="vm-body">
+        <div class="mdt-head"><span style="width:9px;height:9px;border-radius:50%;background:${head.dot};flex:none"></span><b>${esc(head.lbl)}</b></div>
+
+        <div class="mdt-sec">
+          <div class="mdt-t">Conversión</div>
+          ${row("Evento", "Purchase")}
+          ${row("Valor", money(val) + (bumps.length ? ` (producto + ${bumps.length} extra${bumps.length > 1 ? "s" : ""})` : ""))}
+          ${row("Moneda", (order && order.currency) || "PEN")}
+        </div>
+
+        <div class="mdt-sec">
+          <div class="mdt-t">Datos de match <span class="mdt-hint">(se envían cifrados / hasheados)</span></div>
+          ${row("Teléfono", tel ? "•••" + String(tel).slice(-4) : "", !!tel)}
+          ${row("Nombre", nombre, !!nombre)}
+          ${row("Ciudad", ciudad, !!ciudad)}
+          ${row("País", "PE", true)}
+          ${row("Clic del anuncio (ctwa_clid)", ctwa ? String(ctwa).slice(0, 10) + "…" : "", !!ctwa)}
+        </div>
+
+        <div class="mdt-sec">
+          <div class="mdt-t">Técnico</div>
+          ${row("event_id", eventId)}
+          ${row("action_source", actionSrc)}
+          ${row("Último intento", fecha)}
+        </div>
+
+        ${resp ? `<div class="mdt-sec"><div class="mdt-t">Respuesta de Meta</div><pre class="mdt-pre">${esc(resp)}</pre></div>` : ""}
+        <div class="vm-note"><span class="vm-note-ic">🔒</span><span>Los datos personales (teléfono, nombre, ciudad) se <b>cifran</b> antes de salir; Meta solo los usa para emparejar la conversión. El <b>ctwa_clid</b> es el id del clic en tu anuncio.</span></div>
+      </div>
+      <div class="vm-foot">
+        <div class="vm-total"><span>Valor</span><b>${money(val)}</b></div>
+        <div class="vm-actions">
+          ${est !== "enviado" && cerrado ? `<button class="vm-btn" id="mdRetry">Reintentar envío</button>` : ""}
+          <button class="vm-btn primary" id="mdClose">Cerrar</button>
+        </div>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const g = (s) => ov.querySelector(s);
+    const close = (v) => { ov.remove(); resolve(v); };
+    g("#mdX").onclick = () => close(false);
+    g("#mdClose").onclick = () => close(false);
+    ov.onclick = (e) => { if (e.target === ov) close(false); };
+    const rb = g("#mdRetry");
+    if (rb) rb.onclick = async () => {
+      rb.disabled = true; const old = rb.textContent; rb.textContent = "enviando…";
+      try {
+        const { data, error } = await supa.functions.invoke("capi-retry", { body: { channel_id: channelId, order_id: order.id } });
+        if (error || !data?.ok) { toast && toast("No se envió: " + (data?.error || error?.message || "error"), true); rb.disabled = false; rb.textContent = old; return; }
+        toast && toast("Enviado a Meta ✓"); close(true);
+      } catch (e) { toast && toast("No se envió: " + (e?.message || e), true); rb.disabled = false; rb.textContent = old; }
+    };
+  });
 }
 
 // Registrar una venta a MANO (cerrada por fuera: llamada, número personal). Crea
@@ -1304,6 +1399,14 @@ function injectVentaManualCss() {
   .vm-track::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
   .vm-switch input:checked + .vm-track{background:var(--brand,#2b7fff)}
   .vm-switch input:checked + .vm-track::after{transform:translateX(17px)}
+  .mdt-head{display:flex;align-items:center;gap:8px;font-size:13.5px}
+  .mdt-sec{display:flex;flex-direction:column;gap:1px}
+  .mdt-t{font-size:11px;font-weight:700;color:var(--muted,#6b7280);text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px}
+  .mdt-hint{font-weight:500;text-transform:none;letter-spacing:0;color:var(--faint,#9ca3af)}
+  .mdt-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:4px 0;border-bottom:1px solid color-mix(in srgb,var(--border,#e5e7eb) 55%,transparent)}
+  .mdt-k{color:var(--muted,#6b7280);flex:none}
+  .mdt-v{color:var(--text,#111);text-align:right;word-break:break-word}
+  .mdt-pre{background:var(--bg,#f6f6f6);border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.45;overflow:auto;max-height:170px;white-space:pre-wrap;word-break:break-word;margin:0;color:var(--text,#111)}
   .vm-note{display:flex;gap:8px;font-size:11.5px;line-height:1.5;color:var(--muted,#6b7280);background:var(--bg,#f9fafb);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 11px}
   .vm-note.ad{background:color-mix(in srgb,var(--brand,#2b7fff) 8%,transparent);border-color:color-mix(in srgb,var(--brand,#2b7fff) 26%,transparent)}
   .vm-note-ic{flex:none;font-size:13px}

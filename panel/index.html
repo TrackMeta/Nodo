@@ -562,7 +562,7 @@ import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPAB
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js?v=2";
 import * as O from "./orders.js";
-import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
+import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, openMetaDetalle, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm } from "./shell.js";
 injectExtrasCss();
 
@@ -1200,7 +1200,7 @@ async function loadContactPanel(c){
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
   let capiEvt=null;
-  if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
+  if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at, updated_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
   panelData = {
     contact: ctRes.data || c,
     order: orderRes || null,
@@ -1350,13 +1350,19 @@ function renderContactPanel(){
     const ok=await openVentaManual(contact, { supa, toast, channelId:state.channelId });
     if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); }
   };
-  p.querySelectorAll("[data-capi-retry]").forEach(b=> b.onclick=async()=>{
+  p.querySelectorAll("[data-capi-retry]").forEach(b=> b.onclick=async(e)=>{
+    if(e) e.stopPropagation(); // no abrir el detalle del chip al tocar "reintentar"
     const oid=b.dataset.capiRetry; b.disabled=true; const prev=b.textContent; b.textContent="enviando…";
     try{
       const { data, error }=await supa.functions.invoke("capi-retry", { body:{ channel_id:state.channelId, order_id:oid } });
       if(error||!data?.ok){ toast("No se envió a Meta: "+(data?.error||error?.message||"error"), true); b.disabled=false; b.textContent=prev; return; }
       toast("Enviado a Meta ✓"); loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id });
     }catch(e){ toast("No se envió a Meta: "+(e?.message||e), true); b.disabled=false; b.textContent=prev; }
+  });
+  // Chip de Meta clickeable → detalle de lo que se envía/envió a Meta.
+  p.querySelectorAll("[data-meta-detalle]").forEach(el=> el.onclick=async()=>{
+    const ok=await openMetaDetalle(order, capiEvt, contact, { supa, toast, channelId:state.channelId });
+    if(ok){ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); }
   });
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{
     const ok=await openEditarPedido({...order, contact}, { supa });
