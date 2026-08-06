@@ -459,7 +459,7 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
 // adjunta regalos y descuenta stock. Espeja los pasos de `crearPedido`.
 export async function crearVentaManual(
   db: SupabaseClient, channelId: string, contactId: string,
-  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null },
+  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null; extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean }> | null },
 ): Promise<{ orderId: string }> {
   const { productId, versionId, estado } = opts;
   const amount = Number(opts.amount) || 0;
@@ -489,13 +489,38 @@ export async function crearVentaManual(
   await autoEtiquetaZona(db, channelId, contactId, esFisico ? "lima" : "digital").catch(() => {});
   await addTag(db, channelId, contactId, "Venta manual").catch(() => {});
 
-  // Purchase a Meta: maybePurchase ignora lo que no sea cierre real; usa el
-  // ctwa_clid congelado. No lanza si el canal no tiene pixel/token.
+  // Extras COBRADOS agregados a mano → order_bumps. Cuentan en el total, se
+  // entregan si son digitales (entregarExtrasDigitales), descuentan stock si son
+  // físicos (bloque de stock) y SUMAN al valor del Purchase de Meta (maybePurchase
+  // relee order_bumps). Se adjuntan ANTES de maybePurchase para que el valor sea
+  // el real. La talla del extra se deja en "_" (la venta a mano no la pregunta).
+  const extras = Array.isArray(opts.extras) ? opts.extras : [];
+  if (extras.length) {
+    const bumps: Array<Record<string, unknown>> = [];
+    for (const ex of extras) {
+      if (!ex?.productId || !ex?.versionId) continue;
+      let digital = ex.digital;
+      let costo = 0;
+      const { data: exv } = await db.from("product_versions").select("costo").eq("id", ex.versionId).maybeSingle();
+      const cv = Number((exv as any)?.costo); if (Number.isFinite(cv)) costo = cv;
+      if (digital == null) {
+        const { data: exp } = await db.from("products").select("tipo").eq("id", ex.productId).maybeSingle();
+        digital = String((exp as any)?.tipo || "digital") !== "fisico";
+      }
+      bumps.push({ nombre: ex.nombre || "extra", precio: Number(ex.precio) || 0, costo, digital, version_id: ex.versionId, product_id: ex.productId, stock_key: "_", entregado: false });
+    }
+    if (bumps.length) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
+  }
+
+  try { await adjuntarRegalos(db, channelId, contactId, orderId, productId, {}); } catch (e) { console.error("[ventaManual] regalos:", (e as any)?.message ?? e); }
+
+  // Purchase a Meta DESPUÉS de adjuntar extras+regalos: maybePurchase relee
+  // order_bumps y suma sus precios, así el valor que llega a Meta es el total
+  // real. Ignora lo que no sea cierre real; usa el ctwa_clid congelado; no lanza
+  // si el canal no tiene pixel/token.
   try {
     await maybePurchase(db, { id: orderId, channel_id: channelId, contact_id: contactId, estado, amount, currency: "PEN", shipping: ship });
   } catch (e) { console.error("[ventaManual] capi:", (e as any)?.message ?? e); }
-
-  try { await adjuntarRegalos(db, channelId, contactId, orderId, productId, {}); } catch (e) { console.error("[ventaManual] regalos:", (e as any)?.message ?? e); }
 
   // Entrega DIGITAL: el link del producto + los extras/regalos digitales.
   if (!esFisico && opts.entregarLink !== false) {

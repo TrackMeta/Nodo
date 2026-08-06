@@ -990,61 +990,170 @@ export function ventaChipsHtml(order, capiEvent) {
 export function openVentaManual(contact, deps) {
   const { supa, toast, channelId } = deps;
   return new Promise(async (resolve) => {
+    injectVentaManualCss();
     const { data: prods } = await supa.from("products")
-      .select("id, nombre, emoji, tipo, clase, product_versions(id, nombre, precio)")
+      .select("id, nombre, emoji, tipo, clase, config, product_versions(id, nombre, precio)")
       .eq("channel_id", channelId).order("nombre");
     const cat = (prods || []).filter((p) => p.clase !== "regalo" && (p.product_versions || []).length);
     if (!cat.length) { toast("No hay productos con precio para registrar una venta.", true); resolve(false); return; }
     // Atribución del contacto (para el aviso de Meta).
     let tieneAd = false;
     try { const { data: ci } = await supa.from("contacts").select("ctwa_clid, source").eq("id", contact.id).maybeSingle(); tieneAd = !!(ci && (ci.ctwa_clid || ci.source === "ctwa")); } catch (_) {}
-    const ov = document.createElement("div"); ov.className = "overlay";
-    const prodOpts = cat.map((p) => `<option value="${p.id}">${esc((p.emoji ? p.emoji + " " : "") + p.nombre)} · ${p.tipo === "digital" ? "Digital" : "Físico"}</option>`).join("");
-    ov.innerHTML = `<div class="modal" style="max-width:440px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><span style="color:var(--brand)">${icon("dollar")}</span>
-        <div><div style="font-weight:700;font-size:15px">Registrar venta a mano</div>
-        <div style="font-size:12px;color:var(--muted)">${esc(contact.nombre || contact.wa_id || "Cliente")} · venta cerrada por fuera</div></div></div>
-      <label style="margin-top:10px">Producto</label>
-      <select class="in" id="vmProd">${prodOpts}</select>
-      <label style="margin-top:10px">Presentación</label>
-      <select class="in" id="vmVer"></select>
-      <div style="display:flex;gap:10px;margin-top:10px">
-        <div style="flex:1"><label>Monto cobrado (S/)</label><input class="in" id="vmMonto" type="number" min="0" step="0.5"/></div>
-        <div style="flex:1.4"><label>Estado</label><select class="in" id="vmEstado"></select></div>
+
+    const money = (n) => "S/ " + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
+    const prodOpts = (sel) => cat.map((p) => `<option value="${p.id}"${p.id === sel ? " selected" : ""}>${esc((p.emoji ? p.emoji + " " : "") + p.nombre)} · ${p.tipo === "digital" ? "Digital" : "Físico"}</option>`).join("");
+    const verOpts = (p, sel) => (p.product_versions || []).map((v) => `<option value="${v.id}" data-precio="${v.precio ?? 0}"${v.id === sel ? " selected" : ""}>${esc(v.nombre)} — ${money(v.precio)}</option>`).join("");
+
+    // Estado del formulario (fuente de la verdad para el resumen en vivo).
+    let estado = "confirmada"; // se ajusta según el tipo del principal
+    const extras = []; // { id, productId, versionId, precio }
+    let extraSeq = 0;
+
+    const ov = document.createElement("div"); ov.className = "overlay vm-ov";
+    ov.innerHTML = `<div class="vm-card" role="dialog" aria-label="Registrar venta a mano">
+      <div class="vm-head">
+        <div class="vm-ico">${icon("dollar")}</div>
+        <div class="vm-htx">
+          <div class="vm-title">Registrar venta a mano</div>
+          <div class="vm-sub">${esc(contact.nombre || contact.wa_id || "Cliente")} · venta cerrada por fuera</div>
+        </div>
+        <button class="vm-x" id="vmX" title="Cerrar">×</button>
       </div>
-      <label id="vmEntWrap" style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;font-weight:400"><input type="checkbox" id="vmEnt" checked style="width:16px;height:16px"/> <span style="font-size:12.5px">Enviarle el link/acceso al cliente ahora</span></label>
-      <div id="vmNote" style="font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-        <button class="btn" id="vmCancel">Cancelar</button>
-        <button class="btn primary" id="vmOk">Registrar venta</button>
+      <div class="vm-body">
+        <div class="vm-block">
+          <div class="vm-lbl">¿Qué compró?</div>
+          <select class="vm-sel" id="vmProd">${prodOpts()}</select>
+          <div class="vm-row" style="margin-top:8px">
+            <select class="vm-sel" id="vmVer" style="flex:2"></select>
+            <div class="vm-money"><span class="vm-cur">S/</span><input class="vm-inp" id="vmMonto" type="number" min="0" step="0.5" inputmode="decimal"/></div>
+          </div>
+          <div id="vmGift" class="vm-gift" style="display:none"></div>
+        </div>
+
+        <div class="vm-block">
+          <div class="vm-lbl">Extras cobrados <span class="vm-hint">(opcional)</span></div>
+          <div id="vmExtras" class="vm-extras"></div>
+          <button type="button" class="vm-add" id="vmAddExtra">${icon("plus")} Agregar extra</button>
+        </div>
+
+        <div class="vm-block">
+          <div class="vm-lbl">Estado de la venta</div>
+          <div class="vm-seg" id="vmSeg"></div>
+        </div>
+
+        <label class="vm-switch" id="vmEntWrap">
+          <span>Enviarle el link/acceso al cliente ahora</span>
+          <input type="checkbox" id="vmEnt" checked/><span class="vm-track"></span>
+        </label>
+
+        <div class="vm-note" id="vmNote"></div>
+      </div>
+      <div class="vm-foot">
+        <div class="vm-total"><span>Total</span><b id="vmTotal">S/ 0.00</b></div>
+        <div class="vm-actions">
+          <button class="vm-btn" id="vmCancel">Cancelar</button>
+          <button class="vm-btn primary" id="vmOk">Registrar venta</button>
+        </div>
       </div></div>`;
     document.body.appendChild(ov);
     const g = (s) => ov.querySelector(s);
     const close = (val) => { ov.remove(); resolve(val); };
-    function refresh() {
-      const p = cat.find((x) => x.id === g("#vmProd").value);
-      const tipo = p?.tipo || "digital";
-      g("#vmVer").innerHTML = (p.product_versions || []).map((v) => `<option value="${v.id}" data-precio="${v.precio ?? ""}">${esc(v.nombre)} — S/ ${v.precio ?? 0}</option>`).join("");
-      g("#vmEstado").innerHTML = tipo === "digital"
-        ? `<option value="confirmada">Vendido / entregado</option>`
-        : `<option value="entregado_cobrado">Entregado y cobrado (venta cerrada)</option><option value="confirmado">Confirmado (aún por entregar)</option>`;
-      g("#vmEntWrap").style.display = tipo === "digital" ? "flex" : "none";
-      const vopt = g("#vmVer").selectedOptions[0]; g("#vmMonto").value = vopt?.dataset.precio || 0;
-      g("#vmNote").innerHTML = tieneAd
-        ? "🎯 Este cliente vino de un anuncio de Meta: la venta se atribuye al anuncio (se envía el Purchase si tienes el Pixel + token CAPI cargados)."
-        : "Este cliente no tiene atribución de anuncio: la venta cuenta en tus números, pero no se envía a Meta (no hay clic que acreditar).";
+
+    const selProd = () => cat.find((x) => x.id === g("#vmProd").value) || cat[0];
+    const prodById = (id) => cat.find((x) => x.id === id);
+
+    function recomputeTotal() {
+      let t = Number(g("#vmMonto").value) || 0;
+      for (const ex of extras) t += Number(ex.precio) || 0;
+      g("#vmTotal").textContent = money(t);
     }
-    g("#vmProd").onchange = refresh;
-    g("#vmVer").onchange = () => { const vopt = g("#vmVer").selectedOptions[0]; g("#vmMonto").value = vopt?.dataset.precio || 0; };
-    refresh();
+
+    function renderExtras() {
+      const box = g("#vmExtras");
+      box.innerHTML = extras.map((ex) => {
+        const p = prodById(ex.productId) || cat[0];
+        return `<div class="vm-erow" data-id="${ex.id}">
+          <select class="vm-sel vm-ep" data-id="${ex.id}">${prodOpts(ex.productId)}</select>
+          <select class="vm-sel vm-ev" data-id="${ex.id}">${verOpts(p, ex.versionId)}</select>
+          <div class="vm-money sm"><span class="vm-cur">S/</span><input class="vm-inp vm-eprice" data-id="${ex.id}" type="number" min="0" step="0.5" value="${ex.precio ?? 0}"/></div>
+          <button type="button" class="vm-del" data-id="${ex.id}" title="Quitar">${icon("trash")}</button>
+        </div>`;
+      }).join("");
+      box.querySelectorAll(".vm-ep").forEach((s) => s.onchange = () => {
+        const ex = extras.find((e) => e.id === s.dataset.id); const p = prodById(s.value);
+        ex.productId = s.value; ex.versionId = (p.product_versions[0] || {}).id; ex.precio = (p.product_versions[0] || {}).precio ?? 0;
+        renderExtras(); recomputeTotal();
+      });
+      box.querySelectorAll(".vm-ev").forEach((s) => s.onchange = () => {
+        const ex = extras.find((e) => e.id === s.dataset.id);
+        ex.versionId = s.value; ex.precio = Number(s.selectedOptions[0]?.dataset.precio) || 0;
+        const pr = box.querySelector(`.vm-eprice[data-id="${ex.id}"]`); if (pr) pr.value = ex.precio;
+        recomputeTotal();
+      });
+      box.querySelectorAll(".vm-eprice").forEach((i) => i.oninput = () => {
+        const ex = extras.find((e) => e.id === i.dataset.id); ex.precio = Number(i.value) || 0; recomputeTotal();
+      });
+      box.querySelectorAll(".vm-del").forEach((b) => b.onclick = () => {
+        const idx = extras.findIndex((e) => e.id === b.dataset.id); if (idx >= 0) extras.splice(idx, 1);
+        renderExtras(); recomputeTotal();
+      });
+    }
+
+    function renderSeg() {
+      const tipo = selProd()?.tipo || "digital";
+      const opts = tipo === "digital"
+        ? [{ v: "confirmada", l: "Vendido / entregado" }]
+        : [{ v: "entregado_cobrado", l: "Entregado y cobrado" }, { v: "confirmado", l: "Por entregar" }];
+      if (!opts.some((o) => o.v === estado)) estado = opts[0].v;
+      g("#vmSeg").innerHTML = opts.map((o) => `<button type="button" class="vm-segb${o.v === estado ? " on" : ""}" data-v="${o.v}">${o.l}</button>`).join("");
+      g("#vmSeg").querySelectorAll(".vm-segb").forEach((b) => b.onclick = () => { estado = b.dataset.v; renderSeg(); });
+    }
+
+    function refreshGiftAndNote() {
+      const p = selProd(); const tipo = p?.tipo || "digital";
+      const regalos = Array.isArray(p?.config?.regalos) ? p.config.regalos : [];
+      if (regalos.length) {
+        g("#vmGift").style.display = "flex";
+        g("#vmGift").innerHTML = `<span class="vm-gift-ic">🎁</span><span>Incluye de regalo: <b>${regalos.map((r) => esc(r.nombre || "regalo")).join(", ")}</b> — se adjunta y entrega solo.</span>`;
+      } else g("#vmGift").style.display = "none";
+      g("#vmEntWrap").style.display = tipo === "digital" ? "flex" : "none";
+      g("#vmNote").className = "vm-note " + (tieneAd ? "ad" : "");
+      g("#vmNote").innerHTML = tieneAd
+        ? `<span class="vm-note-ic">🎯</span><span>Este cliente vino de un <b>anuncio de Meta</b>: la venta se atribuye al anuncio (se envía el Purchase si tienes el Pixel + token CAPI cargados).</span>`
+        : `<span class="vm-note-ic">ℹ️</span><span>Este cliente <b>no tiene atribución de anuncio</b>: la venta cuenta en tus números, pero no se envía a Meta.</span>`;
+    }
+
+    function onProdChange() {
+      const p = selProd();
+      g("#vmVer").innerHTML = verOpts(p);
+      g("#vmMonto").value = g("#vmVer").selectedOptions[0]?.dataset.precio || 0;
+      renderSeg(); refreshGiftAndNote(); recomputeTotal();
+    }
+
+    g("#vmProd").onchange = onProdChange;
+    g("#vmVer").onchange = () => { g("#vmMonto").value = g("#vmVer").selectedOptions[0]?.dataset.precio || 0; recomputeTotal(); };
+    g("#vmMonto").oninput = recomputeTotal;
+    g("#vmAddExtra").onclick = () => {
+      const p = cat[0]; const v = p.product_versions[0] || {};
+      extras.push({ id: "ex" + (++extraSeq), productId: p.id, versionId: v.id, precio: v.precio ?? 0 });
+      renderExtras(); recomputeTotal();
+    };
+    onProdChange();
+    renderExtras();
+
     g("#vmCancel").onclick = () => close(false);
+    g("#vmX").onclick = () => close(false);
     ov.onclick = (e) => { if (e.target === ov) close(false); };
     g("#vmOk").onclick = async () => {
       const btn = g("#vmOk"); btn.disabled = true; const old = btn.textContent; btn.textContent = "Registrando…";
       const body = {
         channel_id: channelId, contact_id: contact.id,
         product_id: g("#vmProd").value, version_id: g("#vmVer").value,
-        amount: Number(g("#vmMonto").value) || 0, estado: g("#vmEstado").value, entregar: g("#vmEnt").checked,
+        amount: Number(g("#vmMonto").value) || 0, estado, entregar: g("#vmEnt").checked,
+        extras: extras.filter((e) => e.productId && e.versionId).map((e) => {
+          const p = prodById(e.productId), v = (p?.product_versions || []).find((x) => x.id === e.versionId);
+          return { productId: e.productId, versionId: e.versionId, nombre: (p?.emoji ? p.emoji + " " : "") + (p?.nombre || "extra") + (v && v.nombre && v.nombre !== "Única" ? " · " + v.nombre : ""), precio: Number(e.precio) || 0, digital: (p?.tipo || "digital") !== "fisico" };
+        }),
       };
       let data, error;
       try { ({ data, error } = await supa.functions.invoke("venta-manual", { body })); } catch (e) { error = e; }
@@ -1052,6 +1161,73 @@ export function openVentaManual(contact, deps) {
       toast("Venta registrada ✓"); close(true);
     };
   });
+}
+
+// CSS del modal de venta a mano (inyectado una sola vez). Usa las variables del
+// panel para respetar claro/oscuro.
+function injectVentaManualCss() {
+  if (document.getElementById("vm-css")) return;
+  const s = document.createElement("style"); s.id = "vm-css";
+  s.textContent = `
+  .vm-ov{display:flex;align-items:center;justify-content:center}
+  .vm-card{background:var(--card,#fff);color:var(--text,#111);width:min(540px,94vw);max-height:90vh;display:flex;flex-direction:column;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;border:1px solid var(--border,#e5e7eb)}
+  .vm-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border,#e5e7eb)}
+  .vm-ico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--brand,#2b7fff) 16%,transparent);color:var(--brand,#2b7fff);flex:none}
+  .vm-ico svg{width:20px;height:20px}
+  .vm-htx{flex:1;min-width:0}
+  .vm-title{font-weight:750;font-size:16px;letter-spacing:-.01em}
+  .vm-sub{font-size:12px;color:var(--muted,#6b7280);margin-top:1px}
+  .vm-x{border:none;background:none;color:var(--muted,#6b7280);font-size:20px;line-height:1;cursor:pointer;padding:4px;border-radius:8px;flex:none}
+  .vm-x:hover{background:var(--hover,rgba(0,0,0,.05))}
+  .vm-x svg{width:16px;height:16px}
+  .vm-body{padding:16px 20px;overflow:auto;display:flex;flex-direction:column;gap:16px}
+  .vm-block{display:flex;flex-direction:column}
+  .vm-lbl{font-size:12px;font-weight:700;color:var(--muted,#6b7280);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px}
+  .vm-hint{font-weight:500;text-transform:none;letter-spacing:0;color:var(--faint,#9ca3af)}
+  .vm-row{display:flex;gap:8px;align-items:center}
+  .vm-sel,.vm-inp{width:100%;padding:10px 12px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--bg,#fff);color:var(--text,#111);font-size:13.5px;font-family:inherit;outline:none}
+  .vm-sel:focus,.vm-inp:focus{border-color:var(--brand,#2b7fff);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#2b7fff) 18%,transparent)}
+  .vm-money{display:flex;align-items:center;gap:0;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--bg,#fff);padding-left:10px;flex:1;min-width:110px}
+  .vm-money.sm{min-width:96px;max-width:120px}
+  .vm-money .vm-cur{font-size:12.5px;color:var(--muted,#6b7280);font-weight:600}
+  .vm-money .vm-inp{border:none;box-shadow:none;padding-left:6px;background:transparent}
+  .vm-gift{display:flex;align-items:center;gap:8px;margin-top:10px;padding:9px 11px;border-radius:10px;font-size:12.5px;line-height:1.4;background:color-mix(in srgb,#1D9E75 12%,transparent);color:var(--text,#111);border:1px solid color-mix(in srgb,#1D9E75 30%,transparent)}
+  .vm-gift-ic{font-size:15px;flex:none}
+  .vm-extras{display:flex;flex-direction:column;gap:8px}
+  .vm-extras:empty{display:none}
+  .vm-erow{display:flex;align-items:center;gap:6px;padding:8px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:var(--bg,#fff)}
+  .vm-erow .vm-ep{flex:1.4;min-width:0}.vm-erow .vm-ev{flex:1;min-width:0}
+  .vm-del{border:none;background:none;color:var(--muted,#6b7280);cursor:pointer;padding:6px;border-radius:8px;flex:none;display:flex}
+  .vm-del:hover{background:color-mix(in srgb,#ef4444 14%,transparent);color:#ef4444}
+  .vm-del svg{width:15px;height:15px}
+  .vm-add{margin-top:8px;border:1px dashed var(--border,#cbd5e1);background:none;color:var(--brand,#2b7fff);border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:inherit}
+  .vm-add:hover{background:color-mix(in srgb,var(--brand,#2b7fff) 8%,transparent);border-color:var(--brand,#2b7fff)}
+  .vm-add svg{width:14px;height:14px}
+  .vm-seg{display:flex;gap:6px;background:var(--bg,#f3f4f6);padding:4px;border-radius:11px;border:1px solid var(--border,#e5e7eb)}
+  .vm-segb{flex:1;border:none;background:none;color:var(--muted,#6b7280);padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .12s}
+  .vm-segb.on{background:var(--card,#fff);color:var(--text,#111);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .vm-switch{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text,#111)}
+  .vm-switch input{position:absolute;opacity:0;pointer-events:none}
+  .vm-track{width:40px;height:23px;border-radius:20px;background:var(--border,#cbd5e1);position:relative;flex:none;transition:background .15s}
+  .vm-track::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .vm-switch input:checked + .vm-track{background:var(--brand,#2b7fff)}
+  .vm-switch input:checked + .vm-track::after{transform:translateX(17px)}
+  .vm-note{display:flex;gap:8px;font-size:11.5px;line-height:1.5;color:var(--muted,#6b7280);background:var(--bg,#f9fafb);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 11px}
+  .vm-note.ad{background:color-mix(in srgb,var(--brand,#2b7fff) 8%,transparent);border-color:color-mix(in srgb,var(--brand,#2b7fff) 26%,transparent)}
+  .vm-note-ic{flex:none;font-size:13px}
+  .vm-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-top:1px solid var(--border,#e5e7eb);background:var(--bg,#fafafa)}
+  .vm-total{display:flex;flex-direction:column;line-height:1.1}
+  .vm-total span{font-size:11px;color:var(--muted,#6b7280);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+  .vm-total b{font-size:19px;font-weight:750;color:var(--text,#111);letter-spacing:-.01em}
+  .vm-actions{display:flex;gap:8px}
+  .vm-btn{border:1px solid var(--border,#e5e7eb);background:var(--card,#fff);color:var(--text,#111);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .vm-btn:hover{background:var(--hover,rgba(0,0,0,.04))}
+  .vm-btn.primary{background:var(--brand,#2b7fff);border-color:var(--brand,#2b7fff);color:#fff}
+  .vm-btn.primary:hover{filter:brightness(1.06)}
+  .vm-btn:disabled{opacity:.6;cursor:default}
+  @media (max-width:520px){.vm-row{flex-wrap:wrap}.vm-money{min-width:100%}.vm-erow{flex-wrap:wrap}}
+  `;
+  document.head.appendChild(s);
 }
 
 export async function openEditarPedido(o, deps) {

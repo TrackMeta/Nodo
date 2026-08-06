@@ -19,9 +19,10 @@ Deno.serve(async (req) => {
   let body: {
     channel_id?: string; contact_id?: string; product_id?: string; version_id?: string;
     amount?: number; estado?: string; entregar?: boolean; atributos?: Record<string, string> | null;
+    extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean }> | null;
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, contact_id, product_id, version_id, amount, estado, entregar, atributos } = body;
+  const { channel_id, contact_id, product_id, version_id, amount, estado, entregar, atributos, extras } = body;
   if (!channel_id || !contact_id || !product_id || !version_id || !estado) return json({ error: "faltan_campos" }, 400);
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
 
@@ -29,6 +30,7 @@ Deno.serve(async (req) => {
     const res = await crearVentaManual(db, channel_id, contact_id, {
       productId: product_id, versionId: version_id, amount: Number(amount) || 0,
       estado, entregarLink: entregar !== false, atributos: atributos || null,
+      extras: Array.isArray(extras) ? extras : null,
     });
     return json({ ok: true, order_id: res.orderId });
   } catch (e) {
