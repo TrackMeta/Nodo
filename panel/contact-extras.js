@@ -1586,8 +1586,11 @@ export async function openEditarPedido(o, deps) {
 
     g(".save").onclick = async () => {
       const numU = (id) => { const x = g(id).value; return x === "" ? null : Number(x); };
-      const ship = { zona };
-      if (zona !== "digital") { ship.cliente = g("#eNom").value.trim(); ship.tel = g("#eTel").value.trim(); }
+      // OJO: para un pedido DIGITAL no se escribe `zona` en el shipping. Ponerle
+      // zona:"digital" hacía que esFisico lo tomara como físico y zonaDe lo
+      // clasificara como "provincia" (embudo de provincia en un digital).
+      const ship = {};
+      if (zona !== "digital") { ship.zona = zona; ship.cliente = g("#eNom").value.trim(); ship.tel = g("#eTel").value.trim(); }
       // Variante (talla/color) del principal → shipping.atributos (rótulo/agencia/stock).
       const ejesP = ejesDe(g("#eProd") ? g("#eProd").value : o.product_id);
       if (ejesP.length) {

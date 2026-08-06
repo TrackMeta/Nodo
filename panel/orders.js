@@ -87,7 +87,15 @@ export const esPerdido = (o) => !!EST[o?.estado]?.perdido;
 // Es un SUBCONJUNTO de porCobrar — se muestra como desglose, no como KPI aparte
 // (dos números que se solapan sin decirlo confunden más de lo que informan).
 export const enLaCalle = (o) => ["despachado","en_agencia","en_reparto"].includes(o?.estado);
-export const esFisico  = (o) => !!EST[o?.estado]?.zona || !!o?.shipping?.zona || o?.product?.tipo === "fisico";
+// OJO: `shipping.zona` puede valer "digital" (lo escribe "Editar pedido" de un
+// pedido digital). NO cuenta como físico — solo "lima"/"provincia" lo hacen. Sin
+// esta guarda, un digital con zona="digital" se colaba como físico y zonaDe lo
+// mandaba a "provincia" por defecto (embudo de provincia en un pedido digital).
+export const esFisico  = (o) => {
+  const z = String(o?.shipping?.zona ?? "").toLowerCase();
+  if (z === "digital") return false;
+  return !!EST[o?.estado]?.zona || z === "lima" || z === "provincia" || o?.product?.tipo === "fisico";
+};
 
 // De qué operación es un pedido: "digital" | "lima" | "provincia".
 // Manda la zona REAL (shipping.zona); si el pedido es viejo y no la trae, se
@@ -98,8 +106,9 @@ export const esFisico  = (o) => !!EST[o?.estado]?.zona || !!o?.shipping?.zona ||
 // olvidarse de las dos copias lo habría contado como provincia, en silencio. Es
 // el mismo descuido que tuvo al Dashboard sin contar las ventas físicas.
 export function zonaDe(o){
-  if (!esFisico(o)) return "digital";
   const z = String(o?.shipping?.zona ?? "").toLowerCase();
+  if (z === "digital") return "digital"; // zona explícita de un pedido digital
+  if (!esFisico(o)) return "digital";
   if (z === "lima" || z === "provincia") return z;
   return EST[o?.estado]?.zona ?? "provincia";
 }
