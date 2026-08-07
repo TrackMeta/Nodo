@@ -2288,7 +2288,9 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // (Telegram + ficha) para que lo envíes a mano.
     if (vid) {
       const nombreExtra = opcion?.nombre ? String(opcion.nombre) : "tu compra";
-      await emit(db, run, { text: header || `¡Recibí tu pago! 🎉 En un momento te envío el acceso a ${nombreExtra}.` }, ctx);
+      // Se usa un mensaje CLARO (no el header del nodo, que dice "acá va tu extra:"
+      // y prometería un link que no existe): el cliente pagó, se le dice que llega.
+      await emit(db, run, { text: `¡Recibí tu pago! 🎉 En un momento te envío el acceso a ${nombreExtra}.` }, ctx);
       await notifyAdmin(db, run, `⚠️ El extra "${nombreExtra}" se pagó pero NO tiene link de entrega configurado. Envíaselo a mano al cliente.`).catch(() => {});
       await logEvent(db, run.channel_id, run.contact_id, "error", "Extra pagado SIN link de entrega",
         `El extra "${nombreExtra}" se cobró pero no tiene link — envíalo a mano`).catch(() => {});
