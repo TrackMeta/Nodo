@@ -198,6 +198,11 @@ export async function runEngine(
   let run = await getActiveRun(db, contactId);
 
   if (run) {
+    // Recompra clara mientras el run de venta sigue vivo (parqueado en el extra /
+    // "Fin"): se relanza la venta como pedido NUEVO en vez de que el nodo
+    // parqueado la "confirme" sin poder grabarla. Ver recompraEnRunActivo.
+    try { if (await recompraEnRunActivo(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[recompraEnRun]", (e as any)?.message ?? e); }
     const ready = await resumeRun(db, run, event);
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
@@ -3529,15 +3534,46 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
 // resetea los datos del item; marca el run con _recompra (saludo cálido).
 async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: string, productId: string | null): Promise<boolean> {
   if (!productId) return false;
-  const { data: flow } = await db.from("flows")
-    .select("id").eq("channel_id", channelId).eq("product_id", productId).eq("estado", "activo")
-    .order("created_at").limit(1).maybeSingle();
+  // Relanzar por el flujo de ENTRADA (mensajes_iniciales): su rotador da el saludo
+  // cálido de recompra (`_recompra`) y encadena solo al flujo de venta. Elegir por
+  // created_at era frágil — si el flujo de venta resultaba más viejo, la recompra
+  // arrancaba en el nodo "pregunta" de venta (espera input SIN saludar) → dead-air.
+  const { data: flows } = await db.from("flows")
+    .select("id, role").eq("channel_id", channelId).eq("product_id", productId).eq("estado", "activo");
+  const list = (flows ?? []) as any[];
+  const flow = list.find((f) => f.role === "mensajes_iniciales") ?? list.find((f) => f.role === "venta") ?? list[0];
   if (!flow) return false;
   await limpiarCandadosVenta(db, contactId);
   await resetItemFields(db, channelId, contactId, productId);
   const ok = await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true, vars: { _recompra: true } });
   if (ok) await logEvent(db, channelId, contactId, "nota", "🔁 Recompra: se relanzó la venta").catch(() => {});
   return ok;
+}
+
+// Recompra mientras el run de venta SIGUE ACTIVO. Tras cerrar el pedido, el run
+// de venta no muere: queda parqueado ofreciendo el extra (o en el "Fin"). Si en
+// esa ventana el cliente pide OTRO / más unidades con una frase clara, el
+// mensaje lo tragaba ese nodo parqueado —que ya NO puede crear otro pedido
+// (candado pedido_creado=si)— y la IA "confirmaba" un 2º pedido que nunca se
+// grababa (talla/gorra alucinadas). Acá lo desviamos a la recompra REAL (pedido
+// nuevo, que captura la talla/opción de cero) antes de reanudar el run. Mismo
+// criterio de "ya comprador" que maybePostventa. Devuelve true si relanzó.
+async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  if (event.type !== "message" || !event.text || !pideRecompra(event.text)) return false;
+  const { data: order } = await db.from("orders")
+    .select("estado, product_id")
+    .eq("channel_id", channelId).eq("contact_id", contactId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const estado = String((order as any)?.estado ?? "");
+  if (!order || !COMPRADO_STATES.has(estado)) return false; // aún no hay pedido cerrado → no es recompra
+  if (SALDO_PENDIENTE.has(estado)) return false; // debe el saldo: primero se cierra ese pedido
+  const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+  if ((ch as any)?.pedidos_config?.postventa?.activo === false) return false;
+  if (await relanzarVenta(db, channelId, contactId, (order as any).product_id)) {
+    await logEvent(db, channelId, contactId, "nota", "🔁 Recompra (run de venta aún activo)", (event.text ?? "").slice(0, 80)).catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 // El cliente escribe mientras su pago digital está POR VALIDAR (el run quedó
