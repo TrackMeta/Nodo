@@ -5506,6 +5506,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // JSON, se rescatan a campos propios para que el aviso y Google Sheets
     // puedan decir CON QUÉ pagó, que es justo lo que Rodrigo quiere registrar.
     if (op === "analizar_imagen") {
+      // Anti-reúso JUSTO: se borra la operación del comprobante ANTERIOR antes de
+      // leer este, para comparar la operación de ESTE pago y no una vieja.
+      // 🐛 Bug del extra digital: su OCR responde "PAGO_OK" sin JSON (no trae el
+      // nº de operación), así que `pago_operacion` se quedaba con la del pago
+      // PRINCIPAL y el anti-reúso rechazaba el extra como "ya usado". Si este
+      // comprobante SÍ trae operación, se re-guarda unas líneas más abajo.
+      run.vars.pago_operacion = ""; ctx.pago_operacion = "";
       try {
         const m = /\{[\s\S]*\}/.exec(String(result ?? ""));
         if (m) {
