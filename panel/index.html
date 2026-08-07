@@ -1169,9 +1169,9 @@ const COUNTRY_BY_PREFIX={ "593":"🇪🇨 Ecuador","591":"🇧🇴 Bolivia","502
 function prefixLook(wa, map, def){ const w=(wa||"").replace(/\D/g,""); for(const len of [3,2,1]){ const p=w.slice(0,len); if(map[p]) return map[p]; } return def; }
 function localTime(wa){ try{ return new Intl.DateTimeFormat("es",{timeZone:prefixLook(wa,TZ_BY_PREFIX,"America/Lima"),hour:"2-digit",minute:"2-digit"}).format(new Date()); }catch(_){ return "—"; } }
 function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(ts)); }catch(_){ return "—"; } }
-function mediaThumb(m){ const u=esc(m.content.media_url);
-  if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" loading="lazy"/></a>`;
-  if(m.type==="video") return `<a href="${u}" target="_blank"><video src="${u}"></video></a>`;
+function mediaThumb(m){ const u=esc(safeUrl(m.content.media_url));
+  if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" loading="lazy" style="cursor:zoom-in"/>`;
+  if(m.type==="video") return `<video data-light="${u}" data-lk="video" src="${u}" style="cursor:zoom-in"></video>`;
   if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">🎵</a>`;
   return `<a href="${u}" target="_blank" title="Archivo">📎</a>`; }
 
@@ -1647,11 +1647,41 @@ function mediaHtml(m){
   const url = m.content?.media_url; if(!url) return null;
   const cap = m.content?.caption ? `<div style="margin-top:5px">${esc(m.content.caption)}</div>` : "";
   const u = esc(safeUrl(url));
-  if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" alt=""/></a>${cap}`;
+  if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" style="cursor:zoom-in"/>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
   return `<a class="file" href="${u}" target="_blank">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`;
 }
+
+// Visor de multimedia (lightbox): las imágenes/videos abren en una ventana dentro
+// del panel, no en otra pestaña. Cualquier elemento con [data-light] lo dispara.
+function openLightbox(url, kind){
+  const safe = safeUrl(url); if(safe==="#") return;
+  let ov = document.getElementById("nodoLightbox");
+  if(!ov){
+    ov = document.createElement("div"); ov.id="nodoLightbox";
+    ov.style.cssText="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.86);display:none;align-items:center;justify-content:center;padding:24px;cursor:zoom-out";
+    ov.innerHTML=`<div id="nodoLbBody" style="max-width:94vw;max-height:92vh;display:flex;align-items:center;justify-content:center"></div>
+      <a id="nodoLbOpen" target="_blank" rel="noopener" title="Abrir en pestaña" style="position:absolute;top:16px;right:76px;background:rgba(255,255,255,.16);color:#fff;text-decoration:none;font-size:13px;padding:0 14px;height:40px;display:flex;align-items:center;border-radius:20px;cursor:pointer">Abrir ↗</a>
+      <button id="nodoLbClose" title="Cerrar (Esc)" style="position:absolute;top:16px;right:20px;background:rgba(255,255,255,.16);border:none;color:#fff;font-size:24px;width:40px;height:40px;border-radius:50%;cursor:pointer;line-height:1">×</button>`;
+    document.body.appendChild(ov);
+    const hide=()=>{ ov.style.display="none"; ov.querySelector("#nodoLbBody").innerHTML=""; };
+    ov.onclick=(e)=>{ if(e.target===ov) hide(); };
+    ov.querySelector("#nodoLbClose").onclick=hide;
+    document.addEventListener("keydown",(e)=>{ if(e.key==="Escape" && ov.style.display==="flex") hide(); });
+  }
+  const u=esc(safe);
+  ov.querySelector("#nodoLbBody").innerHTML = kind==="video"
+    ? `<video src="${u}" controls autoplay style="max-width:94vw;max-height:88vh;border-radius:10px"></video>`
+    : `<img src="${u}" alt="" style="max-width:94vw;max-height:88vh;border-radius:10px;object-fit:contain"/>`;
+  ov.querySelector("#nodoLbOpen").href=u;
+  ov.style.display="flex";
+}
+// Delegación global: un clic en cualquier [data-light] abre el visor (no pestaña).
+document.addEventListener("click",(e)=>{
+  const el=e.target && e.target.closest && e.target.closest("[data-light]");
+  if(el){ e.preventDefault(); openLightbox(el.getAttribute("data-light"), el.getAttribute("data-lk")||"image"); }
+});
 
 async function markRead() {
   await supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", state.contactId);
