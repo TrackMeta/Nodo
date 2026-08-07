@@ -1746,9 +1746,9 @@ function renderEnvio(){
 // Ventas extra y el generador de flujo (que puede correr sin haberla abierto).
 async function cargarCatalogoExtras(){
   let { data:prods, error } = await supa.from("products")
-    .select("id,nombre,emoji,tipo,clase,config,product_versions(id,nombre,precio,activo)")
+    .select("id,nombre,emoji,tipo,clase,config,product_versions(id,nombre,precio,activo,entrega)")
     .eq("channel_id",st.channelId).order("nombre");
-  if(error){ ({ data:prods } = await supa.from("products").select("id,nombre,emoji,tipo,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre")); }
+  if(error){ ({ data:prods } = await supa.from("products").select("id,nombre,emoji,tipo,config,product_versions(id,nombre,precio,activo,entrega)").eq("channel_id",st.channelId).order("nombre")); }
   const cat=[];
   (prods||[]).forEach(p=>{
     // ¿Este extra FÍSICO lleva tallas/variantes con stock? Si sí, el flujo debe
@@ -1761,6 +1761,7 @@ async function cargarCatalogoExtras(){
     (p.product_versions||[]).forEach(v=>{
       if(v.activo!==false && v.precio!=null && v.precio!=="")
         cat.push({ id:v.id, label:`${p.emoji?p.emoji+" ":""}${p.nombre} · ${v.nombre} — S/ ${v.precio}`, precio:v.precio, tipo:p.tipo||"digital", esExtra:p.clase==="extra", tieneTallas,
+          tieneLink:Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()),
           nombreProd:p.nombre, contexto:(p.config&&p.config.contexto_producto)||"" });
     });
   });
@@ -2365,6 +2366,18 @@ function renderSalud(ready){
     // Cuenta solo los items con URL: una fila de entrega vacía no entrega nada.
     const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim())));
     if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${v.nombre||"—"}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
+  }
+  // 🛡️ Extras DIGITALES enlazados sin link de entrega (aplica a principal físico o
+  // digital: un extra digital puede colgar de cualquiera). Sin su link, el cliente
+  // pagaría el extra y recibiría el link equivocado (o ninguno). Necesita el
+  // catálogo de extras (con `tieneLink`); si aún no cargó, se carga y re-renderiza.
+  const exList=Array.isArray(st.prod.config?.extras)?st.prod.config.extras.filter(x=>x&&x.version_id):[];
+  if(exList.length){
+    if(!st.extraCat){ cargarCatalogoExtras().then(()=>renderSalud(ready)).catch(()=>{}); }
+    else {
+      const sinLinkX=exList.filter(x=>{ const info=st.extraCat.find(c=>c.id===x.version_id); return info && info.tipo==="digital" && !info.tieneLink; }).map(x=>x.nombre||"extra");
+      if(sinLinkX.length) errs.push(`Extra digital sin link de entrega: ${sinLinkX.map(n=>`"${esc(n)}"`).join(", ")}. El cliente pagaría el extra y recibiría el link equivocado (o ninguno). Ponle su link en su propia ficha (Productos → ese extra → ¿Cómo se entrega?).`);
+    }
   }
   // Físico sin adelanto resoluble: el flujo de provincia manda "confírmalo con
   // un adelanto de *S/ *" — con el monto en blanco. Se ve roto y nadie paga.

@@ -2281,7 +2281,20 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     : (a?.mensaje ? resolve(String(a.mensaje), ctx) : "");
 
   if (!all.length) {
-    // Compat: opción sin items pero con link suelto en config.
+    // 🛡️ Un EXTRA / opción CONCRETA (a.version_id) SIN entrega configurada NO se
+    // cae al link del principal (ctx.link_entrega): mandaría el acceso equivocado
+    // en silencio (ej.: el extra "Plan 12 semanas" entregaba el link del Ebook).
+    // El cliente YA pagó → se le avisa que llega en breve y se te notifica
+    // (Telegram + ficha) para que lo envíes a mano.
+    if (vid) {
+      const nombreExtra = opcion?.nombre ? String(opcion.nombre) : "tu compra";
+      await emit(db, run, { text: header || `¡Recibí tu pago! 🎉 En un momento te envío el acceso a ${nombreExtra}.` }, ctx);
+      await notifyAdmin(db, run, `⚠️ El extra "${nombreExtra}" se pagó pero NO tiene link de entrega configurado. Envíaselo a mano al cliente.`).catch(() => {});
+      await logEvent(db, run.channel_id, run.contact_id, "error", "Extra pagado SIN link de entrega",
+        `El extra "${nombreExtra}" se cobró pero no tiene link — envíalo a mano`).catch(() => {});
+      return;
+    }
+    // Compat (principal): opción sin items pero con link suelto en config.
     if (ctx.link_entrega) await emit(db, run, { text: header ? `${header}\n${String(ctx.link_entrega)}` : String(ctx.link_entrega) }, ctx);
     else if (header) await emit(db, run, { text: header }, ctx);
     else await logEvent(db, run.channel_id, run.contact_id, "error", "Nada que entregar",
