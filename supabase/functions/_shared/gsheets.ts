@@ -54,11 +54,14 @@ const norm = (s: string) => s.toString().trim().toLowerCase();
 // Una por operación: mezclar una venta digital con un despacho a provincia hace
 // una hoja ilegible. El orden de las columnas es el orden en que se crean.
 export const HOJAS: Record<string, string[]> = {
+  // La hoja SOLO guarda ventas CERRADAS (dinero cobrado). Por eso: Lima usa "Valor
+  // cobrado" (ya no "a cobrar") y no lleva Estado (siempre sería "entregado"); Provincia
+  // no lleva Adelanto/Saldo (ya se pagaron ambos = el total) ni Estado.
   "Digital": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Valor", "Producto", "Orderbump", "Imagen"],
-  "Lima": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Distrito", "Dirección", "Referencia",
-    "Producto", "Opción", "Valor a cobrar", "Estado"],
+  "Lima": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Distrito", "Dirección",
+    "Producto", "Opción", "Valor cobrado"],
   "Provincia": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "DNI", "Agencia", "Producto", "Opción",
-    "Valor total", "Adelanto", "Saldo", "Guía", "Estado", "Imagen"],
+    "Valor total", "Guía", "Imagen"],
 };
 
 // Deja la hoja LISTA al conectarla: crea las 3 pestañas, escribe los

@@ -2184,13 +2184,12 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Cliente": s.cliente || ct.nombre || "",
         "Cel": ct.wa_id ?? "",
         "Fecha y hora": fecha,
-        "Distrito": s.zona_nombre ?? "",
+        "Distrito": s.distrito ?? "",
         "Dirección": s.direccion ?? "",
-        "Referencia": s.referencia ?? "",
         "Producto": ord.product?.nombre ?? "",
         "Opción": s.opcion ?? "",
-        "Valor a cobrar": String(s.saldo ?? ord.amount ?? ""),
-        "Estado": EST_HOJA[ord.estado] ?? ord.estado,
+        // Total cobrado = precio del pedido + ventas extra (lo que de verdad recibiste).
+        "Valor cobrado": String(+(Number(ord.amount || 0) + extra).toFixed(2)),
       };
     } else {
       hoja = "Provincia";
@@ -2204,11 +2203,8 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Agencia": [s.ciudad, s.sede].filter(Boolean).join(" · "),
         "Producto": ord.product?.nombre ?? "",
         "Opción": s.opcion ?? "",
-        "Valor total": String(ord.amount ?? ""),
-        "Adelanto": String(s.adelanto ?? ""),
-        "Saldo": String(s.saldo ?? ""),
+        "Valor total": String(+(Number(ord.amount || 0) + extra).toFixed(2)),
         "Guía": s.guia ?? "",
-        "Estado": EST_HOJA[ord.estado] ?? ord.estado,
         "Imagen": s.adelanto_comprobante ?? s.saldo_comprobante ?? "",
       };
     }
