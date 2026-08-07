@@ -174,8 +174,11 @@
   /* Chat */
   .ichat{display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px}
   .ibub{max-width:82%;padding:7px 11px;border-radius:13px;font-size:12.5px;line-height:1.45;word-break:break-word;box-shadow:0 1px 2px rgba(0,0,0,.15)}
-  .ibub.in{align-self:flex-start;background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:4px}
-  .ibub.out{align-self:flex-end;background:rgba(43,127,255,.13);color:var(--text);border:1px solid rgba(43,127,255,.24);border-bottom-right-radius:4px}
+  /* Cliente = humano (azul) · Bot = color de la sección IA (verde) */
+  .ibub.in{align-self:flex-start;background:rgba(43,127,255,.12);color:var(--text);border:1px solid rgba(43,127,255,.26);border-bottom-left-radius:4px}
+  .ibub.out{align-self:flex-end;background:rgba(34,192,121,.13);color:var(--text);border:1px solid rgba(34,192,121,.28);border-bottom-right-radius:4px}
+  .ibub.in .iwho{color:#2b7fff;opacity:1}
+  .ibub.out .iwho{color:#1a9e6a;opacity:1}
   .ibub .iwho{font-size:9px;text-transform:uppercase;letter-spacing:.4px;opacity:.65;font-weight:700;margin-bottom:2px}
   .ichatft{text-align:center;font-size:11px;color:var(--faint);margin-top:8px}
 
