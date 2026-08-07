@@ -139,29 +139,45 @@
   .mfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}
   .mfoot .r{display:flex;gap:8px}
   .lnk{background:none;border:none;color:var(--brand);font-size:12.5px;font-weight:600}
-  /* Briefing (info del cliente) */
-  .iload{color:var(--faint);font-size:13px;padding:18px;text-align:center}
-  .isec{margin-bottom:16px}
-  .isec:last-child{margin-bottom:0}
-  .isec-t{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:7px}
-  .isec-t .dot{width:7px;height:7px;border-radius:50%}
+  /* Briefing (info del cliente) — rediseño */
+  #infoModal .mbox{max-width:480px}
+  #infoModal .mbody{padding:0}
+  .iload{color:var(--faint);font-size:13px;padding:30px;text-align:center}
+  /* Tira de datos clave (hero) */
+  .ihero{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:16px 20px;background:linear-gradient(180deg,var(--surface-2),transparent);border-bottom:1px solid var(--border)}
+  .istat{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:9px 12px;min-width:0}
+  .istat .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700}
+  .istat .v{font-size:13px;font-weight:700;margin-top:3px;display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .istat .v .sd{width:8px;height:8px;border-radius:50%;flex:none}
+  .istat .v svg{width:13px;height:13px;flex:none;opacity:.8}
+  .istat.hot{border-color:#e2564a55}
+  /* Secciones */
+  .isecs{padding:16px 20px;display:flex;flex-direction:column;gap:18px}
+  .isec{display:flex;flex-direction:column;gap:9px}
+  .isec-t{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:8px}
+  .isec-t .ib{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex:none}
+  .isec-t .ib svg{width:13px;height:13px}
   .ichips{display:flex;flex-wrap:wrap;gap:6px}
-  .ichip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 11px;font-size:12.5px;font-weight:600;color:var(--text)}
-  .ichip .ik{color:var(--faint);font-weight:600}
-  .ichip.sell{background:#12233f;border-color:#2b7fff44;color:#8fb8ff}
-  .ichip.who{background:#10281d;border-color:#22c07944;color:#7fe0ad}
-  .ichip.how{background:#2c2311;border-color:#f0a92b44;color:#f2c877}
-  .inone{color:var(--faint);font-size:12.5px;font-style:italic}
-  .iprod{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:10px 12px}
-  .iprod .ie{font-size:20px}
-  .iprod .ipn{font-weight:600;font-size:13.5px} .iprod .ips{font-size:11.5px;color:var(--muted);margin-top:1px}
-  .ichat{display:flex;flex-direction:column;gap:6px;max-height:210px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:10px}
-  .ibub{max-width:82%;padding:6px 10px;border-radius:12px;font-size:12.5px;line-height:1.4;word-break:break-word}
-  .ibub.in{align-self:flex-start;background:var(--surface-2);border-bottom-left-radius:4px}
-  .ibub.out{align-self:flex-end;background:#12233f;color:#dbe9ff;border-bottom-right-radius:4px}
-  .ibub .iwho{font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--faint);font-weight:700;margin-bottom:1px}
-  .imeta{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
-  .ipill{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:5px}
+  .ichip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:5px 11px;font-size:12.5px;font-weight:600;color:var(--text)}
+  .ichip .ik{color:var(--faint);font-weight:600;font-size:11px}
+  .ichip.sell{background:#12233f;border-color:#2b7fff40;color:#a9c9ff}
+  .ichip.who{background:#10281d;border-color:#22c07940;color:#8fe6b8}
+  .ichip.how{background:#2c2311;border-color:#f0a92b40;color:#f4cf86}
+  .inone{color:var(--faint);font-size:12.5px;font-style:italic;padding:2px 0}
+  .iprod{display:flex;align-items:center;gap:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 13px}
+  .iprod .ie{font-size:22px;width:40px;height:40px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex:none}
+  .iprod .ipn{font-weight:700;font-size:14px} .iprod .ips{font-size:11.5px;color:var(--muted);margin-top:1px}
+  /* Memoria IA — bloque unificado con acento */
+  .imia{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:13px;display:flex;flex-direction:column;gap:11px}
+  .imia .isub{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .imia .isub .sd{width:7px;height:7px;border-radius:50%}
+  /* Chat */
+  .ichat{display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .ibub{max-width:82%;padding:7px 11px;border-radius:13px;font-size:12.5px;line-height:1.45;word-break:break-word;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .ibub.in{align-self:flex-start;background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:4px}
+  .ibub.out{align-self:flex-end;background:#1e3a63;color:#eaf2ff;border-bottom-right-radius:4px}
+  .ibub .iwho{font-size:9px;text-transform:uppercase;letter-spacing:.4px;opacity:.65;font-weight:700;margin-bottom:2px}
+  .ichatft{text-align:center;font-size:11px;color:var(--faint);margin-top:8px}
 
   .hist{margin-top:6px;border-top:1px dashed var(--border);padding-top:10px;display:none}
   .hist.show{display:block}
@@ -646,10 +662,19 @@ async function openInfo(c){
   const mia=(c.memoria_ia && typeof c.memoria_ia==="object")?c.memoria_ia:{};
   const who=(Array.isArray(mia.quien_es)?mia.quien_es:[]).filter(Boolean);
   const how=(Array.isArray(mia.como_tratar)?mia.como_tratar:[]).filter(Boolean);
+  const lastMsgAt=c.ultimo_mensaje_at || (msgs.length?msgs[msgs.length-1].ts:null);
 
-  // Estado
-  let estadoRow=`<span class="ipill" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="width:7px;height:7px;border-radius:50%;background:${sg.color}"></span>${sg.label}</span><span class="ipill" style="background:var(--surface-2);color:var(--muted)">${esc(org)}</span>`;
-  if(o){ const m=O.EST[o.estado]||{}; const tono=m.tono==="ok"?"var(--green)":m.tono==="bad"?"var(--red)":"var(--amber)"; estadoRow+=`<span class="ipill" style="background:var(--surface-2);color:${tono}">Pedido: ${esc(O.label(o.estado))} · ${esc(money(O.total(o),o.currency))}</span>`; }
+  const CLK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  const ib=(bg,color,svg)=>`<span class="ib" style="background:${bg};color:${color}">${svg}</span>`;
+
+  // ── Tira de datos clave (hero) ──
+  const cells=[];
+  cells.push(`<div class="istat"><div class="k">Etapa</div><div class="v" style="color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</div></div>`);
+  cells.push(`<div class="istat${lastMsgAt&&(Date.now()-new Date(lastMsgAt).getTime())<3600000?" hot":""}"><div class="k">Último mensaje</div><div class="v">${CLK}${lastMsgAt?ago(lastMsgAt):"—"}</div></div>`);
+  cells.push(`<div class="istat"><div class="k">Origen</div><div class="v">${esc(org)}</div></div>`);
+  if(o){ const m=O.EST[o.estado]||{}; const tono=m.tono==="ok"?"var(--green)":m.tono==="bad"?"var(--red)":"var(--amber)"; cells.push(`<div class="istat"><div class="k">Pedido</div><div class="v" style="color:${tono}">${esc(O.label(o.estado))} · ${esc(money(O.total(o),o.currency))}</div></div>`); }
+  else cells.push(`<div class="istat"><div class="k">Compras</div><div class="v" style="color:var(--faint)">Sin pedido aún</div></div>`);
+  const hero=`<div class="ihero">${cells.join("")}</div>`;
 
   // Producto de interés
   const prodHtml=c.product?.nombre
@@ -658,27 +683,30 @@ async function openInfo(c){
 
   // Para vender (campos)
   const sellHtml=fields.length
-    ? `<div class="ichips">${fields.map(r=>`<span class="ichip sell"><span class="ik">${esc(r.field.nombre||r.field.key)}:</span> ${esc(String(r.value).trim())}</span>`).join("")}</div>`
+    ? `<div class="ichips">${fields.map(r=>`<span class="ichip sell"><span class="ik">${esc(r.field.nombre||r.field.key)}</span> ${esc(String(r.value).trim())}</span>`).join("")}</div>`
     : `<span class="inone">La IA aún no ha capturado datos en el chat.</span>`;
 
-  // Quién es / Cómo tratar
-  let miaHtml="";
-  if(who.length) miaHtml+=`<div class="isec"><div class="isec-t"><span class="dot" style="background:#22c079"></span>Quién es</div><div class="ichips">${who.map(t=>`<span class="ichip who">${esc(t)}</span>`).join("")}</div></div>`;
-  if(how.length) miaHtml+=`<div class="isec"><div class="isec-t"><span class="dot" style="background:#f0a92b"></span>Cómo tratarlo</div><div class="ichips">${how.map(t=>`<span class="ichip how">${esc(t)}</span>`).join("")}</div></div>`;
+  // Memoria IA (Quién es / Cómo tratarlo) — bloque unificado
+  let miaInner="";
+  if(who.length) miaInner+=`<div><div class="isub" style="color:#8fe6b8"><span class="sd" style="background:#22c079"></span>Quién es</div><div class="ichips">${who.map(t=>`<span class="ichip who">${esc(t)}</span>`).join("")}</div></div>`;
+  if(how.length) miaInner+=`<div><div class="isub" style="color:#f4cf86"><span class="sd" style="background:#f0a92b"></span>Cómo tratarlo</div><div class="ichips">${how.map(t=>`<span class="ichip how">${esc(t)}</span>`).join("")}</div></div>`;
+  const miaHtml=miaInner
+    ? `<div class="isec"><div class="isec-t">${ib("#1a2e22","#22c079",'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>')}Memoria IA</div><div class="imia">${miaInner}</div></div>`
+    : "";
 
   // Conversación reciente
-  const bubText=(m)=>{ const ct=m.content||{}; if(ct.text) return esc(ct.text); if(m.type==="image"||ct.media_url&&/img|image/i.test(m.type||"")) return "📷 "+(ct.caption?esc(ct.caption):"Imagen"); if(ct.caption) return esc(ct.caption); if(ct.media_url) return "📎 Archivo"; return `<span style="opacity:.6">(${esc(m.type||"mensaje")})</span>`; };
+  const bubText=(m)=>{ const ct=m.content||{}; if(ct.text) return esc(ct.text); if(m.type==="image"||(ct.media_url&&/img|image/i.test(m.type||""))) return "📷 "+(ct.caption?esc(ct.caption):"Imagen"); if(ct.caption) return esc(ct.caption); if(ct.media_url) return "📎 Archivo"; return `<span style="opacity:.6">(${esc(m.type||"mensaje")})</span>`; };
   const chatHtml=msgs.length
-    ? `<div class="ichat">${msgs.map(m=>{ const inb=m.direction==="in"; return `<div class="ibub ${inb?"in":"out"}"><div class="iwho">${inb?"Cliente":"Bot/Asesor"}</div>${bubText(m)}</div>`; }).join("")}</div>`
+    ? `<div class="ichat">${msgs.map(m=>{ const inb=m.direction==="in"; return `<div class="ibub ${inb?"in":"out"}"><div class="iwho">${inb?"Cliente":"Bot / Asesor"}</div>${bubText(m)}</div>`; }).join("")}</div>${lastMsgAt?`<div class="ichatft">Último mensaje ${ago(lastMsgAt)}</div>`:""}`
     : `<span class="inone">Sin mensajes en el chat todavía.</span>`;
 
-  $("iBody").innerHTML=`
-    <div class="isec"><div class="imeta">${estadoRow}</div></div>
-    <div class="isec"><div class="isec-t"><span class="dot" style="background:#9b6cf0"></span>Producto</div>${prodHtml}</div>
-    <div class="isec"><div class="isec-t"><span class="dot" style="background:#2b7fff"></span>Datos capturados (para vender)</div>${sellHtml}</div>
-    ${miaHtml}
-    <div class="isec"><div class="isec-t"><span class="dot" style="background:#18b7be"></span>Conversación reciente</div>${chatHtml}</div>`;
-  // scroll del chat al final (lo más reciente)
+  $("iBody").innerHTML=`${hero}
+    <div class="isecs">
+      <div class="isec"><div class="isec-t">${ib("#241a33","#9b6cf0",'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5M17 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>')}Producto de interés</div>${prodHtml}</div>
+      <div class="isec"><div class="isec-t">${ib("#12233f","#2b7fff",'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>')}Datos capturados · para vender</div>${sellHtml}</div>
+      ${miaHtml}
+      <div class="isec"><div class="isec-t">${ib("#0f2a2c","#18b7be",'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>')}Conversación reciente</div>${chatHtml}</div>
+    </div>`;
   const ch=$("iBody").querySelector(".ichat"); if(ch) ch.scrollTop=ch.scrollHeight;
 }
 
