@@ -98,6 +98,7 @@
   .acts{display:flex;gap:6px;justify-content:flex-end}
   .ico{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--muted);display:flex;align-items:center;justify-content:center}
   .ico:hover{color:var(--text);border-color:var(--brand)}
+  .ico.info:hover{color:#9b6cf0;border-color:#9b6cf0}
   .ico.call:hover{color:var(--green);border-color:var(--green)}
   .ico.chat:hover{color:var(--brand);border-color:var(--brand)}
   .ico.reg{background:var(--brand);border:none;color:#fff;font-weight:700}
@@ -138,6 +139,30 @@
   .mfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}
   .mfoot .r{display:flex;gap:8px}
   .lnk{background:none;border:none;color:var(--brand);font-size:12.5px;font-weight:600}
+  /* Briefing (info del cliente) */
+  .iload{color:var(--faint);font-size:13px;padding:18px;text-align:center}
+  .isec{margin-bottom:16px}
+  .isec:last-child{margin-bottom:0}
+  .isec-t{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+  .isec-t .dot{width:7px;height:7px;border-radius:50%}
+  .ichips{display:flex;flex-wrap:wrap;gap:6px}
+  .ichip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 11px;font-size:12.5px;font-weight:600;color:var(--text)}
+  .ichip .ik{color:var(--faint);font-weight:600}
+  .ichip.sell{background:#12233f;border-color:#2b7fff44;color:#8fb8ff}
+  .ichip.who{background:#10281d;border-color:#22c07944;color:#7fe0ad}
+  .ichip.how{background:#2c2311;border-color:#f0a92b44;color:#f2c877}
+  .inone{color:var(--faint);font-size:12.5px;font-style:italic}
+  .iprod{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:10px 12px}
+  .iprod .ie{font-size:20px}
+  .iprod .ipn{font-weight:600;font-size:13.5px} .iprod .ips{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .ichat{display:flex;flex-direction:column;gap:6px;max-height:210px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:10px}
+  .ibub{max-width:82%;padding:6px 10px;border-radius:12px;font-size:12.5px;line-height:1.4;word-break:break-word}
+  .ibub.in{align-self:flex-start;background:var(--surface-2);border-bottom-left-radius:4px}
+  .ibub.out{align-self:flex-end;background:#12233f;color:#dbe9ff;border-bottom-right-radius:4px}
+  .ibub .iwho{font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--faint);font-weight:700;margin-bottom:1px}
+  .imeta{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+  .ipill{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:5px}
+
   .hist{margin-top:6px;border-top:1px dashed var(--border);padding-top:10px;display:none}
   .hist.show{display:block}
   .hitem{display:flex;gap:8px;font-size:12px;color:var(--muted);padding:4px 0}
@@ -221,9 +246,23 @@
   </div>
 </div></div>
 
+<!-- Modal: información del cliente (briefing para la llamada) -->
+<div class="modal" id="infoModal"><div class="mbox">
+  <div class="mhead">
+    <div class="av" id="iAv"></div>
+    <div style="min-width:0;flex:1"><div class="nm" id="iNm"></div><div class="ph" id="iPh"></div></div>
+    <button class="lnk" id="iClose">Cerrar</button>
+  </div>
+  <div class="mbody" id="iBody"><div class="iload">Cargando contexto…</div></div>
+  <div class="mfoot">
+    <span style="font-size:11.5px;color:var(--faint)">Contexto capturado hasta ahora — úsalo antes de llamar</span>
+    <div class="r"><a class="btn" id="iCall">📞 Llamar</a><a class="btn primary" id="iChat">Abrir chat</a></div>
+  </div>
+</div></div>
+
 <script type="module">
 import { supa, mountShell, toast, askChoice, norm, icon } from "./shell.js";
-import { EMBUDO_STAGES, origenLabel, money, openVentaManual } from "./contact-extras.js";
+import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 
@@ -241,6 +280,7 @@ function ago(iso){ if(!iso) return "—"; const s=(Date.now()-new Date(iso).getT
 const PHONE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 const CHAT_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 const REG_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+const INFO_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
 
 // Resultados posibles de un contacto directo. `stage` opcional mueve la etapa del
 // embudo; `estado` marca el seguimiento (cerrado/descartado salen de la cola).
@@ -270,6 +310,7 @@ async function boot(){
   $("rCancel").onclick=()=>$("regModal").classList.remove("show");
   $("rSave").onclick=saveReg;
   $("rHistBtn").onclick=()=>$("rHist").classList.toggle("show");
+  $("iClose").onclick=()=>$("infoModal").classList.remove("show");
   // Deep-link ?stage=<k> (desde el Embudo)
   const qStage=new URLSearchParams(location.search).get("stage");
   if(qStage && STAGE[qStage]){ f.stages=new Set([qStage]); $("filters").classList.add("show"); }
@@ -299,7 +340,7 @@ function subscribe(){
 
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId;
-  const COLS="id,nombre,wa_id,stage,source,ad_id,ctwa_clid,directo,created_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji),conv:conversations(archivada)";
+  const COLS="id,nombre,wa_id,stage,source,ad_id,ctwa_clid,directo,memoria_ia,created_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji),conv:conversations(archivada)";
   let csRes=await supa.from("contacts").select(COLS).eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).limit(2000);
   // Degradación: si la migración 0066 (columna `directo`) aún no está aplicada,
   // reintenta sin ella para que la cola igual funcione (sin datos de seguimiento).
@@ -475,10 +516,12 @@ function rowEl(c){
     <div class="c-seg"><div class="seg">${segHtml}${nc}</div></div>
     <div class="c-asig">${asHtml}</div>
     <div class="c-acts acts">
+      <button class="ico info" data-info title="Ver info del cliente (contexto para la llamada)">${INFO_SVG}</button>
       <a class="ico call" href="tel:+${esc(c.wa_id)}" title="Llamar">${PHONE_SVG}</a>
       <a class="ico chat" href="index.html?c=${esc(c.id)}" title="Abrir chat">${CHAT_SVG}</a>
       <button class="ico reg" data-reg title="Registrar resultado">${REG_SVG}</button>
     </div>`;
+  el.querySelector("[data-info]").onclick=(e)=>{ e.stopPropagation(); openInfo(c); };
   el.querySelector("[data-reg]").onclick=(e)=>{ e.stopPropagation(); openReg(c); };
   el.querySelector("[data-asig]").onclick=(e)=>{ e.stopPropagation(); asignar(c); };
   el.querySelector(".ico.call").onclick=(e)=>e.stopPropagation();
@@ -538,6 +581,30 @@ async function saveReg(){
   const intento={ at:new Date().toISOString(), by:st.uid, by_name:st.myName||"Yo", medio:R.medio, resultado:R.resultado, nota:nota||undefined };
   const d={ ...dirOf(c) };
   d.intentos=[...(d.intentos||[]), intento];
+
+  // ── "Cerró la venta": NO se da por comprada hasta que la venta se complete de
+  // verdad. Primero se guarda el intento (dejando el seguimiento en curso); recién
+  // si el registrador de venta a mano se confirma se marca Comprado/cerrado y sale
+  // de la cola. Si cancelas el formulario, el intento queda pero el lead sigue vivo.
+  if(meta.venta){
+    d.estado="seguimiento"; delete d.next_call_at;
+    const { error }=await supa.from("contacts").update({ directo:d }).eq("id",c.id);
+    if(error){ toast(error.message,true); return; }
+    c.directo=d;
+    $("regModal").classList.remove("show");
+    toast("Intento registrado ✓ — ahora registra la venta");
+    const ok=await openVentaManual(c, { supa, toast, channelId:st.channelId });
+    if(ok){
+      const d2={ ...dirOf(c), estado:"cerrado" }; delete d2.next_call_at;
+      const { error:e2 }=await supa.from("contacts").update({ directo:d2, stage:"comprado" }).eq("id",c.id);
+      if(!e2){ c.directo=d2; c.stage="comprado"; toast("¡Venta cerrada! ✓"); }
+    } else {
+      toast("Venta no registrada — el lead sigue en la cola");
+    }
+    await load();
+    return;
+  }
+
   // Reagendar / limpiar próxima llamada
   if(meta.reagendar){ const dv=$("rDate").value; if(!dv){ toast("Elige la fecha de la próxima llamada",true); return; } d.next_call_at=dv; d.estado="seguimiento"; }
   else{ delete d.next_call_at; if(meta.estado) d.estado=meta.estado; else d.estado="seguimiento"; }
@@ -547,16 +614,72 @@ async function saveReg(){
   if(error){ toast(error.message,true); return; }
   c.directo=d; if(meta.stage) c.stage=meta.stage;
   $("regModal").classList.remove("show");
-  // Cerró venta → abrir el registrador de venta a mano
-  if(meta.venta){
-    toast("Registrado ✓ — ahora registra la venta");
-    const ok=await openVentaManual(c, { supa, toast, channelId:st.channelId });
-    await load();
-    if(!ok) return;
-  } else {
-    toast("Registrado ✓");
-    render();
-  }
+  toast("Registrado ✓");
+  render();
+}
+
+// ── Información del cliente (briefing para la llamada) ──
+async function openInfo(c){
+  const avaC=avaColor(c.nombre||c.wa_id);
+  $("iAv").style.background=avaC+"22"; $("iAv").style.color=avaC; $("iAv").textContent=ini(c.nombre||c.wa_id);
+  $("iNm").textContent=c.nombre||"Sin nombre";
+  $("iPh").textContent="+"+c.wa_id;
+  $("iCall").href="tel:+"+c.wa_id;
+  $("iChat").href="index.html?c="+c.id;
+  $("iBody").innerHTML=`<div class="iload">Cargando contexto…</div>`;
+  $("infoModal").classList.add("show");
+  // Cargar campos capturados + últimos mensajes
+  let fields=[], msgs=[];
+  try{
+    const [{ data:fv }, { data:ms }]=await Promise.all([
+      supa.from("contact_field_values").select("value, field:custom_fields(key,nombre)").eq("contact_id",c.id),
+      supa.from("messages").select("direction,type,content,ts").eq("contact_id",c.id).order("ts",{ascending:false}).limit(12),
+    ]);
+    fields=(fv||[]).filter(r=>r?.field && !String(r.field.key||"").startsWith("_") && esValorPresentable(r.value));
+    msgs=(ms||[]).reverse();
+  }catch(_){}
+  if(!$("infoModal").classList.contains("show")) return; // se cerró mientras cargaba
+
+  const sg=STAGE[c.stage||"nuevo"]||STAGE.nuevo;
+  const org=origenLabel(c.source);
+  const o=lastOrder(c);
+  const mia=(c.memoria_ia && typeof c.memoria_ia==="object")?c.memoria_ia:{};
+  const who=(Array.isArray(mia.quien_es)?mia.quien_es:[]).filter(Boolean);
+  const how=(Array.isArray(mia.como_tratar)?mia.como_tratar:[]).filter(Boolean);
+
+  // Estado
+  let estadoRow=`<span class="ipill" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="width:7px;height:7px;border-radius:50%;background:${sg.color}"></span>${sg.label}</span><span class="ipill" style="background:var(--surface-2);color:var(--muted)">${esc(org)}</span>`;
+  if(o){ const m=O.EST[o.estado]||{}; const tono=m.tono==="ok"?"var(--green)":m.tono==="bad"?"var(--red)":"var(--amber)"; estadoRow+=`<span class="ipill" style="background:var(--surface-2);color:${tono}">Pedido: ${esc(O.label(o.estado))} · ${esc(money(O.total(o),o.currency))}</span>`; }
+
+  // Producto de interés
+  const prodHtml=c.product?.nombre
+    ? `<div class="iprod"><span class="ie">${esc(c.product.emoji||"📦")}</span><div><div class="ipn">${esc(c.product.nombre)}</div><div class="ips">Producto que le interesa</div></div></div>`
+    : `<span class="inone">Aún no definió un producto.</span>`;
+
+  // Para vender (campos)
+  const sellHtml=fields.length
+    ? `<div class="ichips">${fields.map(r=>`<span class="ichip sell"><span class="ik">${esc(r.field.nombre||r.field.key)}:</span> ${esc(String(r.value).trim())}</span>`).join("")}</div>`
+    : `<span class="inone">La IA aún no ha capturado datos en el chat.</span>`;
+
+  // Quién es / Cómo tratar
+  let miaHtml="";
+  if(who.length) miaHtml+=`<div class="isec"><div class="isec-t"><span class="dot" style="background:#22c079"></span>Quién es</div><div class="ichips">${who.map(t=>`<span class="ichip who">${esc(t)}</span>`).join("")}</div></div>`;
+  if(how.length) miaHtml+=`<div class="isec"><div class="isec-t"><span class="dot" style="background:#f0a92b"></span>Cómo tratarlo</div><div class="ichips">${how.map(t=>`<span class="ichip how">${esc(t)}</span>`).join("")}</div></div>`;
+
+  // Conversación reciente
+  const bubText=(m)=>{ const ct=m.content||{}; if(ct.text) return esc(ct.text); if(m.type==="image"||ct.media_url&&/img|image/i.test(m.type||"")) return "📷 "+(ct.caption?esc(ct.caption):"Imagen"); if(ct.caption) return esc(ct.caption); if(ct.media_url) return "📎 Archivo"; return `<span style="opacity:.6">(${esc(m.type||"mensaje")})</span>`; };
+  const chatHtml=msgs.length
+    ? `<div class="ichat">${msgs.map(m=>{ const inb=m.direction==="in"; return `<div class="ibub ${inb?"in":"out"}"><div class="iwho">${inb?"Cliente":"Bot/Asesor"}</div>${bubText(m)}</div>`; }).join("")}</div>`
+    : `<span class="inone">Sin mensajes en el chat todavía.</span>`;
+
+  $("iBody").innerHTML=`
+    <div class="isec"><div class="imeta">${estadoRow}</div></div>
+    <div class="isec"><div class="isec-t"><span class="dot" style="background:#9b6cf0"></span>Producto</div>${prodHtml}</div>
+    <div class="isec"><div class="isec-t"><span class="dot" style="background:#2b7fff"></span>Datos capturados (para vender)</div>${sellHtml}</div>
+    ${miaHtml}
+    <div class="isec"><div class="isec-t"><span class="dot" style="background:#18b7be"></span>Conversación reciente</div>${chatHtml}</div>`;
+  // scroll del chat al final (lo más reciente)
+  const ch=$("iBody").querySelector(".ichat"); if(ch) ch.scrollTop=ch.scrollHeight;
 }
 
 function clearFilters(){
