@@ -101,6 +101,7 @@ const P = {
   megaphone:'<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
   embudo:'<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
   lock:'<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  directo:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${P[n]||""}</svg>`;
 
@@ -127,6 +128,7 @@ const NAV_GROUPS = [
     { id:"rendimiento", label:"Rendimiento",          href:"rendimiento.html",icon:"rendimiento" },
   ]},
   { key:"ventas", sec:"Ventas", items:[
+    { id:"directo",     label:"Directo",              href:"directo.html",    icon:"directo" },
     { id:"pedidos",     label:"Pedidos",              href:"pedidos.html",    icon:"kanban" },
     { id:"compras",     label:"Compras",              href:"compras.html",    icon:"pedidos" },
     { id:"copiloto",    label:"Pagos por validar",    href:"copiloto.html",   icon:"compass" },
