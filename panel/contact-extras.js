@@ -1203,6 +1203,7 @@ export function openVentaManual(contact, deps) {
         <div class="vm-block">
           <div class="vm-lbl">Estado de la venta</div>
           <div class="vm-seg" id="vmSeg"></div>
+          <div class="vm-kbhint" id="vmKbHint"></div>
         </div>
 
         <label class="vm-switch" id="vmEntWrap">
@@ -1280,11 +1281,34 @@ export function openVentaManual(contact, deps) {
         { v: "entregado_cobrado", l: "Entregado y cobrado" }, // cerrada → col. "Finalizados"
       ];
     }
+    // Cada estado cae en una columna concreta del Kanban de Pedidos. Este mapa
+    // debe coincidir con KB_LIMA / KB_PROV de pedidos.html (si cambian las
+    // columnas allá, actualízalo acá).
+    function kbColumna(est) {
+      const C = {
+        // Lima
+        confirmado: ["Lima", "Confirmado"], entregado_cobrado: ["Lima", "Finalizados"],
+        // Provincia
+        esperando_adelanto: ["Provincia", "Esperando adelanto"], por_despachar: ["Provincia", "Confirmado"],
+        recogido: ["Provincia", "Finalizados"],
+        // Digital (no tiene tablero de envío)
+        confirmada: null,
+      };
+      return C[est];
+    }
     function renderSeg() {
       const opts = segOpts();
       if (!opts.some((o) => o.v === estado)) estado = opts[0].v;
       g("#vmSeg").innerHTML = opts.map((o) => `<button type="button" class="vm-segb${o.v === estado ? " on" : ""}" data-v="${o.v}">${o.l}</button>`).join("");
       g("#vmSeg").querySelectorAll(".vm-segb").forEach((b) => b.onclick = () => { estado = b.dataset.v; renderSeg(); });
+      // Referencia: a qué columna del Kanban entra el pedido con el estado elegido.
+      const hint = g("#vmKbHint");
+      if (hint) {
+        const kb = kbColumna(estado);
+        hint.innerHTML = kb
+          ? `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="18" x="3" y="3" rx="1.5"/><rect width="7" height="11" x="14" y="3" rx="1.5"/></svg><span>Entra al Kanban en <b>${esc(kb[0])} · ${esc(kb[1])}</b></span>`
+          : `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/></svg><span>Entrega digital — se envía al toque, sin tablero de envío.</span>`;
+      }
     }
     function renderZona() {
       g("#vmZona").querySelectorAll(".vm-segb").forEach((b) => b.classList.toggle("on", b.dataset.z === zona));
@@ -1423,6 +1447,9 @@ function injectVentaManualCss() {
   .mdt-k{color:var(--muted,#6b7280);flex:none}
   .mdt-v{color:var(--text,#111);text-align:right;word-break:break-word}
   .mdt-pre{background:var(--bg,#f6f6f6);border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.45;overflow:auto;max-height:170px;white-space:pre-wrap;word-break:break-word;margin:0;color:var(--text,#111)}
+  .vm-kbhint{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11.5px;font-weight:600;color:var(--muted,#6b7280)}
+  .vm-kbhint svg{flex:none;opacity:.75}
+  .vm-kbhint b{color:var(--text,#111827);font-weight:700}
   .vm-note{display:flex;gap:8px;font-size:11.5px;line-height:1.5;color:var(--muted,#6b7280);background:var(--bg,#f9fafb);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 11px}
   .vm-note.ad{background:color-mix(in srgb,var(--brand,#2b7fff) 8%,transparent);border-color:color-mix(in srgb,var(--brand,#2b7fff) 26%,transparent)}
   .vm-note-ic{flex:none;font-size:13px}
