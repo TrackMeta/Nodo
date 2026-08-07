@@ -511,6 +511,9 @@ export const EXTRAS_CSS = `
   .cpanel .cx-btn.ia{background:linear-gradient(135deg,#a855f7,#ec4899);border:none;color:#fff;box-shadow:0 3px 10px rgba(168,85,247,.32)}
   .cpanel .cx-btn.ia:hover{background:linear-gradient(135deg,#9333ea,#db2777)}
   .cpanel .cx-btn:disabled{opacity:.5;cursor:not-allowed}
+  .cpanel .cx-fichahint{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;line-height:1.45;color:var(--muted,#8a97a8);background:var(--surface-2,#1b222c);border:1px solid var(--border,#232b36);border-radius:9px;padding:8px 10px;margin:2px 0 6px}
+  .cpanel .cx-fichahint svg{flex:none;width:14px;height:14px;color:var(--green,#22c079);margin-top:1px}
+  .cpanel .cx-fichahint b{color:var(--text,#e7ecf2);font-weight:700}
   /* Sugerencias de la IA en la ficha (bloque aparte del pago por validar) */
   .cx-cop{margin-top:8px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface-2)}
   .cx-cop-hd{display:flex;align-items:center;gap:8px;padding:9px 11px;font-size:11px;font-weight:700;
