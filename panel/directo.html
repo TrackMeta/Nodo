@@ -59,7 +59,8 @@
   .stat .sdot{width:8px;height:8px;border-radius:50%;flex:none}
 
   .table{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
-  .thead,.qrow{display:grid;grid-template-columns:2fr .9fr 1fr 1.35fr .95fr 130px;gap:12px;align-items:center;padding:12px 16px}
+  .thead,.qrow{display:grid;grid-template-columns:1.9fr .8fr .82fr .9fr 1.25fr .85fr 120px;gap:12px;align-items:center;padding:12px 16px}
+  .c-act{color:var(--muted);font-size:12px;white-space:nowrap}
   .thead{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;border-bottom:1px solid var(--border)}
   .qrow{border-bottom:1px solid var(--border)}
   .qrow:last-child{border-bottom:none}
@@ -192,8 +193,8 @@
 
   @media(max-width:920px){
     .thead{display:none}
-    .qrow{grid-template-columns:1fr auto;grid-template-areas:"cli acts" "stg acts" "ped acts" "seg acts" "asig acts";gap:7px 10px;padding:12px 14px}
-    .qrow>.c-cli{grid-area:cli} .qrow>.c-stg{grid-area:stg} .qrow>.c-ped{grid-area:ped}
+    .qrow{grid-template-columns:1fr auto;grid-template-areas:"cli acts" "stg acts" "act acts" "ped acts" "seg acts" "asig acts";gap:7px 10px;padding:12px 14px}
+    .qrow>.c-cli{grid-area:cli} .qrow>.c-stg{grid-area:stg} .qrow>.c-act{grid-area:act} .qrow>.c-ped{grid-area:ped}
     .qrow>.c-seg{grid-area:seg} .qrow>.c-asig{grid-area:asig} .qrow>.c-acts{grid-area:acts;align-self:center}
     .acts{flex-direction:column}
     .reschoices{grid-template-columns:1fr}
@@ -217,6 +218,7 @@
         <option value="intentos">Más intentos</option>
         <option value="activity">Última actividad</option>
       </select>
+      <div id="dateRange"></div>
       <button class="btn" id="filtBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg> Filtros <span class="cnt" id="filtCnt" style="display:none">0</span></button>
     </div>
 
@@ -235,7 +237,7 @@
     </div>
 
     <div class="table">
-      <div class="thead"><div>Cliente</div><div>Etapa</div><div>Pedido</div><div>Seguimiento</div><div>Asesora</div><div></div></div>
+      <div class="thead"><div>Cliente</div><div>Etapa</div><div>Actividad</div><div>Pedido</div><div>Seguimiento</div><div>Asesora</div><div></div></div>
       <div id="rows"><div class="empty">Cargando…</div></div>
     </div>
     <div class="foot" id="foot"></div>
@@ -285,11 +287,12 @@
 <script type="module">
 import { supa, mountShell, toast, askChoice, norm, icon } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable } from "./contact-extras.js";
+import { mountDateRange, computePreset, ymd } from "./date-range.js?v=2";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 
 const st={ channelId:null, accountId:null, uid:null, myName:"", contacts:[], ordersBy:{}, members:[], visible:80, rt:null, reg:null };
-const f={ q:"", sort:"priority", stages:new Set(), mios:false, hoy:false, sincontacto:false, seguimiento:false, pedido:false, showDone:false };
+const f={ q:"", sort:"priority", stages:new Set(), mios:false, hoy:false, sincontacto:false, seguimiento:false, pedido:false, showDone:false, range:null };
 const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
 const STAGE_W={ caliente:6, confirmado:5, interesado:4, curioso:3, nuevo:2, comprado:1, perdido:0 };
 
@@ -326,6 +329,8 @@ async function boot(){
   shell.onChannel(id=>{ st.channelId=id; loadTeam(); subscribe(); load(); });
   $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=80; render(); });
   $("fSort").addEventListener("change", e=>{ f.sort=e.target.value; render(); });
+  // Filtro de rango de fechas (por última actividad). "Máximo" = sin filtro (default).
+  st.dr = mountDateRange($("dateRange"), { valor: computePreset("max"), nota:"Por última actividad · Hora de Lima", onChange:(r)=>{ f.range = (r.preset==="max") ? null : r; render(); } });
   $("filtBtn").onclick=()=>$("filters").classList.toggle("show");
   $("fClear").onclick=clearFilters;
   // Modal registrar
@@ -401,6 +406,8 @@ function filtered(){
       if(c.stage==="perdido" && !f.stages.has("perdido")) return false;
     }
     if(f.q){ if(!(norm(c.nombre).includes(f.q) || (c.wa_id||"").includes(f.q))) return false; }
+    // Rango de fechas por última actividad (su último mensaje).
+    if(f.range && c.ultimo_mensaje_at){ const dd=ymd(new Date(c.ultimo_mensaje_at)); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
     if(f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
     if(f.mios && d.assigned_to!==st.uid) return false;
     if(f.hoy && !(d.next_call_at && d.next_call_at<=today)) return false;
@@ -534,6 +541,7 @@ function rowEl(c){
       </div>
     </div>
     <div class="c-stg"><span class="stg" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</span></div>
+    <div class="c-act" title="Última vez que hubo actividad (su último mensaje)">${ago(c.ultimo_mensaje_at||c.created_at)}</div>
     <div class="c-ped">${pedHtml}</div>
     <div class="c-seg"><div class="seg">${segHtml}${nc}</div></div>
     <div class="c-asig">${asHtml}</div>
@@ -730,6 +738,7 @@ async function openInfo(c){
 
 function clearFilters(){
   f.q=""; f.stages.clear(); f.mios=f.hoy=f.sincontacto=f.seguimiento=f.pedido=f.showDone=false;
+  f.range=null; if(st.dr) st.dr.set(computePreset("max"));
   $("q").value=""; renderFilterChips(); render();
 }
 
