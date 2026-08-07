@@ -376,14 +376,7 @@ function renderGsOauth(box, g){
           provincia recogido / saldo pagado. Los pedidos en proceso o caídos <b>no</b> se escriben,
           así tu hoja es un registro limpio de tus <b>ventas reales</b>.
         </div>
-        <label style="margin-top:16px">Pestaña por defecto <span style="color:var(--faint);font-weight:400">(opcional — solo para flujos manuales)</span></label>
-        <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">
-          Las ventas NO usan esto: van a Digital/Lima/Provincia. Esto es solo para un nodo
-          <b>Google Sheets</b> que pongas a mano en el editor de flujos y no le indiques pestaña.
-          Si no sabes qué es, déjalo vacío.
-        </div>
-        <input class="in" id="gso_tab" style="max-width:280px" value="${esc(g.tab||'')}" placeholder="(vacío)"/>
-        <div class="acts">
+        <div class="acts" style="margin-top:14px">
           <button class="btn primary" id="gsoSave">Guardar hoja</button>
           <button class="btn" id="gsoTest">Preparar mi hoja de nuevo</button>
           <button class="btn danger" id="gsoDisc" style="margin-left:auto">Desconectar</button>
@@ -407,7 +400,7 @@ function renderGsOauth(box, g){
     const url=$("gso_url").value.trim(); const id=sheetIdFrom(url);
     if(!id){ toast("Pega el enlace de la hoja",true); return; }
     const out=$("gsoOut"); out.innerHTML="";
-    await saveGsheets(e.target, { ...g, connected:true, mode:"oauth", spreadsheet_url:url, spreadsheet_id:id, tab:$("gso_tab").value.trim()||null });
+    await saveGsheets(e.target, { ...g, connected:true, mode:"oauth", spreadsheet_url:url, spreadsheet_id:id });
     await prepararHoja(id, out);
   };
   const test=$("gsoTest");
