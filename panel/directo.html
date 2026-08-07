@@ -174,11 +174,14 @@
   /* Chat */
   .ichat{display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px}
   .ibub{max-width:82%;padding:7px 11px;border-radius:13px;font-size:12.5px;line-height:1.45;word-break:break-word;box-shadow:0 1px 2px rgba(0,0,0,.15)}
-  /* Cliente = humano (azul) · Bot = color de la sección IA (morado) */
+  /* 3 roles: Cliente = humano (azul) · Asesor = tu equipo (teal) · Bot IA = degradado morado→rosa */
   .ibub.in{align-self:flex-start;background:rgba(43,127,255,.12);color:var(--text);border:1px solid rgba(43,127,255,.26);border-bottom-left-radius:4px}
-  .ibub.out{align-self:flex-end;background:rgba(155,108,240,.15);color:var(--text);border:1px solid rgba(155,108,240,.30);border-bottom-right-radius:4px}
-  .ibub.in .iwho{color:#2b7fff;opacity:1}
-  .ibub.out .iwho{color:#9b6cf0;opacity:1}
+  .ibub.asesor{align-self:flex-end;background:rgba(20,184,166,.14);color:var(--text);border:1px solid rgba(20,184,166,.30);border-bottom-right-radius:4px}
+  .ibub.bot{align-self:flex-end;background:linear-gradient(135deg,rgba(168,85,247,.17),rgba(236,72,153,.17));color:var(--text);border:1px solid rgba(168,85,247,.32);border-bottom-right-radius:4px}
+  .ibub .iwho{opacity:1}
+  .ibub.in .iwho{color:#2b7fff}
+  .ibub.asesor .iwho{color:#14b8a6}
+  .ibub.bot .iwho{background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
   .ibub .iwho{font-size:9px;text-transform:uppercase;letter-spacing:.4px;opacity:.65;font-weight:700;margin-bottom:2px}
   .ichatft{text-align:center;font-size:11px;color:var(--faint);margin-top:8px}
 
@@ -652,7 +655,7 @@ async function openInfo(c){
   try{
     const [{ data:fv }, { data:ms }]=await Promise.all([
       supa.from("contact_field_values").select("value, field:custom_fields(key,nombre)").eq("contact_id",c.id),
-      supa.from("messages").select("direction,type,content,ts").eq("contact_id",c.id).order("ts",{ascending:false}).limit(12),
+      supa.from("messages").select("direction,type,content,ts,sent_by").eq("contact_id",c.id).order("ts",{ascending:false}).limit(12),
     ]);
     fields=(fv||[]).filter(r=>r?.field && !String(r.field.key||"").startsWith("_") && esValorPresentable(r.value));
     msgs=(ms||[]).reverse();
@@ -694,13 +697,18 @@ async function openInfo(c){
   if(who.length) miaInner+=`<div><div class="isub" style="color:#8fe6b8"><span class="sd" style="background:#22c079"></span>Quién es</div><div class="ichips">${who.map(t=>`<span class="ichip who">${esc(t)}</span>`).join("")}</div></div>`;
   if(how.length) miaInner+=`<div><div class="isub" style="color:#f4cf86"><span class="sd" style="background:#f0a92b"></span>Cómo tratarlo</div><div class="ichips">${how.map(t=>`<span class="ichip how">${esc(t)}</span>`).join("")}</div></div>`;
   const miaHtml=miaInner
-    ? `<div class="isec"><div class="isec-t">${ib("#9b6cf0",'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>')}Memoria IA</div><div class="imia">${miaInner}</div></div>`
+    ? `<div class="isec"><div class="isec-t"><span class="ib" style="background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff">${'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>'}</span><span style="background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Memoria IA</span></div><div class="imia">${miaInner}</div></div>`
     : "";
 
   // Conversación reciente
   const bubText=(m)=>{ const ct=m.content||{}; if(ct.text) return esc(ct.text); if(m.type==="image"||(ct.media_url&&/img|image/i.test(m.type||""))) return "📷 "+(ct.caption?esc(ct.caption):"Imagen"); if(ct.caption) return esc(ct.caption); if(ct.media_url) return "📎 Archivo"; return `<span style="opacity:.6">(${esc(m.type||"mensaje")})</span>`; };
   const chatHtml=msgs.length
-    ? `<div class="ichat">${msgs.map(m=>{ const inb=m.direction==="in"; return `<div class="ibub ${inb?"in":"out"}"><div class="iwho">${inb?"Cliente":"Bot / Asesor"}</div>${bubText(m)}</div>`; }).join("")}</div>${lastMsgAt?`<div class="ichatft">Último mensaje ${ago(lastMsgAt)}</div>`:""}`
+    ? `<div class="ichat">${msgs.map(m=>{
+        // 3 roles: cliente (entrante) · asesor (humano) · bot IA (todo lo demás)
+        const role=m.direction==="in"?"in":(m.sent_by==="human"?"asesor":"bot");
+        const who=role==="in"?"Cliente":role==="asesor"?"Asesor":"Bot IA";
+        return `<div class="ibub ${role}"><div class="iwho">${who}</div>${bubText(m)}</div>`;
+      }).join("")}</div>${lastMsgAt?`<div class="ichatft">Último mensaje ${ago(lastMsgAt)}</div>`:""}`
     : `<span class="inone">Sin mensajes en el chat todavía.</span>`;
 
   $("iBody").innerHTML=`${hero}
