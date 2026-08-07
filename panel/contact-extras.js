@@ -1110,11 +1110,16 @@ export function openVentaManual(contact, deps) {
           const k = ((r.field?.key || "") + " " + (r.field?.nombre || "")).toLowerCase();
           if (/dni|documento|ruc/.test(k)) pre.dni ??= v;
           else if (/direcc/.test(k)) pre.direccion ??= v;
-          else if (/distrito/.test(k)) pre.distrito ??= v;
+          // "zona_nombre" (nombre de la zona/distrito, ej. San Miguel) va a distrito,
+          // NO al nombre del cliente — antes lo capturaba la rama de /nombre/ y ponía
+          // la zona como si fuera el nombre de la persona.
+          else if (/distrito|zona/.test(k)) pre.distrito ??= v;
           else if (/ciudad|departament|provincia|regi[oó]n/.test(k)) pre.ciudad ??= v;
           else if (/agencia|sede|shalom|oficina|destino/.test(k)) pre.sede ??= v;
           else if (/referen/.test(k)) pre.referencia ??= v;
-          else if (/nombre|full|complet/.test(k)) pre.nombre ??= v;
+          // Nombre REAL del cliente: campos de nombre de persona, excluyendo cosas que
+          // contienen "nombre" pero no lo son (zona, negocio, producto, usuario).
+          else if (/nombre|full|complet|cliente/.test(k) && !/zona|negocio|producto|usuario|empresa/.test(k)) pre.nombre ??= v;
           else if (/tel|celular|whatsapp|n[uú]mero|contacto/.test(k)) pre.tel ??= v;
         }
       } catch (_) {}
