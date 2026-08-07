@@ -1295,7 +1295,7 @@ function renderContactPanel(){
       ${isTest?"":`<div class="cph" style="margin-top:3px">${botTxt}</div>`}
     </div>
     ${!isTest && order?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar el pedido (corregir monto, producto, extras…)">${icon("edit")} Editar pedido</button>${O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button>`:""}</div>`:""}
-    ${!isTest && order && !O.esPerdido(order) && !O.esCerrado(order)?`<div class="cx-fichahint">${icon("check")}<span><b>Venta registrada.</b> Ya hay un pedido en curso, por eso el botón «Registrar venta a mano» se cambió por <b>Editar pedido</b> ↑ (evita crear pedidos duplicados). Muévelo o corrígelo desde ahí. El botón vuelve como «Registrar otra venta» cuando este pedido se cierre o se pierda.</span></div>`:""}
+    ${!isTest && order && !O.esPerdido(order) && !O.esCerrado(order)?`<details class="cx-fichahint"><summary>${icon("check")}<span>Venta registrada</span><span class="cx-fh-q">¿por qué cambió el botón?</span></summary><div class="cx-fh-body">Ya hay un pedido en curso, por eso «Registrar venta a mano» se cambió por <b>Editar pedido</b> ↑ (evita crear pedidos duplicados). Muévelo o corrígelo desde ahí. El botón vuelve como «Registrar otra venta» cuando este pedido se cierre o se pierda.</div></details>`:""}
     ${cet?copilotoCardHtml(order, cet, compFallback):""}
     ${order?sec("Pedido", pedidoResumenHtml(order), {open:true}):""}
     ${order?`<div style="padding:0 2px">${ventaChipsHtml(order, capiEvt)}</div>`:""}
