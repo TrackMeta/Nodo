@@ -85,9 +85,23 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
   }
 
   // 2) Encabezados + formato, ya con los ids reales de cada pestaña.
-  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets.properties(sheetId,title)`);
+  // Trae también bandedRanges: addBanding falla si la pestaña ya tiene banda, así
+  // que solo la agregamos donde no exista (mantiene idempotente el "preparar de nuevo").
+  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets(properties(sheetId,title),bandedRanges(bandedRangeId))`);
   const mapa = new Map<string, number>();
-  for (const s of (meta2.sheets ?? [])) mapa.set(norm(s.properties.title), s.properties.sheetId);
+  const conBanda = new Set<number>();
+  for (const s of (meta2.sheets ?? [])) {
+    mapa.set(norm(s.properties.title), s.properties.sheetId);
+    if (Array.isArray(s.bandedRanges) && s.bandedRanges.length) conBanda.add(s.properties.sheetId);
+  }
+
+  // Un color por operación: encabezado, color de banda (fila alterna) y color de la
+  // pestaña. Le da identidad visual a cada hoja (morado/azul/verde, como el panel).
+  const TEMA: Record<string, { head: any; band: any; tab: any }> = {
+    "Digital":   { head: { red: 0.42, green: 0.24, blue: 0.55 }, band: { red: 0.95, green: 0.92, blue: 0.98 }, tab: { red: 0.55, green: 0.36, blue: 0.70 } },
+    "Lima":      { head: { red: 0.13, green: 0.40, blue: 0.85 }, band: { red: 0.90, green: 0.94, blue: 1.00 }, tab: { red: 0.17, green: 0.50, blue: 1.00 } },
+    "Provincia": { head: { red: 0.08, green: 0.50, blue: 0.38 }, band: { red: 0.90, green: 0.97, blue: 0.94 }, tab: { red: 0.11, green: 0.62, blue: 0.46 } },
+  };
 
   const requests: any[] = [];
   for (const [tab, cols] of Object.entries(HOJAS)) {
@@ -95,26 +109,20 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
     await ensureHeaders(token, id, real, cols);
     const sheetId = mapa.get(norm(tab));
     if (sheetId === undefined) continue;
-    // Fila 1 congelada: al hacer scroll los encabezados se quedan arriba.
-    requests.push({
-      updateSheetProperties: {
-        properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
-        fields: "gridProperties.frozenRowCount",
-      },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
-        cell: {
-          userEnteredFormat: {
-            backgroundColor: { red: 0.26, green: 0.26, blue: 0.65 },
-            textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
-            verticalAlignment: "MIDDLE",
-          },
-        },
-        fields: "userEnteredFormat(backgroundColor,textFormat,verticalAlignment)",
-      },
-    });
+    const t = TEMA[tab] ?? TEMA["Lima"];
+    // Fila 1 congelada (los encabezados se quedan arriba al bajar).
+    requests.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } });
+    // Color de la pestaña (el tab de abajo).
+    requests.push({ updateSheetProperties: { properties: { sheetId, tabColor: t.tab }, fields: "tabColor" } });
+    // Filas alternadas para leer fácil (solo si aún no tiene banda).
+    if (!conBanda.has(sheetId)) {
+      requests.push({ addBanding: { bandedRange: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: cols.length }, rowProperties: { headerColor: t.head, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: t.band } } } });
+    }
+    // Encabezado: color de la operación, texto blanco en negrita, centrado.
+    requests.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { backgroundColor: t.head, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, verticalAlignment: "MIDDLE", horizontalAlignment: "CENTER" } }, fields: "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,horizontalAlignment)" } });
+    // Fila de encabezado un poco más alta (respira mejor).
+    requests.push({ updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 34 }, fields: "pixelSize" } });
+    // Ajustar el ancho de las columnas al contenido.
     requests.push({ autoResizeDimensions: { dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: cols.length } } });
   }
   if (requests.length) await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", { requests });
