@@ -2143,11 +2143,10 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", ord.channel_id).maybeSingle();
     const g = (ch as any)?.gsheets ?? {};
     if (!g.spreadsheet_id || g.connected === false) return; // sin hoja conectada, no hay nada que hacer
-    // "Solo ventas cerradas": si el canal lo pide, a la hoja SOLO van las ventas con
-    // el dinero cobrado (digital pagado, Lima entregado y cobrado, provincia recogido
-    // / saldo pagado). Los pedidos en proceso o caídos no se escriben.
-    if (g.solo_cerradas === true &&
-        !["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(String(ord.estado))) return;
+    // A la hoja SOLO van las ventas CERRADAS (dinero cobrado): digital pagado, Lima
+    // entregado y cobrado, provincia recogido / saldo pagado. Los pedidos en proceso
+    // o caídos NO se escriben — la hoja es un registro limpio de ventas reales.
+    if (!["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(String(ord.estado))) return;
     const { data: c } = await db.from("contacts")
       .select("nombre, wa_id, ad_id").eq("id", ord.contact_id).maybeSingle();
     const ct = (c as any) ?? {};
