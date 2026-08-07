@@ -2172,7 +2172,8 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Cel": ct.wa_id ?? "",
         "Fecha y hora": fecha,
         "Valor": String(ord.amount ?? ""),
-        "Producto": [ord.product?.nombre, s.opcion].filter(Boolean).join(" · "),
+        "Producto": ord.product?.nombre ?? "",
+        "Opción": s.opcion ?? "",
         "Orderbump": extra ? String(extra) : "",
         "Imagen": s.comprobante ?? s.adelanto_comprobante ?? "",
       };
