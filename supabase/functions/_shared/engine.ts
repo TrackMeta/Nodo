@@ -5885,7 +5885,12 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // de WhatsApp → llegó por BSUID). El flujo físico lo usa para pedirle el número
   // SOLO a estos (a los demás no se les molesta). Pre-migración (sin la col
   // telefono) ⇒ "no", para no pedírselo a nadie hasta que la 0062 esté aplicada.
-  ctx.sin_numero = hasNewCols ? (String(c?.telefono ?? "").trim() ? "no" : "si") : "no";
+  // "si" SOLO cuando de verdad no tenemos su número: sin `telefono` (col 0062) Y
+  // con un wa_id que NO es un teléfono (llegó por username/BSUID). Si el wa_id ya
+  // es un número plano (cliente real, o contacto agregado a mano/importado/sim),
+  // ese ES su número → no se le vuelve a pedir aunque `telefono` esté vacío.
+  const waEsNumero = /^\d{8,15}$/.test(String(c?.wa_id ?? "").trim());
+  ctx.sin_numero = hasNewCols ? (String(c?.telefono ?? "").trim() || waEsNumero ? "no" : "si") : "no";
   // Ángulo del creativo: {{angulo}} = nombre visible, {{angulo_gancho}} = frase que
   // la IA retoma. El slug vive congelado en contacts.angulo; nombre/gancho se leen
   // en vivo de `angulos`. Vacíos si el contacto no vino por un anuncio con ángulo.
