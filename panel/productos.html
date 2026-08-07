@@ -2951,7 +2951,14 @@ async function enlazarInicialesConVenta(flowId){
     if(!nodo) return;
     const cfg=nodo.config||{};
     const des=cfg.despues||{modo:"nada"};
-    if(des.modo==="flujo" && des.flow_id) return;   // ya apunta a algo: respetarlo
+    // Ya apunta a un flujo: respetarlo SOLO si ese flujo todavía existe. Si quedó
+    // colgado (la venta se borró y se regeneró con otro id), re-enlazar al nuevo
+    // para no dejar el rotador saludando y sin encadenar (dead-end).
+    if(des.modo==="flujo" && des.flow_id){
+      if(des.flow_id===flowId) return;
+      const { data:vivo } = await supa.from("flows").select("id").eq("id",des.flow_id).maybeSingle();
+      if(vivo) return;   // el destino sigue vivo: respetarlo
+    }
     cfg.despues={ modo:"flujo", flow_id:flowId };
     await supa.from("flow_nodes").update({ config:cfg }).eq("id",nodo.id);
   }catch(e){ console.error("[enlazarInicialesConVenta]",e); }

@@ -1496,28 +1496,35 @@ async function execute(db: SupabaseClient, run: Run) {
         // flujos). Orden: 1) el flujo configurado en `despues` (compat, por si lo
         // dejaron a mano); 2) automático → el flujo de VENTA activo del producto.
         const des = node.config?.despues ?? {};
-        let nextFlowId: string | null = (des.modo === "flujo" && des.flow_id) ? String(des.flow_id) : null;
-        if (!nextFlowId) {
+        const explicitId: string | null = (des.modo === "flujo" && des.flow_id) ? String(des.flow_id) : null;
+        // El destino explícito (`despues.flow_id`) solo vale si el flujo EXISTE y
+        // está activo. Si la venta se regeneró/borró y quedó un flow_id colgado,
+        // NO se respeta a ciegas: se cae al flujo de venta activo del producto. Sin
+        // esto, un despues colgado hacía que el bot saludara y se quedara MUDO (el
+        // rotador no tiene salida "continuar"), y el cliente caía a recepción.
+        let target: any = null;
+        if (explicitId) {
+          const { data: tf } = await db.from("flows")
+            .select("id, nombre, product_id, estado").eq("id", explicitId).eq("channel_id", run.channel_id).maybeSingle();
+          if (tf && (tf as any).estado === "activo") target = tf;
+        }
+        if (!target) {
           const { data: cur } = await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle();
           const pid = (cur as any)?.product_id;
           if (pid) {
-            const { data: vf } = await db.from("flows").select("id")
+            const { data: vf } = await db.from("flows").select("id, nombre, product_id, estado")
               .eq("channel_id", run.channel_id).eq("product_id", pid).eq("role", "venta").eq("estado", "activo")
               .order("created_at", { ascending: false }).limit(1).maybeSingle();
-            if (vf) nextFlowId = (vf as any).id;
+            if (vf) target = vf;
           }
         }
-        if (nextFlowId) {
-          const { data: tf } = await db.from("flows")
-            .select("id, nombre, product_id, estado").eq("id", nextFlowId).eq("channel_id", run.channel_id).maybeSingle();
-          if (tf && (tf as any).estado === "activo") {
-            run.flow_id = (tf as any).id;
-            const init = await initialNode(db, run.flow_id);
-            run.current_node_id = init?.id ?? null;
-            await logEvent(db, run.channel_id, run.contact_id, "flujo_inicio", "Flujo iniciado", (tf as any).nombre ?? null);
-            await markProduct(db, run.contact_id, (tf as any).product_id);
-            break;
-          }
+        if (target) {
+          run.flow_id = target.id;
+          const init = await initialNode(db, run.flow_id);
+          run.current_node_id = init?.id ?? null;
+          await logEvent(db, run.channel_id, run.contact_id, "flujo_inicio", "Flujo iniciado", target.nombre ?? null);
+          await markProduct(db, run.contact_id, target.product_id);
+          break;
         }
         run.current_node_id = await nextNode(db, run.flow_id, node.id, "continuar");
         break;
