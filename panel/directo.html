@@ -617,9 +617,16 @@ async function saveReg(){
     toast("Intento registrado ✓ — ahora registra la venta");
     const ok=await openVentaManual(c, { supa, toast, channelId:st.channelId });
     if(ok){
+      // La etapa del embudo la mueve el MOTOR según el estado real del pedido
+      // (stageDeEstado: recogido/cobrado→Comprado, adelanto/por-entregar→Confirmado,
+      // esperando-adelanto→Interesado, y es forward-only). Acá solo cerramos el
+      // seguimiento para sacar el lead de la cola: ya es un pedido a gestionar.
       const d2={ ...dirOf(c), estado:"cerrado" }; delete d2.next_call_at;
-      const { error:e2 }=await supa.from("contacts").update({ directo:d2, stage:"comprado" }).eq("id",c.id);
-      if(!e2){ c.directo=d2; c.stage="comprado"; toast("¡Venta cerrada! ✓"); }
+      const { error:e2 }=await supa.from("contacts").update({ directo:d2 }).eq("id",c.id);
+      if(!e2) c.directo=d2;
+      let cobrada=false;
+      try{ const { data:lo }=await supa.from("orders").select("estado").eq("contact_id",c.id).order("created_at",{ascending:false}).limit(1).maybeSingle(); cobrada=!!(lo && O.esCerrado(lo)); }catch(_){}
+      toast(cobrada?"¡Venta cobrada! ✓":"Venta registrada · pedido en curso ✓");
     } else {
       toast("Venta no registrada — el lead sigue en la cola");
     }

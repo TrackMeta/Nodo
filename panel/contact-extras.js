@@ -1266,8 +1266,19 @@ export function openVentaManual(contact, deps) {
     function segOpts() {
       const tipo = selProd()?.tipo || "digital";
       if (tipo === "digital") return [{ v: "confirmada", l: "Vendido / entregado" }];
-      if (zona === "provincia") return [{ v: "recogido", l: "Recogido y pagado" }, { v: "confirmado", l: "Por entregar" }];
-      return [{ v: "entregado_cobrado", l: "Entregado y cobrado" }, { v: "confirmado", l: "Por entregar" }];
+      // Por defecto (primera opción) = la plata AÚN no entra, que es lo normal al
+      // cerrar por llamada. Solo marcas "cobrado/recogido" si YA te pagó.
+      // Provincia da las dos etapas previas al recojo, cada una en su columna real
+      // del Kanban (Lima usa `confirmado`, pero provincia NO tiene esa columna).
+      if (zona === "provincia") return [
+        { v: "esperando_adelanto", l: "Esperando adelanto" },        // aún no paga → col. "Esperando adelanto"
+        { v: "por_despachar",      l: "Adelanto pagado · despachar" }, // ya dio adelanto → col. "Confirmado"
+        { v: "recogido",           l: "Recogido y pagado" },          // cerrada → col. "Finalizados"
+      ];
+      return [
+        { v: "confirmado",        l: "Por entregar" },        // → col. "Confirmado" del tablero de Lima
+        { v: "entregado_cobrado", l: "Entregado y cobrado" }, // cerrada → col. "Finalizados"
+      ];
     }
     function renderSeg() {
       const opts = segOpts();
