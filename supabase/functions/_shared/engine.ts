@@ -5301,9 +5301,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (ctx._product_id) {
       const ops = await loadOpciones(db, run, ctx._product_id);
       if (ops.length > 1) {
-        const lista = ops.map((o) =>
-          `- ${o.nombre}${o.precio != null ? `: S/ ${o.precio}` : ""}${o.descripcion ? ` — ${o.descripcion}` : ""}`
-        ).join("\n");
+        // Si el cliente trae una OFERTA activa (descuento de remarketing) para una
+        // de estas opciones, la lista debe mostrar SU precio con descuento — no el
+        // de lista. Antes la IA cotizaba el precio de lista (ej. S/59) aunque el
+        // cliente tuviera un descuento (S/39); el pago sí lo respetaba, pero el
+        // quote no, y quedaba una incoherencia (le decía un precio y le cobraba otro).
+        const ofertaLista = await ofertaActiva(db, run);
+        const lista = ops.map((o) => {
+          const conOferta = ofertaLista && ofertaLista.opcion_id === o.id && Number.isFinite(Number(ofertaLista.precio));
+          const precioTxt = conOferta
+            ? `: S/ ${ofertaLista.precio} (precio con su descuento vigente${o.precio != null ? `, antes S/ ${o.precio}` : ""})`
+            : (o.precio != null ? `: S/ ${o.precio}` : "");
+          return `- ${o.nombre}${precioTxt}${o.descripcion ? ` — ${o.descripcion}` : ""}`;
+        }).join("\n");
         const estado = ctx.opcion
           ? `\n\nAhora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (S/ ${ctx.precio})` : ""}. ` +
             `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
