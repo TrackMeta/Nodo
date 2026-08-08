@@ -2838,7 +2838,9 @@ async function generarFlujoVenta(){
           operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false,
           guardar_en:`pago_extra_${i+1}`, monto_esperado:String(precio),
           _extra_label:(info?info.label:`Extra ${i+1}`),
-          prompt:`Analiza la imagen. Si el pago es VÁLIDO y por S/ ${precio}, responde exactamente PAGO_OK. Si no, responde PAGO_NO y el motivo en una frase.`,
+          prompt:`Analiza la imagen. Si el pago es VÁLIDO y por S/ ${precio}, responde exactamente PAGO_OK. Si no, responde PAGO_NO y el motivo en una frase.\n`+
+                 `En la línea siguiente agrega SIEMPRE un JSON con lo que leíste del comprobante: `+
+                 `{"banco":"Yape o el banco","operacion":"nº de operación","monto":0,"titular":"a quién le pagó"}`,
         },false,940,y-90);
         const nOkX=await N("condicion",`¿Pago OK? (extra ${i+1})`,{
           rutas:[{ nombre:"Pago OK", handle:"ruta:pago_ok", match:"todas",
