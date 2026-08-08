@@ -5310,6 +5310,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
             `Solo cuando decida, confirma cuál y su precio.`;
         parts.push("## Opciones de compra disponibles\n" + lista + estado);
+      } else if (ops.length === 1) {
+        // Una sola presentación: NO entra al bloque de arriba, así que la IA se
+        // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
+        // un producto de S/59). Se lo damos explícito. El OCR igual valida contra el
+        // precio real, pero al cliente hay que decirle el monto correcto.
+        const p = ctx.precio != null ? ctx.precio : (ops[0] as any)?.precio;
+        if (p != null && String(p) !== "") {
+          parts.push(`## Precio\nEste producto cuesta **S/ ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.`);
+        }
       }
     }
     // Atributos del pedido (talla, color…): la IA los pregunta con naturalidad y
