@@ -5229,7 +5229,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // puede crear el pedido. Los campos del flujo se suman a los ATRIBUTOS del
   // producto (talla, color…): se capturan igual, y los obligatorios entran a
   // {{datos_completos}} para que la IA no cierre sin ellos.
-  if (op === "generar_texto" && ctx.last_input) {
+  // También en `clasificar` (nodo de la oferta de extra): así una talla de regalo/
+  // extra que el cliente responde JUNTO con un "no gracias" (que clasifica como
+  // rechazo y va al Fin, sin pasar por el `generar_texto`) igual se captura. Antes
+  // se perdía: el bot pedía la talla del gorro al confirmar, el cliente respondía
+  // "talla M, no gracias" en la fase del extra, y el rechazo se la llevaba sin
+  // guardarla. extraerDatos solo llama a la IA si falta algún campo (barato).
+  if ((op === "generar_texto" || op === "clasificar") && ctx.last_input) {
     const attrCampos = (Array.isArray(ctx._atributos) ? ctx._atributos : []).map((a: any) => ({
       clave: a.clave, label: a.nombre, requerido: a.obligatorio !== false,
       detalle: [a.valores?.length ? `valores posibles: ${a.valores.join(", ")}` : "", a.ayuda]
