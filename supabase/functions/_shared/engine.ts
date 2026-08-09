@@ -2517,6 +2517,21 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     let amount = esperado, vuelto = 0;
     if (a.estado === "confirmada") { const pr = pagoRealYVuelto(run, esperado); amount = pr.amount; vuelto = pr.vuelto; if (vuelto > 0) ship.vuelto = vuelto; }
 
+    // Backstop anti-S/0: un pedido cuyo producto TIENE opciones con precio no debería
+    // salir en 0 (señal de que la opción no se resolvió). La guardia de datos_completos
+    // debería evitar llegar acá; si igual pasa (flujo editado a mano, digital, etc.),
+    // se avisa para que no quede una venta fantasma en S/0 sin que nadie se entere.
+    if (amount === 0) {
+      try {
+        const ops = await loadOpciones(db, run, (c as any)?.product_id);
+        if ((ops || []).some((o: any) => o && Number(o.precio) > 0)) {
+          await notifyAdmin(db, run, "⚠️ Se creó un pedido en S/0 pero el producto tiene opciones con precio: la opción no se resolvió. Revísalo en Pedidos.").catch(() => {});
+          await logEvent(db, run.channel_id, run.contact_id, "error", "Pedido creado en S/0",
+            "El producto tiene opciones con precio — la opción no se resolvió al crear el pedido").catch(() => {});
+        }
+      } catch (_) { /* best-effort */ }
+    }
+
     // Congela el costo de la mercadería EN el pedido, para que cambiar el costo
     // del producto después no altere los márgenes ya cerrados (snapshot).
     // Prioridad: costo de la OPCIÓN elegida (absoluto — para variantes/packs con
@@ -4970,7 +4985,24 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     }
   }
   ctx._datos_faltan = pendientes;
-  const completo = pendientes.length === 0;
+  // Guardia anti-pedido-en-S/0: si el producto tiene 2+ opciones CON precio, el
+  // cliente DEBE haber elegido una — sin opción no hay precio y el pedido nacería en
+  // S/0. Mientras no haya `opcion_id` resuelto, los datos NO se dan por completos: el
+  // flujo sigue conversando y `detectarOpcion` la fija, en vez de crear un pedido
+  // vacío. Pasaba cuando el cliente manda todo junto pegado a la keyword y la opción
+  // no se llegó a resolver (ver simulacion-e2e-2026-08-09). Solo aplica a flujos con
+  // campos de despacho (físicos); el digital cierra por otra vía.
+  let faltaOpcion = false;
+  if (campos.length && !String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim()) {
+    try {
+      const ops = await loadOpciones(db, run, ctx._product_id);
+      const conPrecio = (ops || []).filter((o: any) => o && o.precio != null && Number.isFinite(Number(o.precio)) && Number(o.precio) > 0);
+      if (conPrecio.length >= 2) faltaOpcion = true;
+    } catch (_) { /* sin catálogo de opciones → no se bloquea */ }
+  }
+  ctx._falta_opcion = faltaOpcion;
+  run.vars._falta_opcion = faltaOpcion;
+  const completo = pendientes.length === 0 && !faltaOpcion;
   run.vars.datos_completos = completo ? "si" : "no";
   ctx.datos_completos = completo ? "si" : "no";
   await setField(db, run.channel_id, run.contact_id, "datos_completos", completo ? "si" : "no");
@@ -5529,6 +5561,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
+    }
+    // Falta ELEGIR la opción (hay varias con precio y el cliente no eligió): sin
+    // opción no hay precio y el pedido saldría en S/0. Prioridad sobre "cierra": la
+    // IA primero consigue la elección.
+    if ((ctx as any)._falta_opcion) {
+      parts.push("## Falta elegir la opción\nEl cliente TODAVÍA no eligió qué opción/presentación quiere, y hay VARIAS con precio distinto. " +
+        "Antes de cerrar el pedido: nómbrale las opciones con su precio y pregúntale con naturalidad cuál quiere. " +
+        "NO des el pedido por cerrado, NO le pidas el pago y NO digas «queda confirmado» hasta que elija una — sin opción no hay precio.");
     }
     // Qué datos faltan (y cuáles vinieron mal). La IA los pide DENTRO de la
     // conversación, no como formulario: uno a la vez, sin repetir lo que el
