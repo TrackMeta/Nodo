@@ -2781,13 +2781,20 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
       const previos = ((cur as any)?.order_bumps ?? []) as any[];
       const nombre = resolve(String(a.bump.nombre ?? ""), ctx);
       const precio = Number(resolve(String(a.bump.precio ?? "0"), ctx)) || 0;
-      // Idempotente: si ya está ese extra, no se suma dos veces.
-      if (!previos.some((b) => b?.nombre === nombre)) {
+      const vid = a.bump.version_id ? resolve(String(a.bump.version_id), ctx) : null;
+      // Idempotente por VERSION_ID (identidad real del extra), no por nombre: un extra
+      // PAGADO y un REGALO distintos pueden llamarse igual (ambos "Medias") y el dedup
+      // por nombre tiraba el pagado EN SILENCIO — no se cobraba, no bajaba su stock y el
+      // value a Meta salía corto. Sin version_id, cae al nombre (comportamiento previo).
+      const yaEsta = vid
+        ? previos.some((b) => b?.version_id && String(b.version_id) === String(vid))
+        : previos.some((b) => !b?.version_id && b?.nombre === nombre);
+      if (!yaEsta) {
         // Un extra DIGITAL dentro de un pedido físico viaja con su version_id +
         // digital:true → su link/archivo se entrega cuando el pedido queda pagado
         // del todo (no antes: sería regalar el digital en un pago contraentrega).
         const nuevo: Record<string, unknown> = { nombre, precio };
-        if (a.bump.version_id) nuevo.version_id = resolve(String(a.bump.version_id), ctx);
+        if (vid) nuevo.version_id = vid;
         if (a.bump.digital) { nuevo.digital = true; nuevo.entregado = false; }
         // Un extra FÍSICO también descuenta stock. El bump no traía product_id →
         // lo resolvemos del version_id y lo guardamos. Si el extra tiene tallas
@@ -3100,6 +3107,19 @@ export function mensajeEstadoDefault(
       `${guia ? `Tu guía es *${guia}*. ` : ""}Te aviso apenas llegue para que puedas recogerlo. 🙌`;
   }
   if (estado === "en_agencia") {
+    // Provincia que pagó el TOTAL en el adelanto (saldo 0 / pagado_total): NO debe
+    // nada. Antes el bot mandaba "paga el saldo de S/ 0" y pedía un comprobante que
+    // no existe. Ahora avisa que ya está pagado y le pasa la clave si la hay.
+    const _saldoNum = Number(s.saldo);
+    const yaPagado = s.pagado_total === true ||
+      (s.saldo != null && s.saldo !== "" && Number.isFinite(_saldoNum) && _saldoNum <= 0);
+    if (yaPagado) {
+      const clave = String(s.clave_recojo || "").trim();
+      return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
+        (clave
+          ? `Ya está *todo pagado* ✅ — tu *clave de recojo* es *${clave}*. Muéstrala en la agencia para recogerlo. ¡Gracias por tu compra! 🎉`
+          : `Ya está *todo pagado* ✅, no debes nada. En breve te paso tu *clave de recojo* para que puedas recogerlo. 🙌`);
+    }
     const saldo = (s.saldo != null && s.saldo !== "") ? s.saldo : (amount != null ? amount : null);
     return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
       `${saldo != null ? `Para recogerlo, paga el saldo de *${sym} ${saldo}* ` : "Para recogerlo, paga el saldo "}` +
@@ -3177,7 +3197,7 @@ function metodoLeido(parsed: any): string | null {
 // un fraude.
 function evaluarAbono(
   ship: Record<string, any>, prefix: string, esperado: number, monto: number, op: string | null, tol: number,
-): { key: string; abonos: any[]; total: number; cubre: boolean; falta: number; dup: boolean } {
+): { key: string; abonos: any[]; total: number; cubre: boolean; falta: number; dup: boolean; ambiguo: boolean } {
   const key = prefix + "_abonos";
   const prev = Array.isArray(ship[key]) ? ship[key] : [];
   // Dedup por nº de operación cuando el OCR lo leyó. Si NO lo leyó (op null, típico
@@ -3185,14 +3205,22 @@ function evaluarAbono(
   // dos veces. Antes, con op null `dup` era siempre false → cada reenvío acreditaba
   // de nuevo y dos reenvíos de un pago real de S/15 "cubrían" S/30 → auto-aprobaba /
   // entregaba contra un único pago (agujero de dinero). Erra hacia NO doble-acreditar.
-  const dup = op
-    ? prev.some((a: any) => a.op && String(a.op) === String(op))
-    : prev.some((a: any) => !a.op && Number(a.monto) === Number(monto));
+  // Con nº de operación: reenvío EXACTO del mismo pago → duplicado seguro (no suma).
+  const dupOp = op ? prev.some((a: any) => a.op && String(a.op) === String(op)) : false;
+  // SIN operación (captura borrosa) + ya hay un abono del MISMO monto: AMBIGUO. No se
+  // puede saber si es un reenvío del mismo pago (no acreditar) o un 2º pago legítimo
+  // igual (acreditar). Antes se asumía reenvío y se DESCARTABA en silencio → si era un
+  // 2º pago real, el cliente quedaba sub-acreditado y el pedido trabado ("faltan S/X").
+  // No lo decide el bot: no se acumula (evita doble-crédito) pero se señala `ambiguo`
+  // para que el caller lo mande a REVISIÓN MANUAL con el comprobante, sin auto-aprobar.
+  const ambiguo = !op && prev.some((a: any) => !a.op && Number(a.monto) === Number(monto));
+  const dup = dupOp || ambiguo;
   const abonos = dup ? prev : [...prev, { op: op ?? null, monto, at: new Date().toISOString() }];
   const total = abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0);
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const cubre = Number.isFinite(esperado) && esperado > 0 && total >= (esperado - tol);
-  return { key, abonos, total: r2(total), cubre, falta: Math.max(0, r2(esperado - total)), dup };
+  // Ambiguo nunca auto-cubre: la decisión queda para el humano.
+  const cubre = !ambiguo && Number.isFinite(esperado) && esperado > 0 && total >= (esperado - tol);
+  return { key, abonos, total: r2(total), cubre, falta: Math.max(0, r2(esperado - total)), dup, ambiguo };
 }
 function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }
 
@@ -3394,6 +3422,21 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // paga al menos el piso, se despacha (el saldo se acredita solo con lo pagado).
   const ab = legit ? evaluarAbono(ship, "adelanto", piso, monto, oper, tol) : null;
 
+  // AMBIGUO (op ilegible + 2º comprobante del mismo monto): a revisión humana, sin
+  // auto-aprobar ni descartar en silencio. El operador ve el comprobante en "Pagos
+  // por validar" y decide si es un reenvío o un 2º pago real.
+  if (ab && ab.ambiguo) {
+    await db.from("orders").update({
+      updated_at: new Date().toISOString(),
+      shipping: { ...ship, adelanto_parcial: true, adelanto_revisar_dup: true,
+        adelanto_comprobante: url, adelanto_metodo: metodo },
+    }).eq("id", (order as any).id);
+    await logEvent(db, channelId, contactId, "nota", "⚠️ 2º comprobante del mismo monto sin nº de operación",
+      `${monto} — ¿reenvío o 2º pago? Revisar manualmente antes de validar el adelanto`).catch(() => {});
+    await deliverMessage(db, channelId, contactId,
+      `¡Recibí tu comprobante! 🙌 Lo estoy verificando y te confirmo en un ratito. 😊`).catch(() => {});
+    return true;
+  }
   // Abono legítimo que TODAVÍA no cubre → acumula, avisa cuánto falta y sigue
   // esperando. No es "monto no coincide": es un pago en cuotas.
   if (ab && !ab.cubre) {
@@ -3541,6 +3584,21 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const legit = parsed.es_pago !== false && !!parsed.valido && !reuse && Number.isFinite(monto) && monto > 0;
   const ab = legit ? evaluarAbono(ship, "saldo", saldo, monto, oper, tol) : null;
 
+  // AMBIGUO (op ilegible + 2º comprobante del mismo monto): a revisión humana, sin
+  // auto-soltar la clave ni descartar en silencio. El operador decide en "Saldo por
+  // validar" si es un reenvío o un 2º pago real.
+  if (ab && ab.ambiguo) {
+    await db.from("orders").update({
+      updated_at: new Date().toISOString(),
+      shipping: { ...ship, saldo_parcial: true, saldo_revisar_dup: true,
+        saldo_comprobante: url, saldo_metodo: metodo },
+    }).eq("id", (order as any).id);
+    await logEvent(db, channelId, contactId, "nota", "⚠️ 2º comprobante del mismo monto sin nº de operación",
+      `${monto} — ¿reenvío o 2º pago? Revisar manualmente antes de soltar la clave de recojo`).catch(() => {});
+    await deliverMessage(db, channelId, contactId,
+      `¡Recibí tu comprobante! 🙌 Lo estoy verificando y te confirmo tu clave en un ratito. 😊`).catch(() => {});
+    return true;
+  }
   // Abono parcial legítimo que aún no cubre el saldo → acumula, avisa y espera.
   if (ab && !ab.cubre) {
     await db.from("orders").update({
@@ -4904,6 +4962,20 @@ function datoDudoso(clave: string, valor: string): string | null {
   return null;
 }
 
+// ¿El valor extraído aparece DE VERDAD en el mensaje del cliente? Tolerante a
+// plurales/acentos ("negro" ↔ "negras", "blanco" ↔ "blancas"). Sirve de guard para
+// no pisar un dato bueno cuando la IA "elige" el 1er valor de una lista aunque el
+// mensaje no lo traiga, y para que una corrección real ("mejor la 40") sí entre.
+// Valores cortos (tallas 38/S/M, DNI): match exacto de token.
+function valorEnMensaje(val: string, fuente: string): boolean {
+  const _n = (t: string) => String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const nv = _n(val).trim();
+  if (!nv) return false;
+  const toks = _n(fuente).split(/[^a-z0-9]+/).filter(Boolean);
+  const pref = nv.slice(0, 4);
+  return toks.some((t) => t === nv || (nv.length >= 4 && (t.startsWith(pref) || nv.startsWith(t.slice(0, 4)))));
+}
+
 async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): Promise<void> {
   const todos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
   // Los datos que aplican dependen del camino: mientras no sepamos la zona, se
@@ -4962,7 +5034,15 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // ahí no hay talla: la IA la omite → val vacío → no sobrescribe (ver `continue`).
   const soloUlt = campos.filter((c) => c.solo_ultimo);
   const faltanHist = faltan.filter((c) => !c.solo_ultimo);
-  if (faltanHist.length || soloUlt.length) {
+  // CORRECCIONES: campos enumerables (talla/color, con `valores`) o DNI que YA tienen
+  // valor se re-extraen del ÚLTIMO mensaje para captar un cambio del cliente ("no,
+  // mejor la 40" / "mi DNI es otro"): antes `faltan` los excluía para siempre y el bot
+  // acataba el cambio en la charla pero el pedido/stock salían con el valor viejo. El
+  // guard (valorEnMensaje) evita pisar el valor bueno cuando el mensaje no trae uno.
+  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni";
+  const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim());
+  const desdeUltimo = [...soloUlt, ...correcciones];
+  if (faltanHist.length || desdeUltimo.length) {
     try {
       const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
       const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
@@ -4970,7 +5050,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         // Extrae un grupo de campos desde una `fuente` de texto y guarda lo válido.
         // Se llama por separado para los campos "de historial" (la mayoría) y para
         // los `solo_ultimo` (talla del extra) — ver por qué más abajo.
-        const procesar = async (grupo: CampoDato[], fuente: string) => {
+        const procesar = async (grupo: CampoDato[], fuente: string, guard: boolean) => {
           if (!grupo.length || !fuente.trim()) return;
           const lista = grupo.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
           const raw = await runAI({
@@ -5016,20 +5096,16 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
           for (const c of grupo) {
             const val = String(parsed?.[c.clave] ?? "").trim();
             if (!val) continue;
-            // solo_ultimo (talla de un extra): la IA a veces "elige" el 1er valor de
-            // la lista ("S" de "S, M") aunque el mensaje NO traiga talla ("sí agrégame
-            // las medias"), y reconciliarStockExtras descuenta esa variante equivocada
-            // al toque; la respuesta real ("talla M") llega un turno después, cuando el
-            // bump ya no está pendiente y el campo salió del contexto. Guard
-            // determinista: el valor DEBE aparecer como token en el mensaje; si no, se
-            // descarta (el bot vuelve a preguntar y lo captura recién cuando el cliente
-            // de verdad lo dice). Solo aplica a solo_ultimo: no toca la extracción de
-            // historial del principal (color plural "blancas" lo resuelve el stock).
-            if (c.solo_ultimo) {
-              const _n = (t: string) => String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-              const tok = _n(val).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              if (tok && !new RegExp(`(^|[^a-z0-9])${tok}([^a-z0-9]|$)`).test(_n(fuente))) continue;
-            }
+            // Guard (extracción desde el ÚLTIMO mensaje: solo_ultimo y correcciones): el
+            // valor DEBE aparecer de verdad en el mensaje. Sin esto, la IA "elige" el 1er
+            // valor de la lista ("S" de "S, M") aunque el mensaje no lo traiga, o al
+            // re-extraer una corrección pisaría el valor bueno con uno inventado. Con él,
+            // "sí confirmo" no cambia nada y "mejor la 40" sí. No aplica a la extracción de
+            // historial (guard=false): ahí la IA tiene todo el contexto y mapea plurales.
+            if (guard && !valorEnMensaje(val, fuente)) continue;
+            // Correcciones: si el valor re-extraído es IGUAL al que ya teníamos, no hay
+            // nada que cambiar (evita re-loguear "dato capturado" cada turno).
+            if (guard && String(ctx[c.clave] ?? "").trim() === val) continue;
             const v = validarDato(c, val, ctx);
             if (!v.ok) {
               // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
@@ -5059,8 +5135,8 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         // seteada, su respuesta real ("L") ya no se extraía (faltan la excluye) → el
         // pedido/stock salían con la talla equivocada. Leyendo solo su turno, se
         // captura recién cuando el cliente de verdad la dice, y la correcta.
-        await procesar(faltanHist, contexto);
-        await procesar(soloUlt, texto);   // re-extrae la talla del extra cada turno
+        await procesar(faltanHist, contexto, false);           // datos faltantes, del historial (sin guard)
+        await procesar(desdeUltimo, texto, true);               // extra (solo_ultimo) + correcciones, del último msg, con guard
       }
     } catch (e) { console.error("[extraerDatos]", (e as any)?.message ?? e); }
   }
@@ -5470,6 +5546,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       clave: a.clave, label: a.nombre, requerido: a.obligatorio !== false,
       detalle: [a.valores?.length ? `valores posibles: ${a.valores.join(", ")}` : "", a.ayuda]
         .filter(Boolean).join(". ") || undefined,
+      // `valores` como string: lo usa extraerDatos para saber que es un campo
+      // enumerable y re-extraerlo del último mensaje si el cliente lo CORRIGE
+      // ("no, mejor la 40"). Sin esto, una talla/color ya capturada nunca se
+      // actualizaba y el pedido/stock salían con el valor viejo.
+      valores: Array.isArray(a.valores) ? a.valores.join(", ") : String(a.valores ?? ""),
       // La talla de un EXTRA ride-along se captura SOLO de la respuesta directa del
       // cliente, nunca del historial (evita heredar la talla de otro atributo con
       // valores solapados). Ver extraerDatos → procesar().
@@ -6308,7 +6389,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
               // cuando en verdad tiene tallas S/M. Se muestra solo el producto.
               const gname = String(g?.nombre || "regalo").split(" · ")[0].trim() || "regalo";
               for (const ga of gatrs) {
-                pc._atributos.push({ nombre: `${ga.nombre} de ${gname} (regalo)`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false, media: Array.isArray(ga.media) ? ga.media : [] });
+                // solo_ultimo (igual que el extra ride-along, línea ~6415): la talla del
+                // REGALO se lee SOLO del último mensaje y pasa por el guard de token, así
+                // NO puede heredar del historial un valor que el cliente dio para OTRO
+                // atributo con valores solapados (gorra negro/blanco ← "negras" de las
+                // zapatillas). La IA actual no suele bleedear acá, pero la asimetría con el
+                // extra era real; esto la cierra sin cambiar el flujo de preguntar-y-responder.
+                pc._atributos.push({ nombre: `${ga.nombre} de ${gname} (regalo)`, clave: `rg${gi}_${ga.clave}`, valores: ga.valores, ayuda: ga.ayuda, obligatorio: false, solo_ultimo: true, media: Array.isArray(ga.media) ? ga.media : [] });
               }
             } catch { /* sin config → no se agregan */ }
           }

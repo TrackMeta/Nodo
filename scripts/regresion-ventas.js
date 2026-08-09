@@ -226,6 +226,24 @@
       ];
     } },
 
+    { name: "Corrección de talla: '38'→'40' honra el cambio (stock 40, no 38) [FIX #7]", run: async (ids) => {
+      // El cliente elige 38 y ANTES de confirmar corrige a 40. El bot acata en la
+      // charla; el pedido/stock DEBEN salir con 40 (antes se descartaba la corrección
+      // y salía 38). Ver extraerDatos → correcciones (re-extrae enumerables del último msg).
+      const wa = "519990000015"; const st0 = await stockOf(ids.P.zap);
+      await send(wa, N(wa), "hola quiero las zapatillas runner"); await sleep(1300);
+      await send(wa, N(wa), "un par talla 38 negras"); await sleep(2000);
+      await send(wa, N(wa), "no espera, mejor la talla 40"); await sleep(2200);
+      await send(wa, N(wa), N(wa) + ", Lima, Miraflores, Av Larco 100"); await sleep(2200);
+      await send(wa, N(wa), "sí confirmo"); await sleep(2600);
+      const { o } = await order(wa); const st1 = await stockOf(ids.P.zap);
+      return [
+        ck(o?.estado === "confirmado", `estado=${o?.estado} (esperado confirmado)`),
+        ck(st1["Talla=40|Color=negro"] === st0["Talla=40|Color=negro"] - 1, `stock 40 negro ${st0["Talla=40|Color=negro"]}→${st1["Talla=40|Color=negro"]} (esperado -1: honró la corrección)`),
+        ck(st1["Talla=38|Color=negro"] === st0["Talla=38|Color=negro"], `stock 38 negro ${st0["Talla=38|Color=negro"]}→${st1["Talla=38|Color=negro"]} (esperado SIN cambio)`),
+      ];
+    } },
+
     { name: "Pack 2 pares → amount 230 + stock -2 por cantidad", run: async (ids) => {
       const wa = "519990000003"; const st0 = await stockOf(ids.P.zap);
       await send(wa, N(wa), "hola quiero las zapatillas runner"); await sleep(1300);
