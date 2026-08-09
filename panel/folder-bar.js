@@ -213,7 +213,11 @@ export async function mountFolders(opts){
         el.addEventListener("dragover", (e)=>{ e.preventDefault(); el.classList.add("over"); });
         el.addEventListener("dragleave", ()=> el.classList.remove("over"));
         el.addEventListener("drop", (e)=>{ e.preventDefault(); el.classList.remove("over"); if(dragIdx===null||dragIdx===idx) return;
-          const moved = rows.splice(dragIdx,1)[0]; rows.splice(idx,0,moved); paint(); });
+          const moved = rows.splice(dragIdx,1)[0];
+          // Off-by-one: al arrastrar hacia ABAJO, tras extraer en dragIdx el índice
+          // destino se corre uno → sin esto la carpeta cae una posición más allá.
+          const to = dragIdx < idx ? idx-1 : idx;
+          rows.splice(to,0,moved); paint(); });
         rowsEl.appendChild(el);
       });
     }
@@ -248,6 +252,12 @@ export async function mountFolders(opts){
           const r = live[i];
           if (r._new || !r.id){
             await supa.from("folders").insert({ channel_id:S.channelId, tipo:S.tipo, nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i });
+            // Carpeta "fantasma" RENOMBRADA (existía como texto en los items pero aún
+            // no en la tabla): arrastra el nombre nuevo a sus items, o quedaban
+            // apuntando al viejo (reaparecía como ghost y el renombre se perdía).
+            if (r._orig && r.nombre!==r._orig){
+              await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._orig);
+            }
           } else {
             await supa.from("folders").update({ nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i }).eq("id", r.id);
             if (r._orig && r.nombre!==r._orig){

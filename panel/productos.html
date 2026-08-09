@@ -35,7 +35,7 @@
   .ini-chev{flex:none;color:var(--faint);font-size:18px;line-height:1}
   .ini-ico{flex:none;width:34px;height:34px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted)}
   .ini-ico svg{width:17px;height:17px}
-  .ini-ico.done{background:rgba(34,192,121,.14);border-color:rgba(34,192,121,.32);color:var(--green,#22c079)}
+  .ini-ico.done{background:rgba(34,192,121,.14);border-color:rgba(34,192,121,.32);color:var(--green,var(--green))}
   .ini-item{transition:background .12s}
   .ini-item:hover .ini-chev{color:var(--brand)}
   /* Sección COMPLETADA: brilla en el color de SU grupo. Las pendientes van neutras.
@@ -128,7 +128,7 @@
   h4 .ico{width:15px;height:15px;vertical-align:-2px;margin-right:5px}
   .empty{color:var(--faint);text-align:center;padding:40px}
   .sw{position:relative;width:38px;height:22px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);flex:none;cursor:pointer;transition:.15s}
-  .sw.on{background:var(--green,#22c079);border-color:var(--green,#22c079)}
+  .sw.on{background:var(--green,var(--green));border-color:var(--green,var(--green))}
   .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
   .sw.on::after{transform:translateX(16px)}
   .iconbtn{width:30px;height:30px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
@@ -1026,7 +1026,7 @@ function stockUI(b, c, explicOn){
       const val=c.stock[k];
       const bajo = val!=null && Number(val)<=Number(umbral);
       return `<tr>
-        <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-size:13px">${label}${val!=null&&Number(val)<=0?' <span style="color:var(--red,#e2564a);font-weight:700">· agotado</span>':bajo?' <span style="color:var(--amber,#f0a92b);font-weight:700">· bajo</span>':''}</td>
+        <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-size:13px">${label}${val!=null&&Number(val)<=0?' <span style="color:var(--red,#e2564a);font-weight:700">· agotado</span>':bajo?' <span style="color:var(--amber,var(--amber));font-weight:700">· bajo</span>':''}</td>
         <td style="padding:5px 8px;border-bottom:1px solid var(--border);width:120px;text-align:right"><input class="in stkV" data-k="${esc(k)}" type="number" step="1" value="${val==null?"":esc(val)}" placeholder="—" style="width:100px;text-align:right"/></td>
       </tr>`;
     }).join("");
@@ -1042,7 +1042,7 @@ function stockUI(b, c, explicOn){
       <h4 style="margin-top:0;display:flex;align-items:center;gap:7px">${icon("box")} Unidades disponibles</h4>
       <div style="font-size:12px;color:var(--faint);margin-bottom:8px">Este producto no tiene variantes (talla/color), así que es un solo número. ${(c.atributos||[]).length?"Si quieres llevar el stock por talla/color, agrega esos atributos con sus valores en <b>Producto → Detalles a preguntar</b>.":""}</div>
       <input class="in stkV" data-k="_" type="number" step="1" value="${val==null?"":esc(val)}" placeholder="—" style="width:140px"/>
-      ${val!=null&&Number(val)<=0?'<div style="color:var(--red,#e2564a);font-weight:700;font-size:12.5px;margin-top:6px">Agotado</div>':(val!=null&&Number(val)<=Number(umbral)?'<div style="color:var(--amber,#f0a92b);font-weight:700;font-size:12.5px;margin-top:6px">Stock bajo</div>':'')}${umbralRow}</div>`;
+      ${val!=null&&Number(val)<=0?'<div style="color:var(--red,#e2564a);font-weight:700;font-size:12.5px;margin-top:6px">Agotado</div>':(val!=null&&Number(val)<=Number(umbral)?'<div style="color:var(--amber,var(--amber));font-weight:700;font-size:12.5px;margin-top:6px">Stock bajo</div>':'')}${umbralRow}</div>`;
   }
   b.innerHTML=explic+cuerpo;
   const um=b.querySelector("#stkUmbral"); if(um) um.onchange=(e)=>{ const v=e.target.value.trim(); if(v==="") delete c.stock_umbral; else c.stock_umbral=Math.max(0,parseInt(v,10)||0); stockUI(b,c,explicOn); };
@@ -1142,7 +1142,7 @@ function renderEntrega(host){
         <input class="in" id="pAdelOv" type="number" min="0" step="0.5" value="${esc(c.adelanto_override??"")}" placeholder="por defecto de Negocio" style="width:150px"/>
         <span id="adelHint" style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>.</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <label style="margin:0;font-size:12.5px;font-weight:700">Mínimo aceptable</label>
         <span style="color:var(--muted);font-size:13px">S/</span>
         <input class="in" id="pAdelMin" type="number" min="0" step="0.5" value="${esc(c.adelanto_minimo??"")}" placeholder="por defecto de Negocio" style="width:150px"/>
@@ -1476,7 +1476,7 @@ async function renderRemarketing(host){
       </div>
       <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <span class="sw ${rm.antispam!==false?'on':''}" id="asTog" style="margin-top:2px"></span>
-        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Anti-spam · máximo 1 mensaje automático cada 18 h <span style="font-size:9.5px;color:var(--green,#22c079);font-weight:800;letter-spacing:.4px;border:1px solid var(--green,#22c079);border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
+        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Anti-spam · máximo 1 mensaje automático cada 18 h <span style="font-size:9.5px;color:var(--green,var(--green));font-weight:800;letter-spacing:.4px;border:1px solid var(--green,var(--green));border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
           <div style="font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5">Protege tu número de un <b>baneo de WhatsApp</b> por sobre-envío: coordina secuencias, nudges y campañas para no encimarlos. Los avisos del pedido (va en camino, etc.) no cuentan. Apágalo solo si sabes lo que haces.</div></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
@@ -2156,7 +2156,7 @@ async function renderInicio(){
   const pct = req.length ? Math.round(req.filter(t=>est(t).ok).length/req.length*100) : 100;
   // Degradado de la barra y del %: mismo tono que la sección IA (violeta→fucsia)
   // mientras avanza, verde al llegar al 100%.
-  const grad = pct>=100 ? "linear-gradient(90deg,#22c079,#12b76a)" : "linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
+  const grad = pct>=100 ? "linear-gradient(90deg,var(--green),#12b76a)" : "linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
   const gradGlow = pct>=100 ? "rgba(34,192,121,.45)" : "rgba(168,85,247,.45)";
 
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
@@ -2192,7 +2192,7 @@ async function renderInicio(){
     // Completada = brilla en el color de SU grupo (verde/IA/dorado) + ícono del
     // mismo color. Pendiente = todo neutro/gris (solo lo completado resalta).
     const tone=o.tone||'green';
-    const TONE_ICO={ green:"background:rgba(34,192,121,.16);border-color:transparent;color:#22c079",
+    const TONE_ICO={ green:"background:rgba(34,192,121,.16);border-color:transparent;color:var(--green)",
       ia:"background:rgba(168,85,247,.16);border-color:transparent;color:var(--ia1,#a855f7)",
       gold:"background:rgba(230,168,20,.20);border-color:transparent;color:#c88a04" };
     const icoStyle=isOk?`style="${TONE_ICO[tone]||TONE_ICO.green}"`:'';
@@ -2243,7 +2243,7 @@ async function renderInicio(){
           <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
           <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Poner a vender</button></div>
         </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
-          <span style="font-size:12.5px;color:var(--green,#22c079);font-weight:600">● Activo — ya vende.</span>
+          <span style="font-size:12.5px;color:var(--green,var(--green));font-weight:600">● Activo — ya vende.</span>
           <button class="btn" id="pausarVenta" style="height:30px;padding:0 12px;font-size:12.5px">Pausar</button>
         </div>`:"")}
     </div>`;
@@ -2307,7 +2307,7 @@ async function renderInicio(){
 
   // ── Brillo EN VIVO de las filas: al editar dentro de una sección, su fila
   // se actualiza (verde/IA/dorado) sin redibujar el hub ni recargar la página.
-  const TONE_ICO_R={ green:"background:rgba(34,192,121,.16);border-color:transparent;color:#22c079",
+  const TONE_ICO_R={ green:"background:rgba(34,192,121,.16);border-color:transparent;color:var(--green)",
     ia:"background:rgba(168,85,247,.16);border-color:transparent;color:var(--ia1,#a855f7)",
     gold:"background:rgba(230,168,20,.20);border-color:transparent;color:#c88a04" };
   const recompRow=(t)=>{
@@ -2338,7 +2338,7 @@ async function renderInicio(){
   const refreshMeter=()=>{
     if(!req.length) return;
     const p=Math.round(req.filter(t=>est(t).ok).length/req.length*100);
-    const g=p>=100?"linear-gradient(90deg,#22c079,#12b76a)":"linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
+    const g=p>=100?"linear-gradient(90deg,var(--green),#12b76a)":"linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))";
     const gl=p>=100?"rgba(34,192,121,.45)":"rgba(168,85,247,.45)";
     const bar=$("hubBar"); if(bar){ bar.style.width=p+"%"; bar.style.background=g; bar.style.boxShadow="0 0 12px -1px "+gl; }
     const pe=$("hubPct"); if(pe){ pe.textContent=p+"%"; pe.style.background=g; pe.style.webkitBackgroundClip="text"; pe.style.backgroundClip="text"; pe.style.webkitTextFillColor="transparent"; }
@@ -2418,11 +2418,11 @@ function renderSalud(ready){
   const line=(t,c,ic)=>`<div style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.55;margin-bottom:5px">
     <span style="color:${c};display:inline-flex;flex:none">${icon(ic)}</span><div>${t}</div></div>`;
   box.innerHTML = (errs.length||warns.length)
-    ? `<div style="border:1px solid ${errs.length?"var(--red)":"#f0a92b"};background:${errs.length?"rgba(239,68,68,.06)":"rgba(240,169,43,.07)"};border-radius:11px;padding:12px">
+    ? `<div style="border:1px solid ${errs.length?"var(--red)":"var(--amber)"};background:${errs.length?"rgba(239,68,68,.06)":"rgba(240,169,43,.07)"};border-radius:11px;padding:12px">
         <div style="font-weight:700;font-size:12.5px;margin-bottom:7px">${errs.length?"Esto impide vender":"Revisa esto antes de publicar"}</div>
-        ${errs.map(e=>line(e,"var(--red)","alert")).join("")}${warns.map(w=>line(w,"#f0a92b","alert")).join("")}
+        ${errs.map(e=>line(e,"var(--red)","alert")).join("")}${warns.map(w=>line(w,"var(--amber)","alert")).join("")}
       </div>`
-    : (ready?`<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:#22c079">
+    : (ready?`<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--green)">
         <span style="display:inline-flex">${icon("check")}</span> Todo listo para vender.</div>`:"");
 }
 
@@ -3028,7 +3028,7 @@ function renderOpciones(host){
             </div></div>
           <div style="flex:0 0 150px"><label style="margin-top:0;font-size:12.5px">Tu costo <span style="font-weight:400;color:var(--faint);text-transform:none">(${fisico?"por unidad":"opcional"})</span></label>
             <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="0" style="height:52px"/></div>
-          <div id="opMargen" style="flex:1;min-width:0;font-size:14.5px;font-weight:700;color:var(--green,#22c079);display:none;align-items:center;gap:7px;padding-bottom:14px"></div>
+          <div id="opMargen" style="flex:1;min-width:0;font-size:14.5px;font-weight:700;color:var(--green,var(--green));display:none;align-items:center;gap:7px;padding-bottom:14px"></div>
         </div>
         <div style="font-size:11.5px;color:var(--faint);margin-top:8px">El <b>costo</b> es lo que te cuesta ${fisico?"una unidad":"cada venta"} — el cliente nunca lo ve; sirve para calcular tu ganancia real.${fisico?"":" En un digital suele ser 0."}</div>
         ${fisico
@@ -3071,7 +3071,7 @@ function renderOpciones(host){
           <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="Ej. 60"/></div>
         <div style="flex:0 0 180px"><label style="margin-top:0">📦 Empaque <span style="font-weight:400;color:var(--faint);text-transform:none">(por pedido)</span></label>
           <input class="in" id="opEmpaque" type="number" min="0" step="0.5" value="${esc(cfg.empaque??"")}" placeholder="Ej. 2"/></div>
-        <div id="opMargen" style="flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--green,#22c079);display:none;align-items:center;gap:7px"></div>
+        <div id="opMargen" style="flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--green,var(--green));display:none;align-items:center;gap:7px"></div>
       </div>
       <div style="font-size:11px;color:var(--faint);margin-top:6px">El <b>costo</b> es lo que te cuesta una unidad (en un pack de 2 se multiplica solo). El <b>empaque</b> (caja, bolsa, etiqueta) es un costo fijo por pedido. Ambos se descuentan de tu ganancia real; el cliente nunca los ve.</div>
     </div>`:""}
@@ -3245,9 +3245,9 @@ function warnColision(){
   const seen={}, dup=[];
   act.forEach(v=>{ const k=String(Number(v.precio)); if(seen[k] && !dup.includes(k)) dup.push(k); seen[k]=true; });
   box.innerHTML = dup.length ? `
-    <div class="card" style="border-color:#f0a92b;background:rgba(240,169,43,.07)">
+    <div class="card" style="border-color:var(--amber);background:rgba(240,169,43,.07)">
       <div style="display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.6">
-        <span style="color:#f0a92b;display:inline-flex;flex:none">${icon("alert")}</span>
+        <span style="color:var(--amber);display:inline-flex;flex:none">${icon("alert")}</span>
         <div>Hay opciones activas con el <b>mismo precio</b> (${dup.map(d=>"S/ "+d).join(", ")}).
         El monto que pague no alcanzará para saber cuál eligió, así que la IA tendrá que
         <b>confirmárselo por texto</b> antes de entregar. Si prefieres que el pago lo resuelva solo,
@@ -4088,13 +4088,13 @@ function armRenderDraft(){
   if(Array.isArray(d.atributos)&&d.atributos.length) done.push(`Detalles a preguntar · ${d.atributos.length}`);
   if(Array.isArray(d.faq)&&d.faq.length) done.push(`Preguntas frecuentes · ${d.faq.length}`);
   const faltan=Array.isArray(d.faltan)?d.faltan:[];
-  const chk=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="color:var(--green,#22c079);flex:none;display:inline-flex">${ARM_CHK}</span>${t}</div>`;
-  const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:#f0a92b;flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
+  const chk=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="color:var(--green,var(--green));flex:none;display:inline-flex">${ARM_CHK}</span>${t}</div>`;
+  const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:var(--amber);flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
   $("armBody").innerHTML=`
     <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">Borrador listo 🎉</div>
     <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:12px">${esc(String(d.resumen_cambios||"Revisa lo que llené y ajústalo. Nada se guarda hasta que toques Guardar cambios."))}</div>
     <div style="border:1px solid var(--border);border-radius:11px;padding:12px">${done.map(chk).join("")||"<div style='font-size:12px;color:var(--faint)'>Sin campos</div>"}</div>
-    ${faltan.length?`<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:#f0a92b">Te toca completar (no lo invento):</div><div style="border:1px solid rgba(240,169,43,.4);background:rgba(240,169,43,.06);border-radius:11px;padding:12px">${faltan.map(amb).join("")}</div>`:""}`;
+    ${faltan.length?`<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:var(--amber)">Te toca completar (no lo invento):</div><div style="border:1px solid rgba(240,169,43,.4);background:rgba(240,169,43,.06);border-radius:11px;padding:12px">${faltan.map(amb).join("")}</div>`:""}`;
   $("armFt").innerHTML=`
     <button id="armApply" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-size:14px;font-weight:700">Aplicar borrador</button>
     <button class="btn" id="armBack" style="width:100%">Volver a escribir</button>`;
