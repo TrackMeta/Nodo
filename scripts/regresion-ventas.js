@@ -294,7 +294,7 @@
       // Cliente que manda TODO junto pegado a la palabra clave: la opción no se
       // resuelve en ese turno, así que el pedido NO debe nacer en S/0 — el bot pide
       // elegir la opción. Al elegirla, el pedido sale con el precio correcto.
-      await send(wa, N(wa), "hola quiero las zapatillas runner, un par talla 40 blancas, soy de lima miraflores av larco 100, confirmo"); await sleep(2400);
+      await send(wa, N(wa), "hola quiero las zapatillas runner, un par talla 40 blancas, soy de lima miraflores av larco 100, " + N(wa) + ", confirmo"); await sleep(2400);
       await send(wa, N(wa), "sí confirmo"); await sleep(2400);
       const hayS0 = ((await order(wa))?.all || []).some((x) => Number(x.amount) === 0);
       await send(wa, N(wa), "el par simple de 129"); await sleep(2300);
