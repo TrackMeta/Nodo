@@ -1142,6 +1142,12 @@ function renderEntrega(host){
         <input class="in" id="pAdelOv" type="number" min="0" step="0.5" value="${esc(c.adelanto_override??"")}" placeholder="por defecto de Negocio" style="width:150px"/>
         <span id="adelHint" style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>.</span>
       </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Mínimo aceptable</label>
+        <span style="color:var(--muted);font-size:13px">S/</span>
+        <input class="in" id="pAdelMin" type="number" min="0" step="0.5" value="${esc(c.adelanto_minimo??"")}" placeholder="por defecto de Negocio" style="width:150px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Lo <b>mínimo</b> que aceptas para despachar este producto igual (el resto se cobra al recoger). Vacío = usa el mínimo de Negocio (o el adelanto completo).</span>
+      </div>
     </div>
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("truck")}</span> Envío de este producto</h4>
@@ -1156,6 +1162,7 @@ function renderEntrega(host){
       <div id="envHint" style="font-size:11.5px;color:var(--faint);margin-top:10px"></div>
     </div>`}`;
   const ov=$("pAdelOv"); if(ov) ov.onchange=(e)=>prodSetC("adelanto_override", e.target.value.trim()===""?undefined:Number(e.target.value));
+  const ovm=$("pAdelMin"); if(ovm) ovm.onchange=(e)=>prodSetC("adelanto_minimo", e.target.value.trim()===""?undefined:Number(e.target.value));
   const pintarEnvMontos=()=>{
     const box=$("pEnvMontos"); if(!box) return;
     if(c.envio_modo!=="suma"){ box.innerHTML=""; return; }

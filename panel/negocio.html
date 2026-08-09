@@ -342,6 +342,13 @@ function renderEntregas(b){
         <input class="in" id="entAdelDef" type="number" min="0" step="0.5" placeholder="Ej. 20" value="${esc(E.adelanto_default??"")}" style="width:110px"/>
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>. El resto (precio − adelanto) se cobra al recoger.</span>
       </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Mínimo aceptable</label>
+        <span style="color:var(--muted);font-size:13px">S/</span>
+        <input class="in" id="entAdelMin" type="number" min="0" step="0.5" placeholder="vacío = el adelanto completo" value="${esc(E.adelanto_minimo_default??"")}" style="width:110px"/>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Lo <b>mínimo</b> que aceptas para despachar igual (el resto se paga al recoger). Vacío = exiges el adelanto completo. Un producto puede fijar el suyo desde su ficha.</span>
+      </div>
+      <div style="font-size:11px;color:#c98a00;background:#fff8e6;border:1px solid #f0dca0;border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.45">⚠️ <b>Ojo con bajarlo mucho:</b> mientras menos seña exijas, cierras más ventas… pero también despachas con menos compromiso → más riesgo de que el cliente <b>no recoja</b> (pierdes el flete y el paquete viajó al vicio). Es tu perilla de riesgo.</div>
     </div>
     <div class="card">
       ${cardHd("truck","Envío aéreo (Shalom)","#8b5cf6")}
@@ -403,6 +410,7 @@ function renderEntregas(b){
   });
   $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
   $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
+  { const m=$("entAdelMin"); if(m) m.onchange=(ev)=>{ E.adelanto_minimo_default = ev.target.value===""?undefined:Number(ev.target.value); }; }
   $("aerDest").oninput=(ev)=>{ E.aereo.destinos = ev.target.value.split("\n").map(s=>s.trim()).filter(Boolean); };
   $("aerMsg").oninput=(ev)=>{ E.aereo.mensaje = ev.target.value.trim(); };
   $("coOrigen").oninput=(ev)=>{ E.courier.shalom.origen = ev.target.value.trim(); };

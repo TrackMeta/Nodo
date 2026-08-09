@@ -3284,12 +3284,31 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (!order) return await stashPrepagoAdelanto(db, channelId, contactId, event);
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
 
-  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config").eq("id", channelId).maybeSingle();
+  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas").eq("id", channelId).maybeSingle();
   const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
 
   const esperado = Number(ship.adelanto);
+  // Adelanto MÍNIMO aceptable: piso (en soles) por debajo del adelanto pedido con el
+  // que AÚN se despacha; el resto lo paga al recoger (el saldo se ajusta solo con
+  // saldoTrasAdelanto). Prioridad: override del producto (config.adelanto_minimo) →
+  // global del negocio (entregas.adelanto_minimo_default, Negocio → Entrega, junto al
+  // adelanto por defecto) → sin config: el piso ES el adelanto completo (comportamiento
+  // de siempre). Nunca exige MÁS que el adelanto.
+  let piso = esperado;
+  try {
+    const globalMin = Number((ch as any)?.entregas?.adelanto_minimo_default);
+    let prodMin = NaN;
+    const { data: ct } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+    const pid = (ct as any)?.product_id;
+    if (pid) {
+      const { data: pr } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+      prodMin = Number((pr as any)?.config?.adelanto_minimo);
+    }
+    const cand = Number.isFinite(prodMin) && prodMin > 0 ? prodMin : (Number.isFinite(globalMin) && globalMin > 0 ? globalMin : NaN);
+    if (Number.isFinite(cand) && cand > 0 && Number.isFinite(esperado) && esperado > 0) piso = Math.min(cand, esperado);
+  } catch (_) { /* sin config de mínimo → el piso es el adelanto completo */ }
   const runlike = { channel_id: channelId, contact_id: contactId } as any;
 
   // El OCR opina SIEMPRE (aunque decidas tú): así llegas a la tarjeta con el
@@ -3332,7 +3351,9 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // Fraude/legibilidad lo juzgó el modelo (`valido`); la matemática del monto y la
   // acumulación de pagos en cuotas las hace el código.
   const legit = parsed?.es_pago !== false && !!parsed?.valido && !reuse && Number.isFinite(monto) && monto > 0;
-  const ab = legit ? evaluarAbono(ship, "adelanto", esperado, monto, oper, tol) : null;
+  // Se evalúa contra el PISO (mínimo aceptable), no contra el adelanto pedido: si
+  // paga al menos el piso, se despacha (el saldo se acredita solo con lo pagado).
+  const ab = legit ? evaluarAbono(ship, "adelanto", piso, monto, oper, tol) : null;
 
   // Abono legítimo que TODAVÍA no cubre → acumula, avisa cuánto falta y sigue
   // esperando. No es "monto no coincide": es un pago en cuotas.
@@ -3342,10 +3363,10 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       shipping: { ...ship, [ab.key]: ab.abonos, adelanto_abonado: ab.total, adelanto_parcial: true,
         adelanto_comprobante: url, adelanto_metodo: metodo },
     }).eq("id", (order as any).id);
-    await logEvent(db, channelId, contactId, "nota", "Abono parcial del adelanto", `${ab.total} de ${esperado} · falta ${ab.falta}`);
+    await logEvent(db, channelId, contactId, "nota", "Abono parcial del adelanto", `${ab.total} de ${piso}${piso !== esperado ? " (mínimo)" : ""} · falta ${ab.falta}`);
     const sym = simboloMoneda((order as any).currency);
     await deliverMessage(db, channelId, contactId,
-      `¡Recibí tu abono de ${sym}${monto}! 🙌 Van ${sym}${ab.total} de ${sym}${esperado}, faltan ${sym}${ab.falta}. Cuando completes el resto, mándame la captura y lo cierro. 😊`).catch(() => {});
+      `¡Recibí tu abono de ${sym}${monto}! 🙌 Van ${sym}${ab.total} de ${sym}${piso}, faltan ${sym}${ab.falta}. Cuando completes el resto, mándame la captura y lo cierro. 😊`).catch(() => {});
     return true;
   }
   const cubre = ab ? ab.cubre : false;
