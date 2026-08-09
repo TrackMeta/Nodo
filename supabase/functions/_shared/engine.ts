@@ -5325,7 +5325,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
           : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
             `Solo cuando decida, confirma cuál y su precio.`;
-        parts.push("## Opciones de compra disponibles\n" + lista + estado);
+        parts.push("## Opciones de compra disponibles\n" + lista + estado +
+          "\n\n🔢 CANTIDAD: se vende SOLO por estas presentaciones (cada una ya trae su número de unidades). " +
+          "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
+          "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
+          "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.");
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
@@ -5333,7 +5337,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // precio real, pero al cliente hay que decirle el monto correcto.
         const p = ctx.precio != null ? ctx.precio : (ops[0] as any)?.precio;
         if (p != null && String(p) !== "") {
-          parts.push(`## Precio\nEste producto cuesta **S/ ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.`);
+          parts.push(`## Precio\nEste producto cuesta **S/ ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad y que, si quiere varias, un asesor le coordina el pedido. NUNCA cierres un pedido por una cantidad mayor a 1.`);
         }
       }
     }
