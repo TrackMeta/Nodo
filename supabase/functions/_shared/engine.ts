@@ -4883,6 +4883,32 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // Lo que sigue faltando, para que la IA sepa qué pedir (y el flujo sepa si ya
   // puede crear el pedido). Se recalcula DESPUÉS de extraer.
   const pendientes = campos.filter((c) => c.requerido !== false && !String(ctx[c.clave] ?? "").trim());
+  // Fallback SEDE: muchísimos clientes de provincia NO saben la oficina EXACTA de
+  // Shalom ("la de Iquitos nomás", "no sé cuál"). El extractor devuelve vacío (ve
+  // el "no sé" como sin dato) y la sede quedaba pendiente PARA SIEMPRE → el bot
+  // repreguntaba en bucle algo que el cliente no puede contestar. Regla del negocio
+  // (acordada): con solo la ciudad basta para seguir. Si ya le preguntamos por la
+  // oficina (o él mismo dice que no la sabe) y tenemos su ciudad, usamos la CIUDAD
+  // como sede: el pedido se crea y crearPedido lo marca `sede_por_confirmar` para
+  // que un humano afine la oficina en Pedidos. Por código, no por prompt: arreglarlo
+  // por prompt ya falló varias veces (ver validarDato/sede).
+  const pendSede = pendientes.find((c) => (c.validar as string) === "sede");
+  if (pendSede && String(ctx.ciudad ?? "").trim()) {
+    // Normalizamos (minúsculas, sin tildes): "no sé" con tilde rompía el \b en JS
+    // (la é no es carácter de palabra) y el fallback nunca disparaba.
+    const _sinTilde = (t: string) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const pregN = _sinTilde(pregunta), textN = _sinTilde(texto);
+    const preguntoSede = /(sede|oficina|agencia|sucursal|shalom|recog|recoj)/.test(pregN);
+    const noLaSabe = /\bno se\b|no conozco|no estoy segur|cualquiera|la que sea|no importa|no me acuerdo|ni idea|no la se\b|no sabria/.test(textN);
+    if (preguntoSede || noLaSabe) {
+      const ciu = String(ctx.ciudad).trim();
+      run.vars[pendSede.clave] = ciu; ctx[pendSede.clave] = ciu;
+      await setField(db, run.channel_id, run.contact_id, pendSede.clave, ciu);
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Sede por confirmar",
+        `${pendSede.clave}: ${ciu} (solo la ciudad — falta la oficina exacta, se confirma en Pedidos)`);
+      const i = pendientes.indexOf(pendSede); if (i >= 0) pendientes.splice(i, 1);
+    }
+  }
   ctx._datos_faltan = pendientes;
   const completo = pendientes.length === 0;
   run.vars.datos_completos = completo ? "si" : "no";
@@ -5414,7 +5440,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.
         L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
-          `Pregúntale la oficina de Shalom nombrando su ciudad. 🔑 Si el cliente NO sabe la dirección/oficina exacta, NO lo bloquees ni insistas: acepta lo que sepa (aunque sea solo su ciudad) y tranquilízalo en PRIMERA PERSONA, como si TÚ mismo lo resolvieras ("no te preocupes, yo te dejo coordinada la oficina de Shalom en tu ciudad y te confirmo dónde recoger"). ⛔ NUNCA lo derives a "un asesor", "el equipo" ni "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. Sigue con el pedido; la oficina exacta se afina luego y no es motivo para frenar la venta.`);
+          `Pregúntale la oficina de Shalom de su ciudad, no en abstracto. 🔑 Si el cliente NO sabe la oficina exacta, NO lo bloquees, NO insistas y NO le hagas notar que falta ese dato: acepta lo que diga (aunque sea solo su ciudad) y SIGUE NORMAL con el pedido y el adelanto, como si estuviera completo. NO le prometas "coordinar" ni "confirmar" la oficina, NO le anuncies que la afinas después, y NO lo derives a nadie: simplemente continúa con naturalidad (la sede exacta se resuelve por dentro, sin comentárselo).`);
         // Datos de despacho que SIGUEN faltando (dinámico): así la IA NO confirma un
         // pedido que el motor todavía no puede crear. OJO: la SEDE ya NO es un
         // bloqueo duro — se acepta aunque sea solo la ciudad (crearPedido la marca
