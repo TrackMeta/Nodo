@@ -340,7 +340,7 @@ function abrirExport(courier){
   // muestran pero no se pueden seleccionar, y se avisa.
   const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
   const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
-    return (esAer(o)?`<span class="aermark">✈ AÉREO</span>`:"")+esc(d); };
+    return (esAer(o)?`<span class="aermark">✈️ AÉREO</span>`:"")+esc(d); };
   function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
     $q("#emHint").textContent = n?`${n} pedido${n>1?"s":""} seleccionado${n>1?"s":""}`:"Selecciona pedidos de la tabla";
     $q("#emDl").disabled=!n; }
@@ -348,7 +348,7 @@ function abrirExport(courier){
     const arr=filtrar();
     const body=$q("#emBody");
     const aereos=arr.filter(esAer), seleccionables=arr.filter(o=>!esAer(o));
-    const nota=aereos.length?`<div class="em-aer">✈ ${aereos.length} pedido${aereos.length>1?"s":""} aéreo${aereos.length>1?"s":""}: se registra${aereos.length>1?"n":""} a mano en Shalom, no entra${aereos.length>1?"n":""} en el Excel masivo.</div>`:"";
+    const nota=aereos.length?`<div class="em-aer">✈️ ${aereos.length} pedido${aereos.length>1?"s":""} aéreo${aereos.length>1?"s":""}: se registra${aereos.length>1?"n":""} a mano en Shalom, no entra${aereos.length>1?"n":""} en el Excel masivo.</div>`:"";
     if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} con esos filtros</div>`; foot(arr); return; }
     body.innerHTML=`${nota}<table class="em-tbl"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
@@ -483,9 +483,11 @@ function render(){
   cols.forEach(([ic,label,estados])=>{
     const items=zList.filter(o=>estados.includes(o.estado));
     const col=document.createElement("div"); col.className="kcol";
-    // Acción "En lote" SOLO en la columna "Por despachar" de provincia (registrar
-    // guías de varios a la vez) y cuando hay pedidos terrestres ahí.
-    const esLote = st.kbZona==="provincia" && label==="Por despachar" && items.some(o=>!(o.shipping&&o.shipping.aereo));
+    // Acción "En lote" SOLO en la columna "Confirmado" de provincia (la que junta
+    // adelanto_validado + por_despachar: registrar guías de varios a la vez) y cuando
+    // hay pedidos terrestres ahí. (Antes buscaba "Por despachar", que NO es una
+    // columna real de KB_PROV, así que el botón nunca aparecía.)
+    const esLote = st.kbZona==="provincia" && label==="Confirmado" && items.some(o=>!(o.shipping&&o.shipping.aereo));
     col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?'<button class="kh-lote" title="Registrar guías de varios pedidos a la vez (despacho en lote)">⚡ Lote</button>':""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
     const lb=col.querySelector(".kh-lote"); if(lb) lb.onclick=(ev)=>{ ev.stopPropagation(); despachoLote(); };
     const body=col.querySelector(".kbody");
@@ -525,7 +527,7 @@ function kcard(o){
   const initial=esc(String(nm).trim().charAt(0).toUpperCase()||"?");
   el.style.boxShadow=`inset 3px 0 0 0 ${TONE_COLOR[O.tono(o.estado)]||"var(--border)"}`;
   const shipBits=[];
-  if(s.aereo) shipBits.push(`✈ <b>Aéreo</b>`);
+  if(s.aereo) shipBits.push(`✈️ <b>Aéreo</b>`);
   const agTxt=[s.agencia&&cap(s.agencia), s.destino||s.sede].filter(Boolean).join(" · ");
   if(agTxt) shipBits.push(esc(agTxt));
   if(s.guia) shipBits.push(`Guía <b>${esc(s.guia)}</b>`);
@@ -573,7 +575,7 @@ function kcard(o){
     <div class="kc-money">${moneyLine}</div>
     ${diasEsp>=0?`<div style="font-size:11.5px;margin-top:3px;font-weight:${diasEsp>=2?"700":"500"};color:${diasEsp>=2?"var(--red)":"var(--faint)"}">⏳ ${diasEsp<1?"esperando el adelanto (hoy)":`sin adelanto hace ${diasEsp} día${diasEsp>1?"s":""}`}</div>`:""}
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
-    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠ Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
+    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠️ Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
       <button class="rot edit" title="Editar datos del pedido">${icon("edit")}</button>
@@ -648,7 +650,7 @@ function rotuloInner(o){
       row("DNI", s.dni||"", true)+
       row("Teléfono", tel)+
       row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.destino||s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
-      row("Envío", s.aereo?"✈ AÉREO — despachar por avión":"", true)+
+      row("Envío", s.aereo?"✈️ AÉREO — despachar por avión":"", true)+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       // Sin Guía a propósito: el rótulo se imprime ANTES de despachar, cuando la
@@ -669,7 +671,7 @@ function rotuloInner(o){
   return `<div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(remitente)}</b></div>
-        <div class="zn">${zona==="provincia"?(s.aereo?"AGENCIA · ✈ AÉREO":"AGENCIA"):"CONTRAENTREGA"}</div>
+        <div class="zn">${zona==="provincia"?(s.aereo?"AGENCIA · ✈️ AÉREO":"AGENCIA"):"CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>
@@ -721,7 +723,7 @@ function abrirImprimirRotulos(){
   }
   const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
   const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
-    return (esAer(o)?`<span class="aermark">✈ AÉREO</span>`:"")+esc(d); };
+    return (esAer(o)?`<span class="aermark">✈️ AÉREO</span>`:"")+esc(d); };
   const ov=document.createElement("div"); ov.className="overlay";
   ov.innerHTML=`<div class="modal"><div class="expmodal">
     <div class="em-head">
@@ -885,7 +887,7 @@ function modal(html,onSave){
 function openConfirmSede(o){
   const s=o.shipping||{};
   modal(`
-    <h3>⚠ Confirmar sede Shalom</h3>
+    <h3>⚠️ Confirmar sede Shalom</h3>
     <div class="m-sub">${esc((o.contact||{}).nombre||"")}${s.ciudad?" · "+esc(cap(s.ciudad)):""}. El cliente dijo: <b>"${esc(s.sede||"—")}"</b>${s.sede_por_confirmar?` (${esc(s.sede_por_confirmar)})`:""}. Ponla como la oficina Shalom exacta donde va a recoger.</div>
     <label>Sede / oficina Shalom</label>
     <input id="cSede" value="${esc(s.sede||"")}" placeholder="Ej. Shalom Huancayo · Av. Real 500"/>`,

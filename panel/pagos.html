@@ -172,7 +172,7 @@ function render(b){
       <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el pago de un producto digital?</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="digOpts">
         ${[["auto","⚡","Automático: si el monto cuadra, entrega el producto sin consultarme","La IA lee el comprobante y, si el monto coincide, envía el link/archivo al toque. Ante cualquier duda te lo deriva a Pagos por validar."],
-           ["manual","👁","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA lo analiza y te deja su lectura hecha, pero no entrega nada: la tarjeta con la foto te espera en Pagos por validar. Al aprobar, el bot entrega y sigue vendiendo."]]
+           ["manual","👁️","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA lo analiza y te deja su lectura hecha, pero no entrega nada: la tarjeta con la foto te espera en Pagos por validar. Al aprobar, el bot entrega y sigue vendiendo."]]
           .map(([v,ic,t,d])=>{ const on=(v==="manual")?(p.digital.validacion==="manual"):(p.digital.validacion!=="manual"); return `
         <div class="digopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
           <span class="digdot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
@@ -223,7 +223,7 @@ function render(b){
 
       <label style="margin-top:14px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el adelanto?</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="adelOpts">
-        ${[["manual","👁","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta con los datos y la foto te espera en Pagos por validar."],
+        ${[["manual","👁️","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta con los datos y la foto te espera en Pagos por validar."],
            ["auto","⚡","Automático: si el monto cuadra, valida el adelanto sin consultarme","Ante cualquier duda (monto, fraude o comprobante repetido) te lo deriva igual a Pagos por validar."]]
           .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.adelanto.validacion==="auto"):(p.adelanto.validacion!=="auto"); return `
         <div class="adelopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
@@ -280,7 +280,7 @@ function render(b){
       <div class="desc">Cómo el agente IA verifica los pagos de saldos remanentes para entregar la clave de recojo.</div>
       <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Cómo quieres que tu IA verifique los pagos para entregar la clave de recojo?</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="logOpts">
-        ${[["manual","👁","Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave","La IA te avisará cuando reciba un comprobante (WhatsApp o Telegram). Una vez lo apruebes, dará la clave de recojo."],
+        ${[["manual","👁️","Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave","La IA te avisará cuando reciba un comprobante (WhatsApp o Telegram). Una vez lo apruebes, dará la clave de recojo."],
            ["auto","⚡","Automático: si el cliente paga el saldo, no me notifiques y dale su clave automáticamente","La IA analiza el comprobante. Si el monto coincide, entrega la clave secreta sola."]]
           .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.log.modo==="auto"):(p.log.modo!=="auto"); return `
         <div class="logopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">

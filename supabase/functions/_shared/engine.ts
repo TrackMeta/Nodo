@@ -2141,9 +2141,14 @@ function generarAleatorio(a: any): string {
 const ORDER_FINAL = ["confirmada", "anulada", "entregado_cobrado", "recogido", "cancelado", "rechazado", "no_recogido"];
 
 function parseMonto(raw: unknown, ctx: any): number | undefined {
-  const s = resolve(String(raw ?? ""), ctx).trim().replace(",", ".");
+  let s = resolve(String(raw ?? ""), ctx).trim().replace(/[^\d.,\-]/g, "");
   if (!s) return undefined;
-  const n = Number(s.replace(/[^\d.\-]/g, ""));
+  // "1,234.56": la coma es separador de MILES → se quita (antes replace(",",".")
+  // solo cambiaba la primera coma y "1.234.56" daba NaN → monto perdido).
+  // "129,50": coma decimal → se pasa a punto (comportamiento de siempre).
+  if (s.includes(",") && s.includes(".")) s = s.replace(/,/g, "");
+  else s = s.replace(",", ".");
+  const n = Number(s);
   return Number.isFinite(n) ? n : undefined;
 }
 
@@ -3151,7 +3156,14 @@ function evaluarAbono(
 ): { key: string; abonos: any[]; total: number; cubre: boolean; falta: number; dup: boolean } {
   const key = prefix + "_abonos";
   const prev = Array.isArray(ship[key]) ? ship[key] : [];
-  const dup = op ? prev.some((a: any) => a.op && String(a.op) === String(op)) : false;
+  // Dedup por nº de operación cuando el OCR lo leyó. Si NO lo leyó (op null, típico
+  // en capturas borrosas), se dedup por MONTO: así reenviar la MISMA captura no suma
+  // dos veces. Antes, con op null `dup` era siempre false → cada reenvío acreditaba
+  // de nuevo y dos reenvíos de un pago real de S/15 "cubrían" S/30 → auto-aprobaba /
+  // entregaba contra un único pago (agujero de dinero). Erra hacia NO doble-acreditar.
+  const dup = op
+    ? prev.some((a: any) => a.op && String(a.op) === String(op))
+    : prev.some((a: any) => !a.op && Number(a.monto) === Number(monto));
   const abonos = dup ? prev : [...prev, { op: op ?? null, monto, at: new Date().toISOString() }];
   const total = abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0);
   const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -3347,7 +3359,10 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // adelanto porque cada tipo miraba un registro distinto.
     reuse = !!dup || await operacionYaUsada(db, channelId, oper);
   }
-  const tol = Math.max(0, Number(cfg.tolerancia ?? 1));
+  // Guarda NaN: una tolerancia inválida (Number("abc")=NaN) hacía `total >= esperado - NaN`
+  // siempre false → TODAS las aprobaciones caían a manual en silencio. Cae al default.
+  const _tolRaw = Number(cfg.tolerancia ?? 1);
+  const tol = Number.isFinite(_tolRaw) ? Math.max(0, _tolRaw) : 1;
   // Fraude/legibilidad lo juzgó el modelo (`valido`); la matemática del monto y la
   // acumulación de pagos en cuotas las hace el código.
   const legit = parsed?.es_pago !== false && !!parsed?.valido && !reuse && Number.isFinite(monto) && monto > 0;
@@ -3458,7 +3473,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 
   const saldo = Number(ship.saldo);
   const clave = ship.clave_recojo;
-  const tol = Math.max(0, Number(log.tolerancia ?? 0));
+  const _tolRawS = Number(log.tolerancia ?? 0); // guarda NaN (ver adelanto): tolerancia inválida no debe bloquear todo
+  const tol = Number.isFinite(_tolRawS) ? Math.max(0, _tolRawS) : 0;
   const runlike = { channel_id: channelId, contact_id: contactId } as any;
 
   // 4) Valida con la IA (visión) usando el Validador del canal + salida JSON.

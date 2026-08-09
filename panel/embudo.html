@@ -352,7 +352,7 @@ function renderNeck(F){
     el.innerHTML=`<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`;
     return;
   }
-  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`;
+  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠️"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`;
 }
 
 function renderFunnel(F){
@@ -464,7 +464,7 @@ function renderEntrega(cs){
 
   // Aviso de la fuga principal (el no-recojo, si lo hay).
   if(noRecogido>0){
-    fugaEl.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠"}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
+    fugaEl.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠️"}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
   } else if(enRiesgo>0){
     fugaEl.innerHTML=`<div class="neck ok">${icon("check")}<div><b>${nf.format(enRiesgo)}</b> esperando en la agencia y ninguno caído aún. Avísales que paguen el saldo para cerrar el recojo.</div></div>`;
   } else fugaEl.innerHTML="";

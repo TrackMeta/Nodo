@@ -1637,7 +1637,7 @@ function statusTick(s, animate){
   if(s==="read")      return `<span class="tick read${a}" title="Leído — el cliente vio el mensaje">${_TK_DOUBLE}</span>`;
   if(s==="delivered") return `<span class="tick deliv" title="Entregado al teléfono">${_TK_DOUBLE}</span>`;
   if(s==="sent")      return `<span class="tick sent" title="Enviado">${_TK_SINGLE}</span>`;
-  if(s==="failed")    return `<span class="tick fail" title="No se pudo entregar">⚠</span>`;
+  if(s==="failed")    return `<span class="tick fail" title="No se pudo entregar">⚠️</span>`;
   return `<span class="tick pend" title="Enviando…">${_TK_CLOCK}</span>`;
 }
 // Solo dejamos pasar http(s) y data: al href/src. Un media_url con esquema

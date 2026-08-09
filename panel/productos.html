@@ -1113,7 +1113,7 @@ function renderEntrega(host){
         <select class="in" id="pValPago" style="max-width:320px">
           <option value="" ${!c.validacion_pago?"selected":""}>Usar el default del canal</option>
           <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>⚡ Automático — entrega al toque si el monto cuadra</option>
-          <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>👁 Manual — me avisa para aprobarlo yo</option>
+          <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>👁️ Manual — me avisa para aprobarlo yo</option>
         </select>
       </div>`;
     const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);

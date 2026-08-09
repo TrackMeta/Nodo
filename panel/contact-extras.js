@@ -249,7 +249,7 @@ export function pedidoResumenHtml(o) {
   const moneyLine = adel || saldo
     ? `${adel ? `Adelanto <b>${money(adel, o.currency)}</b>` : ""}${adel && saldo ? " · " : ""}${saldo ? `Saldo <b>${money(saldo, o.currency)}</b>` : ""}`
     : `Total <b>${money(O.total(o), o.currency)}</b>`;
-  const air = s.aereo ? ` <span class="pd-chip air">✈ Aéreo</span>` : "";
+  const air = s.aereo ? ` <span class="pd-chip air">✈️ Aéreo</span>` : "";
   const linesHtml = (arr) => arr.length ? `<div class="pd-info">${arr.join("")}</div>` : "";
   const mkLine = (k, valHtml) => valHtml ? `<div class="pd-line"><span class="pd-k">${esc(k)}</span><span class="pd-v">${valHtml}</span></div>` : "";
 
@@ -360,7 +360,7 @@ export function printRotulo(o, remitente) {
       row("DNI", s.dni || "", true) +
       row("Teléfono", tel) +
       row("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
-      row("Envío", s.aereo ? "✈ AÉREO — despachar por avión" : "", true) +
+      row("Envío", s.aereo ? "✈️ AÉREO — despachar por avión" : "", true) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("N° pedido", nro);
@@ -396,7 +396,7 @@ export function printRotulo(o, remitente) {
     <div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(rem)}</b></div>
-        <div class="zn">${zona === "provincia" ? (s.aereo ? "AGENCIA · ✈ AÉREO" : "AGENCIA") : "CONTRAENTREGA"}</div>
+        <div class="zn">${zona === "provincia" ? (s.aereo ? "AGENCIA · ✈️ AÉREO" : "AGENCIA") : "CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>
@@ -874,7 +874,7 @@ export async function openDespachoModal(o, deps) {
     ov.innerHTML = `<div class="modal">
       <h3>📦 Registrar despacho</h3>
       <div class="m-sub">${esc((o.contact || {}).nombre || "")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
-      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">⚠ La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
+      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">⚠️ La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
       <div class="row2">
         <div><label>Agencia</label>
           <select data-d="agencia"><option value="shalom" ${s.agencia === "shalom" ? "selected" : ""}>Shalom</option><option value="olva" ${s.agencia === "olva" ? "selected" : ""}>Olva Courier</option><option value="otra" ${s.agencia && !["shalom", "olva"].includes(s.agencia) ? "selected" : ""}>Otra</option></select></div>
@@ -2088,7 +2088,7 @@ export async function openDespachoLoteModal(orders, deps) {
 // "Despacho registrado" se leía igual cuando el cliente recibió el aviso y
 // cuando no le llegó nada.
 export function avisoMsg(r, aviso, base) {
-  if (r.aviso_error) return `${base} · ⚠ la plantilla no salió: ${r.aviso_error}`;
+  if (r.aviso_error) return `${base} · ⚠️ la plantilla no salió: ${r.aviso_error}`;
   if (r.aviso_enviado) return `${base} · plantilla enviada`;
   if (aviso.modo === "ninguno") return `${base} · sin avisar al cliente`;
   return r.flow_started ? `${base} · el bot está avisando al cliente` : `${base} · no hay aviso armado para este estado`;
@@ -2167,7 +2167,7 @@ export function copilotoCardHtml(o, et, fallbackImg) {
   const needClave = et.id === "saldo" && !s.clave_recojo;
   return `<div class="cx-copiloto" data-order="${esc(o.id)}">
     <div class="cx-cop2-hd">${ROBOT}<span class="cx-cop2-pill ${et.pill}">${esc(et.titulo)}</span></div>
-    ${img ? `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">⚠ No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`
+    ${img ? `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">⚠️ No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`
       : (et.id === "adelanto" || et.id === "saldo" || et.id === "digital") ? `<div class="cx-cop2-noimg">Sin comprobante todavía</div>` : ""}
     <div class="cx-cop2-amt"><span class="cx-cop2-lbl">${esc(montoLbl)}</span><span class="cx-cop2-val">${monto != null && monto !== "" ? sym + " " + esc(monto) : "—"}</span></div>
     ${s.clave_recojo ? `<div class="cx-cop2-amt"><span class="cx-cop2-lbl">Clave de recojo</span><span class="cx-cop2-val" style="font-size:15px;color:var(--green)">${esc(s.clave_recojo)}</span></div>` : ""}

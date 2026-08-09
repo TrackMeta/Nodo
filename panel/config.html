@@ -581,7 +581,7 @@ function renderPixel(box){
       <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Conexión de anuncios (Rendimiento)</span></div>
       <div class="desc">Conecta tus cuentas publicitarias para ver el <b>gasto</b> de cada anuncio junto a tus ventas reales en la sección <b>Rendimiento</b> (CPA de confirmación, CPA real, ganancia neta y ROAS). Puedes seguir <b>varias cuentas</b>; las ventas, el margen y la atribución por anuncio ya los tiene Nodo.</div>
 
-      ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">⚠</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo (ads_read) y pégalo abajo para reconectar.</div></div>`:""}
+      ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">⚠️</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo (ads_read) y pégalo abajo para reconectar.</div></div>`:""}
 
       <label>Cuentas publicitarias</label>
       <div id="adAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
