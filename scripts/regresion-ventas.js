@@ -27,6 +27,13 @@
  * OJO: usa un canal de PRUEBA (sandbox). Borra TODOS los productos/contactos/
  * flujos de ese canal — no lo corras sobre un canal con datos reales.
  *
+ * ⚠️ GOOGLE SHEETS: si el canal tiene una hoja conectada (Canales → Sheets), CADA
+ * pedido de prueba se sincroniza a esa hoja (syncPedidoSheet) y puede disparar el
+ * Apps Script que la procesa. El `clean()` borra los pedidos de la BD, pero NO de
+ * la hoja (el borrado directo no pasa por la sync) → quedan filas de prueba en la
+ * hoja real. Para evitar ruido/fallos de Apps Script: corre el harness en un canal
+ * SIN hoja conectada, o desconéctala mientras pruebas y limpia esas filas a mano.
+ *
  * MANTENIMIENTO: el catálogo y las aserciones viven acá. Los FLUJOS se generan
  * con el generador real de `productos.html` (vía `window.__nodoTest`), así que
  * NO hay una copia del generador que se desactualice. Si cambian precios/stock
@@ -162,18 +169,26 @@
   async function genFlows(ids) {
     if (!window.__nodoTest) throw new Error("Falta window.__nodoTest — abre el panel en la sección Productos y recarga.");
     for (const pid of [ids.P.zap, ids.P.curso]) {
+      // OJO carrera: openProduct repuebla st.receta de forma ASÍNCRONA y genVenta
+      // dispara re-renders del producto anterior. Si esperamos "cualquier receta con
+      // fIni", podemos agarrar la del producto ANTERIOR (aún pendiente) y generar el
+      // flujo equivocado (los dos rotadores terminan apuntando al mismo flujo). Por
+      // eso anclamos la espera al fIni de ESTE producto (lo consultamos en la BD).
+      const wantIni = (await sel("flows", `select=id&channel_id=eq.${CH}&product_id=eq.${pid}&role=eq.mensajes_iniciales`))[0]?.id;
+      window.__nodoTest.getSt().receta = null; // invalidar la vieja
       await window.__nodoTest.openProduct(pid);
-      // Esperar a que renderInicio pueble st.receta (fIni) antes de generar.
-      for (let i = 0; i < 40; i++) { const s = window.__nodoTest.getSt(); if (s?.prod?.id === pid && s?.receta?.fIni) break; await sleep(150); }
+      for (let i = 0; i < 80; i++) { const s = window.__nodoTest.getSt(); if (s?.prod?.id === pid && s?.receta?.fIni?.id === wantIni) break; await sleep(150); }
+      await sleep(300); // asentar
       await window.__nodoTest.genVenta();
-      await sleep(400);
+      await sleep(600);
     }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CASOS  ·  cada uno devuelve [{ ok, msg }]
   // ═══════════════════════════════════════════════════════════════════════════
-  const N = (wa) => "REG " + wa.slice(-3); // nombre de prueba
+  const N = () => "Ana Torres"; // nombre y apellido de prueba (el wa_id distingue cada chat;
+  // debe tener 2 palabras o el flujo físico se queda pidiendo el apellido y no cierra)
   const ck = (ok, msg) => ({ ok: !!ok, msg });
 
   const CASES = [

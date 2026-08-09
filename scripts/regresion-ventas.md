@@ -25,6 +25,8 @@ await NodoRegresion.clean();                 // solo limpiar el canal
 ```
 
 > ⚠️ Corre sobre el canal de **prueba/sandbox** que tengas activo. **Borra todos** los productos, contactos y flujos de ese canal. No lo corras sobre un canal con datos reales.
+>
+> ⚠️ **Google Sheets:** si el canal tiene una hoja conectada (Canales → Sheets), cada pedido de prueba se sincroniza a esa hoja y puede disparar el Apps Script que la procesa. El `clean()` borra los pedidos de la BD pero **no** de la hoja → quedan filas de prueba ahí. Corre el harness en un canal **sin** hoja conectada (o desconéctala mientras pruebas y limpia esas filas a mano).
 
 ## Qué cubre (10 casos)
 
