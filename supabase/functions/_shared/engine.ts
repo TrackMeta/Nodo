@@ -13,7 +13,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
-import { sedeReconocida } from "./shalom-agencias.ts";
+import { sedeReconocida, candidatasAgencia } from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 
 export type EngineEvent =
@@ -577,10 +577,33 @@ export async function crearVentaManual(
 // ── Stock / inventario ─────────────────────────────────────────────
 // Clave estable de una variante a partir de los atributos del producto (los que
 // tienen VALORES declarados) y lo capturado en el pedido. DEBE coincidir con
+// Mapea el valor que dijo el cliente ("blancas", "39") al valor CANÓNICO de la
+// variante ("blanco", "39"). La IA no siempre devuelve el valor exacto de la lista
+// —dice el color en plural o con otra forma— y como la clave de stock se arma con
+// ese texto, "Color=blancas" no calzaba con "Color=blanco" de config.stock y el
+// stock NO se descontaba (riesgo de sobreventa). Se mapea por: igualdad → mismo
+// singular (quita 's'/'es' finales) → prefijo (≥4). Si nada calza, se deja lo dicho.
+function snapValorVariante(v: string, valoresCsv: string): string {
+  const norm = (s: string) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  const nv = norm(v); if (!nv) return v;
+  const opts = String(valoresCsv ?? "").split(",").map((s) => s.trim()).filter(Boolean).map((o) => ({ o, n: norm(o) }));
+  let hit = opts.find((x) => x.n === nv); if (hit) return hit.o;
+  // Raíz que ignora número (plural) y género: "blancas" y "blanco" → "blanc";
+  // "negras"/"negro" → "negr". Sin esto, el femenino/plural que dice el cliente
+  // ("blancas") no calzaba con el valor configurado ("blanco").
+  const stem = (s: string) => { let x = s.replace(/(es|s)$/, ""); if (x.length >= 4) x = x.replace(/[oa]$/, ""); return x; };
+  const sv = stem(nv);
+  if (sv.length >= 3) { hit = opts.find((x) => stem(x.n) === sv); if (hit) return hit.o; }
+  hit = opts.find((x) => x.n.length >= 4 && (nv.startsWith(x.n) || x.n.startsWith(nv))); if (hit) return hit.o;
+  return v;
+}
 // stockKey() del panel (productos.html): nombre=valor(normalizado)|… o "_".
 function stockKeyEngine(atributos: any[], vals: Record<string, unknown> | undefined | null): string {
   const axes = (atributos || []).filter((a) => a && a.nombre && String(a.valores ?? "").trim());
-  const parts = axes.map((a) => a.nombre + "=" + String((vals && (vals as any)[a.nombre]) ?? "").trim().toLowerCase());
+  const parts = axes.map((a) => {
+    const raw = String((vals && (vals as any)[a.nombre]) ?? "").trim();
+    return a.nombre + "=" + snapValorVariante(raw, a.valores).trim().toLowerCase();
+  });
   return parts.length ? parts.join("|") : "_";
 }
 // Aplica deltas de stock a products.config.stock. signo -1 = reservar (descontar
@@ -2310,9 +2333,19 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     }
     // Compat (principal): opción sin items pero con link suelto en config.
     if (ctx.link_entrega) await emit(db, run, { text: header ? `${header}\n${String(ctx.link_entrega)}` : String(ctx.link_entrega) }, ctx);
-    else if (header) await emit(db, run, { text: header }, ctx);
-    else await logEvent(db, run.channel_id, run.contact_id, "error", "Nada que entregar",
-      `La opción "${opcion?.nombre ?? "—"}" no tiene entrega configurada`);
+    // Opción RESUELTA cuya entrega es solo un mensaje (sin link): legítimo, va el header.
+    else if (opcion && header) await emit(db, run, { text: header }, ctx);
+    else {
+      // 🛡️ NO hay opción concreta resuelta (típico: digital multi-versión donde la
+      // detección de opción no fijó el plan con confianza). Si mandáramos el header
+      // "¡Pago confirmado! Acá tienes tu acceso:" con las manos vacías, el cliente
+      // pagó y recibiría la PROMESA de un acceso que no llega (entrega en falso).
+      // Se le avisa que llega en breve y se notifica para resolverlo a mano.
+      await emit(db, run, { text: "¡Recibí tu pago! 🎉 En un momento te confirmo y te envío tu acceso." }, ctx);
+      await notifyAdmin(db, run, "⚠️ Venta digital sin plan/entrega resuelta: el cliente pagó pero no se determinó qué versión entregar. Revísalo y envíaselo a mano.").catch(() => {});
+      await logEvent(db, run.channel_id, run.contact_id, "error", "Entrega digital sin opción resuelta",
+        `No se resolvió la versión a entregar (${opcion?.nombre ?? "—"}) — el cliente pagó, enviar a mano`).catch(() => {});
+    }
     return;
   }
 
@@ -4463,6 +4496,26 @@ function matchZona(zonas: Zona[], texto: string): Zona | null {
   return null;
 }
 
+// Muchas oficinas Shalom se llaman igual que un distrito de Lima ("La Perla",
+// "Santa Anita", "Santa Rosa", "San Juan Bautista"…). Cuando un cliente de
+// PROVINCIA nombra su oficina ("Shalom de Trujillo La Perla"), matchZona pescaba
+// ese "La Perla" como distrito de Lima y le secuestraba la zona a Lima —le pedía
+// dirección de calle y no creaba el pedido de agencia—. Esto detecta ese caso: el
+// texto trae contexto de agencia Y el distrito Lima matcheado es SUBparte del
+// nombre de una oficina Shalom REAL presente en el texto → es la OFICINA, no su
+// distrito. Devuelve true para descartar ese match de Lima.
+const AGENCIA_KW = /\b(shalom|olva|marvisur|agencia|agencias|sucursal|oficina|sede|terminal|agente)\b/;
+function esNombreOficinaShalom(texto: string, zonaNombre: string): boolean {
+  const tl = limpiaZona(texto);
+  if (!AGENCIA_KW.test(tl)) return false;
+  const zn = limpiaZona(zonaNombre);
+  if (zn.length < 3) return false;
+  return candidatasAgencia(texto).some((ag) => {
+    const na = limpiaZona(ag);
+    return na.length > zn.length && na.includes(zn);
+  });
+}
+
 // La IA extrae el lugar de una frase libre ("mándalo por el óvalo de Santa
 // Anita pues"). Solo se usa si el match determinista no encontró nada.
 async function extraerLugar(db: SupabaseClient, channelId: string, texto: string): Promise<string | null> {
@@ -4584,6 +4637,13 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
     // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
     z = matchZona(zonas, t);
+    // 1b) Falso positivo: el "distrito Lima" matcheado es en realidad el nombre de
+    // una OFICINA Shalom que el cliente de provincia nombró (ej. "Shalom de Trujillo
+    // La Perla"). Se descarta ese texto y se busca la ciudad en otro mensaje (el
+    // cliente casi siempre dijo "soy de Trujillo" antes).
+    if (z && z.cubro !== false && esNombreOficinaShalom(t, z.nombre)) {
+      z = null; lugar = null; continue;
+    }
     lugar = z ? z.nombre : null;
     // 2) Sin match directo: la IA extrae el lugar del texto libre, y reintentamos
     // el match determinista sobre ese lugar (puede venir deletreado distinto).
