@@ -1861,10 +1861,15 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     prevExit=nConfE;                          // el siguiente ofrecimiento cuelga de acá
   }
   await E(prevExit,"continuar",exitNode);
+  // Cierre al RECHAZAR el (último) extra: sin esto, "no gracias" caía directo al
+  // fin SIN mensaje y el bot quedaba mudo (dead-air) justo después de que el
+  // cliente escribió. Un acuse breve cierra con calidez y no vuelve a ofrecer.
+  const nCierre=await N("mensaje","Cierre sin extra",{ bubbles:[{ text:"¡Perfecto! Tu pedido queda tal cual 🙌 Cualquier cosa me avisas." }] },false,2920,baseY + extras.length*300 + 120);
+  await E(nCierre,"continuar",exitNode);
   // Rechazo de cada extra: con `seguir` ON va al SIGUIENTE ofrecimiento; el último
-  // (o con la perilla OFF) cierra la cadena por exitNode.
+  // (o con la perilla OFF) cierra la cadena con el acuse `nCierre`.
   for(let i=0;i<conds.length;i++){
-    await E(conds[i],"ruta:rechaza", (seguir && i+1<ofrecs.length) ? ofrecs[i+1] : exitNode);
+    await E(conds[i],"ruta:rechaza", (seguir && i+1<ofrecs.length) ? ofrecs[i+1] : nCierre);
   }
 }
 
@@ -2905,11 +2910,17 @@ async function generarFlujoVenta(){
         await E(nResp,"exito",nEsp);
         ofrecs.push(nOfr); entregas.push(nDarX); rechs.push(nRech);
       }
+      // Cierre al RECHAZAR el (último) extra: sin esto, "no gracias" caía directo a
+      // la salida SIN mensaje y el bot quedaba mudo (dead-air) justo después de que
+      // el cliente escribió. Un acuse breve cierra con calidez (el cliente ya tiene
+      // su acceso) y no vuelve a ofrecer.
+      const nCierreX=await N("mensaje","Cierre sin extra",{ bubbles:[{ text:"¡Perfecto! 🙌 Ya tienes todo tu acceso. Cualquier cosa me avisas." }] },false,1500,520+extras.length*420);
+      await E(nCierreX,"continuar",salida);
       // Rechazo de cada extra: con la perilla ON va al SIGUIENTE ofrecimiento; el
-      // último (o con la perilla OFF) cierra la cadena por la salida.
+      // último (o con la perilla OFF) cierra la cadena con el acuse `nCierreX`.
       const seguirX = !!(st.prod.config?.extras_seguir);
       for(let i=0;i<rechs.length;i++){
-        await E(rechs[i],"ruta:rechaza", (seguirX && i+1<ofrecs.length) ? ofrecs[i+1] : salida);
+        await E(rechs[i],"ruta:rechaza", (seguirX && i+1<ofrecs.length) ? ofrecs[i+1] : nCierreX);
       }
       // Encadenado: pagar un extra lleva al ofrecimiento del siguiente; el
       // último cierra la cadena por la salida.
