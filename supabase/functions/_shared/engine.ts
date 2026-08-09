@@ -4703,10 +4703,12 @@ function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; mot
   if (v.validar === "sede") {
     const limpio = limpiaZona(s).replace(RUIDO_SEDE, " ").replace(/\s+/g, " ").trim();
     if (!limpio) return { ok: false, motivo: "no dijo qué oficina es" };
-    const ciudad = limpiaZona(String(ctx?.ciudad ?? ""));
-    if (ciudad && limpio === ciudad) {
-      return { ok: false, motivo: `"${s}" es la ciudad, no la oficina — falta la sede exacta (ej. «Av. España»)` };
-    }
+    // Se ACEPTA aunque el cliente solo diga la CIUDAD (no la oficina exacta):
+    // muchos clientes NO saben la dirección del Shalom, y rechazarlo acá los
+    // BLOQUEABA (el pedido no se creaba nunca). Modelo "acepta y tú confirmas":
+    // crearPedido marca `sede_por_confirmar` cuando la sede no calza con una
+    // agencia oficial (sedeReconocida), y un humano confirma la oficina exacta
+    // en Pedidos antes de despachar. Así nunca se pierde la venta.
   }
   // La dirección NO puede ser una ciudad o distrito pelado. Igual que con la sede,
   // el modelo mete "Lima"/"Miraflores" en dirección cuando el cliente dice "soy de
@@ -5412,21 +5414,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.
         L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
-          `Pregúntale la sede nombrando su ciudad, no en abstracto.`);
-        // Cuáles datos de despacho SIGUEN faltando (dinámico): así la IA NO confirma
-        // un pedido que el motor todavía no puede crear. Caso típico: el cliente dice
-        // "Shalom de Iquitos" (la CIUDAD, no la oficina) → el motor NO captura la sede
-        // → datos_completos="no", pero la IA "veía" la sede en el texto y respondía
-        // "queda confirmado tu pedido" (que nunca se creó). El monto/atributos ya
-        // tienen su propio aviso de faltantes; esto lo suma para los datos de agencia.
+          `Pregúntale la oficina de Shalom nombrando su ciudad. 🔑 Si el cliente NO sabe la dirección/oficina exacta, NO lo bloquees ni insistas: acepta lo que sepa (aunque sea solo su ciudad), dile con calidez que un asesor le confirma la oficina exacta de Shalom donde recogerá, y sigue con el pedido. La oficina exacta se confirma luego; no es motivo para frenar la venta.`);
+        // Datos de despacho que SIGUEN faltando (dinámico): así la IA NO confirma un
+        // pedido que el motor todavía no puede crear. OJO: la SEDE ya NO es un
+        // bloqueo duro — se acepta aunque sea solo la ciudad (crearPedido la marca
+        // `sede_por_confirmar` y un humano la confirma). Los DUROS son nombre y DNI:
+        // sin ellos la agencia no despacha. (El caso viejo era que la IA decía "queda
+        // confirmado" con la sede vaga; ahora el motor SÍ crea el pedido con la sede
+        // ciudad, así que la IA puede confirmar de verdad.)
         const faltanDesp: string[] = [];
         if (!String(ctx.nombre_completo ?? "").trim()) faltanDesp.push("su nombre y apellido");
         if (!String(ctx.dni ?? "").trim()) faltanDesp.push("su DNI (8 dígitos)");
-        if (!String(ctx.sede ?? "").trim()) faltanDesp.push("la OFICINA/dirección EXACTA de Shalom (la ciudad sola NO basta)");
         if (faltanDesp.length) {
-          L.push(`⛔ AÚN te falta para poder despachar: **${faltanDesp.join(", ")}**. Pídelo con naturalidad y NO des el pedido por confirmado ni digas "queda confirmado tu pedido" hasta tenerlo TODO —aunque el cliente escriba "confirmo"—. Si solo te dio la ciudad como sede, pídele la oficina o dirección exacta de Shalom en su ciudad.`);
-        } else {
-          L.push("Ya tienes los datos de despacho (nombre, DNI y sede exacta): recién ahora puedes dar el pedido por confirmado.");
+          L.push(`⛔ AÚN te falta para poder despachar: **${faltanDesp.join(", ")}**. Pídelo con naturalidad y NO des el pedido por confirmado ni digas "queda confirmado tu pedido" hasta tenerlo. (La oficina exacta de Shalom NO cuenta como faltante: si no la sabe, se acepta igual.)`);
         }
         // El adelanto: monto RESUELTO por el motor (override del producto →
         // agencia → default de Negocio). Antes no se le decía ninguno, así que la
