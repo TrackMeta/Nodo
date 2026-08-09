@@ -4953,7 +4953,16 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // Solo se le pregunta a la IA por lo que TODAVÍA no tenemos: más barato y
   // evita que "re-extraiga" y pise un dato bueno con uno peor.
   const faltan = campos.filter((c) => !String(ctx[c.clave] ?? "").trim());
-  if (faltan.length) {
+  // EXCEPCIÓN: los `solo_ultimo` (talla de un extra) se RE-extraen cada turno del
+  // último mensaje, AUNQUE ya tengan valor. El bot puede haberlos fijado mal antes:
+  // ante "sí agrégame las medias" (valores "S, M") la IA elige el 1er valor "S", y
+  // la respuesta real ("talla M") llegaba en el turno siguiente, pero como el campo
+  // ya estaba seteado, `faltan` lo excluía y NUNCA se corregía → el extra salía y su
+  // stock bajaba con la talla equivocada. Releer el último mensaje no pisa nada si
+  // ahí no hay talla: la IA la omite → val vacío → no sobrescribe (ver `continue`).
+  const soloUlt = campos.filter((c) => c.solo_ultimo);
+  const faltanHist = faltan.filter((c) => !c.solo_ultimo);
+  if (faltanHist.length || soloUlt.length) {
     try {
       const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
       const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
@@ -5007,6 +5016,20 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
           for (const c of grupo) {
             const val = String(parsed?.[c.clave] ?? "").trim();
             if (!val) continue;
+            // solo_ultimo (talla de un extra): la IA a veces "elige" el 1er valor de
+            // la lista ("S" de "S, M") aunque el mensaje NO traiga talla ("sí agrégame
+            // las medias"), y reconciliarStockExtras descuenta esa variante equivocada
+            // al toque; la respuesta real ("talla M") llega un turno después, cuando el
+            // bump ya no está pendiente y el campo salió del contexto. Guard
+            // determinista: el valor DEBE aparecer como token en el mensaje; si no, se
+            // descarta (el bot vuelve a preguntar y lo captura recién cuando el cliente
+            // de verdad lo dice). Solo aplica a solo_ultimo: no toca la extracción de
+            // historial del principal (color plural "blancas" lo resuelve el stock).
+            if (c.solo_ultimo) {
+              const _n = (t: string) => String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+              const tok = _n(val).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              if (tok && !new RegExp(`(^|[^a-z0-9])${tok}([^a-z0-9]|$)`).test(_n(fuente))) continue;
+            }
             const v = validarDato(c, val, ctx);
             if (!v.ok) {
               // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
@@ -5036,8 +5059,8 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         // seteada, su respuesta real ("L") ya no se extraía (faltan la excluye) → el
         // pedido/stock salían con la talla equivocada. Leyendo solo su turno, se
         // captura recién cuando el cliente de verdad la dice, y la correcta.
-        await procesar(faltan.filter((c) => !c.solo_ultimo), contexto);
-        await procesar(faltan.filter((c) => c.solo_ultimo), texto);
+        await procesar(faltanHist, contexto);
+        await procesar(soloUlt, texto);   // re-extrae la talla del extra cada turno
       }
     } catch (e) { console.error("[extraerDatos]", (e as any)?.message ?? e); }
   }

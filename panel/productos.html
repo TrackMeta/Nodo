@@ -2628,7 +2628,11 @@ async function generarFlujoFisico(flowId, N, E){
   const extras=(Array.isArray(cfg.extras)?cfg.extras:[]).filter(x=>x&&x.version_id);
   const esperaSeg=Math.max(60,(Number(cfg.extras_espera_min)||15)*60);
   const provPost=(cfg.extras_prov_momento||"post")==="post"; // configurable
-  if(extras.length && !st.extraCat) await cargarCatalogoExtras();
+  // SIEMPRE relee el catálogo (no confíes en el caché): si el usuario editó el
+  // precio de un extra o agregó uno después de cargar la página, un st.extraCat
+  // rancio genera el bump con precio 0 y label "Extra N" (find no matchea el
+  // version_id nuevo). Generar es deliberado e infrecuente: una query no cuesta.
+  if(extras.length) await cargarCatalogoExtras();
   const catX=st.extraCat||[];
 
   // Lima: se ofrece tras confirmar (no hay adelanto que esperar).
@@ -2833,8 +2837,10 @@ async function generarFlujoVenta(skipConfirm){
     const antes=(cfg.extras_momento||"antes")==="antes";
     const esperaSeg=Math.max(60,(Number(cfg.extras_espera_min)||15)*60);
     // El catálogo puede no estar cargado si nunca se abrió la pestaña de extras
-    // (se puede generar el flujo directo desde la Receta).
-    if(extras.length && !st.extraCat) await cargarCatalogoExtras();
+    // (se puede generar el flujo directo desde la Receta). SIEMPRE se relee: un
+    // st.extraCat rancio (precio de extra editado tras cargar la página) genera
+    // el bump con precio 0 y label "Extra N". Generar es raro; la query no cuesta.
+    if(extras.length) await cargarCatalogoExtras();
 
     if(!extras.length){
       await E(nRegistrar,"continuar",nEntregar);

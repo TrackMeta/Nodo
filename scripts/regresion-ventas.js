@@ -176,6 +176,10 @@
       // eso anclamos la espera al fIni de ESTE producto (lo consultamos en la BD).
       const wantIni = (await sel("flows", `select=id&channel_id=eq.${CH}&product_id=eq.${pid}&role=eq.mensajes_iniciales`))[0]?.id;
       window.__nodoTest.getSt().receta = null; // invalidar la vieja
+      window.__nodoTest.getSt().extraCat = null; // y el catálogo de extras: si quedó
+      // rancio de un build anterior, el bump sale con precio 0 y label "Extra N"
+      // (find no matchea el version_id nuevo). El generador ahora lo relee solo,
+      // pero lo forzamos acá para no depender de la versión de front desplegada.
       await window.__nodoTest.openProduct(pid);
       for (let i = 0; i < 80; i++) { const s = window.__nodoTest.getSt(); if (s?.prod?.id === pid && s?.receta?.fIni?.id === wantIni) break; await sleep(150); }
       await sleep(300); // asentar
