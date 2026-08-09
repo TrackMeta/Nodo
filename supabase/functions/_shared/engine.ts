@@ -5339,7 +5339,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // precio real, pero al cliente hay que decirle el monto correcto.
         const p = ctx.precio != null ? ctx.precio : (ops[0] as any)?.precio;
         if (p != null && String(p) !== "") {
-          parts.push(`## Precio\nEste producto cuesta **S/ ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad y que, si quiere varias, un asesor le coordina el pedido. NUNCA cierres un pedido por una cantidad mayor a 1.`);
+          parts.push(`## Precio\nEste producto cuesta **S/ ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad, y si quiere varias tranquilízalo en PRIMERA PERSONA (como si TÚ mismo lo coordinaras: "te lo dejo anotado y coordino tu pedido de X unidades"). ⛔ NUNCA lo derives a "un asesor" ni a "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. NUNCA cierres un pedido por una cantidad mayor a 1.`);
         }
       }
     }
@@ -5414,7 +5414,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.
         L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
-          `Pregúntale la oficina de Shalom nombrando su ciudad. 🔑 Si el cliente NO sabe la dirección/oficina exacta, NO lo bloquees ni insistas: acepta lo que sepa (aunque sea solo su ciudad), dile con calidez que un asesor le confirma la oficina exacta de Shalom donde recogerá, y sigue con el pedido. La oficina exacta se confirma luego; no es motivo para frenar la venta.`);
+          `Pregúntale la oficina de Shalom nombrando su ciudad. 🔑 Si el cliente NO sabe la dirección/oficina exacta, NO lo bloquees ni insistas: acepta lo que sepa (aunque sea solo su ciudad) y tranquilízalo en PRIMERA PERSONA, como si TÚ mismo lo resolvieras ("no te preocupes, yo te dejo coordinada la oficina de Shalom en tu ciudad y te confirmo dónde recoger"). ⛔ NUNCA lo derives a "un asesor", "el equipo" ni "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. Sigue con el pedido; la oficina exacta se afina luego y no es motivo para frenar la venta.`);
         // Datos de despacho que SIGUEN faltando (dinámico): así la IA NO confirma un
         // pedido que el motor todavía no puede crear. OJO: la SEDE ya NO es un
         // bloqueo duro — se acepta aunque sea solo la ciudad (crearPedido la marca
