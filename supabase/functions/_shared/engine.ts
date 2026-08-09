@@ -5413,6 +5413,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // si le preguntas por SU ciudad.
         L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
           `Pregúntale la sede nombrando su ciudad, no en abstracto.`);
+        // Cuáles datos de despacho SIGUEN faltando (dinámico): así la IA NO confirma
+        // un pedido que el motor todavía no puede crear. Caso típico: el cliente dice
+        // "Shalom de Iquitos" (la CIUDAD, no la oficina) → el motor NO captura la sede
+        // → datos_completos="no", pero la IA "veía" la sede en el texto y respondía
+        // "queda confirmado tu pedido" (que nunca se creó). El monto/atributos ya
+        // tienen su propio aviso de faltantes; esto lo suma para los datos de agencia.
+        const faltanDesp: string[] = [];
+        if (!String(ctx.nombre_completo ?? "").trim()) faltanDesp.push("su nombre y apellido");
+        if (!String(ctx.dni ?? "").trim()) faltanDesp.push("su DNI (8 dígitos)");
+        if (!String(ctx.sede ?? "").trim()) faltanDesp.push("la OFICINA/dirección EXACTA de Shalom (la ciudad sola NO basta)");
+        if (faltanDesp.length) {
+          L.push(`⛔ AÚN te falta para poder despachar: **${faltanDesp.join(", ")}**. Pídelo con naturalidad y NO des el pedido por confirmado ni digas "queda confirmado tu pedido" hasta tenerlo TODO —aunque el cliente escriba "confirmo"—. Si solo te dio la ciudad como sede, pídele la oficina o dirección exacta de Shalom en su ciudad.`);
+        } else {
+          L.push("Ya tienes los datos de despacho (nombre, DNI y sede exacta): recién ahora puedes dar el pedido por confirmado.");
+        }
         // El adelanto: monto RESUELTO por el motor (override del producto →
         // agencia → default de Negocio). Antes no se le decía ninguno, así que la
         // IA repetía el número que encontrara escrito en la descripción del
