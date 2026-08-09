@@ -3160,6 +3160,21 @@ function evaluarAbono(
 }
 function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }
 
+// Acredita al SALDO lo que el cliente pagó de MÁS en el adelanto. El total que
+// debe = adelanto + saldo (incluye extras que hayan subido el saldo). Si pagó justo
+// el adelanto, el saldo no cambia; si pagó de más, baja; si cubrió el total, queda
+// en 0 (pagó completo → en la agencia no le cobran nada al recoger). Antes el saldo
+// quedaba congelado en "precio − adelanto" aunque pagara de más o todo de una, y se
+// arriesgaba a un doble cobro en la entrega.
+export function saldoTrasAdelanto(ship: Record<string, any>, totalPagadoAdelanto: number): { saldo: number; pagadoTotal: boolean } {
+  const adel = Number(ship?.adelanto) || 0;
+  const saldoAct = Number(ship?.saldo) || 0;
+  const totalOwed = adel + saldoAct;
+  const pagado = Number(totalPagadoAdelanto) || 0;
+  const saldo = Math.max(0, Math.round((totalOwed - pagado) * 100) / 100);
+  return { saldo, pagadoTotal: saldo <= 0.009 };
+}
+
 // El cliente mandó el comprobante del adelanto ANTES de completar sus datos, así
 // que todavía no hay pedido `esperando_adelanto` al cual atarlo. En vez de
 // ignorarlo (y pedirle pagar de nuevo cuando el pedido nazca), lo RECONOCEMOS: si
@@ -3337,11 +3352,19 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const puedeAuto = cfg.validacion === "auto" && cubre;
 
   if (puedeAuto) {
+    // Acreditar al saldo lo pagado de más (o el total si pagó completo de una).
+    const totalAdel = ab ? ab.total : monto;
+    const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(ship, totalAdel);
     await db.from("orders").update({
       estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
-        ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos, adelanto_abonado: ab.total } : {}) },
+        saldo: String(saldoNuevo), adelanto_abonado: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}),
+        ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos } : {}) },
     }).eq("id", (order as any).id);
+    if (saldoNuevo < (Number(ship.saldo) || 0)) {
+      await logEvent(db, channelId, contactId, "nota", pagadoTotal ? "Pagó el TOTAL en el adelanto" : "Pagó de más en el adelanto",
+        `Saldo actualizado a ${saldoNuevo}${pagadoTotal ? " (nada por cobrar al recoger)" : ""}`).catch(() => {});
+    }
     // Registra la operación en el ledger unificado → no se podrá reusar como
     // pago digital ni como saldo de otro pedido.
     if (oper) await registrarOperacion(db, channelId, oper, (order as any).id, "adelanto").catch(() => {});

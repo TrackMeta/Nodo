@@ -305,6 +305,31 @@
         ck(Number(o?.amount) === 129, `tras elegir la opción, amount=${o?.amount} (esperado 129)`),
       ];
     } },
+
+    { name: "Adelanto: pagar el total acredita el saldo (queda en 0)", run: async () => {
+      // Cliente de provincia que paga el precio COMPLETO como adelanto (típico del
+      // recurrente que ya confía): el saldo debe quedar en 0 y marcarse pagado_total
+      // (en la agencia no le cobran nada al recoger). Se valida el adelanto en AUTO
+      // temporalmente para verificar el crédito sin simular la aprobación manual.
+      const chRow = (await sel("channels", `select=pedidos_config&id=eq.${CH}`))[0];
+      const pcBak = JSON.parse(JSON.stringify(chRow.pedidos_config));
+      const pc = JSON.parse(JSON.stringify(chRow.pedidos_config)); pc.adelanto = pc.adelanto || {}; pc.adelanto.validacion = "auto";
+      await patch("channels", `id=eq.${CH}`, { pedidos_config: pc });
+      try {
+        const wa = "519990000013";
+        await send(wa, N(wa), "hola quiero las zapatillas runner, soy de Cusco"); await sleep(1600);
+        await send(wa, N(wa), "un par talla 38 negras, DNI 44556677, " + N(wa) + " Cruz, lo recojo en el Shalom Cusco Parque Industrial"); await sleep(2400);
+        await send(wa, N(wa), "el par simple de 129"); await sleep(2200); // fija la opción (2 presentaciones)
+        await yape(wa, N(wa), { monto: 129, quien: N(wa), op: "0" + Date.now().toString().slice(-9) }); await sleep(3200);
+        const { o } = await order(wa);
+        return [
+          ck(Number(o?.shipping?.saldo) === 0, `saldo tras pagar el total=${o?.shipping?.saldo} (esperado 0) [FIX adelanto]`),
+          ck(o?.shipping?.pagado_total === true, `pagado_total=${o?.shipping?.pagado_total} (esperado true)`),
+        ];
+      } finally {
+        await patch("channels", `id=eq.${CH}`, { pedidos_config: pcBak });
+      }
+    } },
   ];
 
   function report(results) {

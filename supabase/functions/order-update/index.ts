@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -203,6 +203,22 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("[order-update] reservar stock:", (e as any)?.message ?? e);
     }
+    // 💰 Acreditar al saldo lo pagado de MÁS en el adelanto (o marcar pagado total si
+    // cubrió todo). Así el saldo a cobrar en la agencia baja solo, sin doble cobro si
+    // el cliente adelantó de más o pagó completo de una. Se relee el shipping fresco
+    // para no pisar lo que el cambio de estado ya escribió.
+    try {
+      const { data: fresh } = await db.from("orders").select("shipping").eq("id", order.id).maybeSingle();
+      const shipNow = (((fresh as any)?.shipping) || shipA) as any;
+      const totalAdel = Number(shipNow.adelanto_abonado ?? shipNow.adelanto_monto_leido ?? shipNow.adelanto) || 0;
+      const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(shipNow, totalAdel);
+      if (saldoNuevo < (Number(shipNow.saldo) || 0)) {
+        await db.from("orders").update({
+          shipping: { ...shipNow, saldo: String(saldoNuevo), adelanto_abonado: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) },
+          updated_at: new Date().toISOString(),
+        }).eq("id", order.id);
+      }
+    } catch (e) { console.error("[order-update] crédito saldo adelanto:", (e as any)?.message ?? e); }
     try {
       extrasOfrecidos = await resumeIntoExtras(db, (order as any).channel_id, (order as any).contact_id);
     } catch (e) {
