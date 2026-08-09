@@ -212,9 +212,13 @@ Deno.serve(async (req) => {
       const shipNow = (((fresh as any)?.shipping) || shipA) as any;
       const totalAdel = Number(shipNow.adelanto_abonado ?? shipNow.adelanto_monto_leido ?? shipNow.adelanto) || 0;
       const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(shipNow, totalAdel);
-      if (saldoNuevo < (Number(shipNow.saldo) || 0)) {
+      // Idempotencia: NO re-acreditar el MISMO pago. Si el operador mueve el pedido
+      // adelanto_validado → esperando_adelanto → adelanto_validado, sin esta guarda
+      // se volvía a restar sobre el saldo YA reducido (cobraba de menos en la agencia).
+      const yaAcreditado = Number(shipNow.pago_acreditado_adelanto);
+      if (saldoNuevo < (Number(shipNow.saldo) || 0) && yaAcreditado !== totalAdel) {
         await db.from("orders").update({
-          shipping: { ...shipNow, saldo: String(saldoNuevo), adelanto_abonado: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) },
+          shipping: { ...shipNow, saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) },
           updated_at: new Date().toISOString(),
         }).eq("id", order.id);
       }

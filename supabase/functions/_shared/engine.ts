@@ -625,25 +625,48 @@ export async function aplicarStock(
     (byProd.get(m.product_id) ?? byProd.set(m.product_id, []).get(m.product_id)!).push(m);
   }
   for (const [pid, movs] of byProd) {
-    try {
-      const { data: p } = await db.from("products").select("nombre, config").eq("id", pid).maybeSingle();
-      const cfg = (p as any)?.config || {};
-      const stock = (cfg.stock && typeof cfg.stock === "object" && !Array.isArray(cfg.stock)) ? cfg.stock : null;
-      if (!stock) continue; // el producto no lleva stock → no se toca
-      const umbral = cfg.stock_umbral != null ? Number(cfg.stock_umbral) : 3;
-      let changed = false;
-      for (const m of movs) {
-        const k = m.key as string;
-        if (!(k in stock)) continue; // esa variante no se lleva en cuenta
-        const before = Number(stock[k]) || 0;
-        const after = before + signo * Number(m.unidades);
-        stock[k] = after; changed = true;
-        if (signo < 0 && ((before > umbral && after <= umbral) || (before > 0 && after <= 0))) {
-          alerts.push({ nombre: (p as any).nombre || "producto", key: k, restante: after, agotado: after <= 0 });
+    // Neteo de deltas por clave (varias unidades de la misma variante en un pedido).
+    const deltas: Record<string, number> = {};
+    for (const m of movs) { const k = m.key as string; if (k) deltas[k] = (deltas[k] || 0) + signo * Number(m.unidades); }
+    // COMPARE-AND-SWAP sobre updated_at para evitar la sobreventa por concurrencia:
+    // antes era read-modify-write (leer config → calcular en JS → escribir), así que
+    // dos pedidos casi simultáneos de la misma variante leían stock=10 y ambos
+    // escribían 9 (neto −1 en vez de −2), sin alerta, y encima el update pisaba
+    // cualquier otro campo de config que un turno paralelo hubiera escrito. Ahora
+    // solo se escribe si updated_at NO cambió desde la lectura; si otro escribió en
+    // medio, se reintenta releyendo el stock fresco. (Sin migración: atómico vía la
+    // serialización del UPDATE en Postgres + el filtro por updated_at.)
+    let applied = false;
+    for (let intento = 0; intento < 6 && !applied; intento++) {
+      try {
+        const { data: p } = await db.from("products").select("nombre, config, updated_at").eq("id", pid).maybeSingle();
+        if (!p) { applied = true; break; }
+        const cfg = (p as any).config || {};
+        const stock = (cfg.stock && typeof cfg.stock === "object" && !Array.isArray(cfg.stock)) ? cfg.stock : null;
+        if (!stock) { applied = true; break; } // el producto no lleva stock → no se toca
+        const umbral = cfg.stock_umbral != null ? Number(cfg.stock_umbral) : 3;
+        const nuevoStock: Record<string, unknown> = { ...stock };
+        const localAlerts: typeof alerts = [];
+        let changed = false;
+        for (const [k, d] of Object.entries(deltas)) {
+          if (!(k in nuevoStock)) continue; // esa variante no se lleva en cuenta
+          const before = Number(nuevoStock[k]) || 0;
+          const after = before + d;
+          nuevoStock[k] = after; changed = true;
+          if (signo < 0 && ((before > umbral && after <= umbral) || (before > 0 && after <= 0))) {
+            localAlerts.push({ nombre: (p as any).nombre || "producto", key: k, restante: after, agotado: after <= 0 });
+          }
         }
-      }
-      if (changed) await db.from("products").update({ config: { ...cfg, stock } }).eq("id", pid);
-    } catch (e) { console.error("[aplicarStock]", (e as any)?.message ?? e); }
+        if (!changed) { applied = true; break; }
+        const upd = (p as any).updated_at;
+        let q = db.from("products").update({ config: { ...cfg, stock: nuevoStock }, updated_at: new Date().toISOString() }).eq("id", pid);
+        if (upd) q = q.eq("updated_at", upd); // CAS: solo si nadie escribió desde la lectura
+        const { data: ok } = await q.select("id");
+        if (ok && ok.length) { alerts.push(...localAlerts); applied = true; }
+        // else: conflicto (otro escribió) → reintenta con lectura fresca
+      } catch (e) { console.error("[aplicarStock]", (e as any)?.message ?? e); break; }
+    }
+    if (!applied) console.error("[aplicarStock] CAS agotó reintentos para", pid);
   }
   return alerts;
 }
@@ -2114,11 +2137,12 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
 function formatFechaAhora(fmt?: string): string {
   const now = new Date(); const TZ = "America/Lima";
   const p = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("es-PE", { timeZone: TZ, ...opts }).format(now);
+  const hm = () => p({ hour: "2-digit", minute: "2-digit", hour12: false }).replace(/^24/, "00"); // ICU a veces da "24:xx" a medianoche
   switch (fmt) {
     case "yyyy-mm-dd": { const [d, m, y] = p({ day: "2-digit", month: "2-digit", year: "numeric" }).split("/"); return `${y}-${m}-${d}`; }
-    case "hh:mm": return p({ hour: "2-digit", minute: "2-digit", hour12: false });
+    case "hh:mm": return hm();
     case "dia_semana": return p({ weekday: "long" });
-    case "dd/mm/yyyy hh:mm": return `${p({ day: "2-digit", month: "2-digit", year: "numeric" })} ${p({ hour: "2-digit", minute: "2-digit", hour12: false })}`;
+    case "dd/mm/yyyy hh:mm": return `${p({ day: "2-digit", month: "2-digit", year: "numeric" })} ${hm()}`;
     case "dd/mm/yyyy": default: return p({ day: "2-digit", month: "2-digit", year: "numeric" });
   }
 }
@@ -3394,7 +3418,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     await db.from("orders").update({
       estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
-        saldo: String(saldoNuevo), adelanto_abonado: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}),
+        saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}),
         ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos } : {}) },
     }).eq("id", (order as any).id);
     if (saldoNuevo < (Number(ship.saldo) || 0)) {
@@ -4624,7 +4648,10 @@ async function extraerLugar(db: SupabaseClient, channelId: string, texto: string
 // Fecha/hora ACTUAL en la zona horaria del negocio, ya descompuesta.
 function ahoraEnTz(tz: string): { hhmm: string; dia: string; iso: string } {
   const now = new Date();
-  const hhmm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  // Algunos builds de ICU dan "24:15" a medianoche con hour12:false; se normaliza a
+  // "00:15" o las comparaciones de horario ("24:15" >= "09:00") daban un negocio 24h
+  // como CERRADO la 1ª hora tras medianoche (y el scheduler suprimía nudges).
+  const hhmm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(now).replace(/^24/, "00");
   const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(now).toLowerCase();
   const map: Record<string, string> = { mon: "lun", tue: "mar", wed: "mie", thu: "jue", fri: "vie", sat: "sab", sun: "dom" };
   const iso = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);

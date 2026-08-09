@@ -325,7 +325,7 @@ async function enHorario(channelId: string): Promise<boolean> {
     const tz = cfg?.timezone || "America/Lima";
     const hhmm = new Intl.DateTimeFormat("es-PE", {
       timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
-    }).format(new Date());
+    }).format(new Date()).replace(/^24/, "00"); // ICU a veces da "24:xx" a medianoche → "00:xx"
     // Comparación lexicográfica de "HH:MM" (funciona con ceros a la izquierda).
     return hhmm >= String(r.desde) && hhmm <= String(r.hasta);
   } catch (_) { return true; } // ante la duda, no bloquear el remarketing

@@ -94,9 +94,18 @@ export async function sendCapiEvent(
     event_id: eventId, action_source: actionSource, estado: "pendiente",
   });
   if (insErr) {
-    // 23505 = unique_violation → ya se procesó este evento/compra.
-    if ((insErr as any).code === "23505") return { ok: true, deduped: true };
-    return { ok: false, error: insErr.message };
+    if ((insErr as any).code !== "23505") return { ok: false, error: insErr.message };
+    // 23505 = unique_violation → la fila ya existe. Si el envío anterior YA fue
+    // 'enviado', listo (dedup real). Pero si quedó 'fallido' o 'pendiente' (el 1er
+    // intento falló: token aún sin configurar, error transitorio de Meta), NO damos
+    // el evento por hecho: caemos al envío de abajo para REINTENTAR (markEvent
+    // actualiza la MISMA fila). Antes esto se perdía para siempre → venta sin
+    // atribución. maybePurchase se llama en cada cambio de estado, así el reintento
+    // ocurre solo/acotado sin depender del botón manual.
+    const { data: prevRow } = await db.from("capi_events").select("estado")
+      .eq("channel_id", channelId).eq("event_id", eventId).maybeSingle();
+    if ((prevRow as any)?.estado === "enviado") return { ok: true, deduped: true };
+    // fallido/pendiente → continúa (reintento)
   }
 
   // Token CAPI del canal (Vault).
