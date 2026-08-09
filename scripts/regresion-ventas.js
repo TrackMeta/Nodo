@@ -288,6 +288,23 @@
       const { c, o } = await order(wa);
       return [ck(c?.stage === "interesado", `stage=${c?.stage} (esperado interesado)`), ck(!o, `pedido=${o ? "EXISTE" : "ninguno"} (esperado ninguno)`)];
     } },
+
+    { name: "Anti-S/0: bundle tras keyword no crea pedido en S/0", run: async () => {
+      const wa = "519990000011";
+      // Cliente que manda TODO junto pegado a la palabra clave: la opción no se
+      // resuelve en ese turno, así que el pedido NO debe nacer en S/0 — el bot pide
+      // elegir la opción. Al elegirla, el pedido sale con el precio correcto.
+      await send(wa, N(wa), "hola quiero las zapatillas runner, un par talla 40 blancas, soy de lima miraflores av larco 100, confirmo"); await sleep(2400);
+      await send(wa, N(wa), "sí confirmo"); await sleep(2400);
+      const hayS0 = ((await order(wa))?.all || []).some((x) => Number(x.amount) === 0);
+      await send(wa, N(wa), "el par simple de 129"); await sleep(2300);
+      await send(wa, N(wa), "sí confirmo"); await sleep(2400);
+      const { o } = await order(wa);
+      return [
+        ck(!hayS0, `no se creó pedido en S/0 con el mensaje bundle (había S/0: ${hayS0}) [FIX S/0]`),
+        ck(Number(o?.amount) === 129, `tras elegir la opción, amount=${o?.amount} (esperado 129)`),
+      ];
+    } },
   ];
 
   function report(results) {
