@@ -208,8 +208,12 @@
       await send(wa, N(wa), N(wa) + ", Lima, San Isidro, Av Aramburu 120"); await sleep(2200);
       await send(wa, N(wa), "sí confirmo"); await sleep(2300);
       await send(wa, N(wa), "sí agrégame las medias"); await sleep(2200);
-      await send(wa, N(wa), "talla M"); await sleep(2200);
-      const { o } = await order(wa); const st1 = await stockOf(ids.P.zap); const med1 = await stockOf(ids.P.med);
+      await send(wa, N(wa), "talla M"); await sleep(2500);
+      const { o } = await order(wa); const st1 = await stockOf(ids.P.zap);
+      // El stock PROPIO del extra se reconcilia un turno después de dar la talla
+      // (reconciliarStockExtras), así que puede tardar: reintentar hasta que baje.
+      let med1 = await stockOf(ids.P.med);
+      for (let i = 0; i < 6 && med1["Talla=m"] === med0["Talla=m"]; i++) { await sleep(1500); med1 = await stockOf(ids.P.med); }
       const medBump = (o?.order_bumps || []).find((b) => /medias/i.test(b.nombre));
       return [
         ck(st1["Talla=40|Color=blanco"] === st0["Talla=40|Color=blanco"] - 1, `stock 40 blanco ${st0["Talla=40|Color=blanco"]}→${st1["Talla=40|Color=blanco"]} (esperado -1) [FIX #2]`),
