@@ -330,6 +330,31 @@
         await patch("channels", `id=eq.${CH}`, { pedidos_config: pcBak });
       }
     } },
+
+    { name: "Adelanto mínimo: paga sobre el piso (12, mín 10) → despacha", run: async () => {
+      // Con un mínimo aceptable de S/10, pagar S/12 (bajo el adelanto de 20 pero sobre
+      // el piso) debe DESPACHAR igual, con el saldo ajustado a lo que falta (117). Se
+      // fija el mínimo global + validación auto temporalmente y se restaura al final.
+      const chRow = (await sel("channels", `select=entregas,pedidos_config&id=eq.${CH}`))[0];
+      const entBak = JSON.parse(JSON.stringify(chRow.entregas)), pcBak = JSON.parse(JSON.stringify(chRow.pedidos_config));
+      const ent = JSON.parse(JSON.stringify(chRow.entregas)); ent.adelanto_minimo_default = 10;
+      const pc = JSON.parse(JSON.stringify(chRow.pedidos_config)); pc.adelanto = pc.adelanto || {}; pc.adelanto.validacion = "auto";
+      await patch("channels", `id=eq.${CH}`, { entregas: ent, pedidos_config: pc });
+      try {
+        const wa = "519990000014";
+        await send(wa, N(wa), "hola quiero las zapatillas runner, soy de Cusco"); await sleep(1600);
+        await send(wa, N(wa), "un par talla 38 negras, DNI 44112233, " + N(wa) + " Paz, lo recojo en el Shalom Cusco Parque Industrial"); await sleep(2400);
+        await send(wa, N(wa), "el par simple de 129"); await sleep(2200);
+        await yape(wa, N(wa), { monto: 12, quien: N(wa), op: "0" + Date.now().toString().slice(-9) }); await sleep(3200);
+        const { o } = await order(wa);
+        return [
+          ck(o?.estado === "adelanto_validado", `estado=${o?.estado} (esperado adelanto_validado con pago sobre el piso) [FIX mínimo]`),
+          ck(Number(o?.shipping?.saldo) === 117, `saldo=${o?.shipping?.saldo} (esperado 117 = 129−12)`),
+        ];
+      } finally {
+        await patch("channels", `id=eq.${CH}`, { entregas: entBak, pedidos_config: pcBak });
+      }
+    } },
   ];
 
   function report(results) {
