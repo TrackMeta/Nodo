@@ -4976,6 +4976,16 @@ function valorEnMensaje(val: string, fuente: string): boolean {
   return toks.some((t) => t === nv || (nv.length >= 4 && (t.startsWith(pref) || nv.startsWith(t.slice(0, 4)))));
 }
 
+// ¿El mensaje trae ALGÚN valor posible de este campo? Pre-filtro barato para la pasada
+// de correcciones: así la llamada extra a la IA solo se hace en un turno donde el
+// cliente de verdad menciona una talla/color/DNI (no en "sí confirmo" / "no gracias" /
+// la dirección) — sin esto, re-extraer cada turno agrega latencia a TODA venta.
+function mensajeTieneValorDe(c: any, texto: string): boolean {
+  if (c.validar === "dni") return /\b\d{7,9}\b/.test(texto);
+  const vals = String(c.valores ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return vals.some((v) => valorEnMensaje(v, texto));
+}
+
 async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): Promise<void> {
   const todos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
   // Los datos que aplican dependen del camino: mientras no sepamos la zona, se
@@ -5040,7 +5050,8 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // acataba el cambio en la charla pero el pedido/stock salían con el valor viejo. El
   // guard (valorEnMensaje) evita pisar el valor bueno cuando el mensaje no trae uno.
   const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni";
-  const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim());
+  const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim()
+    && mensajeTieneValorDe(c, texto));   // solo si el último msg realmente trae un valor de ESTE campo
   const desdeUltimo = [...soloUlt, ...correcciones];
   if (faltanHist.length || desdeUltimo.length) {
     try {
