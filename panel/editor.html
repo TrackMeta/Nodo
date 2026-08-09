@@ -141,9 +141,6 @@
   .btnrow .in{flex:1}
   .chint{font-size:11px;color:var(--faint);margin-top:6px}
   .cempty{text-align:center;color:var(--faint);padding:50px;max-width:520px;margin:0 auto}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10281d;color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}
-  .toast.err{background:#2c1615;color:var(--red);border-color:var(--red)}
   /* Modal de disparadores del flujo */
   .tg-overlay{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
   .tg-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:560px;max-height:88vh;overflow:auto}
@@ -211,7 +208,6 @@
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">

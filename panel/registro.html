@@ -109,7 +109,8 @@ $("form").addEventListener("submit", async (e) => {
   const nombre = $("nombre").value.trim();
   const business_name = $("business").value.trim();
   if (!token){ show("Falta el código de invitación."); return; }
-  if (!email.includes("@")){ show("Escribe un correo válido."); return; }
+  if (!nombre){ show("Escribe tu nombre."); return; }
+  if (!/.+@.+\..+/.test(email)){ show("Escribe un correo válido."); return; } // antes bastaba un "@" suelto
   if (password.length < 8){ show("La contraseña debe tener al menos 8 caracteres."); return; }
 
   $("btn").disabled = true; show("Creando tu cuenta…", true);

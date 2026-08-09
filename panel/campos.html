@@ -170,7 +170,7 @@ function render(){
   if(notaTec) box.insertAdjacentHTML("beforeend", notaTec);
 }
 async function save(){
-  for(const f of st.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
+  for(const f of st.fields){ if(!(f.nombre||"").trim()||!(f.key||"").trim()){ toast("Cada campo necesita nombre y clave",true); return; } } // guarda null (campos internos del motor)
   if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
   const rows=st.fields.map(f=>{
     const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico", folder:f.folder||null };

@@ -60,11 +60,6 @@
 
   /* ── App shell ── */
   #app{height:100%;display:flex;position:relative}
-  .rail{width:60px;flex:none;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:8px}
-  .rail img{width:36px;height:36px;border-radius:10px;margin-bottom:10px}
-  .rail .icn{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px}
-  .rail .icn.active{background:var(--brand-bg);color:var(--brand)}
-  .rail .bottom{margin-top:auto;display:flex;flex-direction:column;gap:8px;align-items:center}
 
   /* Panel de filtros — drawer que se desliza sobre la lista (se abre con el botón
      «Filtros»; los filtros activos quedan como chips sobre la lista). */
@@ -385,8 +380,6 @@
   .seg2{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px}
   .segbtn{background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px}
   .segbtn.active{background:var(--brand);color:#fff}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red-bg);color:var(--red);border:1px solid var(--red);padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
-  .toast.show{opacity:1}
 
   /* Cabecera del chat: toggle Chat/Actividad + menú de acciones */
   .chat{position:relative}
@@ -555,7 +548,6 @@
   <aside class="cpanel hidden" id="cpanel"></aside>
 </div>
 
-<div class="toast" id="toast"></div>
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
