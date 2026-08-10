@@ -5440,6 +5440,12 @@ async function classify(
       : `Mensaje del cliente:\n"${clean}"\n\n${opts.que}:\n${lista}\n\n` +
         `Elige el número de la opción que mejor describe lo que el cliente quiere decir. ` +
         `Si el mensaje no calza con ninguna o es ambiguo, usa 0.\n` +
+        `OJO — CERRAR el pedido ≠ ACEPTAR un adicional: frases como "confirmo", "sí confirmo", ` +
+        `"confirmo mi pedido", "así está bien", "está bien así", "eso es todo", "solo eso" o "nada más" ` +
+        `significan que el cliente CIERRA su pedido tal como está. Si las opciones son sobre aceptar/agregar ` +
+        `algo ADICIONAL que se le acaba de ofrecer (un extra, un upsell), ese tipo de cierre corresponde a ` +
+        `NO agregarlo (rechazar/mantener como está), NO a aceptarlo — salvo que el cliente diga explícitamente ` +
+        `que sí quiere ese adicional (ej. "sí sumo las medias", "dale agrégalo").\n` +
         `Responde exactamente: {"idx":<0-${opts.candidatos.length}>,"confianza":<0.0-1.0>}`;
 
     const raw = await runAI({
