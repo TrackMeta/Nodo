@@ -336,9 +336,14 @@ export function emparejar(ventas, movs, { modo = "prudente", op = OPCIONES } = {
     const rivales = (porMov.get(mejor.mov.i) || []).filter((x) => x.ventaId !== v.id);
     // Elección mutua: nadie más pretende ese movimiento con mejor puntaje.
     const esMutuo = !rivales.length || rivales[0].p.total < mejor.p.total - 1e-9;
-    const unico = !segundo;
     const margen = segundo ? mejor.p.total - segundo.p.total : 1;
     const nombreOk = mejor.p.nombre >= 0.5;
+    // Un candidato ÚNICO ya no auto-cuadra si el nombre CONTRADICE (ambos presentes y
+    // score 0 = titular distinto): antes se cuadraba igual, así un depósito ajeno del
+    // mismo monto que cayera en la ventana de 4h marcaba la venta como cobrada contra
+    // plata de otro. Con nombre contradictorio va a REVISIÓN (que lo decida un humano).
+    const nombreContradice = !!(mejor.mov.quien && v.cliente && mejor.p.nombre === 0);
+    const unico = !segundo && !nombreContradice;
     const seguro = modo === "equilibrado"
       ? esMutuo && (unico || margen >= 0.25 || nombreOk)
       : esMutuo && (unico || nombreOk);

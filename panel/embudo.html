@@ -307,6 +307,13 @@ function renderMetricas(F){
   const el=$("metPanel");
   if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Ningún contacto coincide con el tipo, producto o rango de fechas elegido — ajusta los filtros de arriba.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
+  // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
+  // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
+  // conversión por zona sale inflada y NO es comparable con la de Total. El rótulo lo
+  // dice para no engañar (la matemática de zona es correcta para "de los que ya sé que
+  // son de X, cuántos compran", solo que no es la misma base que Total).
+  const zonaSub = (st.tipo==="fisico" && st.zona && st.zona!=="total");
+  const zonaNom = st.zona==="lima" ? "Lima" : "provincia";
   const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
   el.innerHTML=`
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
@@ -315,9 +322,11 @@ function renderMetricas(F){
       <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} interesados</div>
     </div></div>
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
-      <div class="mlbl">Conversión total <span class="mtag">base: todos los contactos</span></div>
-      <div class="mdesc">De <b>todos los que te escriben</b> (curiosos incluidos), cuántos llegan a comprar. Es todo el embudo junto: <b>enganchar + cerrar</b>.</div>
-      <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos</div>
+      <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"} <span class="mtag">base: ${zonaSub?`contactos de ${zonaNom}`:"todos los contactos"}</span></div>
+      <div class="mdesc">${zonaSub
+        ? `De los contactos que <b>ya dijeron ser de ${zonaNom}</b>, cuántos compran. ⚠️ Los que aún no dicen su ciudad NO entran en esta base, así que esta cifra <b>no es comparable</b> con la de "Total".`
+        : `De <b>todos los que te escriben</b> (curiosos incluidos), cuántos llegan a comprar. Es todo el embudo junto: <b>enganchar + cerrar</b>.`}</div>
+      <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos${zonaSub?` de ${zonaNom}`:""}</div>
     </div></div>`;
   igualarAlto(el);
 }

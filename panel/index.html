@@ -677,8 +677,13 @@ async function loadConversations() {
   // Meta" y el número de salud de la cabecera de filtros.
   try {
     const CERRADAS = ["confirmada","entregado_cobrado","recogido","saldo_pagado"];
+    // Ventana reciente (90 días): la "salud" mide la atribución ACTUAL. Sin cota, los
+    // pedidos cerrados ANTES de configurar el Pixel/token CAPI (que nunca se pudieron
+    // enviar) quedaban en el denominador para siempre → el número nunca llegaba a 100%
+    // y mostraba un problema que ya no existe. Los huecos viejos irrecuperables envejecen.
+    const desde90 = new Date(Date.now() - 90*86400000).toISOString();
     const { data: co } = await supa.from("orders").select("id,contact_id,shipping")
-      .eq("channel_id", state.channelId).in("estado", CERRADAS);
+      .eq("channel_id", state.channelId).in("estado", CERRADAS).gte("created_at", desde90);
     const adOrders = (co||[]).filter(o => (o.shipping||{}).ctwa_clid);
     const ids = adOrders.map(o=>o.id);
     let sent = new Set();

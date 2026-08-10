@@ -219,7 +219,17 @@ async function conciliar(){
   // Los ya conciliados en una corrida anterior no se vuelven a tocar.
   const pendientes=st.ventas.filter(v=>!v._yaConciliado);
   const desdeMov=new Date(desde.getTime()-MARGEN_HORAS*3600000);
-  const movs=st.rep.movs.filter(m=>m.fecha>=desdeMov && m.fecha<=hasta);
+  // Ledger de movimientos YA usados: cada conciliación previa dejó la huella del
+  // depósito (sello.mov = {quien, monto, fecha}). Se excluyen del pool para que un
+  // mismo depósito NO acredite una 2ª venta en otra sesión con rango solapado (antes
+  // el anti-reúso era solo por corrida → doble atribución entre sesiones).
+  const fpMov=(monto,fecha)=>`${Number(monto).toFixed(2)}|${new Date(fecha).getTime()}`;
+  const usadosMov=new Set();
+  for(const v of st.ventas){
+    const mv=v._yaConciliado&&v._yaConciliado.mov;
+    if(mv&&mv.monto!=null&&mv.fecha) usadosMov.add(fpMov(mv.monto,mv.fecha));
+  }
+  const movs=st.rep.movs.filter(m=>m.fecha>=desdeMov && m.fecha<=hasta && !usadosMov.has(fpMov(m.monto,m.fecha)));
   st.res=emparejar(pendientes,movs,{modo:"prudente"});
   st.res.yaConciliadas=st.ventas.filter(v=>v._yaConciliado);
   // Señales para el ruido: los comprobantes que sí entraron por WhatsApp, con
@@ -235,10 +245,15 @@ async function conciliar(){
 // ── Paso 3: resultado ──────────────────────────────────────────────
 function renderResultado(){
   const r=st.res;
+  // Las ventas en EFECTIVO no van contra el banco → no cuentan en el KPI rojo "sin
+  // respaldo" (antes inflaban la alarma en cada corrida). Se muestran igual en la
+  // cubeta, pero neutrales.
+  const efectivoRe=/efectiv|contado|\bmano\b|\bcash\b/i;
+  const sinPagoReal=r.sinPago.filter(s=>!efectivoRe.test(metodoDe(s.venta._o))).length;
   const K=[
     ["cuadradas","Cuadradas",r.cuadradas.length,"var(--green)","venta y pago que calzan"],
     ["revisar","Por revisar",r.revisar.length,"var(--amber)","tú decides cuál es"],
-    ["sinpago","Ventas sin pago",r.sinPago.length,"var(--red)","el banco no las respalda"],
+    ["sinpago","Ventas sin pago",sinPagoReal,"var(--red)","el banco no las respalda (sin contar efectivo)"],
     ["sinventa","Pagos sin venta",st.sinVenta.conSeñal.length,"var(--violet)",
       st.sinVenta.ajenos.length?`+ ${st.sinVenta.ajenos.length} ${plu(st.sinVenta.ajenos.length,"ajeno, ignorado","ajenos, ignorados")}`:"entró plata no registrada"],
   ];
@@ -324,9 +339,15 @@ function renderLista(){
     box.insertAdjacentHTML("beforebegin","");
     r.sinPago.forEach(s=>{
       const met=metodoDe(s.venta._o);
+      // El EFECTIVO no tiene (ni debe tener) movimiento en el banco → NO es "sin
+      // respaldo", salía sospechoso en cada corrida. Se muestra neutral. Para otros
+      // métodos se mantiene la señal (el operador ve el método y juzga si es la
+      // billetera del reporte que subió).
+      const esEfectivo=/efectiv|contado|\bmano\b|\bcash\b/i.test(met);
       const el=fila(`${cab(s.venta)}
-        <div class="hint" style="margin-top:8px"><span class="pill bad">SIN RESPALDO</span> no hay ningún movimiento de ${money(s.venta.monto)} cerca de esa hora
-        ${met?` · el comprobante decía <b>${esc(met)}</b>`:""}</div>
+        <div class="hint" style="margin-top:8px">${esEfectivo
+          ? `<span class="pill" style="background:var(--surface-2);color:var(--muted)">EFECTIVO</span> se cobró en efectivo — no tiene movimiento en el banco, es normal.`
+          : `<span class="pill bad">SIN RESPALDO</span> no hay ningún movimiento de ${money(s.venta.monto)} cerca de esa hora${met?` · el comprobante decía <b>${esc(met)}</b>`:""}`}</div>
         <div class="acts">
           <button class="btn sm" data-a="otro">Cobré por otro medio</button>
           <a class="btn sm" href="index.html?c=${encodeURIComponent(s.venta._o.contact_id||"")}" target="_blank">Ver el chat</a>
