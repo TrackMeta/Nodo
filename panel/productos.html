@@ -1799,7 +1799,7 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
     // Un extra DIGITAL viaja igual ride-along (se cobra junto), pero su link se
     // entrega recién cuando el pedido queda pagado del todo (motor:
     // entregarExtrasDigitales). El bump lleva version_id + digital para saberlo.
-    const esDigital=(info?.tipo==="digital");
+    const esDigital=(info && info.tipo!=="fisico");   // criterio del motor (tipo!=="fisico"): un tipo no estándar (vacío/"servicio") se trataba distinto en panel vs motor → extra sin entregar ni descontar
     const y=baseY + i*300;
     const nOfr=await N("mensaje",`Ofrecer extra ${i+1}`,{ bubbles:[{ text:x.mensaje||`¿Le sumas ${label}? Te lo mando junto 🎁` }] },false,1800,y);
     const nEsp=await N("pregunta",`Esperar respuesta (extra ${i+1})`,{ text:"", timeout_seg:esperaSeg },false,2080,y);

@@ -381,8 +381,16 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
       // aparecía en ningún lado. Ahora, si falla, queda sin marcar (el próximo
       // intento lo reintenta) y te avisa para que lo mandes a mano.
       try {
-        await deliverMessage(db, channelId, contactId, `🎁 Acá va tu ${nombre}:`);
-        for (const it of items) await deliverMessage(db, channelId, contactId, String(it.url));
+        // Un entregable tipo ARCHIVO (PDF/video/audio subido) va como ADJUNTO, no como
+        // URL de texto pelada; solo los tipo link van como texto. Antes se mandaba
+        // `it.url` como texto SIEMPRE → el cliente que pagó el extra/regalo digital
+        // recibía un link crudo de storage en vez del archivo. Espeja entregarOpcion.
+        const bubbles: any[] = [{ text: `🎁 Acá va tu ${nombre}:` }];
+        for (const it of items) {
+          if (it.tipo === "archivo") bubbles.push({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
+          else bubbles.push({ text: `${it.mensaje || it.nombre ? (it.mensaje || it.nombre) + ": " : ""}${it.url}` });
+        }
+        await deliverStep(db, channelId, contactId, { bubbles });
         b.entregado = true; changed = true;
       } catch (e) {
         console.error("[entregarExtrasDigitales] no se pudo entregar:", (e as any)?.message ?? e);
@@ -549,6 +557,15 @@ export async function crearVentaManual(
       if (it?.url) await deliverMessage(db, channelId, contactId, (it.nombre ? String(it.nombre) + ":\n" : "") + String(it.url)).catch(() => {});
     }
     try { await entregarExtrasDigitales(db, channelId, contactId, orderId); } catch (e) { console.error("[ventaManual] extras dig:", (e as any)?.message ?? e); }
+  }
+
+  // Extra DIGITAL sobre una venta manual FÍSICA ya PAGADA del todo (contraentrega
+  // cobrada / saldo pagado): entregar su link/archivo. Antes `entregarExtrasDigitales`
+  // solo se llamaba en el bloque `!esFisico` → un extra digital sumado a una venta
+  // física cerrada quedaba pagado y SIN enviar, sin aviso. La entrega es idempotente
+  // (marca `b.entregado`), así que no duplica si el pedido no está pagado aún.
+  if (esFisico && ["entregado_cobrado", "recogido", "saldo_pagado"].includes(estado)) {
+    try { await entregarExtrasDigitales(db, channelId, contactId, orderId); } catch (e) { console.error("[ventaManual] extras dig fisico:", (e as any)?.message ?? e); }
   }
 
   // Stock FÍSICO: descuenta el principal (por su variante) + regalos/extras físicos.
@@ -2313,7 +2330,10 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
   if (vid) {
     const { data } = await db.from("product_versions")
       .select("id, nombre, precio, entrega, descripcion, cantidad, entrega_mensaje").eq("id", vid).maybeSingle();
-    if (data) opcion = data as unknown as Opcion;
+    // Versión BORRADA (hard-delete): NO caer al principal — entregaría el link del
+    // producto principal como si fuera el extra. opcion=null → items=[] → cae al guard
+    // de "extra sin entrega" (abajo): avisa al cliente y te notifica para enviarlo a mano.
+    opcion = data ? (data as unknown as Opcion) : null;
   }
   // Items de ESTA opción, con su mensaje opcional ya resuelto (soporta {{vars}}).
   const items = (Array.isArray(opcion?.entrega) ? opcion!.entrega : [])
@@ -2850,10 +2870,23 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
       try {
         const { data: o2 } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
         const ship2 = ((o2 as any)?.shipping ?? {}) as Record<string, unknown>;
-        const mov = Array.isArray((ship2 as any).stock_mov) ? [...(ship2 as any).stock_mov, extraStock] : [extraStock];
-        const alerts = await aplicarStock(db, [extraStock], -1);
-        await db.from("orders").update({ shipping: { ...ship2, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
-        for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+        // 🔴 Provincia que aún NO reservó (esperando_adelanto: el principal está en
+        // `stock_mov_plan`, no descontado): descontar el extra ahora y marcar
+        // `stock_descontado=true` SABOTEA reservarStockPedido → su guard corta y el
+        // PRINCIPAL nunca se descuenta (sobreventa silenciosa). Se DIFIERE: el extra
+        // entra al plan y se descuenta junto con el principal al validar el adelanto.
+        const yaReservado = (ship2 as any).stock_descontado === true;
+        const esperaReserva = !yaReservado && Array.isArray((ship2 as any).stock_mov_plan);
+        if (esperaReserva) {
+          const plan = [...((ship2 as any).stock_mov_plan as any[]), extraStock];
+          await db.from("orders").update({ shipping: { ...ship2, stock_mov_plan: plan } }).eq("id", orderId);
+        } else {
+          // Ya reservado (Lima contraentrega, o adelanto ya validado): descuenta el extra ya.
+          const mov = Array.isArray((ship2 as any).stock_mov) ? [...(ship2 as any).stock_mov, extraStock] : [extraStock];
+          const alerts = await aplicarStock(db, [extraStock], -1);
+          await db.from("orders").update({ shipping: { ...ship2, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+          for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+        }
       } catch (e) { console.error("[actualizarPedido] stock extra:", (e as any)?.message ?? e); }
     }
     if (a.estado) await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido → " + patch.estado);
