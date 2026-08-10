@@ -432,7 +432,15 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
   // "te dejo el X a S/Y" no es solo texto: el OCR valida contra el precio con
   // descuento, y el {{precio}} del mensaje ya sale rebajado. Vence a las N horas.
-  if (paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
+  // ¿Este paso REALMENTE va a enviar? La plantilla (HSM) sale SIEMPRE; el flujo y el
+  // mensaje de texto libre SOLO dentro de la ventana de 24h. Se calcula ANTES de grabar
+  // la oferta: si no, el cliente nunca vería "te dejo a S/Y" pero el validador aceptaría
+  // igual ese precio rebajado (descuento fantasma / pérdida de margen).
+  const enVentana = await ventana24hAbierta(db, s.contact_id);
+  const vaAEnviar = !!paso.template_name
+    || (!!paso.flow_id && enVentana)
+    || (!!(paso.mensaje || paso.bubbles?.length || paso.variantes?.length) && enVentana);
+  if (vaAEnviar && paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
     const venceH = Number(paso.oferta.vence_horas ?? 0);
     const vence = venceH > 0 ? new Date(now + venceH * 3600 * 1000).toISOString() : null;
     await db.from("contacts").update({
@@ -443,7 +451,14 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
   // `toco` marca si de verdad salió algo (para sellar el anti-spam solo entonces).
   let toco = false;
-  if (paso.flow_id) { await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id); toco = true; }
+  if (paso.flow_id) {
+    // El flujo arranca con texto libre (un saludo) casi siempre → igual que el mensaje,
+    // SOLO se corre dentro de la ventana; fuera, se avanza sin correrlo. Antes esta rama
+    // NO chequeaba la ventana → emitía texto libre fuera de 24h (violación de política de
+    // WhatsApp: degrada/banea el número). Para alcanzar a un silencioso, usa una plantilla.
+    if (enVentana) { await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id); toco = true; }
+    else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);
+  }
   else if (paso.template_name) {
     await sendTemplateToContact(db, s.channel_id, s.contact_id, {
       name: paso.template_name, language: paso.template_lang, params: paso.template_params,
@@ -457,7 +472,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // avanza igual para no estancar la secuencia (para alcanzar a un silencioso
   // hay que ponerle una plantilla a este paso).
   else if (paso.mensaje || paso.bubbles?.length || paso.variantes?.length) {
-    if (await ventana24hAbierta(db, s.contact_id)) {
+    if (enVentana) {
       await deliverStep(db, s.channel_id, s.contact_id, paso);
       toco = true;
     } else {

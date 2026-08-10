@@ -200,7 +200,16 @@ function parseMonto(s) {
   if (!t) return NaN;
   // "1.234,56" (europeo) vs "1,234.56" (inglés)
   if (t.includes(",") && t.includes(".")) t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
-  else if (t.includes(",")) t = t.replace(",", ".");
+  else if (t.includes(",")) {
+    // Solo comas: distinguir MILES de DECIMAL. Varias comas ("1,000,000") = miles →
+    // se quitan todas. Una coma seguida de EXACTAMENTE 3 dígitos ("1,000") = miles →
+    // se pega. Si no (1-2 dígitos: "1,50"), es coma decimal. Antes reemplazaba SIEMPRE
+    // la 1ª coma por punto → "1,000" se leía S/1 y "1,000,000" daba NaN.
+    const parts = t.split(",");
+    if (parts.length > 2) t = t.replace(/,/g, "");
+    else if (parts.length === 2 && /^\d{3}$/.test(parts[1])) t = parts.join("");
+    else t = t.replace(",", ".");
+  }
   return Number(t); // CON signo: el signo distingue abono vs cargo en bancos sin columna de tipo
 }
 
