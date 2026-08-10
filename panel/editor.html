@@ -785,7 +785,16 @@ function appendCommon(m, form){
     advBody.appendChild(mkLabel("Salidas (deben coincidir con las conexiones)"));
     const hbox=document.createElement("div"); hbox.id="handles"; advBody.appendChild(hbox);
     const addh=document.createElement("button"); addh.className="fbtn"; addh.textContent="+ salida";
-    addh.onclick=()=>{ m.handles.push("salida_"+(m.handles.length+1)); editor.addNodeOutput(m.dfId); renderHandles(m); decorateNode(editor, m); canvas.schedule(); pushHistory(); };
+    addh.onclick=()=>{
+      // Nombre único: tras borrar una salida intermedia, "length+1" regeneraba un
+      // nombre ya existente (salida_1,salida_3 → +1 = salida_3 duplicado). Se toma
+      // el siguiente número libre a partir del mayor sufijo salida_N presente.
+      let n=m.handles.length+1;
+      const usados=new Set((m.handles||[]).map(h=>String(h).trim().toLowerCase()));
+      for(const h of m.handles||[]){ const mm=/^salida_(\d+)$/i.exec(String(h).trim()); if(mm) n=Math.max(n, parseInt(mm[1],10)+1); }
+      let nombre="salida_"+n; while(usados.has(nombre.toLowerCase())) nombre="salida_"+(++n);
+      m.handles.push(nombre); editor.addNodeOutput(m.dfId); renderHandles(m); decorateNode(editor, m); canvas.schedule(); pushHistory();
+    };
     advBody.appendChild(addh);
   }
   advBody.appendChild(mkLabel("Config (JSON)"));
@@ -796,7 +805,18 @@ function appendCommon(m, form){
   if($("handles")) renderHandles(m);
   // Eliminar
   const del=document.createElement("button"); del.className="del"; del.textContent="Eliminar nodo";
-  del.onclick=()=>{ editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId]; deselectNode(); pushHistory(); };
+  del.onclick=()=>{
+    const eraInicial=!!m.es_inicial;
+    editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId];
+    // Si se borró el nodo inicial, auto-promover otro (el primero que quede) para
+    // no dejar el flujo sin punto de arranque. La validación de guardar es la red;
+    // esto evita tener que re-marcarlo a mano.
+    if(eraInicial){
+      const resto=Object.values(st.model);
+      if(resto.length && !resto.some(x=>x.es_inicial)){ resto[0].es_inicial=true; updateNodeDom(resto[0]); toast("Se marcó «"+(resto[0].nombre||resto[0].tipo)+"» como nodo inicial."); }
+    }
+    deselectNode(); pushHistory();
+  };
   form.appendChild(del);
 }
 
@@ -1332,6 +1352,24 @@ async function deleteFlow(){
 // ── Guardar ──
 async function save(){
   if(!st.flowId){ toast("No hay flujo abierto",true); return; }
+  // ── Validación estructural: no dejar guardar un flujo que no puede arrancar
+  //    o con rutas ambiguas (antes se guardaba sin nodo inicial → nunca corría).
+  const nodos=Object.values(st.model);
+  if(nodos.length){
+    const iniciales=nodos.filter(m=>m.es_inicial);
+    if(iniciales.length===0){ toast("Falta el nodo inicial: marca uno como inicio (☑ «Nodo inicial») antes de guardar.",true); return; }
+    if(iniciales.length>1){ toast("Hay "+iniciales.length+" nodos marcados como inicio; deja solo uno.",true); return; }
+    // Nombres de salida repetidos en un mismo nodo → dos aristas con el mismo
+    // handle = ruteo ambiguo. Se listan para que el operador los renombre.
+    const dup=[];
+    for(const m of nodos){
+      const hs=Array.isArray(m.handles)?m.handles:[];
+      const vistos=new Set(), rep=new Set();
+      for(const h of hs){ const k=String(h).trim().toLowerCase(); if(!k) continue; if(vistos.has(k)) rep.add(h); else vistos.add(k); }
+      if(rep.size) dup.push((m.nombre||m.tipo)+" ("+[...rep].join(", ")+")");
+    }
+    if(dup.length){ toast("Salidas repetidas en → "+dup.join(" · ")+". Renómbralas para evitar rutas ambiguas.",true); return; }
+  }
   const exp=editor.export().drawflow.Home.data;
   // 1) Upsert nodos.
   const rows=[];

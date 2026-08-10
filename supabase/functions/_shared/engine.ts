@@ -3098,11 +3098,20 @@ async function avisar(
     if (!token) { console.warn("[avisar] canal sin telegram_bot_token"); return; }
 
     if (contactId && (datos.cliente == null || datos.telefono == null)) {
-      const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+      // Trae telefono/user_id si la 0062 está; si no, cae al select básico.
+      let { data: c, error: cErr } = await db.from("contacts")
+        .select("nombre, wa_id, telefono, user_id").eq("id", contactId).maybeSingle();
+      if (cErr) ({ data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle());
       if (datos.cliente == null) datos.cliente = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
       if (datos.telefono == null) {
+        // NUNCA mostrar el BSUID como si fuera número. Prefiere el teléfono real
+        // (columna telefono); cae a wa_id solo si es un número de verdad, no el
+        // BSUID (wa_id === user_id ⇒ cliente sin número) ni el marcador de prueba.
+        const tel = String((c as any)?.telefono ?? "").trim();
         const wa = String((c as any)?.wa_id ?? "");
-        datos.telefono = wa && wa !== "webchat-test" ? "+" + wa : "";
+        const uid = String((c as any)?.user_id ?? "");
+        const numeroReal = tel || (wa && wa !== "webchat-test" && wa !== uid ? wa : "");
+        datos.telefono = numeroReal ? "+" + numeroReal : "";
       }
     }
 
@@ -3472,7 +3481,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
-      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency)
+      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true)
         ?? "Eres un validador experto de comprobantes de pago de Perú.") +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
       const raw = await runAI({
@@ -3638,7 +3647,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false; // sin IA → que lo tome un humano por el flujo normal
-  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency)
+  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true)
     ?? "Eres un validador experto de comprobantes de pago de Perú.";
   const system = ocrSys +
     "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
@@ -3817,6 +3826,27 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
 }
 
 // Relanza el flujo de venta del producto para una RECOMPRA (pedido nuevo).
+// Para la recompra: ¿el cliente nombró CLARAMENTE otro producto (o el mismo) por
+// keyword? Si un trigger DETERMINISTA (keyword/referral) matchea, se relanza ESE
+// producto —así "ya compré A, ahora quiero B" abre la venta de B, no re-vende A—.
+// Si no hay match claro, se queda con el que ya compró (fallback). A propósito NO
+// usa el IA Router: una adivinanza de intención no debe cambiar el producto de una
+// recompra (sería peor equivocarse de producto que quedarse en el conocido).
+async function productoRecompra(db: SupabaseClient, channelId: string, event: EngineEvent, fallbackProductId: string | null): Promise<string | null> {
+  try {
+    const txt = event.type === "message" ? (event.text ?? "") : "";
+    if (!txt.trim()) return fallbackProductId;
+    const det = await matchTrigger(db, channelId, txt, undefined);
+    const fid = (det?.flow as any)?.id;
+    if (det?.flow && (det.tier === "keyword" || det.tier === "referral") && fid) {
+      const { data: fr } = await db.from("flows").select("product_id").eq("id", fid).maybeSingle();
+      const pid = (fr as any)?.product_id;
+      if (pid) return pid; // el producto que realmente pidió (mismo o distinto)
+    }
+  } catch (_) { /* degrada al producto comprado */ }
+  return fallbackProductId;
+}
+
 // Limpia los candados una_vez para que el nuevo pedido/aviso no se omitan, y
 // resetea los datos del item; marca el run con _recompra (saludo cálido).
 async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: string, productId: string | null): Promise<boolean> {
@@ -3856,7 +3886,8 @@ async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contac
   if (SALDO_PENDIENTE.has(estado)) return false; // debe el saldo: primero se cierra ese pedido
   const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   if ((ch as any)?.pedidos_config?.postventa?.activo === false) return false;
-  if (await relanzarVenta(db, channelId, contactId, (order as any).product_id)) {
+  const pidRun = await productoRecompra(db, channelId, event, (order as any).product_id);
+  if (await relanzarVenta(db, channelId, contactId, pidRun)) {
     await logEvent(db, channelId, contactId, "nota", "🔁 Recompra (run de venta aún activo)", (event.text ?? "").slice(0, 80)).catch(() => {});
     return true;
   }
@@ -3919,7 +3950,8 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   // turno de IA. NO en la ventana de saldo pendiente: primero se cierra ese
   // pedido (no lo dejamos abrir otro debiendo el saldo del actual).
   if (!esperandoSaldo && pideRecompra(event.text ?? "")) {
-    if (await relanzarVenta(db, channelId, contactId, (order as any).product_id)) {
+    const pidDet = await productoRecompra(db, channelId, event, (order as any).product_id);
+    if (await relanzarVenta(db, channelId, contactId, pidDet)) {
       await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → recompra", (event.text ?? "").slice(0, 80)).catch(() => {});
       return true;
     }
@@ -3962,7 +3994,14 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     let result = "";
     try {
       result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
-    } catch (e) { console.error("[postventa/saldo]", (e as any)?.message ?? e); return false; }
+    } catch (e) {
+      // Si la IA falla, NO caer al ruteo genérico (runReception "¿qué producto?"):
+      // este cliente ya compró y debe el saldo. Se le da un recordatorio fijo y se
+      // corta acá, conservando el contexto de post-venta.
+      console.error("[postventa/saldo]", (e as any)?.message ?? e);
+      await deliverMessage(db, channelId, contactId, "¡Hola! 🙌 Para despachar tu pedido y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂").catch(() => {});
+      return true;
+    }
     await logEvent(db, channelId, contactId, "nota", "💵 Esperando saldo (recordatorio)", (event.text ?? "").slice(0, 80)).catch(() => {});
     await emitIaText(db, run, result || "¡Hola! 🙌 Para poder despachar y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
     return true;
@@ -3993,7 +4032,14 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   let result = "";
   try {
     result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system, content, maxTokens: 500 });
-  } catch (e) { console.error("[postventa]", (e as any)?.message ?? e); return false; }
+  } catch (e) {
+    // Si la IA falla, NO caer al ruteo genérico (runReception "¿qué producto?"):
+    // es un comprador. Se le responde un acuse cálido de soporte y se corta acá,
+    // manteniendo el contexto de post-venta (no lo trata como desconocido).
+    console.error("[postventa]", (e as any)?.message ?? e);
+    await deliverMessage(db, channelId, contactId, "¡Hola! 🙂 Acá sigo para ayudarte con tu compra. Cuéntame en qué te apoyo.").catch(() => {});
+    return true;
+  }
 
   await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta", (event.text ?? "").slice(0, 80)).catch(() => {});
 
@@ -4002,7 +4048,8 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   if (/\[\[\s*recompra\s*\]\]/i.test(result)) {
     result = result.replace(/\[\[\s*recompra\s*\]\]/gi, "").trim();
     if (result) await emitIaText(db, run, result, ctx);
-    await relanzarVenta(db, channelId, contactId, (order as any).product_id);
+    const pidPv = await productoRecompra(db, channelId, event, (order as any).product_id);
+    await relanzarVenta(db, channelId, contactId, pidPv);
     return true; // aunque no haya flujo para relanzar, ya respondió
   }
 
@@ -5450,7 +5497,7 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
 // fecha, anti-fraude) sin tener que repetirlo en cada flujo.
 // `montoEsperado` es el precio VIVO de este cliente (opción + oferta): sin él la
 // IA no puede saber si el pago "corresponde al producto elegido".
-function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null): string | null {
+function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null, noJuzgarMonto?: boolean): string | null {
   if (!ocr || ocr.activo === false) return null;
   const metodos = Array.isArray(ocr.metodos) ? ocr.metodos.filter((m: any) => m && (m.app || m.titular || m.numero)) : [];
   const r = ocr.reglas ?? {};
@@ -5480,7 +5527,14 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
     // oferta activa). Con él la IA puede decidir si el pago corresponde a lo
     // que el cliente eligió; sin él solo puede mirar el comprobante a ciegas.
     const tol = Number(r.tolerancia_monto ?? 0);
-    if (montoEsperado != null && Number.isFinite(montoEsperado)) {
+    if (noJuzgarMonto) {
+      // El interceptor (adelanto/saldo) hace la matemática del monto por separado
+      // contra una cifra que el modelo NO conoce (un adelanto es PARCIAL, un saldo es
+      // el RESTO). Pedirle acá que "verifique que cubra el monto acordado" contradice
+      // el "NO juzgues si alcanza" que el interceptor añade abajo. Solo le pedimos
+      // EXTRAER el monto, sin veredicto de suficiencia.
+      reglas.push("Extrae el monto pagado tal como figura en el comprobante. NO juzgues si el monto alcanza o no: de si es suficiente me encargo yo por separado.");
+    } else if (montoEsperado != null && Number.isFinite(montoEsperado)) {
       const min = Math.max(0, montoEsperado - (Number.isFinite(tol) ? tol : 0));
       reglas.push(
         `El cliente debe pagar EXACTAMENTE ${montoEsperado}${moneda ? " " + moneda : ""}. ` +
@@ -6676,7 +6730,16 @@ async function buildContext(db: SupabaseClient, run: Run) {
   if (Number.isFinite(Number(ctx.precio))) {
     const adel = Number(ctx.adelanto);
     const envio = envioCobroDe(ctx, String(ctx.zona_entrega ?? "provincia"));
-    ctx.saldo = Math.max(0, +(Number(ctx.precio) + envio - (Number.isFinite(adel) ? adel : 0)).toFixed(2));
+    // En Lima (contraentrega) el motorizado cobra el ÍNTEGRO al recibir: NO hubo
+    // adelanto, así que el "saldo" es el total del pedido. Restar el adelanto
+    // (que sale del producto y viene con valor igual en Lima) hacía que una
+    // plantilla con {{saldo}} en un pedido de Lima cobrara de menos. Solo en
+    // provincia el saldo = total − adelanto.
+    const esLimaCE = ctx.zona_entrega === "lima";
+    const totalPed = +(Number(ctx.precio) + envio).toFixed(2);
+    ctx.saldo = esLimaCE
+      ? totalPed
+      : Math.max(0, +(totalPed - (Number.isFinite(adel) ? adel : 0)).toFixed(2));
     // {{total_cobrar}} = TODO lo que el cliente paga por este pedido, envío
     // incluido. Es lo que se le dice al motorizado de Lima (que cobra el íntegro
     // contraentrega) y el total que se avisa en provincia. Con {{precio}} ahí,

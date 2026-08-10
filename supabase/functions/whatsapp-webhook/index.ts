@@ -148,6 +148,42 @@ async function processInbound(
   const { text, type, content } = extractContent(msg);
   const ref = msg.referral; // Click-to-WhatsApp (oro para atribución)
 
+  // ── Dedup TEMPRANO por wamid (antes de mutar contacto/conversación) ──────
+  // Meta reintenta el MISMO mensaje ante cualquier timeout. Si dejamos que el
+  // upsert de abajo corra primero, se re-extiende la ventana FEP (+72h) y se
+  // bumpean los timestamps del contacto SIN un mensaje nuevo real. wamid es
+  // único global, así que basta con verlo una vez. El guard 23505 del insert
+  // queda como respaldo ante carreras. (msg.id siempre viene en mensajes.)
+  if (msg.id) {
+    try {
+      const { data: yaProc } = await db.from("messages")
+        .select("id").eq("wamid", msg.id).maybeSingle();
+      if (yaProc) return; // ya procesado → no re-mutar nada
+    } catch (_) { /* si falla el chequeo, sigue: el insert dedup igual protege */ }
+  }
+
+  // ── Reconciliación username→número (evita contacto huérfano) ─────────────
+  // Un cliente sin número entró keyado por BSUID; cuando por fin comparte su
+  // número, waId pasa a ser el número y el upsert onConflict(channel_id,wa_id)
+  // crearía una FILA NUEVA, dejando huérfano el historial (chat, pedidos). Si
+  // ya existe la fila por BSUID y no hay otra con ese número, migramos su wa_id
+  // al número para conservar todo. (Defensivo: si la 0062 no está, no hay
+  // columna user_id → el try lo absorbe y no pasa nada.)
+  if (sender.bsuid && sender.phone && waId === sender.phone) {
+    try {
+      const { data: prev } = await db.from("contacts")
+        .select("id, wa_id").eq("channel_id", channelId)
+        .eq("user_id", sender.bsuid).maybeSingle();
+      if (prev && (prev as any).wa_id !== sender.phone) {
+        const { data: yaNum } = await db.from("contacts")
+          .select("id").eq("channel_id", channelId).eq("wa_id", sender.phone).maybeSingle();
+        if (!yaNum) {
+          await db.from("contacts").update({ wa_id: sender.phone }).eq("id", (prev as any).id);
+        }
+      }
+    } catch (_) { /* sin columna user_id (0062 pendiente) → sin reconciliación */ }
+  }
+
   // Upsert contacto (captura CTWA solo si viene).
   const patch: Record<string, unknown> = {
     channel_id: channelId,
