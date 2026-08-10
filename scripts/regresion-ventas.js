@@ -71,12 +71,20 @@
   const reset = (wa, nombre) => send(wa, nombre, "", { reset: true });
 
   // Comprobante Yape sintético → media-upload → mandar como imagen.
+  // OJO: el Validador de comprobantes (OCR) rechaza por fecha (> fecha_max_horas,
+  // 48h por defecto) y por método (titular + número). Antes la imagen hardcodeaba
+  // "08 ago. 2026" y solo el titular → los casos digitales empezaban a FALLAR días
+  // después (fecha añeja) y a veces por falta del número. Ahora la fecha es HOY y
+  // se incluye el número Yape del canal de prueba (977533352 / Rodrigo Flores).
   async function yape(wa, nombre, { op, monto, quien } = {}) {
     op = op || ("0" + Math.floor(10000000 + Math.random() * 89999999));
-    const c = document.createElement("canvas"); c.width = 420; c.height = 520; const x = c.getContext("2d");
+    const MES = ["ene.", "feb.", "mar.", "abr.", "may.", "jun.", "jul.", "ago.", "sep.", "oct.", "nov.", "dic."];
+    const d = new Date();
+    const fechaStr = `${d.getDate()} ${MES[d.getMonth()]} ${d.getFullYear()} - 03:14 pm`;
+    const c = document.createElement("canvas"); c.width = 420; c.height = 560; const x = c.getContext("2d");
     x.fillStyle = "#7A3FF2"; x.fillRect(0, 0, 420, 110); x.fillStyle = "#fff"; x.font = "bold 30px Arial"; x.fillText("Yape", 160, 65);
-    x.fillStyle = "#f5f5f5"; x.fillRect(0, 110, 420, 410); x.fillStyle = "#111";
-    const L = ["¡Yapeaste!", "S/ " + (monto || 0) + ".00", "Para: Rodrigo Flores", "De: " + (quien || nombre), "N° operación: " + op, "08 ago. 2026 - 03:14 pm"];
+    x.fillStyle = "#f5f5f5"; x.fillRect(0, 110, 420, 450); x.fillStyle = "#111";
+    const L = ["¡Yapeaste!", "S/ " + (monto || 0) + ".00", "Para: Rodrigo Flores", "Destino: 977533352", "De: " + (quien || nombre), "N° operación: " + op, fechaStr];
     let y = 170; for (const t of L) { x.font = "18px Arial"; x.fillText(t, 26, y); y += 40; }
     const data = c.toDataURL("image/png");
     const up = await fetch(`${BASE}/functions/v1/media-upload`, { method: "POST", headers: { apikey: ANON, Authorization: "Bearer " + token(), "Content-Type": "application/json" }, body: JSON.stringify({ channel_id: CH, filename: "yape.png", content_type: "image/png", data }) }).then((r) => r.json());
