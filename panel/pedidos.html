@@ -372,8 +372,12 @@ function abrirExport(courier){
   $q(".em-x").onclick=()=>ov.remove();
   $q(".cancel").onclick=()=>ov.remove();
   $q("#emDl").onclick=async()=>{
+    // Solo lo seleccionado Y visible con el filtro actual: `filtrar()`, no `st.list`.
+    // Antes leía la lista COMPLETA → si el operador filtraba a "Hoy" y veía "3
+    // seleccionados", el Excel salía con TODOS los marcados de sesiones/períodos previos
+    // (los ya despachados que siguen en por_despachar) → doble envío / doble flete.
     // Nunca exportar aéreos, aunque por algún motivo quedaran marcados.
-    const sel=st.list.filter(o=>S.sel.has(o.id) && !esAer(o));
+    const sel=filtrar().filter(o=>S.sel.has(o.id) && !esAer(o));
     if(!sel.length) return;
     const cfg=(st.entregas&&st.entregas.courier)||{};
     const issues=(await courier.revisar(sel,cfg))||[];
@@ -776,7 +780,8 @@ function abrirImprimirRotulos(){
   $q(".em-x").onclick=()=>ov.remove();
   $q(".cancel").onclick=()=>ov.remove();
   $q("#emPrint").onclick=()=>{
-    const sel=st.list.filter(o=>S.sel.has(o.id));
+    // Igual que el export: solo lo seleccionado Y visible (filtrar()), no st.list completa.
+    const sel=filtrar().filter(o=>S.sel.has(o.id));
     if(!sel.length) return;
     ov.remove();
     printRotulos(sel);

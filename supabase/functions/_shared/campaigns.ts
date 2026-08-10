@@ -144,11 +144,12 @@ export async function sendTemplateToContact(
   db: SupabaseClient, channelId: string, contactId: string,
   tpl: { name: string; language?: string; params?: string[] },
   sender?: { sentBy?: string; sentByUser?: string | null },
+  orderId?: string | null,   // fija el pedido para {{pedido_*}} (aviso al mover un pedido)
 ): Promise<string> {
   const { data: ch } = await db.from("channels").select("phone_number_id, channel_type").eq("id", channelId).maybeSingle();
   const secrets = await getChannelSecrets(db, channelId);
   const token = secrets?.access_token;
-  const ctx = await contactCtx(db, contactId);
+  const ctx = await contactCtx(db, contactId, orderId);
   // Params posicionales. Si el caller no los pasa (aviso del Kanban al mover la
   // tarjeta, plantilla por defecto de un momento), se toman los que la plantilla
   // tiene guardados en Plantillas (wa_templates.params). Sin esto, una plantilla
@@ -174,7 +175,7 @@ export async function sendTemplateToContact(
 }
 
 // ── Contexto del contacto para resolver variables ─────────────────
-async function contactCtx(db: SupabaseClient, contactId: string): Promise<any> {
+async function contactCtx(db: SupabaseClient, contactId: string, orderId?: string | null): Promise<any> {
   const { data: c } = await db.from("contacts").select("nombre, wa_id, stage").eq("id", contactId).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", contactId);
@@ -185,9 +186,13 @@ async function contactCtx(db: SupabaseClient, contactId: string): Promise<any> {
   // plantilla de "tu pedido va en camino" no podía decir el número de guía:
   // el parámetro se resolvía vacío y el aviso salía manco.
   try {
-    const { data: o } = await db.from("orders")
-      .select("estado, amount, shipping").eq("contact_id", contactId)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    // Con orderId (ej. aviso al MOVER un pedido concreto en el kanban) se resuelve ESE
+    // pedido; sin él, el más reciente (compat). Antes siempre el último → una plantilla
+    // de "tu pedido va en camino" mandaba la guía/sede del pedido equivocado.
+    const oq = db.from("orders").select("estado, amount, shipping");
+    const { data: o } = orderId
+      ? await oq.eq("id", orderId).maybeSingle()
+      : await oq.eq("contact_id", contactId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (o) {
       ctx.pedido_estado = (o as any).estado ?? "";
       ctx.pedido_monto = (o as any).amount ?? "";

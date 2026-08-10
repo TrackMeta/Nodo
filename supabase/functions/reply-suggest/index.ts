@@ -27,6 +27,11 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.channel_id || !body.contact_id) return json({ error: "faltan_datos" }, 400);
   if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // El contact_id viene del cliente: hay que verificar que pertenezca al canal ya
+  // verificado, si no un miembro del tenant A podría pasar un contact_id del tenant B y
+  // leer su chat/perfil/pedido (la función corre con service_role → salta RLS).
+  const { data: okContact } = await db.from("contacts").select("id").eq("id", body.contact_id).eq("channel_id", body.channel_id).maybeSingle();
+  if (!okContact) return json({ error: "forbidden_contact" }, 403);
 
   try {
     const sugerencias = await sugerirRespuestas(db, body.channel_id, body.contact_id);

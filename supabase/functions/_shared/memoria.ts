@@ -157,18 +157,24 @@ export async function actualizarMemoriaIA(
     // No escribas si no cambió nada (evita writes inútiles).
     const igual = JSON.stringify({ q: quien_es, c: como_tratar }) ===
       JSON.stringify({ q: actual.quien_es, c: actual.como_tratar });
+    if (igual) return;
+    // 🛡️ Protección anti-borrado: el modelo BARATO a veces devuelve las listas VACÍAS
+    // (se le olvidó re-emitir el perfil). Pisar un perfil CON contenido con uno vacío
+    // borraría toda la memoria acumulada del cliente en una sola escritura. Si lo nuevo
+    // quedó vacío pero antes había algo, NO se toca (la instrucción blanda del prompt no
+    // basta como única salvaguarda).
+    const nuevoVacio = quien_es.length === 0 && como_tratar.length === 0;
+    const habiaAlgo = (actual.quien_es?.length || 0) > 0 || (actual.como_tratar?.length || 0) > 0;
+    if (nuevoVacio && habiaAlgo) return;
     const nuevo: MemoriaAI = { quien_es, como_tratar, _last: new Date().toISOString() };
-
     await db.from("contacts").update({ memoria_ia: nuevo }).eq("id", contactId);
-    if (!igual) {
-      try {
-        await db.from("contact_events").insert({
-          channel_id: channelId, contact_id: contactId, tipo: "nota",
-          titulo: "🧠 Memoria IA actualizada",
-          detalle: [...quien_es, ...como_tratar].join(" · ").slice(0, 140) || null,
-        });
-      } catch (_) { /* log opcional */ }
-    }
+    try {
+      await db.from("contact_events").insert({
+        channel_id: channelId, contact_id: contactId, tipo: "nota",
+        titulo: "🧠 Memoria IA actualizada",
+        detalle: [...quien_es, ...como_tratar].join(" · ").slice(0, 140) || null,
+      });
+    } catch (_) { /* log opcional */ }
   } catch (e) {
     // Defensivo total: la venta NUNCA se cae por la memoria.
     try { console.error("[memoria-ia]", (e as any)?.message ?? e); } catch (_) { /* noop */ }

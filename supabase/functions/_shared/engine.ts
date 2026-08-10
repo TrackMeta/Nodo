@@ -1825,8 +1825,13 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   // avisa que lo pasa con una persona, y después el bot queda en pausa.
   if (/\[\[\s*humano\s*\]\]/i.test(result)) {
     result = result.replace(/\[\[\s*humano\s*\]\]/gi, "").trim();
+    // `aviso: true` (antes "fuera") → pasarAHumano SIEMPRE le manda un acuse al cliente:
+    // dentro de horario "en un momento te atiende un asesor", fuera el aviso fuera. Los
+    // LLM devuelven MUY seguido SOLO el marcador `[[humano]]` sin texto → con "fuera" el
+    // cliente quedaba en SILENCIO al escalar dentro de horario (dead-air, justo el momento
+    // más sensible). Si la IA además escribió texto, se envía + el acuse (handoff claro).
     await pasarAHumano(db, run.channel_id, run.contact_id,
-      "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: "fuera" }).catch(() => {});
+      "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: true }).catch(() => {});
   }
   const re = /\[\[media:([\w-]+)\]\]/g;
   if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result }, ctx); return; }
@@ -1882,8 +1887,10 @@ export async function deliverMessage(db: SupabaseClient, channelId: string, cont
 //   { mensaje }                         → una burbuja de texto (compat viejo)
 //   { bubbles:[...] }                   → una o varias burbujas
 //   { rotacion, variantes:[{peso,activo,bubbles}] } → rota una variante
-export async function deliverStep(db: SupabaseClient, channelId: string, contactId: string, paso: any) {
-  const run: any = { channel_id: channelId, contact_id: contactId, vars: {} };
+export async function deliverStep(db: SupabaseClient, channelId: string, contactId: string, paso: any, orderId?: string | null) {
+  // orderId: fija el pedido CONCRETO para resolver {{pedido_*}} (ej. al mover un pedido en
+  // el kanban se avisa sobre ESE pedido, no el más reciente del contacto).
+  const run: any = { channel_id: channelId, contact_id: contactId, vars: orderId ? { _order_id: orderId } : {} };
   const ctx = await buildContext(db, run);
 
   // Elegir las burbujas a enviar.
@@ -6083,7 +6090,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         let sobrepagoSospechoso = false;
         if (!esExtra) {
           const esperadoB = Number(ctx.precio_esperado);
-          const tolB = Number(cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 0) || 0;
+          // La tolerancia digital que el operador configura vive en pedidos_config.digital
+          // .tolerancia (Pagos → default S/1), igual que revisar_sobre_sol de la línea de
+          // abajo. Antes se leían `cfg.tolerancia_monto`/`info.ocr.tolerancia` (ambos
+          // inexistentes) → tolB era SIEMPRE 0 y un pago de S/58.90 para S/59 (decimal mal
+          // leído / redondeo) se trataba como abono parcial y trababa la venta digital.
+          const tolB = Number((info as any)?.pedidos?.digital?.tolerancia ?? cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 0) || 0;
           const montoB = Number(run.vars.pago_monto);
           if (Number.isFinite(esperadoB) && esperadoB > 0 && Number.isFinite(montoB) && montoB > 0) {
             let bolsa: any = {};
@@ -6692,9 +6704,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // Por eso la foto de la guía que sube el formulario de despacho queda
   // disponible como {{pedido_guia_foto}} sin tocar nada de acá.
   try {
-    const { data: o } = await db.from("orders")
-      .select("estado, amount, currency, shipping").eq("contact_id", run.contact_id)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    // Si el run apunta a un pedido CONCRETO (`_order_id`, p.ej. al mover un pedido en el
+    // kanban), {{pedido_*}} debe resolver ESE pedido, no el más reciente. Antes siempre
+    // tomaba el último → mover el Pedido A mandaba la guía/sede/foto del Pedido B (el más
+    // nuevo) → el cliente iba a la sede equivocada. Sin `_order_id`, cae al último (compat).
+    const oid = (run.vars as any)?._order_id;
+    const oq = db.from("orders").select("estado, amount, currency, shipping");
+    const { data: o } = oid
+      ? await oq.eq("id", oid).maybeSingle()
+      : await oq.eq("contact_id", run.contact_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (o) {
       ctx.pedido_estado = (o as any).estado;
       ctx.pedido_monto = (o as any).amount;
@@ -6738,9 +6756,12 @@ async function getNode(db: SupabaseClient, nodeId: string): Promise<Node | null>
   return data as Node | null;
 }
 async function nextNode(db: SupabaseClient, flowId: string, nodeId: string, handle: string): Promise<string | null> {
+  // `.order(target_node)` antes del limit: si el usuario dibujó por error DOS aristas
+  // desde el mismo handle (fan-out), el motor no puede seguir las dos — pero al menos
+  // sigue SIEMPRE la misma (determinista), no una al azar según el orden de la BD.
   const { data } = await db.from("flow_edges").select("target_node")
     .eq("flow_id", flowId).eq("source_node", nodeId).eq("source_handle", handle)
-    .limit(1).maybeSingle();
+    .order("target_node", { ascending: true }).limit(1).maybeSingle();
   return (data as any)?.target_node ?? null;
 }
 async function resolveTargetFlow(db: SupabaseClient, channelId: string, config: any): Promise<string | null> {

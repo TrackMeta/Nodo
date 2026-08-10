@@ -45,8 +45,11 @@ Deno.serve(async (req) => {
   }
   // Multi-tenant: solo un miembro de la cuenta dueña del canal puede enviar.
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // El contact_id viene del cliente: se exige que pertenezca al canal ya verificado
+  // (si no, un miembro del tenant A podría apagar el bot, contaminar la conversación o
+  // mandar un WhatsApp a un contacto del tenant B — corre con service_role, salta RLS).
   const { data: contact } = await db
-    .from("contacts").select("id, wa_id").eq("id", contact_id).maybeSingle();
+    .from("contacts").select("id, wa_id").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
   if (!contact) return json({ error: "contacto_invalido" }, 400);
 
   // ── Plantilla: el único mensaje que WhatsApp acepta FUERA de ventana ──

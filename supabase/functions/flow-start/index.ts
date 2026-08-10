@@ -34,6 +34,10 @@ Deno.serve(async (req) => {
   const { data: flow } = await db
     .from("flows").select("id, channel_id, nombre").eq("id", flow_id).maybeSingle();
   if (!flow || flow.channel_id !== channel_id) return json({ error: "flujo_invalido" }, 400);
+  // …y que el CONTACTO también: sin esto un miembro del tenant A podría prender el bot y
+  // arrancar un flujo sobre un contacto del tenant B (corre con service_role, salta RLS).
+  const { data: okContact } = await db.from("contacts").select("id").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
+  if (!okContact) return json({ error: "contacto_invalido" }, 400);
 
   // Reactivar el bot (el flujo lo gestiona) y arrancar.
   await db.from("contacts").update({ bot_activo: true }).eq("id", contact_id);

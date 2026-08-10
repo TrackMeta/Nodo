@@ -26,6 +26,13 @@ Deno.serve(async (req) => {
   const { channel_id, contact_id, product_id, version_id, amount, estado, entregar, atributos, extras, envio } = body;
   if (!channel_id || !contact_id || !product_id || !version_id || !estado) return json({ error: "faltan_campos" }, 400);
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // El contact_id (y el product_id) vienen del cliente: se exige que pertenezcan al canal
+  // ya verificado, si no un miembro del tenant A crearía un pedido sobre un contacto del
+  // tenant B (corre con service_role, salta RLS).
+  const { data: okContact } = await db.from("contacts").select("id").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
+  if (!okContact) return json({ error: "contacto_invalido" }, 400);
+  const { data: okProd } = await db.from("products").select("id").eq("id", product_id).eq("channel_id", channel_id).maybeSingle();
+  if (!okProd) return json({ error: "producto_invalido" }, 400);
 
   try {
     const res = await crearVentaManual(db, channel_id, contact_id, {

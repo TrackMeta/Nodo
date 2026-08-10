@@ -268,7 +268,7 @@ Deno.serve(async (req) => {
         const bubbles = cfg.foto_guia
           ? [{ media_kind: "image", media_url: "{{pedido_guia_foto}}", caption: texto, text: texto }]
           : [{ text: texto }];
-        await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles });
+        await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles }, (order as any).id);
         avisoEnviado = "mensaje";
       }
     } catch (e) {
@@ -281,7 +281,7 @@ Deno.serve(async (req) => {
     try {
       await sendTemplateToContact(db, (order as any).channel_id, (order as any).contact_id, {
         name: aviso.template.name, language: aviso.template.language, params: aviso.template.params ?? [],
-      });
+      }, undefined, (order as any).id);
       avisoEnviado = aviso.template.name;
     } catch (e) {
       avisoError = String((e as any)?.message ?? e);
@@ -331,9 +331,16 @@ Deno.serve(async (req) => {
   // fusionado (incluye lo recién guardado en esta misma llamada).
   if (newEstado && !avisoEnviado && !flowStarted && (order as any).contact_id) {
     const ship2 = { ...((order as any).shipping ?? {}), ...((patch.shipping as any) ?? {}) };
-    const txt = mensajeEstadoDefault(newEstado, ship2, (patch.amount as number) ?? (order as any).amount, (order as any).currency);
+    // El "Ten listo S/X" / "A cobrar" para Lima debe ser el TOTAL (base + extras), como
+    // el rótulo del motorizado y el Excel del courier. Antes pasaba solo `amount` (base) →
+    // el motorizado cobraba total pero al cliente se le decía la base → conflicto en la
+    // puerta. (Provincia usa s.saldo, que ya incluye los extras con sube_saldo.)
+    const _amt = Number((patch.amount as number) ?? (order as any).amount) || 0;
+    const _bumps = Array.isArray(patch.order_bumps) ? patch.order_bumps : ((order as any).order_bumps ?? []);
+    const _total = _amt + (_bumps as any[]).reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
+    const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency);
     if (txt) {
-      try { await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }); avisoEnviado = "default"; }
+      try { await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }, (order as any).id); avisoEnviado = "default"; }
       catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
     }
   }
