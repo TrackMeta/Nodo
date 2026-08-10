@@ -79,7 +79,7 @@ export function margenSnap(o: Order): number | null {
   if (cp == null || cp === "") return null;
   const f = (o?.shipping as any)?.flete;
   if (esFisico(o) && (f == null || f === "")) return null;
-  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o);
+  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o) - (Number((o?.shipping as any)?.empaque) || 0);
 }
 
 // ── Resumen de un conjunto de pedidos (los KPIs del digest) ─────────
@@ -129,7 +129,10 @@ export function resumirPedidos(orders: Order[]): Digest {
         if (cpN == null || fN == null) {
           sinDatos++; // físico sin costo o sin flete → no se afirma margen
         } else {
-          ganancia += cobrado(o) - cpN - fN - reg; conMargen++;
+          // Resta el EMPAQUE (snapshot en shipping.empaque, físico) como la fuente de
+          // verdad orders.js `margen`: sin esto el resumen de Telegram sobreestimaba la
+          // ganancia (crecía con el volumen) y no cuadraba con el Dashboard.
+          ganancia += cobrado(o) - cpN - fN - reg - (Number((o?.shipping as any)?.empaque) || 0); conMargen++;
         }
       }
     }

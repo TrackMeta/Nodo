@@ -731,6 +731,12 @@ async function load(){
   const delTipo=(o)=> tipo==="todo" || (tipo==="fisico" ? O.esFisico(o) : !O.esFisico(o));
   const todas=(ordR.error?[]:(ordR.data||[])).filter(delTipo);
   const orders=todas.filter(O.esVenta);
+  // Ventas CERRADAS de verdad: rechazado (Lima) y no_recogido (provincia) son venta+perdido
+  // a la vez → NO deben contar como "Ventas cerradas" ni sumar a los ingresos/ticket (antes
+  // el mismo pedido salía en "Ventas cerradas" Y en "Perdidos", y su valor completo inflaba
+  // el vendido). Se usan para las métricas de éxito; los conteos de dinero real (cobrado/por
+  // cobrar) siguen sobre `orders` porque un adelanto ya cobrado es plata en mano.
+  const ventasOk=orders.filter(o=>!O.esPerdido(o));
   // Costo de la mercadería: el del producto es por unidad, así que hay que saber
   // cuántas trae la opción que compró.
   const prodPorId={}, cantPorVersion={};
@@ -745,9 +751,9 @@ async function load(){
     (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0); ingBump+=p; bumpUnits++;
       const k=b.nombre||"Venta extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
   });
-  const vendido=orders.reduce((a,o)=>a+O.total(o),0);
-  const vueltoTotal=orders.reduce((a,o)=>a+(Number((o.shipping||{}).vuelto)||0),0);
-  const compras=orders.length;
+  const vendido=ventasOk.reduce((a,o)=>a+O.total(o),0);
+  const vueltoTotal=ventasOk.reduce((a,o)=>a+(Number((o.shipping||{}).vuelto)||0),0);
+  const compras=ventasOk.length;
   const ticket=compras?vendido/compras:0;
   const leads=ev.filter(e=>e.event_name==="Lead").length;
   // "En la calle" es lo ya despachado sin cobrar: va como DESGLOSE de Por cobrar,

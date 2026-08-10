@@ -269,9 +269,15 @@ function funnelDe(cs){
   cs.forEach(x=>{ const k=(x.stage||"nuevo"); if(k in c) c[k]++; else c.nuevo++; });
   const total=cs.length;
   // Acumulado: cada nivel = "esa etapa o MÁS adelante". Caliente va entre Interés y Confirmaron.
-  const curiosos=c.curioso+c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido; // engancharon un producto (palabra clave)
-  const interes=c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido;            // interactuaron de verdad (más que la keyword)
-  const calientes=c.caliente+c.confirmado+c.comprado;                                 // volvieron 3+ veces (o ya avanzaron más)
+  // Los PERDIDOS son un desenlace terminal aparte (se muestran en su propio bucket): NO se
+  // mezclan en los niveles. Antes se sumaban a curiosos/interes pero NO a calientes+, así que
+  // el paso "interés→caliente" dividía numerador sin perdidos entre denominador con perdidos y
+  // el "cuello de botella" señalaba el salto equivocado (un no_recojo/cancelado avanzado —
+  // fuga POST-venta — aparecía como si fuera fuga de enganche inicial). Ahora todos los niveles
+  // excluyen perdido → las tasas entre etapas son consistentes.
+  const curiosos=c.curioso+c.interesado+c.caliente+c.confirmado+c.comprado; // engancharon un producto (palabra clave)
+  const interes=c.interesado+c.caliente+c.confirmado+c.comprado;            // interactuaron de verdad (más que la keyword)
+  const calientes=c.caliente+c.confirmado+c.comprado;                       // volvieron 3+ veces (o ya avanzaron más)
   const confirmaron=c.confirmado+c.comprado;
   const compraron=c.comprado;
   return { c, total,

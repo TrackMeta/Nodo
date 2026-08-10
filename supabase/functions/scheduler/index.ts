@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
@@ -183,6 +183,11 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
         .lte("created_at", cutoff).limit(50);
       for (const o of viejos ?? []) {
         await db.from("orders").update({ estado: "cancelado", updated_at: new Date().toISOString() }).eq("id", (o as any).id);
+        // Recalcular la ETAPA del embudo (igual que la cancelación manual en order-update):
+        // sin esto el contacto se quedaba en "interesado" (mapeo de esperando_adelanto)
+        // aunque su pedido ya venció → el embudo lo mostraba como lead vivo y ofrecía
+        // "Reactivar" un pedido muerto. Baja a "perdido" si no le queda otra compra viva.
+        await recomputeStageOnLoss(db, chId, (o as any).contact_id).catch(() => {});
         await db.from("contact_events").insert({
           channel_id: chId, contact_id: (o as any).contact_id, tipo: "nota",
           titulo: "Pedido vencido", detalle: `Sin adelanto tras ${venc.horas} h`,
