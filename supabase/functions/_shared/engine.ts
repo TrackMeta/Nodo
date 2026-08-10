@@ -3825,26 +3825,33 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
   } catch (e) { console.error("[resetItemFields]", (e as any)?.message ?? e); }
 }
 
-// Relanza el flujo de venta del producto para una RECOMPRA (pedido nuevo).
-// Para la recompra: ¿el cliente nombró CLARAMENTE otro producto (o el mismo) por
-// keyword? Si un trigger DETERMINISTA (keyword/referral) matchea, se relanza ESE
-// producto —así "ya compré A, ahora quiero B" abre la venta de B, no re-vende A—.
-// Si no hay match claro, se queda con el que ya compró (fallback). A propósito NO
-// usa el IA Router: una adivinanza de intención no debe cambiar el producto de una
-// recompra (sería peor equivocarse de producto que quedarse en el conocido).
-async function productoRecompra(db: SupabaseClient, channelId: string, event: EngineEvent, fallbackProductId: string | null): Promise<string | null> {
+// ¿El mensaje nombra CLARAMENTE (por trigger DETERMINISTA: keyword/referral) un
+// producto DISTINTO al que se está tratando? Devuelve su product_id, o null. Es la
+// base de "el cliente quiere OTRO producto que sí vendemos". A propósito NO usa el
+// IA Router: una adivinanza de intención no debe cambiar el producto (sería peor
+// equivocarse que quedarse en el conocido).
+async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, text: string, actualProductId: string | null): Promise<string | null> {
   try {
-    const txt = event.type === "message" ? (event.text ?? "") : "";
-    if (!txt.trim()) return fallbackProductId;
-    const det = await matchTrigger(db, channelId, txt, undefined);
+    if (!text || !text.trim()) return null;
+    const det = await matchTrigger(db, channelId, text, undefined);
     const fid = (det?.flow as any)?.id;
     if (det?.flow && (det.tier === "keyword" || det.tier === "referral") && fid) {
       const { data: fr } = await db.from("flows").select("product_id").eq("id", fid).maybeSingle();
       const pid = (fr as any)?.product_id;
-      if (pid) return pid; // el producto que realmente pidió (mismo o distinto)
+      if (pid && pid !== actualProductId) return pid; // otro producto del catálogo
     }
-  } catch (_) { /* degrada al producto comprado */ }
-  return fallbackProductId;
+  } catch (_) { /* sin match → null */ }
+  return null;
+}
+
+// Relanza el flujo de venta del producto para una RECOMPRA (pedido nuevo). Elige el
+// producto que el cliente realmente pidió: si nombró OTRO por keyword, ese; si no,
+// el que ya compró (fallback) — así "quiero otro par" re-vende lo mismo y "ahora
+// quiero el curso" abre la venta del curso.
+async function productoRecompra(db: SupabaseClient, channelId: string, event: EngineEvent, fallbackProductId: string | null): Promise<string | null> {
+  const txt = event.type === "message" ? (event.text ?? "") : "";
+  const otro = await otroProductoPorKeyword(db, channelId, txt, fallbackProductId);
+  return otro || fallbackProductId;
 }
 
 // Limpia los candados una_vez para que el nuevo pedido/aviso no se omitan, y
@@ -3876,7 +3883,7 @@ async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: s
 // nuevo, que captura la talla/opción de cero) antes de reanudar el run. Mismo
 // criterio de "ya comprador" que maybePostventa. Devuelve true si relanzó.
 async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
-  if (event.type !== "message" || !event.text || !pideRecompra(event.text)) return false;
+  if (event.type !== "message" || !event.text) return false;
   const { data: order } = await db.from("orders")
     .select("estado, product_id")
     .eq("channel_id", channelId).eq("contact_id", contactId)
@@ -3884,9 +3891,14 @@ async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contac
   const estado = String((order as any)?.estado ?? "");
   if (!order || !COMPRADO_STATES.has(estado)) return false; // aún no hay pedido cerrado → no es recompra
   if (SALDO_PENDIENTE.has(estado)) return false; // debe el saldo: primero se cierra ese pedido
+  // Dispara si: pide recompra del MISMO ("otro par", "de nuevo") O nombra por keyword
+  // OTRO producto del catálogo. Sin lo segundo, "ya compré las zapatillas, ahora
+  // quiero el curso" lo tragaba el nodo parqueado y el bot NEGABA vender el curso.
+  const otroPid = await otroProductoPorKeyword(db, channelId, event.text, (order as any).product_id);
+  if (!pideRecompra(event.text) && !otroPid) return false;
   const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   if ((ch as any)?.pedidos_config?.postventa?.activo === false) return false;
-  const pidRun = await productoRecompra(db, channelId, event, (order as any).product_id);
+  const pidRun = otroPid || (order as any).product_id;
   if (await relanzarVenta(db, channelId, contactId, pidRun)) {
     await logEvent(db, channelId, contactId, "nota", "🔁 Recompra (run de venta aún activo)", (event.text ?? "").slice(0, 80)).catch(() => {});
     return true;
@@ -3947,10 +3959,12 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const esperandoSaldo = SALDO_PENDIENTE.has(estado);
 
   // 2b) Recompra CLARA (determinista): relanza la venta directo, sin gastar un
-  // turno de IA. NO en la ventana de saldo pendiente: primero se cierra ese
-  // pedido (no lo dejamos abrir otro debiendo el saldo del actual).
-  if (!esperandoSaldo && pideRecompra(event.text ?? "")) {
-    const pidDet = await productoRecompra(db, channelId, event, (order as any).product_id);
+  // turno de IA. Dispara si pide recompra del MISMO o nombra por keyword OTRO
+  // producto del catálogo. NO en la ventana de saldo pendiente: primero se cierra
+  // ese pedido (no lo dejamos abrir otro debiendo el saldo del actual).
+  const otroPidPv = esperandoSaldo ? null : await otroProductoPorKeyword(db, channelId, event.text ?? "", (order as any).product_id);
+  if (!esperandoSaldo && (pideRecompra(event.text ?? "") || otroPidPv)) {
+    const pidDet = otroPidPv || (order as any).product_id;
     if (await relanzarVenta(db, channelId, contactId, pidDet)) {
       await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → recompra", (event.text ?? "").slice(0, 80)).catch(() => {});
       return true;
