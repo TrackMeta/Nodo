@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
-import { sendCapiEvent, maybePurchase } from "./capi.ts";
+import { sendCapiEvent, maybePurchase, maybePurchaseUpsell } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
 import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
@@ -581,8 +581,17 @@ export async function crearVentaManual(
         if (b?.product_id && b?.digital !== true && !b?.stock_pendiente) mov.push({ product_id: b.product_id, key: b.stock_key || "_", unidades: 1 });
       }
       if (mov.length) {
-        await aplicarStock(db, mov, -1);
-        await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+        if (estado === "esperando_adelanto") {
+          // Provincia sin adelanto pagado: no apartar stock todavía (regla de provincia,
+          // igual que crearPedido); se guarda el plan y baja al validar el adelanto.
+          await db.from("orders").update({ shipping: { ...ship, stock_mov_plan: mov } }).eq("id", orderId);
+        } else {
+          // Solo se marca stock_mov/descontado si el descuento SALIÓ (ok): si el CAS agotó
+          // reintentos, no marcar → así al cancelar no se devuelve (+1) algo que nunca bajó.
+          const { ok } = await aplicarStock(db, mov, -1);
+          if (ok) await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+          else console.error("[ventaManual] stock no aplicado (CAS agotó reintentos)");
+        }
       }
     } catch (e) { console.error("[ventaManual] stock:", (e as any)?.message ?? e); }
   }
@@ -634,8 +643,12 @@ export async function aplicarStock(
   db: SupabaseClient,
   movimientos: Array<{ product_id?: string | null; key?: string; unidades?: number }>,
   signo: -1 | 1,
-): Promise<Array<{ nombre: string; key: string; restante: number; agotado: boolean }>> {
+): Promise<{ alerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }>; ok: boolean }> {
   const alerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
+  // `ok`=false si el CAS de ALGÚN producto agotó reintentos (el descuento NO se aplicó):
+  // el caller NO debe marcar stock_descontado en ese caso (si no, marca vendido algo que
+  // no bajó → sobreventa, y al cancelar `+1` infla el inventario de la nada).
+  let allOk = true;
   const byProd = new Map<string, typeof movimientos>();
   for (const m of movimientos || []) {
     if (!m?.product_id || !m?.key || !(Number(m.unidades) > 0)) continue;
@@ -683,9 +696,9 @@ export async function aplicarStock(
         // else: conflicto (otro escribió) → reintenta con lectura fresca
       } catch (e) { console.error("[aplicarStock]", (e as any)?.message ?? e); break; }
     }
-    if (!applied) console.error("[aplicarStock] CAS agotó reintentos para", pid);
+    if (!applied) { allOk = false; console.error("[aplicarStock] CAS agotó reintentos para", pid); }
   }
-  return alerts;
+  return { alerts, ok: allOk };
 }
 
 // Descuenta el stock de los extras físicos con tallas propias YA aceptados
@@ -724,7 +737,8 @@ async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
       }
       if (faltan) continue; // aún no dijo su talla → esperar al próximo mensaje
       const key = stockKeyEngine(eatrs, vals);
-      const al = await aplicarStock(db, [{ product_id: b.product_id, key, unidades: 1 }], -1);
+      const { alerts: al, ok } = await aplicarStock(db, [{ product_id: b.product_id, key, unidades: 1 }], -1);
+      if (!ok) { console.error("[reconciliarStockExtras] stock no aplicado (CAS) — reintenta el próximo turno"); continue; } // no marcar pendiente=false → se reintenta
       for (const a of al) alerts.push(a);
       mov.push({ product_id: b.product_id, key, unidades: 1 });
       b.stock_pendiente = false; b.stock_key = key;
@@ -828,7 +842,7 @@ export async function reconciliarStockManual(
       const desc: typeof actual = [], dev: typeof actual = [];
       for (const [id, d] of D) { const av = A.get(id)?.unidades || 0; if (d.unidades > av) desc.push({ product_id: d.product_id, key: d.key, unidades: d.unidades - av }); }
       for (const [id, a] of A) { const dv = D.get(id)?.unidades || 0; if (a.unidades > dv) dev.push({ product_id: a.product_id, key: a.key, unidades: a.unidades - dv }); }
-      if (desc.length) alerts = await aplicarStock(db, desc, -1);
+      if (desc.length) alerts = (await aplicarStock(db, desc, -1)).alerts;
       if (dev.length) await aplicarStock(db, dev, 1);
       patchShip.stock_mov = deseado;
     } else {
@@ -2718,8 +2732,11 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
           if (a.estado === "esperando_adelanto") {
             await db.from("orders").update({ shipping: { ...ship, stock_mov_plan: mov } }).eq("id", (ord as any).id);
           } else {
-            const alerts = await aplicarStock(db, mov, -1);
-            await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", (ord as any).id);
+            const { alerts, ok } = await aplicarStock(db, mov, -1);
+            // Solo marcar descontado/stock_mov si el descuento SALIÓ (ok): si el CAS agotó
+            // reintentos no marcar → así al cancelar no se devuelve (+1) algo que no bajó.
+            if (ok) await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", (ord as any).id);
+            else console.error("[crearPedido] stock no aplicado (CAS agotó reintentos)");
             for (const al of alerts) {
               const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
               await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
@@ -2756,7 +2773,10 @@ export async function reservarStockPedido(db: SupabaseClient, orderId: string, c
     if (ship.stock_descontado) return;                          // ya reservado
     const plan = Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : [];
     if (!plan.length) return;                                   // nada planificado (Lima ya reservó, o sin stock)
-    const alerts = await aplicarStock(db, plan, -1);
+    const { alerts, ok } = await aplicarStock(db, plan, -1);
+    // Si el CAS no aplicó, NO marcar descontado ni borrar el plan → deja que el próximo
+    // intento reintente (esta función es idempotente y la llaman los dos caminos del adelanto).
+    if (!ok) { console.error("[reservarStockPedido] stock no aplicado (CAS agotó reintentos) — se reintenta"); return; }
     const nship: any = { ...ship, stock_mov: plan, stock_descontado: true };
     delete nship.stock_mov_plan;
     await db.from("orders").update({ shipping: nship }).eq("id", orderId);
@@ -2775,7 +2795,11 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     if (!orderId) {
       const { data: o } = await db.from("orders").select("id")
         .eq("contact_id", run.contact_id)
-        .not("estado", "in", `(${ORDER_FINAL.map((e) => `"${e}"`).join(",")})`)
+        // Excluye ORDER_FINAL y también `saldo_pagado` (cerrado pero no en ORDER_FINAL):
+        // en una RECOMPRA el run nuevo aún no fijó su _order_id, y sin esto el fallback
+        // engancharía el pedido anterior ya pagado/en tránsito y lo mutaría (estado/monto/
+        // dirección de la compra nueva) en vez de dejar que nazca uno propio.
+        .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       orderId = (o as any)?.id;
     }
@@ -2793,6 +2817,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     // Stock de un extra FÍSICO recién sumado: se aplica DESPUÉS del patch, aparte,
     // para no enredarse con el merge de shipping/datos de acá.
     let extraStock: { product_id: string; key: string; unidades: number } | null = null;
+    let bumpUpsell: { value: number; sufijo: string } | null = null; // para el Purchase incremental digital
     // a.bump: { nombre, precio } — suma una venta extra al pedido. Alimenta las
     // métricas de "ventas extra" del Dashboard y la columna "Valor Producto
     // extra" de la hoja, sin inventar una tabla nueva.
@@ -2837,6 +2862,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
           } catch { /* sin product_id → no se descuenta, como antes */ }
         }
         patch.order_bumps = [...previos, nuevo];
+        bumpUpsell = { value: precio, sufijo: String(vid || nombre).replace(/[^a-zA-Z0-9]/g, "").slice(0, 16) };
         // Venta extra "ride-along" en un pedido FÍSICO: no se cobra aparte, se
         // suma al SALDO (lo que cobra la agencia en provincia, o el motorizado en
         // Lima). El adelanto no cambia. Solo si el pedido tiene saldo y el bump lo
@@ -2864,6 +2890,29 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     }
     const { error } = await db.from("orders").update(patch).eq("id", orderId);
     if (error) throw new Error(error.message);
+    // 📊 Upsell DIGITAL agregado tras el cierre: manda un Purchase incremental a Meta
+    // (solo dispara si el pedido es una venta digital ya `confirmada` y de anuncio;
+    // el físico no lo usa: su Purchase suma los bumps al cerrar). Sin pixel → no-op.
+    if (bumpUpsell) {
+      try {
+        const { data: ou } = await db.from("orders").select("estado, amount, currency, shipping").eq("id", orderId).maybeSingle();
+        if (ou) await maybePurchaseUpsell(db, { id: orderId, channel_id: run.channel_id, contact_id: run.contact_id, estado: (ou as any).estado, amount: (ou as any).amount, currency: (ou as any).currency, shipping: (ou as any).shipping }, bumpUpsell.value, bumpUpsell.sufijo);
+      } catch (e) { console.error("[actualizarPedido] capi upsell:", (e as any)?.message ?? e); }
+    }
+    // 📦 Si esta acción CANCELA el pedido (estado de pérdida) y tenía stock reservado,
+    // devuélvelo al inventario. Antes solo el panel (order-update) devolvía → un
+    // "cancélalo" resuelto por la IA dejaba las unidades restadas para siempre
+    // (inventario subestimado). Idempotente por stock_devuelto. Espeja order-update.
+    if (patch.estado && ["cancelado", "anulada", "rechazado", "no_recogido"].includes(patch.estado as string)) {
+      try {
+        const { data: oc } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+        const shc = ((oc as any)?.shipping ?? {}) as any;
+        if (shc.stock_descontado && !shc.stock_devuelto && Array.isArray(shc.stock_mov)) {
+          await aplicarStock(db, shc.stock_mov, 1);
+          await db.from("orders").update({ shipping: { ...shc, stock_devuelto: true } }).eq("id", orderId);
+        }
+      } catch (e) { console.error("[actualizarPedido] devolver stock:", (e as any)?.message ?? e); }
+    }
     // 📦 Stock del extra físico recién sumado: descuenta 1 y lo agrega a stock_mov
     // del pedido (para devolverlo si la venta se cae). Aparte del patch de arriba.
     if (extraStock) {
@@ -2883,8 +2932,9 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         } else {
           // Ya reservado (Lima contraentrega, o adelanto ya validado): descuenta el extra ya.
           const mov = Array.isArray((ship2 as any).stock_mov) ? [...(ship2 as any).stock_mov, extraStock] : [extraStock];
-          const alerts = await aplicarStock(db, [extraStock], -1);
-          await db.from("orders").update({ shipping: { ...ship2, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+          const { alerts, ok } = await aplicarStock(db, [extraStock], -1);
+          if (ok) await db.from("orders").update({ shipping: { ...ship2, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+          else console.error("[actualizarPedido] stock extra no aplicado (CAS)");
           for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
         }
       } catch (e) { console.error("[actualizarPedido] stock extra:", (e as any)?.message ?? e); }

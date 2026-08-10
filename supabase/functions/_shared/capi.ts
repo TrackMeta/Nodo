@@ -224,3 +224,29 @@ export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promi
     match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined, country: "pe" },
   });
 }
+
+// Purchase INCREMENTAL de un upsell DIGITAL agregado DESPUÉS del cierre. En una venta
+// digital el Purchase se dispara al confirmar (estado "confirmada"), ANTES de que el
+// cliente acepte un extra ofrecido tras el pago → ese valor nunca llegaba a Meta (el
+// dedup por `Purchase:<id>` bloquea reenviar el principal). Acá se manda un evento
+// APARTE, con event_id distinto (`Purchase:<id>:x:<sufijo>`) y value = SOLO el extra,
+// así el ROAS suma el upsell sin tocar ni duplicar el Purchase principal. Estricto:
+// solo para la venta digital ya cerrada y de anuncio (ctwa_clid). El FÍSICO no lo usa:
+// su Purchase dispara al CERRAR, después de sumar los bumps (maybePurchase los relee).
+export async function maybePurchaseUpsell(
+  db: SupabaseClient, order: OrderLike, bumpValue: number, sufijo: string,
+): Promise<CapiResult | null> {
+  if (order?.estado !== "confirmada") return null;      // solo la venta digital ya cerrada
+  const ship = (order.shipping ?? {}) as Record<string, unknown>;
+  if (!ship.ctwa_clid) return null;                      // orgánica → no va a Meta
+  if (!(Number(bumpValue) > 0)) return null;
+  return await sendCapiEvent(db, order.channel_id, order.contact_id, {
+    eventName: "Purchase",
+    eventId: `Purchase:${order.id}:x:${sufijo}`,          // distinto del principal → no colisiona ni dedupea
+    value: Number(bumpValue),
+    currency: (order.currency as string) || "PEN",
+    orderId: order.id,
+    ctwaClid: (ship.ctwa_clid as string) || undefined,
+    match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined, country: "pe" },
+  });
+}
