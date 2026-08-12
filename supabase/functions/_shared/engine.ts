@@ -3943,10 +3943,84 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
   }
 }
 
+// El cliente ya COMPRÓ y ahora pide un EXTRA que se le había ofrecido y declinó.
+// El run de venta ya terminó en "Fin" (un rechazo LIMPIO sale por el nodo Fin), así
+// que sin esto la IA de post-venta ALUCINARÍA "ya te lo agregué" sin crear el bump.
+// Reengancha: crea un run posicionado en el nodo CLASIFICADOR del extra (del flujo
+// de venta activo) y lo ejecuta → el flujo clasifica "acepta", suma el bump y (si
+// tiene tallas) las pregunta, igual que si nunca hubiera salido de la cadena.
+// Devuelve true si reenganchó. (Si el rechazo dejó el run PARQUEADO en la espera del
+// extra —caso "duda"— este camino ni corre: resumeRun ya lo reclasifica solo.)
+async function reengancharExtra(
+  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent, order: any,
+): Promise<boolean> {
+  try {
+    if (event.type !== "message" || !event.text?.trim()) return false;
+    const pid = order?.product_id;
+    if (!pid) return false;
+    const { data: prod } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+    const extras = (((prod as any)?.config?.extras) ?? []) as any[];
+    if (!extras.length) return false;
+    const bumps = ((order?.order_bumps) ?? []) as any[];
+    const yaEsta = (vid: any) => bumps.some((b) => b?.version_id && String(b.version_id) === String(vid));
+    // Ofrecibles = extras del producto que aún NO están en el pedido, en orden (el
+    // nodo clasificador del extra i se llama extraf_<i>_resp, i 1-based sobre extras).
+    const ofrecibles = extras
+      .map((e, i) => ({ version_id: e?.version_id, idx: i + 1 }))
+      .filter((e) => e.version_id && !yaEsta(e.version_id));
+    if (!ofrecibles.length) return false;
+    // Nombre legible de cada ofrecible (para que el clasificador sepa qué es).
+    const { data: vers } = await db.from("product_versions")
+      .select("id, nombre, product:product_id(nombre)")
+      .in("id", ofrecibles.map((e) => e.version_id));
+    const nombreDe = (vid: any) => {
+      const v = (vers ?? []).find((x) => String((x as any).id) === String(vid));
+      return v ? `${(v as any).product?.nombre ?? ""} ${(v as any).nombre ?? ""}`.trim() : "el extra";
+    };
+    const cands = ofrecibles.map((e) => ({ clave: String(e.idx), label: nombreDe(e.version_id) }));
+    // ¿El cliente quiere SUMAR uno? (idx 0 = ninguno → no reengancha). Umbral alto:
+    // solo reenganchamos ante una aceptación clara, no ante una pregunta o un "quizás".
+    const cls = await classify(db, channelId, {
+      texto: event.text!, candidatos: cands, modo: "intencion",
+      que: "El cliente quiere SUMAR a su pedido uno de estos productos que ya se le ofreció (o ninguno)",
+    });
+    if (!cls?.clave || cls.confianza < 0.7) return false;
+    const elegido = ofrecibles.find((e) => String(e.idx) === cls.clave);
+    if (!elegido) return false;
+    // Nodo clasificador del extra elegido, en el flujo de VENTA activo del producto.
+    const { data: flows } = await db.from("flows").select("id")
+      .eq("channel_id", channelId).eq("product_id", pid).eq("role", "venta").eq("estado", "activo");
+    const flowId = ((flows ?? [])[0] as any)?.id;
+    if (!flowId) return false;
+    const { data: nodes } = await db.from("flow_nodes").select("id, config").eq("flow_id", flowId);
+    const clasNode = (nodes ?? []).find((n) =>
+      (n as any)?.config?.operacion === "clasificar" &&
+      (n as any)?.config?.guardar_en === `extraf_${elegido.idx}_resp`);
+    if (!clasNode) return false;
+    // Crea el run posicionado EN el clasificador, con el pedido concreto. El nodo
+    // lee contacts.last_input (el mensaje actual, ya guardado) → clasifica "acepta"
+    // → Condición → Sumar extra (bump) → pedir talla. Toda la maquinaria del flujo.
+    await db.from("flow_runs").update({ estado: "cancelado" })
+      .eq("contact_id", contactId).in("estado", ["activo", "esperando"]);
+    const { data: run, error } = await db.from("flow_runs").insert({
+      channel_id: channelId, contact_id: contactId, flow_id: flowId,
+      current_node_id: (clasNode as any).id, estado: "activo",
+      vars: { _order_id: order.id, _reenganche_extra: true },
+    }).select("*").single();
+    if (error || !run) return false;
+    await logEvent(db, channelId, contactId, "nota", "🎁 Re-enganche de extra declinado", (event.text ?? "").slice(0, 80)).catch(() => {});
+    await execute(db, run as any);
+    return true;
+  } catch (e) {
+    console.error("[reengancharExtra]", (e as any)?.message ?? e);
+    return false;
+  }
+}
+
 async function maybePostventa(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   // 1) ¿Es comprador? Su último pedido está en un estado de compra concretada.
   const { data: order } = await db.from("orders")
-    .select("estado, product_id, product:product_id(nombre)")
+    .select("id, estado, product_id, order_bumps, product:product_id(nombre)")
     .eq("channel_id", channelId).eq("contact_id", contactId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order || !COMPRADO_STATES.has(String((order as any).estado))) return false;
@@ -3969,6 +4043,13 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → recompra", (event.text ?? "").slice(0, 80)).catch(() => {});
       return true;
     }
+  }
+
+  // 2c) ¿Ahora quiere un EXTRA que declinó antes? Reenganchar y sumarlo DE VERDAD
+  // (si no, la IA de post-venta alucinaría "ya te lo agregué" sin crear el bump).
+  if (!esperandoSaldo) {
+    try { if (await reengancharExtra(db, channelId, contactId, event, order)) return true; }
+    catch (e) { console.error("[reengancharExtra/call]", (e as any)?.message ?? e); }
   }
 
   // 3) Contexto (run virtual: no hay flujo activo, solo queremos el contexto del
