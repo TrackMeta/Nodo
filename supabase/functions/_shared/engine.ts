@@ -6283,9 +6283,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
         if (!esParcial && !yaParque) {
           const modo = await digitalPagoModo(db, run, info);
-          // Va a validación manual si el canal/producto lo pide (modo.manual) O si el
-          // freno detectó un sobrepago sospechoso (Capa 1), aunque esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso)) {
+          // Un pago de EXTRA sin nº de operación legible NO se puede verificar contra
+          // el anti-reúso (el ledger dedup por operación): un mismo comprobante podría
+          // pagar el principal Y el extra (el OCR del extra suele responder "PAGO_OK"
+          // sin el JSON de operación → opNum vacío → el chequeo de reúso se salta). Ante
+          // esa duda, NO se auto-entrega: va a validación MANUAL para que un humano lo
+          // revise (seguridad del dinero > conveniencia). El principal no aplica: su OCR
+          // sí trae la operación y su anti-reúso funciona.
+          const sinOpVerificable = esExtra && !opNum;
+          // Va a validación manual si el canal/producto lo pide (modo.manual), si el
+          // freno detectó un sobrepago sospechoso (Capa 1), o si es un extra sin
+          // operación verificable — aunque esté en automático.
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
