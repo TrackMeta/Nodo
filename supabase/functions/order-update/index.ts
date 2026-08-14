@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto, ventana24hAbierta } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -340,8 +340,20 @@ Deno.serve(async (req) => {
     const _total = _amt + (_bumps as any[]).reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
     const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency);
     if (txt) {
-      try { await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }, (order as any).id); avisoEnviado = "default"; }
-      catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
+      // Este aviso por defecto es TEXTO LIBRE. Meta lo rechaza fuera de la ventana de
+      // servicio de 24h (mover una tarjeta a "despachado"/"en_agencia" suele pasar días
+      // después del último mensaje del cliente). Antes se enviaba incondicionalmente →
+      // Meta lo rechazaba, el cliente no recibía nada y `avisoEnviado="default"` hacía
+      // creer que salió. Ahora solo se manda dentro de la ventana; fuera, se registra para
+      // que el negocio use una plantilla (como hace el scheduler).
+      try {
+        if (await ventana24hAbierta(db, (order as any).contact_id)) {
+          await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }, (order as any).id);
+          avisoEnviado = "default";
+        } else {
+          console.warn(`[order-update] aviso default de "${newEstado}" NO enviado: fuera de la ventana de 24h (usa una plantilla para avisar).`);
+        }
+      } catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
     }
   }
 

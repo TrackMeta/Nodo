@@ -46,7 +46,15 @@ const SCHEMA = {
   },
 } as const;
 
-// Normaliza una lista: strings limpios, sin duplicados, cortos, cap por capa.
+// Ítems que NUNCA deben entrar al perfil: datos operativos (que se guardan aparte) o
+// texto que huele a INYECCIÓN (el perfil se concatena al system prompt de ventas, así que
+// un ítem del cliente disfrazado de "hecho" podría intentar torcer precio/reglas/tono). El
+// SYSTEM_EXTRACT ya lo prohíbe por prompt; esto es el refuerzo en CÓDIGO (el modelo barato
+// es jailbreakeable). Un ítem legítimo de trato humano jamás menciona precio/pago/reglas.
+const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como)/i;
+
+// Normaliza una lista: strings limpios, sin duplicados, cortos, cap por capa. Descarta
+// los ítems operativos/de inyección (PROHIBIDO_MEM).
 function curar(arr: unknown): string[] {
   if (!Array.isArray(arr)) return [];
   const out: string[] = [];
@@ -54,6 +62,7 @@ function curar(arr: unknown): string[] {
   for (const x of arr) {
     const s = String(x ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_LEN);
     if (!s) continue;
+    if (PROHIBIDO_MEM.test(s)) continue;   // 🛡️ fuera datos operativos / intentos de inyección
     const k = s.toLowerCase();
     if (vistos.has(k)) continue;
     vistos.add(k);
@@ -148,31 +157,33 @@ export async function actualizarMemoriaIA(
       jsonSchema: SCHEMA as unknown as Record<string, unknown>,
     });
 
+    // El modelo YA corrió (el costo se pagó). Pase lo que pase abajo, se BUMPEA `_last`
+    // para que el throttle mida el último ANÁLISIS, no el último CAMBIO: antes `_last` solo
+    // se escribía en la ruta de éxito, así que con el perfil ya estable (lo normal tras 2-3
+    // turnos) el modelo barato corría en CADA turno (el guard nunca bloqueaba).
+    const now = new Date().toISOString();
+    const bumpLast = () => db.from("contacts").update({ memoria_ia: { ...actual, _last: now } }).eq("id", contactId).then(() => {}, () => {});
     const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
-    if (!m) return;
-    const parsed = JSON.parse(m[0]);
+    if (!m) { await bumpLast(); return; }
+    let parsed: any; try { parsed = JSON.parse(m[0]); } catch (_) { await bumpLast(); return; }
     const quien_es = curar(parsed.quien_es);
     const como_tratar = curar(parsed.como_tratar);
-
-    // No escribas si no cambió nada (evita writes inútiles).
-    const igual = JSON.stringify({ q: quien_es, c: como_tratar }) ===
+    // 🛡️ Anti-borrado POR CAPA: el modelo barato a veces re-emite UNA capa y olvida la
+    // otra. Si una capa nueva viene VACÍA pero antes tenía contenido, se conserva la vieja
+    // (antes solo se protegía el vaciado TOTAL de ambas → una capa se borraba sola).
+    const finalQ = (quien_es.length === 0 && (actual.quien_es?.length || 0) > 0) ? actual.quien_es : quien_es;
+    const finalC = (como_tratar.length === 0 && (actual.como_tratar?.length || 0) > 0) ? actual.como_tratar : como_tratar;
+    // Sin cambio de contenido → no reescribe el perfil, pero SÍ bumpea el throttle.
+    const igual = JSON.stringify({ q: finalQ, c: finalC }) ===
       JSON.stringify({ q: actual.quien_es, c: actual.como_tratar });
-    if (igual) return;
-    // 🛡️ Protección anti-borrado: el modelo BARATO a veces devuelve las listas VACÍAS
-    // (se le olvidó re-emitir el perfil). Pisar un perfil CON contenido con uno vacío
-    // borraría toda la memoria acumulada del cliente en una sola escritura. Si lo nuevo
-    // quedó vacío pero antes había algo, NO se toca (la instrucción blanda del prompt no
-    // basta como única salvaguarda).
-    const nuevoVacio = quien_es.length === 0 && como_tratar.length === 0;
-    const habiaAlgo = (actual.quien_es?.length || 0) > 0 || (actual.como_tratar?.length || 0) > 0;
-    if (nuevoVacio && habiaAlgo) return;
-    const nuevo: MemoriaAI = { quien_es, como_tratar, _last: new Date().toISOString() };
+    if (igual) { await bumpLast(); return; }
+    const nuevo: MemoriaAI = { quien_es: finalQ, como_tratar: finalC, _last: now };
     await db.from("contacts").update({ memoria_ia: nuevo }).eq("id", contactId);
     try {
       await db.from("contact_events").insert({
         channel_id: channelId, contact_id: contactId, tipo: "nota",
         titulo: "🧠 Memoria IA actualizada",
-        detalle: [...quien_es, ...como_tratar].join(" · ").slice(0, 140) || null,
+        detalle: [...finalQ, ...finalC].join(" · ").slice(0, 140) || null,
       });
     } catch (_) { /* log opcional */ }
   } catch (e) {

@@ -161,7 +161,10 @@ export async function sendTemplateToContact(
       .select("params").eq("channel_id", channelId).eq("name", tpl.name).maybeSingle();
     rawParams = ((tplRow as any)?.params as string[]) ?? [];
   }
-  const bodyParams = rawParams.map((p) => resolveP(String(p), ctx));
+  // Un parámetro que resuelve a cadena VACÍA (ej. {{pedido_guia}} sin guía aún) hace que
+  // Meta rechace la plantilla ENTERA (error 132000) → el cliente no recibe nada. Se pone
+  // un guion como marcador para que el aviso igual se entregue (mejor "guía: -" que nada).
+  const bodyParams = rawParams.map((p) => { const v = resolveP(String(p), ctx); return v && v.trim() ? v : "-"; });
   let wamid = "";
   if ((ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id && token && ctx.wa_id) {
     wamid = await sendTemplate((ch as any).phone_number_id, token, ctx.wa_id, tpl.name, tpl.language || "es", bodyParams);
@@ -176,10 +179,17 @@ export async function sendTemplateToContact(
 
 // ── Contexto del contacto para resolver variables ─────────────────
 async function contactCtx(db: SupabaseClient, contactId: string, orderId?: string | null): Promise<any> {
-  const { data: c } = await db.from("contacts").select("nombre, wa_id, stage").eq("id", contactId).maybeSingle();
+  const { data: c } = await db.from("contacts").select("nombre, wa_id, stage, telefono, user_id").eq("id", contactId).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", contactId);
-  const ctx: any = { nombre: (c as any)?.nombre ?? "", wa_id: (c as any)?.wa_id ?? "", telefono: (c as any)?.wa_id ?? "", stage: (c as any)?.stage ?? "" };
+  // {{telefono}}: la columna REAL primero; cae a wa_id SOLO si no es un BSUID (un lead que
+  // llegó por anuncio sin número tiene wa_id === user_id, un id interno, no un teléfono).
+  // Antes `telefono = wa_id` siempre → una plantilla con {{telefono}} mostraba el BSUID.
+  // Espeja el fix de avisar/buildContext en engine.ts (que vivía solo del lado del motor).
+  const _wa = (c as any)?.wa_id ?? "";
+  const _telReal = String((c as any)?.telefono ?? "").trim();
+  const _telefono = _telReal || (_wa && _wa === (c as any)?.user_id ? "" : _wa);
+  const ctx: any = { nombre: (c as any)?.nombre ?? "", wa_id: _wa, telefono: _telefono, stage: (c as any)?.stage ?? "" };
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
   // Datos del último pedido, con los mismos nombres que usan los flujos
   // ({{pedido_guia}}, {{pedido_sede}}, {{pedido_saldo}}…). Sin esto una

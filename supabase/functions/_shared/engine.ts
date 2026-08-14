@@ -232,10 +232,19 @@ export async function runEngine(
     // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
     try { if (await maybePostventa(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
-    // Para el ruteo por anuncio: el ad_id del mensaje (referral) o, si no vino en
+    // Para el ruteo por anuncio: el ad_id del mensaje (referral fresco) o, si no vino en
     // este mensaje, el que ya quedó guardado en el contacto (vino de un anuncio antes).
-    const adIdRuteo = event.adId ?? (await db.from("contacts").select("ad_id").eq("id", contactId).maybeSingle()).data?.ad_id ?? undefined;
-    const decision = await routeDecision(db, channelId, event.text, adIdRuteo);
+    const _adStored = (await db.from("contacts").select("ad_id").eq("id", contactId).maybeSingle()).data?.ad_id ?? undefined;
+    const adIdRuteo = event.adId ?? _adStored;
+    let decision = await routeDecision(db, channelId, event.text, adIdRuteo);
+    // 🎯 Si el ruteo ganó por el ad_id GUARDADO (no el fresco de ESTE mensaje) pero el
+    // cliente escribió una KEYWORD explícita, esa intención de HOY manda sobre el anuncio
+    // viejo pegado al contacto. Sin esto, "quiero un polo" reinyectaba al producto del
+    // anuncio de hace semanas (el ad_id guardado nunca se limpia en un mensaje orgánico).
+    if (!event.adId && _adStored && (decision.tier === "referral" || decision.tier === "anuncio")) {
+      const kw = await routeDecision(db, channelId, event.text, undefined);
+      if (kw.tier === "keyword" && kw.flow) decision = kw;
+    }
     const flow = decision.flow;
     if (!flow) {
       // Sin producto claro (hola / anuncio sin banco / mensaje vago): la RECEPCIÓN
@@ -1225,6 +1234,7 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
 
     let entrada: any = null;
     let kwHit: any = null;
+    let kwLen = 0;   // largo del keyword más específico que matcheó (desempate)
     for (const t of triggers ?? []) {
       const flow = (t as any).flows;
       if (!flow || flow.estado !== "activo") continue;
@@ -1238,12 +1248,16 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
       if (t.tipo === "keyword") {
         const kws: string[] = (t.config?.keywords ?? []).map(normalize);
         const mode = t.config?.match ?? "contiene";
-        const hit = kws.some((k) =>
-          k && (mode === "exacta" ? norm === k
-            : mode === "empieza" ? norm.startsWith(k)
-            : contienePalabra(norm, k))
-        );
-        if (hit && !kwHit) kwHit = flow; // keyword gana sobre entrada
+        // Desempate por ESPECIFICIDAD: gana el keyword MÁS LARGO que matchea ("reloj
+        // inteligente" sobre "reloj"). Antes ganaba el PRIMER trigger por orden de BD
+        // (sin `order by` → no determinista entre despliegues).
+        let best = 0;
+        for (const k of kws) {
+          if (!k) continue;
+          const m = mode === "exacta" ? norm === k : mode === "empieza" ? norm.startsWith(k) : contienePalabra(norm, k);
+          if (m && k.length > best) best = k.length;
+        }
+        if (best > kwLen) { kwHit = flow; kwLen = best; } // keyword gana sobre entrada; el más específico gana
       }
     }
     if (kwHit) return { tier: "keyword", flow: kwHit };
@@ -1811,10 +1825,14 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
     })
     .filter((b: any) => b.title)
     .slice(0, 3);
-  // Los botones cuelgan de un cuerpo de texto: sin texto no hay interactivo.
-  const isInteractive = btns.length > 0 && !!text;
+  // Los botones cuelgan de un cuerpo de texto: sin texto no hay interactivo. Si HAY
+  // botones válidos pero el cuerpo resolvió VACÍO (ej. la burbuja era solo "{{gancho}}" y
+  // el contacto no vino por ese ángulo), se pone un cuerpo mínimo para NO perder los
+  // botones (antes: isInteractive=false → los botones se descartaban en silencio).
+  const body = (btns.length > 0 && !text) ? "¿Qué prefieres? 🙂" : text;
+  const isInteractive = btns.length > 0 && !!body;
   const content: any = {};
-  if (text) content.text = text;
+  if (body) content.text = body;
   if (bubble.media_id) content.media_id = bubble.media_id;
   if (isInteractive) content.buttons = btns;
 
@@ -1825,11 +1843,11 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   if (!content.text && !isInteractive && !content.media_id) return;
 
   let wamid = ""; let status = "sent"; let error: any = null;
-  if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (text || isInteractive)) {
+  if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (body || isInteractive)) {
     try {
       wamid = isInteractive
-        ? await sendButtons(d.phoneNumberId, d.token, ctx.wa_id, text, btns)
-        : await sendText(d.phoneNumberId, d.token, ctx.wa_id, text);
+        ? await sendButtons(d.phoneNumberId, d.token, ctx.wa_id, body, btns)
+        : await sendText(d.phoneNumberId, d.token, ctx.wa_id, body);
     } catch (e) {
       status = "failed";
       error = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
@@ -1954,7 +1972,10 @@ export async function deliverStep(db: SupabaseClient, channelId: string, contact
   }
 
   for (const b of bubbles) {
-    if (b && (b.media_url || (b.text && String(b.text).trim()))) await emit(db, run, b, ctx);
+    // También deja pasar una burbuja con BOTONES aunque su texto esté vacío/sin resolver:
+    // emit le pone un cuerpo mínimo para no perderlos. El texto se filtra en CRUDO acá
+    // (una var sin resolver es truthy) pero emit ya maneja el cuerpo vacío al resolver.
+    if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) await emit(db, run, b, ctx);
   }
 }
 

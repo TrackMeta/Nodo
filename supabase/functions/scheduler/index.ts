@@ -223,7 +223,11 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
           // cuando el cliente reabra la ventana, o el pedido vence solo (arriba).
           let enviado = false;
           if (await ventana24hAbierta(db, (o as any).contact_id)) {
-            await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje });
+            // Se pasa `o.id` para que {{pedido_saldo}}/{{pedido_sede}} resuelvan ESTE pedido
+            // (el que espera adelanto). Sin el orderId, buildContext caía al pedido más
+            // reciente del contacto → un cliente con un pedido nuevo recibía el recordatorio
+            // con el saldo/sede del pedido equivocado.
+            await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje }, (o as any).id);
             enviado = true;
           } else if (nudge.template_name) {
             await sendTemplateToContact(db, chId, (o as any).contact_id, {
