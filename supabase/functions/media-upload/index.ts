@@ -10,6 +10,16 @@ import { serviceClient, userClient, userOwnsChannel, accountOfChannel } from "..
 const db = serviceClient();
 const BUCKET = "media";
 const MAX_BYTES = 16 * 1024 * 1024; // 16 MB
+// Solo tipos de MEDIA reales. El bucket es PÚBLICO, así que subir un text/html o
+// image/svg+xml (ambos ejecutan <script> al servirse) daría XSS almacenado / phishing
+// bajo el dominio de Supabase. Se sirve con el content_type que se sube, así que basta
+// con no permitir tipos ejecutables (todo lo que no esté acá se rechaza).
+const ALLOWED_CT = new Set([
+  "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif",
+  "audio/mpeg", "audio/mp3", "audio/ogg", "audio/webm", "audio/wav", "audio/mp4", "audio/aac", "audio/amr", "audio/x-m4a",
+  "video/mp4", "video/3gpp", "video/webm", "video/quicktime",
+  "application/pdf",
+]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -28,6 +38,9 @@ Deno.serve(async (req) => {
   if (!data) return json({ error: "falta_data" }, 400);
   // Multi-tenant: si se sube a la carpeta de un canal, debe ser de tu cuenta.
   if (channel_id && !(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // Solo tipos de media reales (bucket público → nada de HTML/SVG/JS ejecutables).
+  const ct = String(content_type || "").toLowerCase().split(";")[0].trim();
+  if (!ALLOWED_CT.has(ct)) return json({ error: "tipo_no_permitido", detalle: "Solo imagen, audio, video o PDF." }, 415);
 
   await ensureBucket();
 

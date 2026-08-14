@@ -65,7 +65,11 @@ Deno.serve(async (req) => {
       const code = teamCode();
       const role = body.role === "admin" ? "admin" : "operador";
       const { error } = await db.from("invitations").insert({
-        token: code, kind: "join_account", account_id: accountId, role, created_by: uid,
+        // usos_max: 1 → un código = una persona. Sin esto quedaba NULL = usos ILIMITADOS
+        // durante 14 días → cualquiera que viera el link (screenshot, chat) podía sumar su
+        // cuenta al tenant (como admin si el código era admin) las veces que quisiera. Si el
+        // admin necesita sumar a varios, genera un código por persona.
+        token: code, kind: "join_account", account_id: accountId, role, created_by: uid, usos_max: 1,
       });
       if (error) return json({ error: "crear", detalle: error.message }, 400);
       return json({ ok: true, code, link: `${PANEL}/registro.html?join=${code}` });

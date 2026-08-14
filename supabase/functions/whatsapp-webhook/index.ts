@@ -115,7 +115,7 @@ async function processPayload(channel: { id: string; buffer_default_seg?: number
         await processInbound(channel, msg, sender);
       }
       for (const st of value.statuses ?? []) {
-        await processStatus(st);
+        await processStatus(channel.id, st);
       }
     }
   }
@@ -335,7 +335,7 @@ async function runEngineTask(
   }
 }
 
-async function processStatus(st: any) {
+async function processStatus(channelId: string, st: any) {
   const wamid: string = st.id;
   const status: string = st.status; // sent | delivered | read | failed
   const patch: Record<string, unknown> = { status };
@@ -344,7 +344,10 @@ async function processStatus(st: any) {
     patch.error = { code: e.code, title: e.title, message: e.message };
     console.error(`[status] failed wamid=${wamid} code=${e.code} ${e.title}`);
   }
-  await db.from("messages").update(patch).eq("wamid", wamid);
+  // Scope por canal: el update es por wamid (id global de Meta). Aunque un webhook llega
+  // ya firmado con el app_secret del canal, se acota el update a ESTE canal para que un
+  // status con el wamid de OTRO tenant no pueda voltear el estado de su mensaje.
+  await db.from("messages").update(patch).eq("wamid", wamid).eq("channel_id", channelId);
 }
 
 // Extrae texto/tipo/contenido de un mensaje entrante de WhatsApp.

@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
   const uid = userRes?.user?.id;
   if (!uid) return json({ error: "no_auth" }, 401);
   const { data: member } = await db
-    .from("app_users").select("id, role").eq("id", uid).eq("activo", true).maybeSingle();
+    .from("app_users").select("id, role, platform_admin").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
   let body: any;
@@ -36,6 +36,12 @@ Deno.serve(async (req) => {
   if (!channel) return json({ error: "canal_invalido" }, 400);
   // Multi-tenant: el que llama debe ser miembro de la cuenta dueña del canal.
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // 🔒 Rol: gestionar las CLAVES de IA (guardar/borrar/definir el default) es solo para
+  // admin. Antes cualquier operador podía poner SU api_key como default (todo el tráfico
+  // de IA —conversaciones, OCR con DNI/PII— pasaría por su key) o borrarla (dejar el bot
+  // mudo). `test` queda abierto (solo prueba la key existente, no la cambia).
+  const esAdmin = (member as any).role === "admin" || (member as any).platform_admin === true;
+  if (["save", "delete", "default"].includes(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede gestionar las claves de IA del canal." }, 403);
 
   try {
     switch (action) {

@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
   const uid = userRes?.user?.id;
   if (!uid) return json({ error: "no_auth" }, 401);
   const { data: member } = await db
-    .from("app_users").select("id, role").eq("id", uid).eq("activo", true).maybeSingle();
+    .from("app_users").select("id, role, platform_admin").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
   let body: any;
@@ -38,6 +38,14 @@ Deno.serve(async (req) => {
   // Multi-tenant: el que llama debe ser miembro de la cuenta dueña del canal
   // (esta función toca secretos del canal — el chequeo es imprescindible aquí).
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // 🔒 Rol: las acciones que tocan SECRETOS/conexiones (tokens de Meta, app_secret, CAPI,
+  // el pairing de Telegram = "la llave para volverse admin") son solo para admin. Antes
+  // cualquier miembro activo —incluido un operador/vendedor— podía rotar el access_token,
+  // desconectar WhatsApp o generar el código de Telegram (escalada funcional operador→admin).
+  // La config de negocio (avisos/resumen/plantillas) y los tests siguen abiertos al operador.
+  const esAdmin = (member as any).role === "admin" || (member as any).platform_admin === true;
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "telegram_disconnect", "telegram_connect", "telegram_pair_start"]);
+  if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
     if (action === "status") {

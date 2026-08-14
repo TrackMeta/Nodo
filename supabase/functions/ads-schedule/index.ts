@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   const { data: userRes } = await userClient(req.headers.get("Authorization") ?? "").auth.getUser();
   const uid = userRes?.user?.id;
   if (!uid) return json({ error: "no_auth" }, 401);
-  const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
+  const { data: member } = await db.from("app_users").select("id, platform_admin").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
   let body: { action?: string; freq?: string };
@@ -49,6 +49,12 @@ Deno.serve(async (req) => {
   }
 
   if (action === "set") {
+    // 🔒 El cron de ads-sync es GLOBAL de la plataforma (una corrida procesa TODOS los
+    // canales de TODOS los tenants), así que su frecuencia NO es por-negocio: solo un
+    // platform_admin de Nodo puede cambiarla/apagarla. Antes cualquier miembro activo de
+    // cualquier cuenta podía mandar {action:"set",freq:"off"} y apagar el cron de toda la
+    // plataforma → el gasto de Meta dejaba de bajar para TODOS (fuga cross-tenant de infra).
+    if (!(member as any).platform_admin) return json({ error: "forbidden", detalle: "Solo un administrador de la plataforma puede cambiar la frecuencia del cron global de Meta." }, 403);
     const freq = String(body.freq ?? "");
     if (freq === "off") {
       const { error } = await db.rpc("unschedule_nodo_ads_sync");
