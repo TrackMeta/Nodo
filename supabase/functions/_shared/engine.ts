@@ -1696,7 +1696,19 @@ async function execute(db: SupabaseClient, run: Run) {
       }
       case "condicion": {
         const handle = await evalCondicion(db, run, node, ctx);
-        run.current_node_id = await nextNode(db, run.flow_id, node.id, handle);
+        let next = await nextNode(db, run.flow_id, node.id, handle);
+        // Si la rama evaluada NO tiene arista cableada (un flujo que solo dibujó la rama
+        // positiva y no la "else"), antes el run se marcaba `completado` y moría EN SILENCIO
+        // → dead-air a mitad de venta, el cliente sin respuesta y sin run activo. Ahora se
+        // intenta una arista "continuar" genérica y, si tampoco existe, se ESCALA a un humano
+        // (nunca dead-air) y se avisa al negocio que el flujo tiene un hueco.
+        if (!next) next = await nextNode(db, run.flow_id, node.id, "continuar");
+        if (!next) {
+          await pasarAHumano(db, run.channel_id, run.contact_id, `El flujo se quedó sin salida en la condición "${node.nombre || node.tipo}" (rama "${handle}" sin conectar). Atiéndelo y conecta esa rama en el editor.`, { aviso: true }).catch(() => {});
+          run.estado = "completado";
+          await saveRun(db, run); return;
+        }
+        run.current_node_id = next;
         break;
       }
       case "accion": {
@@ -4104,8 +4116,12 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const margenAdel = Number.isFinite(_margenAdelRaw) && _margenAdelRaw >= 0 ? _margenAdelRaw : 50;
   const sobrepagoAdel = !!ab && ab.cubre && totalOwedAdel > 0 && ab.total > totalOwedAdel + margenAdel;
   const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel;
+  // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
+  // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
+  // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
+  if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "adelanto"))) reuse = true;
 
-  if (puedeAuto) {
+  if (puedeAuto && !reuse) {
     // Acreditar al saldo lo pagado de más (o el total si pagó completo de una).
     const totalAdel = ab ? ab.total : monto;
     const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(ship, totalAdel);
@@ -4119,9 +4135,8 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       await logEvent(db, channelId, contactId, "nota", pagadoTotal ? "Pagó el TOTAL en el adelanto" : "Pagó de más en el adelanto",
         `Saldo actualizado a ${saldoNuevo}${pagadoTotal ? " (nada por cobrar al recoger)" : ""}`).catch(() => {});
     }
-    // Registra la operación en el ledger unificado → no se podrá reusar como
-    // pago digital ni como saldo de otro pedido.
-    if (oper) await registrarOperacion(db, channelId, oper, (order as any).id, "adelanto").catch(() => {});
+    // La operación ya quedó registrada en el ledger unificado por el CLAIM atómico de
+    // arriba (reclamarOperacion) → no se podrá reusar como pago digital ni saldo de otro pedido.
     await logEvent(db, channelId, contactId, "nota", "Adelanto validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     // 📦 Recién ahora que pagó el adelanto se aparta su stock (en provincia no se
     // reserva antes: ver reservarStockPedido). Idempotente.
@@ -4268,16 +4283,17 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   // Auto-aprobar (soltar la clave solo) SOLO en modo "auto". En manual se adjunta
   // y espera tu visto bueno (cae al bloque de "Saldo por validar" de abajo).
   const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave;
+  // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
+  // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
+  if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo"))) reuse = true;
 
-  if (puedeAuto) {
-    // ✅ Todo cuadra → saldo_pagado (guarda la operación) + dispara la entrega de clave.
+  if (puedeAuto && !reuse) {
+    // ✅ Todo cuadra → saldo_pagado (la operación ya la reclamó el claim de arriba) + entrega.
     await db.from("orders").update({
       estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
         ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
     }).eq("id", (order as any).id);
-    // Registra la operación en el ledger unificado (anti-reúso entre tipos).
-    if (oper) await registrarOperacion(db, channelId, oper, (order as any).id, "saldo").catch(() => {});
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await moverEtapa(db, channelId, contactId, "comprado");
     await syncPedidoSheet(db, (order as any).id);
@@ -6329,6 +6345,22 @@ export async function registrarOperacion(db: SupabaseClient, channelId: string, 
     channel_id: channelId, operacion: n, order_id: orderId, contexto,
   }).then(() => {}, () => { /* choca con el único = ya estaba: ok */ });
 }
+// CLAIM ATÓMICO del anti-reúso: intenta INSERTAR la operación y devuelve true SOLO si ESTE
+// llamador ganó la fila (el índice único (channel_id, operacion) serializa). Si otra ruta
+// —otro comprobante del mismo Yape, el mismo evento reintentado— ya la reclamó, devuelve
+// false. Cierra el TOCTOU de `operacionYaUsada`→(IA)→`registrarOperacion`: dos aprobaciones
+// concurrentes del MISMO Yape ya no pueden acreditar dos pedidos. Se llama JUSTO ANTES de
+// auto-aprobar. Una operación ilegible (<4 chars) no se puede reclamar → devuelve true (no
+// bloquea; esos pagos ya van a validación manual por otros guardas, ver sinOpVerificable).
+export async function reclamarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<boolean> {
+  const n = normOperacion(op);
+  if (n.length < 4) return true;
+  const { data, error } = await db.from("payment_operations")
+    .insert({ channel_id: channelId, operacion: n, order_id: orderId, contexto })
+    .select("id").maybeSingle();
+  if (error) return false;   // choca con el único → ya la reclamó otro → NO ganamos
+  return !!data;
+}
 
 // Modo de validación del pago DIGITAL, resolviendo la precedencia acordada con
 // Rodrigo: override del producto (config.validacion_pago) > default del canal
@@ -6848,9 +6880,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const esExtra = String(cfg.guardar_en ?? "").startsWith("pago_extra");
       const opNum = String(run.vars.pago_operacion ?? "").trim();
 
-      if (opNum && await operacionYaUsada(db, run.channel_id, opNum)) {
+      // 🔒 Claim ATÓMICO del anti-reúso: intenta reclamar la operación; si NO la gana (ya
+      // estaba, o una ruta concurrente la reclamó en la misma ventana), es reúso → rechazo.
+      // Cierra el TOCTOU del check-then-register (dos comprobantes del mismo Yape en paralelo
+      // no entregan dos productos). Si la gana, ya queda registrada (no se re-registra abajo).
+      if (opNum && !(await reclamarOperacion(db, run.channel_id, opNum, (run.vars._order_id as string) ?? null, esExtra ? "extra" : "digital"))) {
         // Reúso → convertir el veredicto en rechazo: la Condición del flujo
-        // manda a "reintentar pago". No se registra (ya estaba) ni se parquea.
+        // manda a "reintentar pago". No se parquea.
         const aviso = `PAGO_NO Este comprobante ya se usó antes (operación ${opNum}). Envíame uno nuevo, por favor.`;
         if (cfg.guardar_en) {
           run.vars[cfg.guardar_en] = aviso;
@@ -6858,9 +6894,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         await logEvent(db, run.channel_id, run.contact_id, "nota", "🚫 Comprobante reusado", `operación ${opNum}`).catch(() => {});
       } else {
-        if (opNum) {
-          await registrarOperacion(db, run.channel_id, opNum, (run.vars._order_id as string) ?? null, esExtra ? "extra" : "digital").catch(() => {});
-        }
         // BOLSA de pagos en cuotas (solo pago PRINCIPAL). El modelo ya dio el pago
         // por legítimo; acá el CÓDIGO suma los abonos. Si aún no cubre el precio, NO
         // se entrega: se guarda la bolsa pegada al contacto (el pedido todavía no

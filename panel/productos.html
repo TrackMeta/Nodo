@@ -1794,8 +1794,13 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
   for(let i=0;i<extras.length;i++){
     const x=extras[i];
     const info=cat.find(c=>c.id===x.version_id);
-    const precio=info?.precio ?? "";
-    const label=info?info.label:`Extra ${i+1}`;
+    // version_id FANTASMA: el producto/versión que apuntaba este extra ya no existe
+    // en el catálogo (se borró o se desactivó). Antes se horneaba igual un bump con
+    // precio "" → el cliente aceptaba y se le sumaba un extra en S/0. Se salta: no se
+    // puede ofrecer un producto que ya no existe. (saveProduct también los poda al guardar.)
+    if(!info || info.precio==null || info.precio==="" || Number(info.precio)<=0) continue;
+    const precio=info.precio;
+    const label=info.label;
     // Un extra DIGITAL viaja igual ride-along (se cobra junto), pero su link se
     // entrega recién cuando el pedido queda pagado del todo (motor:
     // entregarExtrasDigitales). El bump lleva version_id + digital para saberlo.
@@ -4003,6 +4008,39 @@ async function saveProduct(){
         usadas.add(k); a.clave=k;
         if(!Array.isArray(a.media)) a.media=[];
       });
+    }
+    // PODA de extras/regalos FANTASMA: un extra o regalo cuyo version_id ya no existe
+    // (el producto se borró o su versión se desactivó) horneaba un bump en S/0 en el
+    // flujo. Se contrasta contra el catálogo vivo y se descartan los muertos, avisando
+    // cuáles, para que el negocio no crea que sigue ofreciendo algo que ya no está.
+    if(Array.isArray(c.extras)&&c.extras.length || Array.isArray(c.regalos)&&c.regalos.length){
+      let vivos=null;
+      try{
+        let { data:prods } = await supa.from("products")
+          .select("id,product_versions(id,precio,activo)").eq("channel_id",st.channelId);
+        vivos=new Map();
+        (prods||[]).forEach(p=>(p.product_versions||[]).forEach(v=>{ if(v.activo!==false) vivos.set(v.id, v.precio); }));
+      }catch(_){ vivos=null; }   // si la consulta falla, no podamos a ciegas: se guarda tal cual
+      if(vivos){
+        const podados=[];
+        if(Array.isArray(c.extras)){
+          c.extras=c.extras.filter(x=>{
+            if(!x||!x.version_id) return false;                       // slot vacío
+            const pr=vivos.get(x.version_id);
+            if(pr==null){ podados.push("un extra (ya no existe)"); return false; }   // fantasma
+            if(!(Number(pr)>0)){ podados.push("un extra sin precio"); return false; } // S/0 → sería regalo, no extra
+            return true;
+          });
+        }
+        if(Array.isArray(c.regalos)){
+          c.regalos=c.regalos.filter(r=>{
+            if(!r||!r.version_id) return false;
+            if(!vivos.has(r.version_id)){ podados.push(`el regalo "${r.nombre||"?"}" (ya no existe)`); return false; }
+            return true;
+          });
+        }
+        if(podados.length) toast("Quité "+podados.join(", ")+" porque el producto ya no está en tu catálogo.");
+      }
     }
   }
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
