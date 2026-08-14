@@ -5913,13 +5913,39 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ? { clave: o, label: o }
         : { clave: o.clave ?? o.label, label: o.label ?? o.clave, detalle: o.detalle ?? null });
     const key = cfg.guardar_en || "clasificacion";
+    let que = cfg.que || "Opciones";
+    // Extra ride-along: si el cliente responde a "¿le sumas X?" con una TALLA de X,
+    // eso ES aceptar (está dando su talla para sumarlo). El prompt del generador dice
+    // "una talla = duda" —para no confundir la talla del REGALO con aceptar el extra—
+    // pero SOBRE-APLICA a la talla del PROPIO extra ofrecido. Le damos al modelo las
+    // tallas de ESTE extra para que distinga (no un override por código: decide el
+    // modelo, que es bueno con el matiz; así no reintroducimos el context-bleed del regalo).
+    const mIdx = /^extraf_(\d+)_resp$/.exec(String(cfg.guardar_en ?? ""));
+    if (mIdx && ctx._product_id) {
+      try {
+        const { data: pr } = await db.from("products").select("config").eq("id", ctx._product_id).maybeSingle();
+        const vid = ((((pr as any)?.config?.extras) ?? [])[Number(mIdx[1]) - 1] as any)?.version_id;
+        if (vid) {
+          const { data: pv } = await db.from("product_versions").select("nombre, product_id").eq("id", vid).maybeSingle();
+          const { data: exPr } = (pv as any)?.product_id
+            ? await db.from("products").select("nombre, config").eq("id", (pv as any).product_id).maybeSingle()
+            : { data: null };
+          const exNom = `${(exPr as any)?.nombre ?? ""} ${(pv as any)?.nombre ?? ""}`.trim();
+          const tallas = normalizeAtributos((exPr as any)?.config?.atributos)
+            .flatMap((a: any) => (Array.isArray(a.valores) ? a.valores : [])).filter(Boolean);
+          if (tallas.length) {
+            que += `\n\nACLARACIÓN (manda sobre lo anterior): si el cliente responde con una talla/variante de "${exNom || "este extra"}" —una de: ${tallas.join(", ")}— eso SÍ es ACEPTAR (te está dando su talla para sumarlo al pedido). La regla de "una talla = duda" aplica SOLO a la talla de OTRO producto (ej. el regalo), NUNCA a la de este extra que le estás ofreciendo ahora.`;
+          }
+        }
+      } catch (_) { /* sin tallas → clasifica como siempre */ }
+    }
     // Sin IA, sin candidatos o sin confianza → queda el default. El flujo sigue
     // por la rama prudente en vez de inventar una decisión del cliente.
     let val = String(cfg.default ?? "duda");
     if (cands.length && ctx.last_input) {
       const cls = await classify(db, run.channel_id, {
         texto: String(ctx.last_input), candidatos: cands, modo: "intencion",
-        que: cfg.que || "Opciones", perfil: cfg.perfil,
+        que, perfil: cfg.perfil,
       });
       if (cls?.clave && cls.confianza >= Number(cfg.umbral ?? 0.6)) val = cls.clave;
     }
