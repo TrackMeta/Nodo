@@ -102,10 +102,17 @@ export function resumirPedidos(orders: Order[]): Digest {
   let ganancia = 0, conMargen = 0, sinDatos = 0, costoProd = 0, envio = 0;
   for (const o of orders) {
     if (esFisico(o)) fisico++; else digital++;
-    if (esVenta(o)) {
+    // Plata REAL en mano / comprometida: sobre TODOS (cobrado es 0 en estados sin cobro;
+    // incluye el adelanto de un no_recogido, que sí quedó cobrado; porCobrar ya devuelve
+    // 0 para perdidos y no-ventas). Espeja `cobrado`/`por cobrar` del Dashboard.
+    ingresos += cobrado(o);
+    pc += porCobrar(o);
+    // VENTA CERRADA = venta Y NO perdida. rechazado/no_recogido son `venta:true` Y
+    // `perdido:true` a la vez → antes se contaban como Ventas cerradas Y como Perdidos, e
+    // inflaban `vendido`/ticket con su total. Ahora cuenta, vendido y margen usan solo las
+    // cerradas (espeja `ventasOk` del Dashboard, la fuente de verdad).
+    if (esVenta(o) && !esPerdido(o)) {
       ventas++;
-      ingresos += cobrado(o);
-      pc += porCobrar(o);
       vendido += total(o);
       const reg = costoRegalos(o); // 🎁 el costo del regalo cuenta como COGS
       if (reg > 0) costoProd += reg;

@@ -331,8 +331,12 @@ async function enHorario(channelId: string): Promise<boolean> {
     const hhmm = new Intl.DateTimeFormat("es-PE", {
       timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
     }).format(new Date()).replace(/^24/, "00"); // ICU a veces da "24:xx" a medianoche → "00:xx"
-    // Comparación lexicográfica de "HH:MM" (funciona con ceros a la izquierda).
-    return hhmm >= String(r.desde) && hhmm <= String(r.hasta);
+    // Comparación lexicográfica de "HH:MM" (funciona con ceros a la izquierda). Si la
+    // ventana CRUZA MEDIANOCHE (desde > hasta, p.ej. 20:00–08:00) hay que unir los dos
+    // tramos con OR; con AND, como antes, NINGÚN instante caía dentro → el remarketing
+    // nocturno quedaba apagado 24h sin error visible.
+    const d = String(r.desde), h = String(r.hasta);
+    return d <= h ? (hhmm >= d && hhmm <= h) : (hhmm >= d || hhmm <= h);
   } catch (_) { return true; } // ante la duda, no bloquear el remarketing
 }
 
@@ -446,8 +450,12 @@ async function processSub(s: any, now: number): Promise<boolean> {
     || (!!paso.flow_id && enVentana)
     || (!!(paso.mensaje || paso.bubbles?.length || paso.variantes?.length) && enVentana);
   if (vaAEnviar && paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
-    const venceH = Number(paso.oferta.vence_horas ?? 0);
-    const vence = venceH > 0 ? new Date(now + venceH * 3600 * 1000).toISOString() : null;
+    // SIEMPRE con caducidad: si el paso no configura `vence_horas` (o es 0), antes
+    // quedaba `vence=null` = descuento ETERNO → el validador aceptaba el precio rebajado
+    // para siempre (y en recompras/extras de esa misma versión). Default de 72h.
+    const venceH = Number(paso.oferta.vence_horas);
+    const vh = Number.isFinite(venceH) && venceH > 0 ? venceH : 72;
+    const vence = new Date(now + vh * 3600 * 1000).toISOString();
     await db.from("contacts").update({
       oferta_activa: { opcion_id: paso.oferta.version_id, precio: Number(paso.oferta.precio), vence, origen: "remarketing" },
     }).eq("id", s.contact_id).then(() => {}, () => {}); // best-effort (columna 0030)
@@ -461,7 +469,16 @@ async function processSub(s: any, now: number): Promise<boolean> {
     // SOLO se corre dentro de la ventana; fuera, se avanza sin correrlo. Antes esta rama
     // NO chequeaba la ventana → emitía texto libre fuera de 24h (violación de política de
     // WhatsApp: degrada/banea el número). Para alcanzar a un silencioso, usa una plantilla.
-    if (enVentana) { await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id); toco = true; }
+    // `toco` refleja el RETORNO de startFlowRun: devuelve false si ya hay un run
+    // activo/esperando (p.ej. un run rancio que el guard dejó pasar) → el flujo NO
+    // corrió, así que NO se debe consumir el paso ni sellar el anti-spam (se reintenta
+    // el próximo tick). Antes se marcaba toco=true a ciegas → paso perdido + oferta ya
+    // escrita sin que el cliente viera nada (descuento fantasma).
+    if (enVentana) {
+      const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
+      toco = !!ok;
+      if (!ok) console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/rancio) → se reintenta`);
+    }
     else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);
   }
   else if (paso.template_name) {

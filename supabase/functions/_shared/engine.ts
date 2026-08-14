@@ -387,14 +387,28 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
   try {
     const { data: o } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
     const bumps = ((o as any)?.order_bumps ?? []) as any[];
-    if (!bumps.some((b) => b?.digital && b?.version_id && !b?.entregado)) return;
+    if (!bumps.some((b) => b?.digital && !b?.entregado)) return;
     let changed = false;
     for (const b of bumps) {
-      if (!(b?.digital && b?.version_id && !b?.entregado)) continue;
-      const { data: v } = await db.from("product_versions").select("nombre, entrega").eq("id", b.version_id).maybeSingle();
+      if (!(b?.digital && !b?.entregado)) continue;   // TODOS los digitales sin entregar (aunque no tengan version_id)
+      const { data: v } = b?.version_id
+        ? await db.from("product_versions").select("nombre, entrega").eq("id", b.version_id).maybeSingle()
+        : { data: null };
       const items = (Array.isArray((v as any)?.entrega) ? (v as any).entrega : []).filter((it: any) => it && it.url);
-      if (!items.length) continue; // sin entrega configurada → nada que mandar
-      const nombre = b.nombre || (v as any)?.nombre || "extra";
+      const nombre = b.nombre || (v as any)?.nombre || "extra digital";
+      // Sin entregable (sin entrega configurada, versión borrada, o bump sin version_id):
+      // NO se puede auto-entregar. Se avisa al admin UNA vez (flag `entrega_avisado`, para
+      // no repetir en cada cobro) y se deja SIN marcar entregado para que un humano lo
+      // mande a mano. Antes era `continue` en silencio → el cliente pagaba el extra/regalo
+      // digital y no recibía nada, sin que nadie se enterara.
+      if (!items.length) {
+        if (!b.entrega_avisado) {
+          await logEvent(db, channelId, contactId, "error", "⚠️ Extra/regalo digital sin entrega — mándalo a mano", nombre).catch(() => {});
+          await avisar(db, channelId, contactId, "entrega_fallida", { producto: nombre });
+          b.entrega_avisado = true; changed = true;
+        }
+        continue;
+      }
       // Solo se marca entregado si el envío SALIÓ. Antes el error se tragaba y
       // se marcaba igual: el cliente pagaba, no recibía nada, y como la marca es
       // lo que hace idempotente a esta función, no se reintentaba NUNCA ni
@@ -3486,7 +3500,12 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
 // Acá se detecta (mensaje de texto con señal de cambio) y se actualiza el pedido
 // ABIERTO (no despachado). Solo dispara si el mensaje trae una señal barata (agencia,
 // nº de DNI, o palabra de dirección) para no gastar una llamada de IA en cada turno.
-const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|direccion|domicilio|mandal|manda|envial|envia|entrega|llev)/i;
+// Señal de "cambio de DIRECCIÓN": keywords de calle/dirección (fuertes). Se sacaron
+// los verbos de reparto sueltos (manda/envia/entrega/llev) que disparaban una llamada
+// de IA en preguntas como "¿cuándo me lo mandas?" — un cambio real de dirección casi
+// siempre trae una calle/avenida/jirón, así que no se pierde detección. (Si el mensaje
+// trae OTRA señal —DNI/nombre/tel— la IA igual extrae la dirección si la hay.)
+const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|direccion|domicilio)/i;
 // Señal barata de "cambio de destinatario" (nombre de quien recoge/recibe) y de
 // "cambio de teléfono de contacto". Ambos son datos de despacho que el cliente
 // corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
@@ -4303,7 +4322,14 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
     // "pedido_creado" TAMBIÉN se limpia: el pedido anterior lo dejó en "si" (candado
     // anti-duplicado) y sin resetearlo la Condición "crea si pedido_creado vacío"
     // nunca volvería a dispararse → la recompra no podría crear el pedido nuevo.
-    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos", "pedido_creado"];
+    // `_bolsa_pago` (abono parcial acumulado) TAMBIÉN se limpia: si un cliente abonó a
+    // medias y abandonó, esa bolsa persistía como campo del contacto y en la SIGUIENTE
+    // compra se sumaba a lo nuevo → cubría el precio con un abono viejo (subpago). La
+    // recompra empieza con la bolsa en cero.
+    // `oferta_activa` (descuento de remarketing) TAMBIÉN se limpia en la recompra: si no,
+    // un descuento aplicado en la compra anterior (o que quedó activo sin caducidad) se
+    // heredaba a la compra nueva → el validador aceptaba el precio rebajado de nuevo.
+    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos", "pedido_creado", "_bolsa_pago", "oferta_activa"];
     for (const k of claves) await setField(db, channelId, contactId, k, null);
   } catch (e) { console.error("[resetItemFields]", (e as any)?.message ?? e); }
 }
@@ -6836,14 +6862,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
         if (!esParcial && !yaParque) {
           const modo = await digitalPagoModo(db, run, info);
-          // Un pago de EXTRA sin nº de operación legible NO se puede verificar contra
-          // el anti-reúso (el ledger dedup por operación): un mismo comprobante podría
-          // pagar el principal Y el extra (el OCR del extra suele responder "PAGO_OK"
-          // sin el JSON de operación → opNum vacío → el chequeo de reúso se salta). Ante
-          // esa duda, NO se auto-entrega: va a validación MANUAL para que un humano lo
-          // revise (seguridad del dinero > conveniencia). El principal no aplica: su OCR
-          // sí trae la operación y su anti-reúso funciona.
-          const sinOpVerificable = esExtra && !opNum;
+          // Un pago SIN nº de operación legible NO se puede verificar contra el anti-reúso
+          // (el ledger dedup por operación): un mismo comprobante ilegible podría pagar dos
+          // productos digitales (el OCR a veces responde "PAGO_OK" sin el JSON de operación
+          // → opNum vacío → el chequeo de reúso se salta). Ante esa duda, NO se auto-entrega:
+          // va a validación MANUAL (seguridad del dinero > conveniencia). Aplica al principal
+          // Y al extra: un comprobante legible sí trae la operación y sigue en auto.
+          const sinOpVerificable = !opNum;
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
           // freno detectó un sobrepago sospechoso (Capa 1), o si es un extra sin
           // operación verificable — aunque esté en automático.
