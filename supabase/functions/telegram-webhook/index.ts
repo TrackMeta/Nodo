@@ -17,6 +17,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { answerCallback, editButtons, sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, parseFecha, localParts, localDayStartUTC, ymd, type Cual } from "../_shared/resumen.ts";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 
 const db = serviceClient();
 
@@ -54,7 +55,8 @@ Deno.serve(async (req) => {
 
   // 1) ¿Viene de Telegram?
   const secret = (ch as any).telegram_webhook_secret;
-  if (!secret || req.headers.get("x-telegram-bot-api-secret-token") !== secret) {
+  const got = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  if (!secret || !timingSafeEqual(got, secret)) {   // comparación en tiempo constante
     return json({ error: "forbidden" }, 403);
   }
 

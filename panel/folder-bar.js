@@ -164,7 +164,7 @@ export async function mountFolders(opts){
   async function createFolder(){
     const n = (await askText({ title:"Nueva carpeta", label:"Nombre de la carpeta", placeholder:"Ej. Cursos", confirmText:"Crear" }))?.trim();
     if (!n) return;
-    if (S.metas.some(m=>m.nombre===n)) { toast("Ya existe una carpeta con ese nombre", true); return; }
+    if (S.metas.some(m=>(m.nombre||"").toLowerCase()===n.toLowerCase())) { toast("Ya existe una carpeta con ese nombre", true); return; }
     if (S.hasTable){
       const { error } = await supa.from("folders").insert({ channel_id:S.channelId, tipo:S.tipo, nombre:n, orden:S.metas.length });
       if (error){ toast(/relation|does not exist/.test(error.message)?"Falta aplicar la migración 0061":error.message, true); }

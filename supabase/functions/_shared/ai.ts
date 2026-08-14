@@ -38,9 +38,20 @@ export interface AiCall {
   jsonSchema?: Record<string, unknown>; // salida estructurada (modo "extraer")
 }
 
+// Tope de tamaño del input de TEXTO (~50k tokens). Las Edge Functions de IA no acotaban
+// el input (brief/comando/resumen/texto), así que un miembro podía mandar varios MB y
+// quemar el presupuesto de IA de la cuenta. Está MUY por encima de cualquier prompt real
+// (hilo 4k + catálogo ≈ 10-20k). NO cuenta las imágenes base64 (el OCR de comprobantes es
+// legítimamente grande y ya está topado en media-upload).
+const MAX_INPUT_CHARS = 200_000;
+
 // Despacha al proveedor correcto y devuelve el texto de la respuesta.
 export async function runAI(call: AiCall): Promise<string> {
   if (!call.apiKey) throw new AiError({ provider: call.provider, message: "API key no configurada" });
+  const textLen = (call.system?.length || 0) + (typeof call.content === "string"
+    ? call.content.length
+    : call.content.reduce((a, b) => a + (b.type === "text" ? b.text.length : 0), 0));
+  if (textLen > MAX_INPUT_CHARS) throw new AiError({ provider: call.provider, type: "input_too_large", message: `input de texto demasiado grande (${textLen} > ${MAX_INPUT_CHARS})` });
   return call.provider === "openai" ? await callOpenAI(call) : await callAnthropic(call);
 }
 

@@ -565,7 +565,11 @@ async function asignar(c){
   const opts=[{label:"Sin asignar",value:"__none__"}, ...st.members.map(m=>({label:m.nombre+(m.id===st.uid?" · tú":""),value:m.id}))];
   const pick=await askChoice({ title:`Asignar «${c.nombre||c.wa_id}» a…`, options:opts });
   if(!pick) return;
-  const d={ ...dirOf(c) };
+  // Re-leer el `directo` fresco antes de mergear (multi-usuario): no pisar los intentos que
+  // otra asesora haya registrado mientras se elegía a quién asignar.
+  let base=dirOf(c);
+  try{ const { data:fresh }=await supa.from("contacts").select("directo").eq("id",c.id).maybeSingle(); if(fresh&&fresh.directo) base=fresh.directo; }catch(_){}
+  const d={ ...base };
   if(pick==="__none__"){ delete d.assigned_to; delete d.assigned_name; }
   else{ d.assigned_to=pick; d.assigned_name=st.members.find(m=>m.id===pick)?.nombre||null; }
   const { error }=await supa.from("contacts").update({ directo:d }).eq("id",c.id);
@@ -609,7 +613,13 @@ async function saveReg(){
   const meta=RES[R.resultado];
   const nota=$("rNota").value.trim();
   const intento={ at:new Date().toISOString(), by:st.uid, by_name:st.myName||"Yo", medio:R.medio, resultado:R.resultado, nota:nota||undefined };
-  const d={ ...dirOf(c) };
+  // Re-leer el `directo` ACTUAL del server antes de mergear: Directo es MULTI-USUARIO, otra
+  // asesora pudo registrar un intento/asignación mientras este modal estaba abierto. Sin
+  // esto se escribía sobre una copia rancia (la de openReg) y se pisaba su cambio
+  // (last-write-wins → su intento desaparecía del historial). Se mergea sobre lo fresco.
+  let base=dirOf(c);
+  try{ const { data:fresh }=await supa.from("contacts").select("directo").eq("id",c.id).maybeSingle(); if(fresh&&fresh.directo) base=fresh.directo; }catch(_){}
+  const d={ ...base };
   d.intentos=[...(d.intentos||[]), intento];
 
   // ── "Cerró la venta": NO se da por comprada hasta que la venta se complete de
