@@ -203,6 +203,10 @@ export async function runEngine(
     // parqueado la "confirme" sin poder grabarla. Ver recompraEnRunActivo.
     try { if (await recompraEnRunActivo(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[recompraEnRun]", (e as any)?.message ?? e); }
+    // Modificar el pedido ya creado: QUITAR un item o CAMBIAR la cantidad. Toca plata
+    // y stock → confirma antes de aplicar (no auto-muta). Corta la cadena si atendió.
+    try { if (await maybeModificarPedido(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[maybeModificarPedido]", (e as any)?.message ?? e); }
     // Cambio de datos de despacho (sede/DNI/dirección) mientras el pedido ya existe
     // y está parqueado en un nodo que no re-captura datos. Actualiza antes de responder.
     try { await maybeCambioDatos(db, channelId, contactId, event); }
@@ -211,6 +215,10 @@ export async function runEngine(
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
     if (event.type !== "message") return;
+    // Modificar el pedido ya creado (quitar item / cambiar cantidad) también cuando el
+    // run de venta ya terminó pero el pedido sigue abierto (Lima confirmado sin run).
+    try { if (await maybeModificarPedido(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[maybeModificarPedido/postrun]", (e as any)?.message ?? e); }
     // Modo soporte post-venta: si el contacto YA compró y escribe sin flujo
     // activo, lo atendemos como cliente (soporte), no re-vendemos. Si quiere
     // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
@@ -3538,6 +3546,228 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   if (!cambios.length) return;
   await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "📍 Datos del pedido actualizados", cambios.join(" · ").slice(0, 120)).catch(() => {});
+}
+
+// Estados de pedido en los que YA salió al courier: modificar item/cantidad ahí es
+// tarde (el paquete ya está armado/en camino) → el interceptor de modificación no toca.
+const ESTADOS_DESPACHADO = new Set(["despachado", "en_reparto", "en_agencia", "en_camino", "en_ruta", "listo_despacho", "en_preparacion"]);
+// Señal barata de "quiero MODIFICAR mi pedido" (quitar un item o cambiar la cantidad),
+// para no gastar una llamada de IA en cada turno. El clasificador + la confirmación
+// hacen el trabajo fino; acá solo abrimos la puerta.
+const QUITAR_KW = /\b(quita|quitar|q[uú]itame|saca|sacar|s[aá]came|elimina|eliminar|remueve|remover|b[oó]rra|ya no (lo|la|los|las)? ?(quiero|va|necesito|deseo)|sin (el|la|los|las)|no (lo|la|los|las) ?(quiero|deseo)|no quiero (el|la|los|las|ese|esa|esos|esas))\b/i;
+const CANT_VERBO = /\b(mejor|quiero|quisiera|m[aá]nda|manda|env[ií]a|env[ií]ame|que sean|aumenta|agrega|s[uú]be|s[uú]beme|baja|cambia|hazlo|p[oó]n(me|los|las)?|ll[eé]vame|ser[ií]an|ll[eé]vate)\b/i;
+const CANT_TOKEN = /(\b\d+\b|\bun\b|\buno\b|\buna\b|\bdos\b|\btres\b|\bcuatro\b|\bcinco\b|\bseis\b|\bpar\b|\bpares\b|\bunidad|\bdocena)/i;
+
+// El cliente quiere MODIFICAR un pedido YA CREADO (no despachado): QUITAR un item
+// (extra o regalo) o CAMBIAR LA CANTIDAD (= cambiar de presentación). Toca plata y
+// stock, así que NO auto-muta: re-plantea el cambio con el precio nuevo y pide "sí"
+// (patrón confirmar-y-aplicar) usando un pendiente en shipping._mod_pendiente. Sin
+// esto, el bot "confirmaba" el cambio pero el pedido quedaba igual (cobraba/despachaba
+// lo viejo). Devuelve true si atendió el mensaje (propuso o aplicó un cambio).
+async function maybeModificarPedido(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
+  const txt = event.text; const low = txt.toLowerCase();
+  // Sin acentos para las señales/regex: "quítame"/"súbeme"/"envíame" traen tildes que
+  // rompían el match (\bquita\b no calza "quíta"). Se testea contra la versión pelada.
+  const lowN = low.normalize("NFD").replace(new RegExp("[\u0300-\u036f]","g"), "");
+  // Último pedido editable (creado, no carrito, no despachado, no final).
+  const { data: order } = await db.from("orders")
+    .select("id, product_id, amount, currency, estado, shipping, order_bumps")
+    .eq("channel_id", channelId).eq("contact_id", contactId)
+    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado", "carrito"].map((e) => `"${e}"`).join(",")})`)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!order) return false;
+  if (ESTADOS_DESPACHADO.has(String((order as any).estado))) return false;
+  const ship = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
+  const bumps: any[] = Array.isArray((order as any).order_bumps) ? [...(order as any).order_bumps] : [];
+  const sym = simboloMoneda((order as any).currency);
+  const amount = Number((order as any).amount) || 0;
+  const bumpsTotal = bumps.reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+  const valorOrden = (amt: number, bs: any[]) => +(amt + bs.reduce((a, b) => a + (Number(b?.precio) || 0), 0)).toFixed(2);
+
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+
+  // ── FASE 2: hay un cambio propuesto esperando confirmación ──────────────────
+  const pend = ship._mod_pendiente;
+  if (pend && typeof pend === "object") {
+    // ¿El cliente confirmó? Clasificación mínima sí/no (barata; solo corre cuando
+    // hay un pendiente, o sea justo después de que preguntamos "¿confirmo?").
+    let decision: "si" | "no" | "otro" = "otro";
+    if (/\b(si|sip|dale|ok|okey|confirmo|confirmalo|correcto|asi es|hazlo|ya|de una|claro|por favor|porfa|va|listo)\b/i.test(lowN) && !/\bno\b/i.test(lowN)) decision = "si";
+    else if (/\b(no|mejor no|dejalo|olvidalo|asi esta bien|dejala asi|dejalo asi|cancela el cambio|no importa)\b/i.test(lowN)) decision = "no";
+    else if (ai?.api_key) {
+      const raw = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 12,
+        system: "Respondes SOLO 'SI', 'NO' o 'OTRO'. El cliente tenía un cambio en su pedido pendiente de confirmar.",
+        content: `Cambio propuesto: ${pend.resumen}\nMensaje del cliente: """${txt}"""\n¿El cliente CONFIRMA el cambio (SI), lo RECHAZA (NO), o habla de otra cosa (OTRO)?` }).catch(() => "OTRO");
+      const r = String(raw ?? "").toUpperCase();
+      decision = r.includes("SI") ? "si" : r.includes("NO") ? "no" : "otro";
+    }
+    if (decision === "otro") {
+      // No es una respuesta al cambio → se abandona el pendiente y se deja seguir el
+      // flujo normal con este mensaje (que quizás sea otra cosa). No se aplica nada.
+      delete ship._mod_pendiente;
+      await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+      return false;
+    }
+    delete ship._mod_pendiente;
+    if (decision === "no") {
+      await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+      await deliverMessage(db, channelId, contactId, `¡Sin problema! Lo dejo tal cual estaba. 😊`).catch(() => {});
+      await logEvent(db, channelId, contactId, "nota", "Cambio de pedido descartado por el cliente", String(pend.resumen).slice(0, 120)).catch(() => {});
+      return true;
+    }
+    // decision === "si" → APLICAR
+    try {
+      if (pend.tipo === "quitar") {
+        const idx = Number(pend.bump_idx);
+        const quitado = bumps[idx];
+        if (!quitado || quitado.nombre !== pend.bump_nombre) {           // el pedido cambió bajo los pies → re-evaluar
+          await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+          await deliverMessage(db, channelId, contactId, `Perdón, ¿me confirmas qué querías quitar? 🙏`).catch(() => {});
+          return true;
+        }
+        bumps.splice(idx, 1);
+        // Plata: si el bump subía el saldo (provincia), bajarlo. En Lima el saldo no se
+        // usa (la puerta cobra amount+bumps, que ya baja al sacar el bump de order_bumps).
+        const precio = Number(quitado.precio) || 0;
+        if (precio > 0 && Number.isFinite(Number(ship.saldo))) {
+          ship.saldo = String(Math.max(0, +(Number(ship.saldo) - precio).toFixed(2)));
+        }
+        // Stock: devolver el del item quitado (si se había descontado) o sacarlo del plan.
+        await devolverStockBump(db, ship, quitado).catch((e) => console.error("[maybeModificarPedido/stockQuitar]", e));
+        await db.from("orders").update({ order_bumps: bumps, shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+        await syncPedidoSheet(db, (order as any).id).catch(() => {});
+        await logEvent(db, channelId, contactId, "nota", "🗑️ Item quitado del pedido", `${quitado.nombre}${precio > 0 ? ` (−${sym}${precio})` : ""}`).catch(() => {});
+        await deliverMessage(db, channelId, contactId, `¡Listo! Saqué *${quitado.nombre}* de tu pedido. Queda en *${sym}${valorOrden(amount, bumps)}*. 😊`).catch(() => {});
+        return true;
+      }
+      if (pend.tipo === "cantidad") {
+        const amountNew = Number(pend.amount_new);
+        const cantNew = Number(pend.cantidad_new) || 1;
+        const delta = +(amountNew - amount).toFixed(2);
+        ship.opcion = pend.presentacion_nombre;
+        if (pend.costo_new != null && Number.isFinite(Number(pend.costo_new))) ship.costo_producto = +Number(pend.costo_new).toFixed(2);
+        if (Number.isFinite(Number(ship.saldo))) ship.saldo = String(Math.max(0, +(Number(ship.saldo) + delta).toFixed(2)));
+        // Stock del principal: ajustar las unidades de su movimiento (plan o aplicado).
+        await ajustarStockPrincipal(db, ship, String((order as any).product_id), cantNew).catch((e) => console.error("[maybeModificarPedido/stockCant]", e));
+        await db.from("orders").update({ amount: amountNew, shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+        await syncPedidoSheet(db, (order as any).id).catch(() => {});
+        await logEvent(db, channelId, contactId, "nota", "🔢 Cantidad del pedido actualizada", `${pend.presentacion_nombre} · ${sym}${amountNew}`).catch(() => {});
+        await deliverMessage(db, channelId, contactId, `¡Listo! Te lo dejo como *${pend.presentacion_nombre}*. Tu pedido queda en *${sym}${valorOrden(amountNew, bumps)}*. 😊`).catch(() => {});
+        return true;
+      }
+    } catch (e) {
+      console.error("[maybeModificarPedido/aplicar]", (e as any)?.message ?? e);
+      await deliverMessage(db, channelId, contactId, `Uy, tuve un problemita al actualizar tu pedido. Déjame verlo y te confirmo. 🙏`).catch(() => {});
+      await logEvent(db, channelId, contactId, "error", "Falló aplicar un cambio de pedido", `${pend?.tipo}: ${(e as any)?.message ?? e} — revisar a mano`).catch(() => {});
+      return true;
+    }
+  }
+
+  // ── FASE 1: detectar una NUEVA intención de modificar ───────────────────────
+  const sigQuitar = QUITAR_KW.test(lowN);
+  const sigCant = CANT_VERBO.test(lowN) && CANT_TOKEN.test(lowN);
+  if (!sigQuitar && !sigCant) return false;
+  if (!ai?.api_key) return false;
+
+  // Presentaciones disponibles del producto (para cambiar la cantidad).
+  let opciones: any[] = [];
+  try {
+    const { data: ov } = await db.from("product_versions")
+      .select("id, nombre, precio, costo, cantidad").eq("product_id", (order as any).product_id).eq("activo", true).order("orden");
+    opciones = (ov ?? []) as any[];
+  } catch (_) { opciones = []; }
+  const removibles = bumps.map((b, i) => ({ i, nombre: b.nombre, precio: Number(b.precio) || 0, regalo: !!b.regalo })).filter((b) => b.nombre);
+
+  const listaItems = removibles.length ? removibles.map((b) => `- "${b.nombre}"${b.regalo ? " (regalo)" : ` (${sym}${b.precio})`}`).join("\n") : "(ninguno)";
+  const listaPres = opciones.length ? opciones.map((o) => `- "${o.nombre}" · ${sym}${o.precio}${o.cantidad ? ` · ${o.cantidad} u.` : ""}`).join("\n") : "(una sola presentación)";
+  const raw = await runAI({
+    provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
+    system: "Analizas si un cliente peruano quiere MODIFICAR su pedido ya armado. Respondes SOLO con un JSON, sin explicar. Copia nombres TAL CUAL de las listas; si no calza con ninguno, deja vacío.",
+    content: `Pedido actual — presentación: "${ship.opcion ?? ""}". Items adicionales que se pueden QUITAR:\n${listaItems}\n\nPresentaciones disponibles del producto:\n${listaPres}\n\nMensaje del cliente:\n"""${txt}"""\n\n¿Qué quiere?\n- "accion": "quitar" (sacar un item adicional), "cantidad" (cambiar cuántas unidades / de presentación), o "ninguna".\n- "item": el nombre EXACTO (de la lista de arriba) del item a quitar, si accion=quitar.\n- "presentacion": el nombre EXACTO (de la lista) de la presentación que quiere, si accion=cantidad y calza una.\n- "cantidad_pedida": el número de unidades que pidió, si accion=cantidad (aunque no calce ninguna presentación).\n- "confianza": 0.0 a 1.0.\nJSON: {"accion":"","item":"","presentacion":"","cantidad_pedida":0,"confianza":0}`,
+  }).catch(() => null);
+  const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
+  let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
+  const conf = Number(p.confianza) || 0;
+  if (conf < 0.6) return false;
+
+  if (p.accion === "quitar") {
+    const nom = String(p.item ?? "").trim();
+    const hit = removibles.find((b) => b.nombre === nom) ?? (nom ? removibles.find((b) => b.nombre.toLowerCase().includes(nom.toLowerCase()) || nom.toLowerCase().includes(b.nombre.toLowerCase())) : undefined);
+    if (!hit) return false;                                  // no identificó QUÉ quitar → deja seguir el flujo normal
+    const resumen = `quitar "${hit.nombre}"${hit.precio > 0 ? ` (−${sym}${hit.precio})` : ""} → queda ${sym}${valorOrden(amount, bumps.filter((_, i) => i !== hit.i))}`;
+    ship._mod_pendiente = { tipo: "quitar", bump_idx: hit.i, bump_nombre: hit.nombre, bump_precio: hit.precio, resumen };
+    await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+    const nuevoTotal = valorOrden(amount, bumps.filter((_, i) => i !== hit.i));
+    await deliverMessage(db, channelId, contactId,
+      `Claro, te saco *${hit.nombre}*${hit.precio > 0 ? ` (S/${hit.precio})` : ""}. Tu pedido quedaría en *${sym}${nuevoTotal}*. ¿Te lo confirmo así? 🙂`).catch(() => {});
+    return true;
+  }
+  if (p.accion === "cantidad") {
+    const nomPres = String(p.presentacion ?? "").trim();
+    const opt = nomPres ? (opciones.find((o) => o.nombre === nomPres) ?? opciones.find((o) => String(o.nombre).toLowerCase() === nomPres.toLowerCase())) : null;
+    if (opt) {
+      const envio = Number(ship.envio_cobrado) || 0;
+      const amountNew = +(Number(opt.precio) + envio).toFixed(2);
+      if (+amountNew.toFixed(2) === +amount.toFixed(2)) return false;   // misma presentación → nada que cambiar
+      const cantNew = Number(opt.cantidad) || 1;
+      const costoNew = (opt.costo != null && opt.costo !== "" && Number.isFinite(Number(opt.costo))) ? Number(opt.costo) * cantNew : null;
+      const resumen = `cambiar a "${opt.nombre}" → ${sym}${valorOrden(amountNew, bumps)}`;
+      ship._mod_pendiente = { tipo: "cantidad", presentacion_id: opt.id, presentacion_nombre: opt.nombre, amount_new: amountNew, cantidad_new: cantNew, costo_new: costoNew, resumen };
+      await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+      await deliverMessage(db, channelId, contactId,
+        `¡Perfecto! Te lo dejo como *${opt.nombre}*. Tu pedido quedaría en *${sym}${valorOrden(amountNew, bumps)}*. ¿Lo confirmo? 🙂`).catch(() => {});
+      return true;
+    }
+    // Pidió una cantidad que NO tiene presentación → ofrecer las que sí hay (Rodrigo).
+    if (opciones.length > 1) {
+      const lista = opciones.map((o) => `• *${o.nombre}* — ${sym}${o.precio}`).join("\n");
+      await deliverMessage(db, channelId, contactId,
+        `Para esa cantidad tendría que cotizarte aparte. Por ahora tengo estas presentaciones:\n${lista}\n¿Cuál te preparo? 🙂`).catch(() => {});
+      return true;
+    }
+    return false;                                             // una sola presentación y pidió otra cantidad → lo ve un humano/flujo
+  }
+  return false;
+}
+
+// Devuelve al inventario el stock de un bump que se QUITA del pedido: si ya se había
+// descontado (está en stock_mov) lo repone y lo saca del arreglo; si solo estaba
+// planificado (stock_mov_plan, provincia sin adelanto) lo saca del plan sin reponer;
+// si tenía la talla pendiente (nunca se descontó) no hay nada que devolver.
+async function devolverStockBump(db: SupabaseClient, ship: Record<string, any>, bump: any): Promise<void> {
+  const pid = bump?.product_id; if (!pid) return;
+  const key = bump?.stock_key;
+  const match = (mv: any) => mv && mv.product_id === pid && (key == null || key === "" || mv.key === key);
+  const mov: any[] = Array.isArray(ship.stock_mov) ? ship.stock_mov : [];
+  const iApplic = mov.findIndex(match);
+  if (iApplic >= 0) {
+    await aplicarStock(db, [mov[iApplic]], 1).catch(() => {});   // reponer
+    ship.stock_mov = mov.filter((_, i) => i !== iApplic);
+    return;
+  }
+  const plan: any[] = Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : [];
+  const iPlan = plan.findIndex(match);
+  if (iPlan >= 0) ship.stock_mov_plan = plan.filter((_, i) => i !== iPlan);
+}
+
+// Ajusta las unidades del movimiento de stock del PRINCIPAL al cambiar de presentación
+// (cantidad). En provincia sin adelanto el movimiento vive en el plan (no aplicado) →
+// solo se reescribe; ya reservado (Lima / adelanto validado) → se aplica la diferencia.
+async function ajustarStockPrincipal(db: SupabaseClient, ship: Record<string, any>, productId: string, cantNew: number): Promise<void> {
+  const aplicado = Array.isArray(ship.stock_mov) && ship.stock_descontado;
+  const arr: any[] = aplicado ? ship.stock_mov : (Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : []);
+  const idx = arr.findIndex((mv: any) => mv && mv.product_id === productId);
+  if (idx < 0) return;                                          // sin movimiento del principal → nada que ajustar
+  const viejo = Number(arr[idx].unidades) || 1;
+  if (viejo === cantNew) return;
+  if (aplicado) {
+    const diff = cantNew - viejo;
+    await aplicarStock(db, [{ ...arr[idx], unidades: Math.abs(diff) }], diff > 0 ? -1 : 1).catch(() => {});
+  }
+  const nuevo = arr.map((mv: any, i: number) => i === idx ? { ...mv, unidades: cantNew } : mv);
+  if (aplicado) ship.stock_mov = nuevo; else ship.stock_mov_plan = nuevo;
 }
 
 async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
