@@ -203,6 +203,10 @@ export async function runEngine(
     // parqueado la "confirme" sin poder grabarla. Ver recompraEnRunActivo.
     try { if (await recompraEnRunActivo(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[recompraEnRun]", (e as any)?.message ?? e); }
+    // Cambio de SEDE mientras el pedido de provincia espera el adelanto (el run
+    // parqueado ahí no re-captura datos). Actualiza el pedido antes de responder.
+    try { await maybeCambioSede(db, channelId, contactId, event); }
+    catch (e) { console.error("[maybeCambioSede]", (e as any)?.message ?? e); }
     const ready = await resumeRun(db, run, event);
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
@@ -3437,6 +3441,42 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
 //     "la IA me adjunta los datos y el comprobante para yo validarlo".
 //   · auto: si el monto cuadra y no hay señales raras, lo valida y sigue.
 // Devuelve true si "tomó" el mensaje (el flujo no debe seguir con él).
+// El cliente CAMBIA su sede/oficina de agencia mientras el pedido de provincia
+// espera el adelanto. En ese estado el run está parqueado en el nodo de adelanto,
+// que NO tiene los campos de captura → extraerDatos no corre y el cambio se perdía:
+// el bot decía "cambio tu sede" pero el pedido seguía con la oficina vieja → paquete
+// a la dirección EQUIVOCADA. Acá se detecta (mensaje de texto que nombra una agencia,
+// con un pedido en esperando_adelanto) y se actualiza el pedido + sede_por_confirmar.
+async function maybeCambioSede(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<void> {
+  if (event.type !== "message" || event.msgType === "image" || !event.text) return;
+  if (!AGENCIA_KW.test(event.text.toLowerCase())) return; // AGENCIA_KW no tiene flag i → normalizar
+  const { data: order } = await db.from("orders").select("id, shipping")
+    .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "esperando_adelanto")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!order) return;
+  const sh = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
+  if (String(sh.zona ?? "").toLowerCase() !== "provincia") return;
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) return;
+  const raw = await runAI({
+    provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 80,
+    system: "Extraes la OFICINA/sede de agencia (Shalom, Olva) donde un cliente peruano dice que recogerá su pedido. Respondes SOLO con un JSON, sin explicaciones.",
+    content: `Mensaje del cliente:\n"""${event.text}"""\n\nSi indica una oficina/sede CONCRETA de agencia para recoger, devuélvela TAL CUAL la dijo. Si NO menciona una oficina concreta (solo agradece, pregunta, o dice algo no relacionado), devuelve vacío.\nResponde: {"sede":"..."}`,
+  });
+  const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
+  const nueva = m ? String(JSON.parse(m[0])?.sede ?? "").trim() : "";
+  // Guard: la sede extraída DEBE aparecer de verdad en el mensaje (evita que la IA
+  // invente/repita la vieja) y ser distinta de la actual.
+  if (!nueva || !valorLibreEnMensaje(nueva, event.text) || String(sh.sede ?? "") === nueva) return;
+  sh.sede = nueva; sh.destino = nueva;
+  const motivo = sedeImprecisa(nueva, String(sh.ciudad ?? ""));
+  if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;
+  await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+  await setField(db, channelId, contactId, "sede", nueva).catch(() => {});
+  await logEvent(db, channelId, contactId, "nota", "📍 Sede del pedido actualizada", nueva).catch(() => {});
+}
+
 async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   const { data: order } = await db.from("orders")
     .select("id, estado, amount, currency, shipping")
@@ -5208,12 +5248,29 @@ function valorEnMensaje(val: string, fuente: string): boolean {
   return toks.some((t) => t === nv || (nv.length >= 4 && (t.startsWith(pref) || nv.startsWith(t.slice(0, 4)))));
 }
 
+// Guard para valores de TEXTO LIBRE multi-palabra (sede/agencia): valorEnMensaje
+// falla con ellos (compara token vs valor entero con espacios). Basta con que una
+// palabra SIGNIFICATIVA del valor (≥4 letras, no palabra-ruido de agencia) aparezca
+// en el mensaje → la sede "Shalom Arequipa Cerro Colorado" pasa por "cerro"/"colorado";
+// una sede alucinada que no está en el mensaje NO pasa.
+const RUIDO_LIBRE = new Set(["shalom", "olva", "marvisur", "agencia", "agencias", "sede", "sedes", "oficina", "sucursal", "terminal", "agente", "calle", "avenida", "jiron", "esquina", "cerca", "frente"]);
+function valorLibreEnMensaje(val: string, fuente: string): boolean {
+  const _n = (t: string) => String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const msgToks = new Set(_n(fuente).split(/[^a-z0-9]+/).filter(Boolean));
+  const sig = _n(val).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !RUIDO_LIBRE.has(w));
+  return sig.length > 0 && sig.some((w) => msgToks.has(w));
+}
+
 // ¿El mensaje trae ALGÚN valor posible de este campo? Pre-filtro barato para la pasada
 // de correcciones: así la llamada extra a la IA solo se hace en un turno donde el
 // cliente de verdad menciona una talla/color/DNI (no en "sí confirmo" / "no gracias" /
 // la dirección) — sin esto, re-extraer cada turno agrega latencia a TODA venta.
 function mensajeTieneValorDe(c: any, texto: string): boolean {
   if (c.validar === "dni") return /\b\d{7,9}\b/.test(texto);
+  // Sede: el cliente la CAMBIA nombrando una agencia/oficina ("mejor en el Shalom
+  // Cerro Colorado"). Si el mensaje trae una palabra de agencia, vale re-extraerla
+  // (el pre-filtro barato antes de gastar una llamada a la IA).
+  if (c.validar === "sede") return AGENCIA_KW.test(texto.toLowerCase()); // AGENCIA_KW sin flag i
   const vals = String(c.valores ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   return vals.some((v) => valorEnMensaje(v, texto));
 }
@@ -5281,7 +5338,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // mejor la 40" / "mi DNI es otro"): antes `faltan` los excluía para siempre y el bot
   // acataba el cambio en la charla pero el pedido/stock salían con el valor viejo. El
   // guard (valorEnMensaje) evita pisar el valor bueno cuando el mensaje no trae uno.
-  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni";
+  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni" || c.validar === "sede";
   const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim()
     && mensajeTieneValorDe(c, texto));   // solo si el último msg realmente trae un valor de ESTE campo
   const desdeUltimo = [...soloUlt, ...correcciones];
@@ -5345,7 +5402,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // re-extraer una corrección pisaría el valor bueno con uno inventado. Con él,
             // "sí confirmo" no cambia nada y "mejor la 40" sí. No aplica a la extracción de
             // historial (guard=false): ahí la IA tiene todo el contexto y mapea plurales.
-            if (guard && !valorEnMensaje(val, fuente)) continue;
+            if (guard && !valorEnMensaje(val, fuente) && !(c.validar === "sede" && valorLibreEnMensaje(val, fuente))) continue;
             // Correcciones: si el valor re-extraído es IGUAL al que ya teníamos, no hay
             // nada que cambiar (evita re-loguear "dato capturado" cada turno).
             if (guard && String(ctx[c.clave] ?? "").trim() === val) continue;
@@ -5380,6 +5437,33 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         // captura recién cuando el cliente de verdad la dice, y la correcta.
         await procesar(faltanHist, contexto, false);           // datos faltantes, del historial (sin guard)
         await procesar(desdeUltimo, texto, true);               // extra (solo_ultimo) + correcciones, del último msg, con guard
+
+        // Sincronizar una SEDE corregida al pedido de provincia YA CREADO. En provincia
+        // el pedido nace al dar DNI+sede (esperando_adelanto); si el cliente cambia la
+        // oficina DESPUÉS ("mejor en el Shalom Cerro Colorado"), crearPedido no vuelve a
+        // correr (candado pedido_creado) y el pedido se quedaba con la sede vieja → el
+        // bot decía "cambio tu sede" pero el paquete iba a la oficina EQUIVOCADA. Acá se
+        // actualiza el pedido abierto y se re-evalúa `sede_por_confirmar`.
+        const sedeCampo = correcciones.find((c) => (c.validar as string) === "sede");
+        if (sedeCampo) {
+          const nuevaSede = String(ctx[sedeCampo.clave] ?? "").trim();
+          if (nuevaSede) {
+            try {
+              const { data: ord } = await db.from("orders").select("id, shipping, estado")
+                .eq("contact_id", run.contact_id)
+                .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
+                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+              const sh = { ...(((ord as any)?.shipping) ?? {}) } as Record<string, any>;
+              if (ord && String(sh.zona ?? "").toLowerCase() === "provincia" && String(sh.sede ?? "") !== nuevaSede) {
+                sh.sede = nuevaSede; sh.destino = nuevaSede;
+                const motivo = sedeImprecisa(nuevaSede, String(sh.ciudad ?? ctx.ciudad ?? ""));
+                if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;
+                await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (ord as any).id);
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Sede del pedido actualizada", nuevaSede).catch(() => {});
+              }
+            } catch (e) { console.error("[extraerDatos/sync-sede]", (e as any)?.message ?? e); }
+          }
+        }
       }
     } catch (e) { console.error("[extraerDatos]", (e as any)?.message ?? e); }
   }
