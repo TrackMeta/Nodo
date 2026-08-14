@@ -652,10 +652,18 @@ export async function crearVentaManual(
 // ese texto, "Color=blancas" no calzaba con "Color=blanco" de config.stock y el
 // stock NO se descontaba (riesgo de sobreventa). Se mapea por: igualdad → mismo
 // singular (quita 's'/'es' finales) → prefijo (≥4). Si nada calza, se deja lo dicho.
+// Los valores de un atributo se guardan como texto ("38, 39, 40"). El PANEL los parte con
+// /[,\n;]+/ (coma, salto de línea o punto y coma), pero el motor los partía SOLO por coma →
+// si el usuario pegó "38;39;40" (o la IA los emitió con ;) quedaban como UN solo valor y la
+// talla real ("39") nunca calzaba con el catálogo (no se capturaba → el stock no bajaba). El
+// motor ahora tolera los mismos separadores que el panel.
+function parseValores(csv: unknown): string[] {
+  return String(csv ?? "").split(/[,\n;]+/).map((s) => s.trim()).filter(Boolean);
+}
 function snapValorVariante(v: string, valoresCsv: string): string {
   const norm = (s: string) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   const nv = norm(v); if (!nv) return v;
-  const opts = String(valoresCsv ?? "").split(",").map((s) => s.trim()).filter(Boolean).map((o) => ({ o, n: norm(o) }));
+  const opts = parseValores(valoresCsv).map((o) => ({ o, n: norm(o) }));
   let hit = opts.find((x) => x.n === nv); if (hit) return hit.o;
   // Raíz que ignora número (plural) y género: "blancas" y "blanco" → "blanc";
   // "negras"/"negro" → "negr". Sin esto, el femenino/plural que dice el cliente
@@ -1520,9 +1528,9 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return true;
   }
   if (!aw) {
-    // No esperaba nada pero llegó un mensaje mientras corría → al buffer.
-    run.vars._buffer = [...(run.vars._buffer ?? []), event];
-    await saveRun(db, run);
+    // No esperaba nada (run activo pero sin _await → estado transitorio). El mensaje no
+    // tiene dónde encajar; antes se guardaba en `_buffer`, que NADIE drena (crecía sin
+    // límite en la fila y el evento se perdía igual). No se bufferea; se deja pasar.
     return false;
   }
   if (aw.type === "input" && event.type === "message") {
@@ -1553,9 +1561,19 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     await saveRun(db, run);
     return false;
   }
-  // Tipo inesperado (ej. escribió texto donde esperábamos botón) → buffer.
-  run.vars._buffer = [...(run.vars._buffer ?? []), event];
-  await saveRun(db, run);
+  // El cliente ESCRIBIÓ donde esperábamos un BOTÓN (nodo `mensaje` con botones, que rutea
+  // por boton:id y no tiene arista "continuar" para un texto). Antes caía a `_buffer` que
+  // nunca se drena → MUDO para siempre. Ahora se le pide tocar una opción y el run SIGUE
+  // parqueado (no se pierde su turno ni se avanza a ciegas). El nodo `pregunta` no cae acá:
+  // usa `_await` input a propósito para que un texto entre como respuesta.
+  if (aw.type === "button" && event.type === "message") {
+    await deliverMessage(db, run.channel_id, run.contact_id, "Toca una de las opciones de arriba 👆 (o escríbeme cuál en una palabra) para seguir. 🙂").catch(() => {});
+    run.estado = "esperando";
+    await saveRun(db, run);
+    return false;
+  }
+  // Otro tipo inesperado (ej. imagen donde esperábamos texto): no se bufferea (el buffer
+  // no se drena). Se deja pasar sin avanzar el run ni perder la fila en un buffer que crece.
   return false;
 }
 
@@ -2126,6 +2144,10 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "add_tag":    await addTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_add", "Etiqueta añadida", a.valor); break;
       case "remove_tag": await removeTag(db, run.channel_id, run.contact_id, a.valor); await logEvent(db, run.channel_id, run.contact_id, "etiqueta_del", "Etiqueta quitada", a.valor); break;
       case "set_field": {
+        // 🔒 No dejar que un flujo (editor avanzado / import) pise una var de SISTEMA
+        // (prefijo "_": _order_id, _await, _entrega_buffer, _bolsa_pago…): corrompería el
+        // estado del run. Los campos de negocio nunca empiezan con "_".
+        if (String(a.key ?? "").startsWith("_")) { await logEvent(db, run.channel_id, run.contact_id, "error", "set_field ignorado: clave de sistema protegida", String(a.key)).catch(() => {}); break; }
         const v = resolve(String(a.valor ?? ""), ctx);
         run.vars[a.key] = v; // disponible ya en este run (Condiciones posteriores)
         await setField(db, run.channel_id, run.contact_id, a.key, v);
@@ -2133,10 +2155,12 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         break;
       }
       case "clear_field":
+        if (String(a.key ?? "").startsWith("_")) { await logEvent(db, run.channel_id, run.contact_id, "error", "clear_field ignorado: clave de sistema protegida", String(a.key)).catch(() => {}); break; }
         delete run.vars[a.key]; await setField(db, run.channel_id, run.contact_id, a.key, null);
         await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo borrado", a.key);
         break;
       case "append_field": {
+        if (String(a.key ?? "").startsWith("_")) { await logEvent(db, run.channel_id, run.contact_id, "error", "append_field ignorado: clave de sistema protegida", String(a.key)).catch(() => {}); break; }
         const prev = ctx[a.key] ? String(ctx[a.key]) + "\n" : "";
         const v = prev + resolve(String(a.valor ?? ""), ctx);
         run.vars[a.key] = v;
@@ -2196,10 +2220,16 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
       case "bloquear":
         await db.from("contacts").update({ bloqueado: true, bot_activo: false }).eq("id", run.contact_id);
         await logEvent(db, run.channel_id, run.contact_id, "nota", "Contacto bloqueado"); break;
-      case "borrar_info":
+      case "borrar_info": {
         await db.from("contact_field_values").delete().eq("contact_id", run.contact_id);
-        run.vars = {};
+        // Conserva las vars de SISTEMA (prefijo "_": _order_id, _await, _entrega_buffer…):
+        // solo se borran los campos de NEGOCIO del usuario. Antes `run.vars = {}` desarmaba
+        // el run a mitad de flujo (perdía el pedido en curso, la entrega diferida, el _await).
+        const _sys: Record<string, unknown> = {};
+        for (const k of Object.keys(run.vars)) if (k.startsWith("_")) _sys[k] = (run.vars as any)[k];
+        run.vars = _sys;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "Información del usuario borrada"); break;
+      }
       // ── Bot / atención humana ──
       case "return_bot":
         await db.from("contacts").update({ bot_activo: true }).eq("id", run.contact_id);
@@ -3915,7 +3945,7 @@ async function maybeCambioVariante(db: SupabaseClient, channelId: string, contac
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false;
-  const listaEjes = ejes.map((a) => `- "${a.nombre}" (actual: ${atrib[a.nombre] ?? "?"}) — opciones: ${String(a.valores).split(",").map((s: string) => s.trim()).filter(Boolean).join(", ")}`).join("\n");
+  const listaEjes = ejes.map((a) => `- "${a.nombre}" (actual: ${atrib[a.nombre] ?? "?"}) — opciones: ${parseValores(a.valores).join(", ")}`).join("\n");
   const raw = await runAI({
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 100,
     system: "El cliente CAMBIA un atributo (talla/color) de su pedido ya hecho. Respondes SOLO con un JSON. Para cada atributo, si el cliente pide un valor NUEVO, ponlo TAL CUAL una de las opciones; si no lo cambia, déjalo vacío. Jamás inventes un valor fuera de las opciones.",
@@ -3928,7 +3958,7 @@ async function maybeCambioVariante(db: SupabaseClient, channelId: string, contac
     const pedido = String(p?.[a.nombre] ?? "").trim();
     if (!pedido) continue;
     const csv = String(a.valores);
-    const valores = csv.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const valores = parseValores(csv);
     const snapped = snapValorVariante(pedido, csv);
     const valido = valores.some((v) => v.toLowerCase() === snapped.toLowerCase());
     if (!valido) continue;                                       // valor fuera del catálogo → ignora (no inventa)
@@ -5761,7 +5791,7 @@ function mensajeTieneValorDe(c: any, texto: string): boolean {
   // Cerro Colorado"). Si el mensaje trae una palabra de agencia, vale re-extraerla
   // (el pre-filtro barato antes de gastar una llamada a la IA).
   if (c.validar === "sede") return AGENCIA_KW.test(texto.toLowerCase()); // AGENCIA_KW sin flag i
-  const vals = String(c.valores ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const vals = parseValores(c.valores);
   return vals.some((v) => valorEnMensaje(v, texto));
 }
 
@@ -7124,7 +7154,7 @@ function normalizeAtributos(raw: any): Atributo[] {
     let base = clave, n = 2;
     while (usadas.has(clave)) clave = base + "_" + n++;
     usadas.add(clave);
-    const valores = String(a?.valores ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
+    const valores = parseValores(a?.valores);
     const media = (Array.isArray(a?.media) ? a.media : [])
       .filter((m: any) => m && m.media_url)
       .map((m: any, j: number) => ({ ...m, tag: String(m.tag || ("atr_" + clave + (j ? "_" + j : ""))) }));

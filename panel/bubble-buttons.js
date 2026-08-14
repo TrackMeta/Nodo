@@ -29,9 +29,14 @@ const reindex = (arr) => arr.forEach((b, i) => { b.id = "atajo_" + (i + 1); });
 export function limpiaBotones(bubbles) {
   for (const b of bubbles ?? []) {
     if (!Array.isArray(b.buttons)) continue;
+    const vistos = new Set();
     const ok = b.buttons
       .map((x) => ({ id: x.id, title: (x.title ?? "").trim().slice(0, MAX_TITULO) }))
       .filter((x) => x.title)
+      // WhatsApp exige TÍTULOS ÚNICOS entre los reply buttons de un mismo mensaje; dos
+      // iguales ("Sí" y "Sí") hacen que Meta rechace el mensaje ENTERO (400) y el cliente
+      // no recibe nada. Se descartan los títulos repetidos (case-insensitive).
+      .filter((x) => { const k = x.title.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; })
       .slice(0, MAX_BOTONES);
     if (ok.length) { reindex(ok); b.buttons = ok; } else { delete b.buttons; }
   }
