@@ -207,6 +207,10 @@ export async function runEngine(
     // y stock → confirma antes de aplicar (no auto-muta). Corta la cadena si atendió.
     try { if (await maybeModificarPedido(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeModificarPedido]", (e as any)?.message ?? e); }
+    // Cambio de TALLA/COLOR del principal con el pedido ya creado (auto-aplica: no
+    // cambia el precio, pero sí el rótulo y la variante de stock). Corta si aplicó.
+    try { if (await maybeCambioVariante(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[maybeCambioVariante]", (e as any)?.message ?? e); }
     // Cambio de datos de despacho (sede/DNI/dirección) mientras el pedido ya existe
     // y está parqueado en un nodo que no re-captura datos. Actualiza antes de responder.
     try { await maybeCambioDatos(db, channelId, contactId, event); }
@@ -219,6 +223,8 @@ export async function runEngine(
     // run de venta ya terminó pero el pedido sigue abierto (Lima confirmado sin run).
     try { if (await maybeModificarPedido(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeModificarPedido/postrun]", (e as any)?.message ?? e); }
+    try { if (await maybeCambioVariante(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[maybeCambioVariante/postrun]", (e as any)?.message ?? e); }
     // Modo soporte post-venta: si el contacto YA compró y escribe sin flujo
     // activo, lo atendemos como cliente (soporte), no re-vendemos. Si quiere
     // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
@@ -2799,13 +2805,26 @@ export async function reservarStockPedido(db: SupabaseClient, orderId: string, c
     if (ship.stock_descontado) return;                          // ya reservado
     const plan = Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : [];
     if (!plan.length) return;                                   // nada planificado (Lima ya reservó, o sin stock)
+    // 🔒 CLAIM ATÓMICO anti-doble-descuento: se flip-ea `stock_descontado` false→true en
+    // el MISMO UPDATE, con una guarda que solo matchea si aún NO está descontado. Postgres
+    // serializa el row-lock → si el OCR auto-valida el adelanto a la vez que apruebas el
+    // adelanto a mano (order-update), solo UNO gana la fila; el otro recibe 0 filas y NO
+    // vuelve a descontar. Antes el guard era read-then-write (líneas separadas) → ambos
+    // leían false y ambos descontaban → subventa fantasma permanente (el +1 al cancelar
+    // solo devolvía una vez). El claim se hace ANTES de aplicar el stock; si el CAS de
+    // aplicarStock falla, se REVIERTE el claim para que un reintento lo vuelva a intentar.
+    const claimShip: any = { ...ship, stock_mov: plan, stock_descontado: true };
+    delete claimShip.stock_mov_plan;
+    const { data: won } = await db.from("orders").update({ shipping: claimShip }).eq("id", orderId)
+      .or("shipping->>stock_descontado.is.null,shipping->>stock_descontado.eq.false").select("id");
+    if (!won || !won.length) return;                            // otro camino ya lo reservó → no dobles
     const { alerts, ok } = await aplicarStock(db, plan, -1);
-    // Si el CAS no aplicó, NO marcar descontado ni borrar el plan → deja que el próximo
-    // intento reintente (esta función es idempotente y la llaman los dos caminos del adelanto).
-    if (!ok) { console.error("[reservarStockPedido] stock no aplicado (CAS agotó reintentos) — se reintenta"); return; }
-    const nship: any = { ...ship, stock_mov: plan, stock_descontado: true };
-    delete nship.stock_mov_plan;
-    await db.from("orders").update({ shipping: nship }).eq("id", orderId);
+    // Si el CAS no aplicó, revertir el claim (dejar el plan) → el próximo intento reintenta.
+    if (!ok) {
+      await db.from("orders").update({ shipping: ship }).eq("id", orderId).catch(() => {});
+      console.error("[reservarStockPedido] stock no aplicado (CAS agotó reintentos) — claim revertido, se reintenta");
+      return;
+    }
     for (const al of alerts) {
       const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
       await notifyAdmin(db, { channel_id: channelId } as Run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
@@ -3685,7 +3704,7 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   const raw = await runAI({
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
     system: "Analizas si un cliente peruano quiere MODIFICAR su pedido ya armado. Respondes SOLO con un JSON, sin explicar. Copia nombres TAL CUAL de las listas; si no calza con ninguno, deja vacío.",
-    content: `Pedido actual — presentación: "${ship.opcion ?? ""}". Items adicionales que se pueden QUITAR:\n${listaItems}\n\nPresentaciones disponibles del producto:\n${listaPres}\n\nMensaje del cliente:\n"""${txt}"""\n\n¿Qué quiere?\n- "accion": "quitar" (sacar un item adicional), "cantidad" (cambiar cuántas unidades / de presentación), o "ninguna".\n- "item": el nombre EXACTO (de la lista de arriba) del item a quitar, si accion=quitar.\n- "presentacion": el nombre EXACTO (de la lista) de la presentación que quiere, si accion=cantidad y calza una.\n- "cantidad_pedida": el número de unidades que pidió, si accion=cantidad (aunque no calce ninguna presentación).\n- "confianza": 0.0 a 1.0.\nJSON: {"accion":"","item":"","presentacion":"","cantidad_pedida":0,"confianza":0}`,
+    content: `Pedido actual — presentación: "${ship.opcion ?? ""}". Items adicionales que se pueden QUITAR:\n${listaItems}\n\nPresentaciones disponibles del producto:\n${listaPres}\n\nMensaje del cliente:\n"""${txt}"""\n\n¿Qué quiere?\n- "accion": "quitar" (sacar un item adicional), "cantidad" (cambiar CUÁNTAS unidades / de presentación), o "ninguna".\n- OJO: cambiar la TALLA o el COLOR del producto NO es cambiar la cantidad → eso es "ninguna". Dar un dato (su nombre, DNI, dirección, una talla) tampoco → "ninguna".\n- "item": el nombre EXACTO (de la lista de arriba) del item a quitar, si accion=quitar.\n- "presentacion": el nombre EXACTO (de la lista) de la presentación que quiere, si accion=cantidad y calza una.\n- "cantidad_pedida": el número de unidades que pidió, si accion=cantidad (aunque no calce ninguna presentación).\n- "confianza": 0.0 a 1.0.\nJSON: {"accion":"","item":"","presentacion":"","cantidad_pedida":0,"confianza":0}`,
   }).catch(() => null);
   const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
   let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
@@ -3768,6 +3787,90 @@ async function ajustarStockPrincipal(db: SupabaseClient, ship: Record<string, an
   }
   const nuevo = arr.map((mv: any, i: number) => i === idx ? { ...mv, unidades: cantNew } : mv);
   if (aplicado) ship.stock_mov = nuevo; else ship.stock_mov_plan = nuevo;
+}
+
+// Swap de la CLAVE de variante del movimiento del principal (cambio de talla/color):
+// repone la variante vieja y reserva la nueva si ya estaba descontado; si solo estaba
+// planificado (provincia sin adelanto) reescribe la clave del plan sin tocar inventario.
+async function swapClaveStockPrincipal(db: SupabaseClient, ship: Record<string, any>, productId: string, oldKey: string, newKey: string): Promise<void> {
+  if (oldKey === newKey) return;
+  const aplicado = Array.isArray(ship.stock_mov) && ship.stock_descontado;
+  const arr: any[] = aplicado ? ship.stock_mov : (Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : []);
+  let idx = arr.findIndex((mv: any) => mv && mv.product_id === productId && mv.key === oldKey);
+  if (idx < 0) idx = arr.findIndex((mv: any) => mv && mv.product_id === productId);   // fallback por producto
+  if (idx < 0) return;
+  const unid = Number(arr[idx].unidades) || 1;
+  if (aplicado) {
+    await aplicarStock(db, [{ product_id: productId, key: oldKey, unidades: unid }], 1).catch(() => {});   // repone la vieja
+    await aplicarStock(db, [{ product_id: productId, key: newKey, unidades: unid }], -1).catch(() => {});  // reserva la nueva
+  }
+  const nuevo = arr.map((mv: any, i: number) => i === idx ? { ...mv, key: newKey } : mv);
+  if (aplicado) ship.stock_mov = nuevo; else ship.stock_mov_plan = nuevo;
+}
+
+// Señal de "cambiar la TALLA/COLOR del principal" (exige un verbo de cambio; una
+// respuesta normal tipo "talla M" a la oferta del extra NO trae verbo → no dispara).
+const CAMBIO_VAR_KW = /\b(mejor|en vez|en lugar|cambi|ponme|pongame|que sea|prefiero|hazla|hazlo|quiero (la|el|en|otra|otro)|dame (la|el|otra|otro)|mand[ae]me (la|el|otra|otro))\b/i;
+
+// El cliente cambia la TALLA o el COLOR del producto PRINCIPAL DESPUÉS de crear el
+// pedido ("mejor la talla 42", "en azul mejor"). El pedido queda parqueado en un nodo
+// sin campos → extraerDatos no corre y crearPedido no re-corre → el rótulo/stock salían
+// con la variante VIEJA (se despachaba la talla equivocada). Acá se re-extrae del
+// mensaje SOLO un valor VÁLIDO del producto, se actualiza shipping.atributos y se
+// swapea el stock. Auto-aplica (como la corrección PRE-pedido): no cambia el precio.
+async function maybeCambioVariante(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
+  const txt = event.text; const low = txt.toLowerCase();
+  const lowN = low.normalize("NFD").replace(new RegExp("[\u0300-\u036f]", "g"), "");
+  if (!CAMBIO_VAR_KW.test(lowN)) return false;
+  const { data: order } = await db.from("orders")
+    .select("id, product_id, shipping, estado")
+    .eq("channel_id", channelId).eq("contact_id", contactId)
+    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado", "carrito"].map((e) => `"${e}"`).join(",")})`)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!order) return false;
+  if (ESTADOS_DESPACHADO.has(String((order as any).estado))) return false;
+  const ship = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
+  const atrib = { ...((ship.atributos as Record<string, any>) ?? {}) };
+  if (!Object.keys(atrib).length) return false;                 // producto sin variante → nada que cambiar
+  const { data: prod } = await db.from("products").select("config").eq("id", (order as any).product_id).maybeSingle();
+  const atrRaw: any[] = Array.isArray((prod as any)?.config?.atributos) ? (prod as any).config.atributos : [];
+  const ejes = atrRaw.filter((a) => a && a.nombre && String(a.valores ?? "").trim());
+  if (!ejes.length) return false;
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) return false;
+  const listaEjes = ejes.map((a) => `- "${a.nombre}" (actual: ${atrib[a.nombre] ?? "?"}) — opciones: ${String(a.valores).split(",").map((s: string) => s.trim()).filter(Boolean).join(", ")}`).join("\n");
+  const raw = await runAI({
+    provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 100,
+    system: "El cliente CAMBIA un atributo (talla/color) de su pedido ya hecho. Respondes SOLO con un JSON. Para cada atributo, si el cliente pide un valor NUEVO, ponlo TAL CUAL una de las opciones; si no lo cambia, déjalo vacío. Jamás inventes un valor fuera de las opciones.",
+    content: `Atributos del producto:\n${listaEjes}\n\nMensaje del cliente:\n"""${txt}"""\n\nJSON con SOLO los atributos que cambia: {${ejes.map((a) => `"${a.nombre}":""`).join(",")}}`,
+  }).catch(() => null);
+  const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
+  let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
+  const cambios: string[] = [];
+  for (const a of ejes) {
+    const pedido = String(p?.[a.nombre] ?? "").trim();
+    if (!pedido) continue;
+    const csv = String(a.valores);
+    const valores = csv.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const snapped = snapValorVariante(pedido, csv);
+    const valido = valores.some((v) => v.toLowerCase() === snapped.toLowerCase());
+    if (!valido) continue;                                       // valor fuera del catálogo → ignora (no inventa)
+    if (String(atrib[a.nombre] ?? "").toLowerCase() === snapped.toLowerCase()) continue; // igual → nada
+    atrib[a.nombre] = snapped;
+    cambios.push(`${a.nombre}: ${snapped}`);
+  }
+  if (!cambios.length) return false;
+  const oldKey = stockKeyEngine(atrRaw, (ship.atributos as any) ?? {});
+  const newKey = stockKeyEngine(atrRaw, atrib);
+  ship.atributos = atrib;
+  await swapClaveStockPrincipal(db, ship, String((order as any).product_id), oldKey, newKey).catch((e) => console.error("[maybeCambioVariante/stock]", e));
+  await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+  await syncPedidoSheet(db, (order as any).id).catch(() => {});
+  await logEvent(db, channelId, contactId, "nota", "🎯 Variante del pedido actualizada", cambios.join(" · ").slice(0, 120)).catch(() => {});
+  await deliverMessage(db, channelId, contactId, `¡Listo! Te lo actualicé a *${cambios.join(", ")}*. 😊`).catch(() => {});
+  return true;
 }
 
 async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
