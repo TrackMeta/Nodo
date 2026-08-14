@@ -203,10 +203,10 @@ export async function runEngine(
     // parqueado la "confirme" sin poder grabarla. Ver recompraEnRunActivo.
     try { if (await recompraEnRunActivo(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[recompraEnRun]", (e as any)?.message ?? e); }
-    // Cambio de SEDE mientras el pedido de provincia espera el adelanto (el run
-    // parqueado ahí no re-captura datos). Actualiza el pedido antes de responder.
-    try { await maybeCambioSede(db, channelId, contactId, event); }
-    catch (e) { console.error("[maybeCambioSede]", (e as any)?.message ?? e); }
+    // Cambio de datos de despacho (sede/DNI/dirección) mientras el pedido ya existe
+    // y está parqueado en un nodo que no re-captura datos. Actualiza antes de responder.
+    try { await maybeCambioDatos(db, channelId, contactId, event); }
+    catch (e) { console.error("[maybeCambioDatos]", (e as any)?.message ?? e); }
     const ready = await resumeRun(db, run, event);
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
@@ -3441,40 +3441,67 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
 //     "la IA me adjunta los datos y el comprobante para yo validarlo".
 //   · auto: si el monto cuadra y no hay señales raras, lo valida y sigue.
 // Devuelve true si "tomó" el mensaje (el flujo no debe seguir con él).
-// El cliente CAMBIA su sede/oficina de agencia mientras el pedido de provincia
-// espera el adelanto. En ese estado el run está parqueado en el nodo de adelanto,
-// que NO tiene los campos de captura → extraerDatos no corre y el cambio se perdía:
-// el bot decía "cambio tu sede" pero el pedido seguía con la oficina vieja → paquete
-// a la dirección EQUIVOCADA. Acá se detecta (mensaje de texto que nombra una agencia,
-// con un pedido en esperando_adelanto) y se actualiza el pedido + sede_por_confirmar.
-async function maybeCambioSede(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<void> {
+// El cliente CAMBIA un dato de despacho (SEDE de agencia, DNI o DIRECCIÓN) DESPUÉS
+// de que el pedido ya nació. El pedido de provincia nace al dar DNI+sede (queda
+// parqueado en el nodo de adelanto) y el de Lima al confirmar (parqueado en la
+// oferta del extra / Fin); esos nodos NO tienen campos → extraerDatos no corre y el
+// cambio se perdía: el bot decía "ya lo actualicé" pero el pedido guardaba el dato
+// VIEJO → paquete a la oficina/dirección equivocada o DNI que no calza en la agencia.
+// Acá se detecta (mensaje de texto con señal de cambio) y se actualiza el pedido
+// ABIERTO (no despachado). Solo dispara si el mensaje trae una señal barata (agencia,
+// nº de DNI, o palabra de dirección) para no gastar una llamada de IA en cada turno.
+const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|direccion|domicilio|mandal|manda|envial|envia|entrega|llev)/i;
+async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<void> {
   if (event.type !== "message" || event.msgType === "image" || !event.text) return;
-  if (!AGENCIA_KW.test(event.text.toLowerCase())) return; // AGENCIA_KW no tiene flag i → normalizar
-  const { data: order } = await db.from("orders").select("id, shipping")
-    .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "esperando_adelanto")
+  const txt = event.text; const low = txt.toLowerCase();
+  const sigSede = AGENCIA_KW.test(low);          // AGENCIA_KW no tiene flag i → normalizar
+  const sigDni = /\b\d{7,9}\b/.test(txt);
+  const sigDir = DIRECCION_KW.test(low);
+  if (!sigSede && !sigDni && !sigDir) return;    // sin señal de cambio → nada que hacer
+  // Último pedido AÚN editable (no despachado/pagado/cerrado).
+  const { data: order } = await db.from("orders").select("id, shipping, estado")
+    .eq("channel_id", channelId).eq("contact_id", contactId)
+    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order) return;
   const sh = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
-  if (String(sh.zona ?? "").toLowerCase() !== "provincia") return;
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return;
   const raw = await runAI({
-    provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 80,
-    system: "Extraes la OFICINA/sede de agencia (Shalom, Olva) donde un cliente peruano dice que recogerá su pedido. Respondes SOLO con un JSON, sin explicaciones.",
-    content: `Mensaje del cliente:\n"""${event.text}"""\n\nSi indica una oficina/sede CONCRETA de agencia para recoger, devuélvela TAL CUAL la dijo. Si NO menciona una oficina concreta (solo agradece, pregunta, o dice algo no relacionado), devuelve vacío.\nResponde: {"sede":"..."}`,
+    provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
+    system: "Extraes datos de despacho que un cliente peruano CORRIGE/cambia para su pedido. Respondes SOLO con un JSON, sin explicaciones. Copia el valor TAL CUAL lo dijo. Si un dato NO aparece en el mensaje, déjalo vacío (jamás lo inventes).",
+    content: `Mensaje del cliente:\n"""${txt}"""\n\nDevuelve SOLO lo que el cliente indique concretamente:\n- "sede": la oficina/sede de agencia (Shalom/Olva) donde recoge, si la nombra.\n- "dni": su número de DNI (7-9 dígitos), si lo da.\n- "direccion": la dirección de entrega (calle/avenida/jirón con número o un punto concreto), si la da.\nJSON: {"sede":"","dni":"","direccion":""}`,
   });
   const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
-  const nueva = m ? String(JSON.parse(m[0])?.sede ?? "").trim() : "";
-  // Guard: la sede extraída DEBE aparecer de verdad en el mensaje (evita que la IA
-  // invente/repita la vieja) y ser distinta de la actual.
-  if (!nueva || !valorLibreEnMensaje(nueva, event.text) || String(sh.sede ?? "") === nueva) return;
-  sh.sede = nueva; sh.destino = nueva;
-  const motivo = sedeImprecisa(nueva, String(sh.ciudad ?? ""));
-  if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;
+  let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
+  const cambios: string[] = [];
+  // SEDE (texto libre): guard por solape de palabras + re-evalúa sede_por_confirmar.
+  const nSede = String(p.sede ?? "").trim();
+  if (nSede && valorLibreEnMensaje(nSede, txt) && String(sh.sede ?? "") !== nSede) {
+    sh.sede = nSede; sh.destino = nSede;
+    const motivo = sedeImprecisa(nSede, String(sh.ciudad ?? ""));
+    if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;
+    await setField(db, channelId, contactId, "sede", nSede).catch(() => {});
+    cambios.push("sede: " + nSede);
+  }
+  // DNI: 7-9 dígitos, presente en el mensaje, distinto del actual.
+  const nDni = String(p.dni ?? "").replace(/\D/g, "");
+  if (/^\d{7,9}$/.test(nDni) && txt.includes(nDni) && String(sh.dni ?? "") !== nDni) {
+    sh.dni = nDni;
+    await setField(db, channelId, contactId, "dni", nDni).catch(() => {});
+    cambios.push("DNI: " + nDni);
+  }
+  // DIRECCIÓN (texto libre): guard por solape, distinta de la actual.
+  const nDir = String(p.direccion ?? "").trim();
+  if (nDir && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
+    sh.direccion = nDir;
+    await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
+    cambios.push("dirección: " + nDir);
+  }
+  if (!cambios.length) return;
   await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
-  await setField(db, channelId, contactId, "sede", nueva).catch(() => {});
-  await logEvent(db, channelId, contactId, "nota", "📍 Sede del pedido actualizada", nueva).catch(() => {});
+  await logEvent(db, channelId, contactId, "nota", "📍 Datos del pedido actualizados", cambios.join(" · ").slice(0, 120)).catch(() => {});
 }
 
 async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
