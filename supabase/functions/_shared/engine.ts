@@ -2212,8 +2212,15 @@ function parseMonto(raw: unknown, ctx: any): number | undefined {
   // "1,234.56": la coma es separador de MILES → se quita (antes replace(",",".")
   // solo cambiaba la primera coma y "1.234.56" daba NaN → monto perdido).
   // "129,50": coma decimal → se pasa a punto (comportamiento de siempre).
+  // "1,200" (coma de miles SIN decimales) valía 1.2: en Perú la coma es separador de
+  // miles, así que una coma seguida de EXACTAMENTE 3 dígitos (o varias comas) es
+  // miles, no decimal → se quita. Solo coma + 1-2 dígitos ("129,5"/"129,50") es decimal.
   if (s.includes(",") && s.includes(".")) s = s.replace(/,/g, "");
-  else s = s.replace(",", ".");
+  else if (s.includes(",")) {
+    const parts = s.split(",");
+    if (parts.length > 2 || /^\d{3}$/.test(parts[parts.length - 1])) s = s.replace(/,/g, "");
+    else s = s.replace(",", ".");
+  }
   const n = Number(s);
   return Number.isFinite(n) ? n : undefined;
 }
@@ -3451,13 +3458,20 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
 // ABIERTO (no despachado). Solo dispara si el mensaje trae una señal barata (agencia,
 // nº de DNI, o palabra de dirección) para no gastar una llamada de IA en cada turno.
 const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|direccion|domicilio|mandal|manda|envial|envia|entrega|llev)/i;
+// Señal barata de "cambio de destinatario" (nombre de quien recoge/recibe) y de
+// "cambio de teléfono de contacto". Ambos son datos de despacho que el cliente
+// corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
+const NOMBRE_KW = /\b(a nombre|nombre de|nombre del|destinatari|lo recoge|la recoge|lo recoje|la recoje|recoja|figure a|figura a|a mi (esposa|esposo|mama|mamá|papa|papá|hijo|hija|hermano|hermana|amig|vecin))\b/i;
+const TEL_KW = /\b(telefono|teléfono|celular|numero|número|whatsapp|contacto|llam)/i;
 async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<void> {
   if (event.type !== "message" || event.msgType === "image" || !event.text) return;
   const txt = event.text; const low = txt.toLowerCase();
   const sigSede = AGENCIA_KW.test(low);          // AGENCIA_KW no tiene flag i → normalizar
   const sigDni = /\b\d{7,9}\b/.test(txt);
   const sigDir = DIRECCION_KW.test(low);
-  if (!sigSede && !sigDni && !sigDir) return;    // sin señal de cambio → nada que hacer
+  const sigNombre = NOMBRE_KW.test(low);
+  const sigTel = /\b9\d{8}\b/.test(txt) || TEL_KW.test(low);
+  if (!sigSede && !sigDni && !sigDir && !sigNombre && !sigTel) return;    // sin señal de cambio → nada que hacer
   // Último pedido AÚN editable (no despachado/pagado/cerrado).
   const { data: order } = await db.from("orders").select("id, shipping, estado")
     .eq("channel_id", channelId).eq("contact_id", contactId)
@@ -3471,7 +3485,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const raw = await runAI({
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
     system: "Extraes datos de despacho que un cliente peruano CORRIGE/cambia para su pedido. Respondes SOLO con un JSON, sin explicaciones. Copia el valor TAL CUAL lo dijo. Si un dato NO aparece en el mensaje, déjalo vacío (jamás lo inventes).",
-    content: `Mensaje del cliente:\n"""${txt}"""\n\nDevuelve SOLO lo que el cliente indique concretamente:\n- "sede": la oficina/sede de agencia (Shalom/Olva) donde recoge, si la nombra.\n- "dni": su número de DNI (7-9 dígitos), si lo da.\n- "direccion": la dirección de entrega (calle/avenida/jirón con número o un punto concreto), si la da.\nJSON: {"sede":"","dni":"","direccion":""}`,
+    content: `Mensaje del cliente:\n"""${txt}"""\n\nDevuelve SOLO lo que el cliente indique concretamente:\n- "sede": la oficina/sede de agencia (Shalom/Olva) donde recoge, si la nombra.\n- "dni": su número de DNI (documento de identidad peruano, 8 dígitos), si lo da. OJO: NO pongas acá un número de celular.\n- "direccion": la dirección de entrega (calle/avenida/jirón con número o un punto concreto), si la da.\n- "nombre": el nombre completo del DESTINATARIO que recoge/recibe el paquete, si el cliente lo cambia o aclara (ej. "que salga a nombre de María Torres").\n- "telefono": el número de celular de contacto (9 dígitos), si lo da como su teléfono. NUNCA lo pongas en "dni".\nJSON: {"sede":"","dni":"","direccion":"","nombre":"","telefono":""}`,
   });
   const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
   let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
@@ -3485,9 +3499,22 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     await setField(db, channelId, contactId, "sede", nSede).catch(() => {});
     cambios.push("sede: " + nSede);
   }
-  // DNI: 7-9 dígitos, presente en el mensaje, distinto del actual.
+  // TELÉFONO de contacto (celular peruano: 9 dígitos que empiezan en 9). Se extrae
+  // ANTES que el DNI para poder excluirlo del DNI (un celular NO es DNI).
+  const nTel = String(p.telefono ?? "").replace(/\D/g, "");
+  if (/^9\d{8}$/.test(nTel) && txt.includes(nTel) && String(sh.tel ?? "") !== nTel) {
+    sh.tel = nTel;
+    await setField(db, channelId, contactId, "tel", nTel).catch(() => {});
+    cambios.push("teléfono: " + nTel);
+  }
+  // DNI: 7-9 dígitos, presente en el mensaje, distinto del actual. NO acepta un
+  // celular (9 díg. que empieza en 9) ni el número que ya se leyó como teléfono:
+  // el DNI peruano es de 8 dígitos y `\d{7,9}` tragaba un celular → el interceptor
+  // (que dispara con cualquier bloque de 7-9 díg.) podía pisar el DNI real con el
+  // teléfono nuevo y arruinar el recojo en la agencia.
   const nDni = String(p.dni ?? "").replace(/\D/g, "");
-  if (/^\d{7,9}$/.test(nDni) && txt.includes(nDni) && String(sh.dni ?? "") !== nDni) {
+  const dniEsCelular = /^9\d{8}$/.test(nDni);
+  if (/^\d{7,9}$/.test(nDni) && !dniEsCelular && nDni !== nTel && txt.includes(nDni) && String(sh.dni ?? "") !== nDni) {
     sh.dni = nDni;
     await setField(db, channelId, contactId, "dni", nDni).catch(() => {});
     cambios.push("DNI: " + nDni);
@@ -3498,6 +3525,15 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     sh.direccion = nDir;
     await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
     cambios.push("dirección: " + nDir);
+  }
+  // NOMBRE del destinatario (quien recoge/recibe). Vive en shipping.cliente y lo usa
+  // el rótulo/guía y la agencia (que exige DNI+nombre que calcen). Guard por solape
+  // de palabras para no pisar con un nombre inventado.
+  const nNombre = String(p.nombre ?? "").trim();
+  if (nNombre && valorLibreEnMensaje(nNombre, txt) && String(sh.cliente ?? "") !== nNombre) {
+    sh.cliente = nNombre;
+    await setField(db, channelId, contactId, "cliente", nNombre).catch(() => {});
+    cambios.push("destinatario: " + nNombre);
   }
   if (!cambios.length) return;
   await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
@@ -3618,7 +3654,18 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     return true;
   }
   const cubre = ab ? ab.cubre : false;
-  const puedeAuto = cfg.validacion === "auto" && cubre;
+  // Freno de SOBREPAGO (igual que el pago digital con `revisar_sobre_sol`): si el
+  // monto leído supera lo que el cliente PODRÍA deber (adelanto + saldo = total del
+  // pedido) por más de S/margen, es casi seguro una mala lectura del OCR (leyó "S/ 20"
+  // como "S/ 1200"). Sin este freno, `saldoTrasAdelanto` ponía el saldo en 0 y
+  // `pagado_total`, y el bot le decía "ya está todo pagado" → se perdía el saldo real
+  // en la agencia. A validación MANUAL (no auto). El pago total legítimo (paga el total
+  // de una) NO se frena: ahí lo pagado ≈ el total, no lo supera por el margen.
+  const totalOwedAdel = (Number(ship.adelanto) || 0) + (Number(ship.saldo) || 0);
+  const _margenAdelRaw = Number(cfg.revisar_sobre_sol ?? (ch as any)?.pedidos_config?.digital?.revisar_sobre_sol);
+  const margenAdel = Number.isFinite(_margenAdelRaw) && _margenAdelRaw >= 0 ? _margenAdelRaw : 50;
+  const sobrepagoAdel = !!ab && ab.cubre && totalOwedAdel > 0 && ab.total > totalOwedAdel + margenAdel;
+  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel;
 
   if (puedeAuto) {
     // Acreditar al saldo lo pagado de más (o el total si pagó completo de una).
@@ -3657,6 +3704,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
   const motivo = reuse ? "operación ya usada"
     : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
+    : sobrepagoAdel ? `monto leído (${montoLeido}) muy por encima del total del pedido (${totalOwedAdel}) — posible mala lectura, revisar`
     : "listo para tu aprobación"; // legítimo y ya cubre, pero estás en modo manual
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
