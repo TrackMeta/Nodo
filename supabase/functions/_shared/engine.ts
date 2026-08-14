@@ -205,11 +205,13 @@ export async function runEngine(
     catch (e) { console.error("[recompraEnRun]", (e as any)?.message ?? e); }
     // Modificar el pedido ya creado: QUITAR un item o CAMBIAR la cantidad. Toca plata
     // y stock → confirma antes de aplicar (no auto-muta). Corta la cadena si atendió.
-    try { if (await maybeModificarPedido(db, channelId, contactId, event)) return; }
+    // Se le pasa `run` para el anti-secuestro (no pisar una respuesta a la oferta del
+    // extra) y para atar el cambio al pedido del run (_order_id).
+    try { if (await maybeModificarPedido(db, channelId, contactId, event, run)) return; }
     catch (e) { console.error("[maybeModificarPedido]", (e as any)?.message ?? e); }
     // Cambio de TALLA/COLOR del principal con el pedido ya creado (auto-aplica: no
     // cambia el precio, pero sí el rótulo y la variante de stock). Corta si aplicó.
-    try { if (await maybeCambioVariante(db, channelId, contactId, event)) return; }
+    try { if (await maybeCambioVariante(db, channelId, contactId, event, run)) return; }
     catch (e) { console.error("[maybeCambioVariante]", (e as any)?.message ?? e); }
     // Cambio de datos de despacho (sede/DNI/dirección) mientras el pedido ya existe
     // y está parqueado en un nodo que no re-captura datos. Actualiza antes de responder.
@@ -3583,21 +3585,45 @@ const CANT_TOKEN = /(\b\d+\b|\bun\b|\buno\b|\buna\b|\bdos\b|\btres\b|\bcuatro\b|
 // (patrón confirmar-y-aplicar) usando un pendiente en shipping._mod_pendiente. Sin
 // esto, el bot "confirmaba" el cambio pero el pedido quedaba igual (cobraba/despachaba
 // lo viejo). Devuelve true si atendió el mensaje (propuso o aplicó un cambio).
-async function maybeModificarPedido(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
-  if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
-  const txt = event.text; const low = txt.toLowerCase();
+async function maybeModificarPedido(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent, run?: Run | null): Promise<boolean> {
+  if (event.type !== "message") return false;
+  const aw = (run?.vars as any)?._await;
+  const esImg = event.msgType === "image";
+  if (!esImg && !event.text) return false;
+  const txt = event.text ?? ""; const low = txt.toLowerCase();
   // Sin acentos para las señales/regex: "quítame"/"súbeme"/"envíame" traen tildes que
   // rompían el match (\bquita\b no calza "quíta"). Se testea contra la versión pelada.
   const lowN = low.normalize("NFD").replace(new RegExp("[\u0300-\u036f]","g"), "");
-  // Último pedido editable (creado, no carrito, no despachado, no final).
-  const { data: order } = await db.from("orders")
+  // El pedido: se prefiere el del run activo (`_order_id`) para no pegarle al equivocado
+  // cuando el cliente tiene dos pedidos no-finales (uno esperando recojo + una recompra).
+  const oid = (run?.vars as any)?._order_id;
+  let q = db.from("orders")
     .select("id, product_id, amount, currency, estado, shipping, order_bumps")
     .eq("channel_id", channelId).eq("contact_id", contactId)
-    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado", "carrito"].map((e) => `"${e}"`).join(",")})`)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado", "carrito"].map((e) => `"${e}"`).join(",")})`);
+  q = oid ? q.eq("id", oid) : q.order("created_at", { ascending: false }).limit(1);
+  const { data: order } = await q.maybeSingle();
   if (!order) return false;
   if (ESTADOS_DESPACHADO.has(String((order as any).estado))) return false;
   const ship = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
+  // 🖼️ Turno de IMAGEN (pago): no proponemos cambios, y si había uno propuesto sin
+  // confirmar lo DESCARTAMOS — el cliente pasó a pagar; así un "ya, listo" casual
+  // posterior no aplica un quitar/cambio que quizá abandonó.
+  if (esImg) {
+    if (ship._mod_pendiente) {
+      delete ship._mod_pendiente;
+      await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id).catch(() => {});
+    }
+    return false;
+  }
+  // 🚧 Anti-secuestro: si el flujo está ESPERANDO una respuesta tipeada (`_await` input)
+  // y el pedido NO está en `esperando_adelanto`, ese mensaje es la respuesta a una
+  // PREGUNTA del flujo (la oferta del extra, su talla, la opción) → NO interceptamos, lo
+  // maneja resumeRun. Sin esto, "mejor la L"/"mándame un par" que responden a la oferta
+  // del extra se reaplicaban al PRINCIPAL (regresión del extra-talla por otra vía). En
+  // `esperando_adelanto` lo esperado es un PAGO por imagen, así que un texto SÍ es una
+  // modificación legítima (ahí el cliente pide "quita las medias" antes de pagar).
+  if (aw?.type === "input" && String((order as any).estado) !== "esperando_adelanto") return false;
   const bumps: any[] = Array.isArray((order as any).order_bumps) ? [...(order as any).order_bumps] : [];
   const sym = simboloMoneda((order as any).currency);
   const amount = Number((order as any).amount) || 0;
@@ -3818,18 +3844,27 @@ const CAMBIO_VAR_KW = /\b(mejor|en vez|en lugar|cambi|ponme|pongame|que sea|pref
 // con la variante VIEJA (se despachaba la talla equivocada). Acá se re-extrae del
 // mensaje SOLO un valor VÁLIDO del producto, se actualiza shipping.atributos y se
 // swapea el stock. Auto-aplica (como la corrección PRE-pedido): no cambia el precio.
-async function maybeCambioVariante(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+async function maybeCambioVariante(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent, run?: Run | null): Promise<boolean> {
   if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
+  // \ud83d\udea7 Mismo anti-secuestro que maybeModificarPedido: si el flujo espera una respuesta
+  // tipeada a un campo puntual (talla del extra "mejor la L", opci\u00f3n), NO interceptamos.
+  const aw = (run?.vars as any)?._await;
   const txt = event.text; const low = txt.toLowerCase();
   const lowN = low.normalize("NFD").replace(new RegExp("[\u0300-\u036f]", "g"), "");
   if (!CAMBIO_VAR_KW.test(lowN)) return false;
-  const { data: order } = await db.from("orders")
+  const oid = (run?.vars as any)?._order_id;
+  let q = db.from("orders")
     .select("id, product_id, shipping, estado")
     .eq("channel_id", channelId).eq("contact_id", contactId)
-    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado", "carrito"].map((e) => `"${e}"`).join(",")})`)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado", "carrito"].map((e) => `"${e}"`).join(",")})`);
+  q = oid ? q.eq("id", oid) : q.order("created_at", { ascending: false }).limit(1);
+  const { data: order } = await q.maybeSingle();
   if (!order) return false;
   if (ESTADOS_DESPACHADO.has(String((order as any).estado))) return false;
+  // \ud83d\udea7 Anti-secuestro (igual que maybeModificarPedido): si el flujo espera una respuesta
+  // tipeada y el pedido NO est\u00e1 en `esperando_adelanto`, el mensaje responde a una
+  // pregunta del flujo (talla del extra "mejor la L") \u2192 no interceptar.
+  if (aw?.type === "input" && String((order as any).estado) !== "esperando_adelanto") return false;
   const ship = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
   const atrib = { ...((ship.atributos as Record<string, any>) ?? {}) };
   if (!Object.keys(atrib).length) return false;                 // producto sin variante → nada que cambiar
