@@ -538,9 +538,13 @@ function kcard(o){
   if(s.clave_recojo) shipBits.push(`Clave <b>${esc(s.clave_recojo)}</b>`);
   if(s.distrito||s.direccion) shipBits.push(esc([s.distrito,s.direccion].filter(Boolean).join(" · ")));
   const adel=Number(s.adelanto||0), saldo=Number(s.saldo||0);
-  const moneyLine = adel||saldo
+  // Badge de extra/regalo: en la tarjeta de provincia (con adelanto/saldo) antes NO se veía
+  // que había un order_bump agregado → el operador no sabía que debía empacar el extra.
+  const _bumps=(o.order_bumps||[]); const _nX=_bumps.filter(b=>!b.regalo).length, _nR=_bumps.filter(b=>b.regalo).length;
+  const _extras = (_nX||_nR) ? ` · ${_nX?`+${_nX} extra`:""}${_nX&&_nR?" ":""}${_nR?`🎁${_nR}`:""}` : "";
+  const moneyLine = (adel||saldo
     ? `${adel?`Adelanto <b>${money(adel,o.currency)}</b>`:""}${adel&&saldo?" · ":""}${saldo?`Saldo <b>${money(saldo,o.currency)}</b>`:""}`
-    : `Total <b>${money(total(o),o.currency)}</b>`;
+    : `Total <b>${money(total(o),o.currency)}</b>`) + _extras;
   const act=primaryAction(o);
   // "PAGO POR VALIDAR" (turno) solo cuando de verdad hay un pago esperando tu OK.
   // en_agencia SOLO si ya llegó el comprobante del SALDO; antes todo pedido en

@@ -868,8 +868,12 @@ async function load(){
 
   renderMetricas(porStage);
   renderFunnel(porStage);
-  renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds);
-  renderProducts(prods, orders, vendido, ordersUnavailable, margenPorProd);
+  // ventasOk (excluye rechazado/no_recogido): el panel "Ventas cerradas" y el desglose por
+  // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
+  // el panel mostraba un "vendido" distinto al KPI y el share por producto pasaba de 100%
+  // (numerador con perdidos, denominador `vendido` sin ellos).
+  renderSales(ventasOk, r, dailyMargin, dailySpend, dailyExpense, hasAds);
+  renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
   renderExpenses(expenses);
 
@@ -1035,7 +1039,12 @@ function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds){
   let totalIng=0;
   orders.forEach(o=>{ const k=ymd(new Date(o.created_at)); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in ingMap) ingMap[k]+=v; totalIng+=v; });
   const data=days.map(d=>({ label:d.label, ing:ingMap[d.k]||0, gan:(dailyMargin[d.k]||0)-(dailySpend[d.k]||0)-(dailyExpense[d.k]||0) }));
-  const totalGan=data.reduce((a,d)=>a+d.gan,0);
+  // La ganancia del RESUMEN cubre TODO el rango (igual que "vendido"/totalIng), aunque el
+  // CHART solo dibuje los últimos 31 días. Antes totalGan sumaba solo los días graficados →
+  // en un rango largo (ej. "Máximo") "vendido" era del rango completo y "ganancia en el
+  // periodo" solo del último mes: dos números incoherentes bajo la misma etiqueta.
+  let totalGan=0;
+  { const fromD=startOfDay(r.from); for(let d=new Date(anchor); d>=fromD; d=new Date(d.getTime()-864e5)){ const k=ymd(d); totalGan+=(dailyMargin[k]||0)-(dailySpend[k]||0)-(dailyExpense[k]||0); } }
   const gl=hasAds?"ganancia neta":"ganancia";
   $("salesSum").innerHTML = totalIng>0
     ? `<b>${money(totalIng)}</b> vendido · <b style="color:${totalGan<0?'var(--red)':'var(--green)'}">${money(totalGan)}</b> de ${gl} en el periodo`

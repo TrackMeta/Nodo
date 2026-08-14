@@ -192,7 +192,10 @@ function render(){
       <div class="preview"><span class="chip" style="background:${c}22;color:${c};border-color:${c}55"><span class="dot"></span>${esc(t.nombre)}</span></div>`;
     const chip=el.querySelector(".chip");
     const nameInp=el.querySelector(".name");
-    nameInp.onchange=(e)=>{ const v=e.target.value.trim(); if(v){ update(t,{ nombre:v }); chip.innerHTML=`<span class="dot"></span>${esc(v)}`; } };
+    // El chip se actualiza SOLO si el server confirmó el rename (antes se pintaba el nombre
+    // nuevo de una y, si estaba repetido, la UI mostraba el nuevo mientras la BD guardaba el
+    // viejo → la pantalla mentía hasta recargar). Si falla, se revierte el input.
+    nameInp.onchange=(e)=>{ const v=e.target.value.trim(); if(!v){ e.target.value=t.nombre; return; } update(t,{ nombre:v }).then(ok=>{ if(ok) chip.innerHTML=`<span class="dot"></span>${esc(v)}`; else e.target.value=t.nombre; }); };
     el.querySelector(".swatch").onclick=(e)=>openColorPopover(e.currentTarget, hex(t.color), (col)=>{
       el.querySelector(".swatch").style.background=col; el.style.setProperty("--tc",col+"88");
       chip.style.background=col+"22"; chip.style.color=col; chip.style.borderColor=col+"55";
@@ -238,10 +241,10 @@ async function create(){
   toast("Etiqueta creada ✓"); await load();
 }
 async function update(t, patch){
-  if(patch.nombre!==undefined && !patch.nombre){ toast("El nombre no puede estar vacío",true); return; }
+  if(patch.nombre!==undefined && !patch.nombre){ toast("El nombre no puede estar vacío",true); return false; }
   const { error }=await supa.from("tags").update(patch).eq("id",t.id);
-  if(error){ toast(error.message.includes("duplicate")?"Nombre repetido":error.message,true); return; }
-  Object.assign(t,patch);
+  if(error){ toast(error.message.includes("duplicate")?"Nombre repetido":error.message,true); return false; }
+  Object.assign(t,patch); return true;
 }
 async function remove(t){
   if(!await confirmDialog({title:"Eliminar etiqueta",message:`¿Eliminar la etiqueta "${t.nombre}"?`,confirmText:"Eliminar",danger:true})) return;

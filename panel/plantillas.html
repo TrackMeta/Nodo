@@ -394,8 +394,16 @@ async function enviarMeta(){
   const language=$("f_lang").value.trim()||"es", category=$("f_cat").value;
   if(!name||!body){ toast("Falta el nombre o el cuerpo de la plantilla",true); return; }
   const btn=$("sendMetaBtn"), old=btn.textContent; btn.disabled=true; btn.textContent="Enviando…";
+  // Meta EXIGE un valor de ejemplo por CADA {{N}} del cuerpo, o rechaza la plantilla. Una
+  // plantilla hecha a mano no guarda `ejemplos` → antes se enviaba examples:[] y Meta la
+  // rechazaba. Se derivan: los ejemplos guardados; y para lo que falte, el `param` sample
+  // si es literal (sin {{}}), o un placeholder "Ejemplo N".
+  const nVars=bodyMaxN();
+  const _params=Array.isArray(st.tpl?.params)?st.tpl.params:[];
+  const examples=Array.isArray(st.tpl?.ejemplos)?st.tpl.ejemplos.slice(0,nVars):[];
+  for(let i=examples.length;i<nVars;i++){ const p=String(_params[i]??"").trim(); examples.push(p && !/\{\{/.test(p) ? p : `Ejemplo ${i+1}`); }
   let r=null; try{ r=await callFn("channel-config",{ action:"template_submit", channel_id:st.channelId,
-    template:{ name, language, category, body, examples: st.tpl?.ejemplos||[] } }); }
+    template:{ name, language, category, body, examples } }); }
   catch(e){ r={ error:e.message }; }
   btn.disabled=false; btn.textContent=old;
   if(r?.enviado){ toast("Enviada a Meta ✓ — en revisión (24-48h)"); await loadList(); openTpl(st.tpl.id); }

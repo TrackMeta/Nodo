@@ -342,11 +342,13 @@ function renderFilterChips(){
 }
 
 function updateFilterCounts(){
-  // Conteos por etapa/etiqueta/rápido sobre el universo (sin el propio filtro).
-  const all=st.contacts;
+  // Conteos por etapa/etiqueta/rápido sobre el universo VISIBLE (sin archivados, que la
+  // lista oculta) → el número del chip cuadra con las filas que aparecen al tocarlo. El
+  // conteo de "Archivados" sí va sobre TODOS (para poder abrir ese filtro).
+  const all=st.contacts.filter(c=>!isArchived(c));
   EMBUDO_STAGES.forEach(s=>{ const el=$("fStages").querySelector(`[data-sc="${s.k}"]`); if(el) el.textContent=all.filter(c=>(c.stage||"nuevo")===s.k).length||""; });
   st.tags.forEach(t=>{ const el=$("fTags").querySelector(`[data-tc="${t.id}"]`); if(el) el.textContent=all.filter(c=>(c.contact_tags||[]).some(x=>x.tag_id===t.id)).length||""; });
-  const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, organico:all.filter(c=>!isAd(c)).length, sinprod:all.filter(c=>!c.product_id && c.stage!=="comprado" && c.stage!=="confirmado").length, conimg:all.filter(c=>!!c.ultima_imagen_at).length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:all.filter(isArchived).length };
+  const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, organico:all.filter(c=>!isAd(c)).length, sinprod:all.filter(c=>!c.product_id && c.stage!=="comprado" && c.stage!=="confirmado").length, conimg:all.filter(c=>!!c.ultima_imagen_at).length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:st.contacts.filter(isArchived).length };
   Object.entries(q).forEach(([k,v])=>{ const el=document.querySelector(`[data-qc="${k}"]`); if(el) el.textContent=v||""; });
   const active=f.stages.size+f.tags.size+(f.compro?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.conimg?1:0)+(f.bloqueado?1:0)+(f.noremk?1:0)+(f.archivado?1:0)+(f.source?1:0);
   const cnt=$("filtCnt"); cnt.textContent=active; cnt.style.display=active?"":"none"; $("filtBtn").classList.toggle("on",!!active);
@@ -354,7 +356,9 @@ function updateFilterCounts(){
 
 function renderStats(){
   const box=$("stats"); if(!box) return;
-  const all=st.contacts;
+  // Sobre el universo VISIBLE (los archivados se ocultan de la lista) → las tarjetas
+  // cuadran con lo que ves al tocarlas. Antes contaban también archivados que nunca salen.
+  const all=st.contacts.filter(c=>!isArchived(c));
   const stats=[
     { k:"total", v:all.length, label:"Contactos", color:"#2b7fff" },
     { k:"compro", v:all.filter(c=>ltvOf(c.id).count>0).length, label:"Compraron", color:"#22c079" },
@@ -370,6 +374,12 @@ function renderStats(){
 }
 function render(){
   const list=filtered();
+  // 🛡️ La selección sigue a lo FILTRADO: al cambiar filtro/búsqueda/orden se descartan
+  // los seleccionados que ya no matchean, para que una acción en lote (Eliminar/Bloquear/
+  // Etiquetar/…) NUNCA toque un contacto que no estás viendo. Antes st.sel era global y
+  // persistente → seleccionabas 10, filtrabas a 2, y "Eliminar" borraba los 10 (8 ocultos,
+  // irreversible). Con esto la barra de lote refleja exactamente lo visible seleccionado.
+  if(st.sel.size){ const vis=new Set(list.map(c=>c.id)); for(const id of [...st.sel]) if(!vis.has(id)) st.sel.delete(id); }
   $("sub").textContent="Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas.";
   updateFilterCounts();
   renderStats();
@@ -580,10 +590,15 @@ async function bulk(act){
     const sid=await askChoice({ title:`Agregar ${ids.length} a la secuencia…`, options:act2.map(s=>({label:s.nombre,value:s.id})) });
     if(!sid) return;
     const now=new Date().toISOString();
-    const rows=ids.map(id=>({ channel_id:st.channelId, contact_id:id, sequence_id:sid, paso_actual:0, estado:"activa", updated_at:now }));
-    const { error }=await supa.from("sequence_subscriptions").upsert(rows,{ onConflict:"contact_id,sequence_id" });
+    // Solo AGREGA los que aún NO están en la secuencia (ignoreDuplicates): un contacto que
+    // iba en el paso 3 NO se rebobina a 0, y uno cancelado/completado NO se reactiva → sin
+    // re-spam desde el inicio. Y se excluye a quienes pidieron no recibir remarketing.
+    const elegibles=ids.filter(id=>{ const c=st.contacts.find(x=>x.id===id); return c && !c.no_remarketing; });
+    if(!elegibles.length){ toast("Esos contactos están excluidos del remarketing.",true); return; }
+    const rows=elegibles.map(id=>({ channel_id:st.channelId, contact_id:id, sequence_id:sid, paso_actual:0, estado:"activa", updated_at:now }));
+    const { error }=await supa.from("sequence_subscriptions").upsert(rows,{ onConflict:"contact_id,sequence_id", ignoreDuplicates:true });
     if(error){ toast(error.message,true); return; }
-    toast(`${ids.length} agregado(s) a la secuencia ✓`); st.sel.clear(); render(); return;
+    toast(`${elegibles.length} agregado(s) a la secuencia ✓`); st.sel.clear(); render(); return;
   }
   if(act==="arch"){
     const mode=await askChoice({ title:`${ids.length} contacto(s)`, options:[{label:"Archivar",value:"arch",desc:"Salen de la lista (y de la Bandeja)"},{label:"Desarchivar",value:"unarch",desc:"Vuelven a la lista"}] });
