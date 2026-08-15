@@ -61,7 +61,9 @@ Deno.serve(async (req) => {
   const { data: runs } = await db.from("flow_runs")
     .select("channel_id, contact_id")
     .eq("estado", "esperando").not("wake_at", "is", null)
-    .lte("wake_at", new Date().toISOString()).limit(100);
+    .lte("wake_at", new Date().toISOString())
+    .order("wake_at", { ascending: true })   // los más vencidos primero: sin ORDER BY, con más de 100 pendientes Postgres podía devolver siempre el mismo subconjunto y matar de hambre al resto
+    .limit(100);
   for (const r of runs ?? []) {
     try { await runEngine(db, (r as any).channel_id, (r as any).contact_id, { type: "resume" }); woke++; }
     catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
@@ -70,7 +72,9 @@ Deno.serve(async (req) => {
   // ── 2) Secuencias de remarketing ──────────────────────────────────
   const { data: subs } = await db.from("sequence_subscriptions")
     .select("id, channel_id, contact_id, sequence_id, paso_actual, updated_at, suscrito_at")
-    .eq("estado", "activa").limit(200);
+    .eq("estado", "activa")
+    .order("updated_at", { ascending: true })   // la menos tocada primero: evita inanición si hay más de 200 subs activas
+    .limit(200);
   for (const s of subs ?? []) {
     try { if (await processSub(s, now)) fired++; }
     catch (e) { console.error("[scheduler] seq:", (e as any)?.message ?? e); }

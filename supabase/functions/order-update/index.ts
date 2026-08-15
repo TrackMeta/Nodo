@@ -125,9 +125,27 @@ Deno.serve(async (req) => {
       const ship = ((order as any).shipping || {}) as any;
       if (ship.stock_descontado && !ship.stock_devuelto && Array.isArray(ship.stock_mov)) {
         try {
-          await aplicarStock(db, ship.stock_mov, 1);
-          await db.from("orders").update({ shipping: { ...ship, stock_devuelto: true } }).eq("id", (order as any).id);
+          // Solo se marca stock_devuelto si el +1 REALMENTE aplicó (ok): si el CAS agotó
+          // reintentos bajo contención, NO marcar → la unidad no se pierde del inventario
+          // (queda pendiente de un reintento) en vez de darla por devuelta sin haberlo hecho.
+          const { ok } = await aplicarStock(db, ship.stock_mov, 1);
+          if (ok) await db.from("orders").update({ shipping: { ...ship, stock_devuelto: true } }).eq("id", (order as any).id);
+          else console.error("[order-update] devolver stock: CAS agotó reintentos — NO marcado stock_devuelto");
         } catch (e) { console.error("[order-update] devolver stock:", (e as any)?.message ?? e); }
+      }
+    } else {
+      // 📦 REVIVIR un pedido cancelado: si venía con el stock DEVUELTO (stock_devuelto:true)
+      // y se lo mueve de vuelta a un estado VIVO (no perdido), se vuelve a descontar el
+      // inventario. Sin esto el pedido revivido se despacharía SIN apartar stock (sobreventa
+      // silenciosa): order_claim_stock exige stock_descontado=false y reconciliarStockManual
+      // ve stock_devuelto y no toca nada. Idempotente por la propia bandera.
+      const ship = ((order as any).shipping || {}) as any;
+      if (ship.stock_devuelto === true && Array.isArray(ship.stock_mov) && ship.stock_mov.length) {
+        try {
+          const { ok } = await aplicarStock(db, ship.stock_mov, -1);
+          if (ok) await db.from("orders").update({ shipping: { ...ship, stock_devuelto: false, stock_descontado: true } }).eq("id", (order as any).id);
+          else console.error("[order-update] revivir stock: CAS agotó reintentos — NO re-descontado");
+        } catch (e) { console.error("[order-update] revivir stock:", (e as any)?.message ?? e); }
       }
     }
   }

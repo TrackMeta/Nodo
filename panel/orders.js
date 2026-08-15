@@ -138,13 +138,23 @@ export function costoRegalos(o){
   for (const b of (o?.order_bumps || [])) if (b?.regalo) c += Number(b?.costo || 0);
   return c;
 }
+// 🛒 Costo de los EXTRAS pagados (bumps NO-regalo con costo). A diferencia del regalo,
+// el extra SÍ se vende (su precio suma en total()), así que su costo también es COGS.
+// Antes solo se restaba el del regalo → el margen salía inflado cuando el extra costaba.
+export function costoExtras(o){
+  let c = 0;
+  for (const b of (o?.order_bumps || [])) if (!b?.regalo) c += Number(b?.costo || 0);
+  return c;
+}
 export function costoProducto(o, prod, cantidad = 1){
   const reg = costoRegalos(o);
+  const ext = costoExtras(o);
+  const extra = reg + ext;
   const snap = o?.shipping?.costo_producto;
-  if (snap != null && snap !== "") return Number(snap) + reg;
+  if (snap != null && snap !== "") return Number(snap) + extra;
   const unit = prod?.config?.costo;
-  if (unit == null || unit === "") return reg > 0 ? reg : null; // sin costo del principal, pero el regalo sí cuesta
-  return Number(unit) * (Number(cantidad) || 1) + reg;
+  if (unit == null || unit === "") return extra > 0 ? extra : null; // sin costo del principal, pero regalo/extra sí cuestan
+  return Number(unit) * (Number(cantidad) || 1) + extra;
 }
 
 // Costo de empaque/embalaje del pedido. Snapshot del producto (config.empaque) al

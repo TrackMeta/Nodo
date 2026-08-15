@@ -3077,8 +3077,9 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const { data: oc } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
         const shc = ((oc as any)?.shipping ?? {}) as any;
         if (shc.stock_descontado && !shc.stock_devuelto && Array.isArray(shc.stock_mov)) {
-          await aplicarStock(db, shc.stock_mov, 1);
-          await db.from("orders").update({ shipping: { ...shc, stock_devuelto: true } }).eq("id", orderId);
+          const { ok } = await aplicarStock(db, shc.stock_mov, 1);   // solo marcar si aplicó
+          if (ok) await db.from("orders").update({ shipping: { ...shc, stock_devuelto: true } }).eq("id", orderId);
+          else console.error("[actualizarPedido] devolver stock: CAS agotó reintentos — NO marcado");
         }
       } catch (e) { console.error("[actualizarPedido] devolver stock:", (e as any)?.message ?? e); }
     }
@@ -3803,7 +3804,11 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
         // Plata: si el bump subía el saldo (provincia), bajarlo. En Lima el saldo no se
         // usa (la puerta cobra amount+bumps, que ya baja al sacar el bump de order_bumps).
         const precio = Number(quitado.precio) || 0;
-        if (precio > 0 && Number.isFinite(Number(ship.saldo))) {
+        // Solo baja el saldo si ese item lo SUBIÓ (ride-along de provincia: sube_saldo). Un
+        // bump marcado sube_saldo:false (se cobró aparte / en la puerta) no debe descontarse
+        // del saldo al quitarlo. `!== false` conserva el comportamiento para los ride-along
+        // (sube_saldo:true) y los legacy sin la bandera (el saldo de provincia ya los incluía).
+        if (precio > 0 && quitado.sube_saldo !== false && Number.isFinite(Number(ship.saldo))) {
           ship.saldo = String(Math.max(0, +(Number(ship.saldo) - precio).toFixed(2)));
         }
         // Stock: devolver el del item quitado (si se había descontado) o sacarlo del plan.

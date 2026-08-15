@@ -79,6 +79,16 @@ export function costoRegalos(o: Order): number {
   return c;
 }
 
+// 🛒 Costo de los EXTRAS pagados (bumps NO-regalo con costo): a diferencia del regalo, el
+// extra SÍ se vende (su precio suma en total()/cobrado), así que su costo también es COGS.
+// Antes solo se restaba el de los regalos → el margen salía inflado cuando el extra costaba.
+// Espejo de orders.js costoExtras.
+export function costoExtras(o: Order): number {
+  let c = 0;
+  for (const b of o?.order_bumps || []) if (!(b as any)?.regalo) c += Number((b as any)?.costo || 0);
+  return c;
+}
+
 // Ganancia por SNAPSHOT congelado en el pedido (shipping.costo_producto/flete):
 // no necesita join de productos. null = falta un dato → no se puede afirmar margen.
 export function margenSnap(o: Order): number | null {
@@ -86,7 +96,7 @@ export function margenSnap(o: Order): number | null {
   if (cp == null || cp === "") return null;
   const f = (o?.shipping as any)?.flete;
   if (esFisico(o) && (f == null || f === "")) return null;
-  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o) - (Number((o?.shipping as any)?.empaque) || 0);
+  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o) - costoExtras(o) - (Number((o?.shipping as any)?.empaque) || 0);
 }
 
 // ── Resumen de un conjunto de pedidos (los KPIs del digest) ─────────
@@ -123,6 +133,8 @@ export function resumirPedidos(orders: Order[]): Digest {
       vendido += total(o);
       const reg = costoRegalos(o); // 🎁 el costo del regalo cuenta como COGS
       if (reg > 0) costoProd += reg;
+      const ext = costoExtras(o);  // 🛒 el costo del extra PAGADO también (se vendió)
+      if (ext > 0) costoProd += ext;
       const cp = (o?.shipping as any)?.costo_producto;
       const cpN = (cp == null || cp === "") ? null : Number(cp);
       if (!esFisico(o)) {
@@ -130,7 +142,7 @@ export function resumirPedidos(orders: Order[]): Digest {
         // (mismo criterio que la banda del Dashboard). Sin costo → solo cobrado.
         // Antes sumaba solo `cobrado` y el costo digital aparecía en el COGS pero
         // nunca se restaba → la ganancia neta salía inflada.
-        ganancia += cobrado(o) - (cpN ?? 0) - reg; conMargen++;
+        ganancia += cobrado(o) - (cpN ?? 0) - reg - ext; conMargen++;
         if (cpN != null) costoProd += cpN;
       } else {
         const f = (o?.shipping as any)?.flete;
@@ -146,7 +158,7 @@ export function resumirPedidos(orders: Order[]): Digest {
           // Resta el EMPAQUE (snapshot en shipping.empaque, físico) como la fuente de
           // verdad orders.js `margen`: sin esto el resumen de Telegram sobreestimaba la
           // ganancia (crecía con el volumen) y no cuadraba con el Dashboard.
-          ganancia += cobrado(o) - cpN - fN - reg - (Number((o?.shipping as any)?.empaque) || 0); conMargen++;
+          ganancia += cobrado(o) - cpN - fN - reg - ext - (Number((o?.shipping as any)?.empaque) || 0); conMargen++;
         }
       }
     }
