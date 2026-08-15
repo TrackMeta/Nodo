@@ -251,6 +251,19 @@ Deno.serve(async (req) => {
     if (opD) await registrarOperacion(db, (order as any).channel_id, opD, order.id, "digital").catch((e) => console.error("[order-update] registrar op digital:", (e as any)?.message ?? e));
   }
 
+  // 🔒 Anti-reúso EXTRA: mismo hueco que el digital, pero para el pago de una venta
+  // EXTRA aprobado a mano. El botón extra_ok manda { resume:true, extra_pendiente:false }
+  // SIN cambiar el estado del pedido, así que no lo cubre el bloque de arriba. El nº de
+  // operación del extra se guardó en shipping.extra_operacion al ir a validación manual
+  // (engine: rama esExtra). Sin registrarlo, ese comprobante quedaba reusable. Guarda:
+  // solo cuando de verdad se aprueba el extra (resume o extra_pendiente:false) y hay op.
+  if ((order as any).contact_id) {
+    const shipE = ((patch.shipping as any) ?? (order as any).shipping ?? {}) as any;
+    const opE = String(shipE.extra_operacion || shipE.extra_operacion_leida || "").trim();
+    const aprobandoExtra = body.resume === true || (body.shipping && (body.shipping as any).extra_pendiente === false);
+    if (opE && aprobandoExtra) await registrarOperacion(db, (order as any).channel_id, opE, order.id, "extra").catch((e) => console.error("[order-update] registrar op extra:", (e as any)?.message ?? e));
+  }
+
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
   let flowStarted: string | null = null;
   let avisoEnviado: string | null = null;
