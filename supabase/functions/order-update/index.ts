@@ -238,6 +238,19 @@ Deno.serve(async (req) => {
     if (opS) await registrarOperacion(db, (order as any).channel_id, opS, order.id, "saldo").catch((e) => console.error("[order-update] registrar op saldo:", (e as any)?.message ?? e));
   }
 
+  // 🔒 Anti-reúso DIGITAL: cuando un pago digital que fue a validación MANUAL se
+  // aprueba (pasa a 'confirmada', vía el botón digital_ok de Telegram o el panel),
+  // registra su operación en el ledger unificado — igual que adelanto/saldo. Sin
+  // esto el comprobante aprobado a mano nunca entraba al ledger (el registro solo
+  // ocurría en el camino AUTOMÁTICO) y podía REUSARSE en otra compra digital. La
+  // guarda `if (opD)` lo limita a pagos digitales: un pedido físico en 'confirmada'
+  // no tiene digital_operacion. Idempotente (registrarOperacion ignora duplicados).
+  if (newEstado === "confirmada" && (order as any).contact_id) {
+    const shipD = ((patch.shipping as any) ?? (order as any).shipping ?? {}) as any;
+    const opD = String(shipD.digital_operacion || shipD.digital_operacion_leida || "").trim();
+    if (opD) await registrarOperacion(db, (order as any).channel_id, opD, order.id, "digital").catch((e) => console.error("[order-update] registrar op digital:", (e as any)?.message ?? e));
+  }
+
   // Cambio de estado → Timeline + flujos suscritos a ese estado.
   let flowStarted: string | null = null;
   let avisoEnviado: string | null = null;
