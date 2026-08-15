@@ -100,9 +100,14 @@ export async function runEngine(
     return await runEngineInner(db, channelId, contactId, event);
   } finally {
     if (locked) {
-      await db.rpc("contact_lock_release", {
-        p_channel_id: channelId, p_contact_id: contactId, p_holder: holder,
-      }).catch(() => {});
+      // db.rpc(...) devuelve un builder thenable SIN método .catch → hay que
+      // envolver en try/catch, no encadenar .catch (tiraría "catch is not a
+      // function" al final de CADA mensaje). Best-effort: si falla, el TTL libera.
+      try {
+        await db.rpc("contact_lock_release", {
+          p_channel_id: channelId, p_contact_id: contactId, p_holder: holder,
+        });
+      } catch { /* el TTL lo libera igual */ }
     }
   }
 }
@@ -2925,11 +2930,14 @@ export async function reservarStockPedido(db: SupabaseClient, orderId: string, c
     // Si el CAS no aplicó, revertir el claim con un merge ATÓMICO (restaura el plan, baja
     // la bandera, quita stock_mov) → un reintento posterior lo vuelve a tomar.
     if (!ok) {
-      await db.rpc("order_patch_shipping", {
-        p_order_id: orderId,
-        p_patch: { stock_mov_plan: plan, stock_descontado: false },
-        p_remove: ["stock_mov"],
-      }).catch(() => {});
+      // db.rpc(...) no tiene .catch (builder thenable) → try/catch, no .catch encadenado.
+      try {
+        await db.rpc("order_patch_shipping", {
+          p_order_id: orderId,
+          p_patch: { stock_mov_plan: plan, stock_descontado: false },
+          p_remove: ["stock_mov"],
+        });
+      } catch { /* best-effort: un reintento posterior lo vuelve a tomar */ }
       console.error("[reservarStockPedido] stock no aplicado (CAS agotó reintentos) — claim revertido, se reintenta");
       return;
     }
