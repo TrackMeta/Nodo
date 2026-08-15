@@ -1548,6 +1548,14 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return true;
   }
   if (event.type === "resume") {
+    // 🕒 Wake RANCIO (anti-carrera con el mensaje del cliente): el scheduler seleccionó
+    // este run por su `wake_at` vencido, pero entre ese SELECT y este procesamiento el
+    // cliente pudo CONTESTAR y re-parquear el run en un nodo nuevo con un `wake_at` FUTURO
+    // (el lock por contacto serializa, pero no revalida la decisión). Sin esta guarda se
+    // dispararía la rama `timeout` de ESE nodo nuevo antes de tiempo — saltándose la espera
+    // o escribiendo encima de un cliente activo. Si el wake ya no está vencido, este
+    // `resume` es viejo: no se hace nada (el scheduler lo volverá a despertar a su hora).
+    if (run.wake_at && new Date(run.wake_at).getTime() > Date.now()) return false;
     // Nos despertó el reloj. Hay dos casos distintos:
     //   · Esperar (sin _await): simplemente seguir por 'continuar'.
     //   · Pregunta con timeout_seg (_await presente): el cliente NO contestó

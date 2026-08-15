@@ -267,6 +267,10 @@ async function processOrderReminders(now: number): Promise<number> {
       .lte("updated_at", cutoff).limit(25);
     for (const o of ords ?? []) {
       if (!(o as any).contact_id) continue;
+      // Si un HUMANO tomó la conversación (bot_activo=false), NO inyectar un flujo
+      // automático encima del agente — mismo guard que processAdelantos/processSub.
+      const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", (o as any).contact_id).maybeSingle();
+      if ((ct as any)?.bot_activo === false) continue;
       const ship = (o as any).shipping ?? {};
       const mark = "_nudge_" + estado; // una sola vez por estado
       if (ship[mark]) continue;
@@ -481,7 +485,14 @@ async function processSub(s: any, now: number): Promise<boolean> {
     if (enVentana) {
       const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
       toco = !!ok;
-      if (!ok) console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/rancio) → se reintenta`);
+      if (!ok) {
+        // El flujo NO arrancó (ya hay un run activo/esperando: el cliente está a mitad de
+        // una conversación). NO se consume el paso ni se avanza: se REINTENTA el próximo
+        // tick, cuando el run se libere. Antes se caía a avanzar `paso_actual` igual (el
+        // `return` faltaba) → el paso de re-enganche se perdía en silencio sin enviar nada.
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
+        return false;
+      }
     }
     else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);
   }

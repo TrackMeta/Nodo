@@ -210,7 +210,20 @@ Deno.serve(async (req) => {
     try {
       const { data: fresh } = await db.from("orders").select("shipping").eq("id", order.id).maybeSingle();
       const shipNow = (((fresh as any)?.shipping) || shipA) as any;
-      const totalAdel = Number(shipNow.adelanto_abonado ?? shipNow.adelanto_monto_leido ?? shipNow.adelanto) || 0;
+      let totalAdel = Number(shipNow.adelanto_abonado ?? shipNow.adelanto_monto_leido ?? shipNow.adelanto) || 0;
+      // 🚫 Freno de SOBREPAGO (espeja el camino AUTO en maybeAdelanto): si el monto que
+      // leyó el OCR supera lo que el cliente PODRÍA deber (adelanto + saldo = total) por
+      // más del margen, es casi seguro una mala lectura ("S/20" leído como "S/1200"). El
+      // camino auto ya lo manda a manual por eso; pero al aprobar a mano NO se debe usar
+      // ese número para reducir el saldo: zeroearía el saldo REAL y el negocio perdería lo
+      // que falta cobrar en la agencia. Se acredita solo el adelanto esperado (si hubo un
+      // sobrepago real, el operador ajusta el saldo a mano desde "Editar pedido").
+      const totalOwed = (Number(shipNow.adelanto) || 0) + (Number(shipNow.saldo) || 0);
+      const { data: chAdel } = await db.from("channels").select("pedidos_config").eq("id", (order as any).channel_id).maybeSingle();
+      const _pc = (chAdel as any)?.pedidos_config ?? {};
+      const _mRaw = Number(_pc?.adelanto?.revisar_sobre_sol ?? _pc?.digital?.revisar_sobre_sol);
+      const margenAdel = Number.isFinite(_mRaw) && _mRaw >= 0 ? _mRaw : 50;
+      if (totalOwed > 0 && totalAdel > totalOwed + margenAdel) totalAdel = Number(shipNow.adelanto) || 0;
       const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(shipNow, totalAdel);
       // Idempotencia: NO re-acreditar el MISMO pago. Si el operador mueve el pedido
       // adelanto_validado → esperando_adelanto → adelanto_validado, sin esta guarda

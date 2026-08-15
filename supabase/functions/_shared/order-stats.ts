@@ -62,7 +62,14 @@ export function porCobrar(o: Order): number {
 
 export const esVenta = (o: Order) => !!EST[o?.estado ?? ""]?.venta;
 export const esPerdido = (o: Order) => !!EST[o?.estado ?? ""]?.perdido;
-export const esFisico = (o: Order) => !!EST[o?.estado ?? ""]?.zona || !!(o?.shipping as any)?.zona;
+export const esFisico = (o: Order) => {
+  // ESPEJO de orders.js esFisico: "Editar pedido" de un DIGITAL sella shipping.zona="digital";
+  // sin esta guarda un digital se colaba como físico → el digest lo contaba en `fisico++` y
+  // caía en la rama que exige flete → `sinDatos++` y su ganancia NUNCA se sumaba.
+  const z = String((o?.shipping as any)?.zona ?? "").toLowerCase();
+  if (z === "digital") return false;
+  return !!EST[o?.estado ?? ""]?.zona || z === "lima" || z === "provincia";
+};
 
 // 🎁 Costo de los regalos adjuntos (bumps regalo:true): no se venden (precio 0)
 // pero cuestan → cuentan como COGS. Espejo de orders.js costoRegalos.
