@@ -75,7 +75,39 @@ async function resolverAnguloContacto(db: SupabaseClient, channelId: string, con
   } catch (e) { console.error("[resolverAnguloContacto]", (e as any)?.message ?? e); }
 }
 
+// Wrapper de LOCK por contacto (migración 0069): serializa el procesamiento de
+// eventos del MISMO contacto para que dos mensajes casi simultáneos (o un mensaje
+// + un resume del scheduler) no corran a la vez y dupliquen efectos / se pisen el
+// run. Diseño NEVER-DROP: si no se consigue el lock —otro handler activo, o la RPC
+// no existe (pre-migración)— se ESPERA un poco y, si aún así no se logra, se
+// procede IGUAL (jamás se descarta el evento). El lock tiene TTL (se auto-libera
+// si un worker muere) y se suelta en `finally` sólo si seguimos siendo el dueño.
 export async function runEngine(
+  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
+) {
+  const holder = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  let locked = false;
+  for (let i = 0; i < 20 && !locked; i++) {           // hasta ~5s de espera (20 × 250ms)
+    try {
+      const { data } = await db.rpc("contact_lock_try", {
+        p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 90, p_holder: holder,
+      });
+      locked = data === true;
+    } catch { break; }                                // RPC ausente → proceder sin lock
+    if (!locked) await new Promise((r) => setTimeout(r, 250));
+  }
+  try {
+    return await runEngineInner(db, channelId, contactId, event);
+  } finally {
+    if (locked) {
+      await db.rpc("contact_lock_release", {
+        p_channel_id: channelId, p_contact_id: contactId, p_holder: holder,
+      }).catch(() => {});
+    }
+  }
+}
+
+async function runEngineInner(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
   // "Solo anuncios": si el canal lo tiene activado, el bot atiende únicamente
@@ -2879,28 +2911,25 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
 // automático (OCR, maybePagoAdelanto) y manual (order-update).
 export async function reservarStockPedido(db: SupabaseClient, orderId: string, channelId: string): Promise<void> {
   try {
-    const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
-    const ship = ((o as any)?.shipping ?? {}) as any;
-    if (ship.stock_descontado) return;                          // ya reservado
-    const plan = Array.isArray(ship.stock_mov_plan) ? ship.stock_mov_plan : [];
-    if (!plan.length) return;                                   // nada planificado (Lima ya reservó, o sin stock)
-    // 🔒 CLAIM ATÓMICO anti-doble-descuento: se flip-ea `stock_descontado` false→true en
-    // el MISMO UPDATE, con una guarda que solo matchea si aún NO está descontado. Postgres
-    // serializa el row-lock → si el OCR auto-valida el adelanto a la vez que apruebas el
-    // adelanto a mano (order-update), solo UNO gana la fila; el otro recibe 0 filas y NO
-    // vuelve a descontar. Antes el guard era read-then-write (líneas separadas) → ambos
-    // leían false y ambos descontaban → subventa fantasma permanente (el +1 al cancelar
-    // solo devolvía una vez). El claim se hace ANTES de aplicar el stock; si el CAS de
-    // aplicarStock falla, se REVIERTE el claim para que un reintento lo vuelva a intentar.
-    const claimShip: any = { ...ship, stock_mov: plan, stock_descontado: true };
-    delete claimShip.stock_mov_plan;
-    const { data: won } = await db.from("orders").update({ shipping: claimShip }).eq("id", orderId)
-      .or("shipping->>stock_descontado.is.null,shipping->>stock_descontado.eq.false").select("id");
-    if (!won || !won.length) return;                            // otro camino ya lo reservó → no dobles
+    // 🔒 CLAIM ATÓMICO en la DB (order_claim_stock, migración 0068): un ÚNICO UPDATE
+    // condicional gana la reserva (solo si aún NO está descontado y hay stock_mov_plan),
+    // promueve el plan a stock_mov y baja la bandera — MERGE ESTRECHO que preserva el
+    // resto de `shipping` (a diferencia del viejo `{...ship}`, que pisaba un cambio de
+    // sede/dirección concurrente). Devuelve el plan a descontar; null = ya reservado o
+    // sin plan. Así el OCR (auto) y la aprobación manual (order-update) no descuentan dos
+    // veces, y ninguna escritura concurrente se pierde.
+    const { data: plan, error } = await db.rpc("order_claim_stock", { p_order_id: orderId });
+    if (error) { console.error("[reservarStockPedido] claim rpc:", (error as any)?.message ?? error); return; }
+    if (!Array.isArray(plan) || !plan.length) return;           // no ganó el claim / sin plan
     const { alerts, ok } = await aplicarStock(db, plan, -1);
-    // Si el CAS no aplicó, revertir el claim (dejar el plan) → el próximo intento reintenta.
+    // Si el CAS no aplicó, revertir el claim con un merge ATÓMICO (restaura el plan, baja
+    // la bandera, quita stock_mov) → un reintento posterior lo vuelve a tomar.
     if (!ok) {
-      await db.from("orders").update({ shipping: ship }).eq("id", orderId).catch(() => {});
+      await db.rpc("order_patch_shipping", {
+        p_order_id: orderId,
+        p_patch: { stock_mov_plan: plan, stock_descontado: false },
+        p_remove: ["stock_mov"],
+      }).catch(() => {});
       console.error("[reservarStockPedido] stock no aplicado (CAS agotó reintentos) — claim revertido, se reintenta");
       return;
     }
