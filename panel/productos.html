@@ -2113,6 +2113,17 @@ function accRerender(t){
   const wrap=document.querySelector('.acc[data-t="'+t+'"]');
   if(wrap && wrap.classList.contains("open")){ const fn=ACC_RENDER[t]; if(fn) fn(wrap.querySelector(".acc-body")); }
 }
+// Invalida el DOM cacheado de una sección tras un cambio que la deja rancia (p.ej.
+// agregar/quitar una presentación afecta cómo se edita "Cómo se entrega"): si está
+// ABIERTA la re-dibuja al toque; si está cerrada pero ya renderizada, borra la marca
+// para que se re-dibuje FRESCA al reabrir (antes el render perezoso solo dibujaba 1
+// vez y mostraba el editor de 1 presentación con 2 activas).
+function accInvalidate(t){
+  const wrap=document.querySelector('.acc[data-t="'+t+'"]'); if(!wrap) return;
+  const body=wrap.querySelector(".acc-body"); if(!body) return;
+  if(wrap.classList.contains("open")){ const fn=ACC_RENDER[t]; if(fn){ fn(body); body.dataset.rendered="1"; } }
+  else delete body.dataset.rendered;
+}
 // "Cómo llegan los clientes" depende de flujos/triggers que viven en la BD; tras
 // guardar hay que recargarlos para que la fila brille sin recargar la página.
 async function refreshActivacionRow(){
@@ -3097,7 +3108,7 @@ function renderOpciones(host){
     const oge=b.querySelector(".oGoExtra"); if(oge) oge.onclick=(e)=>{ e.preventDefault(); accOpen("extras"); };
     const ogEnt=b.querySelector(".oGoEnt"); if(ogEnt) ogEnt.onclick=(e)=>{ e.preventDefault(); accOpen("entrega"); };
     $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value); renderOpciones(b); };
-    $("opAdd").onclick=()=>{ st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length }); renderOpciones(b); };
+    $("opAdd").onclick=()=>{ st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length }); renderOpciones(b); accInvalidate("entrega"); };
     updateOpMargen();
     return;
   }
@@ -3132,7 +3143,7 @@ function renderOpciones(host){
   const oe2=$("opEmpaque"); if(oe2) oe2.onchange=(e)=>prodSetC("empaque", e.target.value.trim()===""?undefined:Number(e.target.value));
   $("opAdd").onclick=()=>{
     st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length });
-    paintOpciones(fisico);
+    paintOpciones(fisico); accInvalidate("entrega");
   };
   updateOpMargen();
 }
@@ -3211,6 +3222,7 @@ function paintOpciones(fisico){
       st.versions.splice(i,1);
       // Si quedó 1 (o 0), volver al layout SIMPLE limpio en vez del híbrido multi.
       if(st.versions.length<=1 && st._opHost) renderOpciones(st._opHost); else paintOpciones(fisico);
+      accInvalidate("entrega"); // el editor de entrega depende del nº de presentaciones
     };
     // Agrega una fila vacía y pone el cursor en el link. Antes eran DOS ventanas
     // seguidas (primero el link, después el nombre) para una sola acción — y el
@@ -3753,7 +3765,8 @@ function renderComposer(){
   }
 }
 // Guardado ÚNICO de la sección: ángulos + nodo de mensajes iniciales + disparadores.
-async function saveActivacion(){
+async function saveActivacion(opts){
+  const silent=!!(opts&&opts.silent); // llamado desde el "Guardar cambios" de arriba
   harvest(); harvestAngulos();
   if(st.act.angulosOk){
     try{
@@ -3782,7 +3795,8 @@ async function saveActivacion(){
   // El ruteo por ID de anuncio se maneja ahora en el Banco de anuncios del
   // producto (products.config.ad_bank). Ya no se toca el disparador "referral"
   // desde aquí: lo que exista se queda intacto y no se crea uno nuevo.
-  toast("Guardado ✓"); accRerender("activacion"); refreshActivacionRow();
+  if(!silent) toast("Guardado ✓");
+  accRerender("activacion"); refreshActivacionRow();
 }
 function _renderComposerOld(){
   const root=$("actroot"); const cfg=st.act.node.config;
@@ -4116,6 +4130,16 @@ async function saveProduct(){
     if(error){ toast(error.message,true); return; }
     if(!v.id && data) v.id=data.id;
   }
+  // Guardado INTEGRAL: la sección "Cómo llegan los clientes" (activación: keywords,
+  // mensajes iniciales y ángulos) tiene sus PROPIOS botones y NO se persiste con este
+  // update de products/product_versions. Antes el markClean() de abajo limpiaba el
+  // dirty-flag global → si editabas esa sección y guardabas desde este botón de arriba,
+  // sus cambios se perdían EN SILENCIO (sin aviso al salir). Si está renderizada, se
+  // vuelca acá para que "Guardar cambios" guarde de verdad TODO.
+  try{
+    const actBody=document.querySelector('.acc[data-t="activacion"] .acc-body');
+    if(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node){ await saveActivacion({silent:true}); }
+  }catch(_){ /* si algo falló, saveActivacion ya avisó con su propio toast */ }
   markClean(); toast("Guardado ✓"); loadProducts();
 }
 // ════════════════════════════════════════════════════════════════════
