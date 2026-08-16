@@ -3189,7 +3189,12 @@ const SEG_RANK: Record<string, number> = {
 async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId: string, segmento: string) {
   try {
     // Producto del contacto → su mapa de remarketing por segmento.
-    const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, no_remarketing").eq("id", contactId).maybeSingle();
+    // Pidió que no le escriban: NO re-enrolarlo por "graduación". Antes se le creaba
+    // una sub 'activa' nueva (el scheduler la re-cancelaba al siguiente tick por
+    // no_remarketing, pero era churn constante crear→cancelar y un estado
+    // inconsistente: una sub activa para alguien opt-out). Se corta en la fuente.
+    if ((c as any)?.no_remarketing === true) return;
     const productId = (c as any)?.product_id;
     if (!productId) return; // sin producto → no hay a qué remarketing engancharlo
     const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
@@ -7503,6 +7508,18 @@ async function buildContext(db: SupabaseClient, run: Run) {
         (run as any)._prodCtx = pc;
       }
       for (const [k, v] of Object.entries(pc)) if (k !== "_id") ctx[k] = v;
+      // {{precio}} REBAJADO por oferta de remarketing: si el contacto tiene una oferta
+      // vigente (el scheduler la graba en `oferta_activa` antes de enviar el paso), el
+      // mensaje debe mostrar el precio rebajado — el MISMO que el validador de pago
+      // espera (precioEsperado). Antes buildContext sembraba {{precio}} con el precio
+      // BASE del producto (o vacío en productos con versiones) y NUNCA leía la oferta →
+      // el cliente recibía "te lo dejo a S/99" pero el OCR aceptaba S/79: descuento
+      // fantasma (copy con un precio, cobro con otro). El editor de secuencias promete
+      // que "{{precio}} saldrá rebajado", así que acá se cumple.
+      try {
+        const of = await ofertaActiva(db, run);
+        if (of && Number.isFinite(Number(of.precio))) ctx.precio = Number(of.precio);
+      } catch (_) { /* sin oferta vigente → precio base */ }
       // 📦 Extra físico con tallas propias YA aceptado (bump stock_pendiente): el
       // bot pregunta su talla (campos OPCIONALES, prefijo xt<vid>_). Al capturarla,
       // reconciliarStockExtras descuenta la variante. Copia FRESCA de _atributos

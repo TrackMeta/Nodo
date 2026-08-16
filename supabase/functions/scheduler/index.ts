@@ -57,6 +57,12 @@ Deno.serve(async (req) => {
   const now = Date.now();
   let woke = 0, fired = 0;
 
+  // El caché de config de remarketing (horario/timezone/anti-spam) es por TICK: se
+  // limpia al inicio de cada invocación. El isolate de Deno vive muchos ticks, así
+  // que un Map de módulo que nunca se limpia congelaba la config → un cambio del
+  // operador en las horas de remarketing no tomaba efecto hasta reciclar el isolate.
+  horarioCache.clear();
+
   // ── 1) Despertar Esperar/debounce vencidos ────────────────────────
   const { data: runs } = await db.from("flow_runs")
     .select("channel_id, contact_id")
@@ -374,7 +380,13 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // reinicia con la respuesta del cliente; corre su calendario desde que se
   // suscribió. 'reenganche' (default) = el de siempre (se ancla al silencio).
   const esGoteo = (seq as any)?.modo === "goteo";
-  if (!seq || !(seq as any).activo || s.paso_actual >= pasos.length) {
+  // Secuencia PAUSADA (existe pero activo=false): NO tocar la sub — se queda 'activa'
+  // y se reanuda sola cuando el operador la reactiva. Antes caía en el mismo branch
+  // que 'borrada/terminada' y se marcaba 'completada' → al reactivar nadie se
+  // reanudaba: los toques en vuelo se perdían para siempre (200 leads a mitad de
+  // camino quedaban muertos con un solo toggle). "Pausar" debe ser reversible.
+  if (seq && (seq as any).activo === false) return false;
+  if (!seq || s.paso_actual >= pasos.length) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
     return false;
@@ -501,10 +513,19 @@ async function processSub(s: any, now: number): Promise<boolean> {
     else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);
   }
   else if (paso.template_name) {
-    await sendTemplateToContact(db, s.channel_id, s.contact_id, {
-      name: paso.template_name, language: paso.template_lang, params: paso.template_params,
-    });
-    toco = true;
+    // El envío de plantilla puede FALLAR (Meta la rechaza: plantilla no aprobada,
+    // pausada, o params inválidos). Sin este try/catch el throw se propagaba fuera
+    // de processSub y `paso_actual` NUNCA avanzaba → la secuencia se trababa en un
+    // reintento infinito cada tick (y jamás llegaban los pasos siguientes). Ahora se
+    // registra y se AVANZA igual (se salta ese toque) para no bloquear la secuencia.
+    try {
+      await sendTemplateToContact(db, s.channel_id, s.contact_id, {
+        name: paso.template_name, language: paso.template_lang, params: paso.template_params,
+      });
+      toco = true;
+    } catch (e) {
+      console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
+    }
   }
   // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
   // Las secuencias se disparan por silencio → la ventana de 24h casi siempre

@@ -1828,7 +1828,7 @@ async function openTplPicker() {
   });
   if (!id) return;
   const t = listas.find(x => x.id === id);
-  const ok = await confirmDialog({ title: "Enviar plantilla", message: `¿Enviar «${esc(t.name)}» a <b>${esc(state.contactName)}</b>?`, confirmText: "Enviar" });
+  const ok = await confirmDialog({ title: "Enviar plantilla", messageHtml: `¿Enviar «${esc(t.name)}» a <b>${esc(state.contactName)}</b>?`, confirmText: "Enviar" });
   if (!ok) return;
   const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, template: { name: t.name, language: t.language || "es" } });
   const o = await r.json().catch(() => ({}));

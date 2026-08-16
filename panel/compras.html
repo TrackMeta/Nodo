@@ -184,7 +184,7 @@ function concManual(o){
 }
 async function marcarVerificada(o){
   if(!await confirmDialog({ title:"Marcar como verificada",
-    message:"Se marca como verificada y <b>sale de la próxima conciliación</b> con el banco. Úsalo cuando ya confirmaste el pago por tu cuenta.",
+    messageHtml:"Se marca como verificada y <b>sale de la próxima conciliación</b> con el banco. Úsalo cuando ya confirmaste el pago por tu cuenta.",
     confirmText:"Marcar verificada", cancelText:"Cancelar" })) return;
   const conc=concManual(o);
   const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:o.id, shipping:{ conciliacion:conc } } });

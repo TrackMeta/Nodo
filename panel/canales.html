@@ -268,7 +268,7 @@ async function copiar(txt){
 async function desconectarWA(btn){
   const ok=await confirmDialog({
     title:"Desconectar el número de WhatsApp",
-    message:"Se quitará la conexión de <b>este número</b> (Phone Number ID, WABA y token). <b>Tus contactos, pedidos, flujos y productos NO se borran</b> — quedan intactos en este canal. Luego podrás conectar otro número (por ejemplo si te banearon).<br><br>¿Desconectar ahora?",
+    messageHtml:"Se quitará la conexión de <b>este número</b> (Phone Number ID, WABA y token). <b>Tus contactos, pedidos, flujos y productos NO se borran</b> — quedan intactos en este canal. Luego podrás conectar otro número (por ejemplo si te banearon).<br><br>¿Desconectar ahora?",
     confirmText:"Sí, desconectar",
     danger:true
   });
@@ -288,7 +288,7 @@ async function desconectarWA(btn){
 async function desconectarTG(btn){
   const ok=await confirmDialog({
     title:"Desconectar Telegram",
-    message:"Se quitará el <b>bot de Telegram</b> de este canal: dejarás de recibir avisos y de aprobar pagos desde el celular. Se borran el token, los chats vinculados y el Copiloto.<br><br><b>Tus contactos, pedidos y flujos NO se tocan.</b> Después puedes conectar otro bot.<br><br>¿Desconectar Telegram?",
+    messageHtml:"Se quitará el <b>bot de Telegram</b> de este canal: dejarás de recibir avisos y de aprobar pagos desde el celular. Se borran el token, los chats vinculados y el Copiloto.<br><br><b>Tus contactos, pedidos y flujos NO se tocan.</b> Después puedes conectar otro bot.<br><br>¿Desconectar Telegram?",
     confirmText:"Sí, desconectar",
     danger:true
   });

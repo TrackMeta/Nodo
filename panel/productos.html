@@ -652,8 +652,13 @@ async function createProduct(){
   await loadProducts(); openProduct(data.id);
 }
 async function openProduct(id){
+  // Guard anti-carrera: doble clic (producto A y luego B) podía resolver A DESPUÉS
+  // de B → se pintaba B pero con las versiones/config de A (y un guardado escribía
+  // el set mezclado). Mismo patrón que loadProducts/loadAngHub.
+  const gen=(st.openGen=(st.openGen||0)+1);
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
+  if(gen!==st.openGen) return; // otra apertura más nueva ya ganó
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
   // Migración: el "precio base" viejo (config.precio) pasa a la 1ª presentación
   // si esta no tiene precio, para que el precio viva en un solo lugar

@@ -537,7 +537,7 @@ async function saveContact(){
   if(ya){ toast(`Ya tienes un contacto con ese número${ya.nombre?` (${ya.nombre})`:""}. Ábrelo desde la lista para editarlo.`,true); return; }
   // El wa_id de WhatsApp SIEMPRE incluye el código de país (ej. 51 en Perú). Un
   // número muy corto casi seguro lo omite → el bot no lo reconocería al chatear.
-  if(wa.length<10 && !await confirmDialog({title:"¿Falta el código de país?",message:`«${wa}» parece no incluir el código de país. El número de WhatsApp lo incluye siempre (ej. <b>51${wa}</b>). ¿Guardar igual?`,confirmText:"Guardar igual"})) return;
+  if(wa.length<10 && !await confirmDialog({title:"¿Falta el código de país?",messageHtml:`«${esc(wa)}» parece no incluir el código de país. El número de WhatsApp lo incluye siempre (ej. <b>51${esc(wa)}</b>). ¿Guardar igual?`,confirmText:"Guardar igual"})) return;
   const { error }=await supa.from("contacts").upsert({ channel_id:st.channelId, wa_id:wa, nombre:nombre||null },{ onConflict:"channel_id,wa_id" });
   if(error){ toast(error.message,true); return; }
   $("modal").classList.remove("show"); toast("Contacto guardado ✓"); await load();
@@ -552,6 +552,12 @@ async function removeContact(c){
 // ── Acciones en lote ──
 async function bulk(act){
   const ids=[...st.sel]; if(!ids.length) return;
+  // Canal capturado AL INICIO: bulk() abre un modal (await) y `ids` quedan fijos. Si
+  // el operador cambia de bot con el modal abierto, `onChannel` limpia st.sel pero no
+  // cancela esta operación → sin este `ch` las mutaciones caían sobre el bot NUEVO con
+  // ids del bot viejo. Filtrar por `ch` mantiene la acción en el bot donde se seleccionó
+  // (y nunca toca contactos de otro canal, defensa en profundidad además de RLS).
+  const ch=st.channelId;
   if(act==="tag"){
     if(!st.tags.length){ toast("Aún no hay etiquetas. Créalas en Etiquetas.",true); return; }
     const tid=await askChoice({ title:`Etiquetar ${ids.length} contacto(s)`, options:st.tags.map(t=>({label:t.nombre,value:t.id})) });
@@ -564,14 +570,14 @@ async function bulk(act){
   if(act==="stage"){
     const k=await askChoice({ title:`Mover ${ids.length} a la etapa…`, options:EMBUDO_STAGES.map(s=>({label:s.label,value:s.k,desc:s.desc})) });
     if(!k) return;
-    const { error }=await supa.from("contacts").update({ stage:k }).in("id",ids);
+    const { error }=await supa.from("contacts").update({ stage:k }).eq("channel_id",ch).in("id",ids);
     if(error){ toast(error.message,true); return; }
     toast(`${ids.length} movido(s) a ${STAGE[k].label} ✓`); await load(); return;
   }
   if(act==="block"||act==="unblock"){
     const on=act==="block";
     if(on && !await confirmDialog({ title:`Bloquear ${ids.length} contacto(s)`, message:"El bot dejará de responderles y saldrán de la bandeja.", confirmText:"Bloquear", danger:true })) return;
-    const { error }=await supa.from("contacts").update({ bloqueado:on }).in("id",ids);
+    const { error }=await supa.from("contacts").update({ bloqueado:on }).eq("channel_id",ch).in("id",ids);
     if(error){ toast(error.message,true); return; }
     toast(on?`${ids.length} bloqueado(s) ✓`:`${ids.length} desbloqueado(s) ✓`); await load(); return;
   }
@@ -610,7 +616,7 @@ async function bulk(act){
   }
   if(act==="del"){
     if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones e historial. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
-    const { error }=await supa.from("contacts").delete().in("id",ids);
+    const { error }=await supa.from("contacts").delete().eq("channel_id",ch).in("id",ids);
     if(error){ toast(error.message,true); return; }
     st.sel.clear(); toast(`${ids.length} eliminado(s) ✓`); await load(); return;
   }

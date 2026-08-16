@@ -384,7 +384,7 @@ function abrirExport(courier){
     if(issues.length){
       const lista=issues.slice(0,8).map(x=>`• ${esc(x)}`).join("<br>");
       const extra=issues.length>8?`<br>…y ${issues.length-8} más`:"";
-      const ok=await confirmDialog({title:"Revisa antes de exportar",message:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Ábrelos con <b>Editar</b> y complétalos. Si continúas se exportan igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
+      const ok=await confirmDialog({title:"Revisa antes de exportar",messageHtml:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Ábrelos con <b>Editar</b> y complétalos. Si continúas se exportan igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
       if(!ok) return;
     }
     const btn=$q("#emDl"); btn.disabled=true; btn.textContent="Generando…";

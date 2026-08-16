@@ -337,7 +337,7 @@ function renderLista(){
         // Guarda: un mismo pago no debería acreditarse a dos ventas.
         const dueno=movDuenoDe(mov.i, x.venta.id);
         if(dueno && !await confirmDialog({ title:"Ese pago ya está asignado",
-          message:`El pago de ${money(mov.monto)} de “${esc(mov.quien||"—")}” ya quedó para <b>${esc(dueno.cliente||"otra venta")}</b>. Un mismo pago no debería ir a dos ventas. ¿Asignarlo igual?`,
+          messageHtml:`El pago de ${money(mov.monto)} de “${esc(mov.quien||"—")}” ya quedó para <b>${esc(dueno.cliente||"otra venta")}</b>. Un mismo pago no debería ir a dos ventas. ¿Asignarlo igual?`,
           confirmText:"Asignarlo igual", danger:true })) return;
         el.querySelectorAll(".opt").forEach(o=>o.classList.remove("on")); op.classList.add("on");
         st.decisiones.set(x.venta.id,{tipo:"cuadrar",mov,por:x.opciones[+op.dataset.i].por});

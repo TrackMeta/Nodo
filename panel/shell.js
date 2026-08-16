@@ -303,6 +303,16 @@ function openCreateBot() {
 //  navegador por modales con la identidad de Nodo). Todos devuelven una
 //  Promesa. Respetan mayúsculas/minúsculas del texto que escribe el user.
 // ═══════════════════════════════════════════════════════════════════
+// Párrafo de mensaje de un diálogo. `message` se ESCAPA siempre (puede traer
+// texto atacante-controlado: el nombre de perfil de WhatsApp del cliente entra
+// como `c.nombre` en varios diálogos → sería XSS almacenado si fuera HTML crudo).
+// Para el markup intencional (negritas, <br> de los avisos de desconexión, etc.)
+// el caller pasa `messageHtml`, que confía y NO se escapa: ahí el caller es
+// responsable de escapar cualquier dato variable que interpole.
+function dlgMsg(o) {
+  if (o.messageHtml != null) return `<p>${o.messageHtml}</p>`;
+  return o.message ? `<p>${escHtml(o.message)}</p>` : "";
+}
 function mountModal(html, { onClose } = {}) {
   const back = document.createElement("div");
   back.className = "nodo-modal-back";
@@ -324,7 +334,7 @@ export function askText(opts = {}) {
     const { back, close } = mountModal(`
       <div class="nodo-modal" role="dialog" aria-modal="true">
         <h3>${escHtml(o.title || "")}</h3>
-        ${o.message ? `<p>${o.message}</p>` : ""}
+        ${dlgMsg(o)}
         ${o.label ? `<label for="nmInput">${escHtml(o.label)}</label>` : ""}
         ${field}
         <div class="nb-acts">
@@ -358,7 +368,7 @@ export function confirmDialog(opts = {}) {
     const { back, close } = mountModal(`
       <div class="nodo-modal" role="dialog" aria-modal="true">
         <h3>${escHtml(o.title || "¿Confirmar?")}</h3>
-        ${o.message ? `<p>${o.message}</p>` : ""}
+        ${dlgMsg(o)}
         <div class="nb-acts">
           <button class="nb-btn" id="nmCancel" type="button">${escHtml(o.cancelText || "Cancelar")}</button>
           <button class="nb-btn ${o.danger ? "danger" : "primary"}" id="nmOk" type="button">${escHtml(o.confirmText || "Confirmar")}</button>
@@ -385,7 +395,7 @@ export function askChoice(opts = {}) {
     const { back, close } = mountModal(`
       <div class="nodo-modal" role="dialog" aria-modal="true">
         <h3>${escHtml(opts.title || "Elige una opción")}</h3>
-        ${opts.message ? `<p>${opts.message}</p>` : ""}
+        ${dlgMsg(opts)}
         <div class="nodo-choices">${rows}</div>
         <div class="nb-acts"><button class="nb-btn" id="nmCancel" type="button">Cancelar</button></div>
       </div>`, { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
