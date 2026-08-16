@@ -283,12 +283,17 @@ function subscribe(){
 
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera: si cambias de bot a media carga, esta se descarta
-  const [{ data:cs }, { data:tg }, { data:os }] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,source,ad_id,ctwa_clid,bot_activo,bloqueado,no_remarketing,created_at,ultimo_mensaje_at,ultima_imagen_at,product_id,product:products(nombre,emoji),contact_tags(tag_id),conv:conversations(archivada)").eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).limit(2000),
+  const [{ data:cs, count:total }, { data:tg }, { data:os }] = await Promise.all([
+    supa.from("contacts").select("id,nombre,wa_id,stage,source,ad_id,ctwa_clid,bot_activo,bloqueado,no_remarketing,created_at,ultimo_mensaje_at,ultima_imagen_at,product_id,product:products(nombre,emoji),contact_tags(tag_id),conv:conversations(archivada)",{count:"exact"}).eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).limit(2000),
     supa.from("tags").select("id,nombre,color").eq("channel_id",forChannel).order("nombre"),
     supa.from("orders").select("contact_id,amount,order_bumps,estado,currency").eq("channel_id",forChannel).limit(8000),
   ]);
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó → no pintes datos viejos
+  // Truncado: solo se cargan los 2000 más recientes. Con más contactos, los KPIs,
+  // "seleccionar todo" y las acciones en lote solo abarcan lo cargado → hay que
+  // AVISARLO (antes decía "2000" como si fuera el total y el bulk mentía en silencio).
+  st.total=(typeof total==="number")?total:((cs||[]).length);
+  st.truncado=(cs||[]).length>=2000 && st.total>(cs||[]).length;
   st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test");
   st.tags=tg||[];
   st.ordersBy={}; _ltvCache={};
@@ -380,7 +385,9 @@ function render(){
   // persistente → seleccionabas 10, filtrabas a 2, y "Eliminar" borraba los 10 (8 ocultos,
   // irreversible). Con esto la barra de lote refleja exactamente lo visible seleccionado.
   if(st.sel.size){ const vis=new Set(list.map(c=>c.id)); for(const id of [...st.sel]) if(!vis.has(id)) st.sel.delete(id); }
-  $("sub").textContent="Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas.";
+  $("sub").innerHTML="Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas."+(st.truncado
+    ? ` <span style="color:var(--amber,#f0a92b);font-weight:600">· Mostrando los ${st.contacts.length.toLocaleString("es-PE")} más recientes de ${Number(st.total).toLocaleString("es-PE")}. Los KPIs y las acciones en lote solo aplican a estos — usa la búsqueda o los filtros para acotar.</span>`
+    : "");
   updateFilterCounts();
   renderStats();
   // Barra de lote.

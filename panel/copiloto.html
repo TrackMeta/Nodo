@@ -191,6 +191,13 @@ function render(){
     // paguen", no "por validar": no debe pedir aprobar+dar clave ni mostrar el
     // comprobante del ADELANTO como si fuera el del saldo.
     if(et.id==="saldo")   items=items.filter(o=>{ const s=o.shipping||{}; return s.saldo_comprobante||s.saldo_recibido_at; });
+    // Un pago RECHAZADO no debe reaparecer mostrando el mismo comprobante como si
+    // siguiera pendiente: se excluye hasta que llegue uno NUEVO (recibido_at posterior
+    // al rechazado_at). Digital/extra ya salen al rechazar (*_pendiente:false); acá se
+    // cubre adelanto y saldo, que no cambian de estado al rechazar y reaparecían.
+    const rechVigente=(s,t)=>{ const rej=s[t+"_rechazado_at"], rec=s[t+"_recibido_at"]; return !!rej && (!rec || new Date(rej)>=new Date(rec)); };
+    if(et.id==="adelanto") items=items.filter(o=>!rechVigente(o.shipping||{},"adelanto"));
+    if(et.id==="saldo")    items=items.filter(o=>!rechVigente(o.shipping||{},"saldo"));
     return { et, items };
   });
   renderStats(groups);

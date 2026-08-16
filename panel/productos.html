@@ -547,10 +547,11 @@ function renderCards(){
     // El precio y el nº de opciones salen de las Opciones de compra reales.
     const ops=opcionesDe(p);
     const precios=ops.map(o=>o.precio).filter(x=>x!=null&&x!=="");
+    const $s=curSym(p.config);
     const precio = precios.length>1
-      ? `S/ ${Math.min(...precios.map(Number))} – ${Math.max(...precios.map(Number))}`
-      : precios.length===1 ? `S/ ${esc(precios[0])}`
-      : (p.config&&p.config.precio?`S/ ${esc(p.config.precio)}`:"");
+      ? `${$s} ${Math.min(...precios.map(Number))} – ${Math.max(...precios.map(Number))}`
+      : precios.length===1 ? `${$s} ${esc(precios[0])}`
+      : (p.config&&p.config.precio?`${$s} ${esc(p.config.precio)}`:"");
     const multi=ops.length>1;
     const emIc = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
     el.innerHTML=`
@@ -682,6 +683,11 @@ async function openProduct(id){
         const tiene=v0&&Array.isArray(v0.entrega)&&v0.entrega.some(it=>it&&String(it.url||"").trim());
         if(v0 && !tiene){ v0.entrega=Array.isArray(v0.entrega)?v0.entrega:[]; v0.entrega.push({ tipo:"link", url:String(lk), nombre:"" }); }
       }
+      // El link ya vive en la presentación (o el usuario lo dejó vacío a propósito):
+      // se BORRA de config para que NO RESUCITE al reabrir. Antes openProduct lo
+      // re-copiaba siempre → borrabas el link de la versión, guardabas, y al reabrir
+      // reaparecía. Se persiste al Guardar (config va en saveProduct).
+      if(st.versions.length && st.prod?.config && st.prod.config.link_entrega!=null) delete st.prod.config.link_entrega;
     }
   }catch(_){}
   // Con qué tipo se abrió: si lo cambia, el flujo YA GENERADO sigue vendiendo
@@ -778,6 +784,9 @@ const CURRENCIES=[
   ["HNL","L","Honduras — Lempira"],["NIO","C$","Nicaragua — Córdoba"],["PAB","B/.","Panamá — Balboa"],
   ["GBP","£","Reino Unido — Libra"],["CAD","$","Canadá — Dólar"],
 ];
+// Símbolo de la moneda de un producto (config.moneda). Los readouts del editor y el
+// mensaje de adelanto usaban "S/" fijo aunque el producto se venda en otra moneda.
+function curSym(cfg){ const cur=(cfg&&cfg.moneda)||"PEN"; return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
 const MODOS_ENVIO=[
   ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
   ["gratis","Envío gratis en todos los envíos"],
@@ -2149,7 +2158,7 @@ async function renderInicio(){
         return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo del regalo"};
       }
       const active=(st.versions||[]).filter(v=>v.activo!==false); const priced=active.filter(v=>Number(v.precio)>0); const prices=priced.map(v=>Number(v.precio));
-      let msg; if(!priced.length) msg="Falta ponerle precio"; else if(active.length===1) msg=`S/ ${prices[0]} · 1 presentación`; else msg=`${active.length} presentaciones · desde S/ ${Math.min(...prices)}`;
+      const $s=curSym(st.prod&&st.prod.config); let msg; if(!priced.length) msg="Falta ponerle precio"; else if(active.length===1) msg=`${$s} ${prices[0]} · 1 presentación`; else msg=`${active.length} presentaciones · desde ${$s} ${Math.min(...prices)}`;
       return {ok:priced.length>0,msg}; }
     if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
@@ -2229,10 +2238,10 @@ async function renderInicio(){
   const active=(st.versions||[]).filter(v=>v.activo!==false);
   const priced=active.filter(v=>Number(v.precio)>0); const prices=priced.map(v=>Number(v.precio));
   const costo=Number(c.costo)||0;
-  let precioSub, precioWarn=false;
+  let precioSub, precioWarn=false; const $s=curSym(c);
   if(!priced.length){ precioSub="Falta ponerle precio"; precioWarn=true; }
-  else if(active.length===1){ precioSub=`S/ ${prices[0]} · 1 presentación`; if(costo>0&&prices[0]>costo) precioSub+=` · ganas S/ ${Math.round(prices[0]-costo)}`; }
-  else precioSub=`${active.length} presentaciones · desde S/ ${Math.min(...prices)}`;
+  else if(active.length===1){ precioSub=`${$s} ${prices[0]} · 1 presentación`; if(costo>0&&prices[0]>costo) precioSub+=` · ganas ${$s} ${Math.round(prices[0]-costo)}`; }
+  else precioSub=`${active.length} presentaciones · desde ${$s} ${Math.min(...prices)}`;
   const sStock=(c.stock&&typeof c.stock==="object")?c.stock:{}; const totStock=Object.keys(sStock).reduce((a,k)=>a+(Number(sStock[k])||0),0);
   const atrs=(c.atributos||[]).length;
   const stockSub = (atrs||totStock) ? `${atrs?atrs+" variante(s) · ":""}${totStock} unidad(es) en stock` : "Sin variantes · agrega cuántas tienes";
@@ -2327,7 +2336,7 @@ async function renderInicio(){
     gold:"background:rgba(230,168,20,.20);border-color:transparent;color:#c88a04" };
   const recompRow=(t)=>{
     if(t==="opciones"){ const a=(st.versions||[]).filter(v=>v.activo!==false); const pr=a.filter(v=>Number(v.precio)>0); const prc=pr.map(v=>Number(v.precio)); const co=Number(c.costo)||0;
-      let s,w=false; if(!pr.length){ s="Falta ponerle precio"; w=true; } else if(a.length===1){ s=`S/ ${prc[0]} · 1 presentación`; if(co>0&&prc[0]>co) s+=` · ganas S/ ${Math.round(prc[0]-co)}`; } else s=`${a.length} presentaciones · desde S/ ${Math.min(...prc)}`;
+      const $s2=curSym(st.prod&&st.prod.config); let s,w=false; if(!pr.length){ s="Falta ponerle precio"; w=true; } else if(a.length===1){ s=`${$s2} ${prc[0]} · 1 presentación`; if(co>0&&prc[0]>co) s+=` · ganas ${$s2} ${Math.round(prc[0]-co)}`; } else s=`${a.length} presentaciones · desde ${$s2} ${Math.min(...prc)}`;
       return { ok:pr.length>0, tone:"green", sub:s, warn:w }; }
     if(t==="producto"){ if(!fisico) return null; const sk=(c.stock&&typeof c.stock==="object")?c.stock:{}; const tot=Object.keys(sk).reduce((x,k)=>x+(Number(sk[k])||0),0); const at=(c.atributos||[]).length;
       return { ok:(at>0||tot>0), tone:"green", sub:(at||tot)?`${at?at+" variante(s) · ":""}${tot} unidad(es) en stock`:"Sin variantes · agrega cuántas tienes" }; }
@@ -2423,7 +2432,7 @@ function renderSalud(ready){
     const viejo=st.prod.config?.envio?.agencias?.shalom?.adelanto_valor;
     const def=st.receta?.ch?.entregas?.adelanto_default;
     const hay = propio || (viejo!=null&&String(viejo).trim()!=="") || (def!=null&&String(def).trim()!=="");
-    if(!hay) errs.push("Sin adelanto: el pedido a provincia le pediría <b>“un adelanto de S/ ”</b> con el monto en blanco. Ponlo en Negocio → Entrega, o solo para este producto en su pestaña Entrega.");
+    if(!hay) errs.push(`Sin adelanto: el pedido a provincia le pediría <b>“un adelanto de ${curSym(st.prod&&st.prod.config)} ”</b> con el monto en blanco. Ponlo en Negocio → Entrega, o solo para este producto en su pestaña Entrega.`);
   }
   // OJO: "sin palabra clave / sin mensajes iniciales / sin conocimiento" ya se
   // ven como filas naranjas del hub (Tu venta) → no repetir acá. Solo lo que NO
@@ -2607,7 +2616,7 @@ async function generarFlujoFisico(flowId, N, E){
     ],
   },false,1240,640);
   const nPedirAdel=await N("mensaje","Pedir el adelanto",{
-    bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *S/ {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque." }],
+    bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque." }],
   },false,1520,640);
   // ¿El cliente YA pagó el adelanto ANTES de dar sus datos? El motor lo enganchó
   // al crear el pedido (engancharPrepagoAdelanto) y marcó `adelanto_prepagado`. Si
@@ -3136,7 +3145,7 @@ function updateOpMargen(){
   if(isNaN(p)||isNaN(costoN)){ el.style.display="none"; return; }
   const g=Math.round((p-costoN)*100)/100;
   el.style.display="flex";
-  el.innerHTML=`${icon("dollar")} Ganas ~S/ ${g} por ${prices.length>1?"la presentación más barata":"unidad"} <span style="font-weight:400;color:var(--faint)">(precio − costo, antes del envío)</span>`;
+  el.innerHTML=`${icon("dollar")} Ganas ~${curSym(st.prod&&st.prod.config)} ${g} por ${prices.length>1?"la presentación más barata":"unidad"} <span style="font-weight:400;color:var(--faint)">(precio − costo, antes del envío)</span>`;
 }
 
 // Slug estable para la clave de un atributo → {{clave}}, campo del contacto y
@@ -4042,11 +4051,17 @@ async function saveProduct(){
       if(vivos){
         const podados=[];
         if(Array.isArray(c.extras)){
+          const vistosX=new Set();
           c.extras=c.extras.filter(x=>{
             if(!x||!x.version_id) return false;                       // slot vacío
             const pr=vivos.get(x.version_id);
             if(pr==null){ podados.push("un extra (ya no existe)"); return false; }   // fantasma
             if(!(Number(pr)>0)){ podados.push("un extra sin precio"); return false; } // S/0 → sería regalo, no extra
+            // Mismo version_id dos veces: el flujo generado los keya por version_id
+            // (una_vez), así que el 2º aviso se suprime y AMBOS bumps cobran → el
+            // extra se agrega/cobra doble con un solo aviso. Se deja uno solo.
+            if(vistosX.has(x.version_id)){ podados.push("un extra duplicado"); return false; }
+            vistosX.add(x.version_id);
             return true;
           });
         }
