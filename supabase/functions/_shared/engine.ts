@@ -313,7 +313,14 @@ async function runEngineInner(
     const url = await ingestImage(db, channelId, contactId, event.mediaRef).catch((e) => {
       console.error("[ingestImage]", (e as any)?.message ?? e); return null;
     });
-    run.vars._last_image = url ?? event.mediaRef;
+    // Solo una URL http(s) real vale como comprobante. Antes, si ingestImage fallaba
+    // (Meta/Storage caído, token vencido), se guardaba la referencia cruda "wa-media:<id>"
+    // → esa cadena terminaba en digital_comprobante/adelanto_comprobante y el operador
+    // veía "⚠️ No cargó el comprobante" pero IGUAL tenía el botón Aprobar → aprobaba a
+    // ciegas un pago que nunca vio. Ahora se deja vacío (la tarjeta muestra "Sin
+    // comprobante" y NO invita a aprobar); la referencia queda para reintentar el OCR.
+    run.vars._last_image = url || "";
+    run.vars._media_ref = event.mediaRef;
     if (url) {
       run.vars.ultima_imagen = url;
       await setField(db, channelId, contactId, "ultima_imagen", url);
@@ -2102,6 +2109,23 @@ export async function ventana24hAbierta(db: SupabaseClient, contactId: string): 
   } catch (_) { return false; }
 }
 
+// Guard SSRF: solo http(s) hacia un host que NO sea loopback / red privada / link-local
+// / metadata (169.254.169.254). Los clientes reales nunca llegan a estos fetch (su media
+// es "wa-media:<id>" que se baja del host fijo graph.facebook.com); el vector es un
+// MIEMBRO autenticado del webchat pasando una URL a la red interna de la infra Edge para
+// que el backend la fetchee y le devuelva el contenido (exfiltración). Se rechaza antes.
+function urlDescargaSegura(raw: string): URL | null {
+  let u: URL;
+  try { u = new URL(String(raw)); } catch { return null; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h === "0.0.0.0" || h === "::1") return null;
+  if (h.startsWith("127.") || h.startsWith("169.254.") || h.startsWith("10.") || h.startsWith("192.168.")) return null;
+  const m172 = h.match(/^172\.(\d+)\./); if (m172 && +m172[1] >= 16 && +m172[1] <= 31) return null;
+  if (h.startsWith("fd") || h.startsWith("fc") || h.startsWith("fe80")) return null; // IPv6 ULA / link-local
+  return u;
+}
+
 // ── STT: descarga el audio entrante y lo transcribe (OpenAI Whisper) ─
 // mediaRef = "wa-media:<id>" (WhatsApp, se baja por Graph con el token del
 // canal) o una URL pública (webchat de pruebas).
@@ -2116,7 +2140,9 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
     if (!secrets?.access_token) return null;
     ({ bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token));
   } else {
-    const r = await fetch(mediaRef);
+    const su = urlDescargaSegura(mediaRef);
+    if (!su) { console.warn("[STT] URL de media no permitida (SSRF guard)"); return null; }
+    const r = await fetch(su);
     if (!r.ok) return null;
     mime = r.headers.get("content-type") || "audio/ogg";
     bytes = new Uint8Array(await r.arrayBuffer());
@@ -2157,7 +2183,9 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
 // Descarga cualquier URL http(s) a data-URI base64 (para pasar imágenes de un
 // bucket PRIVADO al modelo de visión, que no puede leer URLs firmadas).
 async function urlToDataUri(url: string): Promise<string> {
-  const r = await fetch(url);
+  const su = urlDescargaSegura(url);
+  if (!su) throw new Error("URL de imagen no permitida");
+  const r = await fetch(su);
   if (!r.ok) throw new Error(`no se pudo descargar la imagen (${r.status})`);
   const mime = r.headers.get("content-type") || "image/jpeg";
   const buf = new Uint8Array(await r.arrayBuffer());
@@ -3525,7 +3553,11 @@ function evaluarAbono(
   const total = abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0);
   const r2 = (n: number) => Math.round(n * 100) / 100;
   // Ambiguo nunca auto-cubre: la decisión queda para el humano.
-  const cubre = !ambiguo && Number.isFinite(esperado) && esperado > 0 && total >= (esperado - tol);
+  // Tope de tolerancia: nunca mayor que lo esperado. Una tolerancia mal configurada
+  // (≥ esperado) dejaba `esperado - tol ≤ 0` → CUALQUIER abono > 0 "cubría" (un S/1
+  // aprobaba un adelanto de S/20). Se clampa a [0, esperado].
+  const tolSafe = Math.max(0, Math.min(Number(tol) || 0, Number(esperado) || 0));
+  const cubre = !ambiguo && Number.isFinite(esperado) && esperado > 0 && total >= (esperado - tolSafe);
   return { key, abonos, total: r2(total), cubre, falta: Math.max(0, r2(esperado - total)), dup, ambiguo };
 }
 function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }
@@ -4374,9 +4406,16 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     return true;
   }
   const cubre = ab ? ab.cubre : false;
+  // 🛡️ Freno anti-error del OCR (igual que adelanto y digital): si el monto LEÍDO supera
+  // el saldo por más de S/margen, NO se suelta la clave sola aunque esté en auto → cae a
+  // manual. Sin esto, un saldo de S/20 con el OCR malinterpretando S/2 como S/1,200
+  // "cubría" y liberaba la entrega sin el visto bueno humano que sí exigen las otras rutas.
+  const margenSaldoRaw = Number((log as any)?.revisar_sobre_sol);
+  const margenSaldo = Number.isFinite(margenSaldoRaw) && margenSaldoRaw >= 0 ? margenSaldoRaw : 50;
+  const sobrepagoSaldo = !!ab && Number(ab.total) > saldo + margenSaldo;
   // Auto-aprobar (soltar la clave solo) SOLO en modo "auto". En manual se adjunta
   // y espera tu visto bueno (cae al bloque de "Saldo por validar" de abajo).
-  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave;
+  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo"))) reuse = true;
@@ -6952,7 +6991,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // nº de operación), así que `pago_operacion` se quedaba con la del pago
       // PRINCIPAL y el anti-reúso rechazaba el extra como "ya usado". Si este
       // comprobante SÍ trae operación, se re-guarda unas líneas más abajo.
+      // También se limpian monto/método/titular del comprobante ANTERIOR: `guarda()`
+      // omite los vacíos, así que si este comprobante no arroja monto, `pago_monto`
+      // conservaba el del anterior → el chequeo de suficiencia usaba el monto viejo y
+      // podía aprobar de más. Cada comprobante se juzga con SUS propios datos.
       run.vars.pago_operacion = ""; ctx.pago_operacion = "";
+      run.vars.pago_monto = ""; ctx.pago_monto = "";
+      run.vars.pago_metodo = ""; ctx.pago_metodo = "";
+      run.vars.pago_titular = ""; ctx.pago_titular = "";
       try {
         const m = /\{[\s\S]*\}/.exec(String(result ?? ""));
         if (m) {
@@ -7009,6 +7055,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // revise. El margen (revisar_sobre_sol, en soles) se configura en Pagos y
         // atención; default S/50.
         let sobrepagoSospechoso = false;
+        let montoIlegible = false;
         if (!esExtra) {
           const esperadoB = Number(ctx.precio_esperado);
           // La tolerancia digital que el operador configura vive en pedidos_config.digital
@@ -7017,7 +7064,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // inexistentes) → tolB era SIEMPRE 0 y un pago de S/58.90 para S/59 (decimal mal
           // leído / redondeo) se trataba como abono parcial y trababa la venta digital.
           const tolB = Number((info as any)?.pedidos?.digital?.tolerancia ?? cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 0) || 0;
-          const montoB = Number(run.vars.pago_monto);
+          // parseMonto, NO Number() crudo: el OCR devuelve el monto como TEXTO del Yape
+          // ("1,050.00", "1,200") y Number("1,050")=NaN → el chequeo de suficiencia se
+          // saltaba y, en auto + operación legible, ENTREGABA el digital sin verificar
+          // cuánto pagó (un S/1,050 por un producto de S/1,200 pasaba). parseMonto ya
+          // maneja miles/decimales peruanos.
+          const montoB = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
           if (Number.isFinite(esperadoB) && esperadoB > 0 && Number.isFinite(montoB) && montoB > 0) {
             let bolsa: any = {};
             try { bolsa = JSON.parse(String(ctx._bolsa_pago ?? "{}")); } catch (_) { bolsa = {}; }
@@ -7044,6 +7096,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const margenRev = Number.isFinite(margenRevRaw) && margenRevRaw >= 0 ? margenRevRaw : 50;
               if (total > esperadoB + margenRev) sobrepagoSospechoso = true;
             }
+          } else if (Number.isFinite(esperadoB) && esperadoB > 0) {
+            // Hay un precio esperado pero el monto del comprobante NO se pudo leer
+            // (NaN/≤0). El JUEZ de suficiencia del digital es el CÓDIGO (al modelo se le
+            // pasa esperado=null), así que sin monto no puede juzgar → NO auto-entregar:
+            // se fuerza validación manual (mismo criterio que un pago sin operación).
+            montoIlegible = true;
           }
         }
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
@@ -7059,7 +7117,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
           // freno detectó un sobrepago sospechoso (Capa 1), o si es un extra sin
           // operación verificable — aunque esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable)) {
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";

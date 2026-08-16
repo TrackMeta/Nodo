@@ -170,9 +170,15 @@ function render(){
   if(notaTec) box.insertAdjacentHTML("beforeend", notaTec);
 }
 async function save(){
-  for(const f of st.fields){ if(!(f.nombre||"").trim()||!(f.key||"").trim()){ toast("Cada campo necesita nombre y clave",true); return; } } // guarda null (campos internos del motor)
+  // Los campos INTERNOS del motor (_once_*, _await, _duda_*) llegan por `select("*")`,
+  // se ocultan de la vista (inTab) pero NO deben validarse ni re-upsertarse desde acá:
+  // (1) los crea el motor sin `nombre` → la validación de abajo bloqueaba TODO guardado
+  // con "Cada campo necesita nombre y clave" apuntando a un campo que el usuario no ve;
+  // (2) reescribir filas de estado del motor mientras él las lee/escribe es frágil.
+  const editables=st.fields.filter(f=>!esInterno(f));
+  for(const f of editables){ if(!(f.nombre||"").trim()||!(f.key||"").trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
   if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
-  const rows=st.fields.map(f=>{
+  const rows=editables.map(f=>{
     const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico", folder:f.folder||null };
     if((f.modo||"dinamico")==="fijo"){ r.valor=f.valor||null; r.descripcion=f.descripcion||null; }
     if(f.id) r.id=f.id; return r;

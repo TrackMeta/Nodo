@@ -378,9 +378,14 @@ function renderAtencion(b){
     if($("huFuera")) p.humano.aviso_fuera=$("huFuera").value.trim();
     if($("pvInstr")) p.postventa.instrucciones=$("pvInstr").value.trim();
     if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
-    // Merge: no pisar las claves de pago/avisos que maneja "Pagos y avisos".
-    const full={ ...src, humano:p.humano, postventa:p.postventa };
+    // Merge: no pisar las claves de pago/avisos que maneja "Pagos y avisos". Se re-lee
+    // pedidos_config FRESCO del server antes de mergear: esa columna también la escribe
+    // "Pagos y avisos", y con el snapshot rancio (`src`) el spread REVERTÍA los cambios
+    // que el operador hiciera ahí tras cargar esta pestaña. Solo se tocan humano/postventa.
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    let base=src;
+    try{ const { data:fresh }=await supa.from("channels").select("pedidos_config").eq("id",st.channelId).maybeSingle(); if(fresh&&fresh.pedidos_config&&typeof fresh.pedidos_config==="object") base=fresh.pedidos_config; }catch(_){}
+    const full={ ...base, humano:p.humano, postventa:p.postventa };
     const { error }=await supa.from("channels").update({ pedidos_config:full }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
@@ -850,15 +855,20 @@ function renderValidador(b){
     // Fuente única: sincroniza el campo del bot {{datos_pago}} (para el mensaje de cobro).
     const datos = (o.gen_datos!==false) ? genDatosPago(o.metodos) : (o.datos_pago||"").trim();
     let extra="";
-    if(datos){
-      try{
-        await supa.from("custom_fields").upsert(
-          { channel_id:st.channelId, key:"datos_pago", nombre:"Datos de pago", tipo:"text", modo:"fijo", valor:datos, descripcion:"Generado desde el Validador de comprobantes" },
-          { onConflict:"channel_id,key" });
-        st.campos.loaded=false; // la pestaña Campos recargará el valor nuevo
-        extra=" · {{datos_pago}} actualizado";
-      }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
-    }
+    // El builder de supabase-js NO lanza en error de BD (resuelve con {error}); hay que
+    // LEERLO — el try/catch solo atrapa throws de red, así que antes decía "actualizado ✓"
+    // aunque el upsert fallara y el bot seguía mostrando el Yape viejo. Y si `datos` quedó
+    // VACÍO (borró los métodos), se LIMPIA el valor en vez de saltarlo, para no dejar un
+    // número de pago rancio (que además no es editable desde Campos).
+    try{
+      const { error:eDp } = datos
+        ? await supa.from("custom_fields").upsert(
+            { channel_id:st.channelId, key:"datos_pago", nombre:"Datos de pago", tipo:"text", modo:"fijo", valor:datos, descripcion:"Generado desde el Validador de comprobantes" },
+            { onConflict:"channel_id,key" })
+        : await supa.from("custom_fields").update({ valor:null }).eq("channel_id",st.channelId).eq("key","datos_pago");
+      if(eDp) extra=" (no se pudo actualizar {{datos_pago}})";
+      else { st.campos.loaded=false; extra=datos?" · {{datos_pago}} actualizado":" · {{datos_pago}} limpiado"; }
+    }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
     btn.disabled=false; btn.textContent=old; markClean(); toast("Validador guardado ✓"+extra);
   };
 }

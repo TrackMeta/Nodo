@@ -46,6 +46,9 @@ Deno.serve(async (req) => {
 
   // data puede venir como dataURL ("data:mime;base64,....") o base64 puro.
   const b64 = data.includes(",") ? data.split(",")[1] : data;
+  // Cota ANTES de decodificar: un base64 de ~4/3 del tamaño → si excede el límite se
+  // rechaza sin gastar memoria/CPU decodificando cientos de MB (atob + map por carácter).
+  if (b64.length > Math.ceil(MAX_BYTES * 4 / 3) + 256) return json({ error: "muy_grande", detalle: "Máx 16 MB" }, 413);
   let bytes: Uint8Array;
   try { bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); }
   catch { return json({ error: "base64_invalido" }, 400); }
