@@ -48,8 +48,13 @@ async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Pr
   // canal supera esto, la solución de fondo es paginar con .range(); hoy 20k cubre
   // de sobra (un negocio con más contactos que eso ya escaló a otro problema).
   const CAP = 20000;
-  let res = await base().neq("bloqueado", true).limit(CAP);
-  if (res.error) res = await base().limit(CAP);
+  // Excluye bloqueados Y opt-out (no_remarketing): un "no me escriban" es un rechazo
+  // DURO que vale para TODO el remarketing (las secuencias y el nudge ya lo respetan;
+  // las campañas masivas NO lo hacían → mandaban la plantilla HSM a quien pidió no
+  // recibir → quejas, block-rate arriba, riesgo de baneo del número por Meta).
+  let res = await base().neq("bloqueado", true).neq("no_remarketing", true).limit(CAP);
+  if (res.error) res = await base().neq("bloqueado", true).limit(CAP); // por si falta la columna no_remarketing
+  if (res.error) res = await base().limit(CAP);                        // o falta también bloqueado
   const { data } = res;
   let ids = (data ?? []).map((r: any) => r.id);
 

@@ -231,8 +231,27 @@ export function mountStepsEditor(el, opts){
         seqBrand(channelId).then(upd); // rellena nombre/logo real y repinta
       }
     };
+    // Cambiar el tipo de acción a "flujo"/"plantilla" BORRA las versiones/burbujas del
+    // mensaje (renderAction hace delete paso.variantes/bubbles). Si hay contenido escrito,
+    // se confirma antes: un clic accidental en el desplegable no debe volar el trabajo.
+    const hayContenido=(p)=>{
+      const bt=(bs)=>Array.isArray(bs)&&bs.some(b=>b&&((b.text&&b.text.trim())||b.media_url));
+      if(p.mensaje && String(p.mensaje).trim()) return true;
+      if(bt(p.bubbles)) return true;
+      if(Array.isArray(p.variantes)&&p.variantes.some(v=>bt(v.bubbles)||(v.text&&String(v.text).trim()))) return true;
+      return false;
+    };
+    let curMode=mode;
     const asel=el2.querySelector(".se-act");
-    if(asel) asel.onchange=(e)=>renderAction(e.target.value);
+    if(asel) asel.onchange=async(e)=>{
+      const nuevo=e.target.value;
+      if((nuevo==="flow"||nuevo==="plantilla") && curMode!=="flow" && curMode!=="plantilla" && hayContenido(paso)){
+        if(!await confirmDialog({ title:"Cambiar el tipo de acción",
+          message:"Este toque tiene un mensaje escrito. Al cambiar a "+(nuevo==="flow"?"iniciar un flujo":"enviar una plantilla")+" se borrará. ¿Continuar?",
+          confirmText:"Cambiar y borrar", danger:true })){ e.target.value=curMode; return; }
+      }
+      curMode=nuevo; renderAction(nuevo);
+    };
     renderAction(mode);
     body.appendChild(el2);
   }

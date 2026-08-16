@@ -222,8 +222,8 @@ async function load(){
   if(!st.channelId){ render(); return; }
   const gen=(st.loadGen=(st.loadGen||0)+1);
   const [cR, oR, chR] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").limit(5000),
-    supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping").eq("channel_id",st.channelId).limit(8000),
+    supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").order("created_at",{ascending:false}).limit(5000),
+    supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(8000),
     supa.from("channels").select("moneda").eq("id",st.channelId).maybeSingle(),
   ]);
   if(gen!==st.loadGen) return;

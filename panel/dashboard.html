@@ -746,8 +746,12 @@ async function load(){
   // adelanto de provincia cuenta como cobro parcial (ver orders.js).
   let cobrado=0, porCobrar=0, ingBump=0, bumpUnits=0;
   const bumpMap={};
-  orders.forEach(o=>{
-    cobrado+=O.cobrado(o); porCobrar+=O.porCobrar(o);
+  // Dinero COBRADO/POR COBRAR: sobre `orders` (incluye perdidos) — el adelanto ya
+  // cobrado de un no_recogido es plata en mano, real.
+  orders.forEach(o=>{ cobrado+=O.cobrado(o); porCobrar+=O.porCobrar(o); });
+  // "Ventas extra": solo de ventas NO perdidas (un extra de un pedido rechazado/
+  // no_recogido nunca se cobró → no debe inflar el conteo ni los ingresos de extras).
+  ventasOk.forEach(o=>{
     (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0); ingBump+=p; bumpUnits++;
       const k=b.nombre||"Venta extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
   });
@@ -768,14 +772,24 @@ async function load(){
   const hasAds = ins.length>0;
   // Mapa ad_id → tipo (dominante) desde TODOS los pedidos con ad_id del rango,
   // para atribuir el gasto por tipo cuando el filtro Digital/Físico está activo.
+  // Tipo DOMINANTE por anuncio (no el "primero visto"): un anuncio que trae 1 digital
+  // y 5 físicos es físico. Antes ganaba el primer pedido iterado (orden arbitrario, sin
+  // ORDER BY) → en la vista Físico/Digital el gasto de ese anuncio caía en el tipo
+  // equivocado y la ganancia neta / ROAS de ese segmento salían mal.
+  const adCnt={};
+  (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (adCnt[a]||(adCnt[a]={fisico:0,digital:0}))[O.esFisico(o)?"fisico":"digital"]++; });
   const adTipo={};
-  (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(a&&!adTipo[a]) adTipo[a]=O.esFisico(o)?"fisico":"digital"; });
+  Object.keys(adCnt).forEach(a=>{ adTipo[a]=adCnt[a].fisico>=adCnt[a].digital?"fisico":"digital"; });
   let gastoAds=0;
   ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo) gastoAds+=Number(i.gasto||0); });
   // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
   // físico = margen (los que tienen costo registrado).
   let bruta=0, sinCostoF=0;
-  orders.forEach(o=>{
+  // Ganancia sobre ventasOk (SIN perdidos): un rechazado/no_recogido resta su COGS
+  // como si la mercadería se hubiera perdido, pero el paquete VUELVE (solo se pierde
+  // el flete). El digest (order-stats.ts:131) ya excluye perdidos de la ganancia; el
+  // Dashboard debe hacer lo mismo o reportan ganancias distintas para el mismo periodo.
+  ventasOk.forEach(o=>{
     if(!O.esFisico(o)){
       // Digital = cobrado MENOS su costo si lo tiene (sin costo → solo cobrado).
       // Antes sumaba solo cobrado y el costo digital salía en el COGS pero nunca
@@ -797,7 +811,7 @@ async function load(){
   // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
   // Mismo criterio que la banda: digital = cobrado (sin COGS), físico = margen.
   const margenPorProd={}, dailyMargin={}, dailySpend={};
-  orders.forEach(o=>{
+  ventasOk.forEach(o=>{   // sin perdidos (mismo criterio que la banda de ganancia y el digest)
     const k=ymd(new Date(o.created_at));
     const m = !O.esFisico(o)
       ? O.cobrado(o)-(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)||0)
@@ -827,7 +841,7 @@ async function load(){
   // Costos de la mercadería y de los envíos (informativos; ya están restados
   // dentro de la ganancia bruta). Se muestran para ver a dónde se va la plata.
   let costoProdTotal=0, fleteTotal=0;
-  orders.forEach(o=>{
+  ventasOk.forEach(o=>{   // informativos, ya restados en la bruta → mismo universo (sin perdidos)
     const cp=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(cp!=null) costoProdTotal+=cp;
     if(O.esFisico(o)){ const f=O.flete(o); if(f!=null) fleteTotal+=f; }

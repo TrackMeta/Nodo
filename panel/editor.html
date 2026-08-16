@@ -525,7 +525,7 @@ async function loadChannels(){
     const { data:f } = await supa.from("flows").select("channel_id").eq("id",flowParam).maybeSingle();
     if(f){ st.channelId = f.channel_id; shell.setChannel(st.channelId, { silent:true }); }
   }
-  shell.onChannel(id=>{ st.channelId=id; st.flowId=null; showOverview(); loadFlows(); clearCanvas(); });
+  shell.onChannel(id=>{ st.channelId=id; st.flowId=null; _seqCache=null; showOverview(); loadFlows(); clearCanvas(); });
   await loadFlows();
   if(flowParam) openFlow(flowParam);
 }
@@ -614,7 +614,11 @@ function clearCanvas(){ if(editor){ editor.clear(); } st.model={}; st.dfToUuid={
 // Añadir un nodo existente (de la BD) al canvas.
 function addExisting(n){
   const def=NODE_DEFS[n.tipo]||{handles:["continuar"]};
-  const handles = handlesFor(n.tipo, n.config, def);
+  // Prioridad: (1) handles explícitos del snapshot (undo/redo preserva las salidas
+  // manuales), (2) derivados de config — que ahora incluye config._handles para las
+  // salidas manuales ("+ salida") persistidas. Antes SIEMPRE re-derivaba → una salida
+  // manual y su arista se descartaban al recargar (dead-air silencioso en producción).
+  const handles = (Array.isArray(n.handles)&&n.handles.length) ? [...n.handles] : handlesFor(n.tipo, n.config, def);
   const ins = def.inputs===0 ? 0 : 1;
   const m = { uuid:n.id, tipo:n.tipo, nombre:n.nombre, config:n.config||{}, handles, es_inicial:n.es_inicial };
   m.dfId = editor.addNode(n.tipo, ins, handles.length, n.pos_x||100, n.pos_y||100, n.tipo, {}, nodeHtml(m));
@@ -661,7 +665,7 @@ function serializeFlow(){
 function restoreFlow(snap){
   histLock=true;
   if(editor) editor.clear(); st.model={}; st.dfToUuid={}; st.selected=null;
-  for(const n of snap.nodes) addExisting({ id:n.uuid, tipo:n.tipo, nombre:n.nombre, config:n.config, es_inicial:n.es_inicial, pos_x:n.pos_x, pos_y:n.pos_y });
+  for(const n of snap.nodes) addExisting({ id:n.uuid, tipo:n.tipo, nombre:n.nombre, config:n.config, handles:n.handles, es_inicial:n.es_inicial, pos_x:n.pos_x, pos_y:n.pos_y });
   for(const e of snap.edges){ const src=st.model[e.s], tgt=st.model[e.t]; if(!src||!tgt) continue;
     const idx=src.handles.indexOf(e.h); if(idx<0) continue;
     try{ editor.addConnection(src.dfId, tgt.dfId, "output_"+(idx+1), "input_1"); }catch(_){}
@@ -717,6 +721,9 @@ function defaultConfig(tipo){
 function handlesFor(tipo, config, def){
   if(tipo==="condicion" && config?.rutas) return [...config.rutas.map(r=>r.handle||("ruta:"+r.nombre)), "si_no_cumple"];
   if(tipo==="mensaje"){ const b=(config?.bubbles||[]).find(x=>x.buttons?.length); if(b) return b.buttons.map(x=>"boton:"+x.id); }
+  // Salidas manuales persistidas ("+ salida" en tipos cuyos handles NO se derivan de
+  // config): save() las guarda en config._handles para que sobrevivan a la recarga.
+  if(Array.isArray(config?._handles) && config._handles.length) return [...config._handles];
   return [...(def.handles||["continuar"])];
 }
 
@@ -1351,14 +1358,21 @@ async function deleteFlow(){
 
 // ── Guardar ──
 async function save(){
-  if(!st.flowId){ toast("No hay flujo abierto",true); return; }
+  if(!st.flowId){ toast("No hay flujo abierto",true); return false; }
+  // Guard anti-reentrancia: doble clic en "Guardar" (o "Publicar" que llama a save()
+  // mientras otro save() corre) ejecutaba dos reconstrucciones de aristas concurrentes
+  // → como flow_edges no tiene UNIQUE, quedaban aristas DUPLICADAS (el motor podía
+  // recorrer la misma dos veces → doble envío / bifurcación fantasma).
+  if(st.saving) return false;
+  st.saving=true;
+  try{
   // ── Validación estructural: no dejar guardar un flujo que no puede arrancar
   //    o con rutas ambiguas (antes se guardaba sin nodo inicial → nunca corría).
   const nodos=Object.values(st.model);
   if(nodos.length){
     const iniciales=nodos.filter(m=>m.es_inicial);
-    if(iniciales.length===0){ toast("Falta el nodo inicial: marca uno como inicio (☑ «Nodo inicial») antes de guardar.",true); return; }
-    if(iniciales.length>1){ toast("Hay "+iniciales.length+" nodos marcados como inicio; deja solo uno.",true); return; }
+    if(iniciales.length===0){ toast("Falta el nodo inicial: marca uno como inicio (☑ «Nodo inicial») antes de guardar.",true); return false; }
+    if(iniciales.length>1){ toast("Hay "+iniciales.length+" nodos marcados como inicio; deja solo uno.",true); return false; }
     // Nombres de salida repetidos en un mismo nodo → dos aristas con el mismo
     // handle = ruteo ambiguo. Se listan para que el operador los renombre.
     const dup=[];
@@ -1368,13 +1382,22 @@ async function save(){
       for(const h of hs){ const k=String(h).trim().toLowerCase(); if(!k) continue; if(vistos.has(k)) rep.add(h); else vistos.add(k); }
       if(rep.size) dup.push((m.nombre||m.tipo)+" ("+[...rep].join(", ")+")");
     }
-    if(dup.length){ toast("Salidas repetidas en → "+dup.join(" · ")+". Renómbralas para evitar rutas ambiguas.",true); return; }
+    if(dup.length){ toast("Salidas repetidas en → "+dup.join(" · ")+". Renómbralas para evitar rutas ambiguas.",true); return false; }
   }
   const exp=editor.export().drawflow.Home.data;
   // 1) Upsert nodos.
   const rows=[];
   for(const uuid in st.model){
     const m=st.model[uuid]; const dfNode=exp[m.dfId];
+    // Persistir las salidas MANUALES en config._handles (flow_nodes no tiene columna
+    // `handles`). Solo cuando difieren de las estándar y el tipo no las deriva de config
+    // (condición→rutas, mensaje con botones→botones); si no, se limpia para no ensuciar.
+    const def=NODE_DEFS[m.tipo]||{handles:["continuar"]};
+    const derivado = (m.tipo==="condicion" && m.config?.rutas) || (m.tipo==="mensaje" && (m.config?.bubbles||[]).some(x=>x.buttons?.length));
+    m.config=m.config||{};
+    const defH=def.handles||["continuar"];
+    const estandar = derivado || (Array.isArray(m.handles) && m.handles.length===defH.length && m.handles.every((h,i)=>h===defH[i]));
+    if(estandar) delete m.config._handles; else m.config._handles=[...(m.handles||[])];
     rows.push({ id:uuid, flow_id:st.flowId, tipo:m.tipo, nombre:m.nombre, config:m.config,
       es_inicial:!!m.es_inicial, pos_x:dfNode?dfNode.pos_x:0, pos_y:dfNode?dfNode.pos_y:0 });
   }
@@ -1383,7 +1406,7 @@ async function save(){
   const keep=new Set(rows.map(r=>r.id));
   const toDel=(oldNodes||[]).map(n=>n.id).filter(id=>!keep.has(id));
   if(toDel.length) await supa.from("flow_nodes").delete().in("id",toDel);
-  if(rows.length){ const { error } = await supa.from("flow_nodes").upsert(rows); if(error){ toast(error.message,true); return; } }
+  if(rows.length){ const { error } = await supa.from("flow_nodes").upsert(rows); if(error){ toast(error.message,true); return false; } }
   // 2) Reconstruir aristas de forma SEGURA. Antes se borraban TODAS y luego se
   //    insertaban en pasos separados: no era atómico, así que si el insert fallaba
   //    (un blip de red, un constraint) el flujo quedaba SIN ninguna conexión.
@@ -1405,15 +1428,21 @@ async function save(){
       }
     }
   }
-  if(edges.length){ const { error } = await supa.from("flow_edges").insert(edges); if(error){ toast(error.message,true); return; } }
+  if(edges.length){ const { error } = await supa.from("flow_edges").insert(edges); if(error){ toast(error.message,true); return false; } }
   const oldIds=(oldEdges||[]).map(e=>e.id);
-  if(oldIds.length){ const { error } = await supa.from("flow_edges").delete().in("id",oldIds); if(error){ toast(error.message,true); return; } }
+  if(oldIds.length){ const { error } = await supa.from("flow_edges").delete().in("id",oldIds); if(error){ toast(error.message,true); return false; } }
   toast("Guardado ✓");
+  return true;
+  } finally { st.saving=false; }
 }
 
 async function publish(){
   if(!st.flowId) return;
-  await save();
+  // Si save() ABORTA por validación (sin nodo inicial, salidas duplicadas) devuelve
+  // false SIN persistir. Antes publish() seguía igual → activaba el flujo con el
+  // contenido VIEJO/vacío de la BD y perdía las ediciones del lienzo en silencio (un
+  // flujo que no arranca quedaba "activo"). Ahora se corta si el guardado no pasó.
+  if(!(await save())) return;
   const nuevo = st.flow.estado==="activo" ? "borrador" : "activo";
   const { error } = await supa.from("flows").update({ estado:nuevo }).eq("id",st.flowId);
   if(error){ toast(error.message,true); return; }

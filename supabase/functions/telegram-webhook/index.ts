@@ -143,8 +143,13 @@ Deno.serve(async (req) => {
   // 2) ¿Quién tocó el botón es admin de ESTE canal?
   const permitidos = ((ch as any).telegram_chat_ids ?? []).map(String);
   const quien = String(cb.from?.id ?? "");
-  const chatDelMensaje = String(cb.message?.chat?.id ?? "");
-  if (!permitidos.includes(quien) && !permitidos.includes(chatDelMensaje)) {
+  // DEBE ser QUIEN tocó el botón (cb.from.id) el que esté vinculado — no el CHAT donde
+  // vive el mensaje. telegram_chat_ids guarda ids INDIVIDUALES (el pairing agrega
+  // cb.from.id), y en un chat privado `from.id === chat.id`, así que exigir `quien` no
+  // rompe el flujo normal. Antes también aceptaba `cb.message.chat.id`: si el id de un
+  // GRUPO llegaba a la lista (aviso al grupo del equipo), CUALQUIER integrante —no solo
+  // los admins vinculados— podía aprobar/rechazar dinero. Escalada cerrada.
+  if (!permitidos.includes(quien)) {
     await answerCallback(token, cb.id, "No tienes permiso para esta acción.", true);
     return json({ ok: true });
   }
@@ -154,7 +159,7 @@ Deno.serve(async (req) => {
   if (!def || !orderId) { await answerCallback(token, cb.id, "Acción desconocida"); return json({ ok: true }); }
 
   const { data: order } = await db.from("orders")
-    .select("id, estado, channel_id").eq("id", orderId).maybeSingle();
+    .select("id, estado, channel_id, shipping").eq("id", orderId).maybeSingle();
   if (!order || (order as any).channel_id !== channelId) {
     await answerCallback(token, cb.id, "No encontré ese pedido");
     return json({ ok: true });
@@ -164,6 +169,15 @@ Deno.serve(async (req) => {
   // Si otro ya resolvió (o lo hiciste tú desde el panel), no se re-ejecuta.
   if (!def.desde.includes((order as any).estado)) {
     await answerCallback(token, cb.id, "Ese pedido ya fue resuelto", true);
+    if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
+    return json({ ok: true });
+  }
+  // extra_ok NO cambia el estado del pedido, así que la guarda de arriba (def.desde) no
+  // lo protege de un 2º toque (los otros chats conservan sus botones). Se cierra por DATO:
+  // si ya no hay un extra pendiente, ya se aprobó → no re-ejecutar (sin esto, un cambio
+  // futuro en resumeAfterApproval podría reintroducir doble entrega del extra).
+  if (accion === "extra_ok" && !(((order as any).shipping || {}).extra_pendiente)) {
+    await answerCallback(token, cb.id, "Ese extra ya fue resuelto", true);
     if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
     return json({ ok: true });
   }
