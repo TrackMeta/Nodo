@@ -1907,8 +1907,13 @@ async function renderExtras(host){
   if(cfg.extras_espera_min==null) cfg.extras_espera_min=15;
   if(!cfg.extras_prov_momento) cfg.extras_prov_momento="post";
 
-  const cat=await cargarCatalogoExtras();
+  let cat=await cargarCatalogoExtras();
   const esFisico=(st.prod.tipo==="fisico");
+  // Un producto DIGITAL no puede DESPACHAR un extra FÍSICO: el flujo digital no recolecta
+  // dirección/DNI/sede y el bump del extra físico no descuenta stock → se cobraría y no se
+  // entregaría (ni se sabría a dónde mandarlo). Se filtra el catálogo a extras NO-físicos para
+  // digitales, mismo criterio que el Regalo digital. (El generador además salta el físico.)
+  if(!esFisico) cat=cat.filter(c=>c.tipo!=="fisico");
 
   const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${cfg.extras_momento===v?'var(--brand)':'var(--border)'};
     background:${cfg.extras_momento===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
@@ -2852,10 +2857,18 @@ async function generarFlujoVenta(skipConfirm){
     // st.extraCat rancio (precio de extra editado tras cargar la página) genera
     // el bump con precio 0 y label "Extra N". Generar es raro; la query no cuesta.
     if(extrasRaw.length) await cargarCatalogoExtras();
-    // Poda extras con versión muerta (desactivada/sin precio): en digital, un bump
-    // con precio "" deja monto_esperado "" → el OCR aprueba CUALQUIER pago del extra.
-    const extras=extrasRaw.filter(x=>(st.extraCat||[]).some(c=>c.id===x.version_id));
-    if(extras.length<extrasRaw.length) toast(`Se omitió ${extrasRaw.length-extras.length} venta(s) extra al generar: su presentación fue desactivada o quedó sin precio. Revísalas en “Ventas extra”.`,true);
+    // Poda extras que romperían la venta digital: (a) versión muerta (desactivada) →
+    // bump sin datos; (b) sin precio o precio ≤0 → monto_esperado "" y el OCR aprueba
+    // CUALQUIER pago; (c) FÍSICO sobre un producto digital → se cobraría y no se podría
+    // despachar (el flujo digital no pide dirección/DNI y el bump no descuenta stock).
+    const extras=extrasRaw.filter(x=>{
+      const info=(st.extraCat||[]).find(c=>c.id===x.version_id);
+      if(!info) return false;
+      if(info.tipo==="fisico") return false;
+      if(info.precio==null || info.precio==="" || Number(info.precio)<=0) return false;
+      return true;
+    });
+    if(extras.length<extrasRaw.length) toast(`Se omitió ${extrasRaw.length-extras.length} venta(s) extra al generar: su presentación fue desactivada, quedó sin precio, o es FÍSICA (un digital no puede despachar un físico). Revísalas en “Ventas extra”.`,true);
 
     if(!extras.length){
       await E(nRegistrar,"continuar",nEntregar);

@@ -51,7 +51,12 @@ const SCHEMA = {
 // un ítem del cliente disfrazado de "hecho" podría intentar torcer precio/reglas/tono). El
 // SYSTEM_EXTRACT ya lo prohíbe por prompt; esto es el refuerzo en CÓDIGO (el modelo barato
 // es jailbreakeable). Un ítem legítimo de trato humano jamás menciona precio/pago/reglas.
-const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como)/i;
+// Incluye también PII de IDENTIDAD/DIRECCIÓN: el SYSTEM_EXTRACT ya la prohíbe, pero es la
+// capa jailbreakeable — un cliente podría redactar su mensaje para que el modelo barato guarde
+// "vive en Av. España 200" (≤60 chars) y eso quedaría en el perfil y se re-inyectaría al system.
+// Estos marcadores (dirección/domicilio) son lo más sensible y regex-detectable; nombres/ciudades
+// sueltos siguen dependiendo del prompt, pero la dirección es la que no debe filtrarse.
+const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como|av\.|avenida|\bjr\.?\b|jir[oó]n|\bcalle\b|\bmz\.?\b|manzana|\blote\b|urbanizaci|\burb\.?\b|pasaje|\bpsje\b|direcci[oó]n|domicilio|vivo en)/i;
 
 // Normaliza una lista: strings limpios, sin duplicados, cortos, cap por capa. Descarta
 // los ítems operativos/de inyección (PROHIBIDO_MEM).

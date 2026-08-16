@@ -4927,7 +4927,12 @@ export async function leerGuiaShalom(db: SupabaseClient, channelId: string, imag
     maxTokens: 400, jsonSchema: schema as unknown as Record<string, unknown>,
   });
   const m = raw.match(/\{[\s\S]*\}/);
-  const p = m ? JSON.parse(m[0]) : JSON.parse(raw);
+  // JSON.parse SIN guarda (a diferencia de los otros OCR): con maxTokens:400 el JSON puede
+  // truncarse, o el modelo devolver prosa → lanzaba y el error subía a guia-ocr. En fallo se
+  // reporta es_guia:false (el caller lo trata como "no es una guía válida"), no crash.
+  let p: any;
+  try { p = m ? JSON.parse(m[0]) : JSON.parse(raw); }
+  catch (e) { console.error("[leerGuiaShalom] JSON inválido:", (e as any)?.message ?? e); p = { es_guia: false }; }
   return {
     guia: String(p.nro_guia ?? "").trim(),
     serie: String(p.serie ?? "").trim(),
@@ -6921,7 +6926,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Memoria IA (Fase 2): tras una respuesta conversacional, actualiza el perfil
     // vivo del cliente (capas "quién es" / "cómo tratar"). Throttled a 1 análisis
     // cada 15 min por contacto y 100% defensivo — nunca bloquea ni tumba la venta.
-    if (op === "generar_texto") {
+    // 🔒 Respeta la perilla "off" del producto (igual que la LECTURA de arriba): si el
+    // operador la apagó, NO se extrae ni se persiste el perfil (ni se gastan tokens ni se
+    // acumula PII del cliente que creía no estar guardando). Antes la escritura corría
+    // SIEMPRE, ignorando el nivel — solo la lectura lo respetaba.
+    if (op === "generar_texto" && (run as any)._memNivel !== "off") {
       await actualizarMemoriaIA(db, {
         channelId: run.channel_id, contactId: run.contact_id,
         provider, apiKey: ai.api_key, thread: await historial(db, run),

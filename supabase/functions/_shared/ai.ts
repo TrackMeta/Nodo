@@ -75,10 +75,16 @@ async function callAnthropic(call: AiCall): Promise<string> {
     },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
+  // Leer como TEXTO y parsear con guarda: bajo carga los gateways devuelven 502/504/529 con
+  // HTML (no JSON). `res.json()` directo lanzaba SyntaxError ANTES de armar el AiError → se
+  // perdía el status real (429 vs 401 vs 529) y el diagnóstico. Ahora un body no-JSON cae a
+  // un AiError con el status y un extracto del cuerpo.
+  const raw = await res.text();
+  let data: any = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
   if (!res.ok || data.type === "error") {
     const e = data.error ?? {};
-    throw new AiError({ provider: "anthropic", type: e.type, message: e.message, status: res.status });
+    throw new AiError({ provider: "anthropic", type: e.type, message: e.message || raw.slice(0, 200), status: res.status });
   }
   if (data.stop_reason === "refusal") {
     throw new AiError({ provider: "anthropic", type: "refusal", message: "el modelo rechazó la solicitud" });
@@ -111,7 +117,14 @@ async function callOpenAI(call: AiCall): Promise<string> {
     messages,
   };
   // OpenAI: para "extraer" forzamos objeto JSON.
-  if (call.jsonSchema) body.response_format = { type: "json_object" };
+  if (call.jsonSchema) {
+    body.response_format = { type: "json_object" };
+    // OpenAI responde 400 si NINGÚN mensaje contiene literalmente la palabra "json" con
+    // json_object. Los callers internos la incluyen, pero un nodo "extraer" con prompt de
+    // usuario (config del producto) podría no tenerla → se garantiza acá.
+    const tieneJson = /json/i.test(call.system ?? "") || (typeof call.content === "string" && /json/i.test(call.content));
+    if (!tieneJson) messages.unshift({ role: "system", content: "Responde SOLO con un objeto JSON válido." });
+  }
 
   const res = await fetch(OPENAI_URL, {
     method: "POST",
@@ -121,10 +134,14 @@ async function callOpenAI(call: AiCall): Promise<string> {
     },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
+  // Ver nota en callAnthropic: leer texto + parse con guarda para no perder el status real
+  // ante un 5xx no-JSON del gateway.
+  const raw = await res.text();
+  let data: any = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
   if (!res.ok || data.error) {
     const e = data.error ?? {};
-    throw new AiError({ provider: "openai", type: e.type, message: e.message, status: res.status });
+    throw new AiError({ provider: "openai", type: e.type, message: e.message || raw.slice(0, 200), status: res.status });
   }
   return (data.choices?.[0]?.message?.content ?? "").trim();
 }
@@ -162,10 +179,14 @@ export async function transcribeAudio(
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
-  const data = await res.json();
+  // Ver nota en callAnthropic: leer texto + parse con guarda para no perder el status real
+  // ante un 5xx no-JSON del gateway.
+  const raw = await res.text();
+  let data: any = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
   if (!res.ok || data.error) {
     const e = data.error ?? {};
-    throw new AiError({ provider: "openai", type: e.type, message: e.message, status: res.status });
+    throw new AiError({ provider: "openai", type: e.type, message: e.message || raw.slice(0, 200), status: res.status });
   }
   return String(data.text ?? "").trim();
 }

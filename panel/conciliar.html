@@ -223,13 +223,24 @@ async function conciliar(){
   // depósito (sello.mov = {quien, monto, fecha}). Se excluyen del pool para que un
   // mismo depósito NO acredite una 2ª venta en otra sesión con rango solapado (antes
   // el anti-reúso era solo por corrida → doble atribución entre sesiones).
-  const fpMov=(monto,fecha)=>`${Number(monto).toFixed(2)}|${new Date(fecha).getTime()}`;
-  const usadosMov=new Set();
+  // La huella incluye al TITULAR (`quien`): la hora del reporte es por SEGUNDO, así que
+  // `monto|segundo` sola colisiona (dos pagos reales distintos de S/10 en el mismo segundo) y
+  // excluía del pool un pago legítimo → la 2ª venta salía "sin respaldo" (falso negativo).
+  // Los sellos VIEJOS sin `quien` caen a la huella legacy (colisionable pero preserva el
+  // anti-doble-conteo entre sesiones, que es lo crítico de plata).
+  const fpMov=(quien,monto,fecha)=>`${String(quien||"").trim().toLowerCase()}|${Number(monto).toFixed(2)}|${new Date(fecha).getTime()}`;
+  const fpLegacy=(monto,fecha)=>`${Number(monto).toFixed(2)}|${new Date(fecha).getTime()}`;
+  const usadosMov=new Set(), usadosLegacy=new Set();
   for(const v of st.ventas){
     const mv=v._yaConciliado&&v._yaConciliado.mov;
-    if(mv&&mv.monto!=null&&mv.fecha) usadosMov.add(fpMov(mv.monto,mv.fecha));
+    if(mv&&mv.monto!=null&&mv.fecha){
+      if(mv.quien) usadosMov.add(fpMov(mv.quien,mv.monto,mv.fecha));
+      else usadosLegacy.add(fpLegacy(mv.monto,mv.fecha));
+    }
   }
-  const movs=st.rep.movs.filter(m=>m.fecha>=desdeMov && m.fecha<=hasta && !usadosMov.has(fpMov(m.monto,m.fecha)));
+  const movs=st.rep.movs.filter(m=>m.fecha>=desdeMov && m.fecha<=hasta
+    && !usadosMov.has(fpMov(m.quien,m.monto,m.fecha))
+    && !usadosLegacy.has(fpLegacy(m.monto,m.fecha)));
   st.res=emparejar(pendientes,movs,{modo:"prudente"});
   st.res.yaConciliadas=st.ventas.filter(v=>v._yaConciliado);
   // Señales para el ruido: los comprobantes que sí entraron por WhatsApp, con
@@ -249,7 +260,11 @@ function renderResultado(){
   // respaldo" (antes inflaban la alarma en cada corrida). Se muestran igual en la
   // cubeta, pero neutrales.
   const efectivoRe=/efectiv|contado|\bmano\b|\bcash\b/i;
-  const sinPagoReal=r.sinPago.filter(s=>!efectivoRe.test(metodoDe(s.venta._o))).length;
+  // Se usa el método de la PARTE (s.venta.metodo: adelanto_metodo o saldo_metodo), NO el del
+  // pedido: metodoDe() cascadea adelanto_metodo ANTES que saldo_metodo, así que un pedido con
+  // adelanto en EFECTIVO y saldo por YAPE pintaba el saldo Yape faltante como "efectivo" y lo
+  // sacaba de la alarma roja "sin pago" — justo el saldo real sin respaldo que hay que cazar.
+  const sinPagoReal=r.sinPago.filter(s=>!efectivoRe.test(s.venta.metodo||metodoDe(s.venta._o))).length;
   const K=[
     ["cuadradas","Cuadradas",r.cuadradas.length,"var(--green)","venta y pago que calzan"],
     ["revisar","Por revisar",r.revisar.length,"var(--amber)","tú decides cuál es"],
@@ -338,7 +353,7 @@ function renderLista(){
     if(!r.sinPago.length) return vacio(box,"Todas tus ventas tienen respaldo en el banco.","Nada que investigar en este rango.");
     box.insertAdjacentHTML("beforebegin","");
     r.sinPago.forEach(s=>{
-      const met=metodoDe(s.venta._o);
+      const met=s.venta.metodo||metodoDe(s.venta._o);   // método de la PARTE (adelanto/saldo), no del pedido
       // El EFECTIVO no tiene (ni debe tener) movimiento en el banco → NO es "sin
       // respaldo", salía sospechoso en cada corrida. Se muestra neutral. Para otros
       // métodos se mantiene la señal (el operador ve el método y juzga si es la
