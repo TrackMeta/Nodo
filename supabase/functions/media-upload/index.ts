@@ -53,6 +53,23 @@ Deno.serve(async (req) => {
   try { bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); }
   catch { return json({ error: "base64_invalido" }, 400); }
   if (bytes.length > MAX_BYTES) return json({ error: "muy_grande", detalle: "Máx 16 MB" }, 413);
+  // Sniff de magic bytes: si se declara IMAGEN o PDF, los bytes deben coincidir con un
+  // formato real. Sin esto, un miembro podía subir un HTML/binario etiquetado image/png
+  // y quedaba servido bajo el dominio de Supabase (hosting de phishing/malware bajo un
+  // dominio confiable). No ejecuta como script (se sirve con su content-type), por eso es
+  // baja severidad. Audio/video se saltan (demasiados contenedores para un sniff simple).
+  const esImg = ct.startsWith("image/");
+  if ((esImg || ct === "application/pdf") && bytes.length >= 12) {
+    const b = bytes;
+    const png  = b[0]===0x89 && b[1]===0x50 && b[2]===0x4E && b[3]===0x47;
+    const jpg  = b[0]===0xFF && b[1]===0xD8 && b[2]===0xFF;
+    const gif  = b[0]===0x47 && b[1]===0x49 && b[2]===0x46 && b[3]===0x38;
+    const webp = b[0]===0x52 && b[1]===0x49 && b[2]===0x46 && b[3]===0x46 && b[8]===0x57 && b[9]===0x45 && b[10]===0x42 && b[11]===0x50;
+    const pdf  = b[0]===0x25 && b[1]===0x50 && b[2]===0x44 && b[3]===0x46; // %PDF
+    if ((esImg && !(png || jpg || gif || webp)) || (ct === "application/pdf" && !pdf)) {
+      return json({ error: "contenido_no_coincide", detalle: "El archivo no corresponde al tipo declarado." }, 415);
+    }
+  }
 
   const ext = ((filename?.split(".").pop() || guessExt(content_type) || "bin")).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
   // Multi-tenant: agrupar por cuenta (acct/{account_id}/chat/{channel_id}/…).

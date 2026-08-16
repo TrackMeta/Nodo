@@ -177,6 +177,10 @@ async function save(){
   // (2) reescribir filas de estado del motor mientras él las lee/escribe es frágil.
   const editables=st.fields.filter(f=>!esInterno(f));
   for(const f of editables){ if(!(f.nombre||"").trim()||!(f.key||"").trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
+  // Dedupe de clave en el cliente: dos campos con la misma clave chocan en BD con un
+  // error crudo ("duplicate"); acá se detecta antes y se DICE cuál, en vez del genérico.
+  const vistas=new Set();
+  for(const f of editables){ const k=f.key.trim().toLowerCase(); if(vistas.has(k)){ toast(`La clave "${f.key.trim()}" está repetida — cada campo necesita una clave única`,true); return; } vistas.add(k); }
   if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
   const rows=editables.map(f=>{
     const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico", folder:f.folder||null };

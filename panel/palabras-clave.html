@@ -415,7 +415,13 @@ function renderKeywords(){
         ${warned?`<div style="margin-top:9px;display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg,#2c2311);color:var(--amber);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — gana cualquiera al azar</span></div>`:""}`;
       card.querySelector("[data-ci]").addEventListener("keydown",e=>{
         if(e.key==="Enter"){ e.preventDefault(); const v=e.target.value.trim(); if(v && !kwsArr.some(k=>norm(k)===norm(v))){ kwsArr.push(v); updateTrigger(t,{keywords:kwsArr}); } }
-        else if(e.key==="Backspace" && !e.target.value && kwsArr.length){ kwsArr.pop(); updateTrigger(t,{keywords:kwsArr}); }
+        else if(e.key==="Backspace" && !e.target.value && kwsArr.length){
+          // Borrar la ÚLTIMA frase = eliminar el trigger (con su confirmación), no guardarlo
+          // vacío: un trigger sin frases aparece en la lista pero NUNCA dispara (keywords:[]
+          // → el motor no matchea) → parece que existe pero está muerto.
+          if(kwsArr.length===1){ removeTrigger(t); return; }
+          kwsArr.pop(); updateTrigger(t,{keywords:kwsArr});
+        }
       });
       card.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>{ kwsArr.splice(+b.dataset.rm,1); updateTrigger(t,{keywords:kwsArr}); });
       card.querySelector(".mm").onchange=e=>updateTrigger(t,{ match:e.target.value });

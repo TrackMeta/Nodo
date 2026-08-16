@@ -324,6 +324,7 @@ async function runEngineInner(
     if (url) {
       run.vars.ultima_imagen = url;
       await setField(db, channelId, contactId, "ultima_imagen", url);
+      await annotateImageUrl(db, contactId, url); // rescata el fallback de la foto en Pagos/Compras
     }
   }
   await execute(db, run);
@@ -2202,6 +2203,23 @@ async function annotateAudioTranscript(db: SupabaseClient, contactId: string, te
       .select("id, content").eq("contact_id", contactId).eq("direction", "in").eq("type", "audio")
       .order("ts", { ascending: false }).limit(1).maybeSingle();
     if (m) await db.from("messages").update({ content: { ...((m as any).content ?? {}), transcription: texto } }).eq("id", (m as any).id);
+  } catch (_) { /* best-effort */ }
+}
+
+// Parchea el ÚLTIMO mensaje entrante tipo `image` con la URL firmada del comprobante.
+// El webhook lo guarda con content={media_id, mime_type, caption} SIN url → el fallback
+// de "Pagos por validar"/Compras (que lee content.media_url para mostrar la foto cuando
+// el pedido no la capturó en su shipping) quedaba MUERTO. Con esto ese respaldo funciona
+// y el operador nunca aprueba un pago sin poder ver el comprobante. Best-effort.
+async function annotateImageUrl(db: SupabaseClient, contactId: string, url: string) {
+  if (!/^https?:/.test(url)) return;
+  try {
+    const { data: m } = await db.from("messages")
+      .select("id, content").eq("contact_id", contactId).eq("direction", "in").eq("type", "image")
+      .order("ts", { ascending: false }).limit(1).maybeSingle();
+    if (m && !((m as any).content?.media_url)) {
+      await db.from("messages").update({ content: { ...((m as any).content ?? {}), media_url: url } }).eq("id", (m as any).id);
+    }
   } catch (_) { /* best-effort */ }
 }
 

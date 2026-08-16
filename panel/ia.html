@@ -481,7 +481,8 @@ function compilePersona(form){
   const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
   if(t.length) p.push("Tono: "+t.join(". ")+".");
   p.push(form.negritas?"Puedes usar *negritas* de WhatsApp (un asterisco a cada lado) para resaltar lo importante, con moderación.":"No uses formato de negritas.");
-  const mx=Number(form.emoji_max); const mn=Number(form.emoji_min)||0;
+  const mx=Number(form.emoji_max); const mnRaw=Number(form.emoji_min)||0;
+  const mn=isNaN(mx)?mnRaw:Math.min(mnRaw,Math.max(0,mx)); // nunca min>max ("entre 5 y 2" no tiene sentido para la IA)
   if(!isNaN(mx)){ p.push(mx<=0?"No uses emojis.":`Usa emojis con moderación: entre ${mn} y ${mx} por mensaje, solo cuando aporten.`); }
   return p.length?p.join(" "):"";
 }
