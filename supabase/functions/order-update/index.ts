@@ -320,13 +320,24 @@ Deno.serve(async (req) => {
       const cfg = (chA as any)?.pedidos_config?.avisos?.[newEstado] ?? {};
       const texto = String(cfg.texto ?? "").trim();
       if (texto) {
-        // Con la foto de la guía: UNA burbuja de imagen con el texto de pie.
-        // Si el pedido no tiene foto, emit() manda el pie como texto solo.
-        const bubbles = cfg.foto_guia
-          ? [{ media_kind: "image", media_url: "{{pedido_guia_foto}}", caption: texto, text: texto }]
-          : [{ text: texto }];
-        await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles }, (order as any).id);
-        avisoEnviado = "mensaje";
+        // El aviso configurado es TEXTO LIBRE (y quizá una imagen): Meta lo RECHAZA fuera
+        // de la ventana de 24h (mover el pedido suele pasar días después del último mensaje
+        // del cliente). Igual que el aviso por defecto de abajo, solo se manda DENTRO de la
+        // ventana; fuera se registra para que el negocio use una plantilla. Antes se enviaba
+        // siempre y, fuera de ventana, fallaba en silencio marcando avisoEnviado="mensaje".
+        if (await ventana24hAbierta(db, (order as any).contact_id)) {
+          // Con la foto de la guía: UNA burbuja de imagen con el texto de pie.
+          // Si el pedido no tiene foto, emit() manda el pie como texto solo.
+          const bubbles = cfg.foto_guia
+            ? [{ media_kind: "image", media_url: "{{pedido_guia_foto}}", caption: texto, text: texto }]
+            : [{ text: texto }];
+          // deliverStep devuelve false si Meta rechazó el envío → NO marcar como enviado.
+          if (await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles }, (order as any).id)) avisoEnviado = "mensaje";
+          else avisoError = "Meta rechazó el envío del aviso";
+        } else {
+          avisoError = "fuera de la ventana de 24h — usa una plantilla para avisar";
+          console.warn(`[order-update] aviso "mensaje" de "${newEstado}" NO enviado: fuera de la ventana de 24h.`);
+        }
       }
     } catch (e) {
       avisoError = String((e as any)?.message ?? e);

@@ -6,7 +6,7 @@
 //   Acciones: status | save | whatsapp_test | whatsapp_disconnect | …
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 
@@ -43,7 +43,9 @@ Deno.serve(async (req) => {
   // cualquier miembro activo —incluido un operador/vendedor— podía rotar el access_token,
   // desconectar WhatsApp o generar el código de Telegram (escalada funcional operador→admin).
   // La config de negocio (avisos/resumen/plantillas) y los tests siguen abiertos al operador.
-  const esAdmin = (member as any).role === "admin" || (member as any).platform_admin === true;
+  // Rol POR CUENTA (account_members.role de la cuenta dueña del canal), NO el legacy global
+  // app_users.role — que diverge y permitía escalada operador→admin en otra cuenta.
+  const esAdmin = await userIsChannelAdmin(db, uid, channel_id);
   const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "telegram_disconnect", "telegram_connect", "telegram_pair_start"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 

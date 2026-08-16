@@ -251,7 +251,9 @@ async function processInbound(
     content,
     wamid: msg.id,
     status: "delivered",
-    ts: new Date(Number(msg.timestamp) * 1000).toISOString(),
+    // Guard NaN: si `timestamp` viniera ausente/no numérico, `new Date(NaN).toISOString()`
+    // LANZA → 500 → Meta reintenta el MISMO payload para siempre (poison). Cae a ahora.
+    ts: new Date((Number.isFinite(Number(msg.timestamp)) && Number(msg.timestamp) > 0 ? Number(msg.timestamp) * 1000 : Date.now())).toISOString(),
   });
   // 23505 = unique_violation → mensaje repetido (reintento de Meta). No
   // volver a correr el motor: la primera entrega ya lo hizo (idempotencia).
@@ -280,6 +282,11 @@ async function processInbound(
     // Texto → con debounce (junta mensajes seguidos, anti respuesta triple).
     event = { type: "message", text, msgType: "text", adId };
     debounce = true;
+  } else if (type === "system") {
+    // Reacción (👍) o tipo NO soportado (extractContent → type:"system"): el mensaje ya quedó
+    // guardado, pero NO se dispara el bot de ventas. Responder a "[reaction]" es ruido y podría
+    // reabrir el buffer/relanzar la conversación. Una reacción no es un mensaje que atender.
+    return;
   } else {
     // video/document/sticker/location → el flujo decide por last_input_type.
     event = { type: "message", text, msgType: type, adId };
@@ -309,7 +316,11 @@ async function runEngineTask(
       const { data: msgs } = await db.from("messages")
         .select("wamid, ts, type, content")
         .eq("contact_id", contactId).eq("direction", "in")
-        .order("ts", { ascending: false }).limit(10);
+        // `ts` viene de Meta con granularidad de SEGUNDOS: dos mensajes del MISMO segundo
+        // empatan. Sin un desempate, dos `runEngineTask` concurrentes podían ver un `msgs[0]`
+        // distinto → o ambos ceden (dead-air) o ambos corren (doble respuesta). `wamid` (único)
+        // como 2ª clave hace el orden DETERMINÍSTICO: las dos queries coinciden y solo una corre.
+        .order("ts", { ascending: false }).order("wamid", { ascending: false }).limit(10);
       if (!msgs?.length) return;
       // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno.
       if ((msgs[0] as any).wamid !== wamid) return;

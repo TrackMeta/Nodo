@@ -6,7 +6,7 @@
 //   Acciones: save | test | delete | default
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { runAI, type Provider } from "../_shared/ai.ts";
 
 const db = serviceClient();
@@ -40,7 +40,8 @@ Deno.serve(async (req) => {
   // admin. Antes cualquier operador podía poner SU api_key como default (todo el tráfico
   // de IA —conversaciones, OCR con DNI/PII— pasaría por su key) o borrarla (dejar el bot
   // mudo). `test` queda abierto (solo prueba la key existente, no la cambia).
-  const esAdmin = (member as any).role === "admin" || (member as any).platform_admin === true;
+  // Rol POR CUENTA (account_members.role), NO el legacy global app_users.role que diverge.
+  const esAdmin = await userIsChannelAdmin(db, uid, channel_id);
   if (["save", "delete", "default"].includes(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede gestionar las claves de IA del canal." }, 403);
 
   try {

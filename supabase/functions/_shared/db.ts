@@ -42,6 +42,27 @@ export async function userOwnsChannel(
   return !!mem;
 }
 
+// ¿El usuario es ADMIN de la cuenta dueña del canal? El rol vive en account_members.role
+// (POR CUENTA), NO en app_users.role (legacy GLOBAL). Los dos DIVERGEN: signup deja
+// app_users.role='operador' por default y apply_invitation solo setea account_members.role.
+// Chequear app_users.role tenía DOS bugs: (1) escalada — un usuario con role='admin' global
+// agregado a OTRA cuenta como operador pasaba como admin ahí; (2) bloqueo — un admin invitado
+// (account_members.role='admin' pero app_users.role='operador') recibía 403 en su propio canal.
+// platform_admin (superadmin de la plataforma) siempre pasa. Devuelve false ante cualquier duda.
+export async function userIsChannelAdmin(
+  db: SupabaseClient, uid: string | undefined | null, channelId: string | undefined | null,
+): Promise<boolean> {
+  if (!uid || !channelId) return false;
+  const { data: u } = await db.from("app_users").select("platform_admin").eq("id", uid).maybeSingle();
+  if ((u as { platform_admin?: boolean } | null)?.platform_admin === true) return true;
+  const { data: ch } = await db.from("channels").select("account_id").eq("id", channelId).maybeSingle();
+  const accountId = (ch as { account_id?: string } | null)?.account_id;
+  if (!accountId) return false;
+  const { data: mem } = await db.from("account_members").select("role")
+    .eq("account_id", accountId).eq("user_id", uid).eq("activo", true).maybeSingle();
+  return (mem as { role?: string } | null)?.role === "admin";
+}
+
 // Cuenta dueña de un canal. Multi-tenant: se usa para agrupar los archivos de
 // Storage por cuenta (rutas acct/{account_id}/…). Devuelve null si no hay.
 export async function accountOfChannel(

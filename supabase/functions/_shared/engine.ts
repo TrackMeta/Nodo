@@ -470,8 +470,15 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
           if (it.tipo === "archivo") bubbles.push({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
           else bubbles.push({ text: `${it.mensaje || it.nombre ? (it.mensaje || it.nombre) + ": " : ""}${it.url}` });
         }
-        await deliverStep(db, channelId, contactId, { bubbles });
-        b.entregado = true; changed = true;
+        // Marcar entregado SOLO si el envío salió de verdad. deliverStep devuelve false
+        // si Meta rechazó (emit NO lanza en ese caso, así que el catch no lo agarraba) →
+        // se deja SIN marcar (el próximo intento lo reintenta) y se avisa para mandarlo a mano.
+        const ok = await deliverStep(db, channelId, contactId, { bubbles });
+        if (ok) { b.entregado = true; changed = true; }
+        else {
+          await logEvent(db, channelId, contactId, "nota", "⚠️ No se pudo entregar un extra digital (Meta rechazó el envío)", nombre).catch(() => {});
+          await avisar(db, channelId, contactId, "entrega_fallida", { producto: nombre });
+        }
       } catch (e) {
         console.error("[entregarExtrasDigitales] no se pudo entregar:", (e as any)?.message ?? e);
         await logEvent(db, channelId, contactId, "nota", "⚠️ No se pudo entregar un extra digital", nombre).catch(() => {});
@@ -1846,7 +1853,7 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
 // ── Emisión de mensajes salientes ──────────────────────────────────
 // En WhatsApp real envía por Graph API; en webchat basta con insertar
 // (el panel lo ve por Realtime). Siempre queda registro en messages.
-async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
+async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promise<boolean> {
   await ensureDelivery(db, run);
   let text = resolve(bubble.text ?? "", ctx);
   const d = run._delivery;
@@ -1863,7 +1870,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   // de foto como texto (si lo hay) o no se manda nada.
   if (bubble.media_url && !mediaUrl) {
     text = (text || resolve(bubble.caption ?? "", ctx)).trim();
-    if (!text) return;
+    if (!text) return true;
   } else if (mediaUrl && mediaKind) {
     const caption = resolve(bubble.caption ?? bubble.text ?? "", ctx);
     let wamid = ""; let status = "sent"; let error: any = null;
@@ -1874,6 +1881,11 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
         status = "failed";
         error = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
         console.error("[emit] fallo envío media:", error);
+        // Mismo aviso que la rama de TEXTO: un archivo/foto que Meta rechaza (URL que no
+        // baja, MIME no soportado, ventana cerrada) NO puede fallar en silencio — sobre
+        // todo si es la entrega de un producto digital PAGADO. Antes esta rama solo marcaba
+        // 'failed' y nadie se enteraba.
+        await avisarEnvioFallido(db, run.channel_id, run.contact_id, error);
       }
     }
     await db.from("messages").insert({
@@ -1882,7 +1894,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
       content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "" },
       status, wamid: wamid || null, error, sent_by: "bot",
     });
-    return;
+    return status !== "failed";   // false = Meta rechazó → el caller no debe darlo por entregado
   }
 
   // ── Burbuja de TEXTO / BOTONES ──
@@ -1915,7 +1927,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
   // insertes un mensaje en blanco. Pasaba con "mensajes iniciales" cuyo texto
   // quedó vacío (producto recién generado sin saludo): el bot abría la
   // conversación con una burbuja vacía.
-  if (!content.text && !isInteractive && !content.media_id) return;
+  if (!content.text && !isInteractive && !content.media_id) return true;
 
   let wamid = ""; let status = "sent"; let error: any = null;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (body || isInteractive)) {
@@ -1939,6 +1951,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any) {
     direction: "out", type: isInteractive ? "interactive" : "text",
     content, status, wamid: wamid || null, error, sent_by: "bot",
   });
+  return status !== "failed";   // false = Meta rechazó → el caller no debe darlo por entregado
 }
 
 // Emite el texto que generó la IA, resolviendo los marcadores [[media:tag]]:
@@ -2004,8 +2017,8 @@ export async function startFlowRun(
 }
 
 // Envía un mensaje suelto (paso de secuencia sin flujo).
-export async function deliverMessage(db: SupabaseClient, channelId: string, contactId: string, text: string) {
-  await deliverStep(db, channelId, contactId, { mensaje: text });
+export async function deliverMessage(db: SupabaseClient, channelId: string, contactId: string, text: string): Promise<boolean> {
+  return await deliverStep(db, channelId, contactId, { mensaje: text });
 }
 
 // Envía un PASO de secuencia con el mismo motor que los "mensajes iniciales":
@@ -2014,7 +2027,7 @@ export async function deliverMessage(db: SupabaseClient, channelId: string, cont
 //   { mensaje }                         → una burbuja de texto (compat viejo)
 //   { bubbles:[...] }                   → una o varias burbujas
 //   { rotacion, variantes:[{peso,activo,bubbles}] } → rota una variante
-export async function deliverStep(db: SupabaseClient, channelId: string, contactId: string, paso: any, orderId?: string | null) {
+export async function deliverStep(db: SupabaseClient, channelId: string, contactId: string, paso: any, orderId?: string | null): Promise<boolean> {
   // orderId: fija el pedido CONCRETO para resolver {{pedido_*}} (ej. al mover un pedido en
   // el kanban se avisa sobre ESE pedido, no el más reciente del contacto).
   const run: any = { channel_id: channelId, contact_id: contactId, vars: orderId ? { _order_id: orderId } : {} };
@@ -2046,12 +2059,19 @@ export async function deliverStep(db: SupabaseClient, channelId: string, contact
     bubbles = [{ text: String(paso.mensaje) }];
   }
 
+  // Devuelve si TODAS las burbujas se enviaron OK (false si Meta rechazó alguna). Los
+  // callers que "marcan entregado" (entregarExtrasDigitales, enviarClaveRecojo) lo usan
+  // para NO dar por entregado un envío que falló — emit no lanza en un rechazo de Meta.
+  let allOk = true;
   for (const b of bubbles) {
     // También deja pasar una burbuja con BOTONES aunque su texto esté vacío/sin resolver:
     // emit le pone un cuerpo mínimo para no perderlos. El texto se filtra en CRUDO acá
     // (una var sin resolver es truthy) pero emit ya maneja el cuerpo vacío al resolver.
-    if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) await emit(db, run, b, ctx);
+    if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) {
+      if ((await emit(db, run, b, ctx)) === false) allOk = false;
+    }
   }
+  return allOk;
 }
 
 // ¿Sigue abierta la ventana de servicio de 24h? Solo dentro de ella WhatsApp
@@ -3403,7 +3423,10 @@ export async function enviarClaveRecojo(
 ): Promise<boolean> {
   const txt = mensajeEstadoDefault("saldo_pagado", shipping);
   if (!txt) return false;
-  try { await deliverMessage(db, channelId, contactId, txt); return true; }
+  // Devuelve si la clave REALMENTE salió: deliverMessage da false si Meta rechazó (ej.
+  // saldo aprobado con el cliente fuera de la ventana de 24h). Antes retornaba true a
+  // ciegas → el caller la daba por enviada y el cliente quedaba sin su clave de recojo.
+  try { return await deliverMessage(db, channelId, contactId, txt); }
   catch (e) { console.error("[enviarClaveRecojo]", (e as any)?.message ?? e); return false; }
 }
 
