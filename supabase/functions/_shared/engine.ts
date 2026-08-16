@@ -640,9 +640,16 @@ export async function crearVentaManual(
   if (!esFisico && opts.entregarLink !== false) {
     const msg = String((prod as any)?.config?.entrega_mensaje || "¡Listo! 🎉 Acá tienes tu acceso:");
     await deliverMessage(db, channelId, contactId, msg).catch(() => {});
+    // Un entregable tipo ARCHIVO (PDF/video subido) va como ADJUNTO; solo los tipo link van
+    // como texto. Antes se mandaba it.url como texto SIEMPRE → el cliente recibía un link de
+    // storage pelado en vez del archivo. Espeja entregarExtrasDigitales/entregarOpcion.
+    const bubbles: any[] = [];
     for (const it of (Array.isArray((ver as any)?.entrega) ? (ver as any).entrega : [])) {
-      if (it?.url) await deliverMessage(db, channelId, contactId, (it.nombre ? String(it.nombre) + ":\n" : "") + String(it.url)).catch(() => {});
+      if (!it?.url) continue;
+      if (it.tipo === "archivo") bubbles.push({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
+      else bubbles.push({ text: (it.nombre ? String(it.nombre) + ":\n" : "") + String(it.url) });
     }
+    if (bubbles.length) await deliverStep(db, channelId, contactId, { bubbles }).catch(() => {});
     try { await entregarExtrasDigitales(db, channelId, contactId, orderId); } catch (e) { console.error("[ventaManual] extras dig:", (e as any)?.message ?? e); }
   }
 
@@ -1916,8 +1923,12 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // botones válidos pero el cuerpo resolvió VACÍO (ej. la burbuja era solo "{{gancho}}" y
   // el contacto no vino por ese ángulo), se pone un cuerpo mínimo para NO perder los
   // botones (antes: isInteractive=false → los botones se descartaban en silencio).
-  const body = (btns.length > 0 && !text) ? "¿Qué prefieres? 🙂" : text;
+  let body = (btns.length > 0 && !text) ? "¿Qué prefieres? 🙂" : text;
   const isInteractive = btns.length > 0 && !!body;
+  // Meta limita el CUERPO de un mensaje interactivo (con botones) a 1024 chars (el texto
+  // plano llega a 4096). Pasarse hace que Meta rechace el mensaje ENTERO (400) y el cliente
+  // no reciba nada. Se recorta solo en el caso interactivo.
+  if (isInteractive && body.length > 1024) body = body.slice(0, 1024);
   const content: any = {};
   if (body) content.text = body;
   if (bubble.media_id) content.media_id = bubble.media_id;
@@ -2405,12 +2416,14 @@ const EST_HOJA: Record<string, string> = {
 };
 
 export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
+  let _chId: string | null = null, _ctId: string | null = null;
   try {
     const { data: o } = await db.from("orders")
       .select("id, channel_id, contact_id, estado, amount, currency, shipping, order_bumps, created_at, product:product_id(nombre, tipo)")
       .eq("id", orderId).maybeSingle();
     if (!o) return;
     const ord = o as any;
+    _chId = ord.channel_id; _ctId = ord.contact_id;
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", ord.channel_id).maybeSingle();
     const g = (ch as any)?.gsheets ?? {};
     if (!g.spreadsheet_id || g.connected === false) return; // sin hoja conectada, no hay nada que hacer
@@ -2496,8 +2509,11 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
       });
     }
   } catch (e) {
-    // Nunca romper la venta por la hoja.
+    // Nunca romper la venta por la hoja — pero SÍ dejar rastro. Antes solo iba a console:
+    // si el token de Google se revoca/expira, ninguna venta llega a la hoja y el negocio
+    // podía pasar SEMANAS sin enterarse. Ahora queda un evento en el timeline del pedido.
     console.error("[syncPedidoSheet]", (e as any)?.message ?? e);
+    if (_chId && _ctId) await logEvent(db, _chId, _ctId, "error", "No se pudo sincronizar el pedido con Google Sheets", String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
   }
 }
 

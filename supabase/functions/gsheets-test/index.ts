@@ -4,7 +4,7 @@
 //   Se hace desde el servidor porque el navegador no puede (CORS de Google).
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { getAccessToken, sheetsAppend, sheetsBootstrap } from "../_shared/gsheets.ts";
 
 const db = serviceClient();
@@ -24,6 +24,11 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   // Multi-tenant: cualquier acción sobre un canal exige ser de su cuenta.
   if (body.channel_id && !(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // 🔒 `preparar` (crear/reescribir las pestañas de la hoja) es config de la integración →
+  // solo ADMIN. Una fila de prueba suelta queda abierta al operador (como el `test` de channel-config).
+  if (body.preparar && body.channel_id && !(await userIsChannelAdmin(db, uid, body.channel_id))) {
+    return json({ error: "forbidden", detalle: "Solo un administrador puede preparar la hoja de Google Sheets." }, 403);
+  }
   const fecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" }).format(new Date());
 
   // ── Preparar la hoja: crea las 3 pestañas con sus encabezados ──────

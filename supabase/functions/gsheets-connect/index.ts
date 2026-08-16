@@ -4,7 +4,7 @@
 //   Crea un nonce (estado) para asegurar el callback.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 
 const db = serviceClient();
 const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
@@ -26,10 +26,20 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.channel_id) return json({ error: "falta_channel" }, 400);
   if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // 🔒 Conectar/desconectar la sync a Google Sheets toca la integración del canal (enlaza una
+  // cuenta de Google arbitraria o corta la sincronización) → solo ADMIN de la cuenta, igual que
+  // channel-config/ai-config. Antes un operador podía hacerlo (misma clase de hueco).
+  if (!(await userIsChannelAdmin(db, uid, body.channel_id))) return json({ error: "forbidden", detalle: "Solo un administrador puede conectar o desconectar Google Sheets." }, 403);
 
   // Desconectar: borra el refresh token del Vault (no necesita OAuth configurado).
   if (body.disconnect) {
     await db.rpc("delete_gsheets_token", { p_channel_id: body.channel_id });
+    // Limpia también el estado en channels.gsheets (que el callback escribe al conectar). Sin
+    // esto el panel seguía mostrando "conectado" y syncPedidoSheet entraba por la rama oauth
+    // hasta que el token daba null. Se conserva el resto (spreadsheet_id, webhook_url).
+    const { data: chG } = await db.from("channels").select("gsheets").eq("id", body.channel_id).maybeSingle();
+    const g = ((chG as any)?.gsheets ?? {}) as Record<string, unknown>;
+    await db.from("channels").update({ gsheets: { ...g, connected: false, mode: null } }).eq("id", body.channel_id);
     return json({ ok: true });
   }
   if (!CLIENT_ID) return json({ error: "sin_configurar", detalle: "Falta configurar GOOGLE_OAUTH_CLIENT_ID en el servidor" }, 400);

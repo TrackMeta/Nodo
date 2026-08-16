@@ -294,6 +294,24 @@ async function processInbound(
   if (!event) return;
 
   const bufferSeg = Math.min(Math.max(Number(channel.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG);
+  // 📎 TEXTO seguido de IMAGEN/AUDIO: el texto (con buffer) cede el turno a la imagen (más
+  // nueva, sin buffer) y su intento SE PERDÍA (el motor solo veía la foto). Si justo antes
+  // llegó texto del cliente dentro de la ventana del buffer, se ANTEPONE al evento de la
+  // imagen — así "mándame 2 tallas M y una S" + la foto llegan JUNTOS al motor. Los task de
+  // esos textos ceden a la imagen (msgs[0] es la imagen) → no se doble-procesan.
+  if ((type === "image" || type === "audio") && bufferSeg > 0) {
+    try {
+      const desde = new Date(Date.now() - (bufferSeg + 2) * 1000).toISOString();
+      const { data: prev } = await db.from("messages")
+        .select("content").eq("contact_id", contact.id).eq("direction", "in").eq("type", "text")
+        .gte("ts", desde).neq("wamid", msg.id).order("ts", { ascending: true }).limit(3);
+      const textos = (prev ?? []).map((m: any) => String(m.content?.text ?? "").trim()).filter(Boolean);
+      if (textos.length) {
+        const combinado = [...textos, (event as { text?: string }).text].filter((t) => t && String(t).trim()).join("\n");
+        event = { ...event, text: combinado };
+      }
+    } catch (e) { console.error("[webhook] fold texto→imagen:", (e as any)?.message ?? e); }
+  }
   const task = runEngineTask(channelId, contact.id, event, msg.id, debounce ? bufferSeg : 0);
   // Responder 200 a Meta ya; el motor sigue en segundo plano.
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(task);
