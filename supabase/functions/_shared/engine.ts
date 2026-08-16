@@ -3293,7 +3293,7 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
 // alcanza para enterarte; el detalle de cada mensaje queda en la Bandeja.
 const ultimoAvisoFallo = new Map<string, number>();
 
-async function avisarEnvioFallido(db: SupabaseClient, channelId: string, contactId: string, error: any) {
+export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, contactId: string, error: any) {
   try {
     const ahora = Date.now();
     const previo = ultimoAvisoFallo.get(channelId) ?? 0;

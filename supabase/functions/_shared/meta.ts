@@ -125,22 +125,33 @@ export async function fetchMediaAsDataUri(mediaId: string, accessToken: string):
   return `data:${mime || "image/jpeg"};base64,${btoa(s)}`;
 }
 
+// Errores de Meta que son TRANSITORIOS (vale reintentar) vs permanentes. 130429 = rate
+// limit del número (muy común en ráfagas de pedidos), 131056 = par (from,to) rate-limited,
+// 80007 = rate limit de la app, 133016 = restauración en curso. Un 5xx también es transitorio.
+const META_RETRYABLE = new Set([130429, 131056, 80007, 133016]);
+
 // POST genérico a /messages. Devuelve el wamid o lanza MetaApiError.
+// Reintenta con backoff los errores TRANSITORIOS: antes, un rate-limit momentáneo se
+// trataba como fallo permanente → el mensaje se marcaba 'failed', el flujo AVANZABA y una
+// entrega digital pagada / una clave de recojo se perdía sin reenvío. Un error permanente
+// (número inválido, plantilla rechazada) sigue lanzando al toque, sin reintentar.
 async function postMessage(phoneNumberId: string, accessToken: string, payload: unknown): Promise<string> {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    // Meta trae error.code y error.error_subcode — loguearlos siempre.
-    const e = data.error ?? {};
-    throw new MetaApiError({
-      code: e.code, subcode: e.error_subcode, message: e.message,
-      type: e.type, fbtrace_id: e.fbtrace_id,
+  let lastErr: MetaApiError | null = null;
+  for (let intento = 0; intento < 3; intento++) {
+    if (intento) await new Promise((r) => setTimeout(r, intento === 1 ? 400 : 1100));
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
+    let data: any = {};
+    try { const t = await res.text(); data = t ? JSON.parse(t) : {}; } catch (_) { data = {}; }
+    if (res.ok && !data.error) return data.messages?.[0]?.id ?? "";
+    const e = data.error ?? {};
+    lastErr = new MetaApiError({ code: e.code, subcode: e.error_subcode, message: e.message, type: e.type, fbtrace_id: e.fbtrace_id });
+    const transitorio = res.status >= 500 || META_RETRYABLE.has(Number(e.code));
+    if (!transitorio) throw lastErr; // permanente → no reintentar
   }
-  return data.messages?.[0]?.id ?? "";
+  throw lastErr ?? new MetaApiError({ message: "envío falló tras reintentos" });
 }

@@ -1,0 +1,22 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Nodo · 0073 — El secreto del webhook de Telegram y el código de pairing NO deben ser
+-- legibles por los MIEMBROS de la cuenta.
+--
+-- El problema: la RLS de `channels` es por-FILA (`channels_sel` deja SELECT de la fila
+-- completa a cualquier miembro), así que un OPERADOR (no admin) podía leer
+-- `telegram_webhook_secret` y un `telegram_chat_ids` permitido, y con eso hacer un POST
+-- directo al webhook PÚBLICO de Telegram (verify_jwt=false, cuya única auth es ese secreto
+-- en un header) con un callback FORJADO `adel_ok/saldo_ok/digital_ok/extra_ok:<order_id>`
+-- → aprobar pagos / soltar claves / entregar digitales, saltándose por completo el gate de
+-- admin (ADMIN_ACTIONS). Escalada operador → aprobar-dinero.
+--
+-- El fix: revocar el SELECT de esas dos columnas al rol `authenticated` (y `anon`). El
+-- `service_role` (las Edge Functions: telegram-webhook, channel-config) las sigue leyendo
+-- sin problema. El panel ya NO las lee (usa channel-config: status.copiloto y la acción
+-- telegram_pair_status). Sin el secreto, el operador no puede forjar el webhook.
+--
+-- Verificado: ninguna consulta del panel selecciona estas columnas ni hace select("*")
+-- sobre channels, así que este REVOKE no rompe ningún select.
+-- ═══════════════════════════════════════════════════════════════════
+revoke select (telegram_webhook_secret, telegram_pair) on public.channels from authenticated;
+revoke select (telegram_webhook_secret, telegram_pair) on public.channels from anon;

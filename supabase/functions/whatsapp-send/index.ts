@@ -109,7 +109,9 @@ Deno.serve(async (req) => {
       : await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, caption);
     await db.from("messages").insert({
       channel_id, contact_id, direction: "out", type: msgType,
-      content: outContent, wamid, status: "sent",
+      // wamid || null: si Meta omite el id, guardar null (no ""), para que los webhooks de
+      // status (delivered/read/failed) puedan matchear por wamid — un "" no matchea nada.
+      content: outContent, wamid: wamid || null, status: "sent",
       sent_by: "human", sent_by_user: uid,
     });
     // El operador está atendiendo → marcar leído.

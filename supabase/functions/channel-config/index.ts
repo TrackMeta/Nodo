@@ -53,11 +53,23 @@ Deno.serve(async (req) => {
     if (action === "status") {
       const { data } = await db.rpc("channel_secrets_status", { p_channel_id: channel_id }).maybeSingle();
       const s = data ?? {};
+      // `copiloto` (¿el webhook de Telegram está activo?) se resuelve acá server-side en
+      // vez de que el panel lea channels.telegram_webhook_secret: ese secreto es material
+      // del webhook y NO debe ser legible por un miembro (con él podría forjar el webhook
+      // público y aprobar pagos). Migración 0073 revoca el SELECT de esa columna.
+      const { data: cRow } = await db.from("channels").select("telegram_webhook_secret").eq("id", channel_id).maybeSingle();
       return json({ ok: true, secrets: {
         access_token: !!(s as any).access_token, app_secret: !!(s as any).app_secret,
         capi_token: !!(s as any).capi_token, telegram_bot_token: !!(s as any).telegram_bot_token,
         ads_token: !!(s as any).ads_token,
+        copiloto: !!(cRow as any)?.telegram_webhook_secret,
       } });
+    }
+    // ¿Sigue pendiente el código de pairing de Telegram? (para el poll del panel, que ya
+    // no lee channels.telegram_pair — ese código lo puede leer cualquier miembro por RLS).
+    if (action === "telegram_pair_status") {
+      const { data: c } = await db.from("channels").select("telegram_pair").eq("id", channel_id).maybeSingle();
+      return json({ ok: true, pendiente: !!(c as any)?.telegram_pair });
     }
 
     // Conecta el Copiloto de Telegram: registra el webhook del bot de ESTE
@@ -424,13 +436,18 @@ Deno.serve(async (req) => {
       // productos) ni ads/CAPI/pixel: solo quita phone_number_id + waba_id y
       // borra los secretos del número (access_token + app_secret) del Vault.
       // El verify_token se conserva (lo elige el usuario, es reutilizable).
-      const { error: e1 } = await db.from("channels")
-        .update({ phone_number_id: null, waba_id: null }).eq("id", channel_id);
-      if (e1) return json({ error: "desconectar", detalle: e1.message }, 400);
+      // Se borran los SECRETOS PRIMERO y recién después se nulan las columnas: el motivo
+      // típico de desconectar es "me banearon / vendí el número → mata el token". Si se
+      // nulaba primero y el borrado del secreto fallaba, quedaba un token VIVO huérfano en
+      // el Vault con la UI ya "desconectada". Ahora, ante un fallo, el canal sigue conectado
+      // (columnas intactas) y el operador reintenta — nunca un token vivo tras desconectar.
       for (const kind of ["access_token", "app_secret"]) {
         const { error } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind });
         if (error) return json({ error: "desconectar_secreto", detalle: `${kind}: ${error.message}` }, 400);
       }
+      const { error: e1 } = await db.from("channels")
+        .update({ phone_number_id: null, waba_id: null }).eq("id", channel_id);
+      if (e1) return json({ error: "desconectar", detalle: e1.message }, 400);
       return json({ ok: true });
     }
 

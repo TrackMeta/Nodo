@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
-import { runEngine, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -61,8 +61,12 @@ Deno.serve(async (req) => {
     ({ data: channel } = await db.from("channels").select("id, buffer_default_seg")
       .eq("phone_number_id", phoneNumberId).eq("activo", true).maybeSingle());
   } else if (esPlantilla && wabaId) {
+    // waba_id NO es único (un negocio puede tener 2 números bajo una misma WABA): con
+    // maybeSingle() eso REVENTABA (múltiples filas) → channel null → el status de la
+    // plantilla se descartaba y nunca se reflejaba. Se toma uno (para la firma) y la
+    // actualización se hace sobre TODOS los canales de la WABA en processTemplateStatus.
     ({ data: channel } = await db.from("channels").select("id, buffer_default_seg")
-      .eq("waba_id", wabaId).eq("activo", true).maybeSingle());
+      .eq("waba_id", wabaId).eq("activo", true).order("id").limit(1).maybeSingle());
   } else {
     return new Response("OK", { status: 200 }); // eventos sin mensajes ni plantilla
   }
@@ -95,7 +99,7 @@ async function processPayload(channel: { id: string; buffer_default_seg?: number
       // Meta avisó que cambió el estado de una plantilla (aprobada/rechazada/…):
       // se refleja solo en Nodo, sin que el usuario toque "Sincronizar".
       if (change.field === "message_template_status_update") {
-        await processTemplateStatus(channel.id, change.value ?? {});
+        await processTemplateStatus(channel.id, change.value ?? {}, entry.id);
         continue;
       }
       const value = change.value ?? {};
@@ -123,7 +127,7 @@ async function processPayload(channel: { id: string; buffer_default_seg?: number
 
 // Refleja en wa_templates el estado que Meta acaba de comunicar por webhook.
 // Se cruza por name + language dentro del canal dueño del WABA.
-async function processTemplateStatus(channelId: string, value: any) {
+async function processTemplateStatus(channelId: string, value: any, wabaId?: string) {
   const name = value?.message_template_name;
   const language = value?.message_template_language ?? "es";
   const event = String(value?.event || "").toUpperCase();
@@ -131,8 +135,18 @@ async function processTemplateStatus(channelId: string, value: any) {
   const estado = event === "APPROVED" ? "aprobada"
     : (event === "PENDING" || event === "IN_APPEAL" || event === "PENDING_DELETION") ? "pendiente"
     : "rechazada"; // REJECTED, PAUSED, DISABLED, FLAGGED…
+  // La plantilla pertenece a la WABA (todos sus números): se refleja en TODOS los canales
+  // de esa WABA, no solo en uno. Antes actualizaba un único channel_id → en un negocio con
+  // 2 números el otro veía la plantilla "pendiente" para siempre.
+  let ids = [channelId];
+  if (wabaId) {
+    try {
+      const { data: chs } = await db.from("channels").select("id").eq("waba_id", wabaId).eq("activo", true);
+      if (chs?.length) ids = (chs as any[]).map((c) => c.id);
+    } catch (_) { /* usa el canal resuelto */ }
+  }
   await db.from("wa_templates").update({ estado_meta: estado })
-    .eq("channel_id", channelId).eq("name", name).eq("language", language);
+    .in("channel_id", ids).eq("name", name).eq("language", language);
 }
 
 async function processInbound(
@@ -368,15 +382,30 @@ async function processStatus(channelId: string, st: any) {
   const wamid: string = st.id;
   const status: string = st.status; // sent | delivered | read | failed
   const patch: Record<string, unknown> = { status };
+  let esFallo = false;
   if (status === "failed" && st.errors?.[0]) {
     const e = st.errors[0];
     patch.error = { code: e.code, title: e.title, message: e.message };
     console.error(`[status] failed wamid=${wamid} code=${e.code} ${e.title}`);
+    esFallo = true;
   }
   // Scope por canal: el update es por wamid (id global de Meta). Aunque un webhook llega
   // ya firmado con el app_secret del canal, se acota el update a ESTE canal para que un
   // status con el wamid de OTRO tenant no pueda voltear el estado de su mensaje.
-  await db.from("messages").update(patch).eq("wamid", wamid).eq("channel_id", channelId);
+  // NO RETROCEDER: los status de Meta NO llegan ordenados; un 'delivered' tardío no debe
+  // pisar un 'read' ya registrado (sent<delivered<read). 'failed' es terminal → siempre.
+  const bloquea: Record<string, string> = { sent: "(delivered,read,failed)", delivered: "(read,failed)", read: "(failed)" };
+  let q = db.from("messages").update(patch).eq("wamid", wamid).eq("channel_id", channelId);
+  if (!esFallo && bloquea[status]) q = q.not("status", "in", bloquea[status]);
+  const { data: upd } = await q.select("contact_id");
+  // 'failed' ASÍNCRONO: Meta aceptó el envío (status 'sent' con wamid) y RECIÉN AHORA
+  // reporta que no se entregó (el cliente bloqueó al negocio, ventana vencida). El camino
+  // síncrono avisa por Telegram; este NO lo hacía → el operador veía "enviado" y creía que
+  // llegó (justo con una clave de recojo o una entrega digital eso es grave). Se avisa igual.
+  if (esFallo) {
+    const cid = (upd && upd[0] && (upd[0] as any).contact_id) || null;
+    if (cid) { try { await avisarEnvioFallido(db, channelId, cid, patch.error); } catch (_) { /* no encadenar fallos */ } }
+  }
 }
 
 // Extrae texto/tipo/contenido de un mensaje entrante de WhatsApp.

@@ -127,11 +127,13 @@ async function boot(){
   if(st.channelId) await load();
 }
 async function load(){
-  // telegram_webhook_secret dice si el Copiloto de Telegram está activo (migración 0033).
+  // NOTA: el panel ya NO lee channels.telegram_webhook_secret (material del webhook, que
+  // un miembro podría usar para forjar el webhook y aprobar pagos — migración 0073 lo
+  // revoca). El booleano "Copiloto activo" viene del endpoint status (st.secrets.copiloto).
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_webhook_secret,ia_router").eq("id",st.channelId).maybeSingle();
+    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
-    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",st.channelId).maybeSingle()); }
+    .select("phone_number_id,waba_id,verify_token,ia_router").eq("id",st.channelId).maybeSingle()); }
   st.channel=ch||{};
   st.secrets={};
   try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
@@ -415,7 +417,7 @@ function pintarWA(r){
 function renderTG(){
   const c=st.channel||{}, s=st.secrets||{};
   const chats=(c.telegram_chat_ids||[]).join(", ");
-  const copiloto=!!c.telegram_webhook_secret;
+  const copiloto=!!s.copiloto; // del endpoint status (ya no del secreto crudo)
   $("tgCard").innerHTML=`
     <div class="card">
       <div class="chd"><span class="ico"><img src="${LOGO.tg}" alt="Telegram"/></span>
@@ -543,8 +545,10 @@ async function vincularTelegram(){
     const t=$("pairTime");
     if(t) t.textContent=queda?`El código vence en ${Math.floor(queda/60)}:${String(queda%60).padStart(2,"0")}`:"El código venció — tocá Detectar de nuevo.";
     if(!queda){ clearInterval(st.pairTimer); return; }
-    const { data } = await supa.from("channels").select("telegram_chat_ids,telegram_pair").eq("id",st.channelId).maybeSingle();
-    if(data && !data.telegram_pair){ // el webhook lo consumió → quedó vinculado
+    // El poll ya no lee channels.telegram_pair (legible por cualquier miembro por RLS):
+    // pregunta por el endpoint si el código sigue pendiente.
+    let r=null; try{ r=await callFn("channel-config",{ action:"telegram_pair_status", channel_id:st.channelId }); }catch(_){}
+    if(r && !r.pendiente){ // el webhook lo consumió → quedó vinculado
       clearInterval(st.pairTimer);
       toast("Telegram vinculado ✓");
       await load();

@@ -147,7 +147,7 @@ async function mkTeamCode(accId){
   const r = await callFn({ action:"create_team_invite", account_id:accId, role:"operador" });
   if(!r) return;
   const box = $("teamBox-"+accId);
-  box.innerHTML = codeBox("Código de equipo", r.code, "Reutilizable: compártelo con todo tu equipo. Cada quien se une como operador. También sirve el link de abajo. Vence en 14 días.") +
+  box.innerHTML = codeBox("Código de equipo", r.code, "Un código por persona (se usa una sola vez). Genera otro para cada quien que sumes como operador. También sirve el link de abajo. Vence en 14 días.") +
     `<div style="margin-top:8px" class="muted" data-link>${esc(r.link)}</div>`;
   wireCopy(box, r.code);
 }
@@ -160,6 +160,14 @@ async function renameAccount(accId){
   toast("Cuenta renombrada ✓"); load();
 }
 async function removeMember(accId, userId){
+  // Guard "último admin": no dejar la cuenta sin ningún admin (quedaría ingobernable —
+  // nadie podría invitar, renombrar ni gestionar). La defensa dura vive en un trigger de
+  // BD (migración 0072); esto cubre el caso normal desde el panel.
+  const acc = st.accounts.find(a=>a.id===accId);
+  const admins = (acc?.members||[]).filter(m=>m.role==="admin");
+  if(admins.some(m=>m.user_id===userId) && admins.length<=1){
+    toast("No puedes quitar al único admin — la cuenta quedaría sin dueño. Primero suma otro admin.",true); return;
+  }
   const ok = await confirmDialog({ title:"Quitar del equipo", message:"Esta persona dejará de ver y operar esta cuenta.", confirmText:"Quitar", danger:true });
   if(!ok) return;
   const { error } = await supa.from("account_members").delete().eq("account_id",accId).eq("user_id",userId);
