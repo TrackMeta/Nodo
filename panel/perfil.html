@@ -114,7 +114,7 @@ async function boot(){
   $("avatarFile").onchange=(e)=>handleAvatar(e.target.files[0]);
   $("saveProfile").onclick=saveProfile;
   $("savePw").onclick=changePassword;
-  $("logoutBtn").onclick=async()=>{ await supa.auth.signOut(); location.href="index.html"; };
+  $("logoutBtn").onclick=async()=>{ try{ localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); }catch{} await supa.auth.signOut(); location.href="index.html"; };
 }
 function paintAvatar(url){
   const a=$("avatar");

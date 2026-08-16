@@ -767,7 +767,13 @@ export async function mountShell({ active } = {}) {
 
   // Logout (solo existe en el rail minimal; en el completo vive en Perfil)
   const logoutBtn = nav.querySelector("#nodoLogout");
-  if (logoutBtn) logoutBtn.onclick = async () => { await supa.auth.signOut(); location.href = "index.html"; };
+  if (logoutBtn) logoutBtn.onclick = async () => {
+    // Limpia el caché LOCAL antes de salir: en una PC compartida, loadMe/paintBrand pintan
+    // primero desde caché, así que sin esto el SIGUIENTE usuario veía el nombre/rol/logo/negocio
+    // del anterior hasta que refrescara la red (fuga de identidad/negocio).
+    try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); } catch {}
+    await supa.auth.signOut(); location.href = "index.html";
+  };
 
   // Chip de usuario (perfil) en el pie del sidebar completo
   loadMe(nav);

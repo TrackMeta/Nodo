@@ -1,0 +1,13 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Nodo · 0071 — Moneda de la cuenta publicitaria de Meta (para el módulo Rendimiento)
+--
+-- El campo `spend` de la Graph API viene en la MONEDA DE FACTURACIÓN de la cuenta de
+-- Meta (para un anunciante peruano, casi siempre USD). El módulo Rendimiento sumaba ese
+-- gasto crudo y lo cruzaba con ingresos en PEN → CPA, ROAS y ganancia neta quedaban sin
+-- sentido por el tipo de cambio, y se pintaba "S/" sobre un número que era USD.
+--
+-- Este campo guarda la moneda de la cuenta (la trae ads-sync de `GET /act_<id>?fields=currency`)
+-- para que el panel AVISE cuando no coincide con la moneda del negocio (channels.moneda).
+-- La CONVERSIÓN en sí (aplicar un tipo de cambio) queda para después; por ahora es detección.
+-- ═══════════════════════════════════════════════════════════════════
+alter table ads_meta add column if not exists account_currency text;

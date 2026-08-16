@@ -67,6 +67,15 @@ Deno.serve(async (req) => {
 // Baja los insights por anuncio y día de UNA cuenta y los upserta.
 async function syncCuenta(channelId: string, acct: string, token: string, since: string, until: string): Promise<number> {
   const acctId = acct.startsWith("act_") ? acct : `act_${acct}`;
+  // Moneda de facturación de la cuenta: `spend` viene en ESTA moneda (casi siempre USD para
+  // un anunciante peruano). Se guarda para que Rendimiento avise si no coincide con la moneda
+  // del negocio (los números no están convertidos). Best-effort: si falla, queda null.
+  let accountCurrency: string | null = null;
+  try {
+    const cr = await fetch(`${GRAPH}/${acctId}?fields=currency&access_token=${encodeURIComponent(token)}`);
+    const cj = await cr.json();
+    if (cr.ok && cj?.currency) accountCurrency = String(cj.currency);
+  } catch (_) { /* sin moneda → null */ }
   const fields = [
     "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id", "campaign_name",
     "spend", "impressions", "reach", "clicks",
@@ -101,11 +110,16 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
           channel_id: channelId, account_id: acctId, ad_id: adId,
           ad_name: r.ad_name ?? null, adset_id: r.adset_id ?? null, adset_name: r.adset_name ?? null,
           campaign_id: r.campaign_id ?? null, campaign_name: r.campaign_name ?? null,
+          account_currency: accountCurrency,
           updated_at: new Date().toISOString(),
         });
       }
+      // Solo el tipo CANÓNICO "conversación iniciada" (messaging_conversation_started, y su
+      // variante onsite_conversion.*). Antes sumaba CUALQUIER action_type con "whatsapp"/
+      // "messaging" → Meta devuelve varios solapados por fila (started_7d + first_reply + …) y
+      // el número salía inflado. Esto es "conversaciones iniciadas" de verdad, sin doble conteo.
       const clicsWA = (r.actions ?? []).reduce((a: number, x: any) =>
-        /whatsapp|messaging_conversation|onsite_conversion.messaging/i.test(String(x.action_type)) ? a + Number(x.value || 0) : a, 0);
+        /(^|\.)messaging_conversation_started/i.test(String(x.action_type)) ? a + Number(x.value || 0) : a, 0);
       insightRows.push({
         channel_id: channelId, ad_id: adId, fecha: r.date_start,
         gasto: Number(r.spend || 0), impresiones: Number(r.impressions || 0),

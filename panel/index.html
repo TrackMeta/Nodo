@@ -980,42 +980,51 @@ async function sendBubblesInOrder(bubs){
   if(!state.contactId) return false;
   if(state.winLocked && !state.isTest){ toast("La ventana está cerrada — usa una plantilla",true); return false; }
   if(!await okManualEnvio()) return false;
+  // Devuelve true SOLO si TODAS las burbujas salieron. Antes retornaba true a ciegas → si la
+  // 2ª de 3 fallaba (Meta rechazó, media mala), el modal se cerraba "en verde" como si todo
+  // hubiera salido. Ahora el caller no cierra el modal ante una falla parcial.
+  let allOk=true;
   for(const b of (bubs||[])){
-    if(b.media_url){ await sendStoredMedia({ media_kind:b.media_kind, media_url:b.media_url, mime:b.mime, filename:b.filename, caption:b.caption||"" }); }
-    else { const t=(b.text||"").trim(); if(t) await sendTextMsg(t); }
+    let ok;
+    if(b.media_url){ ok=await sendStoredMedia({ media_kind:b.media_kind, media_url:b.media_url, mime:b.mime, filename:b.filename, caption:b.caption||"" }); }
+    else { const t=(b.text||"").trim(); ok=t?await sendTextMsg(t):true; }
+    if(ok===false) allOk=false;
   }
-  return true;
+  return allOk;
 }
 // Envía UN mensaje de texto (mismo camino que sendMsg, sin tocar el compositor
 // ni re-preguntar las guardas — las maneja quien llama).
 async function sendTextMsg(text){
-  text=(text||"").trim(); if(!text||!state.contactId) return;
-  if(state.isTest){
-    if(state.testAs==="bot"){ await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:"text", content:{text}, status:"sent", sent_by:"bot" }); }
-    else { await callFn("webchat", { channel_id:state.channelId, text }); }
-  } else {
+  text=(text||"").trim(); if(!text||!state.contactId) return true;   // nada que enviar ≠ fallo
+  try{
+    if(state.isTest){
+      if(state.testAs==="bot"){ await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:"text", content:{text}, status:"sent", sent_by:"bot" }); }
+      else { await callFn("webchat", { channel_id:state.channelId, text }); }
+      return true;
+    }
     const res=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, text });
-    if(!res.ok){ const o=await res.json().catch(()=>({})); toast(o.detalle?.message||o.detalle||o.error||"Error al enviar",true); }
-    else setBotPill(false);
-  }
+    if(!res.ok){ const o=await res.json().catch(()=>({})); toast(o.detalle?.message||o.detalle||o.error||"Error al enviar",true); return false; }
+    setBotPill(false); return true;
+  }catch{ toast("Error de red al enviar",true); return false; }   // antes un error de red dejaba el botón trabado en "Enviando…"
 }
 // Envía una media ya subida (guardada en una respuesta rápida) reusando el
 // mismo camino que sendAttachment (whatsapp-send / webchat / insert de prueba).
 async function sendStoredMedia(m){
-  if(!state.contactId||!m||!m.media_url) return;
+  if(!state.contactId||!m||!m.media_url) return true;   // nada que enviar ≠ fallo
   const media={ kind:m.media_kind, url:m.media_url, mime:m.mime||"", filename:m.filename||"", caption:m.caption||"" };
   try{
     if(state.isTest){
       if(state.testAs==="bot"){
         await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:m.caption||"", mime:media.mime, filename:media.filename }, status:"sent", sent_by:"bot" });
       } else { await callFn("webchat", { channel_id:state.channelId, media }); }
-    } else {
-      // whatsapp-send toma la caption del campo `text` (no de media.caption) → se
-      // la pasamos así para que la imagen llegue con su texto en la misma burbuja.
-      const r=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, media, text:m.caption||"" });
-      const o=await r.json().catch(()=>({})); if(!r.ok) toast(o.detalle?.message||o.detalle||o.error||"Error al enviar media",true); else setBotPill(false);
+      return true;
     }
-  }catch{ toast("Error al enviar multimedia",true); }
+    // whatsapp-send toma la caption del campo `text` (no de media.caption) → se
+    // la pasamos así para que la imagen llegue con su texto en la misma burbuja.
+    const r=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, media, text:m.caption||"" });
+    const o=await r.json().catch(()=>({})); if(!r.ok){ toast(o.detalle?.message||o.detalle||o.error||"Error al enviar media",true); return false; }
+    setBotPill(false); return true;
+  }catch{ toast("Error al enviar multimedia",true); return false; }
 }
 const EMOJI_CATS=[
   { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },
@@ -1704,7 +1713,13 @@ async function markRead() {
 async function updateWindow() {
   const w = $("chWin");
   if (state.isTest) { w.innerHTML = ""; setComposerLock(false); return; }
-  const { data } = await supa.from("contacts").select("ultimo_mensaje_cliente_at,fep_hasta").eq("id", state.contactId).maybeSingle();
+  const cid = state.contactId;   // guard de carrera: se captura el chat actual…
+  const { data } = await supa.from("contacts").select("ultimo_mensaje_cliente_at,fep_hasta").eq("id", cid).maybeSingle();
+  // …y si mientras se resolvía el fetch cambiaste de chat, NO se pisa el candado del nuevo:
+  // sin esto, abrir chat A (ventana cerrada) y enseguida B (abierta) podía dejar B con el
+  // compositor bloqueado y empujar al operador a mandar una plantilla HSM (que cuesta y pausa
+  // el bot) sin necesidad, hasta el siguiente tick de 60s.
+  if (cid !== state.contactId) return;
   const now = Date.now();
   const svcEnd = data?.ultimo_mensaje_cliente_at ? new Date(data.ultimo_mensaje_cliente_at).getTime() + 24*3.6e6 : 0;
   const fepEnd = data?.fep_hasta ? new Date(data.fep_hasta).getTime() : 0;

@@ -94,9 +94,31 @@ export function wireMemoriaChips(p, contact, { supa, toast, reRender }) {
       _last: m._last,
     };
   };
+  const base = getMia(); // snapshot con el que el operador empezó a editar (para el delta)
+  const norm = (s) => String(s ?? "").trim().toLowerCase();
   const guardar = async (mia) => {
-    const payload = { quien_es: mia.quien_es, como_tratar: mia.como_tratar };
-    if (mia._last) payload._last = mia._last;
+    // 🔀 Lost-update: la memoria es un perfil VIVO que la IA rellena; mientras el chat está
+    // abierto, la IA (o un 2º asesor) puede agregar un insight. Escribir el snapshot en memoria
+    // borraría eso (misma clase que directo.html). Se RE-LEE fresco y se aplica el DELTA del
+    // operador (lo que agregó/quitó vs `base`) sobre lo fresco: fresco − quitados + agregados.
+    let fresh = getMia();
+    try {
+      const { data } = await supa.from("contacts").select("memoria_ia").eq("id", contact.id).maybeSingle();
+      const m = (data?.memoria_ia && typeof data.memoria_ia === "object") ? data.memoria_ia : {};
+      fresh = { quien_es: Array.isArray(m.quien_es) ? m.quien_es : [], como_tratar: Array.isArray(m.como_tratar) ? m.como_tratar : [], _last: m._last };
+    } catch (_) { /* sin red → cae al snapshot (comportamiento viejo) */ }
+    const mergeLayer = (layer) => {
+      const baseK = new Set((base[layer] || []).map(norm));
+      const nowK = new Set((mia[layer] || []).map(norm));
+      const quitados = new Set([...baseK].filter((k) => !nowK.has(k)));   // los que el operador QUITÓ
+      const out = [], vis = new Set();
+      for (const x of (fresh[layer] || [])) { const k = norm(x); if (k && !quitados.has(k) && !vis.has(k)) { vis.add(k); out.push(x); } }   // fresco − quitados
+      for (const x of (mia[layer] || [])) { const k = norm(x); if (k && !baseK.has(k) && !vis.has(k)) { vis.add(k); out.push(x); } }         // + agregados por el operador
+      return out;
+    };
+    const payload = { quien_es: mergeLayer("quien_es"), como_tratar: mergeLayer("como_tratar") };
+    const last = fresh._last ?? mia._last;   // preserva el reloj del throttle más reciente
+    if (last) payload._last = last;
     contact.memoria_ia = payload; // que el re-render lo vea
     const { error } = await supa.from("contacts").update({ memoria_ia: payload }).eq("id", contact.id);
     if (error) toast("No se pudo guardar la memoria: " + error.message, true);
