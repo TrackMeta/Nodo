@@ -780,7 +780,7 @@ function appendCommon(m, form){
   if(m.tipo!=="nota" && m.tipo!=="fin"){
     const lab=document.createElement("label"); lab.className="chk";
     const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!m.es_inicial;
-    cb.onchange=()=>{ if(cb.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; } else m.es_inicial=false; for(const k in st.model) updateNodeDom(st.model[k]); };
+    cb.onchange=()=>{ if(cb.checked){ for(const k in st.model) st.model[k].es_inicial=false; m.es_inicial=true; } else m.es_inicial=false; for(const k in st.model) updateNodeDom(st.model[k]); if(!histLock) pushHistory(); };
     lab.appendChild(cb); lab.appendChild(document.createTextNode(" Marcar como paso inicial del flujo"));
     form.appendChild(lab);
   }

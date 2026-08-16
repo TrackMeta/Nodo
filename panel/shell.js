@@ -440,6 +440,22 @@ export function guardUnsaved(selector) {
 export function markClean() { _dirty = false; }
 export function markDirty() { if (_guardSel) _dirty = true; }
 export function isDirty() { return _dirty; }
+// Trae TODAS las filas de una consulta paginando (Supabase/PostgREST topa en ~1000 por
+// request). `makeQuery(from,to)` debe devolver una query FRESCA con `.range(from,to)` y
+// un orden ESTABLE (incluye un desempate por id para no repetir/saltar filas entre
+// páginas). Tope de seguridad para no colgar el navegador con un canal gigante.
+export async function pageAll(makeQuery, { pageSize = 1000, max = 100000 } = {}) {
+  const out = []; let from = 0;
+  while (from < max) {
+    const { data, error } = await makeQuery(from, from + pageSize - 1);
+    if (error) return { data: out, error, truncado: false };
+    const rows = data || [];
+    out.push(...rows);
+    if (rows.length < pageSize) return { data: out, error: null, truncado: false };
+    from += pageSize;
+  }
+  return { data: out, error: null, truncado: true }; // llegó al tope de seguridad
+}
 // Se resetea al cambiar de página (teardown): la nueva vuelve a opt-in si toca.
 function _resetGuard() { _guardSel = null; _dirty = false; }
 // true = se puede salir; pregunta solo si hay cambios sin guardar.

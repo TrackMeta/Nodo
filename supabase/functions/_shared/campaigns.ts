@@ -101,6 +101,16 @@ async function sendBatch(db: SupabaseClient, c: any) {
   let ok = 0, fail = 0;
   let first = true;
   for (const s of pend) {
+    // Claim ATÓMICO: marca la fila 'enviando' SOLO si sigue 'pendiente'. Si un tick
+    // solapado (el cron corre cada minuto y un lote grande puede pasar de 60s) ya la
+    // tomó, el update no afecta filas → se salta. Sin esto, dos ticks seleccionaban
+    // las MISMAS filas pendientes y mandaban la plantilla DOS veces al mismo contacto
+    // (cuesta una conversación Meta, spamea, sube el block-rate). Si el envío tiene
+    // éxito pero el update final falla, la fila queda 'enviando' (no se reintenta) →
+    // no hay doble envío; el mensaje ya salió, solo queda sin marcar 'enviado'.
+    const { data: claim } = await db.from("campaign_sends")
+      .update({ estado: "enviando" }).eq("id", s.id).eq("estado", "pendiente").select("id");
+    if (!claim || !claim.length) continue; // otro worker la reclamó
     // Retraso aleatorio entre envíos reales (anti-baneo). No aplica al 1º ni
     // cuando el canal no puede enviar (prueba sin WhatsApp conectado).
     if (!first && canSend) await new Promise((r) => setTimeout(r, 120 + Math.random() * 260));

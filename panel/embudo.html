@@ -182,7 +182,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, pageAll } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js";
@@ -221,9 +221,12 @@ async function boot(){
 async function load(){
   if(!st.channelId){ render(); return; }
   const gen=(st.loadGen=(st.loadGen||0)+1);
+  // Paginado (TODOS los contactos y pedidos): antes .limit(5000)/.limit(8000) sin traer
+  // el resto → efectividad, conversión y "plata en juego" se calculaban sobre un universo
+  // truncado (numerador y denominador falseados). Orden estable con id de desempate.
   const [cR, oR, chR] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").order("created_at",{ascending:false}).limit(5000),
-    supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(8000),
+    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     supa.from("channels").select("moneda").eq("id",st.channelId).maybeSingle(),
   ]);
   if(gen!==st.loadGen) return;

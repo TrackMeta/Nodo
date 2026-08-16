@@ -130,7 +130,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, norm, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, norm, confirmDialog, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -228,10 +228,13 @@ async function boot(){
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
   const sel="id,amount,currency,order_bumps,estado,created_at,updated_at,confirmed_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
-  let { data, error }=await supa.from("orders").select(sel)
-    .eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
-  if(error){ ({ data }=await supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,contact_id,product_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
-    .eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000)); }
+  // Paginado (trae TODAS las cerradas): antes .limit(1000) topaba el archivo Y el
+  // "cobrado en total" a los 1000 pedidos más recientes, sin aviso → el histórico
+  // salía corto. Orden estable (created_at + id como desempate) para no repetir/saltar.
+  let { data, error }=await pageAll((f,t)=>supa.from("orders").select(sel)
+    .eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
+  if(error){ ({ data }=await pageAll((f,t)=>supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,contact_id,product_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
+    .eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t))); }
   st.list=(data||[]).filter(esCerrada);
 
   // Último comprobante entrante por contacto — respaldo cuando el pedido no lo
@@ -311,13 +314,19 @@ function render(){
 
 function renderStats(){
   const list=filtered();
-  const cur=(list[0]&&list[0].currency)||(st.list[0]&&st.list[0].currency)||"PEN";
-  const cobrado=list.reduce((a,o)=>a+O.cobrado(o),0);
+  // "Cobrado en total" AGRUPADO por moneda: antes sumaba todas las compras y las
+  // etiquetaba con la moneda del PRIMER pedido → un canal con pedidos en más de una
+  // moneda mostraba un total mal sumado y mal rotulado. Si hay una sola, se ve igual.
+  const porMoneda={};
+  list.forEach(o=>{ const c=o.currency||"PEN"; porMoneda[c]=(porMoneda[c]||0)+O.cobrado(o); });
+  const cobradoStr = Object.keys(porMoneda).length
+    ? Object.entries(porMoneda).sort((a,b)=>b[1]-a[1]).map(([c,v])=>money(v,c)).join(" · ")
+    : money(0,"PEN");
   const porTipo=(t)=>list.filter(o=>tipoDe(o)===t).length;
   const verif=list.filter(o=>{ const vd=verifDe(o); return vd&&vd.full; }).length;
   const S=[
     [String(list.length),"compras cerradas","#2b7fff"],
-    [money(cobrado,cur),"cobrado en total","#22c079"],
+    [cobradoStr,"cobrado en total","#22c079"],
     [`${verif}/${list.length}`,"verificadas","#18b7be"],
     [String(porTipo("digital")),"digitales","#8b5cf6"],
     [String(porTipo("lima")+porTipo("provincia")),"físicas","#f0a92b"],
