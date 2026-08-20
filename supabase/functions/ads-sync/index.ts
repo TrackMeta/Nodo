@@ -46,6 +46,7 @@ Deno.serve(async (req) => {
     const token = (await getChannelSecrets(db, channelId))?.ads_token;
     if (!token) { resumen.push({ channelId, saltado: "sin_token" }); continue; }
     let authErr: string | null = null;
+    let otroErr: string | null = null;
     for (const acct of cuentas) {
       try {
         const n = await syncCuenta(channelId, acct, token, since, until);
@@ -54,11 +55,17 @@ Deno.serve(async (req) => {
         const msg = String((e as any)?.message ?? e);
         resumen.push({ channelId, acct, error: msg });
         if ((e as any)?.authError) authErr = msg;   // token inválido/caducado
+        else otroErr = otroErr ?? msg;              // rate limit / permiso / escritura fallida
       }
     }
-    // Anota o limpia el estado del token del canal → el panel avisa si falla.
+    // Anota o limpia el estado del canal. ANTES solo un error de AUTH marcaba el canal:
+    // un rate-limit, un permiso perdido en una cuenta, o una escritura fallida dejaban
+    // `ads_sync_error=null` → el panel decía "sincronizado sano" con el gasto SUBCONTADO
+    // (ROAS/ganancia inflados) y CERO señal. Ahora cualquier fallo se anota (el de auth
+    // manda porque su mensaje pide reconectar). ads_sync_at solo se actualiza si TODO salió.
+    const err = authErr ?? otroErr;
     await db.from("channels").update(
-      authErr ? { ads_sync_error: authErr } : { ads_sync_error: null, ads_sync_at: new Date().toISOString() },
+      err ? { ads_sync_error: err } : { ads_sync_error: null, ads_sync_at: new Date().toISOString() },
     ).eq("id", channelId);
   }
   return json({ ok: true, canales: porCanal.size, resumen });
@@ -106,13 +113,17 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
       // Jerarquía/nombres: una vez por anuncio.
       if (!metaSeen.has(adId)) {
         metaSeen.add(adId);
-        metaRows.push({
+        const metaRow: Record<string, unknown> = {
           channel_id: channelId, account_id: acctId, ad_id: adId,
           ad_name: r.ad_name ?? null, adset_id: r.adset_id ?? null, adset_name: r.adset_name ?? null,
           campaign_id: r.campaign_id ?? null, campaign_name: r.campaign_name ?? null,
-          account_currency: accountCurrency,
           updated_at: new Date().toISOString(),
-        });
+        };
+        // Solo se escribe account_currency si el fetch de moneda funcionó: si falló (glitch de
+        // red), NO se pisa con null la moneda ya conocida (evita borrarla y disparar un aviso de
+        // "moneda desconocida" espurio). accountCurrency es constante por cuenta → filas uniformes.
+        if (accountCurrency != null) metaRow.account_currency = accountCurrency;
+        metaRows.push(metaRow);
       }
       // Solo el tipo CANÓNICO "conversación iniciada" (messaging_conversation_started, y su
       // variante onsite_conversion.*). Antes sumaba CUALQUIER action_type con "whatsapp"/
@@ -130,10 +141,18 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
     url = body.paging?.next ?? "";
   }
 
-  if (metaRows.length) await db.from("ads_meta").upsert(metaRows, { onConflict: "channel_id,ad_id" });
+  // Se REVISA el .error de cada upsert y se LANZA: sin esto, una escritura fallida (timeout de
+  // DB, error transitorio) dejaba syncCuenta devolviendo "éxito" y el canal marcado sano, con el
+  // gasto bajado de Meta pero NUNCA aterrizado en la tabla → subconteo silencioso. Al lanzar,
+  // el loop de arriba lo captura y marca ads_sync_error.
+  if (metaRows.length) {
+    const { error } = await db.from("ads_meta").upsert(metaRows, { onConflict: "channel_id,ad_id" });
+    if (error) throw new Error("ads_meta upsert: " + error.message);
+  }
   // Upsert por chunks para no exceder límites.
   for (let i = 0; i < insightRows.length; i += 500) {
-    await db.from("ads_insights").upsert(insightRows.slice(i, i + 500), { onConflict: "channel_id,ad_id,fecha" });
+    const { error } = await db.from("ads_insights").upsert(insightRows.slice(i, i + 500), { onConflict: "channel_id,ad_id,fecha" });
+    if (error) throw new Error("ads_insights upsert: " + error.message);
   }
   return insightRows.length;
 }

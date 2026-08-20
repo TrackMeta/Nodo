@@ -67,7 +67,7 @@ export async function construirResumen(
   const fromISO = from.toISOString(), toISO = to.toISOString();
   const chId = ch.id;
 
-  const [ordR, contR, leadR, adsR, expR] = await Promise.all([
+  const [ordR, contR, leadR, adsR, expR, admR] = await Promise.all([
     db.from("orders").select("amount, order_bumps, estado, shipping, created_at")
       .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO),
     db.from("contacts").select("id", { count: "exact", head: true })
@@ -78,6 +78,7 @@ export async function construirResumen(
       .gte("created_at", fromISO).lt("created_at", toISO),
     db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd),
     db.from("manual_expenses").select("monto").eq("channel_id", chId).eq("fecha", diaYmd),
+    db.from("ads_meta").select("account_currency").eq("channel_id", chId),
   ]);
 
   const orders = (ordR.data ?? []) as Order[];
@@ -90,6 +91,13 @@ export async function construirResumen(
   const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra : null;
   // ROAS = lo cobrado por cada S/ 1 gastado en anuncios (mismo que el Dashboard).
   const roas = gastoAds > 0 ? dg.ingresos / gastoAds : 0;
+  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA (casi siempre USD), sin
+  // convertir a la del negocio → ROAS y neta salen inflados ~3.75×. El Dashboard ya AVISA;
+  // este digest (que llega 2 veces al día por Telegram) los mostraba sin ninguna advertencia.
+  const _adm = (admR.data ?? []) as any[];
+  const monedaRara = gastoAds > 0 && (
+    _adm.some((m) => m.account_currency && String(m.account_currency).toUpperCase() !== String(ch?.moneda || "PEN").toUpperCase())
+    || _adm.every((m) => !m.account_currency));
 
   const fechaLbl = new Intl.DateTimeFormat("es-PE", {
     timeZone: tz, weekday: "long", day: "numeric", month: "long",
@@ -110,9 +118,10 @@ export async function construirResumen(
   if (dg.ganancia != null) {
     L.push(`📈 Ganancia bruta: ${money(dg.ganancia, sym)}${dg.gananciaSinDatos ? ` <i>(${dg.gananciaSinDatos} sin costo)</i>` : ""}`);
   }
-  if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}${roas > 0 ? ` · <b>ROAS ${roas.toFixed(1)}×</b>` : ""}`);
+  if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}${roas > 0 && !monedaRara ? ` · <b>ROAS ${roas.toFixed(1)}×</b>` : ""}`);
   if (gastosExtra > 0) L.push(`📋 Gastos extra: ${money(gastosExtra, sym)}`);
-  if (neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`💚 Ganancia neta: <b>${money(neta, sym)}</b>`);
+  if (neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`💚 Ganancia neta: <b>${money(neta, sym)}</b>${monedaRara ? " ⚠️" : ""}`);
+  if (monedaRara) L.push(`⚠️ <i>El gasto de ads no está convertido a tu moneda — ROAS y ganancia neta no son confiables.</i>`);
   if (dg.ganancia != null || gastoAds > 0 || gastosExtra > 0) L.push("");
   const desglose = (dg.digital || dg.fisico) ? ` <i>(${dg.digital} digital · ${dg.fisico} físico)</i>` : "";
   L.push(`📦 Pedidos nuevos: ${dg.pedidosNuevos}${desglose}`);
