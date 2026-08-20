@@ -5858,7 +5858,11 @@ function entregaHoy(cfg: any, zona: Zona): { hoy: boolean; motivo: string } {
   if (e.feriados !== true && Array.isArray(e.feriados_fechas) && e.feriados_fechas.includes(iso)) {
     return { hoy: false, motivo: "hoy es feriado" };
   }
-  const corte = String(e.corte ?? "");
+  let corte = String(e.corte ?? "").trim();
+  // Normaliza el cero a la izquierda: hhmm siempre es "HH:MM" (2 díg), pero el corte es texto
+  // libre del negocio. "9:00" sin cero comparaba MAL como string ("18:00" > "9:00" da false,
+  // compara '1'<'9') → el motor creía que no había pasado el corte y prometía entrega HOY.
+  if (/^\d:\d{2}$/.test(corte)) corte = "0" + corte;
   if (corte && hhmm > corte) return { hoy: false, motivo: `ya pasó la hora de corte de hoy (${corte})` };
   return { hoy: true, motivo: "" };
 }

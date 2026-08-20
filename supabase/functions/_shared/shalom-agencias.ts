@@ -511,7 +511,18 @@ export function candidatasAgencia(texto: string): string[] {
 
 export function sedeReconocida(sede: string, ciudad: string): string | null {
   const s = String(sede ?? "").trim();
-  if (!s) return null;
+  if (!s) {
+    // Sede VACÍA es el caso MÁS impreciso y antes era el único SIN bandera (return null) →
+    // un pedido de provincia salía con destino vacío en el Excel del courier, sin aviso al
+    // humano (contra el diseño "prefiere marcar de más"). Se intenta resolver por ciudad; si
+    // ni la ciudad calza con UNA sola agencia, se pide confirmar.
+    const c = String(ciudad ?? "").trim();
+    if (!c) return "falta la sede/agencia de destino — confírmala";
+    const set = new Set(candidatasAgencia(c).map((a) => _n(a)));
+    if (set.size === 1) return null;
+    if (set.size > 1) return "hay varias oficinas Shalom que calzan — confirma la exacta";
+    return "no la reconozco en la lista de Shalom — confírmala con la oficina exacta";
+  }
   const cs = candidatasAgencia(s);
   if (cs.some((a) => _n(a) === _n(s))) return null;
   const set = new Set<string>([...cs, ...candidatasAgencia(ciudad)]);

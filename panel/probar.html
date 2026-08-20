@@ -715,7 +715,9 @@ function subscribe(){
     // Con actividad ON hay que recargar el hilo (para intercalar los eventos
     // que el motor acaba de registrar); con OFF basta con pintar el mensaje.
     if(st.showActivity){ clearTimeout(threadTimer); threadTimer=setTimeout(loadThread,350); }
-    else renderMsg(p.new);
+    // Pinta solo si no existe ya: evita la doble burbuja por la carrera loadThread ↔ realtime
+    // (el mismo mensaje pudo venir en el fetch inicial), igual que la Bandeja.
+    else if(!document.querySelector('.msg[data-id="'+((window.CSS&&CSS.escape)?CSS.escape(p.new.id):p.new.id)+'"]')) renderMsg(p.new);
     clearTimeout(panelTimer); panelTimer=setTimeout(refreshPanel,600);
   }).subscribe();
 }

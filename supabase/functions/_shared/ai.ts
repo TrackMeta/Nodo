@@ -45,6 +45,20 @@ export interface AiCall {
 // legítimamente grande y ya está topado en media-upload).
 const MAX_INPUT_CHARS = 200_000;
 
+// fetch con TIMEOUT: Deno fetch no lo trae por defecto. Un proveedor que acepta la conexión
+// pero se cuelga (incidente típico bajo carga) bloquearía TODA la invocación de la Edge
+// Function hasta el wall-clock de Supabase (~150s), y un CUELGUE no es un throw → evade la
+// degradación con try/catch de los call sites → el flow_run queda con el lock tomado y el
+// cliente recibe DEAD-AIR hasta que el reaper de runs zombi lo libere. Al abortar, lanza →
+// los call sites ya degradan (rama "fallo"/fallback).
+const AI_TIMEOUT_MS = 28_000;
+async function fetchAI(url: string, init: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
+  try { return await fetch(url, { ...init, signal: ctrl.signal }); }
+  finally { clearTimeout(t); }
+}
+
 // Despacha al proveedor correcto y devuelve el texto de la respuesta.
 export async function runAI(call: AiCall): Promise<string> {
   if (!call.apiKey) throw new AiError({ provider: call.provider, message: "API key no configurada" });
@@ -66,7 +80,7 @@ async function callAnthropic(call: AiCall): Promise<string> {
   if (call.system) body.system = call.system;
   if (call.jsonSchema) body.output_config = { format: { type: "json_schema", schema: call.jsonSchema } };
 
-  const res = await fetch(ANTHROPIC_URL, {
+  const res = await fetchAI(ANTHROPIC_URL, {
     method: "POST",
     headers: {
       "x-api-key": call.apiKey,
@@ -126,7 +140,7 @@ async function callOpenAI(call: AiCall): Promise<string> {
     if (!tieneJson) messages.unshift({ role: "system", content: "Responde SOLO con un objeto JSON válido." });
   }
 
-  const res = await fetch(OPENAI_URL, {
+  const res = await fetchAI(OPENAI_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${call.apiKey}`,
@@ -174,7 +188,7 @@ export async function transcribeAudio(
   form.append("file", new Blob([bytes], { type: mime }), opts.filename || `audio.${ext}`);
   form.append("model", opts.model || "whisper-1");
   form.append("language", opts.language || "es"); // español por defecto (mejora la precisión)
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const res = await fetchAI("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,

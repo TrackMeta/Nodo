@@ -1694,8 +1694,9 @@ function onDocClickLightbox(e){
 }
 document.addEventListener("click", onDocClickLightbox);
 
-async function markRead() {
-  await supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", state.contactId);
+async function markRead(cid = state.contactId) {
+  if (!cid) return;
+  await supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", cid);
 }
 // Estado de la ventana de escritura del contacto abierto:
 //   · FEP viva (llegó por anuncio hace <72h)  → verde, mensajes gratis
@@ -1963,7 +1964,7 @@ function subscribeRealtime() {
         // El cliente escribe mientras miras SU chat → márcalo leído (con debounce): el trigger
         // de BD sube no_leidos +1 por cada entrante, así que sin esto el badge "sin responder"
         // revivía sobre la conversación que estás LEYENDO (solo se veía si leías sin contestar).
-        if (m.direction === "in") { clearTimeout(state.rtReadTimer); state.rtReadTimer = setTimeout(() => markRead(), 800); }
+        if (m.direction === "in") { const _cid = m.contact_id; clearTimeout(state.rtReadTimer); state.rtReadTimer = setTimeout(() => markRead(_cid), 800); } // captura el contacto: si cambias de chat antes de los 800ms, marca leído el correcto (no deja un no-leído fantasma en el que sí viste)
         // Con Actividad ON, recarga el hilo para intercalar los eventos que el
         // motor acaba de registrar; con OFF basta con pintar el mensaje.
         if (state.chatView === "timeline") { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 350); }
@@ -1998,7 +1999,27 @@ function subscribeRealtime() {
         loadContactPanel({ id: cid, nombre: ct.nombre || state.contactName, wa_id: ct.wa_id });
       }, 500);
     })
-    .subscribe();
+    .subscribe((status) => {
+      // Realtime NO reproduce los eventos PERDIDOS al re-unirse el canal tras una caída del
+      // websocket (laptop que despierta de sleep, cambio de wifi, hipo de red — común en
+      // operación real). Al RE-suscribir (no la 1ª vez) se recargan las conversaciones y el
+      // hilo abierto → un mensaje entrante del hueco de reconexión ya no queda invisible.
+      if (status === "SUBSCRIBED") {
+        if (state._rtWasSubscribed) resyncRealtime();
+        state._rtWasSubscribed = true;
+      }
+    });
+  // Refuerzo del refetch al reconectar: la red vuelve (online) o el operador regresa a la
+  // pestaña (visible). Guardado para no duplicar listeners al re-suscribir por cambio de bot.
+  if (!window.__inboxResyncWired) {
+    window.__inboxResyncWired = true;
+    window.addEventListener("online", () => resyncRealtime());
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) resyncRealtime(); });
+  }
+}
+function resyncRealtime() {
+  try { loadConversationsSoon(); } catch (_) {}
+  try { if (state.contactId) { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 200); } } catch (_) {}
 }
 
 // ── util ──
