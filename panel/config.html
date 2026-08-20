@@ -330,7 +330,9 @@ const GS_SCRIPT = `function doPost(e) {
   return out({ ok: true });
 }
 function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }`;
-function sheetIdFrom(v){ const m=(v||"").match(/\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:(v||"").trim(); }
+// Solo un ID válido de Sheets ([A-Za-z0-9_-]). Sin esto, un valor crudo con /, ?, # se
+// interpolaba sin encodear en el path de la API (inyección de segmentos/query, mismo host).
+function sheetIdFrom(v){ const m=(v||"").match(/\/d\/([a-zA-Z0-9-_]+)/); const raw=m?m[1]:(v||"").trim(); return /^[a-zA-Z0-9_-]+$/.test(raw)?raw:""; }
 function renderGsheets(b){
   const g=(st.channel&&st.channel.gsheets)||{};
   const curMode = g.mode || (g.webhook_url ? "apps_script" : (g.google_email ? "oauth" : null));

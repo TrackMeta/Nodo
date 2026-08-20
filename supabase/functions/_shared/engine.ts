@@ -2627,6 +2627,10 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
       const token = await getAccessToken(String(refresh));
       await sheetsUpdate(token, String(g.spreadsheet_id), hoja, { "ID": ord.id }, fila);
     } else if (g.webhook_url) {
+      // Re-valida el host en el SERVIDOR: channels.gsheets se guarda directo del navegador
+      // por RLS, así que la validación del front no basta (un admin podría apuntar el POST
+      // con los datos del pedido a una URL arbitraria). Solo se acepta la app web de Apps Script.
+      if (!/^https:\/\/script\.google\.com\/[^\s]*\/exec(\?.*)?$/.test(String(g.webhook_url))) throw new Error("webhook_url de Apps Script inválida");
       const res = await fetch(String(g.webhook_url), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hoja, fila, buscar: { "ID": ord.id }, accion: "update" }),
@@ -7430,7 +7434,9 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
       if (accion === "update") await sheetsUpdate(token, spreadsheetId, hoja, buscar, fila);
       else await sheetsAppend(token, spreadsheetId, hoja, fila);
     } else if (g.webhook_url) {
-      // Apps Script: POST a la app web del usuario.
+      // Apps Script: POST a la app web del usuario. Se re-valida el host en el servidor
+      // (channels.gsheets se guarda directo por RLS; el front no es suficiente).
+      if (!/^https:\/\/script\.google\.com\/[^\s]*\/exec(\?.*)?$/.test(String(g.webhook_url))) throw new Error("webhook_url de Apps Script inválida");
       const payload: Record<string, unknown> = { accion, hoja, fila };
       if (accion === "update") payload.buscar = buscar;
       const res = await fetch(g.webhook_url, {

