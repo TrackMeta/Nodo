@@ -285,7 +285,7 @@ async function boot(){
   document.querySelector(".emptyIc").innerHTML=icon("probar");
   document.querySelector('.segbtn[data-as="cliente"]').innerHTML=icon("user")+" Cliente";
   document.querySelector('.segbtn[data-as="bot"]').innerHTML=icon("robot")+" Bot";
-  shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); reloadAll(); });
+  shell.onChannel(id=>{ st.channelId=id; st.contactId=null; reset(); reloadAll(); subscribe(); }); // re-suscribe con el filtro del nuevo canal
   $("startBtn").onclick=startTest;
   $("sendBtn").onclick=sendMsg;
   $("msgInput").addEventListener("keydown",e=>{ if(e.key==="Enter") sendMsg(); });
@@ -708,7 +708,9 @@ async function exportMessages(){
 let panelTimer=null, threadTimer=null;
 function subscribe(){
   if(st.rt) supa.removeChannel(st.rt);
-  st.rt=supa.channel("nodo-probar").on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages" },(p)=>{
+  // Filtro server-side por canal (como el resto de páginas) + channelId en el nombre: sin
+  // esto recibía TODOS los INSERT de mensajes de la cuenta (RLS acota al tenant, no al bot).
+  st.rt=supa.channel("nodo-probar-"+st.channelId).on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages", filter:"channel_id=eq."+st.channelId },(p)=>{
     if(p.new.contact_id!==st.contactId) return;
     // Con actividad ON hay que recargar el hilo (para intercalar los eventos
     // que el motor acaba de registrar); con OFF basta con pintar el mensaje.

@@ -1956,10 +1956,16 @@ function subscribeRealtime() {
       const cache = state.threadCache[m.contact_id];
       if (cache && !cache.some(x=>x.id===m.id)) cache.push(m);
       if (m.contact_id === state.contactId) {
+        // El cliente escribe mientras miras SU chat → márcalo leído (con debounce): el trigger
+        // de BD sube no_leidos +1 por cada entrante, así que sin esto el badge "sin responder"
+        // revivía sobre la conversación que estás LEYENDO (solo se veía si leías sin contestar).
+        if (m.direction === "in") { clearTimeout(state.rtReadTimer); state.rtReadTimer = setTimeout(() => markRead(), 800); }
         // Con Actividad ON, recarga el hilo para intercalar los eventos que el
         // motor acaba de registrar; con OFF basta con pintar el mensaje.
         if (state.chatView === "timeline") { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 350); }
-        else renderMsg(m);
+        // Pinta la burbuja SOLO si no existe ya (evita doble burbuja por la carrera
+        // abrir-chat ↔ realtime: loadThread pudo traer el mismo mensaje).
+        else if (!document.querySelector('.msg[data-id="' + ((window.CSS && CSS.escape) ? CSS.escape(m.id) : m.id) + '"]')) renderMsg(m);
       }
       loadConversationsSoon();
     })

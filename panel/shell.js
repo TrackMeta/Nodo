@@ -233,7 +233,7 @@ export function paintUserChip(info) { // usado por el shell y por Perfil (tras g
   const nm = nav.querySelector("#nodoUserName"), rl = nav.querySelector("#nodoUserRole"), av = nav.querySelector("#nodoUserAv");
   if (nm) nm.textContent = info.name || "Perfil";
   if (rl) rl.textContent = info.role || "Mi cuenta";
-  if (av) { if (info.avatar) av.innerHTML = `<img src="${info.avatar}" alt="" />`; else av.textContent = (info.name || "?").trim().charAt(0).toUpperCase() || "?"; }
+  if (av) { if (info.avatar) { av.innerHTML = '<img alt="" />'; av.querySelector("img").src = info.avatar; } else av.textContent = (info.name || "?").trim().charAt(0).toUpperCase() || "?"; }
 }
 async function loadMe(nav) {
   try {
@@ -292,6 +292,10 @@ function openCreateBot() {
     S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
     close();
     toast("Bot creado ✓ — conéctalo en Canales");
+    // Guard de cambios sin guardar ANTES de cambiar de bot (setChannel recarga la página y
+    // descartaría ediciones en silencio): el selector de bot existente ya lo respeta, esta
+    // ruta no. Si hay cambios y el operador cancela, el bot queda creado y sigue en su página.
+    if (!(await _dirtyGate())) return;
     S.api.setChannel(data.id); // cambia al bot nuevo (recarga los datos de la página)
   };
   back.querySelector("#nbCreate").onclick = create;
@@ -743,8 +747,8 @@ export async function mountShell({ active } = {}) {
   nav.innerHTML = `
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
-        <img class="nb-logo" id="nodoBotLogo" src="${initLogo}" alt="" />
-        <span class="nb-name" id="nodoBotName">${initName}</span>
+        <img class="nb-logo" id="nodoBotLogo" src="${escAttr(initLogo)}" alt="" />
+        <span class="nb-name" id="nodoBotName">${escHtml(initName)}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú"><span class="cl-shrink">${svg("panel")}</span><span class="cl-grow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></button>
@@ -893,6 +897,22 @@ export async function mountShell({ active } = {}) {
     isCollapsedPref() { return localStorage.getItem("nodo.collapsed") === "1"; },
   };
   window.NodoShell = S.api;
+
+  // Listeners GLOBALES (una vez por carga de página; sobreviven a la navegación SPA):
+  if (!S._globalWired) {
+    S._globalWired = true;
+    // Multi-pestaña: si cambias de bot en OTRA pestaña, ESTA se sincroniza. Sin esto seguía
+    // mostrando/editando datos del bot VIEJO mientras el resto del sistema cree que el activo
+    // es otro → el operador podía actuar sobre el bot equivocado (riesgo multi-tenant).
+    window.addEventListener("storage", (e) => {
+      if (e.key === "nodo.channelId" && e.newValue && e.newValue !== S.channelId) {
+        try { S.api.setChannel(e.newValue); } catch (_) {}
+      }
+    });
+    // Sesión caída (refresh token vencido tras dejar la pestaña abierta de noche): al login,
+    // no a un panel vacío/roto sin explicación.
+    try { supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") location.href = "index.html"; }); } catch (_) {}
+  }
 
   applyInboxCollapse(active); // Bandeja arranca colapsada
   setupRouter(); // activa la navegación SPA

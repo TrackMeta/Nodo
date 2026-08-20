@@ -4251,9 +4251,17 @@ function armRenderDraft(){
   $("armApply").onclick=()=>armAplicar(armDraft);
   $("armBack").onclick=armRenderBrief;
 }
-function armAplicar(d){
+async function armAplicar(d){
   if(!d||!st.prod) return;
   const p=st.prod; const c=p.config=p.config||{};
+  // Aviso si el borrador va a REEMPLAZAR datos ya curados (FAQ / atributos): la pantalla del
+  // borrador solo lista lo que llenó, no advierte que pisa lo existente. Antes se reemplazaba
+  // en silencio y el dueño podía perder preguntas/atributos armados a mano al Guardar.
+  const pisaFaq=(Array.isArray(d.faq)&&d.faq.length) && Array.isArray(c.faq_items)&&c.faq_items.length;
+  const pisaAtr=(Array.isArray(d.atributos)&&d.atributos.length) && Array.isArray(c.atributos)&&c.atributos.length;
+  if((pisaFaq||pisaAtr) && !await confirmDialog({ title:"Reemplazar lo que ya tienes",
+    message:`El borrador va a REEMPLAZAR ${[pisaFaq?`tus ${c.faq_items.length} preguntas frecuentes`:"",pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:""].filter(Boolean).join(" y ")}. ¿Continuar?`,
+    confirmText:"Reemplazar", danger:true })) return;
   if(d.nombre) p.nombre=String(d.nombre);
   if(d.emoji) p.emoji=String(d.emoji);
   if(d.tipo==="fisico"||d.tipo==="digital") p.tipo=d.tipo;

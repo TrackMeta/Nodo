@@ -104,7 +104,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, confirmDialog } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
@@ -616,9 +616,13 @@ function armRenderDraft(){
   $("armApply").onclick=()=>armAplicar(armDraft);
   $("armBack").onclick=armRenderBrief;
 }
-function armAplicar(d){
+async function armAplicar(d){
   if(!d) return;
   const f = st.channel.negocio_form = (st.channel.negocio_form && typeof st.channel.negocio_form==="object") ? st.channel.negocio_form : {};
+  // Aviso si va a REEMPLAZAR una FAQ ya armada (el borrador solo lista lo que llenó, no
+  // advierte que pisa lo existente → se podían perder preguntas curadas al Guardar).
+  if(Array.isArray(d.faq)&&d.faq.length && Array.isArray(f.faq)&&f.faq.length &&
+     !await confirmDialog({ title:"Reemplazar tu FAQ", message:`El borrador va a REEMPLAZAR tus ${f.faq.length} preguntas frecuentes actuales. ¿Continuar?`, confirmText:"Reemplazar", danger:true })) return;
   ["nombre","rubro","publico","propuesta","horario","transferir","pagos","entrega","politicas","no_hacer","tono"].forEach(k=>{ if(d[k]) f[k]=String(d[k]); });
   if(Array.isArray(d.faq)&&d.faq.length){ f.faq=d.faq.filter(x=>x&&x.q&&x.a).map(x=>({q:String(x.q),a:String(x.a)})); }
   st.tab="conocimiento";
