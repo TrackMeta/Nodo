@@ -87,13 +87,23 @@ function filasShalom(orders, cfg, listas) {
     return f;
   });
 }
-function revisarShalom(orders, cfg) {
+async function revisarShalom(orders, cfg) {
   const sh = (cfg && cfg.shalom) || {}, p = [];
+  const listas = await cargarListas();
+  const ags = listas && listas.shalom && listas.shalom.destino;
+  const oficiales = new Set((ags || []).map(_norm).filter(Boolean));
   if (!sh.origen) p.push("Falta tu oficina de ORIGEN Shalom (Negocio → Entrega → Exportar a couriers).");
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || s.dni || "un pedido";
     if (!s.dni) p.push(`${q}: falta DNI. (Editar pedido)`);
-    if (!s.destino && !s.sede && !s.ciudad) p.push(`${q}: falta la agencia de DESTINO. (Editar pedido)`);
+    // Se resuelve el DESTINO igual que filasShalom y se valida contra la lista OFICIAL:
+    // si sale una ciudad cruda ("CUSCO") en vez de una agencia real, la columna DESTINO
+    // tiene validación de lista en la plantilla de Shalom → la fila (o el archivo) se
+    // rechaza. Antes solo se chequeaba que no estuviera vacío (como sí hace revisarEva).
+    const destino = (s.destino || sugerirAgencia(s.sede || s.ciudad, ags) || s.sede || s.ciudad || "").trim();
+    if (!destino) p.push(`${q}: falta la agencia de DESTINO. (Editar pedido)`);
+    else if (oficiales.size && !oficiales.has(_norm(destino)))
+      p.push(`${q}: el destino “${destino}” no es una agencia Shalom de la lista — revísalo (Editar pedido).`);
   });
   return p;
 }

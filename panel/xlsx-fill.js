@@ -150,7 +150,10 @@ export function escribirZip(entries) {
 }
 
 // ── Modificar el sheetData de una hoja ─────────────────────────────
-const escXml = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Además de escapar & < > ", se QUITAN los caracteres de control inválidos en XML
+// (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F): uno pegado en una dirección/referencia del cliente
+// producía XML inválido dentro de <t> y Excel/el portal del courier reportaba "archivo dañado".
+const escXml = (s) => String(s ?? "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 export function colLetra(n) { let s = "", x = n + 1; while (x > 0) { const m = (x - 1) % 26; s = String.fromCharCode(65 + m) + s; x = Math.floor((x - 1) / 26); } return s; }
 
 // `filas` = array de filas; cada fila = array indexado por columna (0=A). Cada

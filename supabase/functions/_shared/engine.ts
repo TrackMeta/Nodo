@@ -1577,7 +1577,13 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     // dispararía la rama `timeout` de ESE nodo nuevo antes de tiempo — saltándose la espera
     // o escribiendo encima de un cliente activo. Si el wake ya no está vencido, este
     // `resume` es viejo: no se hace nada (el scheduler lo volverá a despertar a su hora).
-    if (run.wake_at && new Date(run.wake_at).getTime() > Date.now()) return false;
+    // También cubre `wake_at = null`: un resume por reloj sobre un run SIN temporizador
+    // activo es, por definición, rancio (el cliente ya contestó y re-parqueó el run en un
+    // nodo sin timeout → wake_at nulo, o dos ticks tomaron el mismo run). Sin esto se
+    // disparaba la rama `timeout` de ESE nodo nuevo → se saltaba la pregunta como si el
+    // cliente hubiera contestado, y su respuesta real luego caía en el vacío → dead-air.
+    // El scheduler nunca selecciona runs con wake_at nulo, así que un null acá siempre es rancio.
+    if (!run.wake_at || new Date(run.wake_at).getTime() > Date.now()) return false;
     // Nos despertó el reloj. Hay dos casos distintos:
     //   · Esperar (sin _await): simplemente seguir por 'continuar'.
     //   · Pregunta con timeout_seg (_await presente): el cliente NO contestó
@@ -1601,6 +1607,9 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return false;
   }
   if (aw.type === "input" && event.type === "message") {
+    // (Nota: NO exigir texto acá — una imagen puede ser una respuesta legítima a un nodo
+    // input, p.ej. el comprobante de pago en algunos flujos digitales. Un guard "solo texto"
+    // rompía esa entrega. El caso de "imagen pisa una pregunta de texto" es menor y se deja.)
     if (aw.guardar_en) {
       await setField(db, run.channel_id, run.contact_id, aw.guardar_en, event.text);
       await logEvent(db, run.channel_id, run.contact_id, "campo", "Campo capturado", `${aw.guardar_en}: ${event.text ?? ""}`.slice(0, 140));
@@ -1646,6 +1655,7 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
 
 // ── Ejecución de nodos ─────────────────────────────────────────────
 async function execute(db: SupabaseClient, run: Run) {
+  try {
   for (let i = 0; i < MAX_STEPS; i++) {
     if (!run.current_node_id) { run.estado = "completado"; break; }
     const node = await getNode(db, run.current_node_id);
@@ -1850,6 +1860,17 @@ async function execute(db: SupabaseClient, run: Run) {
   if (run.estado === "activo") run.estado = "completado"; // agotó MAX_STEPS
   if (run.estado === "completado") await logEvent(db, run.channel_id, run.contact_id, "flujo_fin", "Flujo finalizado");
   await saveRun(db, run);
+  } catch (e) {
+    // Un throw NO PROTEGIDO dentro de un nodo (hipo de DB en buildContext/emit/insert) dejaba
+    // el run atascado en 'activo' PARA SIEMPRE → dead-air permanente e irreparable (el
+    // scheduler no despierta 'activo', resumeRun descarta cada mensaje, y el índice único
+    // impide crear un run nuevo para ese contacto). Se rescata: se cierra el run y se escala.
+    console.error("[execute] un nodo lanzó, se rescata el run:", (e as any)?.message ?? e);
+    run.estado = "completado";
+    delete (run.vars as any)._await; run.wake_at = null;
+    try { await saveRun(db, run); } catch (_) { /* nada más que hacer */ }
+    try { await pasarAHumano(db, run.channel_id, run.contact_id, "El bot tropezó procesando el flujo — te paso con un humano.", { aviso: true }); } catch (_) {}
+  }
 }
 
 // ── Modo de entrega del canal (WhatsApp real vs webchat de pruebas) ─
@@ -2485,7 +2506,15 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
       .select("nombre, wa_id, ad_id").eq("id", ord.contact_id).maybeSingle();
     const ct = (c as any) ?? {};
     const s = ord.shipping ?? {};
-    const zona = String(s.zona ?? "").toLowerCase();
+    let zona = String(s.zona ?? "").toLowerCase();
+    // Fallback por ESTADO cuando zona viene en blanco (un flujo cuyo crear_pedido no seteó
+    // zona:"{{zona_entrega}}"): entregado_cobrado es SIEMPRE Lima; saldo_pagado/recogido son
+    // provincia. Sin esto, una venta de Lima con zona vacía caía al else = hoja Provincia
+    // (con DNI/Agencia vacíos) → discrepancia con el resto del CRM (orders.js zonaDe sí lo hace).
+    if (!zona) {
+      if (String(ord.estado) === "entregado_cobrado") zona = "lima";
+      else if (["saldo_pagado", "recogido"].includes(String(ord.estado))) zona = "provincia";
+    }
     const fisico = ord.product?.tipo === "fisico" || !!zona;
 
     const fecha = new Intl.DateTimeFormat("es-PE", {
@@ -2517,7 +2546,7 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "ID": ord.id,
         "Ad ID": ct.ad_id ?? "",
         "Cliente": s.cliente || ct.nombre || "",
-        "Cel": ct.wa_id ?? "",
+        "Cel": s.tel || ct.wa_id || "", // el número CAPTURADO (cliente sin WhatsApp da su tel en el flujo); antes mostraba el username/wa_id
         "Fecha y hora": fecha,
         "Distrito": s.distrito ?? "",
         "Dirección": s.direccion ?? "",
@@ -2532,7 +2561,7 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "ID": ord.id,
         "Ad ID": ct.ad_id ?? "",
         "Cliente": s.cliente || ct.nombre || "",
-        "Cel": ct.wa_id ?? "",
+        "Cel": s.tel || ct.wa_id || "", // el número CAPTURADO (cliente sin WhatsApp da su tel en el flujo); antes mostraba el username/wa_id
         "Fecha y hora": fecha,
         "DNI": s.dni ?? "",
         "Agencia": [s.ciudad, s.sede].filter(Boolean).join(" · "),
@@ -2549,14 +2578,22 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     if (g.mode === "oauth") {
       const { data: tk } = await db.rpc("get_gsheets_token", { p_channel_id: ord.channel_id });
       const refresh = Array.isArray(tk) ? tk[0]?.refresh_token : (tk as any)?.refresh_token ?? tk;
-      if (!refresh) return;
+      // throw (no `return` mudo): la hoja está marcada conectada (connected!==false, se
+      // chequeó arriba) pero no hay token → desconexión a medias / token revocado. Que caiga
+      // al catch y quede en el timeline, en vez de que TODAS las ventas dejen de espejarse en
+      // silencio y el negocio pase semanas sin enterarse.
+      if (!refresh) throw new Error("Google Sheets conectado pero sin token — reconecta la cuenta");
       const token = await getAccessToken(String(refresh));
       await sheetsUpdate(token, String(g.spreadsheet_id), hoja, { "ID": ord.id }, fila);
     } else if (g.webhook_url) {
-      await fetch(String(g.webhook_url), {
+      const res = await fetch(String(g.webhook_url), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hoja, fila, buscar: { "ID": ord.id }, accion: "update" }),
       });
+      // El fetch solo rechaza por error de RED. Un 4xx/5xx del Apps Script (URL rancia tras
+      // redeploy → 302 al login, cuota, permisos) resuelve con res.ok=false y se tragaba en
+      // silencio → la fila nunca se escribía y nadie se enteraba. Que caiga al catch.
+      if (!res.ok) throw new Error("Apps Script respondió " + res.status);
     }
   } catch (e) {
     // Nunca romper la venta por la hoja — pero SÍ dejar rastro. Antes solo iba a console:
@@ -2607,12 +2644,14 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     return;
   }
 
-  // Juntar con lo diferido (venta extra "antes") si corresponde, y vaciar el buffer.
+  // Juntar con lo diferido (venta extra "antes") si corresponde. NO se vacía el buffer
+  // TODAVÍA: solo se vacía si la entrega sale OK (abajo). Antes se ponía en [] ANTES de
+  // emitir → si Meta rechazaba el bundle, el extra diferido que el cliente PAGÓ se perdía
+  // sin reintento (el principal es re-llamable, pero el buffer ya no existía).
   let all = items;
-  if (a?.incluir_buffer && Array.isArray(vars._entrega_buffer) && vars._entrega_buffer.length) {
-    all = [...items, ...vars._entrega_buffer];
-    vars._entrega_buffer = [];
-  }
+  const bufferUsado = (a?.incluir_buffer && Array.isArray(vars._entrega_buffer) && vars._entrega_buffer.length)
+    ? (vars._entrega_buffer as any[]).slice() : [];
+  if (bufferUsado.length) all = [...items, ...bufferUsado];
   // Mensaje de apertura: si la OPCIÓN comprada tiene el suyo propio, gana; si no,
   // el general del producto (a.mensaje). Así el Premium puede abrir distinto al Básico.
   const optMsg = (opcion as any)?.entrega_mensaje;
@@ -2657,6 +2696,10 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
   const links = all.filter((it) => it.tipo !== "archivo");
   const files = all.filter((it) => it.tipo === "archivo");
 
+  // Se acumula el bool de CADA emit (false = Meta rechazó): así el buffer diferido solo se
+  // vacía si TODO salió, y el timeline no miente "entregado" cuando el envío falló.
+  let allOk = true;
+  const ok = async (b: any) => { if ((await emit(db, run, b, ctx)) === false) allOk = false; };
   if (a?.una_burbuja) {
     // Un solo mensaje: encabezado + cada link en su línea (con su etiqueta/mensaje).
     let text = header;
@@ -2664,25 +2707,36 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
       const label = it.mensaje || it.nombre;
       text += (text ? "\n" : "") + (label ? `${label} ` : "") + it.url;
     }
-    if (text) await emit(db, run, { text }, ctx);
+    if (text) await ok({ text });
     // Archivos: obligatoriamente aparte (WhatsApp); su mensaje va de caption.
     for (const it of files) {
-      await emit(db, run, { media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" }, ctx);
+      await ok({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
     }
   } else {
     // Burbujas separadas: encabezado, luego cada item (su mensaje + el link/archivo).
-    if (header) await emit(db, run, { text: header }, ctx);
+    if (header) await ok({ text: header });
     for (const it of all) {
-      if (it.mensaje) await emit(db, run, { text: it.mensaje }, ctx);
+      if (it.mensaje) await ok({ text: it.mensaje });
       if (it.tipo === "archivo") {
-        await emit(db, run, { media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.nombre ?? "" }, ctx);
+        await ok({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.nombre ?? "" });
       } else {
-        await emit(db, run, { text: `${it.nombre ? it.nombre + ": " : ""}${it.url}` }, ctx);
+        await ok({ text: `${it.nombre ? it.nombre + ": " : ""}${it.url}` });
       }
     }
   }
-  await logEvent(db, run.channel_id, run.contact_id, "nota", "Producto entregado",
-    `${opcion?.nombre ?? ""} · ${all.length} ${all.length === 1 ? "elemento" : "elementos"}`);
+  if (allOk) {
+    // Salió todo → recién ahora se vacía el buffer diferido (ya se entregó de verdad).
+    if (bufferUsado.length) vars._entrega_buffer = [];
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "Producto entregado",
+      `${opcion?.nombre ?? ""} · ${all.length} ${all.length === 1 ? "elemento" : "elementos"}`);
+  } else {
+    // Meta rechazó parte del envío: NO se vacía el buffer (queda para el reintento "no me
+    // llegó") y NO se miente "entregado". emit ya avisó por Telegram (avisarEnvioFallido);
+    // acá queda el rastro claro para el operador.
+    await logEvent(db, run.channel_id, run.contact_id, "error", "Entrega no completada",
+      `${opcion?.nombre ?? "la compra"} — WhatsApp rechazó parte del envío; se reintenta o envíalo a mano`).catch(() => {});
+    await notifyAdmin(db, run, `⚠️ La entrega de "${opcion?.nombre ?? "la compra"}" no se completó (WhatsApp rechazó el envío). Revísalo — puede requerir reenvío a mano.`).catch(() => {});
+  }
 }
 
 // Acción crear_pedido: { estado?, monto?, datos?: { zona:"{{zona_entrega}}", … } }
@@ -4476,7 +4530,15 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     const claveFlow = await triggerPedidoEstado(db, channelId, contactId, "saldo_pagado", true);
     // Si no había un flujo pedido_estado que mandara la clave, la mandamos por
     // defecto (el saldo se aprobó solo, pero el cliente igual necesita su clave).
-    if (!claveFlow) await enviarClaveRecojo(db, channelId, contactId, { ...ship, saldo_operacion: oper });
+    if (!claveFlow) {
+      const claveOk = await enviarClaveRecojo(db, channelId, contactId, { ...ship, saldo_operacion: oper });
+      // Si Meta rechazó el envío (false), avisar: el saldo quedó saldo_pagado y cerrado, pero
+      // el cliente NO recibió su clave de recojo → sin esto quedaba en silencio.
+      if (claveOk === false) {
+        await avisarEnvioFallido(db, channelId, contactId, { message: "El saldo se validó pero NO pude enviar la clave de recojo (WhatsApp la rechazó). Mándasela a mano al cliente." }).catch(() => {});
+        await logEvent(db, channelId, contactId, "error", "Clave de recojo no enviada", "El saldo se aprobó pero la clave no salió — envíala a mano").catch(() => {});
+      }
+    }
     // Pedido pagado del todo → recién ahora se entregan las ventas extra
     // digitales que viajaban en él (link/archivo).
     await entregarExtrasDigitales(db, channelId, contactId, (order as any).id);

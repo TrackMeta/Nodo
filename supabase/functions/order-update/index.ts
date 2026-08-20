@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto, ventana24hAbierta } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -425,7 +425,17 @@ Deno.serve(async (req) => {
           await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }, (order as any).id);
           avisoEnviado = "default";
         } else {
-          console.warn(`[order-update] aviso default de "${newEstado}" NO enviado: fuera de la ventana de 24h (usa una plantilla para avisar).`);
+          console.warn(`[order-update] aviso default de "${newEstado}" NO enviado: fuera de la ventana de 24h.`);
+          // Fuera de la ventana el aviso NO salió. Para saldo_pagado eso es la CLAVE DE
+          // RECOJO —lo único que el cliente necesita para recoger su pedido YA PAGADO— y el
+          // operador clicó "Aprobar y dar la clave" creyendo que salió. Se le avisa por
+          // Telegram para que la mande por plantilla o a mano (antes: silencio total).
+          const critico = newEstado === "saldo_pagado";
+          await avisarEnvioFallido(db, (order as any).channel_id, (order as any).contact_id, {
+            message: critico
+              ? "No pude enviar la CLAVE DE RECOJO (el cliente está fuera de la ventana de 24h). Mándasela por plantilla o a mano — la necesita para recoger."
+              : `No pude avisar al cliente el cambio a "${newEstado}" (fuera de la ventana de 24h). Usa una plantilla.`,
+          }).catch(() => {});
         }
       } catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
     }
