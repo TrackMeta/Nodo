@@ -308,6 +308,25 @@ Deno.serve(async (req) => {
         const b = (comps || []).find((x: any) => String(x?.type).toUpperCase() === "BODY");
         return b?.text ?? "";
       };
+      // ¿Nodo puede ENVIAR esta plantilla? Hoy solo llena variables del CUERPO. Si la
+      // plantilla tiene una variable {{N}} en el encabezado de texto, un encabezado de
+      // MEDIA (imagen/documento/video, que exige un parámetro de media), o un botón con
+      // URL dinámica ({{N}}), el envío (solo bodyParams) haría que Meta rechace el lote
+      // entero. Se detecta acá y el resto del sistema la esconde/bloquea.
+      const tieneVar = (s: any) => /\{\{\s*\d+\s*\}\}/.test(String(s ?? ""));
+      const soportaEnvio = (comps: any[]) => {
+        for (const c of comps || []) {
+          const tipo = String(c?.type).toUpperCase();
+          if (tipo === "HEADER") {
+            const fmt = String(c?.format ?? "TEXT").toUpperCase();
+            if (fmt !== "TEXT") return false;              // header de media: no soportado
+            if (tieneVar(c?.text)) return false;           // header de texto con variable
+          } else if (tipo === "BUTTONS") {
+            for (const b of c?.buttons || []) if (tieneVar(b?.url) || tieneVar(b?.text)) return false; // botón dinámico
+          }
+        }
+        return true;
+      };
 
       const { data: existentes } = await db.from("wa_templates")
         .select("id, name, language").eq("channel_id", channel_id);
@@ -321,18 +340,27 @@ Deno.serve(async (req) => {
         const language = t?.language ?? "es";
         const estado = mapEstado(t?.status);
         const bodyTxt = bodyOf(t?.components);
+        const puedeEnviar = soportaEnvio(t?.components);
         const prevId = idx.get(`${name}::${language}`);
         if (prevId) {
           // params se PRESERVAN: es el mapeo de huecos {{1}},{{2}} que hizo el usuario.
-          await db.from("wa_templates").update({
-            estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null,
+          // Si la columna soporta_envio no existe aún (migración 0074 sin aplicar), se
+          // reintenta sin ella para no romper la sincronización.
+          let up = await db.from("wa_templates").update({
+            estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null, soporta_envio: puedeEnviar,
           }).eq("id", prevId);
+          if ((up as any)?.error && /soporta_envio|column/.test(String((up as any).error.message))) {
+            await db.from("wa_templates").update({ estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null }).eq("id", prevId);
+          }
           actualizadas++;
         } else {
-          await db.from("wa_templates").insert({
+          let ins = await db.from("wa_templates").insert({
             channel_id, name, language, estado_meta: estado,
-            body_preview: bodyTxt, categoria: t?.category ?? null, params: [], activa: true,
+            body_preview: bodyTxt, categoria: t?.category ?? null, params: [], activa: true, soporta_envio: puedeEnviar,
           });
+          if ((ins as any)?.error && /soporta_envio|column/.test(String((ins as any).error.message))) {
+            await db.from("wa_templates").insert({ channel_id, name, language, estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null, params: [], activa: true });
+          }
           creadas++;
         }
       }

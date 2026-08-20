@@ -114,9 +114,9 @@ async function load(){
   // la ventana de 24h, y los avisos de pedido (despacho, llegada) casi siempre
   // caen fuera. Acá se elige cuál usar en cada momento.
   try{
-    const { data:t }=await supa.from("wa_templates").select("name,language,estado_meta,activa,body_preview")
+    const { data:t }=await supa.from("wa_templates").select("name,language,estado_meta,soporta_envio,activa,body_preview")
       .eq("channel_id",st.channelId).order("name");
-    st.tpls=(t||[]).filter(x=>x.activa!==false && (x.estado_meta??"aprobada")==="aprobada");
+    st.tpls=(t||[]).filter(x=>x.activa!==false && (x.estado_meta??"aprobada")==="aprobada" && x.soporta_envio!==false);
   }catch(_){ st.tpls=[]; }
   // Qué flujo escucha cada estado. Es "el mensaje de siempre": el texto no vive
   // en un campo, vive en un flujo, y sin decir CUÁL no hay forma de encontrarlo.

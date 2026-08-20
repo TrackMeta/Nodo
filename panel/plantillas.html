@@ -305,7 +305,7 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-top"><span class="c-tt">${esc(t.name)}</span><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span></div>
       <div class="wa-chat tprev"><div class="wa-out">${waHighlight(t.body_preview||"(sin cuerpo)")}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
-      <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}<span data-cardfolder style="margin-left:auto"></span></div>`;
+      <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}${t.soporta_envio===false?'<span style="color:var(--amber)" title="Usa variables en el encabezado o botón; Nodo solo llena el cuerpo, así que no se puede enviar desde acá.">• no enviable</span>':''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){ const pk=Fbar.picker({ current:t.folder||null, onPick:async(v)=>{ const { error }=await supa.from("wa_templates").update({ folder:v }).eq("id",t.id); if(error){ toast(error.message,true); return; } t.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards(); renderReco(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
@@ -331,8 +331,9 @@ function renderDetail(){
   st.focused=null; st.slotN=null;
   d.innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-      <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span>
+      <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span>${t.soporta_envio===false?'<span class="chip" style="background:var(--amber-soft,#3a2e12);color:var(--amber)">No enviable desde Nodo</span>':''}
     </div>
+    ${t.soporta_envio===false?'<div class="dcard" style="border-color:var(--amber);color:var(--amber);font-size:13px">⚠ Esta plantilla usa variables en el <b>encabezado</b> o en un <b>botón</b> (o un encabezado con imagen/documento). Nodo hoy solo llena variables del <b>cuerpo</b>, así que no se puede enviar desde Campañas/Secuencias/Pagos: Meta rechazaría el envío. Usa una plantilla con variables solo en el cuerpo.</div>':''}
     <div class="dcard">
       <!-- 1 · Identidad -->
       <div class="dsec">

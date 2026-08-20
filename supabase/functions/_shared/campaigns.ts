@@ -100,6 +100,13 @@ async function sendBatch(db: SupabaseClient, c: any) {
   // aprobado en Meta, o Meta rechaza todo el lote (132000). templates_sync inserta
   // params:[] al traer una plantilla nueva → usarla antes de mapear los huecos
   // quemaría la audiencia entera. Se detiene la campaña con un motivo accionable.
+  // Plantilla con variable en encabezado/botón o header de media: Nodo solo llena el
+  // cuerpo → Meta rechazaría el lote (132000). La marca la sincronización (0074).
+  if ((tpl as any).soporta_envio === false) {
+    await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla usa variables en el encabezado o en un botón, que Nodo aún no puede llenar. Usa una plantilla con variables solo en el cuerpo." } }).eq("campaign_id", c.id).eq("estado", "pendiente");
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    return;
+  }
   const nVars = new Set(String((tpl as any).body_preview ?? "").match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
   const nParams = ((tpl as any).params ?? []).length;
   if (nVars !== nParams) {
@@ -195,11 +202,14 @@ export async function sendTemplateToContact(
   // aprobada por Meta y (b) caer a sus params guardados si el caller no los pasó.
   // El filtro por idioma evita que un canal con la MISMA plantilla en dos idiomas
   // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
-  let tq = db.from("wa_templates").select("estado_meta, params, body_preview").eq("channel_id", channelId).eq("name", tpl.name);
+  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio").eq("channel_id", channelId).eq("name", tpl.name);
   if (tpl.language) tq = tq.eq("language", tpl.language);
   const { data: tplRow } = await tq.maybeSingle();
   if ((tplRow as any)?.estado_meta && (tplRow as any).estado_meta !== "aprobada") {
     throw new Error(`Plantilla "${tpl.name}" no está aprobada por Meta (${(tplRow as any).estado_meta})`);
+  }
+  if ((tplRow as any)?.soporta_envio === false) {
+    throw new Error(`Plantilla "${tpl.name}" usa variables en el encabezado o botón (Nodo solo llena el cuerpo).`);
   }
   if (!rawParams || rawParams.length === 0) rawParams = ((tplRow as any)?.params as string[]) ?? [];
   // El conteo de params debe cuadrar con las variables {{N}} del cuerpo aprobado

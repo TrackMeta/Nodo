@@ -153,13 +153,13 @@ async function boot(){
 async function load(){
   const [{ data:c },{ data:tpl },{ data:tg }]=await Promise.all([
     supa.from("campaigns").select("*").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
-    supa.from("wa_templates").select("id,name,language,activa,estado_meta,body_preview,ejemplos").eq("channel_id",st.channelId).eq("activa",true).order("name"),
+    supa.from("wa_templates").select("id,name,language,activa,estado_meta,soporta_envio,body_preview,ejemplos").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
   ]);
   // Solo plantillas APROBADAS por Meta (el copy lo promete). Una activa pero
   // pendiente/rechazada → Meta rechaza cada envío del lote (132001) y toda la
   // audiencia cae a fallido. null = legacy sin sync → se trata como aprobada.
-  st.camps=c||[]; st.templates=(tpl||[]).filter(x=>(x.estado_meta??"aprobada")==="aprobada"); st.tags=tg||[];
+  st.camps=c||[]; st.templates=(tpl||[]).filter(x=>(x.estado_meta??"aprobada")==="aprobada" && x.soporta_envio!==false); st.tags=tg||[];
   if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"campaign", table:"campaigns", channelId:st.channelId, items:()=>st.camps, onChange:renderGrid, labelAll:"Todas" }); }
   else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
   else { await Fbar.reload(); }
