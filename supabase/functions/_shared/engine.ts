@@ -70,7 +70,7 @@ async function resolverAnguloContacto(db: SupabaseClient, channelId: string, con
     const { data: c } = await db.from("contacts").select("ad_id, angulo").eq("id", contactId).maybeSingle();
     if (!c || (c as any).angulo || !(c as any).ad_id) return;
     const { data: a } = await db.from("angulos").select("slug")
-      .eq("channel_id", channelId).contains("ad_ids", [String((c as any).ad_id)]).limit(1).maybeSingle();
+      .eq("channel_id", channelId).contains("ad_ids", [String((c as any).ad_id)]).order("slug").limit(1).maybeSingle();
     if ((a as any)?.slug) await db.from("contacts").update({ angulo: (a as any).slug }).eq("id", contactId);
   } catch (e) { console.error("[resolverAnguloContacto]", (e as any)?.message ?? e); }
 }
@@ -1311,7 +1311,7 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
     const norm = normalize(text);
     const { data: triggers } = await db.from("flow_triggers")
       .select("flow_id, tipo, config, flows!inner(id, nombre, estado, es_entrada)")
-      .eq("channel_id", channelId).eq("activo", true);
+      .eq("channel_id", channelId).eq("activo", true).order("flow_id");
 
     let entrada: any = null;
     let kwHit: any = null;
@@ -1440,14 +1440,16 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
 async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: string): Promise<{ id: string; nombre?: string } | null> {
   if (!adId) return null;
   try {
+    // .order determinista: si por un fat-finger el mismo ad_id quedó en DOS ángulos, al menos
+    // se congela SIEMPRE el mismo (no uno arbitrario que varía entre consultas).
     const { data: ang } = await db.from("angulos")
       .select("product_id").eq("channel_id", channelId)
-      .contains("ad_ids", [String(adId)]).limit(1).maybeSingle();
+      .contains("ad_ids", [String(adId)]).order("slug").limit(1).maybeSingle();
     let productId = (ang as any)?.product_id;
     // Fuente de ruteo principal: el BANCO del producto (products.config.ad_bank).
     // Atrapa también los anuncios SIN ángulo (que rutean pero con saludo general).
     if (!productId) {
-      const { data: prods } = await db.from("products").select("id, config").eq("channel_id", channelId);
+      const { data: prods } = await db.from("products").select("id, config").eq("channel_id", channelId).order("id");
       for (const pr of prods ?? []) {
         const bank = (pr as any)?.config?.ad_bank;
         if (Array.isArray(bank) && bank.map(String).includes(String(adId))) { productId = (pr as any).id; break; }
@@ -1455,15 +1457,17 @@ async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: stri
     }
     if (!productId) return null;
     // El flujo de ENTRADA de ese producto (el que arranca la venta): un flow ACTIVO
-    // del producto que sea punto de entrada (trigger keyword/entrada/referral).
+    // del producto que sea punto de entrada (trigger keyword/entrada/referral). El
+    // `.eq("activo", true)` faltaba (a diferencia de matchTrigger/receptionCands) → un
+    // trigger DESACTIVADO igual ruteaba. Se elige el de menor id para ser determinista si
+    // el producto tiene varios flujos de entrada activos.
     const { data: trg } = await db.from("flow_triggers")
       .select("flows!inner(id, nombre, estado, product_id)")
-      .eq("channel_id", channelId).in("tipo", ["keyword", "entrada", "referral"]);
-    for (const t of trg ?? []) {
-      const f = (t as any).flows;
-      if (f && f.estado === "activo" && f.product_id === productId) return { id: f.id, nombre: f.nombre };
-    }
-    return null;
+      .eq("channel_id", channelId).eq("activo", true).in("tipo", ["keyword", "entrada", "referral"]);
+    const cands = (trg ?? []).map((t) => (t as any).flows)
+      .filter((f: any) => f && f.estado === "activo" && f.product_id === productId)
+      .sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+    return cands[0] ? { id: cands[0].id, nombre: cands[0].nombre } : null;
   } catch (_) { return null; }
 }
 
@@ -7375,8 +7379,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 if (previo) {
                   const { data: cur } = await db.from("orders").select("shipping, estado").eq("id", previo).maybeSingle();
                   if ((cur as any)?.estado === "pendiente") {
+                    const cs = ((cur as any).shipping ?? {}) as Record<string, unknown>;
+                    const merged = { ...cs, ...ship };
+                    // Atribución CONGELADA: preservar el ad_id/ctwa_clid del pedido ORIGINAL. Si
+                    // el cliente hizo clic en otro anuncio entre el rechazo y el reenvío,
+                    // ctx.ad_id/ctwa (que van en `ship`) apuntan al 2do anuncio → sin esto el
+                    // Purchase de CAPI se atribuía al anuncio equivocado. El pedido nació con Ad A;
+                    // sigue siendo de Ad A.
+                    if (cs.ctwa_clid) merged.ctwa_clid = cs.ctwa_clid;
+                    if (cs.ad_id) merged.ad_id = cs.ad_id;
                     await db.from("orders").update({
-                      amount, shipping: { ...((cur as any).shipping ?? {}), ...ship },
+                      amount, shipping: merged,
                       updated_at: new Date().toISOString(),
                     }).eq("id", previo);
                     reusado = true;

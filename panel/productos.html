@@ -3200,8 +3200,8 @@ function paintOpciones(fisico){
           <input class="in on" value="${esc(v.nombre||"")}" placeholder="${fisico?"Ej. 1 par · 2 pares · Pack familiar":"Ej. Básico · Premium · Pack completo"}"/></div>`}
         <div style="${simple?'flex:0 0 160px':'flex:0 0 110px'}"><label style="margin-top:0">Precio</label>
           <input class="in op" type="number" step="0.01" min="0" value="${esc(v.precio??"")}"/></div>
-        ${simple?"":`<div style="flex:0 0 115px"><label style="margin-top:0">Costo <span style="font-weight:400;color:var(--faint);text-transform:none">opcional</span></label>
-          <input class="in ocosto" type="number" step="0.01" min="0" value="${esc(v.costo??"")}" placeholder="del prod." title="Vacío = usa el costo del producto"/></div>`}
+        ${simple?"":`<div style="flex:0 0 115px"><label style="margin-top:0">Costo <span style="font-weight:400;color:var(--faint);text-transform:none">por unidad</span></label>
+          <input class="in ocosto" type="number" step="0.01" min="0" value="${esc(v.costo??"")}" placeholder="del prod." title="Costo POR UNIDAD (OJO: a diferencia del Precio, que es el total del pack, esto es por cada unidad — en un pack de N se multiplica × N). Vacío = usa el costo del producto."/></div>`}
         ${fisico?`<div style="flex:0 0 120px"><label style="margin-top:0">Unidades por venta</label>
           <input class="in oc" type="number" min="1" value="${esc(v.cantidad??1)}" title="Cuántas unidades del producto lleva ESTA presentación (es lo que descuenta del stock). Producto simple: 1. Pack de 2: 2."/></div>`:""}
         ${simple?"":`<label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="oa" ${v.activo!==false?"checked":""}/> Activa</label>

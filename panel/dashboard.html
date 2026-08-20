@@ -1122,7 +1122,12 @@ async function loadBitacora(monthStart){
   const day={}; const D=(k)=> day[k]||(day[k]={margin:0,rev:0,spend:0,exp:0,sales:0});
   orders.forEach(o=>{
     const k=ymd(new Date(o.created_at));
-    const m=!O.esFisico(o)?O.cobrado(o):O.margen(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1);
+    // Digital = cobrado − COGS (producto digital + regalos + extras pagados), IGUAL que la banda
+    // del Dashboard (:805/824) y el digest (order-stats.ts): antes usaba cobrado a secas → la
+    // ganancia diaria de la Bitácora salía inflada y no cuadraba con el resto para el mismo periodo.
+    const m=!O.esFisico(o)
+      ? O.cobrado(o)-(O.costoProducto(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1)||0)
+      : O.margen(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1);
     const d=D(k); if(m!=null) d.margin+=m; d.rev+=O.cobrado(o); d.sales++;
   });
   (insR.error?[]:(insR.data||[])).forEach(i=>{ if(tipo==="todo"||adTipo[i.ad_id]===tipo){ D(i.fecha).spend+=Number(i.gasto||0); } });
