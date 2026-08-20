@@ -96,6 +96,17 @@ async function sendBatch(db: SupabaseClient, c: any) {
     await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
     return;
   }
+  // El nº de parámetros mapeados debe COINCIDIR con las variables {{N}} del cuerpo
+  // aprobado en Meta, o Meta rechaza todo el lote (132000). templates_sync inserta
+  // params:[] al traer una plantilla nueva → usarla antes de mapear los huecos
+  // quemaría la audiencia entera. Se detiene la campaña con un motivo accionable.
+  const nVars = new Set(String((tpl as any).body_preview ?? "").match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+  const nParams = ((tpl as any).params ?? []).length;
+  if (nVars !== nParams) {
+    await db.from("campaign_sends").update({ estado: "fallido", error: { message: `La plantilla tiene ${nVars} variable(s) {{N}} pero ${nParams} parámetro(s) mapeado(s). Mapea los huecos en Plantillas antes de enviar.` } }).eq("campaign_id", c.id).eq("estado", "pendiente");
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    return;
+  }
 
   const { data: ch } = await db.from("channels")
     .select("phone_number_id, channel_type").eq("id", c.channel_id).maybeSingle();
@@ -184,13 +195,20 @@ export async function sendTemplateToContact(
   // aprobada por Meta y (b) caer a sus params guardados si el caller no los pasó.
   // El filtro por idioma evita que un canal con la MISMA plantilla en dos idiomas
   // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
-  let tq = db.from("wa_templates").select("estado_meta, params").eq("channel_id", channelId).eq("name", tpl.name);
+  let tq = db.from("wa_templates").select("estado_meta, params, body_preview").eq("channel_id", channelId).eq("name", tpl.name);
   if (tpl.language) tq = tq.eq("language", tpl.language);
   const { data: tplRow } = await tq.maybeSingle();
   if ((tplRow as any)?.estado_meta && (tplRow as any).estado_meta !== "aprobada") {
     throw new Error(`Plantilla "${tpl.name}" no está aprobada por Meta (${(tplRow as any).estado_meta})`);
   }
   if (!rawParams || rawParams.length === 0) rawParams = ((tplRow as any)?.params as string[]) ?? [];
+  // El conteo de params debe cuadrar con las variables {{N}} del cuerpo aprobado
+  // (132000 si no). El fallback "-" rellena valores VACÍOS pero no arregla un
+  // desajuste de CANTIDAD (ej. body con {{1}}{{2}} y params mapeado solo con 1).
+  const _nVars = new Set(String((tplRow as any)?.body_preview ?? "").match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+  if ((tplRow as any)?.body_preview && _nVars !== rawParams.length) {
+    throw new Error(`Plantilla "${tpl.name}": ${_nVars} variable(s) {{N}} pero ${rawParams.length} parámetro(s) mapeado(s). Mapea los huecos en Plantillas.`);
+  }
   // Un parámetro que resuelve a cadena VACÍA (ej. {{pedido_guia}} sin guía aún) hace que
   // Meta rechace la plantilla ENTERA (error 132000) → el cliente no recibe nada. Se pone
   // un guion como marcador para que el aviso igual se entregue (mejor "guía: -" que nada).

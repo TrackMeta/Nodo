@@ -153,7 +153,7 @@ async function conciliar(){
   b.textContent="Cruzando…";
   const r0=st.rango||computePreset("30d");
   const desde=new Date(r0.from.getFullYear(),r0.from.getMonth(),r0.from.getDate(),0,0,0);
-  const hasta=new Date(r0.to.getFullYear(),r0.to.getMonth(),r0.to.getDate(),23,59,59);
+  const hasta=new Date(r0.to.getFullYear(),r0.to.getMonth(),r0.to.getDate(),23,59,59,999);
   // Ventas cobradas al 100% del rango (mismo criterio que Compras).
   const { data:ords }=await supa.from("orders")
     .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")

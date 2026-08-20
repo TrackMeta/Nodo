@@ -3359,6 +3359,11 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
 // alcanza para enterarte; el detalle de cada mensaje queda en la Bandeja.
 const ultimoAvisoFallo = new Map<string, number>();
 
+// Avisos que el operador NO puede silenciar desde el panel: son de seguridad, no
+// de marketing. Silenciarlos rompería la regla "nunca dead air" (un cliente
+// esperando a un humano) o escondería plata que no llegó a destino.
+const AVISOS_CRITICOS = new Set(["pide_humano", "envio_fallido", "entrega_fallida"]);
+
 export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, contactId: string, error: any, opts?: { critico?: boolean }) {
   try {
     // `critico`: un fallo por-cliente e irrepetible (pagó su saldo y NO recibió la
@@ -3415,7 +3420,11 @@ async function avisar(
     if (!chatIds.length) return;
 
     const cfg = (channel as any)?.telegram_avisos as AvisosConfig | null;
-    if (!avisoActivo(cfg, clave)) return;   // lo apagó desde el panel
+    // Avisos de SEGURIDAD no silenciables: "un cliente quedó esperando a un humano"
+    // (pide_humano) o "no le llegó algo que pagó" (envio_fallido/entrega_fallida). El
+    // bot igual pausó/cerró la venta; apagar la alerta dejaría al cliente fantasmeado
+    // sin que nadie se entere. El resto (marketing, confirmaciones) sí respeta el toggle.
+    if (!AVISOS_CRITICOS.has(clave) && !avisoActivo(cfg, clave)) return;   // lo apagó desde el panel
 
     const secrets = await getChannelSecrets(db, channelId);
     const token = secrets?.telegram_bot_token;
