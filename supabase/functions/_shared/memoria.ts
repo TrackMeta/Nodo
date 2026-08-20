@@ -56,7 +56,7 @@ const SCHEMA = {
 // "vive en Av. España 200" (≤60 chars) y eso quedaría en el perfil y se re-inyectaría al system.
 // Estos marcadores (dirección/domicilio) son lo más sensible y regex-detectable; nombres/ciudades
 // sueltos siguen dependiendo del prompt, pero la dirección es la que no debe filtrarse.
-const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como|av\.|avenida|\bjr\.?\b|jir[oó]n|\bcalle\b|\bmz\.?\b|manzana|\blote\b|urbanizaci|\burb\.?\b|pasaje|\bpsje\b|direcci[oó]n|domicilio|vivo en)/i;
+const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como|av\.|avenida|\bjr\.?\b|jir[oó]n|\bcalle\b|\bmz\.?\b|manzana|\blote\b|urbanizaci|\burb\.?\b|pasaje|\bpsje\b|direcci[oó]n|domicilio|vivo en|\bvip\b|precio especial|may[uú]scul|en ingl[eé]s|responde en|cont[eé]stale|habla como|tr[aá]tal[oa] como|\benferm[oa]s?\b|c[aá]ncer|\bcovid\b|hospital|cl[ií]nic|di[aá]gn[oó]stic|embaraz|\bluto\b|falleci|divorci|depresi[oó]n)/i;
 
 // Normaliza una lista: strings limpios, sin duplicados, cortos, cap por capa. Descarta
 // los ítems operativos/de inyección (PROHIBIDO_MEM).
@@ -140,7 +140,19 @@ export async function actualizarMemoriaIA(
     const { channelId, contactId, provider, apiKey, thread } = opts;
     if (!apiKey || !thread || thread.trim().length < 15) return; // nada útil que analizar
 
-    const actual = await leerMemoria(db, contactId);
+    // Lectura con detección de FALLO (no usar leerMemoria acá: traga el error y devuelve
+    // vacío, indistinguible de "sin memoria" → un timeout de lectura terminaría escribiendo
+    // un perfil VACÍO sobre el real acumulado). Si el select falla, se ABORTA: mejor no
+    // analizar este turno que borrar el perfil.
+    let actual: MemoriaAI;
+    try {
+      const { data, error } = await db.from("contacts").select("memoria_ia").eq("id", contactId).maybeSingle();
+      if (error) return;
+      const raw = (data as any)?.memoria_ia;
+      actual = (raw && typeof raw === "object")
+        ? { quien_es: curar(raw.quien_es), como_tratar: curar(raw.como_tratar), _last: raw._last }
+        : { quien_es: [], como_tratar: [] };
+    } catch (_) { return; }
 
     // Throttle por contacto (control de costo): 1 análisis cada THROTTLE_MIN.
     if (actual._last) {
@@ -167,7 +179,13 @@ export async function actualizarMemoriaIA(
     // se escribía en la ruta de éxito, así que con el perfil ya estable (lo normal tras 2-3
     // turnos) el modelo barato corría en CADA turno (el guard nunca bloqueaba).
     const now = new Date().toISOString();
-    const bumpLast = () => db.from("contacts").update({ memoria_ia: { ...actual, _last: now } }).eq("id", contactId).then(() => {}, () => {});
+    // Re-lee fresco antes de bumpear: NO pisar una edición del operador ocurrida durante el
+    // análisis (~2-4s de la IA). Solo se toca _last sobre el perfil VIGENTE, no la copia vieja.
+    const bumpLast = async () => {
+      let base: MemoriaAI = actual;
+      try { base = await leerMemoria(db, contactId); } catch (_) { /* usa actual */ }
+      await db.from("contacts").update({ memoria_ia: { ...base, _last: now } }).eq("id", contactId).then(() => {}, () => {});
+    };
     const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
     if (!m) { await bumpLast(); return; }
     let parsed: any; try { parsed = JSON.parse(m[0]); } catch (_) { await bumpLast(); return; }
@@ -183,6 +201,17 @@ export async function actualizarMemoriaIA(
       JSON.stringify({ q: actual.quien_es, c: actual.como_tratar });
     if (igual) { await bumpLast(); return; }
     const nuevo: MemoriaAI = { quien_es: finalQ, como_tratar: finalC, _last: now };
+    // Re-lectura fresca antes de escribir: si el operador (u otro turno) agregó un chip
+    // mientras corría la IA, se FUSIONA en vez de pisarse. El motor hacía overwrite ciego;
+    // el panel ya protege esta clase (contact-extras.js re-lee y aplica delta). `curar`
+    // deduplica y capa a MAX_ITEMS.
+    try {
+      const fresco = await leerMemoria(db, contactId);
+      const addQ = (fresco.quien_es || []).filter((x) => !(actual.quien_es || []).includes(x));
+      const addC = (fresco.como_tratar || []).filter((x) => !(actual.como_tratar || []).includes(x));
+      if (addQ.length) nuevo.quien_es = curar([...nuevo.quien_es, ...addQ]);
+      if (addC.length) nuevo.como_tratar = curar([...nuevo.como_tratar, ...addC]);
+    } catch (_) { /* si la re-lectura falla, se escribe lo analizado */ }
     await db.from("contacts").update({ memoria_ia: nuevo }).eq("id", contactId);
     try {
       await db.from("contact_events").insert({
