@@ -1463,6 +1463,10 @@ async function toggleBot(){
   // escritura fallara y el bot seguía respondiendo al cliente.
   const { error }=await supa.from("contacts").update({ bot_activo:!on }).eq("id",cid);
   if(error){ toast("No se pudo cambiar el bot: "+error.message, true); return; }
+  // Reactivar el bot = la escalada quedó atendida → limpia requiere_humano (igual que la acción
+  // return_bot del motor). Sin esto, cada escalada atendida quedaba marcada "Seguimiento" e
+  // inflaba para siempre el KPI "Requieren humano" del Dashboard.
+  if(!on){ await supa.from("conversations").update({ requiere_humano:false }).eq("contact_id",cid).then(()=>{},()=>{}); }
   if(panelData.contact) panelData.contact.bot_activo=!on;
   setBotPill(!on);
   logEvent(cid, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");

@@ -1022,6 +1022,26 @@ function remapStockValor(c, ejeNombre, oldVal, newVal){
   }
   c.stock=nuevo;
 }
+// Al RENOMBRAR el NOMBRE de un eje (ej. "Talla" → "Tamaño"), la clave de stock cambia de
+// "talla=X|..." a "tamaño=X|..." → sin re-mapear TODAS las claves quedan huérfanas y el motor
+// no descuenta = sobreventa muda (misma clase que remapStockValor, pero para el nombre del eje;
+// el nombre va tal cual en la clave, no en minúsculas). Suma si la destino ya existía.
+function remapStockEje(c, oldName, newName){
+  if(!c || !c.stock || typeof c.stock!=="object" || Array.isArray(c.stock)) return;
+  const o=String(oldName).trim(), n=String(newName).trim();
+  if(!o || o===n) return;
+  const nuevo={};
+  for(const k of Object.keys(c.stock)){
+    const parts=String(k).split("|").map(p=>{
+      const eq=p.indexOf("="); if(eq<0) return p;
+      const nom=p.slice(0,eq), val=p.slice(eq+1);
+      return (nom===o) ? (n+"="+val) : p;
+    });
+    const nk=parts.join("|");
+    nuevo[nk]=(Number(nuevo[nk])||0)+(Number(c.stock[k])||0);
+  }
+  c.stock=nuevo;
+}
 function renderStock(host){
   const b=host||$("tabBody");
   const c=st.prod.config=st.prod.config||{};
@@ -3411,8 +3431,9 @@ function paintAtributos(){
         <button class="btn atmadd" data-k="document" style="height:32px">${icon("file")} Archivo</button>
       </div>`;
     const anI=el.querySelector(".an");
+    anI.onfocus=()=>{ anI._ejeOrig=a.nombre; }; // nombre ANTES de editar, para re-mapear el stock al soltar
     anI.oninput=(e)=>{ a.nombre=e.target.value; a.clave=slugAttr(e.target.value); const h=el.querySelector(".clhint b"); if(h) h.textContent="{{"+(a.clave||"atributo")+"}}"; };
-    anI.onblur=()=>{ prodSync(); };
+    anI.onblur=()=>{ if(anI._ejeOrig!=null && anI._ejeOrig!==a.nombre) remapStockEje(cfg, anI._ejeOrig, a.nombre); prodSync(); }; // renombrar el eje conserva su stock (evita sobreventa muda)
     el.querySelector(".ao").onchange=(e)=>{ a.obligatorio=e.target.checked; prodSync(); };
     // Valores como CASILLAS (chips). Guarda internamente en a.valores CSV (el
     // motor y la grilla de stock lo siguen leyendo igual). Dispara 'change' para
@@ -4064,6 +4085,18 @@ async function saveTrigger(tipo, key, config){
 
 async function saveProduct(){
   if(!st.prod){ return; }
+  // Aviso al cambiar digital↔físico: el flujo de venta YA GENERADO sigue vendiendo como el
+  // tipo ANTERIOR (entrega un link vs pide dirección) hasta que lo REGENERES. st.tipoGuardado
+  // guardaba el tipo original pero NUNCA se leía → el cambio pasaba sin advertencia y el
+  // cliente lo sufría (le pedían dirección para un digital, o le mandaban link de un físico).
+  if(st.prod.id && st.tipoGuardado && (st.prod.tipo||"digital")!==st.tipoGuardado){
+    const nuevo=(st.prod.tipo||"digital")==="fisico"?"Físico":"Digital", viejo=st.tipoGuardado==="fisico"?"Físico":"Digital";
+    const ok=await confirmDialog({ title:"Cambiaste el tipo de producto",
+      message:`Pasó de ${viejo} a ${nuevo}. El flujo de venta ya generado SIGUE entregando como ${viejo.toLowerCase()} hasta que lo REGENERES (botón "Armar/Regenerar flujo"). ¿Guardar igual?`,
+      confirmText:"Guardar", cancelText:"Cancelar", danger:true });
+    if(!ok) return;
+  }
+  st.tipoGuardado=st.prod.tipo||"digital";
   // Recompila el conocimiento del producto a config.contexto_producto (lo que
   // el motor inyecta) por si se guarda sin haber tocado el formulario.
   if(st.prod.config){

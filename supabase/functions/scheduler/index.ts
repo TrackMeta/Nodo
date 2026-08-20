@@ -71,8 +71,15 @@ Deno.serve(async (req) => {
     .order("wake_at", { ascending: true })   // los más vencidos primero: sin ORDER BY, con más de 100 pendientes Postgres podía devolver siempre el mismo subconjunto y matar de hambre al resto
     .limit(100);
   for (const r of runs ?? []) {
-    try { await runEngine(db, (r as any).channel_id, (r as any).contact_id, { type: "resume" }); woke++; }
-    catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
+    try {
+      // El operador pudo TOMAR el chat mientras el run estaba parqueado en un "Esperar"/timeout.
+      // Sin este chequeo, al vencer wake_at el scheduler reanudaba y disparaba el mensaje parqueado
+      // ENCIMA del operador (el guard de bot_activo del webhook no cubre este camino). Igual que ya
+      // hacen las inyecciones de remarketing de este archivo.
+      const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", (r as any).contact_id).maybeSingle();
+      if ((ct as any)?.bot_activo === false) continue;
+      await runEngine(db, (r as any).channel_id, (r as any).contact_id, { type: "resume" }); woke++;
+    } catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
   }
 
   // ── 1b) Reaper de runs 'activo' zombis ────────────────────────────

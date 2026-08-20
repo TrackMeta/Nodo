@@ -4530,12 +4530,15 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     parsed = JSON.parse(raw);
   } catch (_) { parsed = null; }
 
-  // Si no es un pago (o no se pudo analizar), no interceptamos: sigue el flujo normal.
-  if (!parsed || !parsed.es_pago) return false;
+  // Solo se descarta si la IA dijo explícitamente "NO es pago". Si la IA se CAYÓ (parsed=null,
+  // timeout/rate-limit), NO se descarta el comprobante del saldo: cae a la tarjeta MANUAL con la
+  // foto (igual que el adelanto). Antes `!parsed` retornaba false → el pago real del cliente
+  // quedaba sin señal (ni tarjeta ni Telegram), la clave nunca salía → dead-air invisible.
+  if (parsed && parsed.es_pago === false) return false;
 
-  const monto = Number(parsed.monto);
-  const oper = parsed.operacion ? String(parsed.operacion).trim() : null;
-  const metodo = metodoLeido(parsed);
+  const monto = Number(parsed?.monto);
+  const oper = parsed?.operacion ? String(parsed.operacion).trim() : null;
+  const metodo = metodoLeido(parsed ?? {});
 
   // 5) Anti-reúso: la misma operación no puede validar dos pedidos.
   let reuse = false;
@@ -4546,7 +4549,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     // el reúso de una misma operación entre digital ↔ adelanto ↔ saldo.
     reuse = !!dup || await operacionYaUsada(db, channelId, oper);
   }
-  const legit = parsed.es_pago !== false && !!parsed.valido && !reuse && Number.isFinite(monto) && monto > 0;
+  const legit = parsed?.es_pago !== false && !!parsed?.valido && !reuse && Number.isFinite(monto) && monto > 0;
   const ab = legit ? evaluarAbono(ship, "saldo", saldo, monto, oper, tol) : null;
 
   // AMBIGUO (op ilegible + 2º comprobante del mismo monto): a revisión humana, sin
@@ -4640,7 +4643,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   // ⚠️ Ante cualquier duda → al Copiloto + aviso por Telegram.
   const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
   const motivo = reuse ? "operación ya usada"
-    : !parsed.valido ? (parsed.motivo || "comprobante a revisar")
+    : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
     : !clave ? "el pedido no tiene clave de recojo cargada"
     : "listo para tu aprobación";
   await db.from("orders").update({
@@ -7113,6 +7116,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (op === "analizar_imagen") {
       // La imagen viene de una variable de config, o del último input del contacto.
       const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image);
+      // CONSUMIR la imagen: se limpia _last_image tras leerla para que un TURNO POSTERIOR con
+      // TEXTO ("ya te lo mandé pes") no re-analice esta MISMA imagen vieja como comprobante
+      // nuevo. Sin esto, el nodo OCR del extra guardaba el comprobante del PRINCIPAL como
+      // extra_comprobante y el operador aprobaba un extra contra un pago que era de otra cosa.
+      // Un flujo que difiere el OCR a un paso posterior igual funciona (se limpia al consumir).
+      if (!cfg.imagen_var) { delete (run.vars as any)._last_image; delete (run.vars as any)._media_ref; }
       if (!img) throw new Error("no hay imagen para analizar");
       let src = String(img);
       // "wa-media:<id>" = media privado de WhatsApp → descargar con el token
@@ -8089,7 +8098,11 @@ async function handoffAlVender(db: SupabaseClient, channelId: string, contactId:
   if (!(ch as any)?.pedidos_config?.humano?.al_vender) return;
   const { data: c } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
   if ((c as any)?.bot_activo === false) return; // ya lo tomó un humano → no repetir
-  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)");
+  // { aviso: true }: acá el handoff lo dispara moverEtapa (automático), NO un nodo de flujo
+  // con su propio mensaje → sin el aviso el bot se pausaba en SILENCIO y el cliente que acaba
+  // de pagar y escribe "¿cuándo llega?" caía en dead-air (peor fuera de horario). Todas las
+  // demás llamadas a pasarAHumano ya pasan aviso; esta era la única sin él.
+  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: true });
 }
 
 // Al ANULAR / perder un pedido, recalcula la etapa del contacto desde los

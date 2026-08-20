@@ -384,6 +384,11 @@ async function runEngineTask(
       }
       if (chain.length > 1) event = { ...event, text: chain.join("\n") };
     }
+    // El operador pudo TOMAR el chat DURANTE la espera del buffer (hasta 20s). El chequeo de
+    // bot_activo del ingest ocurrió ANTES de esperar → se revalida acá para no responder ENCIMA
+    // del operador. (La ruta de aprobación/entrega no pasa por acá, así que no la bloquea.)
+    { const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
+      if ((ct as any)?.bot_activo === false) return; }
     await runEngine(db, channelId, contactId, event);
   } catch (e) {
     // El mensaje ya quedó guardado; un error del motor no debe hacer que
