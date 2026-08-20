@@ -1002,6 +1002,26 @@ function stockKey(atributos, vals){
   const parts=stockAxes(atributos).map(a=>a.nombre+"="+String((vals&&vals[a.nombre])??"").trim().toLowerCase());
   return parts.length?parts.join("|"):"_";
 }
+// Al RENOMBRAR un valor de variante (ej. "negro" → "negro mate"), se re-mapean las llaves
+// del mapa de stock (formato "<nombre>=<valor minúsc>" unidas por "|") para que el número
+// se CONSERVE y siga descontándose. Sin esto, la llave vieja "color=negro" quedaba huérfana
+// (el motor computaba "color=negro mate", no la hallaba → NO descontaba = sobreventa muda).
+function remapStockValor(c, ejeNombre, oldVal, newVal){
+  if(!c || !c.stock || typeof c.stock!=="object" || Array.isArray(c.stock)) return;
+  const o=String(oldVal).trim().toLowerCase(), n=String(newVal).trim().toLowerCase();
+  if(!o || o===n) return;
+  const nuevo={};
+  for(const k of Object.keys(c.stock)){
+    const parts=String(k).split("|").map(p=>{
+      const eq=p.indexOf("="); if(eq<0) return p;
+      const nom=p.slice(0,eq), val=p.slice(eq+1);
+      return (nom===ejeNombre && val===o) ? (nom+"="+n) : p;
+    });
+    const nk=parts.join("|");
+    nuevo[nk]=(Number(nuevo[nk])||0)+(Number(c.stock[k])||0); // si la destino ya existía, suma (no pierde unidades)
+  }
+  c.stock=nuevo;
+}
 function renderStock(host){
   const b=host||$("tabBody");
   const c=st.prod.config=st.prod.config||{};
@@ -3333,14 +3353,31 @@ const EJ_ATRIBUTO = {
 function valsArr(a){ return String(a.valores||"").split(/[,\n;]+/).map(s=>s.trim()).filter(Boolean); }
 // Editor de valores en CASILLAS (chips): cada valor su etiqueta con ×; se agrega
 // escribiendo + Enter (o coma). onChange corre tras cada cambio (guarda + refresca).
-function paintVals(box, a, onChange){
+function paintVals(box, a, onChange, onRename){
   const arr=valsArr(a);
-  box.innerHTML=arr.map((v,idx)=>`<span class="valchip" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 6px 4px 10px;font-size:13px">${esc(v)}<button type="button" class="valx" data-i="${idx}" title="Quitar" style="border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:0 2px">×</button></span>`).join("")
+  box.innerHTML=arr.map((v,idx)=>`<span class="valchip" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 6px 4px 10px;font-size:13px"><span class="valtxt" data-i="${idx}" title="Clic para renombrar" style="cursor:text">${esc(v)}</span><button type="button" class="valx" data-i="${idx}" title="Quitar" style="border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:0 2px">×</button></span>`).join("")
     +`<input class="valnew" placeholder="${arr.length?"Otro…":"Ej. 38"}" style="border:none;background:transparent;outline:none;color:var(--text);font:inherit;flex:1;min-width:70px;padding:4px 2px"/>`;
-  box.querySelectorAll(".valx").forEach(bx=> bx.onclick=()=>{ arr.splice(+bx.dataset.i,1); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); });
+  box.querySelectorAll(".valx").forEach(bx=> bx.onclick=()=>{ arr.splice(+bx.dataset.i,1); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); });
+  // Renombrar un valor EN SITIO (clic en el texto del chip): es un renombre REAL que
+  // conserva el stock (remapStockValor vía onRename). Antes solo se podía borrar + agregar,
+  // y ahí el número del stock de esa variante se perdía (llave huérfana = sobreventa muda).
+  box.querySelectorAll(".valtxt").forEach(sp=> sp.onclick=()=>{
+    const idx=+sp.dataset.i, old=arr[idx];
+    const ed=document.createElement("input"); ed.value=old;
+    ed.style.cssText="border:1px solid var(--brand);background:var(--surface);border-radius:6px;color:var(--text);font:inherit;padding:2px 6px;width:"+Math.max(60,(String(old).length+2)*9)+"px";
+    sp.replaceWith(ed); ed.focus(); ed.select();
+    const commit=()=>{ ed.onblur=null; const nv=ed.value.trim();
+      if(nv && nv.toLowerCase()!==String(old).toLowerCase() && !arr.some((x,j)=>j!==idx && String(x).trim().toLowerCase()===nv.toLowerCase())){
+        arr[idx]=nv; a.valores=arr.join(", "); onRename&&onRename(old,nv); onChange&&onChange();
+      } else if(nv && nv!==old){ arr[idx]=nv; a.valores=arr.join(", "); onChange&&onChange(); } // solo mayúsc/espacios → misma llave, sin remap
+      paintVals(box,a,onChange,onRename);
+    };
+    ed.onblur=commit;
+    ed.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); commit(); } else if(e.key==="Escape"){ e.preventDefault(); ed.onblur=null; paintVals(box,a,onChange,onRename); } };
+  });
   const inp=box.querySelector(".valnew");
-  const add=()=>{ const v=inp.value.trim(); if(!v) return false; inp.onblur=null; inp.value=""; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
-  inp.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===","){ e.preventDefault(); add(); } else if(e.key==="Backspace" && !inp.value && arr.length){ arr.pop(); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); } };
+  const add=()=>{ const v=inp.value.trim(); if(!v) return false; inp.onblur=null; inp.value=""; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
+  inp.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===","){ e.preventDefault(); add(); } else if(e.key==="Backspace" && !inp.value && arr.length){ arr.pop(); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); } };
   inp.onblur=()=>{ add(); };
   // Al tocar la caja (no un chip), enfoca el input para escribir.
   box.onclick=(e)=>{ if(e.target===box) inp.focus(); };
@@ -3381,7 +3418,9 @@ function paintAtributos(){
     // motor y la grilla de stock lo siguen leyendo igual). Dispara 'change' para
     // que la grilla de stock (si el producto es físico) se regenere.
     const avalBox=el.querySelector(".avalbox");
-    if(avalBox) paintVals(avalBox, a, ()=>{ prodSync(); avalBox.dispatchEvent(new Event("change",{bubbles:true})); });
+    if(avalBox) paintVals(avalBox, a,
+      ()=>{ prodSync(); avalBox.dispatchEvent(new Event("change",{bubbles:true})); },
+      (old,nv)=>{ remapStockValor(cfg, a.nombre, old, nv); }); // renombrar un valor conserva su stock
     el.querySelector(".ahelp").oninput=(e)=>{ a.ayuda=e.target.value; prodSync(); };
     el.querySelector(".adel").onclick=()=>{ cfg.atributos.splice(i,1); prodSync(); paintAtributos(); };
     const mmBox=el.querySelector(".atmm");
