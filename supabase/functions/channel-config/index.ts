@@ -46,7 +46,9 @@ Deno.serve(async (req) => {
   // Rol POR CUENTA (account_members.role de la cuenta dueña del canal), NO el legacy global
   // app_users.role — que diverge y permitía escalada operador→admin en otra cuenta.
   const esAdmin = await userIsChannelAdmin(db, uid, channel_id);
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "telegram_disconnect", "telegram_connect", "telegram_pair_start"]);
+  // template_submit crea/envía una plantilla a Meta con el access_token del canal (cambia
+  // estado del lado de Meta) → coherente con el resto del gating, solo admin.
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -424,6 +426,19 @@ Deno.serve(async (req) => {
           ? body.telegram_chat_ids
           : String(body.telegram_chat_ids || "").split(/[\s,]+/);
         upd.telegram_chat_ids = arr.map((x: string) => x.trim()).filter(Boolean);
+      }
+      // Validar formato (numérico) y PERTENENCIA de los IDs de Meta en el BACKEND (el front ya
+      // valida, pero un cliente puede llamar la función directo). Sin esto un admin podía
+      // guardar el phone_number_id/waba_id de OTRA cuenta: el phone_number_id lo frena el índice
+      // único, pero el waba_id NO es único → squatting que descarta el sync de plantillas de la
+      // víctima (Meta enruta su webhook de estado por waba_id y cae en el canal del atacante,
+      // cuya firma no valida → 401 → update perdido). corre con service_role → ve todos los canales.
+      for (const idk of ["phone_number_id", "waba_id"]) {
+        const v = upd[idk];
+        if (v == null) continue; // no se está cambiando (o se está limpiando)
+        if (!/^\d{5,}$/.test(String(v))) return json({ error: "id_invalido", detalle: `El ${idk} debe ser numérico.` }, 400);
+        const { data: dup } = await db.from("channels").select("id").eq(idk, v as string).neq("id", channel_id).limit(1).maybeSingle();
+        if (dup) return json({ error: "id_en_uso", detalle: `Ese ${idk} ya está en uso por otro canal.` }, 400);
       }
       if (Object.keys(upd).length) {
         const { error } = await db.from("channels").update(upd).eq("id", channel_id);

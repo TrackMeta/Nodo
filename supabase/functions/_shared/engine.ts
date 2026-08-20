@@ -4405,7 +4405,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const _margenAdelRaw = Number(cfg.revisar_sobre_sol ?? (ch as any)?.pedidos_config?.digital?.revisar_sobre_sol);
   const margenAdel = Number.isFinite(_margenAdelRaw) && _margenAdelRaw >= 0 ? _margenAdelRaw : 50;
   const sobrepagoAdel = !!ab && ab.cubre && totalOwedAdel > 0 && ab.total > totalOwedAdel + margenAdel;
-  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel;
+  // 🔒 Sin nº de operación legible NO se auto-aprueba (va a manual), igual que el digital
+  // (sinOpVerificable). Sin `oper` no hay nada que deduplicar en el ledger → el MISMO
+  // screenshot ilegible podía auto-validar DOS pedidos distintos (doble despacho contra un
+  // solo pago real). La seguridad del dinero manda sobre la conveniencia.
+  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel && !!oper;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -4579,7 +4583,10 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const sobrepagoSaldo = !!ab && Number(ab.total) > saldo + margenSaldo;
   // Auto-aprobar (soltar la clave solo) SOLO en modo "auto". En manual se adjunta
   // y espera tu visto bueno (cae al bloque de "Saldo por validar" de abajo).
-  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo;
+  // 🔒 Sin nº de operación legible NO se auto-aprueba (igual que adelanto/digital): sin `oper`
+  // no hay nada que deduplicar → el mismo comprobante ilegible soltaría la clave de recojo de
+  // dos pedidos. Cae a manual.
+  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo"))) reuse = true;

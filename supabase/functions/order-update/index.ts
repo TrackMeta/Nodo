@@ -262,10 +262,13 @@ Deno.serve(async (req) => {
       // se volvía a restar sobre el saldo YA reducido (cobraba de menos en la agencia).
       const yaAcreditado = Number(shipNow.pago_acreditado_adelanto);
       if (saldoNuevo < (Number(shipNow.saldo) || 0) && yaAcreditado !== totalAdel) {
-        await db.from("orders").update({
-          shipping: { ...shipNow, saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) },
-          updated_at: new Date().toISOString(),
-        }).eq("id", order.id);
+        // MERGE atómico (order_patch_shipping, 0068), NO write del shipping completo:
+        // order-update no toma el contact_lock y el handler del cliente escribe shipping
+        // (sede/dirección) en paralelo → un write completo pisaría una sede recién editada
+        // (paquete a la agencia equivocada). Se tocan SOLO las claves de pago.
+        try {
+          await db.rpc("order_patch_shipping", { p_order_id: order.id, p_patch: { saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) } });
+        } catch (e) { console.error("[order-update] patch crédito adelanto:", (e as any)?.message ?? e); }
       }
     } catch (e) { console.error("[order-update] crédito saldo adelanto:", (e as any)?.message ?? e); }
     try {
