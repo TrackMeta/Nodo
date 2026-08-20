@@ -394,17 +394,19 @@ function pedidoEnCurso(c){ const o=lastOrder(c); if(!o) return false; const m=O.
 function dirOf(c){ return (c && typeof c.directo==="object" && c.directo) || {}; }
 function isArchived(c){ const cv=Array.isArray(c.conv)?c.conv[0]:c.conv; return !!cv?.archivada; }
 function isDone(c){ const d=dirOf(c); return c.stage==="comprado" || d.estado==="cerrado" || d.estado==="descartado"; }
+// Universo "por atender": ni comprado/cerrado/descartado, ni marcado `perdido` por el embudo
+// (el motor setea stage="perdido" al cancelar/rechazar/no-recoger un pedido SIN tocar `directo`,
+// así que un lead puede quedar perdido con un next_call_at de hoy). La LISTA lo esconde salvo con
+// el chip perdido → los CONTADORES deben usar el MISMO universo, si no el badge "Para hoy: 3"
+// miente (2 visibles) y ese callback de un lead ya perdido nunca se hace = venta perdida muda.
+function enColaActiva(c){ return !isDone(c) && !(c.stage==="perdido" && !f.stages.has("perdido")); }
 
 function filtered(){
   const today=todayStr();
   let list=st.contacts.filter(c=>{
     if(isArchived(c)) return false;
     const d=dirOf(c);
-    const done=isDone(c);
-    if(!f.showDone){
-      if(done) return false;
-      if(c.stage==="perdido" && !f.stages.has("perdido")) return false;
-    }
+    if(!f.showDone && !enColaActiva(c)) return false;
     if(f.q){ if(!(norm(c.nombre).includes(f.q) || (c.wa_id||"").includes(f.q))) return false; }
     // Rango de fechas por última actividad (su último mensaje).
     if(f.range && c.ultimo_mensaje_at){ const dd=ymd(new Date(c.ultimo_mensaje_at)); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
@@ -444,7 +446,7 @@ function renderFilterChips(){
 function updateCounts(){
   const today=todayStr();
   const all=st.contacts.filter(c=>!isArchived(c));
-  const live=all.filter(c=>!isDone(c)); // universo "por atender" para los conteos rápidos
+  const live=all.filter(enColaActiva); // MISMO universo que la lista (excluye perdido oculto) → los contadores cuadran
   EMBUDO_STAGES.forEach(s=>{ const el=$("fStages").querySelector(`[data-sc="${s.k}"]`); if(el) el.textContent=all.filter(c=>(c.stage||"nuevo")===s.k).length||""; });
   const q={
     mios:live.filter(c=>dirOf(c).assigned_to===st.uid).length,
@@ -461,7 +463,7 @@ function updateCounts(){
 
 function renderStats(){
   const today=todayStr();
-  const live=st.contacts.filter(c=>!isArchived(c) && !isDone(c));
+  const live=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c));
   const stats=[
     { k:"hoy",         v:live.filter(c=>{ const n=dirOf(c).next_call_at; return n&&n<=today; }).length, label:"Para hoy", color:"#e2564a" },
     { k:"sincontacto", v:live.filter(c=>!(dirOf(c).intentos||[]).length).length, label:"Sin contactar", color:"#f0a92b" },
@@ -639,7 +641,13 @@ async function saveReg(){
       // (stageDeEstado: recogido/cobrado→Comprado, adelanto/por-entregar→Confirmado,
       // esperando-adelanto→Interesado, y es forward-only). Acá solo cerramos el
       // seguimiento para sacar el lead de la cola: ya es un pedido a gestionar.
-      const d2={ ...dirOf(c), estado:"cerrado" }; delete d2.next_call_at;
+      // Re-lee FRESCO: openVentaManual pudo tener el modal abierto minutos; otra asesora pudo
+      // registrar un intento o reasignar el lead en el ínterin. Sin esto, la copia local rancia
+      // pisaba ese cambio (last-write-wins) — el único punto del archivo que rompía la disciplina
+      // de merge fresco que el resto respeta.
+      let base=dirOf(c);
+      try { const { data:fresh }=await supa.from("contacts").select("directo").eq("id",c.id).maybeSingle(); if(fresh&&fresh.directo&&typeof fresh.directo==="object") base=fresh.directo; } catch(_){}
+      const d2={ ...base, estado:"cerrado" }; delete d2.next_call_at;
       const { error:e2 }=await supa.from("contacts").update({ directo:d2 }).eq("id",c.id);
       if(!e2) c.directo=d2;
       let cobrada=false;

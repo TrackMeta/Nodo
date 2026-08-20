@@ -2152,6 +2152,14 @@ export async function deliverStep(db: SupabaseClient, channelId: string, contact
 //   postergar. Es el mismo problema que resolvió el modal de aviso del Kanban.
 export async function ventana24hAbierta(db: SupabaseClient, contactId: string): Promise<boolean> {
   try {
+    // Se alinea con whatsapp-send: la ventana ABIERTA es `conversations.expira_at` = la MAYOR
+    // entre la ventana de servicio de 24h y el Free Entry Point de 72h del anuncio. Antes medía
+    // SOLO 24h desde el último mensaje del cliente → durante las 24-72h del FEP (texto libre
+    // GRATIS y legal según Meta) los avisos/secuencias mandaban plantilla HSM de más o saltaban
+    // el mensaje = re-enganche gratis perdido. Fallback a las 24h si no hay fila/expira_at.
+    const { data: conv } = await db.from("conversations").select("expira_at").eq("contact_id", contactId).maybeSingle();
+    const exp = (conv as any)?.expira_at ? new Date((conv as any).expira_at).getTime() : 0;
+    if (exp > 0) return exp > Date.now();
     const { data } = await db.from("contacts").select("ultimo_mensaje_cliente_at").eq("id", contactId).maybeSingle();
     const t = (data as any)?.ultimo_mensaje_cliente_at ? new Date((data as any).ultimo_mensaje_cliente_at).getTime() : 0;
     return t > 0 && (Date.now() - t) < 24 * 3600 * 1000;
