@@ -216,8 +216,13 @@ async function processInbound(
   if (sender.username) patch.username = sender.username;
   if (sender.phone) patch.telefono = sender.phone;
   if (ref) {
-    patch.ad_id = ref.source_id ?? null;
-    patch.ctwa_clid = ref.ctwa_clid ?? null;
+    // Solo pisar ad_id/ctwa_clid cuando el referral TRAE valor: un referral posterior sin
+    // ctwa_clid (un post/story, o un anuncio sin click-to-WhatsApp) NO debe BORRAR el
+    // ctwa_clid del anuncio que sí trajo al cliente → si no, la venta se cierra sin ese id
+    // y maybePurchase corta (`if(!ship.ctwa_clid) return null`): Meta nunca recibe el
+    // Purchase y ese anuncio parece que no vendió.
+    if (ref.source_id) patch.ad_id = ref.source_id;
+    if (ref.ctwa_clid) patch.ctwa_clid = ref.ctwa_clid;
     patch.source = ref.source_type ?? "ctwa";
     // Free Entry Point: el mensaje que entra desde un anuncio abre 72h de
     // mensajería gratis (Meta). Un clic nuevo en un anuncio la re-abre.

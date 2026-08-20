@@ -129,7 +129,11 @@ Deno.serve(async (req) => {
           // reintentos bajo contención, NO marcar → la unidad no se pierde del inventario
           // (queda pendiente de un reintento) en vez de darla por devuelta sin haberlo hecho.
           const { ok } = await aplicarStock(db, ship.stock_mov, 1);
-          if (ok) await db.from("orders").update({ shipping: { ...ship, stock_devuelto: true } }).eq("id", (order as any).id);
+          // order_patch_shipping (0068), NO un write del shipping completo: order-update no
+          // toma el contact_lock y el handler del cliente (sede/dirección) escribe shipping
+          // en paralelo → `{ ...ship(snapshot viejo), ... }` PISABA una sede recién editada
+          // (paquete a la agencia equivocada). El patch fusiona SOLO la bandera, atómico.
+          if (ok) { try { await db.rpc("order_patch_shipping", { p_order_id: (order as any).id, p_patch: { stock_devuelto: true } }); } catch (e) { console.error("[order-update] patch devuelto:", (e as any)?.message ?? e); } }
           else console.error("[order-update] devolver stock: CAS agotó reintentos — NO marcado stock_devuelto");
         } catch (e) { console.error("[order-update] devolver stock:", (e as any)?.message ?? e); }
       }
@@ -143,7 +147,9 @@ Deno.serve(async (req) => {
       if (ship.stock_devuelto === true && Array.isArray(ship.stock_mov) && ship.stock_mov.length) {
         try {
           const { ok } = await aplicarStock(db, ship.stock_mov, -1);
-          if (ok) await db.from("orders").update({ shipping: { ...ship, stock_devuelto: false, stock_descontado: true } }).eq("id", (order as any).id);
+          // Igual que arriba: patch atómico de las banderas, no un write del shipping completo
+          // (que pisaría ediciones concurrentes de sede/dirección hechas bajo el lock).
+          if (ok) { try { await db.rpc("order_patch_shipping", { p_order_id: (order as any).id, p_patch: { stock_devuelto: false, stock_descontado: true } }); } catch (e) { console.error("[order-update] patch revivir:", (e as any)?.message ?? e); } }
           else console.error("[order-update] revivir stock: CAS agotó reintentos — NO re-descontado");
         } catch (e) { console.error("[order-update] revivir stock:", (e as any)?.message ?? e); }
       }

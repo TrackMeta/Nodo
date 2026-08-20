@@ -1870,7 +1870,11 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
 // (el panel lo ve por Realtime). Siempre queda registro en messages.
 async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promise<boolean> {
   await ensureDelivery(db, run);
-  let text = resolve(bubble.text ?? "", ctx);
+  // `_noTpl`: el texto GENERADO POR LA IA NO se pasa por el templater {{…}}. Las burbujas
+  // FIJAS del flujo sí lo necesitan (expanden {{precio}}, etc.), pero si se templatiza la
+  // salida del modelo, un cliente puede pedirle "repite esto: {{pago_titular}}" y resolve()
+  // sustituiría datos internos (titular del Yape, costo/margen del producto) antes de enviar.
+  let text = bubble._noTpl ? String(bubble.text ?? "") : resolve(bubble.text ?? "", ctx);
   const d = run._delivery;
 
   // ── Burbuja de MEDIA (imagen/video/audio/documento) ──
@@ -1993,13 +1997,13 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: true }).catch(() => {});
   }
   const re = /\[\[media:([\w-]+)\]\]/g;
-  if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result }, ctx); return; }
+  if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx); return; }
   const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
   re.lastIndex = 0;
   let last = 0; let m: RegExpExecArray | null;
   while ((m = re.exec(result)) !== null) {
     const before = result.slice(last, m.index).trim();
-    if (before) await emit(db, run, { text: before }, ctx);
+    if (before) await emit(db, run, { text: before, _noTpl: true }, ctx);
     const asset = catalog.find((x) => x && x.tag === m![1]);
     if (asset && asset.media_url) {
       await emit(db, run, {
@@ -2010,7 +2014,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
     last = m.index + m[0].length;
   }
   const rest = result.slice(last).trim();
-  if (rest) await emit(db, run, { text: rest }, ctx);
+  if (rest) await emit(db, run, { text: rest, _noTpl: true }, ctx);
 }
 
 // Arranca un flujo concreto para un contacto (usado por el scheduler para
@@ -3113,7 +3117,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
           } catch { /* sin product_id → no se descuenta, como antes */ }
         }
         patch.order_bumps = [...previos, nuevo];
-        bumpUpsell = { value: precio, sufijo: String(vid || nombre).replace(/[^a-zA-Z0-9]/g, "").slice(0, 16) };
+        bumpUpsell = { value: precio, sufijo: String(vid || nombre).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40) }; // 40 (no 16): un UUID sanitizado tiene 32 hex → con 16 dos version_id podían colisionar y Meta deduplicaba el 2º extra (valor perdido)
         // Venta extra "ride-along" en un pedido FÍSICO: no se cobra aparte, se
         // suma al SALDO (lo que cobra la agencia en provincia, o el motorizado en
         // Lima). El adelanto no cambia. Solo si el pedido tiene saldo y el bump lo
@@ -3834,7 +3838,11 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   if (esImg) {
     if (ship._mod_pendiente) {
       delete ship._mod_pendiente;
-      await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id).catch(() => {});
+      // `.then(ok,err)`, NO `.catch`: el builder de PostgREST es un thenable SIN `.catch`
+      // → `.catch(...)` lanzaba TypeError, el update NUNCA se enviaba y `_mod_pendiente`
+      // no se limpiaba → un "ya, listo" posterior aplicaba un cambio ABANDONADO sobre un
+      // pedido YA PAGADO (justo lo que este branch existe para evitar).
+      await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id).then(() => {}, () => {});
     }
     return false;
   }
@@ -4118,6 +4126,11 @@ async function maybeCambioVariante(db: SupabaseClient, channelId: string, contac
     const snapped = snapValorVariante(pedido, csv);
     const valido = valores.some((v) => v.toLowerCase() === snapped.toLowerCase());
     if (!valido) continue;                                       // valor fuera del catálogo → ignora (no inventa)
+    // 🚧 El valor DEBE aparecer en el mensaje del cliente (mismo guard que extraerDatos):
+    // la IA tiende a "elegir" el 1er valor de la lista aunque el mensaje no lo traiga. Sin
+    // esto, un "mejor mándamelo mañana" / "prefiero contra entrega" (matchea CAMBIO_VAR_KW
+    // pero NO es un cambio de talla) reescribía la variante y swapeaba el stock en silencio.
+    if (!valorEnMensaje(snapped, txt) && !valorEnMensaje(pedido, txt)) continue;
     if (String(atrib[a.nombre] ?? "").toLowerCase() === snapped.toLowerCase()) continue; // igual → nada
     atrib[a.nombre] = snapped;
     cambios.push(`${a.nombre}: ${snapped}`);
@@ -6198,11 +6211,18 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // no se llegó a resolver (ver simulacion-e2e-2026-08-09). Solo aplica a flujos con
   // campos de despacho (físicos); el digital cierra por otra vía.
   let faltaOpcion = false;
-  if (campos.length && !String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim()) {
+  if (campos.length) {
+    const opId = String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
     try {
       const ops = await loadOpciones(db, run, ctx._product_id);
       const conPrecio = (ops || []).filter((o: any) => o && o.precio != null && Number.isFinite(Number(o.precio)) && Number(o.precio) > 0);
-      if (conPrecio.length >= 2) faltaOpcion = true;
+      // La opción elegida debe ser del producto ACTUAL. `opcion_id` persiste como campo del
+      // contacto ENTRE conversaciones; si viene de OTRO producto (el cliente vio A, se fue
+      // sin pagar, volvió con la keyword de B), no debe darse por elegida → si no,
+      // datos_completos se prende y el pedido de B nace en S/0 (opcionElegida(B) no halla el
+      // id de A). Antes el guard solo miraba que opcion_id NO estuviera vacío.
+      const opElegidaValida = !!opId && (ops || []).some((o: any) => String(o?.id) === opId);
+      if (conPrecio.length >= 2 && !opElegidaValida) faltaOpcion = true;
     } catch (_) { /* sin catálogo de opciones → no se bloquea */ }
   }
   ctx._falta_opcion = faltaOpcion;
@@ -7322,6 +7342,11 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const res = await sendCapiEvent(db, run.channel_id, run.contact_id, {
     eventName, value: Number.isFinite(value as number) ? value : undefined,
     currency, orderId,
+    // event_id ESTABLE para los eventos sin pedido (Lead / InitiateCheckout): por
+    // (evento, contacto, nodo). Antes capi.ts caía a `${eventName}:${contactId}:${Date.now()}`
+    // → jamás era estable → el dedup local no dispara y Meta cuenta el mismo Lead dos veces
+    // si el contacto reentra al nodo (infla Leads / abarata el CPL aparente).
+    eventId: orderId ? undefined : `${eventName}:${run.contact_id}:${node.id}`,
   });
   if (!res.ok) { run.vars._capi_error = res.error; await logEvent(db, run.channel_id, run.contact_id, "error", "Error al enviar evento a Meta", String(res.error ?? "")); }
 
