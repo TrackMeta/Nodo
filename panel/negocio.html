@@ -619,12 +619,21 @@ function armRenderDraft(){
 async function armAplicar(d){
   if(!d) return;
   const f = st.channel.negocio_form = (st.channel.negocio_form && typeof st.channel.negocio_form==="object") ? st.channel.negocio_form : {};
-  // Aviso si va a REEMPLAZAR una FAQ ya armada (el borrador solo lista lo que llenó, no
-  // advierte que pisa lo existente → se podían perder preguntas curadas al Guardar).
-  if(Array.isArray(d.faq)&&d.faq.length && Array.isArray(f.faq)&&f.faq.length &&
-     !await confirmDialog({ title:"Reemplazar tu FAQ", message:`El borrador va a REEMPLAZAR tus ${f.faq.length} preguntas frecuentes actuales. ¿Continuar?`, confirmText:"Reemplazar", danger:true })) return;
-  ["nombre","rubro","publico","propuesta","horario","transferir","pagos","entrega","politicas","no_hacer","tono"].forEach(k=>{ if(d[k]) f[k]=String(d[k]); });
-  if(Array.isArray(d.faq)&&d.faq.length){ f.faq=d.faq.filter(x=>x&&x.q&&x.a).map(x=>({q:String(x.q),a:String(x.a)})); }
+  // El borrador solo LISTA lo que llenó, pero al aplicar REEMPLAZABA en silencio TODO campo
+  // curado del dueño (incl. `no_hacer` = los guardarraíles del bot). Ahora: por defecto solo
+  // llena lo VACÍO; si el borrador chocaría con algo ya escrito, se avisa qué y se ofrece
+  // "Reemplazar todo". Nunca se pierde config curada sin que el dueño lo elija.
+  const CAMPOS=["nombre","rubro","publico","propuesta","horario","transferir","pagos","entrega","politicas","no_hacer","tono"];
+  const LBL={nombre:"Nombre",rubro:"Rubro",publico:"Público",propuesta:"Propuesta",horario:"Horario",transferir:"Cuándo pasar a un humano",pagos:"Pagos",entrega:"Entrega",politicas:"Políticas",no_hacer:"Qué NO hacer",tono:"Tono"};
+  const pisa=CAMPOS.filter(k=> d[k] && String(f[k]??"").trim() && String(f[k]).trim()!==String(d[k]).trim());
+  const pisaFaq=Array.isArray(d.faq)&&d.faq.length && Array.isArray(f.faq)&&f.faq.length;
+  let reemplazar=true;
+  if(pisa.length||pisaFaq){
+    const items=[...(pisaFaq?[`tus ${f.faq.length} preguntas frecuentes`]:[]), ...pisa.map(k=>LBL[k]||k)];
+    reemplazar=await confirmDialog({ title:"Ya tenías cosas escritas", message:`El borrador chocaría con: ${items.join(", ")}. Elige "Solo lo vacío" para conservarlas y llenar solo lo que falta, o "Reemplazar todo".`, confirmText:"Reemplazar todo", cancelText:"Solo lo vacío", danger:true });
+  }
+  CAMPOS.forEach(k=>{ if(d[k] && (reemplazar || !String(f[k]??"").trim())) f[k]=String(d[k]); });
+  if(Array.isArray(d.faq)&&d.faq.length && (reemplazar || !pisaFaq)){ f.faq=d.faq.filter(x=>x&&x.q&&x.a).map(x=>({q:String(x.q),a:String(x.a)})); }
   st.tab="conocimiento";
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento"));
   render(); armClose();

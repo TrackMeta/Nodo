@@ -4254,23 +4254,29 @@ function armRenderDraft(){
 async function armAplicar(d){
   if(!d||!st.prod) return;
   const p=st.prod; const c=p.config=p.config||{};
-  // Aviso si el borrador va a REEMPLAZAR datos ya curados (FAQ / atributos): la pantalla del
-  // borrador solo lista lo que llenó, no advierte que pisa lo existente. Antes se reemplazaba
-  // en silencio y el dueño podía perder preguntas/atributos armados a mano al Guardar.
+  // El borrador solo LISTA lo que llenó, pero al aplicar REEMPLAZABA en silencio la FAQ,
+  // los atributos, la sección "Venta con IA" (pitch/reglas curadas), el nombre y el tipo.
+  // Ahora: por defecto solo llena lo VACÍO; si chocaría con algo ya escrito, se avisa qué y
+  // se ofrece "Reemplazar todo". Nunca se pierde config curada sin que el dueño lo elija.
+  const dia=d.ia||{}; c.ia=c.ia||{};
+  const IA_CAMPOS=["resumen","detalle","reglas_producto","limites","estilo_venta","proceso","tecnicas"];
+  const IA_LBL={resumen:"Resumen de venta",detalle:"Detalle",reglas_producto:"Reglas del producto",limites:"Límites",estilo_venta:"Estilo de venta",proceso:"Proceso",tecnicas:"Técnicas"};
   const pisaFaq=(Array.isArray(d.faq)&&d.faq.length) && Array.isArray(c.faq_items)&&c.faq_items.length;
   const pisaAtr=(Array.isArray(d.atributos)&&d.atributos.length) && Array.isArray(c.atributos)&&c.atributos.length;
-  if((pisaFaq||pisaAtr) && !await confirmDialog({ title:"Reemplazar lo que ya tienes",
-    message:`El borrador va a REEMPLAZAR ${[pisaFaq?`tus ${c.faq_items.length} preguntas frecuentes`:"",pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:""].filter(Boolean).join(" y ")}. ¿Continuar?`,
-    confirmText:"Reemplazar", danger:true })) return;
-  if(d.nombre) p.nombre=String(d.nombre);
-  if(d.emoji) p.emoji=String(d.emoji);
-  if(d.tipo==="fisico"||d.tipo==="digital") p.tipo=d.tipo;
-  if(Array.isArray(d.atributos)&&d.atributos.length){
+  const pisaIa=IA_CAMPOS.filter(k=> dia[k] && String(c.ia[k]??"").trim() && String(c.ia[k]).trim()!==String(dia[k]).trim());
+  let reemplazar=true;
+  if(pisaFaq||pisaAtr||pisaIa.length){
+    const items=[pisaFaq?`tus ${c.faq_items.length} preguntas frecuentes`:"", pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:"", ...pisaIa.map(k=>IA_LBL[k]||k)].filter(Boolean);
+    reemplazar=await confirmDialog({ title:"Ya tenías cosas escritas", message:`El borrador chocaría con: ${items.join(", ")}. Elige "Solo lo vacío" para conservarlas y llenar solo lo que falta, o "Reemplazar todo".`, confirmText:"Reemplazar todo", cancelText:"Solo lo vacío", danger:true });
+  }
+  if(d.nombre && (reemplazar || !String(p.nombre??"").trim())) p.nombre=String(d.nombre);
+  if(d.emoji && (reemplazar || !String(p.emoji??"").trim())) p.emoji=String(d.emoji);
+  if((d.tipo==="fisico"||d.tipo==="digital") && (reemplazar || !p.tipo)) p.tipo=d.tipo;
+  if(Array.isArray(d.atributos)&&d.atributos.length && (reemplazar || !pisaAtr)){
     c.atributos=d.atributos.filter(a=>a&&a.nombre).map(a=>({ nombre:String(a.nombre), clave:slugAttr(a.nombre), obligatorio:true, valores:a.valores?String(a.valores):"", ayuda:"", media:[] }));
   }
-  const dia=d.ia||{}; c.ia=c.ia||{};
-  ["resumen","detalle","reglas_producto","limites","estilo_venta","proceso","tecnicas"].forEach(k=>{ if(dia[k]) c.ia[k]=String(dia[k]); });
-  if(Array.isArray(d.faq)&&d.faq.length){
+  IA_CAMPOS.forEach(k=>{ if(dia[k] && (reemplazar || !String(c.ia[k]??"").trim())) c.ia[k]=String(dia[k]); });
+  if(Array.isArray(d.faq)&&d.faq.length && (reemplazar || !pisaFaq)){
     c.faq_items=d.faq.filter(f=>f&&f.q&&f.a).map(f=>({q:String(f.q),a:String(f.a)}));
     c.faq=compileFaq(c.faq_items);
   }
