@@ -23,18 +23,36 @@ const dSame = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMo
 export const dFmt = (d) => `${d.getDate()} ${DR_MES[d.getMonth()]} ${d.getFullYear()}`;
 export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+// El negocio opera en HORA DE LIMA (UTC-5, sin horario de verano). Los presets
+// deben anclarse al día calendario de Lima, no al del navegador: un asistente que
+// entra desde otra zona (España, madrugada) tenía un "Hoy" que era otro día para
+// el negocio. `hoyLima()` = medianoche LOCAL del día calendario de Lima (round-trip
+// seguro: se lee con los mismos getters locales con que se construyó).
+const _p2 = (n) => String(n).padStart(2, "0");
+const hoyLima = () => {
+  const s = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date());
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+// Instante ABSOLUTO del inicio/fin del día calendario de `d`, en hora de Lima. Se
+// usa para filtrar registros (que son instantes absolutos) por día de Lima sin que
+// la zona del navegador corra el corte. `d` es una fecha-día (medianoche local del
+// día elegido), así que sus getters LOCALES dan el día correcto en cualquier zona.
+export const startOfDayLima = (d) => new Date(`${d.getFullYear()}-${_p2(d.getMonth() + 1)}-${_p2(d.getDate())}T00:00:00.000-05:00`);
+export const endOfDayLima = (d) => new Date(`${d.getFullYear()}-${_p2(d.getMonth() + 1)}-${_p2(d.getDate())}T23:59:59.999-05:00`);
+
 export const PRESETS = [
-  ["hoy", "Hoy", () => { const t = d0(new Date()); return [t, t]; }],
-  ["ayer", "Ayer", () => { const y = dAdd(d0(new Date()), -1); return [y, y]; }],
-  ["7d", "Últimos 7 días", () => { const t = d0(new Date()); return [dAdd(t, -6), t]; }],
-  ["14d", "Últimos 14 días", () => { const t = d0(new Date()); return [dAdd(t, -13), t]; }],
-  ["28d", "Últimos 28 días", () => { const t = d0(new Date()); return [dAdd(t, -27), t]; }],
-  ["30d", "Últimos 30 días", () => { const t = d0(new Date()); return [dAdd(t, -29), t]; }],
-  ["semana", "Esta semana", () => { const t = d0(new Date()); return [dAdd(t, -((t.getDay() + 6) % 7)), t]; }],
-  ["semanaAnt", "La semana pasada", () => { const t = d0(new Date()); const lun = dAdd(t, -((t.getDay() + 6) % 7)); return [dAdd(lun, -7), dAdd(lun, -1)]; }],
-  ["mes", "Este mes", () => { const t = d0(new Date()); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; }],
-  ["mesAnt", "El mes pasado", () => { const t = d0(new Date()); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; }],
-  ["max", "Máximo", () => { const t = d0(new Date()); return [new Date(2020, 0, 1), t]; }], // TODO el historial (no 365 días): antes recortaba y ocultaba pedidos/plata de +1 año en Compras/Embudo, en la vista por defecto
+  ["hoy", "Hoy", () => { const t = hoyLima(); return [t, t]; }],
+  ["ayer", "Ayer", () => { const y = dAdd(hoyLima(), -1); return [y, y]; }],
+  ["7d", "Últimos 7 días", () => { const t = hoyLima(); return [dAdd(t, -6), t]; }],
+  ["14d", "Últimos 14 días", () => { const t = hoyLima(); return [dAdd(t, -13), t]; }],
+  ["28d", "Últimos 28 días", () => { const t = hoyLima(); return [dAdd(t, -27), t]; }],
+  ["30d", "Últimos 30 días", () => { const t = hoyLima(); return [dAdd(t, -29), t]; }],
+  ["semana", "Esta semana", () => { const t = hoyLima(); return [dAdd(t, -((t.getDay() + 6) % 7)), t]; }],
+  ["semanaAnt", "La semana pasada", () => { const t = hoyLima(); const lun = dAdd(t, -((t.getDay() + 6) % 7)); return [dAdd(lun, -7), dAdd(lun, -1)]; }],
+  ["mes", "Este mes", () => { const t = hoyLima(); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; }],
+  ["mesAnt", "El mes pasado", () => { const t = hoyLima(); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; }],
+  ["max", "Máximo", () => { const t = hoyLima(); return [new Date(2020, 0, 1), t]; }], // TODO el historial (no 365 días): antes recortaba y ocultaba pedidos/plata de +1 año en Compras/Embudo, en la vista por defecto
 ];
 export function computePreset(key) { const p = PRESETS.find((x) => x[0] === key) || PRESETS[5]; const [from, to] = p[2](); return { from, to, preset: p[0] }; }
 export function rangeLabel(r) {

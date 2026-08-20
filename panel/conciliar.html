@@ -85,7 +85,7 @@
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
 import * as O from "./orders.js";
 import { leerReporte, emparejar, pagosSinVenta } from "./conciliar.js";
-import { mountDateRange, computePreset, rangeLabel } from "./date-range.js";
+import { mountDateRange, computePreset, rangeLabel, startOfDayLima, endOfDayLima } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const money=(v)=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -152,8 +152,8 @@ async function conciliar(){
 
   b.textContent="Cruzando…";
   const r0=st.rango||computePreset("30d");
-  const desde=new Date(r0.from.getFullYear(),r0.from.getMonth(),r0.from.getDate(),0,0,0);
-  const hasta=new Date(r0.to.getFullYear(),r0.to.getMonth(),r0.to.getDate(),23,59,59,999);
+  const desde=startOfDayLima(r0.from); // corte del día en hora de Lima (no del navegador)
+  const hasta=endOfDayLima(r0.to);
   // Ventas cobradas al 100% del rango (mismo criterio que Compras).
   const { data:ords }=await supa.from("orders")
     .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")

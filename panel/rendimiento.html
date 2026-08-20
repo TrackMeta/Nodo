@@ -133,7 +133,7 @@
 <script type="module">
 import { supa, mountShell, icon } from "./shell.js";
 import * as O from "./orders.js";
-import { mountDateRange, computePreset, rangeLabel } from "./date-range.js";
+import { mountDateRange, computePreset, rangeLabel, startOfDayLima, endOfDayLima } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
 function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)); }
@@ -164,13 +164,13 @@ async function loadData(){
   // sesión UTC de Postgres leería corrida ~5h → así se perdían las ventas de la
   // tarde-noche (horario pico) del último día del rango. El gasto sí va con ymd()
   // porque ads_insights.fecha es columna `date` (sin hora, por día calendario).
-  const ordDesde=r.from.toISOString();
-  const ordHasta=new Date(r.to.getFullYear(),r.to.getMonth(),r.to.getDate()+1).toISOString();
+  const ordDesde=startOfDayLima(r.from).toISOString(); // inicio del día en hora de Lima (UTC-5), no del navegador
+  const ordHasta=endOfDayLima(r.to).toISOString();     // fin del día de Lima (inclusive .999) → se usa con .lte
   let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
   try{ [insR,metaR,ordR]=await Promise.all([
     supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to),
     supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency").eq("channel_id",cid),
-    supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lt("created_at",ordHasta),
+    supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta),
   ]); }catch(_){ st.loaded=true; return; }
   const meta=Object.fromEntries((metaR.data||[]).map(m=>[m.ad_id,m]));
   // Ángulos (aparte, con su propio try/catch: si falta la migración 0063 no debe

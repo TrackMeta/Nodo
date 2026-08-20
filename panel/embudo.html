@@ -185,7 +185,7 @@
 import { supa, mountShell, toast, icon, pageAll } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import * as O from "./orders.js";
-import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js";
+import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima } from "./date-range.js";
 
 const $=(id)=>document.getElementById(id);
 const nf=new Intl.NumberFormat("es-PE");
@@ -252,7 +252,7 @@ function tipoDe(c){ const t=c.product&&c.product.tipo; return t==="fisico"?"fisi
 // Lima o provincia de un contacto: primero el campo temprano zona_entrega; si no,
 // del último pedido físico. null = todavía no dijo de dónde es (solo va en "Total").
 function zonaDeContacto(c){ const z=st.zonaMap[c.id]; if(z) return z; for(const o of (st.ordersBy[c.id]||[])){ if(O.esFisico(o)){ const zz=O.zonaDe(o); if(zz==="lima"||zz==="provincia") return zz; } } return null; }
-function enRango(c){ if(!st.range) return true; if(!c.created_at) return true; /* sin fecha → se muestra (no lo escondemos en silencio, como en Compras) */ const d=new Date(c.created_at); const from=st.range.from, to=new Date(st.range.to.getFullYear(),st.range.to.getMonth(),st.range.to.getDate(),23,59,59,999); return d>=from && d<=to; }
+function enRango(c){ if(!st.range) return true; if(!c.created_at) return true; /* sin fecha → se muestra (no lo escondemos en silencio, como en Compras) */ const d=new Date(c.created_at); const from=startOfDayLima(st.range.from), to=endOfDayLima(st.range.to); /* corte en hora de Lima */ return d>=from && d<=to; }
 function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.tipo!=="fisico"||st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
 
 function fillProdSel(){
