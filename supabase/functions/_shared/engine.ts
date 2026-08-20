@@ -2146,15 +2146,48 @@ export async function ventana24hAbierta(db: SupabaseClient, contactId: string): 
 // es "wa-media:<id>" que se baja del host fijo graph.facebook.com); el vector es un
 // MIEMBRO autenticado del webchat pasando una URL a la red interna de la infra Edge para
 // que el backend la fetchee y le devuelva el contenido (exfiltración). Se rechaza antes.
+// ¿Una IPv4 con puntos cae en un rango loopback / privado / link-local / metadata?
+function ipv4Privada(ip: string): boolean {
+  const p = ip.split(".").map(Number);
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = p;
+  if (a === 127 || a === 0 || a === 10) return true;                 // loopback / "este host" / privada
+  if (a === 192 && b === 168) return true;                            // privada
+  if (a === 172 && b >= 16 && b <= 31) return true;                   // privada
+  if (a === 169 && b === 254) return true;                            // link-local + metadata 169.254.169.254
+  if (a === 100 && b >= 64 && b <= 127) return true;                  // CGNAT
+  return false;
+}
+// Un host que es un ENTERO (decimal 2130706433, hex 0x7f000001, octal 017700000001)
+// lo resuelve el sistema a IPv4 → hay que normalizarlo antes de chequear rangos.
+function hostEnteroAIpv4(h: string): string | null {
+  let n: number | null = null;
+  if (/^0x[0-9a-f]+$/.test(h)) n = parseInt(h, 16);
+  else if (/^0[0-7]+$/.test(h)) n = parseInt(h, 8);
+  else if (/^\d+$/.test(h)) n = parseInt(h, 10);
+  if (n == null || !Number.isFinite(n) || n < 0 || n > 0xffffffff) return null;
+  return `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
+}
 function urlDescargaSegura(raw: string): URL | null {
   let u: URL;
   try { u = new URL(String(raw)); } catch { return null; }
   if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost") || h === "0.0.0.0" || h === "::1") return null;
-  if (h.startsWith("127.") || h.startsWith("169.254.") || h.startsWith("10.") || h.startsWith("192.168.")) return null;
-  const m172 = h.match(/^172\.(\d+)\./); if (m172 && +m172[1] >= 16 && +m172[1] <= 31) return null;
+  let h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // IPv6 mapeada a IPv4 (::ffff:169.254.169.254 o ::ffff:a9fe:a9fe): extraer la IPv4.
+  const mapped = h.match(/^::ffff:(.+)$/);
+  if (mapped) {
+    const rest = mapped[1];
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(rest)) h = rest;
+    else { const hx = rest.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/); if (hx) { const n = ((parseInt(hx[1], 16) << 16) | parseInt(hx[2], 16)) >>> 0; h = `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`; } }
+  }
+  if (h === "localhost" || h.endsWith(".localhost") || h === "::1") return null;
   if (h.startsWith("fd") || h.startsWith("fc") || h.startsWith("fe80")) return null; // IPv6 ULA / link-local
+  // Normaliza IP en decimal/hex/octal a IPv4 con puntos; si no, usa la dotted-quad tal cual.
+  const ipv4 = hostEnteroAIpv4(h) ?? (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) ? h : null);
+  if (ipv4 && ipv4Privada(ipv4)) return null;
+  // Host puramente numérico (o hex/octal) que NO se pudo validar como IPv4 pública →
+  // se rechaza por precaución (mejor perder una URL rara que exponer la red interna).
+  if (/^(0x[0-9a-f]+|[0-9.]+)$/.test(h) && !ipv4) return null;
   return u;
 }
 

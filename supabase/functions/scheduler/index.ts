@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
   }
 
   const now = Date.now();
-  let woke = 0, fired = 0;
+  let woke = 0, fired = 0, reaped = 0;
 
   // El caché de config de remarketing (horario/timezone/anti-spam) es por TICK: se
   // limpia al inicio de cada invocación. El isolate de Deno vive muchos ticks, así
@@ -73,6 +73,26 @@ Deno.serve(async (req) => {
   for (const r of runs ?? []) {
     try { await runEngine(db, (r as any).channel_id, (r as any).contact_id, { type: "resume" }); woke++; }
     catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
+  }
+
+  // ── 1b) Reaper de runs 'activo' zombis ────────────────────────────
+  // Si el isolate murió entre el INSERT de startRun (estado='activo') y el primer
+  // saveRun (wall-time/OOM/deploy a mitad), la fila queda 'activo' PARA SIEMPRE: el
+  // wake loop de arriba solo mira 'esperando', el índice único idx_runs_lock impide
+  // crear un run nuevo, y cada mensaje entrante entra a resumeRun sin `_await` → se
+  // descarta (dead-air total) y el remarketing del contacto queda bloqueado sin
+  // recuperación automática. Ningún run real dura horas → un 'activo' inactivo hace
+  // más de RUN_STALE_MS es un zombi: se cierra para liberar el lock (el próximo
+  // mensaje del cliente arranca un run limpio).
+  const zombieCut = new Date(now - RUN_STALE_MS).toISOString();
+  const { data: zombies } = await db.from("flow_runs")
+    .select("id, channel_id, contact_id")
+    .eq("estado", "activo").lt("updated_at", zombieCut).limit(50);
+  for (const z of zombies ?? []) {
+    const { data: done } = await db.from("flow_runs")
+      .update({ estado: "completado", wake_at: null })
+      .eq("id", (z as any).id).eq("estado", "activo").select("id");
+    if (done && done.length) { reaped++; console.warn(`[scheduler] run zombi cerrado (contacto ${(z as any).contact_id})`); }
   }
 
   // ── 2) Secuencias de remarketing ──────────────────────────────────
@@ -109,7 +129,7 @@ Deno.serve(async (req) => {
   try { resumenes = await processResumenes(); }
   catch (e) { console.error("[scheduler] resumenes:", (e as any)?.message ?? e); }
 
-  return json({ ok: true, woke, fired, nudged, recordados, vencidos, resumenes });
+  return json({ ok: true, woke, fired, reaped, nudged, recordados, vencidos, resumenes });
 });
 
 // ── Resúmenes diarios ───────────────────────────────────────────────
@@ -460,6 +480,19 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // (otra secuencia, un nudge, o una campaña) dentro de la ventana de enfriamiento,
   // se posterga al próximo tick — no se pierde el paso, solo espera.
   if (await antispamOn(s.channel_id) && tocoMktReciente(c, now)) return false;
+
+  // Claim ATÓMICO del paso: reclama ESTA sub reescribiendo updated_at solo si nadie
+  // la tocó desde que la leímos (mismo paso_actual y mismo updated_at). El cron se
+  // invoca fire-and-forget; si un tick pasa de 60s, el siguiente arranca solapado y
+  // AMBOS seleccionan las mismas subs 'activa' → sin este claim, el mismo paso se
+  // enviaba DOS veces (doble toque + doble conversación Meta). Debe ir ANTES de
+  // escribir la oferta y de enviar. Si no afecta filas, otro tick ya lo tomó.
+  const _claimStamp = new Date().toISOString();
+  let _claimQ = db.from("sequence_subscriptions").update({ updated_at: _claimStamp })
+    .eq("id", s.id).eq("paso_actual", s.paso_actual);
+  _claimQ = s.updated_at ? _claimQ.eq("updated_at", s.updated_at) : _claimQ.is("updated_at", null);
+  const { data: _claim } = await _claimQ.select("id");
+  if (!_claim || !_claim.length) return false;
 
   // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
   // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un

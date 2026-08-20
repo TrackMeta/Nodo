@@ -201,6 +201,12 @@ async function loadData(){
   st.rows=Object.values(byAd); st.loaded=true;
   // Monedas de las cuentas de Meta (para avisar del desajuste con la moneda del negocio).
   st.adCurrencies=[...new Set((metaR.data||[]).map(m=>m.account_currency).filter(Boolean).map(c=>String(c).toUpperCase()))];
+  // ¿Hay gasto cuya moneda NO conocemos? account_currency lo llena un fetch best-effort
+  // de ads-sync; si falló (o Meta no devolvió currency), queda null → el banner de
+  // desajuste desaparecía aunque el gasto (casi siempre USD) siguiera sin convertir y
+  // el ROAS saliera inflado ~3.75×. Se avisa también en ese caso.
+  const _hayGasto=st.rows.some(r=>Number(r.gasto)>0);
+  st.monedaDesconocida=_hayGasto && (metaR.data||[]).some(m=>!m.account_currency);
 }
 async function reload(){ await loadData(); render(); }
 
@@ -283,7 +289,7 @@ function render(){
   const v=$("view");
   // ⚠️ Aviso de MONEDA: si la cuenta de Meta factura en otra moneda que el negocio, el gasto
   // (y por ende CPA/ROAS/ganancia neta) NO está convertido → los números no son comparables.
-  const monedaMismatch=(st.adCurrencies||[]).find(c=>c!==CUR);
+  const monedaMismatch=(st.adCurrencies||[]).find(c=>c!==CUR) || (st.monedaDesconocida?"desconocida":null);
   v.innerHTML=`
     <div class="toolbar">
       <span class="tlabel">Periodo</span>
@@ -299,7 +305,7 @@ function render(){
       </div>
       <div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>
     </div>
-    ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>. El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) NO está convertido — no compares estos números hasta convertir la moneda.</div>`:""}
+    ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ ${monedaMismatch==="desconocida"?`No pude confirmar en qué <b>moneda</b> factura tu cuenta de Meta (la sincronización no la trajo).`:`Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>.`} El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) puede NO estar convertido — no compares estos números hasta confirmar la moneda.</div>`:""}
     <div id="content"></div>`;
   wireToolbar();
   if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }
