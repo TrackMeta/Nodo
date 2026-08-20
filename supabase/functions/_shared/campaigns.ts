@@ -87,6 +87,15 @@ async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Pr
 async function sendBatch(db: SupabaseClient, c: any) {
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
   if (!tpl) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
+  // Defensa en profundidad: si Meta pausó/rechazó la plantilla DESPUÉS de crear la
+  // campaña (baja calidad, sin aviso en la UI), no quemar la audiencia entera contra
+  // un rechazo 132001. Se detiene la campaña y se marcan los pendientes con motivo.
+  // (La UI ya filtra por estado_meta al elegir; esto cubre el cambio posterior.)
+  if ((tpl as any).estado_meta && (tpl as any).estado_meta !== "aprobada") {
+    await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla ya no está aprobada por Meta" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    return;
+  }
 
   const { data: ch } = await db.from("channels")
     .select("phone_number_id, channel_type").eq("id", c.channel_id).maybeSingle();
@@ -171,11 +180,17 @@ export async function sendTemplateToContact(
   // con variables {{1}},{{2}} salía con los huecos VACÍOS → Meta la rechazaba y
   // el cliente no recibía el aviso. Se resuelven contra los datos del contacto.
   let rawParams = tpl.params;
-  if (!rawParams || rawParams.length === 0) {
-    const { data: tplRow } = await db.from("wa_templates")
-      .select("params").eq("channel_id", channelId).eq("name", tpl.name).maybeSingle();
-    rawParams = ((tplRow as any)?.params as string[]) ?? [];
+  // Cargamos la fila real (por canal+nombre+idioma) para (a) validar que sigue
+  // aprobada por Meta y (b) caer a sus params guardados si el caller no los pasó.
+  // El filtro por idioma evita que un canal con la MISMA plantilla en dos idiomas
+  // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
+  let tq = db.from("wa_templates").select("estado_meta, params").eq("channel_id", channelId).eq("name", tpl.name);
+  if (tpl.language) tq = tq.eq("language", tpl.language);
+  const { data: tplRow } = await tq.maybeSingle();
+  if ((tplRow as any)?.estado_meta && (tplRow as any).estado_meta !== "aprobada") {
+    throw new Error(`Plantilla "${tpl.name}" no está aprobada por Meta (${(tplRow as any).estado_meta})`);
   }
+  if (!rawParams || rawParams.length === 0) rawParams = ((tplRow as any)?.params as string[]) ?? [];
   // Un parámetro que resuelve a cadena VACÍA (ej. {{pedido_guia}} sin guía aún) hace que
   // Meta rechace la plantilla ENTERA (error 132000) → el cliente no recibe nada. Se pone
   // un guion como marcador para que el aviso igual se entregue (mejor "guía: -" que nada).
@@ -227,5 +242,9 @@ async function contactCtx(db: SupabaseClient, contactId: string, orderId?: strin
   return ctx;
 }
 function resolveP(text: string, ctx: any): string {
-  return (text ?? "").replace(/\{\{\s*([\w\-.]+)\s*\}\}/g, (_: string, k: string) => (ctx[k] ?? "").toString());
+  // Colapsa saltos de línea / tabs / espacios múltiples en el VALOR sustituido:
+  // Meta rechaza (132000) un parámetro de body con \n, \t o >4 espacios seguidos.
+  // Un cliente que escribió su dirección en varias líneas rompía el aviso ENTERO.
+  return (text ?? "").replace(/\{\{\s*([\w\-.]+)\s*\}\}/g, (_: string, k: string) =>
+    (ctx[k] ?? "").toString().replace(/\s+/g, " ").trim());
 }

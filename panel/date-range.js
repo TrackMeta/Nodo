@@ -34,7 +34,7 @@ export const PRESETS = [
   ["semanaAnt", "La semana pasada", () => { const t = d0(new Date()); const lun = dAdd(t, -((t.getDay() + 6) % 7)); return [dAdd(lun, -7), dAdd(lun, -1)]; }],
   ["mes", "Este mes", () => { const t = d0(new Date()); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; }],
   ["mesAnt", "El mes pasado", () => { const t = d0(new Date()); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; }],
-  ["max", "Máximo", () => { const t = d0(new Date()); return [dAdd(t, -364), t]; }],
+  ["max", "Máximo", () => { const t = d0(new Date()); return [new Date(2020, 0, 1), t]; }], // TODO el historial (no 365 días): antes recortaba y ocultaba pedidos/plata de +1 año en Compras/Embudo, en la vista por defecto
 ];
 export function computePreset(key) { const p = PRESETS.find((x) => x[0] === key) || PRESETS[5]; const [from, to] = p[2](); return { from, to, preset: p[0] }; }
 export function rangeLabel(r) {

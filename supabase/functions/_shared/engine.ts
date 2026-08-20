@@ -1105,7 +1105,7 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   if (modo === "humano") {
     const frag = String(texto ?? "").slice(0, 100);
     const motivo = vuelto > 0
-      ? `💸 Pide su vuelto (pagó de más). Saldo a favor: <b>S/ ${vuelto}</b>. “${frag}”`
+      ? `💸 Pide su vuelto (pagó de más). Saldo a favor: S/ ${vuelto}. “${frag}”`
       : `💸 Reclama un vuelto / devolución. “${frag}”`;
     await pasarAHumano(db, channelId, contactId, motivo, { aviso: true }); // pausa + traspasa + avisa al cliente
     return true;
@@ -1161,7 +1161,13 @@ function horarioAtencion(hcfg: any, tz: string): { dentro: boolean; proxima: str
   const dias = h.dias ?? {};
   const desde = String(h.desde || "09:00");
   const hasta = String(h.hasta || "20:00");
-  const dentro = dias[dia] !== false && hhmm >= desde && hhmm <= hasta;
+  // Franja normal (09:00–20:00) vs nocturna que cruza medianoche (20:00–02:00): sin
+  // el caso `desde > hasta` una franja nocturna nunca daba "dentro" → siempre mandaba
+  // "no hay asesor" aun en pleno horario. La UI permite elegir esas horas.
+  const enFranja = desde <= hasta
+    ? (hhmm >= desde && hhmm <= hasta)
+    : (hhmm >= desde || hhmm <= hasta);
+  const dentro = dias[dia] !== false && enFranja;
   return { dentro, proxima: dentro ? null : proximaApertura(h, tz) };
 }
 
@@ -2347,12 +2353,14 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         break;
       }
       case "transfer_human": {
-        await db.from("contacts").update({ bot_activo: false }).eq("id", run.contact_id);
-        await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", run.contact_id);
-        if (a.mensaje) await notifyAdmin(db, run, resolve(String(a.mensaje), ctx));
-        else await avisar(db, run.channel_id, run.contact_id, "transferido",
-          { ...datosAviso(ctx), motivo: "Lo transfirió el flujo." });
-        await logEvent(db, run.channel_id, run.contact_id, "humano", "Transferido a un humano");
+        // pasarAHumano garantiza el acuse al CLIENTE (nunca dead-air) + pausa el bot
+        // + alerta al operador + logEvent. Antes este caso pausaba el bot pero dejaba
+        // al cliente MUDO si el flujo no traía su propio nodo de "enviar mensaje".
+        const nota = a.mensaje ? resolve(String(a.mensaje), ctx) : "";
+        await pasarAHumano(db, run.channel_id, run.contact_id, nota || "Lo transfirió el flujo.", { aviso: true });
+        // Si el flujo definió un mensaje propio al operador, se lo mandamos aparte
+        // (notifyAdmin no depende de que el aviso "pide_humano" esté encendido).
+        if (nota) await notifyAdmin(db, run, nota);
         break;
       }
       case "subscribe_seq": await subscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_inicio", "Secuencia suscrita", a.nombre ?? null); break;
@@ -3351,12 +3359,20 @@ async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?
 // alcanza para enterarte; el detalle de cada mensaje queda en la Bandeja.
 const ultimoAvisoFallo = new Map<string, number>();
 
-export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, contactId: string, error: any) {
+export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, contactId: string, error: any, opts?: { critico?: boolean }) {
   try {
-    const ahora = Date.now();
-    const previo = ultimoAvisoFallo.get(channelId) ?? 0;
-    if (ahora - previo < 10 * 60 * 1000) return;
-    ultimoAvisoFallo.set(channelId, ahora);
+    // `critico`: un fallo por-cliente e irrepetible (pagó su saldo y NO recibió la
+    // CLAVE DE RECOJO / llegó a la agencia). Salta el throttle de 10 min por canal:
+    // ese throttle existe para frenar el spam de un canal mal configurado (token
+    // vencido → todos fallan), pero no debe tragarse una alerta de plata única —
+    // un fallo genérico en otro contacto haría desaparecer "este cliente pagó y no
+    // le llegó su clave".
+    if (!opts?.critico) {
+      const ahora = Date.now();
+      const previo = ultimoAvisoFallo.get(channelId) ?? 0;
+      if (ahora - previo < 10 * 60 * 1000) return;
+      ultimoAvisoFallo.set(channelId, ahora);
+    }
     const motivo = String(error?.message ?? error?.error?.message ?? "WhatsApp no aceptó el mensaje").slice(0, 300);
     await avisar(db, channelId, contactId, "envio_fallido", { motivo });
   } catch (_) { /* avisar de un fallo no puede provocar otro */ }
@@ -4535,7 +4551,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       // Si Meta rechazó el envío (false), avisar: el saldo quedó saldo_pagado y cerrado, pero
       // el cliente NO recibió su clave de recojo → sin esto quedaba en silencio.
       if (claveOk === false) {
-        await avisarEnvioFallido(db, channelId, contactId, { message: "El saldo se validó pero NO pude enviar la clave de recojo (WhatsApp la rechazó). Mándasela a mano al cliente." }).catch(() => {});
+        await avisarEnvioFallido(db, channelId, contactId, { message: "El saldo se validó pero NO pude enviar la clave de recojo (WhatsApp la rechazó). Mándasela a mano al cliente." }, { critico: true }).catch(() => {});
         await logEvent(db, channelId, contactId, "error", "Clave de recojo no enviada", "El saldo se aprobó pero la clave no salió — envíala a mano").catch(() => {});
       }
     }

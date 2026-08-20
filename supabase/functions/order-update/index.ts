@@ -436,7 +436,7 @@ Deno.serve(async (req) => {
               : newEstado === "en_agencia"
               ? "No pude avisarle al cliente que su pedido LLEGÓ a la agencia (fuera de la ventana de 24h). Avísale por plantilla o a mano — tiene que ir a pagar el saldo y recogerlo."
               : `No pude avisar al cliente el cambio a "${newEstado}" (fuera de la ventana de 24h). Usa una plantilla.`,
-          }).catch(() => {});
+          }, { critico: true }).catch(() => {});
         }
       } catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
     }

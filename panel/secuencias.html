@@ -164,11 +164,14 @@ async function load(){
   const [{ data:seqs },{ data:flows },{ data:tpl },{ data:prods },{ data:angs }]=await Promise.all([
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
     supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre"),
-    supa.from("wa_templates").select("id,name,language,activa").eq("channel_id",st.channelId).eq("activa",true).order("name"),
+    supa.from("wa_templates").select("id,name,language,activa,estado_meta").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("products").select("id,nombre,emoji,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
     supa.from("angulos").select("nombre,slug").eq("channel_id",st.channelId).order("orden"),
   ]);
-  st.seqs=seqs||[]; st.flows=flows||[]; st.templates=tpl||[];
+  // Solo plantillas APROBADAS: un paso de secuencia con plantilla no aprobada
+  // lanza throw, el try/catch del scheduler lo traga y AVANZA → el toque se pierde
+  // en silencio. null = legacy sin sync → se trata como aprobada.
+  st.seqs=seqs||[]; st.flows=flows||[]; st.templates=(tpl||[]).filter(x=>(x.estado_meta??"aprobada")==="aprobada");
   // Ángulos del canal (para el selector "Responde al ángulo" por variante). Dedupe
   // por slug — dos productos pueden compartir un slug; el match del motor es por slug.
   // Sin tabla angulos (pre-0063) → angs null → lista vacía → el selector no aparece.
