@@ -14,7 +14,12 @@ export interface CapiOpts {
   eventName: "Lead" | "InitiateCheckout" | "Purchase" | string;
   value?: number;
   currency?: string;
-  orderId?: string;      // comprobante → dedup de compra
+  orderId?: string;      // comprobante → dedup de compra (va a customData.order_id de Meta)
+  // Para el UPSELL: no escribir order_id en la COLUMNA (evita chocar con el índice único
+  // uq_capi_order(channel_id, order_id) que ya ocupó el Purchase principal → 23505 →
+  // la fila del upsell no se registraba y perdía idempotencia/estado). El order_id igual
+  // viaja en customData para Meta; la dedup del upsell es por su event_id único.
+  noOrderLock?: boolean;
   eventId?: string;      // si no se da, se deriva de orderId/contacto
   // El ctwa_clid CONGELADO del pedido. Se antepone al del contacto porque el
   // Purchase se dispara al cierre (días después), cuando el contacto ya pudo
@@ -90,7 +95,7 @@ export async function sendCapiEvent(
   const { error: insErr } = await db.from("capi_events").insert({
     channel_id: channelId, contact_id: contactId,
     event_name: opts.eventName, value: opts.value ?? null,
-    currency: opts.currency ?? "PEN", order_id: opts.orderId ?? null,
+    currency: opts.currency ?? "PEN", order_id: opts.noOrderLock ? null : (opts.orderId ?? null),
     event_id: eventId, action_source: actionSource, estado: "pendiente",
   });
   if (insErr) {
@@ -245,7 +250,8 @@ export async function maybePurchaseUpsell(
     eventId: `Purchase:${order.id}:x:${sufijo}`,          // distinto del principal → no colisiona ni dedupea
     value: Number(bumpValue),
     currency: (order.currency as string) || "PEN",
-    orderId: order.id,
+    orderId: order.id,        // va a customData.order_id (Meta)
+    noOrderLock: true,        // pero NO a la columna (evita el choque con el Purchase principal)
     ctwaClid: (ship.ctwa_clid as string) || undefined,
     match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined, country: "pe" },
   });

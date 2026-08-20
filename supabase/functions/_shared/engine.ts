@@ -777,7 +777,11 @@ export async function aplicarStock(
     // medio, se reintenta releyendo el stock fresco. (Sin migración: atómico vía la
     // serialización del UPDATE en Postgres + el filtro por updated_at.)
     let applied = false;
-    for (let intento = 0; intento < 6 && !applied; intento++) {
+    // 12 reintentos con backoff aleatorio (jitter): bajo un PICO de anuncios, muchos
+    // compradores de la MISMA variante caliente chocan en el CAS del mismo segundo. Con
+    // pocos reintentos y sin backoff, los perdedores agotaban intentos → su unidad NUNCA
+    // se descontaba → sub-reserva silenciosa → sobreventa (justo lo que el stock evita).
+    for (let intento = 0; intento < 12 && !applied; intento++) {
       try {
         const { data: p } = await db.from("products").select("nombre, config, updated_at").eq("id", pid).maybeSingle();
         if (!p) { applied = true; break; }
@@ -793,7 +797,11 @@ export async function aplicarStock(
           const before = Number(nuevoStock[k]) || 0;
           const after = before + d;
           nuevoStock[k] = after; changed = true;
-          if (signo < 0 && ((before > umbral && after <= umbral) || (before > 0 && after <= 0))) {
+          // Alerta al cruzar el umbral (una vez) Y en CADA descuento que deje stock ≤0:
+          // antes solo avisaba en el 1er cruce a 0 (before>0), así que una 2ª/3ª sobreventa
+          // (0→-1→-2), o un pedido nuevo con el stock ya en ≤0, quedaban MUDOS. Cada
+          // sobreventa debe verse (el diseño es "avisa pero no bloquea").
+          if (signo < 0 && ((before > umbral && after <= umbral) || after <= 0)) {
             localAlerts.push({ nombre: (p as any).nombre || "producto", key: k, restante: after, agotado: after <= 0 });
           }
         }
@@ -803,7 +811,7 @@ export async function aplicarStock(
         if (upd) q = q.eq("updated_at", upd); // CAS: solo si nadie escribió desde la lectura
         const { data: ok } = await q.select("id");
         if (ok && ok.length) { alerts.push(...localAlerts); applied = true; }
-        // else: conflicto (otro escribió) → reintenta con lectura fresca
+        else { await new Promise((r) => setTimeout(r, 15 + Math.floor(Math.random() * 60))); } // conflicto → backoff jitter y reintenta con lectura fresca
       } catch (e) { console.error("[aplicarStock]", (e as any)?.message ?? e); break; }
     }
     if (!applied) { allOk = false; console.error("[aplicarStock] CAS agotó reintentos para", pid); }
