@@ -7775,7 +7775,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
       // que "{{precio}} saldrá rebajado", así que acá se cumple.
       try {
         const of = await ofertaActiva(db, run);
-        if (of && Number.isFinite(Number(of.precio))) ctx.precio = Number(of.precio);
+        if (of && Number.isFinite(Number(of.precio))) {
+          // SOLO si la oferta es para la opción EN JUEGO (mismo check que precioEsperado/OCR).
+          // Si el version_id quedó rancio (se borró/reemplazó la presentación en el producto),
+          // NO calza → se muestra el precio BASE, igual que valida el OCR. Antes el copy ponía
+          // el descuento incondicionalmente y el OCR esperaba el base → el pago correcto del
+          // cliente se RECHAZABA (copy con un precio, cobro con otro).
+          const opcion = await opcionElegida(db, run, ctx);
+          if (opcion && of.opcion_id === opcion.id) ctx.precio = Number(of.precio);
+        }
       } catch (_) { /* sin oferta vigente → precio base */ }
       // 📦 Extra físico con tallas propias YA aceptado (bump stock_pendiente): el
       // bot pregunta su talla (campos OPCIONALES, prefijo xt<vid>_). Al capturarla,
