@@ -286,7 +286,12 @@ function funnelDe(cs){
   return { c, total,
     niveles:{ llegaron:total, curiosos, interes, calientes, confirmaron, compraron },
     paso:{ curiosos:pct(curiosos,total), interes:pct(interes,curiosos), caliente:pct(calientes,interes), confirmar:pct(confirmaron,calientes), comprar:pct(compraron,confirmaron) },
-    efectividad: pct(compraron, interes),   // de los que interactuaron de verdad, cuántos cierran
+    // Efectividad de cierre: los PERDIDOS (pedido que se cayó: rechazo/cancelado/no recogido)
+    // SÍ entran en el divisor — se interesaron de verdad (llegaron a tener pedido) y no cerraste.
+    // Excluirlos escondía las ventas caídas e inflaba la efectividad. Las BARRAS del embudo sí
+    // los excluyen a propósito (fuga post-venta ≠ fuga de enganche); solo este número los suma,
+    // para que coincida con el Dashboard y sea honesto.
+    efectividad: pct(compraron, interes + c.perdido),   // de los que se interesaron de verdad (incl. los que se cayeron), cuántos cerraste
     conversion: pct(compraron, total) };    // de todos los contactos, cuántos compran
 }
 
