@@ -91,8 +91,16 @@ Deno.serve(async (req) => {
     if (CONFIRM_STATES.includes(newEstado)) patch.confirmed_at = new Date().toISOString();
   }
 
-  const { error } = await db.from("orders").update(patch).eq("id", order.id);
+  // CAS sobre el estado cuando HAY transición: dos aprobaciones concurrentes del MISMO
+  // botón de Telegram (doble-tap antes de que se quiten los botones) leían ambas el estado
+  // viejo y ambas pasaban a entregar → DOBLE entrega digital + doble aviso. Con `.eq(estado)`
+  // solo una gana el UPDATE; la otra afecta 0 filas y aborta las side-effects de abajo
+  // (resumeAfterApproval / entrega / CAPI / avisos). Sin transición (edición pura) no aplica.
+  let uq = db.from("orders").update(patch).eq("id", order.id);
+  if (newEstado) uq = uq.eq("estado", (order as any).estado);
+  const { data: upd, error } = await uq.select("id");
   if (error) return json({ error: error.message }, 500);
+  if (newEstado && (!upd || !upd.length)) return json({ ok: true, deduped: true });
   // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);

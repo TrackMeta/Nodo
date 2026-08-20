@@ -64,7 +64,12 @@ Deno.serve(async (req) => {
   const cb = update?.callback_query;
   const msg = update?.message;
 
-  const secrets = await getChannelSecrets(db, channelId);
+  // getChannelSecrets LANZA ante un error de RPC; sin try/catch un hipo de DB daba 500 →
+  // Telegram REINTENTA el update (tormenta de reintentos). Se responde 200 y se corta: los
+  // botones siguen visibles, el operador puede volver a tocar (no se pierde la venta).
+  let secrets: Awaited<ReturnType<typeof getChannelSecrets>> | null = null;
+  try { secrets = await getChannelSecrets(db, channelId); }
+  catch (e) { console.error("[telegram-webhook] getChannelSecrets:", (e as any)?.message ?? e); return json({ ok: true }); }
   const token = secrets?.telegram_bot_token;
   if (!token) return json({ ok: true });
 

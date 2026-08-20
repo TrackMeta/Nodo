@@ -361,6 +361,15 @@ async function runEngineTask(
       if (!msgs?.length) return;
       // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno.
       if ((msgs[0] as any).wamid !== wamid) return;
+      // Una IMAGEN/AUDIO corre de inmediato (bufferSeg=0) y ABSORBE los textos previos
+      // dentro de su ventana de plegado. No entra en el protocolo de `msgs[0]` (el
+      // desempate por wamid solo cubre texto-vs-texto), así que en el MISMO segundo con
+      // un wamid desfavorable el texto quedaba como msgs[0] y se procesaba DOS VECES
+      // (una plegado en la imagen, otra por su propio task). Si hay una imagen/audio con
+      // ts >= el de este texto y dentro de la ventana de plegado, ya lo procesó → cede.
+      const selfTs = new Date((msgs.find((m: any) => m.wamid === wamid) as any)?.ts ?? 0).getTime();
+      const foldWindow = (bufferSeg + 2) * 1000;
+      if (selfTs && msgs.some((m: any) => (m.type === "image" || m.type === "audio") && (() => { const it = new Date(m.ts).getTime(); return it >= selfTs && (it - selfTs) <= foldWindow; })())) return;
       // Unir la cadena de textos con separación ≤ buffer (más reciente hacia
       // atrás) en un solo texto, en orden cronológico.
       const chain: string[] = [];
