@@ -1193,6 +1193,7 @@ export function openVentaManual(contact, deps) {
             <div class="vm-money"><span class="vm-cur">S/</span><input class="vm-inp" id="vmMonto" type="number" min="0" step="0.5" inputmode="decimal"/></div>
           </div>
           <div id="vmGift" class="vm-gift" style="display:none"></div>
+          <div id="vmAtrWrap" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
         </div>
 
         <div class="vm-block">
@@ -1365,6 +1366,12 @@ export function openVentaManual(contact, deps) {
       g("#vmVer").innerHTML = verOpts(p);
       g("#vmMonto").value = g("#vmVer").selectedOptions[0]?.dataset.precio || 0;
       g("#vmShip").style.display = (p?.tipo === "fisico") ? "flex" : "none";
+      // Variante (talla/color) del principal: si el producto la tiene, se captura para
+      // descontar el STOCK de la variante correcta y que salga en el rótulo/Excel del courier.
+      // Sin esto la venta manual armaba una clave de stock VACÍA → no descontaba nada y no
+      // avisaba (sobreventa silenciosa), y el que empaca despachaba sin la talla.
+      const aw = g("#vmAtrWrap");
+      if (aw) { const ejes = ejesDe(p?.id); aw.innerHTML = ejes.length ? varSelectsHtml(p?.id, {}, "vmatr-ppal") : ""; aw.style.display = ejes.length ? "flex" : "none"; }
       renderSeg(); refreshGiftAndNote(); recomputeTotal();
     }
 
@@ -1394,16 +1401,25 @@ export function openVentaManual(contact, deps) {
     g("#vmX").onclick = () => close(false);
     ov.onclick = (e) => { if (e.target === ov) close(false); };
     g("#vmOk").onclick = async () => {
+      // El monto DEBE ser > 0: registrar una venta en S/0 la cuenta como cerrada (Dashboard/
+      // KPIs), entrega el digital gratis y dispara un Purchase(0) a Meta que ensucia el ROAS.
+      const monto = Number(g("#vmMonto").value) || 0;
+      if (monto <= 0) { toast("Ponle el monto de la venta (mayor a 0).", true); const mi = g("#vmMonto"); if (mi) mi.focus(); return; }
       const btn = g("#vmOk"); btn.disabled = true; const old = btn.textContent; btn.textContent = "Registrando…";
       const t = (id) => (g(id)?.value || "").trim();
       const fisico = (selProd()?.tipo) === "fisico";
       const envio = !fisico ? null : (zona === "lima"
         ? { zona: "lima", cliente: t("#vmNom"), tel: t("#vmTel"), direccion: t("#vmDir"), distrito: t("#vmDist"), referencia: t("#vmRef") }
         : { zona: "provincia", cliente: t("#vmNom"), tel: t("#vmTel"), dni: t("#vmDni"), ciudad: t("#vmCiudad"), destino: t("#vmDest") });
+      // Variante (talla/color) del principal → atributos: crearVentaManual los vuelca a
+      // shipping.atributos y así stockKeyEngine arma la clave correcta y descuenta el stock.
+      const atributos = {};
+      ov.querySelectorAll(".vmatr-ppal").forEach((sl) => { const v = (sl.value || "").trim(); if (v) atributos[sl.dataset.eje] = v; });
       const body = {
         channel_id: channelId, contact_id: contact.id,
         product_id: g("#vmProd").value, version_id: g("#vmVer").value,
-        amount: Number(g("#vmMonto").value) || 0, estado, entregar: g("#vmEnt").checked, envio,
+        atributos: Object.keys(atributos).length ? atributos : null,
+        amount: monto, estado, entregar: g("#vmEnt").checked, envio,
         extras: extras.filter((e) => e.productId && e.versionId).map((e) => {
           const p = prodById(e.productId), v = (p?.product_versions || []).find((x) => x.id === e.versionId);
           return { productId: e.productId, versionId: e.versionId, nombre: (p?.emoji ? p.emoji + " " : "") + (p?.nombre || "extra") + (v && v.nombre && v.nombre !== "Única" ? " · " + v.nombre : ""), precio: Number(e.precio) || 0, digital: (p?.tipo || "digital") !== "fisico" };
@@ -1802,7 +1818,7 @@ export async function openEditarPedido(o, deps) {
         Object.assign(ship, { dni: g("#eDni").value.trim(), ciudad: g("#eCiudad").value.trim(),
           destino: dst, mercaderia: g("#eMerc").value,
           alto: numU("#eAlto"), ancho: numU("#eAncho"), largo: numU("#eLargo"), peso: numU("#ePeso"),
-          adelanto: g("#eAdel").value, saldo: g("#eSaldo").value,
+          adelanto: numU("#eAdel"), saldo: numU("#eSaldo"), // número o null (no string): un "80" de texto rompía sumas aguas abajo (concat/NaN)
           guia: g("#eGuia").value.trim(), codigo_envio: g("#eCodigo").value.trim(), clave_recojo: g("#eClave").value.trim(),
           flete: numU("#eFlete"), empaque: numU("#eEmpaqueP") });
         if (dst) ship.sede_por_confirmar = null;

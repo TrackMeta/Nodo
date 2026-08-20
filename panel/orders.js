@@ -91,7 +91,7 @@ export const esCerrado = (o) => EST[o?.estado]?.cobro === "todo";
 // Ya salió físicamente y todavía no está cobrado del todo: es el riesgo vivo.
 // Es un SUBCONJUNTO de porCobrar — se muestra como desglose, no como KPI aparte
 // (dos números que se solapan sin decirlo confunden más de lo que informan).
-export const enLaCalle = (o) => ["despachado","en_agencia","en_reparto"].includes(o?.estado);
+export const enLaCalle = (o) => ["despachado","en_agencia","en_reparto","reprogramado"].includes(o?.estado);
 // OJO: `shipping.zona` puede valer "digital" (lo escribe "Editar pedido" de un
 // pedido digital). NO cuenta como físico — solo "lima"/"provincia" lo hacen. Sin
 // esta guarda, un digital con zona="digital" se colaba como físico y zonaDe lo
@@ -172,7 +172,10 @@ export function margen(o, prod, cantidad = 1){
   const f  = flete(o);
   if (cp == null) return null;
   if (esFisico(o) && f == null) return null; // físico sin flete registrado
-  return cobrado(o) - cp - (f ?? 0) - empaque(o);
+  // El empaque es un costo FÍSICO (caja/bolsa/etiqueta del despacho): en digital NO se
+  // resta (el Dashboard y el digest definen la ganancia digital = cobrado − COGS). Sin este
+  // gate, Rendimiento/CPA restaba el empaque a un digital y daba una ganancia distinta al Dashboard.
+  return cobrado(o) - cp - (f ?? 0) - (esFisico(o) ? empaque(o) : 0);
 }
 
 // Costo de reparto configurado para una zona de Lima. Cascada: zona → grupo →

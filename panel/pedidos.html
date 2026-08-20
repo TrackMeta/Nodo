@@ -231,7 +231,7 @@ function avaColor(s){ const str=String(s||"?"); let h=0; for(let i=0;i<str.lengt
 const TONE_COLOR={ok:"var(--green)",warn:"var(--amber)",bad:"var(--red)"};
 const total=O.total;
 function rel(iso){ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(s<90) return "hace 1 min"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
-function isFisico(o){ return (o.product&&o.product.tipo==="fisico") || FIS_STATES.has(o.estado) || (o.shipping&&Object.keys(o.shipping).length>0 && !!o.shipping.zona); }
+function isFisico(o){ if(String((o.shipping&&o.shipping.zona)||"")==="digital") return false; /* "Editar pedido" escribe zona="digital" en digitales → no meterlos al kanban físico (mismo guard que O.esFisico) */ return (o.product&&o.product.tipo==="fisico") || FIS_STATES.has(o.estado) || (o.shipping&&Object.keys(o.shipping).length>0 && !!o.shipping.zona); }
 const badgeClass=O.tono;
 const cap=(s)=>{ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); };
 
@@ -503,7 +503,11 @@ function render(){
 function primaryAction(o){
   const zona=zonaDe(o);
   switch(o.estado){
-    case "carrito": return { label:"Confirmar pedido", estado:"confirmado" };
+    // Provincia: un carrito avanza a "esperando adelanto" (su flujo), NO a "confirmado" (que
+    // es estado de LIMA) → si no, la tarjeta saltaba al tablero de Lima o desaparecía.
+    case "carrito": return zona==="provincia"
+      ? { label:"Esperar adelanto", estado:"esperando_adelanto" }
+      : { label:"Confirmar pedido", estado:"confirmado" };
     case "confirmado": return zona==="provincia"
       ? { label:"Adelanto validado", estado:"adelanto_validado" }
       : { label:"Salió a reparto", estado:"en_reparto" };
@@ -838,7 +842,17 @@ function openMenu(ev,o){
   const trans=zona==="lima"
     ? [["confirmado"],["en_reparto"],["entregado_cobrado"],["reprogramado"],["rechazado"]]
     : [["esperando_adelanto"],["adelanto_validado"],["despachado"],["en_agencia"],["saldo_pagado"],["recogido"],["no_recogido"]];
-  trans.forEach(([e])=>{ if(e!==o.estado) ops.push([`→ ${O.label(e)}`,()=>confirmSet(o,e,O.label(e))]); });
+  // No ofrecer en el ⋮ saltos que SE SALTAN pasos de plata/entrega: cerrar una venta
+  // (saldo_pagado dispara CAPI a Meta + la clave de recojo; entregado_cobrado/recogido)
+  // sin haber despachado/cobrado atribuye a Meta una venta nunca cobrada y le manda al
+  // cliente una clave VACÍA. Estos estados solo se ofrecen desde su paso previo. El botón
+  // primario guía el camino correcto; el ⋮ sigue permitiendo retroceder y las correcciones.
+  const preReq={ saldo_pagado:["despachado","en_agencia"], recogido:["saldo_pagado"], entregado_cobrado:["en_reparto"] };
+  trans.forEach(([e])=>{
+    if(e===o.estado) return;
+    if(preReq[e] && !preReq[e].includes(o.estado)) return; // salto que se salta pasos → no ofrecerlo
+    ops.push([`→ ${O.label(e)}`,()=>confirmSet(o,e,O.label(e))]);
+  });
   ops.push(["sep"]);
   // Si la plata YA entró, tumbar el pedido no es cancelar: es anular una venta,
   // y eso pide motivo (misma puerta que Compras). Sin esto se podía borrar una

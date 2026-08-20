@@ -25,6 +25,9 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, contact_id, product_id, version_id, amount, estado, entregar, atributos, extras, envio } = body;
   if (!channel_id || !contact_id || !product_id || !version_id || !estado) return json({ error: "faltan_campos" }, 400);
+  // Monto > 0: una venta manual en S/0 se contabiliza como cerrada, entrega el digital gratis
+  // y dispara un Purchase(0) a Meta. El front ya lo bloquea; acá es la red de seguridad.
+  if (!(Number(amount) > 0)) return json({ error: "monto_invalido", detalle: "El monto debe ser mayor a 0." }, 400);
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   // El contact_id (y el product_id) vienen del cliente: se exige que pertenezcan al canal
   // ya verificado, si no un miembro del tenant A crearía un pedido sobre un contacto del

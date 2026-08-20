@@ -430,10 +430,11 @@ Deno.serve(async (req) => {
           // RECOJO —lo único que el cliente necesita para recoger su pedido YA PAGADO— y el
           // operador clicó "Aprobar y dar la clave" creyendo que salió. Se le avisa por
           // Telegram para que la mande por plantilla o a mano (antes: silencio total).
-          const critico = newEstado === "saldo_pagado";
           await avisarEnvioFallido(db, (order as any).channel_id, (order as any).contact_id, {
-            message: critico
+            message: newEstado === "saldo_pagado"
               ? "No pude enviar la CLAVE DE RECOJO (el cliente está fuera de la ventana de 24h). Mándasela por plantilla o a mano — la necesita para recoger."
+              : newEstado === "en_agencia"
+              ? "No pude avisarle al cliente que su pedido LLEGÓ a la agencia (fuera de la ventana de 24h). Avísale por plantilla o a mano — tiene que ir a pagar el saldo y recogerlo."
               : `No pude avisar al cliente el cambio a "${newEstado}" (fuera de la ventana de 24h). Usa una plantilla.`,
           }).catch(() => {});
         }
