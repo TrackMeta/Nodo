@@ -216,6 +216,21 @@ async function conciliar(){
   };
   st.ventas=cerradas.flatMap(entradasDe);
 
+  // Para el LEDGER anti-reúso: una venta creada JUSTO ANTES del rango pero pagada
+  // dentro de la ventana de movimientos (desde-6h) no entra a st.ventas → su depósito
+  // ya usado quedaba libre y podía auto-cuadrar una 2ª venta del borde (falso positivo
+  // que oculta un pago falso). Se cargan las conciliadas de los días previos SOLO para
+  // el ledger (no se muestran ni se re-concilian). Solo se usa su `_yaConciliado.mov`,
+  // que sale del sello guardado (shipping.conciliacion), independiente de las imágenes.
+  const LEDGER_LOOKBACK_DIAS=3;
+  const { data:prevOrds }=await supa.from("orders")
+    .select("id,amount,order_bumps,estado,shipping,contact_id,confirmed_at,updated_at,created_at,product:product_id(nombre)")
+    .eq("channel_id",st.channelId)
+    .gte("created_at",new Date(desde.getTime()-LEDGER_LOOKBACK_DIAS*86400000).toISOString())
+    .lt("created_at",desde.toISOString()).limit(2000);
+  const ledgerExtra=(prevOrds||[]).filter(o=>O.EST[o.estado] && O.EST[o.estado].cobro==="todo")
+    .flatMap(entradasDe).filter(v=>v._yaConciliado);
+
   // Los ya conciliados en una corrida anterior no se vuelven a tocar.
   const pendientes=st.ventas.filter(v=>!v._yaConciliado);
   const desdeMov=new Date(desde.getTime()-MARGEN_HORAS*3600000);
@@ -231,7 +246,7 @@ async function conciliar(){
   const fpMov=(quien,monto,fecha)=>`${String(quien||"").trim().toLowerCase()}|${Number(monto).toFixed(2)}|${new Date(fecha).getTime()}`;
   const fpLegacy=(monto,fecha)=>`${Number(monto).toFixed(2)}|${new Date(fecha).getTime()}`;
   const usadosMov=new Set(), usadosLegacy=new Set();
-  for(const v of st.ventas){
+  for(const v of [...st.ventas, ...ledgerExtra]){
     const mv=v._yaConciliado&&v._yaConciliado.mov;
     if(mv&&mv.monto!=null&&mv.fecha){
       if(mv.quien) usadosMov.add(fpMov(mv.quien,mv.monto,mv.fecha));
