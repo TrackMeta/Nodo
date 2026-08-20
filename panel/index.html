@@ -1903,6 +1903,10 @@ $("fileInput").addEventListener("change", (e) => { const f = e.target.files[0]; 
 function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
 async function sendAttachment(file){
   if (!state.contactId) return;
+  // Fijar el destino AHORA: la subida del archivo tarda varios segundos (hasta 16 MB) y NO
+  // hay overlay que bloquee, así que el operador puede abrir OTRO chat mientras sube → sin
+  // esto, el envío leía state.contactId FRESCO y la imagen se iba al contacto equivocado.
+  const cid = state.contactId;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
   if (!await okManualEnvio()) return;
   if (file.size > 16*1024*1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
@@ -1915,7 +1919,7 @@ async function sendAttachment(file){
     if (state.isTest) {
       if (state.testAs === "bot") {
         const { error } = await supa.from("messages").insert({
-          channel_id: state.channelId, contact_id: state.contactId, direction: "out",
+          channel_id: state.channelId, contact_id: cid, direction: "out",
           type: media.kind, content: { media_url: media.url, caption: "", mime: media.mime, filename: media.filename }, status: "sent",
         });
         if (error) toast(error.message, true);
@@ -1923,7 +1927,7 @@ async function sendAttachment(file){
         await callFn("webchat", { channel_id: state.channelId, media });
       }
     } else {
-      const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, media });
+      const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: cid, media });
       const o = await r.json().catch(() => ({}));
       if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "Error al enviar", true); }
       else setBotPill(false);

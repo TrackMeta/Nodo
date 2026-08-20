@@ -697,7 +697,7 @@ async function load(){
   // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
   // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
-  const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR] = await Promise.all([
+  const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR, admR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
     supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
@@ -710,6 +710,7 @@ async function load(){
     // en por_stage, así que el embudo del Dashboard daba 1 de más que la sección
     // Embudo (que lo excluye). Traemos su etapa para descontarlo del mismo bucket.
     supa.from("contacts").select("stage").eq("channel_id",channelId).eq("wa_id","webchat-test").maybeSingle(),
+    supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
   ]);
   if(cid!==channelId) return; // cambiaste de bot mientras cargaba → no pintes los números del anterior
   const s=stats.data||{};
@@ -782,6 +783,12 @@ async function load(){
   Object.keys(adCnt).forEach(a=>{ adTipo[a]=adCnt[a].fisico>=adCnt[a].digital?"fisico":"digital"; });
   let gastoAds=0;
   ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo) gastoAds+=Number(i.gasto||0); });
+  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA de ads (casi siempre USD),
+  // pero bruta/cobrado están en la del negocio. Sin convertir, neta/ROAS/%ads salen inflados
+  // (~3.75× con USD/PEN). Aún no se convierte → se AVISA (Rendimiento ya avisa; el Dashboard
+  // no lo hacía y es PEOR: son los números que el dueño mira a diario para decidir su inversión).
+  const _admRows = admR.error ? [] : (admR.data||[]);
+  const monedaAdsRara = gastoAds>0 && (_admRows.some(m=>m.account_currency && String(m.account_currency).toUpperCase()!==CUR) || _admRows.every(m=>!m.account_currency));
   // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
   // físico = margen (los que tienen costo registrado).
   let bruta=0, sinCostoF=0;
@@ -854,9 +861,9 @@ async function load(){
     : (sinCostoF ? `tras mercadería y envío · faltan ${sinCostoF} costo${sinCostoF>1?"s":""}` : "tras mercadería y envío");
   K.push(kpi("chart","#22c079","Ganancia bruta", money(bruta), brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
-    hasAds ? `${pctAds}% de lo cobrado${roas>0?` · ROAS ${roas.toFixed(1)}×`:""}` : "conecta Meta en Ajustes"));
+    (hasAds ? `${pctAds}% de lo cobrado${roas>0?` · ROAS ${roas.toFixed(1)}×`:""}` : "conecta Meta en Ajustes") + (monedaAdsRara?" · ⚠ moneda sin convertir":"")));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
-  K.push(kpi("wallet", neta<0?"#e2564a":"#22c079", "Ganancia neta", money(neta), "lo que ganaste de verdad, tras todo"));
+  K.push(kpi("wallet", neta<0?"#e2564a":"#22c079", "Ganancia neta", money(neta), monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
   // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
   if(vueltoTotal>0){
     K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
@@ -1107,7 +1114,11 @@ async function loadBitacora(monthStart){
   const delTipo=(o)=> tipo==="todo"||(tipo==="fisico"?O.esFisico(o):!O.esFisico(o));
   const allOrd=ordR.error?[]:(ordR.data||[]);
   const orders=allOrd.filter(delTipo).filter(O.esVenta);
-  const adTipo={}; allOrd.forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(a&&!adTipo[a]) adTipo[a]=O.esFisico(o)?"fisico":"digital"; });
+  // Tipo del anuncio por MAYORÍA de sus pedidos (no "primero visto": el orden es arbitrario
+  // sin ORDER BY → mandaba el gasto de un anuncio mixto al segmento equivocado, y el profit
+  // diario de la Bitácora no cuadraba con el del Dashboard, que ya usa la mayoría).
+  const adCnt={}; allOrd.forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (adCnt[a]||(adCnt[a]={fisico:0,digital:0}))[O.esFisico(o)?"fisico":"digital"]++; });
+  const adTipo={}; Object.keys(adCnt).forEach(a=>{ adTipo[a]=adCnt[a].fisico>=adCnt[a].digital?"fisico":"digital"; });
   const day={}; const D=(k)=> day[k]||(day[k]={margin:0,rev:0,spend:0,exp:0,sales:0});
   orders.forEach(o=>{
     const k=ymd(new Date(o.created_at));

@@ -64,13 +64,22 @@ Deno.serve(async (req) => {
     if (!tpl || tpl.activa === false || ((tpl as any).estado_meta ?? "aprobada") !== "aprobada") {
       return json({ error: "plantilla_invalida", detalle: "La plantilla no existe, está inactiva o no está aprobada." }, 400);
     }
-    // Humano interviene → pausar el bot, igual que con texto libre.
-    await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
+    // Validar ANTES de enviar: sin token/wa_id, sendTemplateToContact NO manda a Meta pero
+    // igual inserta el mensaje como "sent" y devuelve wamid="" → el panel mostraba
+    // "Plantilla enviada ✓" con una burbuja FANTASMA que nunca salió. Se falla antes.
+    const secrets = await getChannelSecrets(db, channel_id);
+    if (!secrets?.access_token) return json({ error: "sin_token", detalle: "El canal no tiene token de WhatsApp configurado." }, 500);
+    if (!contact.wa_id) return json({ error: "sin_wa_id", detalle: "El contacto no tiene número de WhatsApp." }, 400);
     try {
       const wamid = await sendTemplateToContact(db, channel_id, contact_id, {
         name: tpl.name, language: tpl.language || "es",
         params: ((tpl as any).params ?? []) as string[],
       }, { sentBy: "human", sentByUser: uid });
+      if (!wamid) return json({ error: "no_enviado", detalle: "No se pudo enviar la plantilla (revisa el número/token del canal)." }, 502);
+      // Recién con el envío CONFIRMADO se pausa el bot: si el envío falla, el bot sigue
+      // atendiendo (antes se pausaba ANTES de enviar → un fallo dejaba el bot mudo/pausado
+      // sin que saliera nada al cliente, hasta re-activarlo a mano).
+      await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
       await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
       return json({ ok: true, wamid });
     } catch (e) {

@@ -664,9 +664,13 @@ async function importCsv(file){
     rows.push({ channel_id:st.channelId, wa_id:wa, nombre:(cols[ci.nombre]||"")||null });
   }
   if(!rows.length){ toast("No se encontraron teléfonos válidos",true); return; }
-  const { error }=await supa.from("contacts").upsert(rows,{ onConflict:"channel_id,wa_id" });
+  // ignoreDuplicates: NO pisar los contactos que YA existen. Sin esto, importar una lista
+  // (ej. del courier) con el nombre en blanco o distinto RENOMBRABA/borraba el nombre de tus
+  // clientes actuales de golpe e irreversible. El alta de UN contacto ya tiene este guard;
+  // la importación en lote debe respetarlo igual — solo se AGREGAN los nuevos.
+  const { error }=await supa.from("contacts").upsert(rows,{ onConflict:"channel_id,wa_id", ignoreDuplicates:true });
   if(error){ toast(error.message,true); return; }
-  toast(`${rows.length} contacto(s) importados ✓`); await load();
+  toast(`Importados ✓ (los que ya existían se conservaron tal cual)`); await load();
 }
 boot();
 </script>
