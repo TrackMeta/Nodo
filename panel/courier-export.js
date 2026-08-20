@@ -30,11 +30,20 @@ export const POR_DESPACHAR = {
 // Columnas: B destinatario · C celular · D distrito · E dirección · F referencia
 // · G maps/GPS · H método cobro · I importe a cobrar · J observaciones ·
 // K descripción · L cantidad · N SKU. (A y las opcionales van vacías.)
+// Teléfono REAL para el courier. shipping.tel (capturado) manda; luego la columna
+// telefono; c.wa_id SOLO si es un número de verdad y NO el BSUID de un cliente sin número
+// (wa_id === user_id) ni el marcador de prueba. Sin esta guarda, un cliente sin número
+// exportaba un celular basura (últimos 9 díg. del BSUID) → el courier no lo ubica.
+function telCliente(c, s) {
+  const wa = String((c && c.wa_id) || ""), uid = String((c && c.user_id) || "");
+  return String((s && s.tel) || "").trim() || String((c && c.telefono) || "").trim()
+    || (wa && wa !== "webchat-test" && wa !== uid ? wa : "");
+}
 function filasEva(orders) {
   return orders.map((o) => {
     const c = o.contact || {}, s = o.shipping || {}, f = [];
     f[1] = s.cliente || c.nombre || "";        // B DESTINATARIO (editable: shipping.cliente manda)
-    f[2] = tel9(s.tel || c.telefono || c.wa_id); // C CELULAR (shipping.tel captura al cliente sin número; c.wa_id es legacy)
+    f[2] = tel9(telCliente(c, s));             // C CELULAR (capturado; nunca el BSUID de un sin-número)
     f[3] = (s.distrito || "").toUpperCase();    // D DISTRITO ENTREGA
     f[4] = s.direccion || "";                   // E DIRECCIÓN
     f[5] = s.referencia || "";                  // F REFERENCIA
@@ -53,6 +62,7 @@ async function revisarEva(orders) {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || "un pedido";
     if (!s.direccion) p.push(`${q}: falta dirección.`);
     if (!s.distrito) p.push(`${q}: falta distrito.`);
+    if (!telCliente(c, s)) p.push(`${q}: falta un teléfono válido — el courier no podrá coordinar la entrega.`);
     // El distrito va al Excel tal cual; si no coincide con la lista oficial de
     // Eva (mal escrito o distrito raro) avisamos para que lo corrijan en Editar.
     else if (oficiales.size && !oficiales.has(_norm(s.distrito)))
@@ -71,7 +81,7 @@ function filasShalom(orders, cfg, listas) {
   return orders.map((o) => {
     const c = o.contact || {}, s = o.shipping || {}, f = [];
     f[0] = s.dni || "";                                            // A DESTINATARIO (DOC)
-    f[1] = tel9(s.tel || c.telefono || c.wa_id);                   // B TELF. DESTINATARIO
+    f[1] = tel9(telCliente(c, s));                                 // B TELF. DESTINATARIO (nunca el BSUID)
     f[5] = (sh.origen || "").toUpperCase();                        // F ORIGEN (agencia, de la config)
     // G DESTINO: agencia elegida → SUGERIDA (match de la lista con lo que dijo el
     // cliente) → sede/ciudad en crudo. Así el Excel sale con la agencia oficial.
@@ -96,6 +106,7 @@ async function revisarShalom(orders, cfg) {
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || s.dni || "un pedido";
     if (!s.dni) p.push(`${q}: falta DNI. (Editar pedido)`);
+    if (!telCliente(c, s)) p.push(`${q}: falta un teléfono válido para el courier. (Editar pedido)`);
     // Se resuelve el DESTINO igual que filasShalom y se valida contra la lista OFICIAL:
     // si sale una ciudad cruda ("CUSCO") en vez de una agencia real, la columna DESTINO
     // tiene validación de lista en la plantilla de Shalom → la fila (o el archivo) se

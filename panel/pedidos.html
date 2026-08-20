@@ -423,10 +423,10 @@ async function load(){
       st.entregas=data?.entregas||null; st.channelName=data?.nombre||"";
       st.remitente=(data?.negocio_form?.nombre || data?.nombre || "").trim();
     }).catch(()=>{});
-  const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
+  const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   let { data, error }=await supa.from("orders").select(full).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
   if(error){
-    const r1=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji),version:version_id(nombre)").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
+    const r1=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id),product:product_id(nombre,emoji),version:version_id(nombre)").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
     if(r1.error){
       const r2=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
       if(r2.error){ st.list=[]; $("kb").innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><h3>No se pudo cargar</h3><p>Aplica la migración <b>0017_orders.sql</b> para habilitar Pedidos.</p></div>`; return; }
@@ -649,7 +649,10 @@ function rotuloInner(o){
   const remitente=st.remitente||st.channelName||"Remitente";
   // El celular CAPTURADO (shipping.tel) manda — es el que llama el courier. Para
   // el cliente sin número (username/BSUID) c.wa_id es un BSUID, no un teléfono.
-  const telNum=s.tel||c.telefono||(c.wa_id==="webchat-test"?"":c.wa_id);
+  // c.wa_id de un cliente SIN número es un BSUID (wa_id === user_id), no un teléfono:
+  // sin esta guarda el rótulo salía con un celular basura. Se prefiere el capturado.
+  const _uid=String(c.user_id||""), _wa=String(c.wa_id||"");
+  const telNum=s.tel||c.telefono||(_wa && _wa!=="webchat-test" && _wa!==_uid ? _wa : "");
   const tel=telNum?"+"+telNum:"—";
   const pedido=[p.emoji,p.nombre,v.nombre?"· "+v.nombre:""].filter(Boolean).join(" ");
   const nro=(o.order_id||o.id||"").toString().slice(0,8).toUpperCase();
