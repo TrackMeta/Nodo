@@ -3273,6 +3273,18 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     }
     const { error } = await db.from("orders").update(patch).eq("id", orderId);
     if (error) throw new Error(error.message);
+    // Sincroniza la ETAPA del contacto con el nuevo estado del pedido (como crearPedido,
+    // order-update y el scheduler). Esta 3ra ruta —cancelar/cerrar por la IA— NO lo hacía: un
+    // "cancélalo" dejaba al contacto pegado como lead VIVO (fantasma en Embudo/Directo), y un
+    // cierre por la IA (saldo_pagado/entregado_cobrado/confirmada) NO avanzaba a "comprado"
+    // (venta subcontada, sin etiqueta "Compra" ni handoffAlVender).
+    if (patch.estado) {
+      try {
+        const stg = stageDeEstado(patch.estado as string);
+        if (stg === "perdido") await recomputeStageOnLoss(db, run.channel_id, run.contact_id);
+        else if (stg) await moverEtapa(db, run.channel_id, run.contact_id, stg);
+      } catch (e) { console.error("[actualizarPedido] etapa:", (e as any)?.message ?? e); }
+    }
     // 📊 Upsell DIGITAL agregado tras el cierre: manda un Purchase incremental a Meta
     // (solo dispara si el pedido es una venta digital ya `confirmada` y de anuncio;
     // el físico no lo usa: su Purchase suma los bumps al cerrar). Sin pixel → no-op.
@@ -3339,6 +3351,11 @@ async function subscribeSeq(db: SupabaseClient, run: Run, a: any) {
     seqId = (data as any)?.id;
   }
   if (!seqId) return;
+  // Respetar el opt-out (como enrolarSegmento): no re-suscribir a quien pidió baja. Sin esto,
+  // un nodo subscribe_seq resucitaba una sub 'activa' para un "no me escriban" (el scheduler la
+  // re-cancela cada tick = churn, y un estado momentáneo inconsistente).
+  const { data: ct } = await db.from("contacts").select("no_remarketing").eq("id", run.contact_id).maybeSingle();
+  if ((ct as any)?.no_remarketing === true) return;
   await db.from("sequence_subscriptions").upsert({
     channel_id: run.channel_id, contact_id: run.contact_id, sequence_id: seqId,
     estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
