@@ -234,7 +234,11 @@
         for (let i = 0; i < 6 && med1["Talla=m"] === med0["Talla=m"]; i++) { await sleep(1500); med1 = await stockOf(ids.P.med); }
         const checks = [
           ck(medBump && Number(medBump.precio) === 19, `extra medias en el pedido a S/19 (precio=${medBump?.precio})`),
-          ck(Number(o?.shipping?.por_cobrar ?? o?.amount) >= 148, `total a cobrar=${o?.shipping?.por_cobrar ?? o?.amount} (esperado 148 = 129+19)`),
+          // En Lima el saldo no se usa: la puerta cobra amount + bumps (engine.ts,
+          // "la puerta cobra amount+bumps"). Así que amount se queda en 129 a
+          // propósito y el extra viaja en order_bumps — el total es la SUMA.
+          ck(Number(o?.amount) + (o?.order_bumps || []).reduce((a, b) => a + Number(b.precio || 0), 0) === 148,
+             `total a cobrar en la puerta = amount ${o?.amount} + bumps ${(o?.order_bumps || []).reduce((a, b) => a + Number(b.precio || 0), 0)} (esperado 148)`),
           ck(med1["Talla=m"] === med0["Talla=m"] - 1, `stock medias M ${med0["Talla=m"]}→${med1["Talla=m"]} (esperado -1)`),
         ];
         if (o?.id) { await mover(o.id, "en_reparto"); await sleep(2000); }
@@ -413,8 +417,13 @@
         await send(wa, nombre, "hola quiero el curso de trading premium"); await sleep(2500);
         await send(wa, nombre, "si, pasame el yape"); await sleep(2000);
         await yape(wa, nombre, { monto: 199, quien: nombre, op: "0" + Date.now().toString().slice(-9) }); await sleep(4000);
-        const outs1 = await outMsgs(wa, 10);
-        const checks = [ck(tieneLink(outs1, /nodo\.demo\/premium/), `entregó el Premium`)];
+        const outs1 = await outMsgs(wa, 10); const a = await order(wa);
+        const checks = [
+          ck(tieneLink(outs1, /nodo\.demo\/premium/), `entregó el Premium que PAGÓ`),
+          // El pedido debe valer lo que pagó. Si nace en S/0 con `vuelto`=lo pagado,
+          // es que la opción no se selló: venta fantasma y cliente sin producto.
+          ck(Number(a.o?.amount) === 199, `el pedido vale lo pagado (amount=${a.o?.amount}, vuelto=${a.o?.shipping?.vuelto ?? "—"})`),
+        ];
         // Tras entregar, ofrece el extra digital (extras_momento = "despues").
         await send(wa, nombre, "si, dale, sumame el pack de plantillas"); await sleep(3500);
         const outs2 = await outMsgs(wa, 6);
@@ -434,10 +443,15 @@
         await send(wa, nombre, "hola quiero el curso de trading basica"); await sleep(2500);
         await send(wa, nombre, "ya te yapeo"); await sleep(2000);
         await yape(wa, nombre, { monto: 50, quien: nombre, op: "0" + Date.now().toString().slice(-9) }); await sleep(4000);
-        const outs = await outMsgs(wa, 8);
+        const outs = await outMsgs(wa, 8); const { o } = await order(wa);
         return [
           ck(!tieneLink(outs, /nodo\.demo\/basica/), `NO entregó el acceso con un pago incompleto`),
-          ck(outs.some((m) => /falta|diferencia|complet|49|no coincide|revis/i.test(m || "")), `avisó del pago incompleto: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
+          // OJO: no basta con "mencionó un número". Un pago incompleto NO debe dejar el
+          // pedido como venta cerrada — y menos en S/0 (señal de que la opción no se
+          // resolvió y el motor tomó lo pagado como `vuelto`).
+          ck(o?.estado !== "confirmada", `el pedido NO quedó cerrado como venta (estado=${o?.estado})`),
+          ck(Number(o?.amount) > 0, `el pedido NO nació en S/0 (amount=${o?.amount}, vuelto=${o?.shipping?.vuelto ?? "—"})`),
+          ck(outs.some((m) => /falta|diferencia|complet|resta|no coincide|incomplet/i.test(m || "")), `avisó del pago incompleto: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
         ];
       } },
 
@@ -453,7 +467,7 @@
         const outs = await outMsgs(wa, 8);
         return [
           ck(!tieneLink(outs, /nodo\.demo\/basica/), `NO entregó el acceso con una operación ya usada (op ${opRobado})`),
-          ck(outs.some((m) => /ya (fue|esta|está) (usad|registrad)|otro pago|no coincide|revis|verific/i.test(m || "")), `avisó del reúso: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
+          ck(outs.some((m) => /ya se us|ya (fue|esta|está) (usad|registrad)|otro pago|no pude validar|no coincide|revis|verific/i.test(m || "")), `avisó del reúso: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
         ];
       } },
 
