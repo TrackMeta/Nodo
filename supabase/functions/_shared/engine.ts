@@ -7393,7 +7393,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           L.push(`El adelanto de este pedido es de **S/ ${ctx.adelanto}** — ese monto exacto, no otro. ` +
             `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.`);
         }
-        L.push("El adelanto **no lo pides tú**: lo pide un mensaje del sistema con los datos de pago, apenas tengas los datos. " +
+        L.push("El adelanto **no lo pides tú**: sale solo, en el mensaje siguiente, con los datos de pago. " +
+          "Y TAMPOCO lo anuncies: nada de \"en breve te llega un mensaje con los datos del adelanto\" — ese mensaje sale " +
+          "INMEDIATAMENTE después del tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
           "No lo negocies ni preguntes con cuánto quiere adelantar, y no le pidas su número de teléfono ni ningún dato de contacto: ya le escribes por su WhatsApp.");
       }
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
