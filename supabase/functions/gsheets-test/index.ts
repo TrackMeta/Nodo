@@ -74,6 +74,14 @@ Deno.serve(async (req) => {
     });
     const txt = await res.text();
     if (!res.ok) return json({ ok: false, detalle: `HTTP ${res.status}: ${txt.slice(0, 200)}` });
+    // Apps Script devuelve 200 IGUAL cuando la app web está desplegada con acceso equivocado
+    // ("Solo yo" en vez de "Cualquiera" → Google sirve una página de LOGIN HTML) o cuando doPost
+    // lanza (página de error HTML). Con solo res.ok se daba falso OK y la sincronización real fallaba
+    // en producción. Se detecta esa página HTML: la escritura real no devuelve un documento <html>.
+    const t = txt.trim();
+    if (/^<(!doctype|html)/i.test(t) || /accounts\.google\.com|ServiceLogin|autoriza|authoriz|iniciar sesión|sign in/i.test(t)) {
+      return json({ ok: false, detalle: "La app web respondió una página de Google (login/permiso) en vez de escribir la fila. Vuelve a desplegarla con acceso «Cualquiera» y reintenta." });
+    }
     return json({ ok: true });
   } catch (e) {
     return json({ ok: false, detalle: String((e as any)?.message ?? e) });

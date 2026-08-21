@@ -37,6 +37,14 @@ Deno.serve(async (req) => {
   const capiToken = secrets?.capi_token;
   if (!capiToken) return json({ ok: false, error: "Falta el token CAPI. Cárgalo y guarda antes de probar." }, 200);
 
+  // EXIGIR el código de prueba: sin él, este Lead de prueba entra como CONVERSIÓN REAL en la data
+  // del pixel (Meta la cuenta y la usa para optimización/audiencias) — el comentario "no toca las
+  // métricas reales" era falso del lado de Meta. Con el código, el evento cae en Events Manager →
+  // Probar eventos y no ensucia nada. Se obliga para que "Probar" NUNCA contamine el pixel real.
+  if (!body.test_event_code || !String(body.test_event_code).trim()) {
+    return json({ ok: false, error: "Pega el código de prueba de Meta (Events Manager → Probar eventos → «Código de prueba», suele empezar con TEST). Sin él, el evento entraría como conversión real en tu pixel." }, 200);
+  }
+
   // Evento de prueba: un Lead que imita a los reales (business_messaging), con
   // datos ficticios. No se guarda en capi_events; es solo para ver la conexión.
   const evt: Record<string, unknown> = {

@@ -425,7 +425,22 @@ function renderGsOauth(box, g){
     }catch(err){ out.innerHTML=`<span style="color:var(--red)">${esc(err.message||"error")}</span>`; }
   };
   const disc=$("gsoDisc");
-  if(disc) disc.onclick=async(e)=>{ if(!await confirmDialog({title:"Desconectar Google Sheets",message:"¿Desconectar la cuenta de Google de este bot?",confirmText:"Desconectar",danger:true})) return; try{ await callFn("gsheets-connect",{ channel_id:st.channelId, disconnect:true }); }catch(_){} await saveGsheets(e.target,{ connected:false }); };
+  if(disc) disc.onclick=async(e)=>{
+    if(!await confirmDialog({title:"Desconectar Google Sheets",message:"¿Desconectar la cuenta de Google de este bot?",confirmText:"Desconectar",danger:true})) return;
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Desconectando…";
+    // SOLO el backend revoca el refresh token del Vault. Antes el error se tragaba (catch vacío) y
+    // se marcaba "Sin conectar" igual → el token seguía VIVO en el Vault mientras la UI decía
+    // desconectado. Ahora se surfacea el fallo (ej. un operador no-admin recibe 403) y no se miente.
+    let res=null, err=null;
+    try{ res=await callFn("gsheets-connect",{ channel_id:st.channelId, disconnect:true }); }catch(ex){ err=ex; }
+    btn.disabled=false; btn.textContent=old;
+    if(err || (res && res.error)){ toast("No se pudo desconectar: "+((err&&err.message)||(res&&res.error)||"error")+". El token de Google puede seguir activo.",true); return; }
+    // El backend ya escribió channels.gsheets CONSERVANDO spreadsheet_id/url/email. Se re-lee fresco
+    // en vez de sobrescribir con {connected:false} (que los borraba y forzaba re-pegar la hoja).
+    try{ const { data }=await supa.from("channels").select("gsheets").eq("id",st.channelId).maybeSingle(); st.channel.gsheets=(data&&data.gsheets)||{connected:false}; }
+    catch(_){ st.channel.gsheets={ ...(st.channel.gsheets||{}), connected:false, mode:null }; }
+    toast("Desconectado ✓"); render();
+  };
 }
 
 // ── Método 2: Apps Script (sin Google Cloud) ────────────────────────

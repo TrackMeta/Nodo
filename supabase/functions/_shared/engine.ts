@@ -2504,7 +2504,7 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         await logEvent(db, run.channel_id, run.contact_id, "humano", "Devuelto al bot"); break;
       // ── Herramientas (calculan un valor y lo guardan en un campo) ──
       case "fecha_formato": {
-        const v = formatFechaAhora(a.formato);
+        const v = formatFechaAhora(a.formato, await tzDe(db, run));
         if (a.guardar_en) { run.vars[a.guardar_en] = v; await setField(db, run.channel_id, run.contact_id, a.guardar_en, v); await logEvent(db, run.channel_id, run.contact_id, "campo", "Fecha formateada", `${a.guardar_en}: ${v}`); }
         break;
       }
@@ -2523,9 +2523,19 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
   }
 }
 
+// Zona horaria del canal (config.html la deja elegir entre 12), cacheada en el run para no
+// re-consultar por cada acción. Default Lima. Antes varios tokens de fecha la hardcodeaban a Lima
+// → un negocio de México/Argentina/España veía {{fecha}}/{{hora}} corridos por el offset UTC.
+async function tzDe(db: SupabaseClient, run: any): Promise<string> {
+  if (run._tz) return run._tz;
+  try { const { data } = await db.from("channels").select("timezone").eq("id", run.channel_id).maybeSingle(); run._tz = (data as any)?.timezone || "America/Lima"; }
+  catch (_) { run._tz = "America/Lima"; }
+  return run._tz;
+}
+
 // Fecha/hora de AHORA en la zona del negocio, según el formato elegido.
-function formatFechaAhora(fmt?: string): string {
-  const now = new Date(); const TZ = "America/Lima";
+function formatFechaAhora(fmt?: string, tz = "America/Lima"): string {
+  const now = new Date(); const TZ = tz;
   const p = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("es-PE", { timeZone: TZ, ...opts }).format(now);
   const hm = () => p({ hour: "2-digit", minute: "2-digit", hour12: false }).replace(/^24/, "00"); // ICU a veces da "24:xx" a medianoche
   switch (fmt) {
@@ -7762,10 +7772,12 @@ async function buildContext(db: SupabaseClient, run: Run) {
   }
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id);
-  // Fecha/hora actuales en la zona del negocio (para {{fecha}}, {{fecha_hora}}).
+  // Fecha/hora actuales en la zona del negocio (para {{fecha}}, {{fecha_hora}}). Zona del canal,
+  // no Lima hardcodeada (un negocio de México/Argentina/España veía la fecha/hora corrida).
   const now = new Date();
-  const fFecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
-  const fHora = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" }).format(now);
+  const _tzCtx = await tzDe(db, run);
+  const fFecha = new Intl.DateTimeFormat("es-PE", { timeZone: _tzCtx, day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+  const fHora = new Intl.DateTimeFormat("es-PE", { timeZone: _tzCtx, hour: "2-digit", minute: "2-digit" }).format(now);
   const ctx: any = {
     // {{telefono}} = número REAL conocido (col telefono de 0062) o VACÍO. NO cae a
     // wa_id: si cayera, para un cliente sin número {{telefono}} sería el BSUID y el
@@ -8011,7 +8023,12 @@ async function buildContext(db: SupabaseClient, run: Run) {
   } catch (_) { /* columnas pendientes */ }
   // 3) Variables del run en curso, y 4) Campos del contacto (lo más específico).
   Object.assign(ctx, run.vars);
-  for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
+  // Claves de SISTEMA que un campo/atributo del contacto NO debe pisar: si el dueño (o la IA) crea
+  // un campo llamado "Nombre"/"Teléfono" (slug → nombre/telefono), sin este veto su valor pisaba el
+  // nombre/número REAL del cliente en TODO saludo/aviso/rótulo (dato equivocado, silencioso). Los
+  // campos SÍ pueden pisar defaults de producto (precio, etc.) — eso es intencional (el dato propio gana).
+  const CLAVES_SISTEMA = new Set(["nombre", "telefono", "wa_id", "username", "stage", "ad_id", "ctwa_clid", "origen", "source", "fecha", "hora", "fecha_hora", "sin_numero", "angulo", "angulo_gancho", "angulo_slug"]);
+  for (const f of fields ?? []) { const k = (f as any).custom_fields.key; if (!CLAVES_SISTEMA.has(k)) ctx[k] = (f as any).value; }
 
   // {{adelanto_prepago_nota}}: si el cliente YA mandó el comprobante del adelanto
   // ANTES de dar sus datos (stashPrepagoAdelanto lo guardó en _prepago_adel_url),
@@ -8358,6 +8375,10 @@ async function addTag(db: SupabaseClient, channelId: string, contactId: string, 
   if (!tag) {
     const ins = await db.from("tags").insert({ channel_id: channelId, nombre: tagName, ...(color ? { color } : {}) }).select("id").single();
     tag = ins.data;
+    // Carrera: si otro mensaje concurrente insertó la MISMA etiqueta primero, el insert choca con
+    // unique(channel_id,nombre) y supabase-js NO lanza (ins.data=null) → sin re-select este contacto
+    // se quedaba SIN su contact_tag. Se re-lee para recuperar el id que ganó la carrera.
+    if (!tag) { const re = await db.from("tags").select("id").eq("channel_id", channelId).eq("nombre", tagName).maybeSingle(); tag = re.data; }
   }
   if (tag) await db.from("contact_tags").upsert({ contact_id: contactId, tag_id: (tag as any).id }, { onConflict: "contact_id,tag_id" });
 }
