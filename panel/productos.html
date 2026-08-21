@@ -867,7 +867,14 @@ function normalizeEnvio(c){
 }
 // Config compartido: recompila el contexto IA y refresca el JSON avanzado si está.
 function prodSync(){
-  const c=st.prod.config;
+  const c=st.prod.config; c.ia=c.ia||{};
+  // MIGRACIÓN DE SEGURIDAD (espeja saveProduct/renderProductoIA): si el conocimiento
+  // viejo vive en contexto_producto y aún no se migró a la ficha nueva (config.ia)
+  // —porque no se abrió la pestaña "Cómo lo vende la IA"—, migrarlo AQUÍ antes de
+  // recompilar. Sin esto, editar un campo NO-IA (costo, talla, envío) de un producto
+  // legado recompilaría a vacío y BORRARÍA el conocimiento, dejando a saveProduct sin
+  // nada que rescatar (pérdida de datos silenciosa).
+  if(!c.ia.detalle && c.contexto_producto && !c.ia._migrado){ c.ia.detalle=c.contexto_producto; c.ia._migrado=true; }
   c.contexto_producto=compileProductoIA(c, st.prod.tipo||"digital")||undefined;
   const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2);
 }

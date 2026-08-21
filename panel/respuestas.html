@@ -247,7 +247,11 @@ function renderDetail(){
   $("q_colorCustom").onchange=(e)=>setColor(e.target.value);
   pal.querySelector(".qClearC").onclick=()=>setColor(null);
   // ── Vista previa en vivo tipo WhatsApp (misma pantalla que el resto del panel) ──
-  const smpQr=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{[^}]*\}\}/g,"…");
+  // El envío de respuestas rápidas (index.html applyVars) SOLO resuelve {{nombre}}.
+  // El preview debe reflejar exactamente eso: resolvemos {{nombre}} y dejamos cualquier
+  // otra {{variable}} LITERAL (visible), para que el operador vea que no se sustituye
+  // y no cree plantillas rotas creyendo que {{precio}} funciona aquí.
+  const smpQr=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana");
   let _brand={};
   function paintPreview(){
     const box=$("q_prev"); if(!box) return;

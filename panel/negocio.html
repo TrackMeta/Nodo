@@ -618,7 +618,12 @@ function armRenderDraft(){
 }
 async function armAplicar(d){
   if(!d) return;
-  const f = st.channel.negocio_form = (st.channel.negocio_form && typeof st.channel.negocio_form==="object") ? st.channel.negocio_form : {};
+  const hadForm = st.channel.negocio_form && typeof st.channel.negocio_form==="object";
+  const f = st.channel.negocio_form = hadForm ? st.channel.negocio_form : {};
+  // Preserva el conocimiento legado en texto libre (channels.negocio): si aún NO había
+  // negocio_form, seedForm lo habría migrado a form.extra; como aquí creamos negocio_form,
+  // esa migración ya no correría → migrarlo AHORA para no perderlo al Guardar.
+  if(!hadForm && st.channel.negocio && !f.extra) f.extra = st.channel.negocio;
   // El borrador solo LISTA lo que llenó, pero al aplicar REEMPLAZABA en silencio TODO campo
   // curado del dueño (incl. `no_hacer` = los guardarraíles del bot). Ahora: por defecto solo
   // llena lo VACÍO; si el borrador chocaría con algo ya escrito, se avisa qué y se ofrece

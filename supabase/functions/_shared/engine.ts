@@ -4842,7 +4842,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     if (!ai?.api_key) { await deliverMessage(db, run.channel_id, run.contact_id, fallback).catch(() => {}); return; }
     const parts: string[] = [];
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
-    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
+    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     parts.push(
       "## Estás VERIFICANDO su pago\n" +
       "El cliente ya envió su comprobante y su pago está siendo revisado por una persona del equipo. " +
@@ -4987,7 +4987,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const prod = (order as any).product?.nombre || ctx.producto_nombre || "tu compra";
   const parts: string[] = [];
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
-  if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + ctx.contexto_producto);
+  if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + resolve(String(ctx.contexto_producto), ctx));
 
   if (esperandoSaldo) {
     // Provincia con el SALDO pendiente: el bot COBRA el saldo, no hace soporte
@@ -5090,7 +5090,7 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
   const prod = ctx.producto_nombre || "";
   const parts: string[] = [];
   if (info.negocio) parts.push("## Sobre el negocio (incluye tu personalidad, tono y emojis)\n" + info.negocio);
-  if (ctx.contexto_producto) parts.push(`## Sobre el producto${prod ? ` (${prod})` : ""}\n` + ctx.contexto_producto);
+  if (ctx.contexto_producto) parts.push(`## Sobre el producto${prod ? ` (${prod})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
   const pm = (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
     .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
   if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
@@ -6890,7 +6890,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const pm = ctx.zona_entrega === "lima" ? [] : (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
       .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
     if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
-    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + ctx.contexto_producto);
+    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     // Ángulo del creativo: el cliente llegó por un anuncio con cierto gancho —
     // la IA debe MANTENER ese enfoque en toda la conversación (continuidad de mensaje).
     if (String(ctx.angulo_gancho ?? "").trim()) {
@@ -7067,7 +7067,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "En este mismo turno el sistema cierra el pedido y le manda cómo pagar, así que NO termines con una pregunta: cierra la venta.");
     }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
-    if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + ctx.faq);
+    if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
     // Agentes de pedidos físicos: instrucciones y mensajes del embudo actual
     // (confirmaciones/logística) según el estado del pedido y el tipo de envío.
     const ped = buildPedidosSystem(info.pedidos, funnel, agencia);

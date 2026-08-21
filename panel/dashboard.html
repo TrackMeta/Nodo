@@ -964,12 +964,19 @@ function toggleExpForm(){
   $("ef_desc").addEventListener("keydown",(e)=>{ if(e.key==="Enter") saveExpense(); });
   setTimeout(()=>$("ef_monto").focus(),30);
 }
+let _savingExp=false;
 async function saveExpense(){
+  if(_savingExp) return; // evita doble insert por doble clic o Enter+clic
   const monto=Number($("ef_monto").value), desc=$("ef_desc").value.trim();
   if(!(monto>0)){ toast("Escribe un monto mayor a 0",true); $("ef_monto").focus(); return; }
   if(!desc){ toast("Escribe una descripción",true); $("ef_desc").focus(); return; }
-  const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto, descripcion:desc, categoria:$("ef_cat").value||null, fecha:$("ef_fecha").value||undefined });
-  if(error){ toast(error.message,true); return; }
+  _savingExp=true; const btn=$("ef_save"); if(btn){ btn.disabled=true; btn.textContent="Guardando…"; }
+  // Fecha local (no dejar que la BD ponga current_date en UTC → de noche en Lima adelanta un día)
+  const _n=new Date(), _p=x=>String(x).padStart(2,"0");
+  const fechaLocal=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
+  const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto, descripcion:desc, categoria:$("ef_cat").value||null, fecha:$("ef_fecha").value||fechaLocal });
+  _savingExp=false;
+  if(error){ if(btn){ btn.disabled=false; btn.textContent="Guardar gasto"; } toast(error.message,true); return; }
   toast("Gasto registrado ✓"); toggleExpForm(); load();
 }
 async function delExpense(id){
