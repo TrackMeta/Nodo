@@ -93,16 +93,33 @@ Deno.serve(async (req) => {
 });
 
 // ── Procesamiento del payload ──────────────────────────────────────
-async function processPayload(channel: { id: string; buffer_default_seg?: number }, payload: any) {
+async function processPayload(fallback: { id: string; buffer_default_seg?: number }, payload: any) {
+  // El canal se resuelve POR CADA change según su phone_number_id, NO una sola vez
+  // desde entry[0]. Meta puede meter varias entries/changes en un mismo POST con
+  // distinto número; si un negocio tiene 2 números bajo la misma WABA (mismo
+  // app_secret → la firma ya validó), procesarlos todos con el canal de entry[0]
+  // cruzaría los mensajes del número 2 al canal 1 (contacto fantasma, el motor del
+  // canal 1 responde con su número) y perdería los statuses del número 2.
+  const cache = new Map<string, { id: string; buffer_default_seg?: number } | null>();
+  async function chanFor(pnid: string | undefined) {
+    if (!pnid) return fallback; // sin metadata (p.ej. cambios de plantilla): usa el de entry[0]
+    if (cache.has(pnid)) return cache.get(pnid) ?? null;
+    const { data } = await db.from("channels").select("id, buffer_default_seg")
+      .eq("phone_number_id", pnid).eq("activo", true).maybeSingle();
+    cache.set(pnid, data ?? null);
+    return data ?? null;
+  }
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       // Meta avisó que cambió el estado de una plantilla (aprobada/rechazada/…):
       // se refleja solo en Nodo, sin que el usuario toque "Sincronizar".
       if (change.field === "message_template_status_update") {
-        await processTemplateStatus(channel.id, change.value ?? {}, entry.id);
+        await processTemplateStatus(fallback.id, change.value ?? {}, entry.id);
         continue;
       }
       const value = change.value ?? {};
+      const channel = await chanFor(value?.metadata?.phone_number_id as string | undefined);
+      if (!channel) continue; // número desconocido en este POST → no lo cruces a otro canal
       // Remitente. Con "nombres de usuario" de WhatsApp (BSUID), contacts[0]
       // trae user_id (BSUID, siempre), username (@handle) y wa_id (el número,
       // solo si lo comparte). Se pasa todo para keyar bien e identificar al
@@ -416,6 +433,11 @@ async function processStatus(channelId: string, st: any) {
   const bloquea: Record<string, string> = { sent: "(delivered,read,failed)", delivered: "(read,failed)", read: "(failed)" };
   let q = db.from("messages").update(patch).eq("wamid", wamid).eq("channel_id", channelId);
   if (!esFallo && bloquea[status]) q = q.not("status", "in", bloquea[status]);
+  // 'failed' es terminal, pero SIN dedup de statuses un reintento de Meta (o el camino
+  // síncrono que ya marcó failed) volvía a matchear y disparaba avisarEnvioFallido OTRA VEZ
+  // (alerta de Telegram duplicada). Al exigir que NO estuviera ya en 'failed', el segundo
+  // pase devuelve 0 filas → sin re-aviso. El primero sí actualiza y avisa.
+  if (esFallo) q = q.neq("status", "failed");
   const { data: upd } = await q.select("contact_id");
   // 'failed' ASÍNCRONO: Meta aceptó el envío (status 'sent' con wamid) y RECIÉN AHORA
   // reporta que no se entregó (el cliente bloqueó al negocio, ventana vencida). El camino
