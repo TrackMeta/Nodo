@@ -347,14 +347,17 @@ const ESTADOS_FIRMES = [
   "confirmado", "en_reparto", "reprogramado", "adelanto_validado",     // comprometido
   "por_despachar", "despachado", "en_agencia",
 ];
-async function yaCompro(contactId: string, stage: string | null): Promise<boolean> {
-  const st = String(stage ?? "").toLowerCase();
-  if (st === "comprado" || st === "confirmado") return true;
+async function yaCompro(contactId: string, productId: string | null): Promise<boolean> {
   try {
-    const { data } = await db.from("orders").select("id")
-      .eq("contact_id", contactId)
-      .in("estado", ESTADOS_FIRMES)
-      .limit(1).maybeSingle();
+    // Veto POR PRODUCTO (decisión de Rodrigo): un contacto SOLO sale del remarketing de ESTE
+    // producto si ya lo compró/comprometió — NO de TODO por haber comprado otra cosa. En un
+    // negocio de compra repetida eso recupera el re-enganche de otros productos. (Antes era
+    // GLOBAL: cualquier compra vetaba todo el remarketing para siempre.) NO se usa el `stage`
+    // del contacto (es global, no por producto). Sin product_id (secuencia general/legacy) →
+    // veto GLOBAL como antes (cualquier compra firme).
+    let q = db.from("orders").select("id").eq("contact_id", contactId).in("estado", ESTADOS_FIRMES);
+    if (productId) q = q.eq("product_id", productId);
+    const { data } = await q.limit(1).maybeSingle();
     return !!data;
   } catch (_) { return false; }
 }
@@ -421,7 +424,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const paso = pasos[s.paso_actual];
 
   const { data: c } = await db.from("contacts")
-    .select("ultimo_mensaje_cliente_at, bot_activo, stage, no_remarketing, ultimo_auto_msg_at").eq("id", s.contact_id).maybeSingle();
+    .select("ultimo_mensaje_cliente_at, bot_activo, stage, no_remarketing, ultimo_auto_msg_at, product_id").eq("id", s.contact_id).maybeSingle();
   if (!c) return false;
   if ((c as any).bot_activo === false) return false; // humano tomó la conversación
 
@@ -435,7 +438,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // 2) Ya compró O se comprometió → sale del remarketing. Mandarle "última
   //    oportunidad" a alguien que ya pagó, o que ya aceptó pagar y espera su
   //    entrega, es vergonzoso y quema la marca.
-  if (await yaCompro(s.contact_id, (c as any).stage)) {
+  if (await yaCompro(s.contact_id, (c as any).product_id)) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
     return false;
