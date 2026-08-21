@@ -3913,9 +3913,9 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
-      const { data: ch } = await db.from("channels").select("ocr_config").eq("id", channelId).maybeSingle();
-      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, "PEN")
-        ?? "Eres un validador experto de comprobantes de pago de Perú.") +
+      const { data: ch } = await db.from("channels").select("ocr_config, moneda, timezone").eq("id", channelId).maybeSingle();
+      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (ch as any)?.moneda ?? null, false, (ch as any)?.timezone)
+        ?? "Eres un validador experto de comprobantes de pago.") +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
       const raw = await runAI({
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
@@ -4453,7 +4453,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (!order) return await stashPrepagoAdelanto(db, channelId, contactId, event);
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
 
-  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas").eq("id", channelId).maybeSingle();
+  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas, timezone").eq("id", channelId).maybeSingle();
   const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
@@ -4487,8 +4487,8 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
-      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true)
-        ?? "Eres un validador experto de comprobantes de pago de Perú.") +
+      const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
+        ?? "Eres un validador experto de comprobantes de pago.") +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
       const raw = await runAI({
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
@@ -4650,7 +4650,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
 
   // 2) ¿Modo automático activado en IA · Pedidos?
-  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config").eq("id", channelId).maybeSingle();
+  const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, timezone").eq("id", channelId).maybeSingle();
   const log = (ch as any)?.pedidos_config?.log ?? {};
   // NO se corta en modo manual: igual que el ADELANTO, el comprobante del saldo
   // SIEMPRE se lee (OCR) y se adjunta al pedido para que aparezca en "Saldo por
@@ -4672,8 +4672,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false; // sin IA → que lo tome un humano por el flujo normal
-  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true)
-    ?? "Eres un validador experto de comprobantes de pago de Perú.";
+  const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
+    ?? "Eres un validador experto de comprobantes de pago.";
   const system = ocrSys +
     "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
     "`valido` juzga SOLO que el pago sea legítimo (destinatario correcto, sin fraude/montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
@@ -6718,25 +6718,31 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
 // fecha, anti-fraude) sin tener que repetirlo en cada flujo.
 // `montoEsperado` es el precio VIVO de este cliente (opción + oferta): sin él la
 // IA no puede saber si el pago "corresponde al producto elegido".
-function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null, noJuzgarMonto?: boolean): string | null {
+function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null, noJuzgarMonto?: boolean, tz?: string | null): string | null {
   if (!ocr || ocr.activo === false) return null;
   const metodos = Array.isArray(ocr.metodos) ? ocr.metodos.filter((m: any) => m && (m.app || m.titular || m.numero)) : [];
   const r = ocr.reglas ?? {};
   const p: string[] = [];
-  p.push("Eres un validador experto de comprobantes de pago de Perú (Yape, Plin, y transferencias de BCP, BBVA, Interbank, Scotiabank, etc.). Analiza la captura con el máximo detalle y criterio anti-fraude.");
+  // País(es) derivados de los métodos de pago configurados (cada método trae `pais`). Antes esto
+  // estaba HARDCODEADO a "Perú (Yape, Plin, BCP…)" → un negocio de México/Colombia recibía el
+  // contexto equivocado. Ahora se adapta a lo que el dueño cargó; sin país conocido, queda genérico.
+  const paises = [...new Set(metodos.map((m: any) => String(m?.pais ?? "").trim()).filter(Boolean))];
+  const paisesTxt = paises.length ? paises.join(", ") : "";
+  const apps = [...new Set(metodos.map((m: any) => String(m?.app ?? "").trim()).filter(Boolean))].slice(0, 10);
+  p.push(`Eres un validador experto de comprobantes de pago${paisesTxt ? " de " + paisesTxt : ""}${apps.length ? ` (${apps.join(", ")}, y transferencias bancarias)` : ""}. Analiza la captura con el máximo detalle y criterio anti-fraude.`);
   // Ancla de fecha: sin decirle qué día es HOY, el modelo asume que el año en
   // curso es el de su entrenamiento y marca como "futuro/sospechoso" un
-  // comprobante con la fecha real (ej. un Yape de 2026). Le damos el presente
-  // en hora de Perú para que juzgue la antigüedad contra la fecha correcta.
-  const tzLima = "America/Lima";
-  const ahoraLima = new Date();
-  let hoyStr = ahoraLima.toISOString();
-  let anioActual = String(ahoraLima.getUTCFullYear());
+  // comprobante con la fecha real (ej. un pago de 2026). Le damos el presente
+  // en la zona horaria del NEGOCIO (no Lima fija) para juzgar la antigüedad bien.
+  const tzNeg = tz || "America/Lima";
+  const ahora = new Date();
+  let hoyStr = ahora.toISOString();
+  let anioActual = String(ahora.getUTCFullYear());
   try {
-    hoyStr = ahoraLima.toLocaleString("es-PE", { timeZone: tzLima, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    anioActual = ahoraLima.toLocaleDateString("es-PE", { timeZone: tzLima, year: "numeric" });
+    hoyStr = ahora.toLocaleString("es-PE", { timeZone: tzNeg, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    anioActual = ahora.toLocaleDateString("es-PE", { timeZone: tzNeg, year: "numeric" });
   } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
-  p.push(`## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora de Perú). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy.`);
+  p.push(`## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy.`);
   if (metodos.length) {
     p.push("## Métodos de pago VÁLIDOS de este negocio\nEl pago solo es válido si va dirigido a uno de estos destinatarios:\n" +
       metodos.map((m: any) => "- " + [m.app && `App/Banco: ${m.app}`, m.titular && `Titular esperado: ${m.titular}`, m.numero && `Número/cuenta: ${m.numero}`, m.notas && `(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
@@ -6774,7 +6780,7 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   p.push("## Reglas de validación\n" + reglas.map((x) => "- " + x).join("\n"));
   // Consideraciones SIEMPRE presentes (realidad de los pagos en Perú).
   const cons: string[] = [
-    "Los pagos en Perú son INTEROPERABLES: un Yape puede llegar a un Plin y viceversa, y las transferencias cruzan bancos (BCP, BBVA, Interbank, Scotiabank…). NO invalides un pago solo porque la app/banco de origen sea distinta a la del destinatario; lo que importa es que el dinero llegue a una de las cuentas/números válidos de arriba.",
+    "Las billeteras y transferencias suelen ser INTEROPERABLES: una billetera puede recibir dinero de otra distinta, y las transferencias cruzan entre bancos. NO invalides un pago solo porque la app/banco de ORIGEN sea distinta a la del destinatario; lo que importa es que el dinero llegue a una de las cuentas/números válidos de arriba.",
     "El nombre del destinatario suele salir PARCIAL o enmascarado (ej. «PER FLO», «P*** F****», «J. PÉREZ N.», solo iniciales o apellidos). Considéralo válido si coincide RAZONABLEMENTE con el titular esperado (mismas iniciales/apellidos/patrón); no exijas el nombre completo exacto.",
     "Distingue una CONSTANCIA de pago ya realizado de un «pago programado» o «en proceso» aún no ejecutado: estos últimos NO son válidos.",
     // Muchos clientes NO pagan desde la app: van a un agente o al banco. Esos
@@ -6785,7 +6791,7 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
     "Ante un pago legítimo con algún detalle menor (una fecha difícil de leer, un nombre parcial), inclínate por ACEPTAR si lo esencial coincide. Rechazar un pago verdadero es peor que revisar uno dudoso.",
     // Se guarda para el conciliador: al cruzar el reporte de UNA app, hay que
     // poder distinguir "esta venta no aparece" de "esta venta se cobró por otra".
-    "Di SIEMPRE con qué app o banco se hizo el pago (Yape, Plin, BCP, Interbank, BBVA, Scotiabank, agente…), tal como se ve en el comprobante. Si no se puede saber, déjalo vacío en vez de adivinar.",
+    `Di SIEMPRE con qué app o banco se hizo el pago${apps.length ? ` (por ejemplo ${apps.slice(0, 5).join(", ")}, un banco, o un agente)` : ""}, tal como se ve en el comprobante. Si no se puede saber, déjalo vacío en vez de adivinar.`,
   ];
   p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
@@ -7244,7 +7250,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // código, para acumular pagos en cuotas — la "bolsa"); solo juzga fraude/
     // legibilidad. La venta extra sí lleva su monto al modelo (pago aparte, sin cuotas).
     const esExtraNode = String(cfg.guardar_en ?? "").startsWith("pago_extra");
-    const vt = buildOcrSystem(info.ocr, (esExtraNode && Number.isFinite(esperado)) ? esperado : null, ctx.moneda ?? null);
+    const vt = buildOcrSystem(info.ocr, (esExtraNode && Number.isFinite(esperado)) ? esperado : null, ctx.moneda ?? null, false, await tzDe(db, run));
     if (vt) system = system ? (vt + "\n\n" + system) : vt;
   }
 
@@ -7295,15 +7301,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         src = await urlToDataUri(src);
       }
       const blocks: ContentBlock[] = [];
-      // Imágenes de REFERENCIA del validador (opcional, máx 3): ayudan a la IA a
-      // reconocer cómo lucen los pagos, sin ser el único método aceptado.
-      const refs = (cfg.usar_validador !== false && Array.isArray(info.ocr?.ejemplos))
-        ? info.ocr.ejemplos.filter((e: any) => e?.url).slice(0, 3) : [];
-      if (refs.length) {
-        blocks.push({ type: "text", text: `A continuación ${refs.length} comprobante(s) de REFERENCIA (válidos, solo para que sepas cómo lucen los pagos de este negocio). NO son el único método: si el comprobante del cliente es de otro tipo/app, ignóralos y valida por las reglas.` });
-        for (const e of refs) blocks.push(imageBlock(String(e.url)));
-        blocks.push({ type: "text", text: "— Ahora analiza el SIGUIENTE comprobante enviado por el cliente:" });
+      // Imágenes de REFERENCIA del validador (opcional): ayudan a la IA a reconocer cómo lucen los
+      // pagos, sin ser el único método aceptado. Se separan por tipo: VÁLIDOS (así lucen los pagos
+      // buenos) y FRAUDE (montajes/ediciones a rechazar). Máx 3 de cada uno para no inflar el prompt.
+      const ejAll = (cfg.usar_validador !== false && Array.isArray(info.ocr?.ejemplos)) ? info.ocr.ejemplos.filter((e: any) => e?.url) : [];
+      const refsOk = ejAll.filter((e: any) => e?.tipo !== "fraude").slice(0, 3);
+      const refsBad = ejAll.filter((e: any) => e?.tipo === "fraude").slice(0, 3);
+      if (refsOk.length) {
+        blocks.push({ type: "text", text: `A continuación ${refsOk.length} comprobante(s) de REFERENCIA VÁLIDOS (solo para que sepas cómo lucen los pagos buenos de este negocio). NO son el único método: si el comprobante del cliente es de otro tipo/app, ignóralos y valida por las reglas.` });
+        for (const e of refsOk) blocks.push(imageBlock(String(e.url)));
       }
+      if (refsBad.length) {
+        blocks.push({ type: "text", text: `A continuación ${refsBad.length} ejemplo(s) de comprobantes FRAUDULENTOS/EDITADOS que ESTE negocio ya recibió (montajes, capturas alteradas, "pagos" falsos). Si el comprobante del cliente se PARECE a estos (mismas señales de edición/montaje), es INVÁLIDO. NO son plantilla exacta: úsalos como pista de qué buscar.` });
+        for (const e of refsBad) blocks.push(imageBlock(String(e.url)));
+      }
+      if (refsOk.length || refsBad.length) blocks.push({ type: "text", text: "— Ahora analiza el SIGUIENTE comprobante enviado por el cliente:" });
       blocks.push(imageBlock(src), { type: "text", text: prompt });
       content = blocks;
     }

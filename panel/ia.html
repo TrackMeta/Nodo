@@ -678,8 +678,10 @@ const payNorm=(s)=>(s??"").toString().toLowerCase().normalize("NFD").replace(/[�
 function ocrPreview(o){
   if(o.activo===false) return "";
   const r=o.reglas||{}; const L=[];
-  L.push("Eres un validador experto de comprobantes de pago de Perú (Yape, Plin, transferencias BCP/BBVA/Interbank…). Analiza la captura con máximo detalle y criterio anti-fraude.");
   const mets=(o.metodos||[]).filter(m=>m.app||m.titular||m.numero);
+  const paises=[...new Set(mets.map(m=>String(m.pais||"").trim()).filter(Boolean))];
+  const apps=[...new Set(mets.map(m=>String(m.app||"").trim()).filter(Boolean))].slice(0,10);
+  L.push(`Eres un validador experto de comprobantes de pago${paises.length?" de "+paises.join(", "):""}${apps.length?` (${apps.join(", ")}, y transferencias bancarias)`:""}. Analiza la captura con máximo detalle y criterio anti-fraude.`);
   if(mets.length) L.push("## Métodos de pago VÁLIDOS\n"+mets.map(m=>"- "+[m.app&&`App/Banco: ${m.app}`,m.titular&&`Titular: ${m.titular}`,m.numero&&`Número/cuenta: ${m.numero}`,m.notas&&`(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
   const rls=[];
   if(mets.length&&r.verificar_titular!==false) rls.push("El destinatario debe coincidir con un método válido, si no → INVÁLIDO.");
@@ -689,9 +691,11 @@ function ocrPreview(o){
   if(r.rechazar_editados) rls.push("Detecta montajes/ediciones; ante duda → INVÁLIDO.");
   rls.push("Exigencia: "+(r.exigencia||"media")+".");
   L.push("## Reglas\n"+rls.map(x=>"- "+x).join("\n"));
-  L.push("## Consideraciones\n- Pagos interoperables: un Yape puede llegar a Plin y viceversa; las transferencias cruzan bancos. No invalides por app/banco distinto si el dinero llega a una cuenta válida.\n- El destinatario puede salir parcial/enmascarado (PER FLO, P*** F****, iniciales); vale si coincide razonablemente.\n- Un «pago programado/en proceso» no ejecutado NO es válido.");
-  const ej=(o.ejemplos||[]).filter(x=>x&&x.url);
-  if(ej.length) L.push(`## Imágenes de referencia\nTe adjunto ${ej.length} comprobante(s) de ejemplo (válidos). Son SOLO referencia; si el que llega es de otro método/app, ignóralos y valida por las reglas.`);
+  L.push("## Consideraciones\n- Billeteras y transferencias suelen ser interoperables: una billetera puede recibir de otra distinta y las transferencias cruzan bancos. No invalides por app/banco de origen distinto si el dinero llega a una cuenta válida.\n- El destinatario puede salir parcial/enmascarado (PER FLO, P*** F****, iniciales); vale si coincide razonablemente.\n- Un «pago programado/en proceso» no ejecutado NO es válido.");
+  const ejOk=(o.ejemplos||[]).filter(x=>x&&x.url&&x.tipo!=="fraude");
+  const ejBad=(o.ejemplos||[]).filter(x=>x&&x.url&&x.tipo==="fraude");
+  if(ejOk.length) L.push(`## Imágenes de referencia (VÁLIDOS)\nTe adjunto ${ejOk.length} comprobante(s) buenos de ejemplo. Son SOLO referencia; si el que llega es de otro método/app, ignóralos y valida por las reglas.`);
+  if(ejBad.length) L.push(`## Ejemplos de FRAUDE\nTe adjunto ${ejBad.length} comprobante(s) fraudulentos/editados que ya recibiste. Si el del cliente se parece (mismas señales de montaje), es INVÁLIDO.`);
   if(o.instrucciones&&o.instrucciones.trim()) L.push("## Instrucciones del negocio\n"+o.instrucciones.trim());
   L.push('Responde en JSON: {"valido":bool,"monto":number,"operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"..."}.');
   return L.join("\n\n");
@@ -837,10 +841,13 @@ function renderValidador(b){
     const box=$("ocrEj"); box.innerHTML="";
     if(!o.ejemplos.length){ box.innerHTML=`<div class="desc" style="padding:2px 0">Sin imágenes de referencia.</div>`; }
     o.ejemplos.forEach((ej,i)=>{
+      const esFraude = ej.tipo==="fraude";
       const el=document.createElement("div"); el.style.cssText="position:relative;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface-2)";
       el.innerHTML=`<img src="${esc(ej.url)}" style="width:104px;height:150px;object-fit:cover;border-radius:6px;display:block"/>
-        <button class="btn danger" style="position:absolute;top:5px;right:5px;width:26px;height:26px;padding:0;border:1px solid var(--border);background:var(--surface)">${icon("trash")}</button>`;
-      el.querySelector("button").onclick=()=>{ o.ejemplos.splice(i,1); paintEj(); };
+        <button class="btn danger ejdel" style="position:absolute;top:5px;right:5px;width:26px;height:26px;padding:0;border:1px solid var(--border);background:var(--surface)">${icon("trash")}</button>
+        <button class="ejtipo" title="Marca si este es un ejemplo de pago VÁLIDO o de un FRAUDE/montaje" style="width:104px;margin-top:6px;height:26px;border-radius:6px;border:1px solid var(--border);cursor:pointer;font-size:11.5px;font-weight:700;${esFraude?"background:rgba(239,68,68,.14);color:#ef4444":"background:rgba(34,197,120,.14);color:#22c078"}">${esFraude?"⚠ Fraude":"✓ Válido"}</button>`;
+      el.querySelector("button.ejdel").onclick=()=>{ o.ejemplos.splice(i,1); paintEj(); };
+      el.querySelector(".ejtipo").onclick=()=>{ ej.tipo = esFraude?"valido":"fraude"; paintEj(); };
       box.appendChild(el);
     });
   };
