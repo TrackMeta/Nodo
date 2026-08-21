@@ -267,8 +267,15 @@ async function runEngineInner(
     // Modo soporte post-venta: si el contacto YA compró y escribe sin flujo
     // activo, lo atendemos como cliente (soporte), no re-vendemos. Si quiere
     // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
-    try { if (await maybePostventa(db, channelId, contactId, event)) return; }
-    catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
+    // EXCEPTO si este mensaje trae un referral de anuncio FRESCO (event.adId): un comprador que
+    // hace clic en un anuncio NUEVO (retargeting) está respondiendo a marketing → quiere ese
+    // producto, no soporte del viejo. maybePostventa usa el último pedido GLOBAL e ignora el adId,
+    // así que sin esta excepción el clic de anuncio se respondía como soporte del producto anterior
+    // (venta perdida + sin atribución). Se deja pasar al ruteo por anuncio de abajo.
+    if (!event.adId) {
+      try { if (await maybePostventa(db, channelId, contactId, event)) return; }
+      catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
+    }
     // Para el ruteo por anuncio: el ad_id del mensaje (referral fresco) o, si no vino en
     // este mensaje, el que ya quedó guardado en el contacto (vino de un anuncio antes).
     const _adStored = (await db.from("contacts").select("ad_id").eq("id", contactId).maybeSingle()).data?.ad_id ?? undefined;
@@ -1977,13 +1984,22 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
         await avisarEnvioFallido(db, run.channel_id, run.contact_id, error);
       }
     }
+    // Canal en modo WhatsApp pero el envío se SALTÓ arriba (token rotado/expirado, o contacto sin
+    // wa_id): NO darlo por "sent". Se marca failed → emit devuelve false y el caller (entrega digital
+    // por ARCHIVO: entregarOpcion/[[media]]) no marca el producto entregado ni vacía el buffer
+    // diferido sobre un archivo que NUNCA salió (pagó y no recibe). Espeja el guard de la rama texto.
+    if (d?.mode === "whatsapp" && !wamid && status !== "failed") {
+      status = "failed";
+      error = !d?.token ? { message: "canal en WhatsApp sin token (reconecta)" } : { message: "contacto sin número de WhatsApp (wa_id)" };
+      await avisarEnvioFallido(db, run.channel_id, run.contact_id, error).catch(() => {});
+    }
     await db.from("messages").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       direction: "out", type: mediaKind,
       content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "" },
       status, wamid: wamid || null, error, sent_by: "bot",
     });
-    return status !== "failed";   // false = Meta rechazó → el caller no debe darlo por entregado
+    return status !== "failed";   // false = no salió → el caller no debe darlo por entregado
   }
 
   // ── Burbuja de TEXTO / BOTONES ──

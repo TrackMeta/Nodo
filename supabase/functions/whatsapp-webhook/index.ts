@@ -340,7 +340,10 @@ async function processInbound(
       const desde = new Date(Date.now() - (bufferSeg + 2) * 1000).toISOString();
       const { data: prev } = await db.from("messages")
         .select("content").eq("contact_id", contact.id).eq("direction", "in").eq("type", "text")
-        .gte("ts", desde).neq("wamid", msg.id).order("ts", { ascending: true }).limit(3);
+        // limit(10) (antes 3): con ≥4 textos seguidos + una imagen, los textos 4º/5º quedaban FUERA
+        // del plegado y su propio task cedía a la imagen (msgs[0]) → mensaje del cliente PERDIDO para
+        // el motor. La ventana ya está acotada por `desde` (bufferSeg+2s), así que 10 cubre la ráfaga.
+        .gte("ts", desde).neq("wamid", msg.id).order("ts", { ascending: true }).limit(10);
       const textos = (prev ?? []).map((m: any) => String(m.content?.text ?? "").trim()).filter(Boolean);
       if (textos.length) {
         const combinado = [...textos, (event as { text?: string }).text].filter((t) => t && String(t).trim()).join("\n");
