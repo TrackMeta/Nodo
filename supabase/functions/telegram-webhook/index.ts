@@ -88,6 +88,19 @@ Deno.serve(async (req) => {
       await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null }).eq("id", channelId);
       await sendTelegram(token, [quienEs],
         "✅ <b>Listo, quedaste vinculado.</b>\nDesde aquí vas a poder aprobar los pagos con un toque.");
+    } else if (vigente && quienEs && /^\d{4,8}$/.test(texto.replace(/\D/g, "")) && texto.replace(/\D/g, "") !== String(pair.codigo)) {
+      // Intento de código FALLIDO con un pairing activo: cuenta y, tras 5, ANULA el código
+      // (obliga a regenerarlo en el panel). Cierra la fuerza bruta en la ventana de 5 min
+      // (espacio 900k, pero mejor no depender solo del rate-limit de Telegram para aprobar pagos).
+      const intentos = (Number(pair.intentos) || 0) + 1;
+      if (intentos >= 5) {
+        await db.from("channels").update({ telegram_pair: null }).eq("id", channelId);
+        await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Canales → Telegram</b>.");
+      } else {
+        await db.from("channels").update({ telegram_pair: { ...pair, intentos } }).eq("id", channelId);
+        await sendTelegram(token, [quienEs], "❌ Código incorrecto. Revísalo en el panel e inténtalo de nuevo.");
+      }
+      return json({ ok: true });
     } else if (/^\/(hoy|ayer|fecha|resumen|start|help|ayuda)\b/i.test(texto)) {
       // Comandos. Los de resumen exponen KPIs del negocio → solo admins del
       // canal (los que están en telegram_chat_ids), igual que aprobar un pago.

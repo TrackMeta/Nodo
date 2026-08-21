@@ -863,7 +863,14 @@ async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
       changed = true;
     }
     if (changed) {
-      await db.from("orders").update({ order_bumps: bumps, shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", oid);
+      // Write ESTRECHO del shipping (order_patch_shipping, 0068), NO `{ ...ship, ... }`: esta
+      // función corre en el turno del cliente, pero el operador puede editar la sede/dirección
+      // en el panel en paralelo (order-update no toma el contact_lock) → un write completo con
+      // el snapshot viejo pisaría esa sede (paquete a la agencia equivocada) o reviviría una
+      // bandera stock_devuelto de una cancelación concurrente. Se tocan SOLO las claves de stock.
+      await db.from("orders").update({ order_bumps: bumps }).eq("id", oid);
+      try { await db.rpc("order_patch_shipping", { p_order_id: oid, p_patch: { stock_mov: mov, stock_descontado: true } }); }
+      catch (e) { console.error("[reconciliarStockExtras] patch shipping:", (e as any)?.message ?? e); }
       for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
     }
   } catch (e) { console.error("[reconciliarStockExtras]", (e as any)?.message ?? e); }
@@ -4233,8 +4240,12 @@ async function ajustarStockPrincipal(db: SupabaseClient, ship: Record<string, an
   const viejo = Number(arr[idx].unidades) || 1;
   if (viejo === cantNew) return;
   if (aplicado) {
+    // Honra el ok: si el CAS agota reintentos, NO reescribir las unidades (el inventario no
+    // cambió → dejar el movimiento viejo para no reclamar un ajuste que no ocurrió).
     const diff = cantNew - viejo;
-    await aplicarStock(db, [{ ...arr[idx], unidades: Math.abs(diff) }], diff > 0 ? -1 : 1).catch(() => {});
+    let okAdj = false;
+    try { okAdj = (await aplicarStock(db, [{ ...arr[idx], unidades: Math.abs(diff) }], diff > 0 ? -1 : 1)).ok; } catch (_) { okAdj = false; }
+    if (!okAdj) { console.error("[ajustarStockPrincipal] ajuste de unidades falló (CAS) — no se reescribe"); return; }
   }
   const nuevo = arr.map((mv: any, i: number) => i === idx ? { ...mv, unidades: cantNew } : mv);
   if (aplicado) ship.stock_mov = nuevo; else ship.stock_mov_plan = nuevo;
@@ -4252,8 +4263,14 @@ async function swapClaveStockPrincipal(db: SupabaseClient, ship: Record<string, 
   if (idx < 0) return;
   const unid = Number(arr[idx].unidades) || 1;
   if (aplicado) {
-    await aplicarStock(db, [{ product_id: productId, key: oldKey, unidades: unid }], 1).catch(() => {});   // repone la vieja
-    await aplicarStock(db, [{ product_id: productId, key: newKey, unidades: unid }], -1).catch(() => {});  // reserva la nueva
+    // Reservar la NUEVA variante PRIMERO: si el CAS agota reintentos, abortar SIN tocar nada
+    // (no reponer la vieja ni cambiar la clave). Antes se reponía la vieja y luego se reservaba
+    // la nueva sin mirar ok → si la reserva fallaba, el pedido quedaba con la clave nueva NUNCA
+    // descontada (sobreventa de esa variante + inflado al cancelar).
+    let okNew = false;
+    try { okNew = (await aplicarStock(db, [{ product_id: productId, key: newKey, unidades: unid }], -1)).ok; } catch (_) { okNew = false; }
+    if (!okNew) { console.error("[swapClaveStockPrincipal] reserva de la nueva variante falló (CAS) — no se cambia la clave"); return; }
+    await aplicarStock(db, [{ product_id: productId, key: oldKey, unidades: unid }], 1).catch(() => {});   // repone la vieja (best-effort)
   }
   const nuevo = arr.map((mv: any, i: number) => i === idx ? { ...mv, key: newKey } : mv);
   if (aplicado) ship.stock_mov = nuevo; else ship.stock_mov_plan = nuevo;
