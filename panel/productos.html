@@ -661,6 +661,10 @@ async function openProduct(id){
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   if(gen!==st.openGen) return; // otra apertura más nueva ya ganó
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
+  // Snapshot del stock al ABRIR: al guardar se reconcilia por DELTA contra el stock FRESCO
+  // de la BD (el motor pudo decrementar por ventas mientras la ficha estaba abierta), para
+  // no revertir esos descuentos ni perder una edición manual del dueño. Ver saveProduct.
+  st._stockOrig = (p&&p.config&&p.config.stock&&typeof p.config.stock==="object"&&!Array.isArray(p.config.stock)) ? JSON.parse(JSON.stringify(p.config.stock)) : {};
   // Migración: el "precio base" viejo (config.precio) pasa a la 1ª presentación
   // si esta no tiene precio, para que el precio viva en un solo lugar
   // (Presentaciones y precios). Al guardar se persiste; config.precio se queda
@@ -4169,6 +4173,26 @@ async function saveProduct(){
       }
     }
   }
+  // 🔒 Anti-sobreventa: config.stock lo mutan las VENTAS (el motor decrementa por variante
+  // con CAS). El panel abrió con un snapshot que pudo quedar viejo; escribir el config
+  // completo revertiría esos descuentos → sobreventa silenciosa. Se reconcilia por DELTA:
+  // (valor del panel − valor original al abrir) se aplica sobre el stock FRESCO de la BD.
+  // Así una edición manual del dueño se respeta y los descuentos por ventas NO se pierden.
+  try{
+    const cfg=st.prod.config||{};
+    if(cfg.stock&&typeof cfg.stock==="object"&&!Array.isArray(cfg.stock)){
+      const { data:fresh } = await supa.from("products").select("config").eq("id",st.prod.id).maybeSingle();
+      const dbStock=(fresh&&fresh.config&&fresh.config.stock&&typeof fresh.config.stock==="object"&&!Array.isArray(fresh.config.stock)) ? fresh.config.stock : null;
+      if(dbStock){ // solo si se pudo leer fresco (si no, se deja el snapshot, como antes)
+        const orig=st._stockOrig||{}; const merged={ ...dbStock };
+        for(const k of Object.keys(cfg.stock)){ // aplica el delta del panel sobre lo fresco
+          merged[k]=Math.max(0,(Number(dbStock[k])||0)+((Number(cfg.stock[k])||0)-(Number(orig[k])||0)));
+        }
+        for(const k of Object.keys(orig)){ if(!(k in cfg.stock)) delete merged[k]; } // respeta lo que el panel borró
+        cfg.stock=merged;
+      }
+    }
+  }catch(e){ console.warn("[productos] reconciliar stock:",e); }
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }

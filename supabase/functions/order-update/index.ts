@@ -121,11 +121,18 @@ Deno.serve(async (req) => {
   // viejo y ambas pasaban a entregar → DOBLE entrega digital + doble aviso. Con `.eq(estado)`
   // solo una gana el UPDATE; la otra afecta 0 filas y aborta las side-effects de abajo
   // (resumeAfterApproval / entrega / CAPI / avisos). Sin transición (edición pura) no aplica.
+  // extra_ok (aprobar una venta EXTRA) NO cambia el estado del pedido, así que el CAS de
+  // estado no lo cubre y dos toques concurrentes (dos admins con el mismo aviso, o doble-tap)
+  // entregaban el extra digital DOS veces (segundo link/licencia regalado + doble aviso +
+  // doble fila en Sheets). Le damos su propio CAS por DATO: el UPDATE solo procede si el
+  // extra SIGUE pendiente; el 2do toque afecta 0 filas y aborta las side-effects de abajo.
+  const aprobandoExtraCas = !newEstado && !!(body.shipping && (body.shipping as any).extra_pendiente === false);
   let uq = db.from("orders").update(patch).eq("id", order.id);
   if (newEstado) uq = uq.eq("estado", (order as any).estado);
+  else if (aprobandoExtraCas) uq = uq.eq("shipping->>extra_pendiente", "true");
   const { data: upd, error } = await uq.select("id");
   if (error) return json({ error: error.message }, 500);
-  if (newEstado && (!upd || !upd.length)) return json({ ok: true, deduped: true });
+  if ((newEstado || aprobandoExtraCas) && (!upd || !upd.length)) return json({ ok: true, deduped: true });
   // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);

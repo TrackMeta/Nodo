@@ -35,7 +35,7 @@ const ACCIONES: Record<string, { estado?: string; desde: string[]; ok: string; e
   saldo_ok:   { estado: "saldo_pagado",      desde: ["en_agencia"],         ok: "Saldo aprobado ✅ · el bot manda la clave" },
   llego:      { estado: "en_agencia",        desde: ["despachado"],         ok: "Avisado ✅" },
   digital_ok: { estado: "confirmada",        desde: ["pendiente"],          ok: "Pago aprobado ✅ · el bot entrega el producto" },
-  extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "despachado", "en_agencia"],
+  extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado"],
                 ok: "Extra aprobado ✅ · el bot lo entrega",
                 // `extra_aprobado_at` lo escribe también el Copiloto del panel:
                 // el rastro tiene que ser el mismo se apruebe desde donde se apruebe.

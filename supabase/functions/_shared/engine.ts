@@ -960,9 +960,14 @@ export async function reconciliarStockManual(
       const desc: typeof actual = [], dev: typeof actual = [];
       for (const [id, d] of D) { const av = A.get(id)?.unidades || 0; if (d.unidades > av) desc.push({ product_id: d.product_id, key: d.key, unidades: d.unidades - av }); }
       for (const [id, a] of A) { const dv = D.get(id)?.unidades || 0; if (a.unidades > dv) dev.push({ product_id: a.product_id, key: a.key, unidades: a.unidades - dv }); }
-      if (desc.length) alerts = (await aplicarStock(db, desc, -1)).alerts;
-      if (dev.length) await aplicarStock(db, dev, 1);
-      patchShip.stock_mov = deseado;
+      let okStock = true;
+      if (desc.length) { const r = await aplicarStock(db, desc, -1); alerts = r.alerts; okStock = okStock && r.ok; }
+      if (dev.length) { const r = await aplicarStock(db, dev, 1); okStock = okStock && r.ok; }
+      // Solo avanzar el REGISTRO de movimientos si el inventario SÍ se movió. Si el CAS agotó
+      // reintentos (ok=false), dejar el stock_mov viejo (lo copió el spread de patchShip): no
+      // reclamar un movimiento que no ocurrió, para que al cancelar no se devuelvan unidades
+      // que nunca bajaron (inventario fantasma) ni se pierdan las que sí. aplicarStock ya logueó.
+      if (okStock) patchShip.stock_mov = deseado;
     } else {
       // esperando_adelanto: no se descuenta todavía; se guarda el PLAN actualizado.
       patchShip.stock_mov_plan = deseado;
@@ -2642,6 +2647,13 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Imagen": s.adelanto_comprobante ?? s.saldo_comprobante ?? "",
       };
     }
+
+    // Fuerza TEXTO en las columnas de identidad (puros dígitos): con USER_ENTERED, Sheets
+    // las leería como NÚMERO y un DNI "07654321" pierde el cero inicial, una Guía/Ad ID larga
+    // cae en notación científica → identificador CORRUPTO. Y la hoja es la fuente del Excel
+    // del courier, así que un DNI/guía alterado hace rechazar el envío. El ' inicial marca
+    // texto en Sheets y NO se muestra; safeCell lo deja pasar (no empieza con =+-@).
+    for (const k of ["Cel", "DNI", "Guía", "Ad ID"]) if (fila[k]) fila[k] = "'" + fila[k];
 
     // update busca por ID; si no encuentra la fila, la agrega. Así la primera
     // llamada crea y las siguientes actualizan, sin llevar cuenta de nada.
