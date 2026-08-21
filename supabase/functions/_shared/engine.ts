@@ -6570,6 +6570,63 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
       await enrolarSegmento(db, run.channel_id, run.contact_id, "provincia_sin_adelanto").catch(() => {});
     }
   }
+
+  // El bot ofreció otra variante porque la pedida está agotada y el cliente aceptó
+  // con un "sí" pelado. Las CORRECCIONES de arriba solo miran el mensaje del CLIENTE
+  // ("mejor la 40"), así que ese cambio no se registraba: el bot prometía negro y el
+  // pedido/rótulo/stock salían en blanco. Se corrige acá, guiado por el STOCK.
+  await corregirVarianteAgotada(db, run, ctx).catch(() => false);
+}
+
+// Repara la variante cuando la que pidió el cliente está AGOTADA y el bot le ofreció
+// otra que aceptó sin nombrarla ("sí", "confirmo"). No es adivinanza: solo cambia UN
+// eje, el valor nuevo tiene que estar NOMBRADO en el último mensaje del bot y además
+// TENER stock, y si hay más de una candidata no toca nada. Nunca puede terminar
+// eligiendo algo agotado — el stock es el juez, como en las zonas de entrega.
+async function corregirVarianteAgotada(db: SupabaseClient, run: Run, ctx: any): Promise<boolean> {
+  const stock = (ctx as any)._stock;
+  const atributos: any[] = Array.isArray(ctx._atributos) ? ctx._atributos : [];
+  if (!stock || typeof stock !== "object" || !atributos.length) return false;
+  // Solo los ejes con valores declarados: son los que forman la clave de stock.
+  const ejes = atributos.filter((a: any) => a && a.nombre && a.clave && (a.valores || []).length);
+  if (!ejes.length) return false;
+  const axesCsv = ejes.map((a: any) => ({ nombre: a.nombre, valores: (a.valores || []).join(",") }));
+
+  const vals: Record<string, string> = {};
+  for (const a of ejes) vals[a.nombre] = String(ctx[a.clave] ?? run.vars?.[a.clave] ?? "").trim();
+  if (Object.values(vals).some((v) => !v)) return false;        // aún falta capturar algún eje
+  const keyActual = stockKeyEngine(axesCsv, vals);
+  const nActual = Number((stock as any)[keyActual]);
+  // Sin la clave en el mapa = variante que el dueño no lleva en cuenta → no se toca.
+  if (!Number.isFinite(nActual) || nActual > 0) return false;    // hay stock → nada que corregir
+
+  const { data: last } = await db.from("messages").select("content")
+    .eq("contact_id", run.contact_id).eq("direction", "out")
+    .order("ts", { ascending: false }).limit(1).maybeSingle();
+  const txtBot = String((last as any)?.content?.text ?? "");
+  if (!txtBot) return false;
+
+  const cands: Array<{ clave: string; nombre: string; de: string; a: string; key: string }> = [];
+  for (const eje of ejes) {
+    for (const v of (eje.valores || [])) {
+      if (!valorEnMensaje(v, txtBot)) continue;                  // el bot no lo nombró
+      const prueba = { ...vals, [eje.nombre]: v };
+      const k = stockKeyEngine(axesCsv, prueba);
+      if (k === keyActual) continue;                             // es el mismo valor
+      const n = Number((stock as any)[k]);
+      if (Number.isFinite(n) && n > 0) cands.push({ clave: eje.clave, nombre: eje.nombre, de: vals[eje.nombre], a: v, key: k });
+    }
+  }
+  const unicas = [...new Map(cands.map((c) => [c.key, c])).values()];
+  if (unicas.length !== 1) return false;                         // ambiguo (o ninguna) → no adivinar
+
+  const c = unicas[0];
+  ctx[c.clave] = c.a;
+  if (run.vars) run.vars[c.clave] = c.a;
+  await setField(db, run.channel_id, run.contact_id, c.clave, c.a);
+  await logEvent(db, run.channel_id, run.contact_id, "campo", "Variante corregida (la pedida está agotada)",
+    `${c.nombre}: ${c.de} → ${c.a}`).catch(() => {});
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -6710,6 +6767,59 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       `${op?.nombre ?? cls.clave} (${Math.round(cls.confianza * 100)}%)`);
   }
   return cls;
+}
+
+// Último recurso para saber QUÉ presentación compró: deducirla por el MONTO que
+// pagó. Se usa cuando llega el comprobante y la opción nunca se selló —pasa
+// cuando el cliente nombra el plan pegado a la palabra clave ("quiero el curso
+// premium"): la IA cita el precio correcto en el chat pero `opcion_id` queda
+// vacío—. Sin precio esperado, TODOS los frenos de monto se saltan y la venta se
+// cerraba en S/0 con lo pagado como `vuelto`: el cliente pagaba y no recibía nada.
+//
+// Solo sella si el monto calza con UNA sola presentación (comparando contra el
+// precio vivo: la oferta de remarketing manda sobre el de lista). Si dos cuestan
+// lo mismo, o ninguna calza, NO adivina — devuelve false y quien llama manda el
+// pago a validación manual. Nunca se adivina cuando hay dinero de por medio.
+async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Promise<boolean> {
+  const prodId = ctx._product_id;
+  if (!prodId) return false;
+  // ¿Ya hay una opción válida DE ESTE producto? (opcion_id persiste entre
+  // conversaciones, así que puede venir de otro producto — mismo cuidado que la
+  // guardia de datos_completos.)
+  const list = await loadOpciones(db, run, prodId);
+  if (list.length < 2) return false;                       // una sola → no hay nada que deducir
+  const idActual = String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
+  if (idActual && list.some((o) => String(o.id) === idActual)) return false;
+
+  const pagado = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
+  if (!Number.isFinite(pagado) || pagado <= 0) return false;
+  const oferta = await ofertaActiva(db, run).catch(() => null);
+  const infoT = await channelIaInfo(db, run).catch(() => null);
+  const tol = Number((infoT as any)?.pedidos?.digital?.tolerancia ?? 0) || 0;
+
+  const precioVivo = (o: Opcion): number | null => {
+    if (oferta && (oferta as any).opcion_id === o.id && Number.isFinite(Number((oferta as any).precio))) return Number((oferta as any).precio);
+    return o.precio != null && Number.isFinite(Number(o.precio)) ? Number(o.precio) : null;
+  };
+  const calzan = list.filter((o) => {
+    const p = precioVivo(o);
+    return p != null && p > 0 && Math.abs(pagado - p) <= tol + 0.01;
+  });
+  if (calzan.length !== 1) return false;                   // ambiguo o ninguna → que lo vea un humano
+
+  const op = calzan[0];
+  run.vars.opcion_id = op.id;
+  ctx.opcion_id = op.id;
+  await setField(db, run.channel_id, run.contact_id, "opcion_id", op.id);
+  await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op.nombre);
+  ctx.opcion = op.nombre;
+  ctx.cantidad = op.cantidad ?? 1;
+  (ctx as any)._opcion = op;
+  const { monto } = await precioEsperado(db, run, ctx);
+  if (monto != null) { ctx.precio = monto; ctx.precio_esperado = monto; }
+  await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación deducida por el monto pagado",
+    `${op.nombre} (pagó ${simboloMoneda(ctx.moneda as string)}${pagado})`).catch(() => {});
+  return true;
 }
 
 // Construye el contexto de sistema para validar comprobantes de pago a partir
@@ -7112,6 +7222,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         : "";
       parts.push("## Datos que debes capturar de este pedido\n" + L.join("\n") + apoyoTxt + cierreReq + cierreOpc);
     }
+
+    // Existencias: dato DURO del sistema. Sin esto la IA vendía alegremente una
+    // talla agotada y le prometía entrega ("talla 40 blancas, llega mañana") con el
+    // stock ya en 0 — quedaba en negativo y solo se enteraba el dueño por Telegram.
+    // Mismo reparto de trabajo que las zonas: el CÓDIGO dice qué hay, la IA solo lo
+    // comunica. La reserva sigue sin bloquear; esto evita vender a ciegas.
+    const stockMap = (ctx as any)._stock;
+    if (stockMap && typeof stockMap === "object") {
+      const nombreProd = String(ctx.producto_nombre ?? "el producto");
+      // Claves tipo "Talla=40|Color=blanco" → "Talla 40 · Color blanco". La clave
+      // vacía es el producto sin variantes (un solo stock).
+      const legible = (k: string) => (String(k).trim() ? String(k).replace(/=/g, " ").replace(/\|/g, " · ") : nombreProd);
+      const agotadas: string[] = [];
+      const hay: string[] = [];
+      for (const [k, v] of Object.entries(stockMap)) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) continue;
+        (n <= 0 ? agotadas : hay).push(n <= 0 ? legible(k) : `${legible(k)} (${n})`);
+      }
+      if (agotadas.length) {
+        const alt = hay.length
+          ? `\nDISPONIBLE ahora: ${hay.slice(0, 20).join(", ")}.`
+          : "\nAhora mismo NO queda stock: no confirmes pedidos, avisa que estás reponiendo.";
+        parts.push(
+          "## Existencias (dato del sistema — NO lo contradigas ni lo negocies)\n" +
+          `AGOTADO: ${agotadas.slice(0, 20).join(", ")}.` + alt +
+          "\nSi el cliente pide algo AGOTADO: díselo de frente y ofrécele lo disponible. NO se lo confirmes " +
+          "ni le prometas entrega. Si insiste en lo agotado, pásalo a un humano con [[humano]].",
+        );
+      }
+    }
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
     // explícita de no contradecirlo — sabe qué decir, no qué decidir. (La IA no
@@ -7443,8 +7584,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // atención; default S/50.
         let sobrepagoSospechoso = false;
         let montoIlegible = false;
+        let precioSinResolver = false; // no sabemos QUÉ compró → no hay contra qué medir el pago
         let extraMontoDudoso = false; // backstop de monto para el EXTRA (ver bloque esExtra abajo)
         if (!esExtra) {
+          // Sin precio esperado (la presentación nunca se selló) TODOS los frenos de
+          // monto de abajo se saltan —piden esperadoB > 0— y la venta terminaba
+          // cerrándose en S/0 con lo pagado como `vuelto`: el cliente pagaba y no
+          // recibía nada. Antes de medir, se intenta DEDUCIR la presentación por el
+          // monto del comprobante (caso típico: pagó justo los S/199 del Premium).
+          if (!(Number(ctx.precio_esperado) > 0)) {
+            await deducirOpcionPorMonto(db, run, ctx).catch(() => false);
+          }
           const esperadoB = Number(ctx.precio_esperado);
           // La tolerancia digital que el operador configura vive en pedidos_config.digital
           // .tolerancia (Pagos → default S/1), igual que revisar_sobre_sol de la línea de
@@ -7490,6 +7640,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // pasa esperado=null), así que sin monto no puede juzgar → NO auto-entregar:
             // se fuerza validación manual (mismo criterio que un pago sin operación).
             montoIlegible = true;
+          } else {
+            // Ni siquiera con la deducción por monto se supo qué compró. Si el producto
+            // TIENE presentaciones con precio, no hay contra qué medir el pago: el juez de
+            // suficiencia es el CÓDIGO y sin precio esperado no puede juzgar. Va a
+            // validación manual en vez de cerrar la venta en S/0 (antes se colaba por acá).
+            try {
+              const opsB = await loadOpciones(db, run, ctx._product_id);
+              if ((opsB || []).some((o: any) => o && Number(o.precio) > 0)) precioSinResolver = true;
+            } catch (_) { /* sin catálogo de opciones → como antes, juzga el modelo */ }
           }
         } else {
           // EXTRA: backstop de monto por CÓDIGO (no solo el modelo). Sin esto, un extra en
@@ -7520,9 +7679,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Y al extra: un comprobante legible sí trae la operación y sigue en auto.
           const sinOpVerificable = !opNum;
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
-          // freno detectó un sobrepago sospechoso (Capa 1), o si es un extra sin
-          // operación verificable — aunque esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || extraMontoDudoso)) {
+          // freno detectó un sobrepago sospechoso (Capa 1), si no se sabe QUÉ compró
+          // (precioSinResolver), o si es un extra sin operación verificable — aunque
+          // esté en automático.
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
@@ -7560,6 +7720,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 digital_ok_ia: true,
                 // Freno (Capa 1): nota para que el humano revise el sobrepago sospechoso.
                 ...(sobrepagoSospechoso ? { digital_revisar: `El bot leyó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto} para un precio de ${simboloMoneda(ctx.moneda as string)}${amount}. Revisa el comprobante antes de aprobar.` } : {}),
+                // No se supo qué presentación compró (ni por la charla ni por el monto):
+                // el humano tiene que fijarla antes de aprobar, o la entrega saldría vacía.
+                ...(precioSinResolver ? { digital_revisar: `No se pudo identificar qué presentación compró: pagó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto ?? "?"} y el monto no calza con ninguna. Confirma la presentación (y el monto) antes de aprobar y entregar.` } : {}),
                 ...(run.vars._pago_abonos ? { digital_abonos: run.vars._pago_abonos } : {}),
               };
               // Atribución congelada desde que nace el pedido (ver crearPedido):
@@ -7904,6 +8067,14 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // capturarlos y mostrarle a la IA qué falta. "_" = interno, no {{...}}.
           const attrs = normalizeAtributos((p as any).config?.atributos);
           if (attrs.length) pc._atributos = attrs;
+          // Existencias por variante. El bucle de arriba descarta los objetos, así que
+          // el stock NUNCA llegaba a la IA: vendía tallas agotadas prometiendo entrega
+          // ("un par talla 40 blancas, llega mañana") con el stock ya en 0, y el
+          // descuento lo dejaba en negativo. Se expone acá para que el prompt le diga
+          // qué NO ofrecer. La reserva sigue SIN bloquear (decisión de negocio: se
+          // sigue vendiendo y se avisa por Telegram); esto evita venderlo a ciegas.
+          const stockCfg = (p as any).config?.stock;
+          if (stockCfg && typeof stockCfg === "object") pc._stock = stockCfg;
           // Regalos FÍSICOS con tallas propias: el bot también las pregunta (campos
           // OPCIONALES, clave prefijada rg<idx>_<clave> para no chocar con el
           // principal). extraerDatos los captura y adjuntarRegalos descuenta la

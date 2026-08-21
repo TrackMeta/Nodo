@@ -451,7 +451,11 @@
           // resolvió y el motor tomó lo pagado como `vuelto`).
           ck(o?.estado !== "confirmada", `el pedido NO quedó cerrado como venta (estado=${o?.estado})`),
           ck(Number(o?.amount) > 0, `el pedido NO nació en S/0 (amount=${o?.amount}, vuelto=${o?.shipping?.vuelto ?? "—"})`),
-          ck(outs.some((m) => /falta|diferencia|complet|resta|no coincide|incomplet/i.test(m || "")), `avisó del pago incompleto: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
+          // OJO: acá el sistema NO sabe qué compró (la presentación nunca se selló), así
+          // que NO puede decir "te faltan S/49" — sería inventar. Lo correcto es acusar
+          // recibo y parquear para revisión. El aviso de "faltan S/X" corresponde al
+          // pago parcial CON presentación resuelta, que es otro camino (bolsa de abonos).
+          ck(!!(outs[outs.length - 1]), `acusó recibo, no quedó mudo: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
         ];
       } },
 
@@ -491,10 +495,16 @@
         await send(wa, nombre, "quiero un par talla 40 blancas"); await sleep(3000);
         await send(wa, nombre, "Nadia Quiroz, Lima, Jesus Maria, Av Brasil 500"); await sleep(2500);
         await send(wa, nombre, "si confirmo"); await sleep(3000);
-        const st = await stockOf(ids.P.zap); const { o } = await order(wa);
+        const st = await stockOf(ids.P.zap); const { o } = await order(wa); const outs = await outMsgs(wa, 8);
+        const atr = o?.shipping?.atributos || {};
         return [
+          // El stock nunca debe irse a negativo por vender lo agotado.
           ck(st["Talla=40|Color=blanco"] >= 0, `stock 40 blanco = ${st["Talla=40|Color=blanco"]} (NUNCA debe ser negativo)`),
-          ck(true, `[observar] pedido=${o?.estado || "ninguno"} amount=${o?.amount} — ¿avisó que estaba agotado o vendió igual?`),
+          // El bot tiene que DECIRLO, no venderlo callado.
+          ck(outs.some((m) => /agotad|sin stock|no me queda|se acab/i.test(m || "")), `avisó que estaba agotada`),
+          // Y si el cliente acepta la alternativa, el pedido debe salir con ESA
+          // (si no, promete negro y despacha blanco).
+          ck(!o || String(atr.Color || "").toLowerCase().startsWith("negr"), `el pedido salió con la variante acordada (Color=${atr.Color ?? "—"}, Talla=${atr.Talla ?? "—"})`),
         ];
       } },
 
