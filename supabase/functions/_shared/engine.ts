@@ -2039,12 +2039,21 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
       await avisarEnvioFallido(db, run.channel_id, run.contact_id, error);
     }
   }
+  // Canal en modo WhatsApp pero el envío se SALTÓ arriba por falta de token (rotado/expirado) o
+  // de wa_id (contacto sin número): NO darlo por "sent". Se marca failed → emit devuelve false y
+  // el caller (entrega digital: entregarExtrasDigitales/entregarOpcion) NO marca el producto como
+  // entregado sobre un mensaje que nunca salió (falso "entregado" → el cliente pagó y no recibe).
+  if (d?.mode === "whatsapp" && !wamid && status !== "failed" && (body || isInteractive)) {
+    status = "failed";
+    error = { message: !d?.token ? "canal en WhatsApp sin token (reconecta)" : "contacto sin número de WhatsApp (wa_id)" };
+    await avisarEnvioFallido(db, run.channel_id, run.contact_id, error).catch(() => {});
+  }
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
     direction: "out", type: isInteractive ? "interactive" : "text",
     content, status, wamid: wamid || null, error, sent_by: "bot",
   });
-  return status !== "failed";   // false = Meta rechazó → el caller no debe darlo por entregado
+  return status !== "failed";   // false = no salió → el caller no debe darlo por entregado
 }
 
 // Emite el texto que generó la IA, resolviendo los marcadores [[media:tag]]:
@@ -3320,6 +3329,15 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         if (stg === "perdido") await recomputeStageOnLoss(db, run.channel_id, run.contact_id);
         else if (stg) await moverEtapa(db, run.channel_id, run.contact_id, stg);
       } catch (e) { console.error("[actualizarPedido] etapa:", (e as any)?.message ?? e); }
+    }
+    // 🎁 Entrega DIGITAL al cerrar por la IA: el ride-along digital (extra/regalo) que viajaba en
+    // un pedido físico se entrega cuando queda PAGADO DEL TODO, y el digital principal al confirmarse.
+    // Esta 4ta ruta de cierre (actualizar_pedido) era la ÚNICA que NO llamaba entregarExtrasDigitales
+    // (order-update/maybeAutoSaldo/crearPedido sí) → el cliente pagaba (el saldo incluía el extra
+    // digital) y su link/archivo nunca salía, en silencio. Idempotente por b.entregado.
+    if (patch.estado && ["entregado_cobrado", "saldo_pagado", "recogido", "confirmada"].includes(patch.estado as string)) {
+      try { await entregarExtrasDigitales(db, run.channel_id, run.contact_id, orderId); }
+      catch (e) { console.error("[actualizarPedido] entregar extras digitales:", (e as any)?.message ?? e); }
     }
     // 📊 Purchase PRINCIPAL a Meta. Esta 3ra ruta de cierre (la IA cierra un pedido vía
     // actualizar_pedido) era la ÚNICA de las cuatro (crearPedido/order-update/maybeAutoSaldo)

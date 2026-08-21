@@ -414,7 +414,7 @@ function filtered(){
     if(f.mios && d.assigned_to!==st.uid) return false;
     if(f.hoy && !(d.next_call_at && d.next_call_at<=today)) return false;
     if(f.sincontacto && (d.intentos||[]).length) return false;
-    if(f.seguimiento && !((d.intentos||[]).length && !done)) return false;
+    if(f.seguimiento && !((d.intentos||[]).length && !isDone(c))) return false; // 'done' no existía → ReferenceError congelaba la lista al filtrar "En seguimiento"
     if(f.pedido && !pedidoEnCurso(c)) return false;
     return true;
   });
@@ -609,8 +609,10 @@ function openReg(c){
 
 async function saveReg(){
   const R=st.reg; if(!R) return;
+  if(R.saving) return; // evita doble clic → dos modales de venta manual / intento duplicado
   if(!R.resultado){ toast("Elige qué pasó",true); return; }
   if(st._sinMigracion){ toast("Falta aplicar la migración 0066 (columna «directo») para guardar el seguimiento.",true); return; }
+  R.saving=true; const _sv=$("rSave"); if(_sv) _sv.disabled=true;
   const c=R.contact;
   const meta=RES[R.resultado];
   const nota=$("rNota").value.trim();
@@ -629,9 +631,11 @@ async function saveReg(){
   // si el registrador de venta a mano se confirma se marca Comprado/cerrado y sale
   // de la cola. Si cancelas el formulario, el intento queda pero el lead sigue vivo.
   if(meta.venta){
-    d.estado="seguimiento"; delete d.next_call_at;
+    // NO borrar next_call_at aquí: si el registrador de venta se CANCELA (misclick), el lead debe
+    // seguir en la cola CON su callback intacto. Solo se borra al confirmar la venta (línea de abajo).
+    d.estado="seguimiento";
     const { error }=await supa.from("contacts").update({ directo:d }).eq("id",c.id);
-    if(error){ toast(error.message,true); return; }
+    if(error){ R.saving=false; if(_sv) _sv.disabled=false; toast(error.message,true); return; }
     c.directo=d;
     $("regModal").classList.remove("show");
     toast("Intento registrado ✓ — ahora registra la venta");
@@ -661,12 +665,12 @@ async function saveReg(){
   }
 
   // Reagendar / limpiar próxima llamada
-  if(meta.reagendar){ const dv=$("rDate").value; if(!dv){ toast("Elige la fecha de la próxima llamada",true); return; } d.next_call_at=dv; d.estado="seguimiento"; }
+  if(meta.reagendar){ const dv=$("rDate").value; if(!dv){ R.saving=false; if(_sv) _sv.disabled=false; toast("Elige la fecha de la próxima llamada",true); return; } d.next_call_at=dv; d.estado="seguimiento"; }
   else{ delete d.next_call_at; if(meta.estado) d.estado=meta.estado; else d.estado="seguimiento"; }
   const upd={ directo:d };
   if(meta.stage) upd.stage=meta.stage;
   const { error }=await supa.from("contacts").update(upd).eq("id",c.id);
-  if(error){ toast(error.message,true); return; }
+  if(error){ R.saving=false; if(_sv) _sv.disabled=false; toast(error.message,true); return; }
   c.directo=d; if(meta.stage) c.stage=meta.stage;
   $("regModal").classList.remove("show");
   toast("Registrado ✓");

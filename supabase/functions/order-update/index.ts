@@ -394,7 +394,10 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (avisoModo === "plantilla" && aviso.template?.name && (order as any).contact_id) {
+  // Exige newEstado (como la rama "mensaje"): el aviso está atado al MOVIMIENTO del pedido. Sin
+  // esto, un 2º update sin transición (doble modal por doble clic → el 1º ya cambió el estado, el
+  // 2º llega con newEstado=null pero el CAS no cubre la plantilla) reenviaba la plantilla al cliente.
+  if (avisoModo === "plantilla" && newEstado && aviso.template?.name && (order as any).contact_id) {
     try {
       await sendTemplateToContact(db, (order as any).channel_id, (order as any).contact_id, {
         name: aviso.template.name, language: aviso.template.language, params: aviso.template.params ?? [],
@@ -446,7 +449,11 @@ Deno.serve(async (req) => {
   // reparto" (Lima: salió el motorizado), "despachado" (provincia: va a la
   // agencia + guía) y "saldo pagado" (clave de recojo). Usa el shipping ya
   // fusionado (incluye lo recién guardado en esta misma llamada).
-  if (newEstado && !avisoEnviado && !flowStarted && (order as any).contact_id) {
+  // avisoModo !== "ninguno": si el operador eligió "No avisarle" (Editar pedido manda SIEMPRE
+  // {modo:"ninguno"}, y los modales de despacho/lote/llegada lo ofrecen), este fallback por DEFECTO
+  // NO debe mandar nada. Sin el guard, mover "en silencio" a saldo_pagado/recogido igual le mandaba
+  // al cliente la CLAVE DE RECOJO (o el aviso de despacho), incumpliendo el contrato {ninguno}→no avisar.
+  if (avisoModo !== "ninguno" && newEstado && !avisoEnviado && !flowStarted && (order as any).contact_id) {
     const ship2 = { ...((order as any).shipping ?? {}), ...((patch.shipping as any) ?? {}) };
     // El "Ten listo S/X" / "A cobrar" para Lima debe ser el TOTAL (base + extras), como
     // el rótulo del motorizado y el Excel del courier. Antes pasaba solo `amount` (base) →
