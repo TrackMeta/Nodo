@@ -233,12 +233,19 @@ export async function mountFolders(opts){
       for (const r of live){ r.nombre=(r.nombre||"").trim(); if(!r.nombre){ toast("Ponle nombre a todas las carpetas", true); return; } }
       const names = live.map(r=>r.nombre.toLowerCase());
       if (new Set(names).size !== names.length){ toast("Hay carpetas con el mismo nombre", true); return; }
+      // Renombres que van a un nombre YA usado por otra carpeta viva (swap A↔B, ciclos):
+      // el cascade de items es por TEXTO (item.folder), así que renombrar en 2 pasos contamina
+      // (el 2º paso arrastra los items que el 1º ya movió) → ambos grupos colapsan en una. Y en
+      // modo tabla, supabase NO lanza ante el unique(nombre) → el error se tragaba y el rename se
+      // perdía en silencio. Fix: renombrar SIEMPRE por un nombre TEMPORAL único primero, y revisar
+      // el .error de cada escritura a `folders`.
+      const renom = live.filter(r=>r._orig && r.nombre!==r._orig);
+      renom.forEach(r=>{ r._tmp = " tmp "+(r.id||r._orig); });
       if (!S.hasTable){
-        // Modo texto: solo cascada de renombres/borrados sobre item.folder.
-        for (const r of rows){
-          if (r._del && r._orig){ await supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig); }
-          else if (r._orig && r.nombre!==r._orig){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._orig); }
-        }
+        // Modo texto: solo item.folder. Fase 1 → temp, Fase 2 → nombre final. Borrados aparte.
+        for (const r of rows){ if (r._del && r._orig){ await supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig); } }
+        for (const r of renom){ await supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig); }
+        for (const r of renom){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._tmp); }
         close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas ✓"); return;
       }
       try{
@@ -247,22 +254,27 @@ export async function mountFolders(opts){
           if (r.id) await supa.from("folders").delete().eq("id", r.id);
           if (r._orig) await supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig);
         }
-        // Altas / actualizaciones / orden.
+        // FASE 1: las carpetas renombradas van a un nombre TEMPORAL único (evita colisión del
+        // unique y libera su nombre viejo/nuevo), y sus items también.
+        for (const r of renom){
+          if (r.id && !r._new){ const { error }=await supa.from("folders").update({ nombre:r._tmp }).eq("id", r.id); if(error){ toast("No se pudo guardar las carpetas: "+error.message, true); return; } }
+          await supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig);
+        }
+        // FASE 2: nombre FINAL + color/emoji/orden; y arrastra los items del temp (o del original
+        // si no estaba renombrada) al nombre final.
         for (let i=0;i<live.length;i++){
           const r = live[i];
           if (r._new || !r.id){
-            await supa.from("folders").insert({ channel_id:S.channelId, tipo:S.tipo, nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i });
-            // Carpeta "fantasma" RENOMBRADA (existía como texto en los items pero aún
-            // no en la tabla): arrastra el nombre nuevo a sus items, o quedaban
-            // apuntando al viejo (reaparecía como ghost y el renombre se perdía).
-            if (r._orig && r.nombre!==r._orig){
-              await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._orig);
-            }
+            const { error }=await supa.from("folders").insert({ channel_id:S.channelId, tipo:S.tipo, nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i });
+            if(error){ toast("No se pudo crear la carpeta “"+r.nombre+"”: "+error.message, true); return; }
+            // Carpeta "fantasma" renombrada (existía como texto en los items pero no en la tabla).
+            const from = r._tmp || r._orig;
+            if (from && r.nombre!==from){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from); }
           } else {
-            await supa.from("folders").update({ nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i }).eq("id", r.id);
-            if (r._orig && r.nombre!==r._orig){
-              await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._orig);
-            }
+            const { error }=await supa.from("folders").update({ nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i }).eq("id", r.id);
+            if(error){ toast("No se pudo guardar la carpeta “"+r.nombre+"”: "+error.message, true); return; }
+            const from = r._tmp || r._orig;
+            if (from && r.nombre!==from){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from); }
           }
         }
         close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas ✓");
