@@ -896,7 +896,7 @@ async function load(){
   renderSales(ventasOk, r, dailyMargin, dailySpend, dailyExpense, hasAds);
   renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
-  renderExpenses(expenses);
+  renderExpenses(expenses, tipo);
 
   // ── Asesor IA (Mide + Aconseja): resumen de los números reales para la IA ──
   const flows = flowR&&!flowR.error ? (flowR.data||[]) : [];
@@ -935,10 +935,17 @@ async function load(){
 }
 
 // ── Gastos extra (manuales) ────────────────────────────────────────
-function renderExpenses(list){
+function renderExpenses(list, tipo){
   const box=$("expenses"); if(!box) return;
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:14px 0">Sin gastos extra en el periodo. Toca “+ Registrar” para agregar uno.</div>`; return; }
   const total=list.reduce((a,e)=>a+Number(e.monto||0),0);
+  // Los gastos extra son overhead del negocio → solo se restan en la vista "Todo".
+  // En Digital/Físico mostramos el total pero avisamos que NO se descuenta ahí, para
+  // no dar a entender que la ganancia neta de ese segmento ya lo restó.
+  if(tipo && tipo!=="todo"){
+    box.innerHTML=`<div class="empty" style="padding:14px 0;line-height:1.55">Tienes ${money(total)} en gastos extra este periodo, pero son gastos de todo el negocio: se restan de tu ganancia solo en la vista <b>Todo</b>, no en ${tipo==="digital"?"Digital":"Físico"}.</div>`;
+    return;
+  }
   const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short"});
   let rows=list.map(e=>`<tr><td style="white-space:nowrap">${fmt.format(new Date(e.fecha+"T00:00:00"))}</td><td class="pname">${esc(e.descripcion)}${e.categoria?` <span style="color:var(--faint);font-size:11px">· ${esc(e.categoria)}</span>`:""}</td><td class="r money">${money(e.monto)}</td><td class="r"><button class="expdel" data-id="${e.id}" title="Eliminar">✕</button></td></tr>`).join("");
   rows+=`<tr class="total"><td colspan="2">Total</td><td class="r money">${money(total)}</td><td></td></tr>`;

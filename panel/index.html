@@ -1054,10 +1054,11 @@ async function openSuggest(){
   if(!willOpen){ pop.classList.add("hidden"); return; }
   pop.classList.add("sgpop"); pop.classList.remove("hidden");
   pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span></div><div class="sg-load"><span class="sg-spin"></span>Pensando 3 respuestas…</div>`;
+  const cid=state.contactId; // congela el contacto: si cambias de chat mientras carga, descarta
   try{
-    const res=await callFn("reply-suggest",{ channel_id:state.channelId, contact_id:state.contactId });
+    const res=await callFn("reply-suggest",{ channel_id:state.channelId, contact_id:cid });
     const out=await res.json().catch(()=>({}));
-    if(pop.classList.contains("hidden")) return; // se cerró mientras cargaba
+    if(pop.classList.contains("hidden") || state.contactId!==cid) return; // se cerró o cambiaste de chat
     const sug=Array.isArray(out.sugerencias)?out.sugerencias.filter(Boolean):[];
     if(!res.ok || !sug.length){
       pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span></div><div class="sg-empty">${esc(out.error||out.detalle||"No pude generar sugerencias ahora. Intenta de nuevo.")}</div>`;
