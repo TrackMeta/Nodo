@@ -242,6 +242,12 @@ async function create(){
 }
 async function update(t, patch){
   if(patch.nombre!==undefined && !patch.nombre){ toast("El nombre no puede estar vacío",true); return false; }
+  // Renombrar una etiqueta desengancha en SILENCIO las campañas/secuencias que segmentan por su
+  // NOMBRE (se guardan por nombre, no por id → el segmento deja de encontrarla). Se avisa para que
+  // el dueño las re-apunte. (Solo al cambiar el nombre; los cambios de color no afectan.)
+  if(patch.nombre!==undefined && patch.nombre!==t.nombre){
+    if(!await confirmDialog({title:"Renombrar etiqueta",message:`Si alguna campaña o secuencia segmenta por la etiqueta "${esc(t.nombre)}", dejará de encontrarla al renombrarla (los segmentos guardan la etiqueta por su nombre). Tendrás que volver a elegirla en esos segmentos. ¿Renombrar igual?`,confirmText:"Renombrar",cancelText:"Cancelar"})) return false;
+  }
   const { error }=await supa.from("tags").update(patch).eq("id",t.id);
   if(error){ toast(error.message.includes("duplicate")?"Nombre repetido":error.message,true); return false; }
   Object.assign(t,patch); return true;

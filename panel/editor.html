@@ -1390,6 +1390,12 @@ async function save(){
     }
     if(dup.length){ toast("Salidas repetidas en → "+dup.join(" · ")+". Renómbralas para evitar rutas ambiguas.",true); return false; }
   }
+  // Optimistic lock (DOS PESTAÑAS): si otra pestaña/persona guardó este flujo desde que lo abrí,
+  // el borrado de nodos de abajo pisaría sus nodos (last-write destructivo). Se compara updated_at
+  // fresco contra el que se cargó; si cambió, se aborta pidiendo recargar en vez de pisar.
+  { const { data:fr } = await supa.from("flows").select("updated_at").eq("id",st.flowId).maybeSingle();
+    if(fr && st.flow && fr.updated_at && st.flow.updated_at && fr.updated_at!==st.flow.updated_at){
+      toast("Otra pestaña guardó este flujo mientras lo editabas. Recarga la página para no pisar esos cambios.",true); return false; } }
   const exp=editor.export().drawflow.Home.data;
   // 1) Upsert nodos.
   const rows=[];
@@ -1437,6 +1443,9 @@ async function save(){
   if(edges.length){ const { error } = await supa.from("flow_edges").insert(edges); if(error){ toast(error.message,true); return false; } }
   const oldIds=(oldEdges||[]).map(e=>e.id);
   if(oldIds.length){ const { error } = await supa.from("flow_edges").delete().in("id",oldIds); if(error){ toast(error.message,true); return false; } }
+  // Bump de updated_at: sella esta versión para que OTRA pestaña abierta antes detecte el conflicto
+  // (su updated_at cargado ya no coincidirá) y no pise estos nodos al guardar.
+  { const nowIso=new Date().toISOString(); await supa.from("flows").update({ updated_at:nowIso }).eq("id",st.flowId).then(()=>{},()=>{}); if(st.flow) st.flow.updated_at=nowIso; }
   st.dirty=false; // guardado OK → sin cambios pendientes
   toast("Guardado ✓");
   return true;

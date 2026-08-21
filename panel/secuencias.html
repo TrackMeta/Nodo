@@ -244,6 +244,7 @@ async function createSeq(){
 async function openSeq(id){
   const { data }=await supa.from("sequences").select("*").eq("id",id).maybeSingle();
   st.seq=data; if(!Array.isArray(st.seq.pasos)) st.seq.pasos=[];
+  st._loadedPasos=JSON.stringify(st.seq.pasos); // baseline para detectar si otra pestaña guardó (sequences no tiene updated_at)
   renderDetail(); showDetail(); st.dirty=false; // baseline limpio al abrir
 }
 // ¿A qué producto/segmento está vinculada esta secuencia? (busca en products.config
@@ -322,6 +323,11 @@ async function saveSeq(){
   // "{{precio}}" en S/0 (producto GRATIS) a TODO el segmento y que el OCR valide un pago de S/0.
   const malOferta=(st.seq.pasos||[]).findIndex(p=> p && p.oferta && p.oferta.version_id && !(Number(p.oferta.precio)>0));
   if(malOferta>=0){ toast(`El toque ${malOferta+1} tiene un descuento sin precio válido (mayor a 0). Corrígelo o apágalo antes de guardar.`,true); return; }
+  // Optimistic lock (DOS PESTAÑAS): sequences no tiene updated_at, así que se compara el contenido
+  // de `pasos` fresco contra el que se cargó. Si otra pestaña lo cambió, se aborta pidiendo recargar
+  // en vez de pisar sus pasos (last-write destructivo).
+  if(st._loadedPasos!=null){ try{ const { data:fr }=await supa.from("sequences").select("pasos").eq("id",st.seq.id).maybeSingle();
+    if(fr && JSON.stringify(fr.pasos||[])!==st._loadedPasos){ toast("Otra pestaña guardó esta secuencia mientras la editabas. Recarga la página para no pisar esos cambios.",true); return; } }catch(_){} }
   const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null, segmento:st.seq.segmento||"general", modo:st.seq.modo||"reenganche" };
   let { error }=await supa.from("sequences").update(row).eq("id",st.seq.id);
   if(error && /modo|column/.test(error.message)){ delete row.modo; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0064 para el modo goteo)"); }
@@ -330,7 +336,7 @@ async function saveSeq(){
   if(error){ toast(error.message,true); return; }
   let linkErr=null;
   try{ await syncSeqLink(st.seq.id); }catch(e){ linkErr=e; console.warn("[seqlink]",e); }
-  st.dirty=false; // guardado OK
+  st.dirty=false; st._loadedPasos=JSON.stringify(st.seq.pasos||[]); // guardado OK → nuevo baseline
   toast(linkErr?"Guardada, pero falló el enlace al producto":"Guardado ✓", !!linkErr);
   await load();
 }
