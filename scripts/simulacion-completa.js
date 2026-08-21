@@ -400,10 +400,16 @@
         await send(wa, nombre, "hola quiero el curso de trading"); await sleep(2000);
         await send(wa, nombre, "cual es la diferencia entre basica y premium?"); await sleep(2500);
         await send(wa, nombre, "quiero la premium"); await sleep(2500);
-        await send(wa, nombre, "ya te yapeo"); await sleep(2000);
+        await send(wa, nombre, "ya te yapeo"); await sleep(2500);
+        // ANUNCIAR el pago no es pagar. Antes de que llegue la captura, el bot NO puede
+        // decir "ya lo recibí" ni prometer el acceso: el cliente puede no pagar nunca, y
+        // encima el sistema lo contradice un turno después ("estoy verificando tu pago").
+        const antesDelComprobante = (await outMsgs(wa, 2)).join(" ");
         await yape(wa, nombre, { monto: 199, quien: nombre, op: "0" + Date.now().toString().slice(-9) }); await sleep(4000);
         const { o } = await order(wa); const outs = await outMsgs(wa, 12);
         return [
+          ck(!/ya lo recib|ya confirm|recibí tu pago|pago confirmado|gracias por el pago/i.test(antesDelComprobante),
+             `no dio por recibido un pago que aún no veía: "${antesDelComprobante.slice(-90)}"`),
           ck(Number(o?.amount) === 199, `amount=${o?.amount} (esperado 199)`),
           ck(tieneLink(outs, /nodo\.demo\/premium/), `entregó el link Premium`),
           ck(tieneLink(outs, /nodo\.demo\/mentoria/), `entregó el link de Mentoría`),

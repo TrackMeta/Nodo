@@ -7140,6 +7140,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const pm = ctx.zona_entrega === "lima" ? [] : (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
       .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
     if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
+    // 🔒 El dinero lo confirma el CÓDIGO, no la IA. "Ya te yapeo" es una intención, no
+    // un pago: la IA respondía "Gracias por el pago, ya lo recibí, te envío el acceso"
+    // ANTES de que llegara la captura (y podía no llegar nunca). Encima contradecía al
+    // sistema, que un turno después decía "estoy verificando tu pago". Misma regla que
+    // las zonas y el stock: sobre plata la IA comunica, no decide.
+    // En Lima contraentrega no aplica: ahí paga al recibir, no por adelantado.
+    if (ctx.zona_entrega !== "lima") {
+      parts.push(
+        "## Sobre los pagos (REGLA DURA, no negociable)\n" +
+        "NUNCA des por recibido, confirmado ni validado un pago que no has visto. Que el cliente diga " +
+        '"ya te yapeo", "ya te pagué" o "ya te transferí" NO es un pago: es una intención. ' +
+        'Mientras no llegue la CAPTURA del comprobante, está PROHIBIDO decir "ya lo recibí", ' +
+        '"ya confirmé tu pago" o cualquier frase que dé el pago por hecho, y también prometer que ' +
+        "le vas a enviar el acceso o el producto. Lo que debes hacer es pedirle la captura con " +
+        "amabilidad y decirle que apenas se verifique recibe todo. Quien confirma los pagos y hace " +
+        "la entrega es el sistema, no tú.",
+      );
+    }
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     // Ángulo del creativo: el cliente llegó por un anuncio con cierto gancho —
     // la IA debe MANTENER ese enfoque en toda la conversación (continuidad de mensaje).
