@@ -1344,10 +1344,14 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
         // Desempate por ESPECIFICIDAD: gana el keyword MÁS LARGO que matchea ("reloj
         // inteligente" sobre "reloj"). Antes ganaba el PRIMER trigger por orden de BD
         // (sin `order by` → no determinista entre despliegues).
+        // 'empieza' con frontera de palabra: "pago" NO debe pescar "pagoda" (startsWith crudo lo
+        // hacía → ruteo al producto equivocado). Permite el plural opcional (es/s) + frontera,
+        // igual que contienePalabra. Así "pago" matchea "pagos falsos" pero no "pagoda barata".
+        const empiezaPalabra = (s: string, k: string) => s.startsWith(k) && /^(es|s)?([^\p{L}\p{N}]|$)/u.test(s.slice(k.length));
         let best = 0;
         for (const k of kws) {
           if (!k) continue;
-          const m = mode === "exacta" ? norm === k : mode === "empieza" ? norm.startsWith(k) : contienePalabra(norm, k);
+          const m = mode === "exacta" ? norm === k : mode === "empieza" ? empiezaPalabra(norm, k) : contienePalabra(norm, k);
           if (m && k.length > best) best = k.length;
         }
         if (best > kwLen) { kwHit = flow; kwLen = best; } // keyword gana sobre entrada; el más específico gana
@@ -7776,7 +7780,17 @@ async function buildContext(db: SupabaseClient, run: Run) {
     try {
       let q = db.from("angulos").select("nombre, gancho_ia").eq("channel_id", run.channel_id).eq("slug", (c as any).angulo);
       if (c?.product_id) q = q.eq("product_id", c.product_id);
-      const { data: ang } = await q.limit(1).maybeSingle();
+      let { data: ang } = await q.limit(1).maybeSingle();
+      // Fallback: el slug del ángulo se congela con el 1er anuncio (first-ad-wins), pero
+      // contacts.product_id es last-write (markProduct lo pisa si el cliente llega por un 2º
+      // anuncio de OTRO producto). Cuando divergen, el producto actual no tiene un ángulo con
+      // ese slug → la búsqueda scopeada daba VACÍO y la IA nunca retomaba el gancho por el que
+      // vino el cliente. Se reintenta por slug SIN filtrar producto (orden determinista) para
+      // no perder la personalización. (Si el producto actual SÍ tiene ese slug, gana el suyo.)
+      if (!ang && c?.product_id) {
+        ({ data: ang } = await db.from("angulos").select("nombre, gancho_ia")
+          .eq("channel_id", run.channel_id).eq("slug", (c as any).angulo).order("product_id").limit(1).maybeSingle());
+      }
       ctx.angulo = (ang as any)?.nombre ?? "";
       ctx.angulo_gancho = (ang as any)?.gancho_ia ?? "";
     } catch (_) { /* sin tabla angulos (pre-0063) → vacíos */ }

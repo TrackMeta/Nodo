@@ -176,8 +176,12 @@ async function loadData(){
   // Ángulos (aparte, con su propio try/catch: si falta la migración 0063 no debe
   // romper toda la carga). Mapa ad_id → nombre del ángulo.
   const angMap={};
-  try{ const {data:angs}=await supa.from("angulos").select("slug,nombre,ad_ids").eq("channel_id",cid);
-    (angs||[]).forEach(a=>(a.ad_ids||[]).forEach(id=>{ angMap[String(id)]={slug:a.slug,nombre:a.nombre}; })); }catch(_){}
+  // .order("slug") + "primer slug gana" (if(!angMap)): mismo desempate DETERMINISTA que el motor
+  // (resolverAnguloContacto usa .order("slug").limit(1)). Antes sin .order y con last-write, un
+  // ad_id que quedó por error en DOS ángulos se reportaba bajo uno cambiante entre refrescos y
+  // distinto del que el cliente realmente vivió.
+  try{ const {data:angs}=await supa.from("angulos").select("slug,nombre,ad_ids").eq("channel_id",cid).order("slug");
+    (angs||[]).forEach(a=>(a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre}; })); }catch(_){}
   const byAd={};
   const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };

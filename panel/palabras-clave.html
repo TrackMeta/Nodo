@@ -339,7 +339,13 @@ function renderFlowSelects(){
 // Flujo de venta de un producto (el que activa la palabra clave).
 function mainFlowFor(productId){
   const fs=st.flows.filter(f=>f.product_id===productId); if(!fs.length) return null;
-  return fs.find(f=>/venta|activaci|principal|inicial/i.test(f.nombre)) || fs.find(f=>f.estado==="activo") || fs[0];
+  // Preferir un flujo ACTIVO: matchTrigger salta los borradores, así que una keyword apuntada a
+  // un flujo en borrador queda MUDA (el cliente cae a recepción/Bandeja en vez de al producto).
+  // Antes se elegía por NOMBRE ignorando el estado → si el flujo de venta seguía en borrador
+  // (normal a media configuración) la keyword nacía muerta. Dentro de los activos, el de venta.
+  const act=fs.filter(f=>f.estado==="activo");
+  const esVenta=f=>f.role==="venta"||/venta|activaci|principal|inicial/i.test(f.nombre||"");
+  return act.find(esVenta) || act[0] || fs.find(esVenta) || fs[0];
 }
 // Chips de la palabra clave nueva (apilables, no separadas por coma).
 function renderNewChips(){
@@ -412,7 +418,7 @@ function renderKeywords(){
           <div class="sw${t.activo?" on":""}" data-act title="Activar/desactivar"></div>
           <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>
         </div>
-        ${warned?`<div style="margin-top:9px;display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg,#2c2311);color:var(--amber);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — gana cualquiera al azar</span></div>`:""}`;
+        ${warned?`<div style="margin-top:9px;display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg,#2c2311);color:var(--amber);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — se enruta a uno solo (no ambos); mejor usa palabras distintas</span></div>`:""}`;
       card.querySelector("[data-ci]").addEventListener("keydown",e=>{
         if(e.key==="Enter"){ e.preventDefault(); const v=e.target.value.trim(); if(v && !kwsArr.some(k=>norm(k)===norm(v))){ kwsArr.push(v); updateTrigger(t,{keywords:kwsArr}); } }
         else if(e.key==="Backspace" && !e.target.value && kwsArr.length){

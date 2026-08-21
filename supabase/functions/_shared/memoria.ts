@@ -201,16 +201,23 @@ export async function actualizarMemoriaIA(
       JSON.stringify({ q: actual.quien_es, c: actual.como_tratar });
     if (igual) { await bumpLast(); return; }
     const nuevo: MemoriaAI = { quien_es: finalQ, como_tratar: finalC, _last: now };
-    // Re-lectura fresca antes de escribir: si el operador (u otro turno) agregó un chip
-    // mientras corría la IA, se FUSIONA en vez de pisarse. El motor hacía overwrite ciego;
-    // el panel ya protege esta clase (contact-extras.js re-lee y aplica delta). `curar`
-    // deduplica y capa a MAX_ITEMS.
+    // Re-lectura fresca + merge por DELTA: el operador (u otro turno) pudo editar la memoria
+    // mientras corría la IA (~2-4s). Se aplica el CAMBIO de la IA (respecto al snapshot `actual`
+    // que vio) sobre lo FRESCO, en vez de sobrescribir con la salida cruda del LLM. Así: (a) NO se
+    // RESUCITA un chip que el operador borró en esa ventana (la IA no lo tocó → sigue borrado);
+    // (b) las adiciones del operador van PRIMERO → sobreviven el cap de MAX_ITEMS. Antes solo se
+    // fusionaban las ADICIONES del operador y se reescribía la salida del LLM (que aún veía el
+    // chip borrado). El panel ya hace este delta (contact-extras.js). `curar` dedup + capa.
     try {
       const fresco = await leerMemoria(db, contactId);
-      const addQ = (fresco.quien_es || []).filter((x) => !(actual.quien_es || []).includes(x));
-      const addC = (fresco.como_tratar || []).filter((x) => !(actual.como_tratar || []).includes(x));
-      if (addQ.length) nuevo.quien_es = curar([...nuevo.quien_es, ...addQ]);
-      if (addC.length) nuevo.como_tratar = curar([...nuevo.como_tratar, ...addC]);
+      const mergeCapa = (freshArr: string[] | undefined, actualArr: string[] | undefined, aiArr: string[] | undefined) => {
+        const fresh = freshArr || [], act = actualArr || [], ai = aiArr || [];
+        const aiAdd = ai.filter((x) => !act.includes(x));   // lo que la IA AGREGÓ respecto a lo que vio
+        const aiDel = act.filter((x) => !ai.includes(x));   // lo que la IA QUITÓ
+        return curar([...fresh.filter((x) => !aiDel.includes(x)), ...aiAdd]);
+      };
+      nuevo.quien_es = mergeCapa(fresco.quien_es, actual.quien_es, finalQ);
+      nuevo.como_tratar = mergeCapa(fresco.como_tratar, actual.como_tratar, finalC);
     } catch (_) { /* si la re-lectura falla, se escribe lo analizado */ }
     await db.from("contacts").update({ memoria_ia: nuevo }).eq("id", contactId);
     try {
