@@ -681,7 +681,7 @@ function rotuloInner(o){
       row("Referencia", s.referencia||"")+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
-      row("A COBRAR", money(total(o),o.currency)+"  ·  CONTRAENTREGA", true);
+      row("A COBRAR", money(O.porCobrar(o),o.currency)+"  ·  CONTRAENTREGA", true);
   }
   return `<div class="lbl">
       <div class="hd">

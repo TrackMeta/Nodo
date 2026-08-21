@@ -91,6 +91,31 @@ Deno.serve(async (req) => {
     if (CONFIRM_STATES.includes(newEstado)) patch.confirmed_at = new Date().toISOString();
   }
 
+  // 🔒 Anti-reúso en la APROBACIÓN MANUAL: si el nº de operación de este pago YA se
+  // acreditó en OTRO pedido, NO aprobar (doble crédito / doble despacho contra un solo
+  // pago real). El caso auto↔auto lo cierra reclamarOperacion; este cubre el hueco
+  // manual↔manual: dos comprobantes del mismo Yape que crearon dos pedidos pendientes,
+  // ambos "listos para aprobar" antes de que ninguno escribiera el ledger (los pre-chequeos
+  // de reúso del motor no ven nada porque el ledger aún está vacío). El registro efectivo
+  // sigue más abajo; acá solo se BLOQUEA el reúso CRUZADO. Mismo pedido = OK (idempotente).
+  {
+    const sh = ((order as any).shipping ?? {}) as any;
+    const aprobandoExtra = body.resume === true || (body.shipping && (body.shipping as any).extra_pendiente === false);
+    let opChk = "";
+    if (newEstado === "adelanto_validado") opChk = String(sh.adelanto_operacion || sh.adelanto_operacion_leida || "");
+    else if (newEstado === "saldo_pagado") opChk = String(sh.saldo_operacion || sh.saldo_operacion_leida || "");
+    else if (newEstado === "confirmada") opChk = String(((patch.shipping as any) ?? sh).digital_operacion || ((patch.shipping as any) ?? sh).digital_operacion_leida || "");
+    else if (aprobandoExtra) opChk = String(((patch.shipping as any) ?? sh).extra_operacion || ((patch.shipping as any) ?? sh).extra_operacion_leida || "");
+    const opN = opChk.toUpperCase().replace(/\s+/g, "").trim();
+    if (opN.length >= 4) {
+      const { data: prev } = await db.from("payment_operations").select("order_id")
+        .eq("channel_id", (order as any).channel_id).eq("operacion", opN).maybeSingle();
+      if (prev && (prev as any).order_id && (prev as any).order_id !== order.id) {
+        return json({ error: "operacion_reusada", detalle: `Esa operación (${opN}) ya se acreditó en otro pedido. Revísalo antes de aprobar.` }, 409);
+      }
+    }
+  }
+
   // CAS sobre el estado cuando HAY transición: dos aprobaciones concurrentes del MISMO
   // botón de Telegram (doble-tap antes de que se quiten los botones) leían ambas el estado
   // viejo y ambas pasaban a entregar → DOBLE entrega digital + doble aviso. Con `.eq(estado)`

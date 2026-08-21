@@ -3285,10 +3285,27 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         else if (stg) await moverEtapa(db, run.channel_id, run.contact_id, stg);
       } catch (e) { console.error("[actualizarPedido] etapa:", (e as any)?.message ?? e); }
     }
-    // 📊 Upsell DIGITAL agregado tras el cierre: manda un Purchase incremental a Meta
-    // (solo dispara si el pedido es una venta digital ya `confirmada` y de anuncio;
-    // el físico no lo usa: su Purchase suma los bumps al cerrar). Sin pixel → no-op.
-    if (bumpUpsell) {
+    // 📊 Purchase PRINCIPAL a Meta. Esta 3ra ruta de cierre (la IA cierra un pedido vía
+    // actualizar_pedido) era la ÚNICA de las cuatro (crearPedido/order-update/maybeAutoSaldo)
+    // que NO disparaba el Purchase principal → una venta de anuncio cerrada por la IA
+    // (saldo_pagado/entregado_cobrado/recogido/confirmada) nunca llegaba a Meta: conversión
+    // sub-reportada, sin cron que la recupere, y en el CRM se ve como venta cerrada (nadie
+    // sospecha). maybePurchase ignora los estados que no son cierre real, exige ctwa_clid y
+    // deduplica por pedido (Purchase:<id>). Sin pixel → no-op.
+    let principalCapi: any = null;
+    if (patch.estado) {
+      try {
+        const { data: op } = await db.from("orders").select("estado, amount, currency, shipping").eq("id", orderId).maybeSingle();
+        if (op) principalCapi = await maybePurchase(db, { id: orderId, channel_id: run.channel_id, contact_id: run.contact_id, estado: (op as any).estado, amount: (op as any).amount, currency: (op as any).currency, shipping: (op as any).shipping });
+      } catch (e) { console.error("[actualizarPedido] capi purchase:", (e as any)?.message ?? e); }
+    }
+    // 📊 Upsell DIGITAL incremental (extra agregado tras el cierre). SOLO si el Purchase
+    // principal NO se acaba de enviar en ESTA misma llamada: maybePurchase relee los bumps
+    // y suma el extra al valor, así que si el principal disparó AHORA ya lo incluyó → mandar
+    // también el upsell lo contaría DOBLE. Se dispara cuando el principal ya se había enviado
+    // antes (deduped) o cuando esta acción no cambió el estado (extra sobre venta ya cerrada).
+    const principalReciénEnviado = !!(principalCapi && principalCapi.ok && !principalCapi.deduped);
+    if (bumpUpsell && !principalReciénEnviado) {
       try {
         const { data: ou } = await db.from("orders").select("estado, amount, currency, shipping").eq("id", orderId).maybeSingle();
         if (ou) await maybePurchaseUpsell(db, { id: orderId, channel_id: run.channel_id, contact_id: run.contact_id, estado: (ou as any).estado, amount: (ou as any).amount, currency: (ou as any).currency, shipping: (ou as any).shipping }, bumpUpsell.value, bumpUpsell.sufijo);
@@ -7297,6 +7314,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // atención; default S/50.
         let sobrepagoSospechoso = false;
         let montoIlegible = false;
+        let extraMontoDudoso = false; // backstop de monto para el EXTRA (ver bloque esExtra abajo)
         if (!esExtra) {
           const esperadoB = Number(ctx.precio_esperado);
           // La tolerancia digital que el operador configura vive en pedidos_config.digital
@@ -7344,6 +7362,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // se fuerza validación manual (mismo criterio que un pago sin operación).
             montoIlegible = true;
           }
+        } else {
+          // EXTRA: backstop de monto por CÓDIGO (no solo el modelo). Sin esto, un extra en
+          // auto + operación legible se entregaba SIN ningún control de monto → un cliente
+          // pagaba S/1 por un extra de S/200 y bastaba que el modelo (falible, o con
+          // verificar_monto apagado) diera PAGO_OK. Solo actúa si el extra tiene monto
+          // esperado configurado (cfg.monto_esperado); si no, cae al juicio del modelo como
+          // antes (no introduce falsos rechazos). Cualquier duda de monto → validación manual.
+          const espX = cfg.monto_esperado ? (parseMonto(resolve(String(cfg.monto_esperado), ctx), ctx) ?? NaN) : NaN;
+          if (Number.isFinite(espX) && espX > 0) {
+            const pagX = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
+            const tolX = Number((info as any)?.pedidos?.digital?.tolerancia ?? 0) || 0;
+            const margenXraw = Number((info as any)?.pedidos?.digital?.revisar_sobre_sol);
+            const margenX = Number.isFinite(margenXraw) && margenXraw >= 0 ? margenXraw : 50;
+            if (!Number.isFinite(pagX) || pagX <= 0) extraMontoDudoso = true;      // no se pudo leer el monto
+            else if (pagX < espX - tolX) extraMontoDudoso = true;                  // pagó de menos
+            else if (pagX > espX + margenX) extraMontoDudoso = true;               // sobrepago sospechoso
+          }
         }
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
         if (!esParcial && !yaParque) {
@@ -7358,7 +7393,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
           // freno detectó un sobrepago sospechoso (Capa 1), o si es un extra sin
           // operación verificable — aunque esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible)) {
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || extraMontoDudoso)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
