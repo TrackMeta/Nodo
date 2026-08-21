@@ -1932,7 +1932,10 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
       const nEspT=await N("pregunta",`Esperar talla del extra ${i+1}`,{ text:"", timeout_seg:esperaSeg },false,3480,y);
       const nCapT=await N("ia",`Anotar talla del extra ${i+1}`,{
         operacion:"generar_texto", enviar:true, usar_conocimiento:true, detectar_opcion:false,
-        prompt:`El cliente acaba de indicar la talla/variante de ${label}. Responde SOLO con un OK muy corto (ej. «¡Anotado! 👍»). No vuelvas a preguntar.`,
+        // Solo ACUSA la talla. La suma al pedido la confirma el mensaje siguiente
+        // (`Confirmar extra`): si acá también dijera "te lo sumo", al cliente le
+        // llegaban dos burbujas seguidas diciendo lo mismo.
+        prompt:`El cliente acaba de indicar la talla/variante de ${label}. Responde SOLO con un acuse muy corto que repita la talla elegida (ej. «Anotado, talla M 👍»). No vuelvas a preguntar, NO confirmes la suma al pedido ni hables del pago: eso lo dice el mensaje siguiente.`,
       },false,3760,y);
       await E(nAdd,"continuar",nAskT);
       await E(nAskT,"exito",nEspT);
@@ -3018,8 +3021,15 @@ async function generarFlujoVenta(skipConfirm){
           // Contexto del PROPIO extra (su "Venta con IA") para que la IA responda
           // dudas del complemento, no solo del principal. Se congela al generar.
           contexto:(info&&info.contexto)?`## Sobre el complemento que estás ofreciendo (${info.nombreProd||info.label})\n${info.contexto}`:undefined,
+          // 🔒 El principal YA ESTÁ PAGADO acá (este nodo vive DESPUÉS de la entrega).
+          // Sin decírselo, la IA veía el precio del curso en el Conocimiento y le pedía
+          // al cliente "la captura del pago total de S/ 248 (199 + 49)" — o sea cobrarle
+          // de nuevo el producto que ya pagó, mientras el validador esperaba solo S/ 49.
           prompt:`El cliente está viendo una oferta adicional (${info?info.label:"el extra"}). Responde su duda de forma breve `+
-                 `y ayúdalo a decidir, sin presionar. Si quiere, pásale los datos de pago ({{datos_pago}}).`,
+                 `y ayúdalo a decidir, sin presionar. Si quiere, pásale los datos de pago ({{datos_pago}}).\n`+
+                 `🔒 IMPORTANTE: el cliente YA PAGÓ su compra principal y ya recibió su acceso. Esta oferta se cobra APARTE y `+
+                 `SOLO por su precio${precio!==""?` de S/ ${precio}`:""}. NUNCA le pidas pagar de nuevo el producto principal ni `+
+                 `le sumes ambos importes: el único monto que debe pagar ahora es el de esta oferta.`,
         },false,1500,y+240);
 
         await E(nOfr,"continuar",nEsp);

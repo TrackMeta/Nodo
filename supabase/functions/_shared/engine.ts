@@ -1545,8 +1545,14 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   // Saludo de apertura: SOLO la primera vez (si el bot aún no le ha escrito nunca).
   const { count: outCount } = await db.from("messages").select("id", { count: "exact", head: true })
     .eq("contact_id", contactId).eq("direction", "out");
+  // Saludo ya emitido en ESTE turno: hay que contárselo a la IA. Si no, saluda y
+  // pregunta lo mismo que el saludo fijo ("¿qué producto te interesa?") y al cliente
+  // le llegan dos mensajes seguidos preguntando igual.
+  let saludoEmitido = "";
   if (!outCount && Array.isArray(rec.saludo)) {
-    for (const b of rec.saludo) { if (b && (b.text || b.media_url)) await emit(db, run, b, ctx); }
+    for (const b of rec.saludo) {
+      if (b && (b.text || b.media_url)) { await emit(db, run, b, ctx); if (b.text) saludoEmitido += (saludoEmitido ? "\n" : "") + String(b.text); }
+    }
   }
   const info = await channelIaInfo(db, run);
   const cands = await receptionCands(db, channelId);
@@ -1559,6 +1565,10 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "\n\nGuía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
   } else {
     parts.push("Aún no hay productos configurados; responde con amabilidad y ofrece tomar sus datos.");
+  }
+  if (saludoEmitido) {
+    parts.push("## Ojo: el saludo de apertura YA salió\nAcabas de enviarle esto:\n\"" + saludoEmitido.slice(0, 400) +
+      "\"\nNO vuelvas a saludar ni repitas esa misma pregunta. Continúa desde ahí, atendiendo lo que él escribió.");
   }
   const hist = await historial(db, run, 10);
   const content = `El cliente escribe:\n"${event.text ?? ""}"` +
@@ -2971,7 +2981,11 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       const bag: Record<string, string> = {};
       for (const at of atrs) {
         const v = String(ctx[at.clave] ?? run.vars?.[at.clave] ?? "").trim();
-        if (v) bag[at.nombre] = v;
+        // Al valor CANÓNICO del catálogo: el cliente dice "blancas"/"negras" y así se
+        // guardaba en el pedido, así que el rótulo de envío y Compras salían en
+        // femenino plural en vez del valor real ("blanco"). El stock ya normalizaba
+        // por su lado (stockKeyEngine), pero lo que se IMPRIME salía crudo.
+        if (v) bag[at.nombre] = snapValorVariante(v, (at.valores || []).join(","));
       }
       if (Object.keys(bag).length) ship.atributos = bag;
     }
@@ -3335,7 +3349,11 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         if (a.bump.sube_saldo) {
           const sActual = Number(((cur as any)?.shipping ?? {}).saldo);
           if (Number.isFinite(sActual)) {
-            patch.shipping = { ...((cur as any)?.shipping ?? {}), saldo: +(sActual + precio).toFixed(2) };
+            // String, como en TODOS los demás puntos que escriben el saldo (crearPedido,
+            // saldoTrasAdelanto, quitar bump). Acá salía NÚMERO, así que un mismo campo
+            // era texto o número según si el pedido tuvo o no una venta extra — y las
+            // comparaciones de saldo se vuelven una lotería (ya hubo bugs de NaN por esto).
+            patch.shipping = { ...((cur as any)?.shipping ?? {}), saldo: String(+(sActual + precio).toFixed(2)) };
           }
         }
       }
@@ -3733,7 +3751,12 @@ export function mensajeEstadoDefault(
 ): string | null {
   const s = shipping || {};
   const sym = moneda === "USD" ? "$" : "S/";
-  const sede = String(s.destino || s.sede || s.ciudad || "").trim();
+  // La plantilla ya dice "la agencia Shalom de …", y el cliente suele dar la sede
+  // CON el nombre del courier ("Shalom Trujillo Parque Industrial") → salía
+  // "la agencia Shalom de Shalom Trujillo…" en los 3 avisos (despacho, llegada y
+  // clave). Se le quita el prefijo del courier a la sede antes de interpolarla.
+  const sede = String(s.destino || s.sede || s.ciudad || "").trim()
+    .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim();
   if (estado === "en_reparto") {
     const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : (amount != null ? amount : null);
     const dir = String(s.direccion || "").trim();
@@ -7159,6 +7182,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       );
     }
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
+    // 🎁 Regalo con la compra. El panel compila este bloque en el Conocimiento, pero
+    // los nodos generados usan `usar_conocimiento` → el prompt lo arma ACÁ en runtime,
+    // y acá no existía: el toggle "Mencionar el regalo" no hacía NADA en producto
+    // físico y el cliente nunca se enteraba de su regalo (en digital "funcionaba" de
+    // rebote, porque el regalo se anuncia solo al entregarse por link). Se perdía el
+    // gancho de cierre y encima le llegaba algo que no esperaba.
+    const regalosCtx = Array.isArray((ctx as any)._regalos) ? (ctx as any)._regalos : [];
+    if (regalosCtx.length && (ctx as any)._regalo_mencionar) {
+      const lista = regalosCtx.map((g: any) => {
+        const d = String(g?.desc ?? g?.regalo_desc ?? "").trim();
+        return `- ${g?.nombre || "regalo"}${d ? `: ${d}` : ""}`;
+      }).join("\n");
+      parts.push(
+        "## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS, ya incluido en el pedido:\n" + lista +
+        '\nMENCIÓNALO como gancho para cerrar ("y de regalo te incluye…") y, al confirmar el pedido, nómbralo entre lo que va a recibir. ' +
+        "Va GRATIS y ya está incluido: NO lo cobres, NO lo ofrezcas como si tuviera que aceptarlo o pagarlo, NO prometas más de uno " +
+        "y NO exageres. Si pregunta qué es, explícaselo con su descripción.",
+      );
+    }
     // Ángulo del creativo: el cliente llegó por un anuncio con cierto gancho —
     // la IA debe MANTENER ese enfoque en toda la conversación (continuidad de mensaje).
     if (String(ctx.angulo_gancho ?? "").trim()) {
@@ -7271,6 +7313,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         );
       }
     }
+
+    // Cómo cerrar sin pisarte con el sistema. Tres vicios que salieron en la
+    // simulación, los tres por narrar lo que hace el motor en vez de hablarle al
+    // cliente:
+    //  · Preguntar "¿confirmo el pedido?" teniendo ya todo: el motor confirma en ESE
+    //    mismo turno, así que el "sí" del cliente llega cuando la pregunta viva ya es
+    //    otra (el extra) y se lee como un NO → se pierde el upsell.
+    //  · Anunciar mensajes que el sistema manda solo ("en breve te llega un mensaje
+    //    con los datos del adelanto") → llega el anuncio y enseguida la plantilla.
+    //  · Dar por ocurridos pasos que no pasaron ("un asesor validará tu pago del
+    //    saldo" cuando el cliente todavía no lo pagó).
+    parts.push(
+      "## Cómo cerrar (evita pisarte con el sistema)\n" +
+      "1. Si ya tienes todos los datos, CIERRA afirmando (\"listo, queda confirmado\"). NO preguntes " +
+      "\"¿confirmo?\" ni \"¿te lo dejo listo?\": el pedido se confirma en ese mismo momento, y si preguntas, " +
+      "la respuesta del cliente llega cuando ya estás en otra cosa y se malinterpreta.\n" +
+      "2. NO anuncies mensajes que el sistema envía solo (datos de pago, adelanto, guía, clave de recojo). " +
+      "Nada de \"en breve te llegará un mensaje con…\": salen automáticamente y tu anuncio los duplica.\n" +
+      "3. No narres pasos que NO han pasado ni hables de \"el sistema\", \"un asesor\" o \"el área de pagos\" " +
+      "en tercera persona. Habla del presente y de lo que le toca al cliente ahora.",
+    );
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
     // explícita de no contradecirlo — sabe qué decir, no qué decidir. (La IA no
@@ -8093,6 +8156,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // sigue vendiendo y se avisa por Telegram); esto evita venderlo a ciegas.
           const stockCfg = (p as any).config?.stock;
           if (stockCfg && typeof stockCfg === "object") pc._stock = stockCfg;
+          // Regalos del producto + la perilla "Mencionar el regalo". Son objetos, así
+          // que el bucle de arriba también los descartaba y el prompt nunca los veía.
+          const regsP = Array.isArray((p as any).config?.regalos) ? (p as any).config.regalos : [];
+          if (regsP.length) {
+            pc._regalos = regsP.filter((g: any) => g && g.nombre);
+            pc._regalo_mencionar = (p as any).config?.regalo_mencionar !== false;
+          }
           // Regalos FÍSICOS con tallas propias: el bot también las pregunta (campos
           // OPCIONALES, clave prefijada rg<idx>_<clave> para no chocar con el
           // principal). extraerDatos los captura y adjuntarRegalos descuenta la
