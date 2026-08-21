@@ -465,7 +465,33 @@ async function rechazar(o,tipo){
   const pausa=parqueado&&quien==="humano";
   if(r && pausa){ try{ await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); }catch(_){} }
   if(r){ toast(pausa?"Rechazado · el bot quedó en pausa en ese chat"
-                    :(r.rejected?"Rechazado · el bot le está pidiendo otro comprobante":"Marcado como rechazado")); await load(); }
+                    :(r.rejected?"Rechazado · el bot le está pidiendo otro comprobante":"Marcado como rechazado")); await load();
+    await ofrecerGuardarFraude(o,tipo); } // #4: aprender del rechazo (si era un montaje, guardarlo como ejemplo)
+}
+// Aprende de tus correcciones: al rechazar un comprobante FALSO/editado, ofrece guardarlo como
+// ejemplo de FRAUDE del validador (ocr_config.ejemplos con tipo:"fraude") para que la IA reconozca
+// montajes parecidos en el futuro. El rechazo es la mejor señal de "esto es un pago malo".
+async function ofrecerGuardarFraude(o,tipo){
+  try{
+    const s=o.shipping||{};
+    const img = tipo==="adelanto" ? (s.adelanto_comprobante||st.imgs[o.contact_id])
+              : tipo==="saldo"    ? s.saldo_comprobante
+              : tipo==="digital"  ? (s.digital_comprobante||st.imgs[o.contact_id])
+              : tipo==="extra"    ? (s.extra_comprobante||st.imgs[o.contact_id]) : null;
+    if(!img || !/^https?:/.test(img)) return; // sin URL utilizable (o wa-media crudo) → no se puede guardar como ejemplo
+    if(!await confirmDialog({ title:"¿Era un comprobante falso?", message:"Si este comprobante era FALSO o editado (un montaje), guárdalo como ejemplo para que el validador reconozca fraudes parecidos. Si solo era un monto equivocado o el destinatario, no hace falta.", confirmText:"Sí, guardar como fraude", cancelText:"No" })) return;
+    const { data:ch } = await supa.from("channels").select("ocr_config").eq("id",st.channelId).maybeSingle();
+    const ocr = (ch&&ch.ocr_config&&typeof ch.ocr_config==="object") ? ch.ocr_config : {};
+    const ej = Array.isArray(ocr.ejemplos) ? ocr.ejemplos : [];
+    if(ej.some(e=>e&&e.url===img)){ toast("Ese comprobante ya estaba guardado"); return; }
+    let nuevos = ej;
+    const fraudes = ej.filter(e=>e&&e.tipo==="fraude");
+    if(fraudes.length>=5){ const drop=fraudes[0]; nuevos=ej.filter(e=>e!==drop); } // tope 5, dropea el más viejo
+    nuevos=[...nuevos, { url:img, tipo:"fraude" }];
+    const { error } = await supa.from("channels").update({ ocr_config:{ ...ocr, ejemplos:nuevos } }).eq("id",st.channelId);
+    if(error){ toast("No se pudo guardar el ejemplo",true); return; }
+    toast("Guardado como ejemplo de fraude ✓ — el validador aprenderá de esto");
+  }catch(_){}
 }
 
 boot();
