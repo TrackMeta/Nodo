@@ -81,6 +81,13 @@ export async function construirResumen(
     db.from("ads_meta").select("account_currency").eq("channel_id", chId),
   ]);
 
+  // supabase-js NO lanza ante error de query (devuelve {data:null, error}). Sin revisar:
+  // (a) si falla `orders` reportaríamos "😴 Sin movimiento" o ceros → FALSO "cero negocio";
+  // (b) si falla `ads` el gasto sale 0 → se omiten las líneas de anuncios y neta → la ganancia
+  // parece MEJOR que la real. Ante fallo de pedidos, abortamos (el caller no manda un digest
+  // mentiroso); ante fallo de ads, mostramos el digest pero SIN neta y con aviso.
+  if (ordR.error) throw new Error("resumen: no se pudo leer pedidos — " + ordR.error.message);
+  const adsFail = !!adsR.error;
   const orders = (ordR.data ?? []) as Order[];
   const dg = resumirPedidos(orders);
   const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
@@ -118,9 +125,12 @@ export async function construirResumen(
   if (dg.ganancia != null) {
     L.push(`📈 Ganancia bruta: ${money(dg.ganancia, sym)}${dg.gananciaSinDatos ? ` <i>(${dg.gananciaSinDatos} sin costo)</i>` : ""}`);
   }
-  if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}${roas > 0 && !monedaRara ? ` · <b>ROAS ${roas.toFixed(1)}×</b>` : ""}`);
+  if (adsFail) L.push(`📣 <i>No pude leer el gasto de anuncios ahora — la ganancia neta queda para el próximo resumen.</i>`);
+  else if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}${roas > 0 && !monedaRara ? ` · <b>ROAS ${roas.toFixed(1)}×</b>` : ""}`);
   if (gastosExtra > 0) L.push(`📋 Gastos extra: ${money(gastosExtra, sym)}`);
-  if (neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`💚 Ganancia neta: <b>${money(neta, sym)}</b>${monedaRara ? " ⚠️" : ""}`);
+  // Neta SOLO si el gasto de ads se pudo leer (si adsFail, gastoAds=0 y la neta saldría inflada).
+  // Corazón verde solo en ganancia; en pérdida (neta<0) 🔻 rojo, como el Dashboard (no engañar de un vistazo).
+  if (!adsFail && neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`${neta < 0 ? "🔻" : "💚"} Ganancia neta: <b>${money(neta, sym)}</b>${monedaRara ? " ⚠️" : ""}`);
   if (monedaRara) L.push(`⚠️ <i>El gasto de ads no está convertido a tu moneda — ROAS y ganancia neta no son confiables.</i>`);
   if (dg.ganancia != null || gastoAds > 0 || gastosExtra > 0) L.push("");
   const desglose = (dg.digital || dg.fisico) ? ` <i>(${dg.digital} digital · ${dg.fisico} físico)</i>` : "";

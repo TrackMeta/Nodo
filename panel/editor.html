@@ -272,7 +272,9 @@ async function boot(){
   $("saveBtn").onclick = save;
   $("pubBtn").onclick = publish;
   $("trigBtn").onclick = openTriggers;
-  $("backBtn").onclick = ()=>{ st.flowId=null; showOverview(); loadFlows(); };
+  // Aviso de cambios sin guardar al cerrar/recargar la pestaña (el editor no autoguarda).
+  window.addEventListener("beforeunload",(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue=""; } });
+  $("backBtn").onclick = async ()=>{ if(st.dirty && !await confirmDialog({title:"Cambios sin guardar",message:"Tienes cambios en este flujo que no guardaste. Si sales, se pierden.",confirmText:"Salir sin guardar",cancelText:"Seguir editando",danger:true})) return; st.dirty=false; st.flowId=null; showOverview(); loadFlows(); };
   $("delFlowBtn").onclick = deleteFlow;
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
   $("editorIaBtn").onclick=()=>setView(st.view==="editorIA"?"estructura":"editorIA");
@@ -525,7 +527,7 @@ async function loadChannels(){
     const { data:f } = await supa.from("flows").select("channel_id").eq("id",flowParam).maybeSingle();
     if(f){ st.channelId = f.channel_id; shell.setChannel(st.channelId, { silent:true }); }
   }
-  shell.onChannel(id=>{ st.channelId=id; st.flowId=null; _seqCache=null; showOverview(); loadFlows(); clearCanvas(); });
+  shell.onChannel(async id=>{ if(st.dirty && !await confirmDialog({title:"Cambios sin guardar",message:"Cambiaste de bot con cambios sin guardar en el flujo. Si continúas, se pierden.",confirmText:"Descartar y cambiar",cancelText:"Seguir editando",danger:true})){ return; } st.dirty=false; st.channelId=id; st.flowId=null; _seqCache=null; showOverview(); loadFlows(); clearCanvas(); });
   await loadFlows();
   if(flowParam) openFlow(flowParam);
 }
@@ -679,8 +681,9 @@ function pushHistory(){
   histStack=histStack.slice(0, histIdx+1);
   histStack.push(snap); if(histStack.length>60) histStack.shift();
   histIdx=histStack.length-1; paintHistory();
+  st.dirty=true; // hay cambios sin guardar (se limpia en resetHistory tras cargar y en save)
 }
-function resetHistory(){ histStack=[]; histIdx=-1; pushHistory(); }
+function resetHistory(){ histStack=[]; histIdx=-1; pushHistory(); st.dirty=false; } // baseline limpio tras cargar
 function undo(){ if(histIdx<=0) return; histIdx--; restoreFlow(histStack[histIdx]); paintHistory(); }
 function redo(){ if(histIdx>=histStack.length-1) return; histIdx++; restoreFlow(histStack[histIdx]); paintHistory(); }
 function paintHistory(){ zoomCtl?._setHistory?.(histIdx>0, histIdx<histStack.length-1); }
@@ -820,7 +823,10 @@ function appendCommon(m, form){
     // esto evita tener que re-marcarlo a mano.
     if(eraInicial){
       const resto=Object.values(st.model);
-      if(resto.length && !resto.some(x=>x.es_inicial)){ resto[0].es_inicial=true; updateNodeDom(resto[0]); toast("Se marcó «"+(resto[0].nombre||resto[0].tipo)+"» como nodo inicial."); }
+      // Auto-promover el 1er nodo EJECUTABLE (no una nota/fin): una nota como inicial pasa la
+      // validación de guardar (que solo exige 1 inicial) pero el motor no arranca → dead-air.
+      const cand=resto.find(x=>x.tipo!=="nota" && x.tipo!=="fin");
+      if(cand && !resto.some(x=>x.es_inicial)){ cand.es_inicial=true; updateNodeDom(cand); toast("Se marcó «"+(cand.nombre||cand.tipo)+"» como nodo inicial."); }
     }
     deselectNode(); pushHistory();
   };
@@ -1431,6 +1437,7 @@ async function save(){
   if(edges.length){ const { error } = await supa.from("flow_edges").insert(edges); if(error){ toast(error.message,true); return false; } }
   const oldIds=(oldEdges||[]).map(e=>e.id);
   if(oldIds.length){ const { error } = await supa.from("flow_edges").delete().in("id",oldIds); if(error){ toast(error.message,true); return false; } }
+  st.dirty=false; // guardado OK → sin cambios pendientes
   toast("Guardado ✓");
   return true;
   } finally { st.saving=false; }

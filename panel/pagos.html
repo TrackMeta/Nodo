@@ -416,6 +416,14 @@ function render(b){
       toast("El vencimiento tiene que ser DESPUÉS del recordatorio",true); return;
     }
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    // Merge: NO pisar humano/postventa, que los maneja "IA → Atención". Esta pantalla arma `p`
+    // con humano/postventa del snapshot RANCIO cargado al montar, así que sin re-leer fresco el
+    // update REVERTÍA los cambios de Atención hechos tras abrir Pagos (al_vender, horario…). Es
+    // el fix SIMÉTRICO al de ia.html, que quedó sin aplicar en este lado.
+    try{ const { data:fresh }=await supa.from("channels").select("pedidos_config").eq("id",st.channelId).maybeSingle();
+      const base=(fresh&&fresh.pedidos_config&&typeof fresh.pedidos_config==="object")?fresh.pedidos_config:null;
+      if(base){ if(base.humano) p.humano=base.humano; if(base.postventa) p.postventa=base.postventa; }
+    }catch(_){}
     const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
