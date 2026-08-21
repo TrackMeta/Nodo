@@ -211,6 +211,11 @@ async function loadData(){
   // el ROAS saliera inflado ~3.75×. Se avisa también en ese caso.
   const _hayGasto=st.rows.some(r=>Number(r.gasto)>0);
   st.monedaDesconocida=_hayGasto && (metaR.data||[]).some(m=>!m.account_currency);
+  // Ventas atribuidas a un anuncio SIN filas de gasto en el periodo → neta=margen−0 (inflada) y
+  // el ROAS baja el denominador, sin señal. Pasa con un anuncio borrado en Meta (ya no devuelve su
+  // gasto histórico) o al ver un mes anterior a la ventana móvil de 30 días de ads-sync. Se avisa,
+  // igual que con la moneda, para que el dueño no crea rentable un anuncio/mes con el gasto subcontado.
+  st.hayVentaSinGasto=st.rows.some(r=>Number(r.ventas)>0 && !(Number(r.gasto)>0));
 }
 async function reload(){ await loadData(); render(); }
 
@@ -310,6 +315,7 @@ function render(){
       <div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>
     </div>
     ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ ${monedaMismatch==="desconocida"?`No pude confirmar en qué <b>moneda</b> factura tu cuenta de Meta (la sincronización no la trajo).`:`Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>.`} El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) puede NO estar convertido — no compares estos números hasta confirmar la moneda.</div>`:""}
+    ${st.hayVentaSinGasto?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ Hay ventas atribuidas a anuncios <b>sin gasto registrado</b> en este periodo (un anuncio borrado en Meta, o un mes anterior a lo que se sincronizó). El <b>ROAS</b> y la <b>ganancia neta</b> salen mejor de lo real porque falta ese gasto — tómalos con cuidado.</div>`:""}
     <div id="content"></div>`;
   wireToolbar();
   if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }

@@ -43,8 +43,19 @@ Deno.serve(async (req) => {
   const resumen: Record<string, unknown>[] = [];
 
   for (const [channelId, cuentas] of porCanal) {
-    const token = (await getChannelSecrets(db, channelId))?.ads_token;
-    if (!token) { resumen.push({ channelId, saltado: "sin_token" }); continue; }
+    // getChannelSecrets LANZA ante un error transitorio del RPC/Vault. Estaba FUERA de todo
+    // try → un hipo al desencriptar el secreto de UN canal tiraba 500 y los canales restantes
+    // del loop NO se sincronizaban ese ciclo. Se acota: se salta ese canal, no se mata la corrida.
+    let token: string | null = null;
+    try { token = (await getChannelSecrets(db, channelId))?.ads_token ?? null; }
+    catch (e) { resumen.push({ channelId, error: "secreto: " + String((e as any)?.message ?? e) }); continue; }
+    if (!token) {
+      // Sin token (nunca conectó, o se lo quitaron): limpiar un ads_sync_error RANCIO para que el
+      // banner rojo "tu token de anuncios dejó de funcionar" no quede pegado cuando ya no hay nada
+      // que sincronizar (antes nunca se tocaba al saltar → el aviso vivía para siempre).
+      await db.from("channels").update({ ads_sync_error: null }).eq("id", channelId).then(() => {}, () => {});
+      resumen.push({ channelId, saltado: "sin_token" }); continue;
+    }
     let authErr: string | null = null;
     let otroErr: string | null = null;
     for (const acct of cuentas) {

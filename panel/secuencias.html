@@ -151,10 +151,14 @@ async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"secuencias" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; st.seq=null; showGrid(); load(); });
+  // Aviso de trabajo sin guardar (el editor de secuencias no autoguarda), como el editor de flujos.
+  const okDescartar=async()=> !st.dirty || await confirmDialog({title:"Cambios sin guardar",message:"Tienes cambios en esta secuencia que no guardaste. Si sales, se pierden.",confirmText:"Salir sin guardar",cancelText:"Seguir editando",danger:true});
+  window.addEventListener("beforeunload",(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue=""; } });
+  ["input","change","click"].forEach(ev=> $("detailView").addEventListener(ev,(e)=>{ if(st.seq && !(e.target&&e.target.closest&&e.target.closest("#saveBtn,#backBtn,#delBtn"))) st.dirty=true; }));
+  shell.onChannel(async id=>{ if(!await okDescartar()) return; st.dirty=false; st.channelId=id; st.seq=null; showGrid(); load(); });
   $("addSeq").onclick=createSeq; $("saveBtn").onclick=saveSeq;
   $("delBtn").onclick=deleteSeq;
-  $("backBtn").onclick=()=>{ st.seq=null; showGrid(); load(); };
+  $("backBtn").onclick=async()=>{ if(!await okDescartar()) return; st.dirty=false; st.seq=null; showGrid(); load(); };
   await load();
 }
 function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
@@ -240,7 +244,7 @@ async function createSeq(){
 async function openSeq(id){
   const { data }=await supa.from("sequences").select("*").eq("id",id).maybeSingle();
   st.seq=data; if(!Array.isArray(st.seq.pasos)) st.seq.pasos=[];
-  renderDetail(); showDetail();
+  renderDetail(); showDetail(); st.dirty=false; // baseline limpio al abrir
 }
 // ¿A qué producto/segmento está vinculada esta secuencia? (busca en products.config
 // .remarketing_seqs[seg]===seqId, o el legacy remarketing_seq_id → general).
@@ -314,6 +318,10 @@ function renderDetail(){
 async function saveSeq(){
   if(!st.seq){ toast("No hay secuencia abierta",true); return; }
   if(st.stepsEd) st.stepsEd.normalize();
+  // Bloqueo de oferta a S/0: una oferta ENCENDIDA con precio vacío o ≤0 haría que el motor mande
+  // "{{precio}}" en S/0 (producto GRATIS) a TODO el segmento y que el OCR valide un pago de S/0.
+  const malOferta=(st.seq.pasos||[]).findIndex(p=> p && p.oferta && p.oferta.version_id && !(Number(p.oferta.precio)>0));
+  if(malOferta>=0){ toast(`El toque ${malOferta+1} tiene un descuento sin precio válido (mayor a 0). Corrígelo o apágalo antes de guardar.`,true); return; }
   const row={ nombre:st.seq.nombre, activo:st.seq.activo!==false, pasos:st.seq.pasos||[], folder:st.seq.folder||null, segmento:st.seq.segmento||"general", modo:st.seq.modo||"reenganche" };
   let { error }=await supa.from("sequences").update(row).eq("id",st.seq.id);
   if(error && /modo|column/.test(error.message)){ delete row.modo; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0064 para el modo goteo)"); }
@@ -322,6 +330,7 @@ async function saveSeq(){
   if(error){ toast(error.message,true); return; }
   let linkErr=null;
   try{ await syncSeqLink(st.seq.id); }catch(e){ linkErr=e; console.warn("[seqlink]",e); }
+  st.dirty=false; // guardado OK
   toast(linkErr?"Guardada, pero falló el enlace al producto":"Guardado ✓", !!linkErr);
   await load();
 }

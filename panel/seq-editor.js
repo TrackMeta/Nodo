@@ -421,6 +421,8 @@ export function mountStepsEditor(el, opts){
 
   function ofWarn(paso){
     if(!paso.oferta) return "";
+    // Precio vacío o ≤0 = producto GRATIS a todo el segmento. Se avisa en vivo y el guardado lo bloquea.
+    if(paso.oferta.version_id && !(Number(paso.oferta.precio)>0)) return "⚠️ Escribe el precio con descuento (mayor a 0). Si lo dejas vacío o en 0, se enviaría el producto GRATIS.";
     const myP=Number(paso.oferta.precio); if(!Number.isFinite(myP)) return "";
     const idx=seq.pasos.indexOf(paso);
     for(let j=0;j<idx;j++){ const pj=seq.pasos[j];
@@ -451,7 +453,7 @@ export function mountStepsEditor(el, opts){
         <input class="in" data-ofvence type="number" min="0" step="1" value="${esc(paso.oferta.vence_horas??48)}" style="width:70px"/>
         <span style="font-size:12px;color:var(--muted)">horas</span>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. 0 horas = sin caducidad.</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. Si dejas 0, la oferta caduca en 72 h (no hay descuento permanente).</div>
       <div class="se-ofwarn" style="font-size:11.5px;color:var(--amber);margin-top:8px;font-weight:600">${ofWarn(paso)}</div>`
       :`<div style="font-size:11.5px;color:var(--amber);margin-top:9px">Primero crea una opción de compra con precio para poder ofrecer un descuento.</div>`):""}`;
     box.querySelector("[data-oftog]").onclick=()=>{

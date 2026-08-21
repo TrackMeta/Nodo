@@ -275,11 +275,16 @@ function renderResultado(){
   // respaldo" (antes inflaban la alarma en cada corrida). Se muestran igual en la
   // cubeta, pero neutrales.
   const efectivoRe=/efectiv|contado|\bmano\b|\bcash\b/i;
+  // Efectivo = no va contra el banco. Incluye Lima CONTRAENTREGA: el cliente paga en efectivo al
+  // motorizado, esa plata NUNCA entra al Yape/banco del reporte. Antes metodoDe(Lima)="" y
+  // efectivoRe.test("")=false → TODA venta de Lima se marcaba "sin respaldo" en rojo (alarma
+  // sistemáticamente inflada, y una venta de Lima podía auto-cuadrar contra un depósito ajeno).
+  const esEfectivoVenta=(v)=> efectivoRe.test(v.metodo||metodoDe(v._o)) || (v._o && O.zonaDe(v._o)==="lima");
   // Se usa el método de la PARTE (s.venta.metodo: adelanto_metodo o saldo_metodo), NO el del
   // pedido: metodoDe() cascadea adelanto_metodo ANTES que saldo_metodo, así que un pedido con
   // adelanto en EFECTIVO y saldo por YAPE pintaba el saldo Yape faltante como "efectivo" y lo
   // sacaba de la alarma roja "sin pago" — justo el saldo real sin respaldo que hay que cazar.
-  const sinPagoReal=r.sinPago.filter(s=>!efectivoRe.test(s.venta.metodo||metodoDe(s.venta._o))).length;
+  const sinPagoReal=r.sinPago.filter(s=>!esEfectivoVenta(s.venta)).length;
   const K=[
     ["cuadradas","Cuadradas",r.cuadradas.length,"var(--green)","venta y pago que calzan"],
     ["revisar","Por revisar",r.revisar.length,"var(--amber)","tú decides cuál es"],
@@ -373,10 +378,10 @@ function renderLista(){
       // respaldo", salía sospechoso en cada corrida. Se muestra neutral. Para otros
       // métodos se mantiene la señal (el operador ve el método y juzga si es la
       // billetera del reporte que subió).
-      const esEfectivo=/efectiv|contado|\bmano\b|\bcash\b/i.test(met);
+      const esEfectivo=esEfectivoVenta(s.venta); // incluye Lima contraentrega (cobro en efectivo al motorizado)
       const el=fila(`${cab(s.venta)}
         <div class="hint" style="margin-top:8px">${esEfectivo
-          ? `<span class="pill" style="background:var(--surface-2);color:var(--muted)">EFECTIVO</span> se cobró en efectivo — no tiene movimiento en el banco, es normal.`
+          ? `<span class="pill" style="background:var(--surface-2);color:var(--muted)">EFECTIVO</span> ${s.venta._o && O.zonaDe(s.venta._o)==="lima" ? "Lima contraentrega — se cobra al recibir, no entra al banco." : "se cobró en efectivo — no tiene movimiento en el banco, es normal."}`
           : `<span class="pill bad">SIN RESPALDO</span> no hay ningún movimiento de ${money(s.venta.monto)} cerca de esa hora${met?` · el comprobante decía <b>${esc(met)}</b>`:""}`}</div>
         <div class="acts">
           <button class="btn sm" data-a="otro">Cobré por otro medio</button>
