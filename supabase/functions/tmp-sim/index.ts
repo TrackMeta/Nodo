@@ -2,7 +2,7 @@
 // wa_id/nombre parametrizables). Auth: miembro + userOwnsChannel. BORRAR después.
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { runEngine } from "../_shared/engine.ts";
+import { runEngine, aplicarStock } from "../_shared/engine.ts";
 
 const db = serviceClient();
 
@@ -38,6 +38,16 @@ Deno.serve(async (req) => {
   }, { onConflict: "contact_id" });
 
   if (reset) {
+    // Devolver el stock reservado antes del DELETE (el borrado directo no lo repone; ver webchat).
+    try {
+      const { data: ords } = await db.from("orders").select("shipping").eq("contact_id", contactId);
+      for (const o of (ords ?? [])) {
+        const sh = ((o as any)?.shipping ?? {}) as any;
+        if (sh.stock_descontado && !sh.stock_devuelto && Array.isArray(sh.stock_mov) && sh.stock_mov.length) {
+          await aplicarStock(db, sh.stock_mov, 1).catch(() => {});
+        }
+      }
+    } catch (_) { /* best-effort */ }
     await Promise.all([
       db.from("messages").delete().eq("contact_id", contactId),
       db.from("flow_runs").delete().eq("contact_id", contactId),

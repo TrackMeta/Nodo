@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { runEngine, startFlowRun } from "../_shared/engine.ts";
+import { runEngine, startFlowRun, aplicarStock } from "../_shared/engine.ts";
 
 const db = serviceClient();
 const TEST_WA_ID = "webchat-test";
@@ -64,6 +64,20 @@ Deno.serve(async (req) => {
   // "comprador" tras reiniciar → el modo post-venta/recompra lo secuestraba y no
   // se podía volver a probar una venta desde cero. Por eso van acá.
   if (reset) {
+    // Devolver el stock RESERVADO de los pedidos de prueba ANTES de borrarlos: el DELETE directo
+    // NO dispara la devolución (no hay trigger; el stock vive en products.config.stock y se aplica
+    // en JS vía aplicarStock). Sin esto, cada ciclo de prueba con una venta física drenaba
+    // permanentemente el stock del producto REAL → agotado falso / alertas de sobreventa / bloqueo
+    // de ventas reales. Idempotente por stock_devuelto (igual que la cancelación normal).
+    try {
+      const { data: ords } = await db.from("orders").select("shipping").eq("contact_id", contactId);
+      for (const o of (ords ?? [])) {
+        const sh = ((o as any)?.shipping ?? {}) as any;
+        if (sh.stock_descontado && !sh.stock_devuelto && Array.isArray(sh.stock_mov) && sh.stock_mov.length) {
+          await aplicarStock(db, sh.stock_mov, 1).catch(() => {});
+        }
+      }
+    } catch (_) { /* best-effort: no bloquear el reset */ }
     await Promise.all([
       db.from("messages").delete().eq("contact_id", contactId),
       db.from("flow_runs").delete().eq("contact_id", contactId),

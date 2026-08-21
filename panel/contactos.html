@@ -494,9 +494,10 @@ async function toggleTag(c, tagId, add){
 
 // Archivar/desarchivar = flag en la conversación (1:1 con el contacto). Upsert
 // por si el contacto aún no tiene fila de conversación (creado a mano, sin chat).
-async function setArchived(ids, val){
+async function setArchived(ids, val, ch){
   if(!ids.length) return;
-  const rows=ids.map(id=>({ channel_id:st.channelId, contact_id:id, archivada:val }));
+  const channelId=ch||st.channelId; // el canal donde se seleccionó (bulk lo captura antes del modal)
+  const rows=ids.map(id=>({ channel_id:channelId, contact_id:id, archivada:val }));
   const { error }=await supa.from("conversations").upsert(rows,{ onConflict:"contact_id" });
   if(error){ toast(error.message,true); return; }
   toast(val?`${ids.length>1?ids.length+" archivados":"Archivado"} ✓`:`${ids.length>1?ids.length+" desarchivados":"Desarchivado"} ✓`);
@@ -597,7 +598,7 @@ async function bulk(act){
     await setNoRemarketing(ids, mode==="off"); return;
   }
   if(act==="seq"){
-    const { data:seqs }=await supa.from("sequences").select("id,nombre,activo").eq("channel_id",st.channelId).order("nombre");
+    const { data:seqs }=await supa.from("sequences").select("id,nombre,activo").eq("channel_id",ch).order("nombre");
     const act2=(seqs||[]).filter(s=>s.activo!==false);
     if(!act2.length){ toast("No hay secuencias activas. Créalas en Secuencias.",true); return; }
     const sid=await askChoice({ title:`Agregar ${ids.length} a la secuencia…`, options:act2.map(s=>({label:s.nombre,value:s.id})) });
@@ -608,7 +609,7 @@ async function bulk(act){
     // re-spam desde el inicio. Y se excluye a quienes pidieron no recibir remarketing.
     const elegibles=ids.filter(id=>{ const c=st.contacts.find(x=>x.id===id); return c && !c.no_remarketing; });
     if(!elegibles.length){ toast("Esos contactos están excluidos del remarketing.",true); return; }
-    const rows=elegibles.map(id=>({ channel_id:st.channelId, contact_id:id, sequence_id:sid, paso_actual:0, estado:"activa", updated_at:now }));
+    const rows=elegibles.map(id=>({ channel_id:ch, contact_id:id, sequence_id:sid, paso_actual:0, estado:"activa", updated_at:now }));
     const { error }=await supa.from("sequence_subscriptions").upsert(rows,{ onConflict:"contact_id,sequence_id", ignoreDuplicates:true });
     if(error){ toast(error.message,true); return; }
     toast(`${elegibles.length} agregado(s) a la secuencia ✓`); st.sel.clear(); render(); return;
@@ -616,7 +617,7 @@ async function bulk(act){
   if(act==="arch"){
     const mode=await askChoice({ title:`${ids.length} contacto(s)`, options:[{label:"Archivar",value:"arch",desc:"Salen de la lista (y de la Bandeja)"},{label:"Desarchivar",value:"unarch",desc:"Vuelven a la lista"}] });
     if(!mode) return;
-    await setArchived(ids, mode==="arch"); return;
+    await setArchived(ids, mode==="arch", ch); return;
   }
   if(act==="export"){
     exportCsv(st.contacts.filter(c=>st.sel.has(c.id))); return;
@@ -646,24 +647,46 @@ function exportCsv(list){
   const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
   a.href=URL.createObjectURL(blob); a.download="contactos.csv"; a.click(); URL.revokeObjectURL(a.href);
 }
+// Parser CSV que RESPETA comillas y el escape "" (Excel/Sheets/nuestro propio export).
+// El split(/[,;]/) crudo partía un nombre con coma ("García Flores, Ana") en dos columnas →
+// el teléfono caía sobre el trozo equivocado y el contacto se descartaba (o entraba con el
+// número mal). Se elige el delimitador por cuál aparece más en la 1ª línea (coma vs ;).
+function parseCsvLine(line, delim){
+  const out=[]; let cur="", q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(q){ if(ch==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; }
+    else { if(ch==='"') q=true; else if(ch===delim){ out.push(cur); cur=""; } else cur+=ch; }
+  }
+  out.push(cur);
+  return out.map(s=>s.trim());
+}
 async function importCsv(file){
   const text=await file.text();
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(!lines.length) return;
-  const head=lines[0].toLowerCase();
+  const delim=(lines[0].split(";").length > lines[0].split(",").length) ? ";" : ",";
   let start=0, ci={nombre:0, tel:1};
-  if(/nombre|tel|phone|whatsapp/.test(head)){
-    const cols=head.split(/[,;]/).map(s=>s.replace(/"/g,"").trim());
-    ci.nombre=cols.findIndex(c=>/nombre|name/.test(c)); ci.tel=cols.findIndex(c=>/tel|phone|whats|numero|número/.test(c));
-    if(ci.tel<0) ci.tel=1; if(ci.nombre<0) ci.nombre=0; start=1;
+  if(/nombre|tel|phone|whatsapp|numero|número|name/i.test(lines[0])){
+    const head=parseCsvLine(lines[0], delim).map(s=>s.toLowerCase());
+    const ti=head.findIndex(c=>/tel|phone|whats|numero|número/.test(c));
+    const ni=head.findIndex(c=>/nombre|name/.test(c));
+    // Solo tratar la 1ª fila como CABECERA si su celda de teléfono NO tiene dígitos: un CSV sin
+    // cabecera cuyo 1er nombre contenga "tel" (ej. "Telma,51999...") NO debe perder esa fila.
+    const telCell=(ti>=0?head[ti]:head[1])||"";
+    if(!/\d/.test(telCell)){ ci.tel=ti<0?1:ti; ci.nombre=ni<0?0:ni; start=1; }
   }
-  const rows=[];
+  const rows=[]; let sinCP=0;
   for(let i=start;i<lines.length;i++){
-    const cols=lines[i].split(/[,;]/).map(s=>s.replace(/^"|"$/g,"").trim());
+    const cols=parseCsvLine(lines[i], delim);
     const wa=(cols[ci.tel]||"").replace(/[^0-9]/g,""); if(!wa) continue;
+    if(wa.length<10) sinCP++; // probablemente sin código de país (wa_id real = internacional)
     rows.push({ channel_id:st.channelId, wa_id:wa, nombre:(cols[ci.nombre]||"")||null });
   }
   if(!rows.length){ toast("No se encontraron teléfonos válidos",true); return; }
+  // Mismo guard que el alta manual: un número corto casi seguro omite el código de país → no
+  // casará con WhatsApp y creará un duplicado huérfano cuando esa persona escriba.
+  if(sinCP && !await confirmDialog({title:"¿Faltan códigos de país?",message:`${sinCP} número(s) tienen menos de 10 dígitos — quizá les falta el código de país (ej. 51 en Perú). Así no casarán con WhatsApp y crearán duplicados cuando escriban. ¿Importar igual?`,confirmText:"Importar igual",danger:true})) return;
   // ignoreDuplicates: NO pisar los contactos que YA existen. Sin esto, importar una lista
   // (ej. del courier) con el nombre en blanco o distinto RENOMBRABA/borraba el nombre de tus
   // clientes actuales de golpe e irreversible. El alta de UN contacto ya tiene este guard;

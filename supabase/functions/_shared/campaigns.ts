@@ -138,6 +138,17 @@ async function sendBatch(db: SupabaseClient, c: any) {
     const { data: claim } = await db.from("campaign_sends")
       .update({ estado: "enviando" }).eq("id", s.id).eq("estado", "pendiente").select("id");
     if (!claim || !claim.length) continue; // otro worker la reclamó
+    // Re-chequeo de opt-out/bloqueo EN VUELO: matchSegment los excluyó al EXPANDIR, pero un lote
+    // grande tarda HORAS en drenar (25/tick, cron cada minuto). Si el cliente pide baja (o lo
+    // bloqueas) mientras tanto, su fila pendiente NO debe dispararse: mandar una HSM a quien
+    // acaba de pedir "no me escriban" sube el block-rate y arriesga el baneo del número por Meta.
+    {
+      const { data: cc } = await db.from("contacts").select("no_remarketing, bloqueado").eq("id", s.contact_id).maybeSingle();
+      if ((cc as any)?.no_remarketing === true || (cc as any)?.bloqueado === true) {
+        await db.from("campaign_sends").update({ estado: "cancelado", error: { message: "El contacto pidió baja / fue bloqueado durante la campaña" } }).eq("id", s.id);
+        continue;
+      }
+    }
     // Retraso aleatorio entre envíos reales (anti-baneo). No aplica al 1º ni
     // cuando el canal no puede enviar (prueba sin WhatsApp conectado).
     if (!first && canSend) await new Promise((r) => setTimeout(r, 120 + Math.random() * 260));
@@ -161,6 +172,14 @@ async function sendBatch(db: SupabaseClient, c: any) {
       let wamid = "";
       if (canSend && ctx.wa_id) {
         wamid = await sendTemplate((ch as any).phone_number_id, token!, ctx.wa_id, (tpl as any).name, (tpl as any).language, bodyParams);
+      }
+      // Canal que PUEDE enviar (WhatsApp con token) pero el contacto no tiene wa_id (lead BSUID
+      // sin número) → NO marcar "enviado" (fantasma que nunca salió, ensucia el hilo con un
+      // "sent" e infla `enviados` sin reintento). Se marca fallido, como sendTemplateToContact.
+      if (canSend && !wamid) {
+        await db.from("campaign_sends").update({ estado: "fallido", error: { message: "El contacto no tiene número de WhatsApp" } }).eq("id", s.id);
+        fail++;
+        continue;
       }
       await db.from("campaign_sends").update({ estado: "enviado", wamid: wamid || null, sent_at: new Date().toISOString() }).eq("id", s.id);
       await db.from("messages").insert({

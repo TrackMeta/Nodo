@@ -1915,7 +1915,15 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
   if (run._delivery !== undefined) return;
   const { data: ch } = await db.from("channels")
     .select("channel_type, phone_number_id").eq("id", run.channel_id).maybeSingle();
-  if ((ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id) {
+  // Contacto de PRUEBA (panel "Probar"): SIEMPRE webchat, aunque el canal YA tenga WhatsApp
+  // conectado. Sin esto, al conectar Meta el emit hacía POST a Graph con to:"webchat-test" →
+  // Meta lo rechaza → cada burbuja se marcaba failed + disparaba avisarEnvioFallido (Telegram
+  // CRÍTICO no silenciable) + emit devolvía false → una entrega digital de prueba se marcaba NO
+  // entregada (falso negativo). No hay fuga a un cliente real ("webchat-test" no es un número);
+  // es divergencia prueba-vs-real que muerde JUSTO al conectar Meta.
+  let esPrueba = false;
+  try { const { data: cc } = await db.from("contacts").select("wa_id").eq("id", run.contact_id).maybeSingle(); esPrueba = (cc as any)?.wa_id === "webchat-test"; } catch (_) {}
+  if (!esPrueba && (ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id) {
     const secrets = await getChannelSecrets(db, run.channel_id);
     run._delivery = { mode: "whatsapp", phoneNumberId: (ch as any).phone_number_id, token: secrets?.access_token ?? null };
   } else {
@@ -3550,6 +3558,14 @@ async function avisar(
       .select("telegram_chat_ids, nombre, telegram_avisos, timezone").eq("id", channelId).maybeSingle();
     const chatIds = (channel as any)?.telegram_chat_ids ?? [];
     if (!chatIds.length) return;
+
+    // Contacto de PRUEBA (panel "Probar"): NO disparar avisos reales al Telegram del dueño.
+    // Probar una venta no debe spamear el grupo ni, peor, crear botones (pago por validar /
+    // entregar) que al tocarse operen sobre un pedido FALSO vía telegram-webhook.
+    if (contactId) {
+      const { data: ctp } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
+      if ((ctp as any)?.wa_id === "webchat-test") return;
+    }
 
     const cfg = (channel as any)?.telegram_avisos as AvisosConfig | null;
     // Avisos de SEGURIDAD no silenciables: "un cliente quedó esperando a un humano"
