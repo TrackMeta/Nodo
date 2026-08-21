@@ -4328,9 +4328,16 @@ async function armAplicar(d){
   const pisaFaq=(Array.isArray(d.faq)&&d.faq.length) && Array.isArray(c.faq_items)&&c.faq_items.length;
   const pisaAtr=(Array.isArray(d.atributos)&&d.atributos.length) && Array.isArray(c.atributos)&&c.atributos.length;
   const pisaIa=IA_CAMPOS.filter(k=> dia[k] && String(c.ia[k]??"").trim() && String(c.ia[k]).trim()!==String(dia[k]).trim());
+  // Presentaciones CURADAS del dueño: precio, descripción, cantidad≠1, o un nombre propio
+  // (≠ "Única"). "tienePrecio" era un proxy DÉBIL — nombre/descr/cantidad son datos curados
+  // aunque falte el precio (estado normal a media creación), y se pisaban ignorando la elección.
+  const presCuradas=(st.versions||[]).filter(v=> Number(v.precio)>0 || String(v.descripcion??"").trim() || (Number(v.cantidad)>1) || (String(v.nombre??"").trim() && String(v.nombre).trim().toLowerCase()!=="única"));
+  const pisaPres=(Array.isArray(d.presentaciones)&&d.presentaciones.length) && presCuradas.length>0;
+  const pisaNombre=!!(d.nombre && String(p.nombre??"").trim() && String(p.nombre).trim()!==String(d.nombre).trim());
+  const pisaTipo=!!((d.tipo==="fisico"||d.tipo==="digital") && p.tipo && p.tipo!==d.tipo); // digital↔físico reconfigura todo
   let reemplazar=true;
-  if(pisaFaq||pisaAtr||pisaIa.length){
-    const items=[pisaFaq?`tus ${c.faq_items.length} preguntas frecuentes`:"", pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:"", ...pisaIa.map(k=>IA_LBL[k]||k)].filter(Boolean);
+  if(pisaFaq||pisaAtr||pisaIa.length||pisaPres||pisaNombre||pisaTipo){
+    const items=[pisaNombre?"el nombre":"", pisaTipo?"el tipo (físico/digital)":"", pisaPres?`tus ${presCuradas.length} presentaciones`:"", pisaFaq?`tus ${c.faq_items.length} preguntas frecuentes`:"", pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:"", ...pisaIa.map(k=>IA_LBL[k]||k)].filter(Boolean);
     reemplazar=await confirmDialog({ title:"Ya tenías cosas escritas", message:`El borrador chocaría con: ${items.join(", ")}. Elige "Solo lo vacío" para conservarlas y llenar solo lo que falta, o "Reemplazar todo".`, confirmText:"Reemplazar todo", cancelText:"Solo lo vacío", danger:true });
   }
   if(d.nombre && (reemplazar || !String(p.nombre??"").trim())) p.nombre=String(d.nombre);
@@ -4344,13 +4351,12 @@ async function armAplicar(d){
     c.faq_items=d.faq.filter(f=>f&&f.q&&f.a).map(f=>({q:String(f.q),a:String(f.a)}));
     c.faq=compileFaq(c.faq_items);
   }
-  // Presentaciones: solo si aún no hay precios (no pisar lo que ya pusiste).
-  if(Array.isArray(d.presentaciones)&&d.presentaciones.length){
-    const tienePrecio=(st.versions||[]).some(v=>Number(v.precio)>0);
-    if(!tienePrecio){
-      (st.versions||[]).forEach(v=>{ if(v.id) st.delVersions.push(v.id); });
-      st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:"", cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
-    }
+  // Presentaciones: se reemplazan solo si el dueño NO tiene presentaciones curadas, o si eligió
+  // "Reemplazar todo". Antes solo miraba "tienePrecio" e ignoraba la elección "Solo lo vacío"
+  // → borraba nombres/descripciones/cantidades curados que aún no tenían precio.
+  if(Array.isArray(d.presentaciones)&&d.presentaciones.length && (reemplazar || !presCuradas.length)){
+    (st.versions||[]).forEach(v=>{ if(v.id) st.delVersions.push(v.id); });
+    st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:"", cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
   }
   prodSync(); st.tab="inicio"; renderDetail(); armClose();
   toast("Borrador aplicado ✓ — revisa y Guarda cambios");

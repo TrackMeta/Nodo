@@ -910,8 +910,14 @@ export async function mountShell({ active } = {}) {
       }
     });
     // Sesión caída (refresh token vencido tras dejar la pestaña abierta de noche): al login,
-    // no a un panel vacío/roto sin explicación.
-    try { supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") location.href = "index.html"; }); } catch (_) {}
+    // no a un panel vacío/roto sin explicación. Limpia el caché LOCAL antes de redirigir: en una
+    // PC compartida, mountShell pinta primero desde caché, así que sin esto el SIGUIENTE usuario
+    // veía el nombre/rol/avatar y el logo/negocio del anterior hasta que resolvieran las queries
+    // (misma fuga que ya cierra el botón de salir; la expiración pasiva no lo hacía).
+    try { supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") {
+      try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); } catch (_) {}
+      location.href = "index.html";
+    } }); } catch (_) {}
   }
 
   applyInboxCollapse(active); // Bandeja arranca colapsada

@@ -913,7 +913,12 @@ async function load(){
   rank.sort((a,b)=>b.ganancia-a.ganancia);
   const ps=porStage;
   const comprado=Number(ps.comprado)||0;
-  const interesadosTot=(Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0)+comprado;
+  const interesadosSinComprar=(Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0);
+  // Efectividad de cierre: MISMO denominador que ve el dueño en pantalla (interesado+caliente+
+  // confirmado+comprado+PERDIDO). Antes el feed de la IA excluía `perdido` → un % inflado (los
+  // deals caídos desaparecían) que ni coincidía con la tarjeta "Efectividad de cierre" ni con la
+  // "Conversión total" → la IA aconsejaba con un número que el dueño no ve.
+  const baseEfec=interesadosSinComprar+comprado+(Number(ps.perdido)||0);
   asesorResumen={
     periodo: ($("dfLabel")?$("dfLabel").textContent:"")||"el periodo",
     tipo_filtro: tipo,
@@ -922,14 +927,23 @@ async function load(){
     // O.margen para todos (excluía el digital sin costo) y divergía de `bruta`.
     ganancia: Math.round(bruta), ingresos: Math.round(vendido), ventas: compras,
     ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidos,
-    embudo_por_etapa: ps,
-    interesados_sin_comprar: (Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0),
-    conversion_pct: interesadosTot>0 ? Math.round(comprado/interesadosTot*100) : null,
+    interesados_sin_comprar: interesadosSinComprar,
     producto_estrella: rank[0]||null,
     producto_mas_flojo: rank.length>1?rank[rank.length-1]:null,
     productos_por_ganancia: rank.slice(0,6),
     huecos: { sin_remarketing:sinRem, sin_conocimiento_ia:sinCon, flujo_en_borrador_o_sin_flujo:mudo },
-    en_remarketing_ahora: s.subs_activas??0,
+    // ⚠ Embudo/efectividad/remarketing son EN VIVO = acumulado de TODO EL TIEMPO (dashboard_stats
+    // ignora el filtro de fechas). Se agrupan y etiquetan aparte para que el Asesor IA NO los
+    // confunda con las métricas de plata del periodo elegido (ganancia/ventas/ticket, que SÍ son
+    // del periodo). Antes iban mezclados al mismo nivel bajo `periodo` → la IA razonaba sobre una
+    // mezcla incoherente (ganancia de hoy + embudo de toda la vida).
+    embudo_en_vivo_todo_el_tiempo: {
+      nota: "acumulado de TODO el tiempo, NO del periodo elegido",
+      por_etapa: ps,
+      interesados_sin_comprar: interesadosSinComprar,
+      efectividad_cierre_pct: baseEfec>0 ? Math.round(comprado/baseEfec*100) : null,
+      en_remarketing_ahora: s.subs_activas??0,
+    },
   };
   renderAsesor();
 }
@@ -1034,7 +1048,7 @@ function renderMetricas(porStage){
   const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
     `<div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
     `<div class="mdesc">De los que se interesaron, cuántos terminas cerrando.</div>`+
-    `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · en vivo</div>`+
+    `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · en vivo · todo el tiempo (no filtra por fecha)</div>`+
     `</div></div>`;
   // Conversión a compra (informativa, color marca)
   const cP = total? Math.round(comprado/total*100) : null;
@@ -1043,7 +1057,7 @@ function renderMetricas(porStage){
   const convHtml=`<div class="metric ${cCls}" title="${tConv}"><div class="num">${cP==null?"—":cP+"%"}</div><div class="mtxt">`+
     `<div class="mlbl">Conversión total <span class="mtag">base: todos los contactos</span></div>`+
     `<div class="mdesc">De todos los que te escriben, cuántos compraron.</div>`+
-    `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(total===1?" contacto":" contactos")} · en vivo</div>`+
+    `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(total===1?" contacto":" contactos")} · en vivo · todo el tiempo (no filtra por fecha)</div>`+
     `</div></div>`;
   el.innerHTML=`<div class="metricas">${efec}${convHtml}</div>`;
 }
