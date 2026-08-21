@@ -308,8 +308,10 @@ async function processInbound(
   if (type === "interactive") {
     // Botón tocado → ruteo determinista inmediato (sin buffer).
     if (content?.id) event = { type: "button", buttonId: String(content.id), title: content.title };
-  } else if (type === "image") {
-    // Imagen (ej. comprobante) → inmediata, con referencia para el nodo IA.
+  } else if (type === "image" || (type === "document" && /^image\/|^application\/pdf$/i.test(String(content?.mime_type ?? "")) && content?.media_id)) {
+    // Imagen (ej. comprobante) → inmediata, con referencia para el nodo IA. También un DOCUMENTO
+    // con mime de imagen o PDF: en Perú es común mandar el Yape como archivo/PDF en vez de foto —
+    // se trata como "imagen" para que el OCR lo lea (Claude procesa imágenes y PDFs).
     event = { type: "message", text, msgType: "image", mediaRef: `wa-media:${content.media_id}`, adId };
   } else if (type === "audio") {
     // Nota de voz → referencia para que el motor la transcriba (STT).

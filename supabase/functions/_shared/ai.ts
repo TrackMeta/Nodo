@@ -111,6 +111,10 @@ function toAnthropicContent(content: string | ContentBlock[]): unknown[] {
   const blocks = typeof content === "string" ? [{ type: "text", text: content } as ContentBlock] : content;
   return blocks.map((b) => {
     if (b.type === "text") return { type: "text", text: b.text };
+    // PDF (comprobante enviado como documento): Claude lo lee con un bloque `document`, no `image`.
+    if (b.data && b.media_type === "application/pdf") {
+      return { type: "document", source: { type: "base64", media_type: "application/pdf", data: b.data } };
+    }
     // Imagen: base64 si viene data-URI parseado, si no por URL.
     if (b.data && b.media_type) {
       return { type: "image", source: { type: "base64", media_type: b.media_type, data: b.data } };

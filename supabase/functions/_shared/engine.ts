@@ -2307,7 +2307,7 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
   const secrets = await getChannelSecrets(db, channelId);
   if (!secrets?.access_token) return null;
   const { bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token);
-  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const ext = mime.includes("pdf") ? "pdf" : mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
   // D4: los comprobantes (data financiera del cliente) van a un bucket PRIVADO,
   // agrupados por cuenta. Nada de bucket público listable.
   const acc = await accountOfChannel(db, channelId);
