@@ -362,6 +362,35 @@ async function yaCompro(contactId: string, productId: string | null): Promise<bo
   } catch (_) { return false; }
 }
 
+// Producto DUEÑO de una secuencia de remarketing: se deriva del mapa
+// products.config.remarketing_seqs (segmento→sequence_id) o remarketing_seq_id, porque la
+// sub NO guarda product_id y contacts.product_id es LAST-WRITE (markProduct lo pisa con el
+// último producto tocado) → usarlo para el veto por-producto daba el producto equivocado
+// (spam a un comprador de A, o baja de un lead vivo de A por comprar B). Cacheado por tick.
+// Si la secuencia no mapea a ningún producto (general/legacy/enroll manual) → null → yaCompro
+// cae al veto GLOBAL (cualquier compra firme), que es el fallback seguro (no spamear).
+const prodSeqCache = new Map<string, Array<{ id: string; seqs: Set<string> }>>();
+async function productoDeSecuencia(channelId: string, sequenceId: string): Promise<string | null> {
+  try {
+    if (!sequenceId) return null;
+    let prods = prodSeqCache.get(channelId);
+    if (!prods) {
+      const { data } = await db.from("products").select("id, config").eq("channel_id", channelId);
+      prods = (data ?? []).map((p: any) => {
+        const cfg = p.config ?? {};
+        const seqs = new Set<string>();
+        const map = (cfg.remarketing_seqs && typeof cfg.remarketing_seqs === "object") ? cfg.remarketing_seqs : {};
+        for (const v of Object.values(map)) if (v) seqs.add(String(v));
+        if (cfg.remarketing_seq_id) seqs.add(String(cfg.remarketing_seq_id));
+        return { id: p.id as string, seqs };
+      });
+      prodSeqCache.set(channelId, prods);
+    }
+    const hit = prods.find((p) => p.seqs.has(String(sequenceId)));
+    return hit ? hit.id : null;
+  } catch (_) { return null; }
+}
+
 // Horario permitido del remarketing (hora local del negocio). Sin configurar,
 // se manda a cualquier hora (lo de antes). Cacheado por tick.
 const horarioCache = new Map<string, any>();
@@ -438,7 +467,10 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // 2) Ya compró O se comprometió → sale del remarketing. Mandarle "última
   //    oportunidad" a alguien que ya pagó, o que ya aceptó pagar y espera su
   //    entrega, es vergonzoso y quema la marca.
-  if (await yaCompro(s.contact_id, (c as any).product_id)) {
+  // Veto POR PRODUCTO: el producto es el DUEÑO de esta secuencia (derivado de su sequence_id),
+  // NO contacts.product_id (last-write, lo pisa markProduct con el último producto tocado).
+  const subProductId = await productoDeSecuencia(s.channel_id, s.sequence_id);
+  if (await yaCompro(s.contact_id, subProductId)) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
     return false;

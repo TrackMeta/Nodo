@@ -588,6 +588,7 @@ async function boot() {
   // Al entrar a la Bandeja el sidebar se colapsa; al salir (SPA) se limpia todo.
   shell.onLeave?.(() => {
     if (state.rt) { supa.removeChannel(state.rt); state.rt = null; }
+    window.__inboxResync = null; // los listeners persistentes de online/visibilitychange no deben correr fuera de la Bandeja
     clearInterval(winTimer);
     document.removeEventListener("click", onDocClickComposer);
     document.removeEventListener("click", onDocClickActions);
@@ -1468,8 +1469,9 @@ async function toggleBot(){
   // return_bot del motor). Sin esto, cada escalada atendida quedaba marcada "Seguimiento" e
   // inflaba para siempre el KPI "Requieren humano" del Dashboard.
   if(!on){ await supa.from("conversations").update({ requiere_humano:false }).eq("contact_id",cid).then(()=>{},()=>{}); }
-  if(panelData.contact) panelData.contact.bot_activo=!on;
-  setBotPill(!on);
+  // La BD ya quedó correcta (por cid). El pintado del pill/ficha SOLO si sigues en ese chat:
+  // si cambiaste a otro chat durante el await, no pintar el estado del toggle de A sobre B.
+  if(state.contactId===cid){ if(panelData.contact) panelData.contact.bot_activo=!on; setBotPill(!on); }
   logEvent(cid, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
   toast(on?"Bot pausado — atiendes tú ✓":"Bot reactivado ✓");
   loadConversations();
@@ -2015,11 +2017,17 @@ function subscribeRealtime() {
       }
     });
   // Refuerzo del refetch al reconectar: la red vuelve (online) o el operador regresa a la
-  // pestaña (visible). Guardado para no duplicar listeners al re-suscribir por cambio de bot.
+  // pestaña (visible). Los listeners viven en window (el panel es un SPA: al re-entrar a la
+  // Bandeja se re-ejecuta el módulo con un closure NUEVO, pero window persiste). Antes se
+  // ataban UNA vez al resyncRealtime del PRIMER closure (state congelado) → tras navegar y
+  // volver, un cambio de pestaña repintaba el hilo/lista con el chat/canal VIEJO. Ahora
+  // despachan SIEMPRE al closure ACTUAL vía window.__inboxResync (refrescado en cada
+  // subscribeRealtime); onLeave lo pone en null → no corre fuera de la Bandeja.
+  window.__inboxResync = resyncRealtime;
   if (!window.__inboxResyncWired) {
     window.__inboxResyncWired = true;
-    window.addEventListener("online", () => resyncRealtime());
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) resyncRealtime(); });
+    window.addEventListener("online", () => { if (window.__inboxResync) window.__inboxResync(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && window.__inboxResync) window.__inboxResync(); });
   }
 }
 function resyncRealtime() {

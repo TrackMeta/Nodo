@@ -1850,9 +1850,11 @@ async function execute(db: SupabaseClient, run: Run) {
       }
       case "ia": {
         await runIa(db, run, node, ctx);
-        // El nodo IA puede PARQUEAR el run (pago digital en validación manual):
-        // deja estado "esperando" para que la entrega ocurra recién al aprobar.
-        if (run.estado === "esperando") { await saveRun(db, run); return; }
+        // El nodo IA puede PARQUEAR el run (pago digital en validación manual → "esperando")
+        // o CERRARLO (la IA escaló a humano con [[humano]] → "completado"). En ambos casos se
+        // corta la ejecución: no seguir emitiendo los nodos siguientes encima de la espera o
+        // del handoff (evita burbujas automáticas tras "te paso con una persona").
+        if (run.estado === "esperando" || run.estado === "completado") { await saveRun(db, run); return; }
         break;
       }
       case "evento_fb": {
@@ -2037,12 +2039,14 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
 // por cada marcador envía el archivo correspondiente del catálogo del producto
 // (config.ia_multimedia, expuesto en ctx._ia_multimedia) intercalado con el
 // texto. Los marcadores desconocidos se descartan (no se filtran al usuario).
-async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any) {
+async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
+  let hizoHandoff = false; // true si se escaló a humano → el caller debe CORTAR el flujo
   // [[humano]] — la IA pide ayuda cuando juzga que no puede resolverlo sola.
   // Se saca del texto SIEMPRE (aunque el traspaso falle) para que el marcador
   // nunca se le filtre al cliente. El mensaje que la IA escribió sí se manda:
   // avisa que lo pasa con una persona, y después el bot queda en pausa.
   if (/\[\[\s*humano\s*\]\]/i.test(result)) {
+    hizoHandoff = true;
     result = result.replace(/\[\[\s*humano\s*\]\]/gi, "").trim();
     // `aviso: true` (antes "fuera") → pasarAHumano SIEMPRE le manda un acuse al cliente:
     // dentro de horario "en un momento te atiende un asesor", fuera el aviso fuera. Los
@@ -2053,7 +2057,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: true }).catch(() => {});
   }
   const re = /\[\[media:([\w-]+)\]\]/g;
-  if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx); return; }
+  if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx); return hizoHandoff; }
   const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
   re.lastIndex = 0;
   let last = 0; let m: RegExpExecArray | null;
@@ -2071,6 +2075,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   }
   const rest = result.slice(last).trim();
   if (rest) await emit(db, run, { text: rest, _noTpl: true }, ctx);
+  return hizoHandoff;
 }
 
 // Arranca un flujo concreto para un contacto (usado por el scheduler para
@@ -3441,13 +3446,21 @@ async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId:
     const { data: activos } = await db.from("sequence_subscriptions")
       .select("id, sequence_id, segmento").eq("contact_id", contactId).eq("estado", "activa");
     if ((activos ?? []).some((a: any) => a.sequence_id === seqId)) return; // ya está en esa secuencia
-    const rankActual = Math.max(0, ...(activos ?? []).map((a: any) => SEG_RANK[a.segmento ?? "general"] ?? 1));
-    if (rank <= rankActual) return; // hay algo igual o más profundo → no mover
-    // Graduar: cancelar lo activo y entrar a la nueva desde el paso 0.
-    if ((activos ?? []).length) {
+    // La graduación se aísla POR PRODUCTO: solo compara/cancela las subs de ESTE producto (sus
+    // sequence_ids viven en su remarketing_seqs). Antes era global por rank → ponerse "caliente"
+    // en el producto B cancelaba el remarketing VIVO del producto A (se perdía el re-enganche de
+    // A). Espeja el veto por-producto de yaCompro. Una sub de otro producto sigue su propio curso.
+    const misSeqs = new Set<string>();
+    for (const v of Object.values(map)) if (v) misSeqs.add(String(v));
+    if (cfg.remarketing_seq_id) misSeqs.add(String(cfg.remarketing_seq_id));
+    const activosMios = (activos ?? []).filter((a: any) => misSeqs.has(String(a.sequence_id)));
+    const rankActual = Math.max(0, ...activosMios.map((a: any) => SEG_RANK[a.segmento ?? "general"] ?? 1));
+    if (rank <= rankActual) return; // hay algo igual o más profundo EN ESTE PRODUCTO → no mover
+    // Graduar: cancelar SOLO las subs de este producto y entrar a la nueva desde el paso 0.
+    if (activosMios.length) {
       await db.from("sequence_subscriptions")
         .update({ estado: "cancelada", updated_at: new Date().toISOString() })
-        .eq("contact_id", contactId).eq("estado", "activa");
+        .in("id", activosMios.map((a: any) => a.id));
     }
     await db.from("sequence_subscriptions").upsert({
       channel_id: channelId, contact_id: contactId, sequence_id: seqId,
@@ -7526,7 +7539,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");
-    if (enviar && result) await emitIaText(db, run, String(result), ctx);
+    if (enviar && result) {
+      const handoff = await emitIaText(db, run, String(result), ctx);
+      // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
+      // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
+      // ("y por último…", un link), justo tras decir "te paso con una persona". Los handoffs
+      // deterministas (pideHumano/reclamo/condición sin salida) ya cierran así; el [[humano]]
+      // inline de la IA era el único que dejaba el flujo corriendo.
+      if (handoff) { run.estado = "completado"; return; }
+    }
 
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "exito")) ??
