@@ -433,11 +433,19 @@ Deno.serve(async (req) => {
       // único, pero el waba_id NO es único → squatting que descarta el sync de plantillas de la
       // víctima (Meta enruta su webhook de estado por waba_id y cae en el canal del atacante,
       // cuya firma no valida → 401 → update perdido). corre con service_role → ve todos los canales.
+      // Cuenta dueña del canal: el waba_id SÍ puede repetirse entre canales de la MISMA
+      // cuenta (un negocio con 2 números bajo una WABA — el webhook lo soporta), pero NO
+      // entre cuentas distintas (eso sería squatting). El phone_number_id es único global.
+      const { data: myCh } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
+      const myAcc = (myCh as any)?.account_id ?? null;
       for (const idk of ["phone_number_id", "waba_id"]) {
         const v = upd[idk];
         if (v == null) continue; // no se está cambiando (o se está limpiando)
         if (!/^\d{5,}$/.test(String(v))) return json({ error: "id_invalido", detalle: `El ${idk} debe ser numérico.` }, 400);
-        const { data: dup } = await db.from("channels").select("id").eq(idk, v as string).neq("id", channel_id).limit(1).maybeSingle();
+        let dq = db.from("channels").select("id, account_id").eq(idk, v as string).neq("id", channel_id);
+        // waba_id: solo choca si pertenece a OTRA cuenta (permite el 2do número del mismo negocio).
+        if (idk === "waba_id" && myAcc) dq = dq.neq("account_id", myAcc);
+        const { data: dup } = await dq.limit(1).maybeSingle();
         if (dup) return json({ error: "id_en_uso", detalle: `Ese ${idk} ya está en uso por otro canal.` }, 400);
       }
       if (Object.keys(upd).length) {

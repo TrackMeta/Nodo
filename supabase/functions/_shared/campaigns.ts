@@ -202,7 +202,7 @@ export async function sendTemplateToContact(
   // aprobada por Meta y (b) caer a sus params guardados si el caller no los pasó.
   // El filtro por idioma evita que un canal con la MISMA plantilla en dos idiomas
   // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
-  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio").eq("channel_id", channelId).eq("name", tpl.name);
+  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio, language").eq("channel_id", channelId).eq("name", tpl.name);
   if (tpl.language) tq = tq.eq("language", tpl.language);
   const { data: tplRow } = await tq.maybeSingle();
   if ((tplRow as any)?.estado_meta && (tplRow as any).estado_meta !== "aprobada") {
@@ -223,13 +223,23 @@ export async function sendTemplateToContact(
   // Meta rechace la plantilla ENTERA (error 132000) → el cliente no recibe nada. Se pone
   // un guion como marcador para que el aviso igual se entregue (mejor "guía: -" que nada).
   const bodyParams = rawParams.map((p) => { const v = resolveP(String(p), ctx); return v && v.trim() ? v : "-"; });
+  // Idioma: el del caller si vino; si no, el idioma REAL de la fila aprobada (no "es"
+  // hardcodeado, que da 132001 si la plantilla está en es_PE/es_MX/en). "es" es el último
+  // recurso solo si ni el caller ni la fila lo tienen.
+  const lang = tpl.language || (tplRow as any)?.language || "es";
+  const esWhats = (ch as any)?.channel_type === "whatsapp";
   let wamid = "";
-  if ((ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id && token && ctx.wa_id) {
-    wamid = await sendTemplate((ch as any).phone_number_id, token, ctx.wa_id, tpl.name, tpl.language || "es", bodyParams);
+  if (esWhats && (ch as any).phone_number_id && token && ctx.wa_id) {
+    wamid = await sendTemplate((ch as any).phone_number_id, token, ctx.wa_id, tpl.name, lang, bodyParams);
   }
+  // Canal WhatsApp que NO pudo enviar (sin token/phone/wa_id = a medio configurar): NO lo
+  // marques "sent" (el operador vería "aviso enviado ✓" y el cliente nunca recibió nada).
+  // whatsapp-send ya devuelve 502 ante wamid vacío; esto cubre scheduler/order-update/motor.
+  // En webchat (channel_type != whatsapp) el insert ES la entrega → "sent" es correcto.
+  const status = esWhats && !wamid ? "failed" : "sent";
   await db.from("messages").insert({
     channel_id: channelId, contact_id: contactId, direction: "out",
-    type: "template", content: { template: tpl.name, params: bodyParams }, wamid: wamid || null, status: "sent",
+    type: "template", content: { template: tpl.name, params: bodyParams }, wamid: wamid || null, status,
     sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null,
   });
   return wamid;

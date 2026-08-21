@@ -82,12 +82,18 @@ export async function sendTemplate(
   bodyParams: string[] = [],
   headerParams: string[] = [],
 ): Promise<string> {
+  // Meta rechaza (132000) un parámetro de plantilla con salto de línea, tab o >4 espacios
+  // seguidos. resolveP (campaigns.ts) ya colapsa el whitespace al sustituir {{key}}, PERO
+  // el motor pre-resuelve sus params con resolve() → llegan como literales sin {{}}, el
+  // regex de resolveP no matchea y el \n pasa intacto. Colapsar acá, en el punto ÚNICO de
+  // paso, blinda TODAS las rutas (motor, campañas, secuencias, avisos, envío manual).
+  const clean = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim();
   const components: any[] = [];
   if (headerParams.length) {
-    components.push({ type: "header", parameters: headerParams.map((t) => ({ type: "text", text: String(t ?? "") })) });
+    components.push({ type: "header", parameters: headerParams.map((t) => ({ type: "text", text: clean(t) })) });
   }
   if (bodyParams.length) {
-    components.push({ type: "body", parameters: bodyParams.map((t) => ({ type: "text", text: String(t ?? "") })) });
+    components.push({ type: "body", parameters: bodyParams.map((t) => ({ type: "text", text: clean(t) })) });
   }
   return await postMessage(phoneNumberId, accessToken, {
     messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
