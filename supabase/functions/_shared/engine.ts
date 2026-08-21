@@ -149,7 +149,8 @@ async function runEngineInner(
     if (texto) {
       event = { ...event, text: texto };
       await db.from("contacts").update({ last_input: texto }).eq("id", contactId);
-      await annotateAudioTranscript(db, contactId, texto);
+      const _audMediaId = String(event.mediaRef ?? "").startsWith("wa-media:") ? String(event.mediaRef).slice("wa-media:".length) : undefined;
+      await annotateAudioTranscript(db, contactId, texto, _audMediaId);
       await logEvent(db, channelId, contactId, "nota", "🎙️ Audio transcrito", texto.slice(0, 140));
     }
   }
@@ -2340,12 +2341,22 @@ async function urlToDataUri(url: string): Promise<string> {
 
 // Guarda la transcripción dentro de la burbuja del audio → el operador la lee
 // en la Bandeja bajo la nota de voz. Best-effort.
-async function annotateAudioTranscript(db: SupabaseClient, contactId: string, texto: string) {
+async function annotateAudioTranscript(db: SupabaseClient, contactId: string, texto: string, mediaId?: string) {
   try {
-    const { data: m } = await db.from("messages")
-      .select("id, content").eq("contact_id", contactId).eq("direction", "in").eq("type", "audio")
-      .order("ts", { ascending: false }).limit(1).maybeSingle();
-    if (m) await db.from("messages").update({ content: { ...((m as any).content ?? {}), transcription: texto } }).eq("id", (m as any).id);
+    let m: any = null;
+    // Match por media_id EXACTO: con dos notas de voz casi simultáneas (el STT corre antes del lock),
+    // colgar la transcripción sobre "el último audio" la ataba a la burbuja equivocada. El media_id
+    // ancla cada transcripción a SU propio audio. Fallback a "el último" si no vino el media_id.
+    if (mediaId) {
+      ({ data: m } = await db.from("messages").select("id, content").eq("contact_id", contactId)
+        .eq("direction", "in").eq("type", "audio").eq("content->>media_id", mediaId)
+        .order("ts", { ascending: false }).limit(1).maybeSingle());
+    }
+    if (!m) {
+      ({ data: m } = await db.from("messages").select("id, content").eq("contact_id", contactId)
+        .eq("direction", "in").eq("type", "audio").order("ts", { ascending: false }).limit(1).maybeSingle());
+    }
+    if (m) await db.from("messages").update({ content: { ...(m.content ?? {}), transcription: texto } }).eq("id", m.id);
   } catch (_) { /* best-effort */ }
 }
 
@@ -2629,7 +2640,7 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     if (!o) return;
     const ord = o as any;
     _chId = ord.channel_id; _ctId = ord.contact_id;
-    const { data: ch } = await db.from("channels").select("gsheets").eq("id", ord.channel_id).maybeSingle();
+    const { data: ch } = await db.from("channels").select("gsheets, timezone").eq("id", ord.channel_id).maybeSingle();
     const g = (ch as any)?.gsheets ?? {};
     if (!g.spreadsheet_id || g.connected === false) return; // sin hoja conectada, no hay nada que hacer
     // A la hoja SOLO van las ventas CERRADAS (dinero cobrado): digital pagado, Lima
@@ -2652,7 +2663,7 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     const fisico = ord.product?.tipo === "fisico" || !!zona;
 
     const fecha = new Intl.DateTimeFormat("es-PE", {
-      timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric",
+      timeZone: (ch as any)?.timezone || "America/Lima", day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     }).format(new Date(ord.created_at));
     const extra = (ord.order_bumps ?? []).reduce((a: number, b: any) => a + Number(b.precio ?? 0), 0);
