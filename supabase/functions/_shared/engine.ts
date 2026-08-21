@@ -6520,6 +6520,28 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     } catch (e) { console.error("[extraerDatos]", (e as any)?.message ?? e); }
   }
 
+  // 🔒 RED DE SEGURIDAD para los campos ENUMERABLES (talla, color…): si el extractor
+  // no lo trajo pero el cliente SÍ lo dijo, se sella por código. Sin esto la venta se
+  // perdía EN SILENCIO: el cliente escribió "un par talla 40 negras, DNI …, nombre …",
+  // el extractor guardó la talla y NO el color, `datos_completos` quedó en "no", el
+  // pedido nunca nació — y encima la IA, que sí ve "negras" en el historial, le
+  // respondió "ya tengo tu talla 40 y el color negro". Nadie se entera: no hay pedido,
+  // no hay alerta y el cliente cree que todo va bien.
+  // Solo actúa si en lo que dijo el cliente calza UN único valor del catálogo; si hay
+  // dos (dijo "negro o blanco") no adivina y lo deja pendiente para que se lo pregunten.
+  for (const c of campos) {
+    if (String(ctx[c.clave] ?? "").trim()) continue;              // ya está
+    const vals = parseValores((c as any).valores);
+    if (vals.length < 2) continue;                                // no es enumerable
+    const hallados = [...new Set(vals.filter((v) => valorEnMensaje(v, contexto)))];
+    if (hallados.length !== 1) continue;                          // ninguno o ambiguo
+    const val = snapValorVariante(hallados[0], vals.join(","));
+    ctx[c.clave] = val; run.vars[c.clave] = val;
+    await setField(db, run.channel_id, run.contact_id, c.clave, val).catch(() => {});
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "Dato recuperado del mensaje",
+      `${c.clave}: ${val} (el extractor no lo trajo)`).catch(() => {});
+  }
+
   // Lo que sigue faltando, para que la IA sepa qué pedir (y el flujo sepa si ya
   // puede crear el pedido). Se recalcula DESPUÉS de extraer.
   const pendientes = campos.filter((c) => c.requerido !== false && !String(ctx[c.clave] ?? "").trim());
@@ -7275,7 +7297,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // así que el regalo/extra salía sin talla y su stock no se descontaba.
       const faltanOpc = atributos.filter((a: any) => a.obligatorio === false && !String(ctx[a.clave] ?? "").trim());
       const cierreReq = faltan.length
-        ? `\n\nAún te falta capturar (OBLIGATORIO): **${faltan.map((a: any) => a.nombre).join(", ")}**. Pídelos con naturalidad, de a pocos, sin interrogar ni pedir todo de golpe, y no confirmes el pedido hasta tenerlos.`
+        ? `\n\n⛔ Aún te falta capturar (OBLIGATORIO): **${faltan.map((a: any) => a.nombre).join(", ")}**. Pídelos con naturalidad, ` +
+          `de a pocos, sin interrogar ni pedir todo de golpe, y no confirmes el pedido hasta tenerlos.\n` +
+          `🔑 Y aunque te PAREZCA que el cliente ya lo dijo antes, para el sistema NO está: si no lo vuelves a preguntar, ` +
+          `el pedido NO se crea y la venta se queda trabada sin que nadie se entere. Está PROHIBIDO decir "ya tengo tu ${faltan[0]?.nombre ?? "dato"}" ` +
+          `o dar el dato por registrado. PREGÚNTALO otra vez, breve y sin disculpas ("¿en qué ${String(faltan[0]?.nombre ?? "dato").toLowerCase()} lo quieres?").`
         : "\n\nYa tienes todos los atributos obligatorios.";
       const cierreOpc = faltanOpc.length
         ? `\n\nUn obsequio/añadido de este pedido necesita su TALLA/variante para enviar la correcta. OJO: lo marcado como "(regalo)" YA VA INCLUIDO GRATIS en el pedido — NO es algo que el cliente deba aceptar o rechazar, no lo ofrezcas como opción; solo pregunta su talla. Pregunta UNA vez, con naturalidad, usando EXACTAMENTE los valores que te di para cada uno (nunca digas "talla única" si te di una lista de tallas): **${faltanOpc.map((a: any) => a.nombre).join(", ")}**. Si el cliente no la sabe o le da igual, cierra el pedido igual sin insistir.`
@@ -7329,10 +7355,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "1. Si ya tienes todos los datos, CIERRA afirmando (\"listo, queda confirmado\"). NO preguntes " +
       "\"¿confirmo?\" ni \"¿te lo dejo listo?\": el pedido se confirma en ese mismo momento, y si preguntas, " +
       "la respuesta del cliente llega cuando ya estás en otra cosa y se malinterpreta.\n" +
-      "2. NO anuncies mensajes que el sistema envía solo (datos de pago, adelanto, guía, clave de recojo). " +
-      "Nada de \"en breve te llegará un mensaje con…\": salen automáticamente y tu anuncio los duplica.\n" +
+      "2. NUNCA anuncies que va a llegar otro mensaje. Los del sistema (datos de pago, adelanto, guía, clave de " +
+      "recojo, instrucciones de entrega) salen solos y al instante. Da igual cómo lo digas — \"en breve\", \"ahora\", " +
+      "\"enseguida\", \"te va a llegar\", \"recibirás\" —: está prohibido en cualquier forma. Termina tu mensaje y ya.\n" +
       "3. No narres pasos que NO han pasado ni hables de \"el sistema\", \"un asesor\" o \"el área de pagos\" " +
-      "en tercera persona. Habla del presente y de lo que le toca al cliente ahora.",
+      "en tercera persona. Habla del presente y de lo que le toca al cliente ahora.\n" +
+      "4. Si le pasas datos de pago, di SIEMPRE el monto exacto en el MISMO mensaje. Nunca lo invites a pagar sin " +
+      "decirle cuánto: termina pagando de más o de menos y hay que devolvérselo.\n" +
+      "5. No ofrezcas nada que el negocio no controla: horarios o franjas de entrega (\"¿en la mañana o en la tarde?\"), " +
+      "días exactos que no te dieron, ni descuentos. El reparto va por ruta; solo puedes decir lo que te indica esta ficha.",
     );
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
@@ -7394,7 +7425,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.`);
         }
         L.push("El adelanto **no lo pides tú**: sale solo, en el mensaje siguiente, con los datos de pago. " +
-          "Y TAMPOCO lo anuncies: nada de \"en breve te llega un mensaje con los datos del adelanto\" — ese mensaje sale " +
+          "Y TAMPOCO lo anuncies, de NINGUNA forma: ni \"en breve\", ni \"ahora\", ni \"enseguida\", ni \"te va a llegar\", " +
+          "ni \"recibirás un mensaje con…\". Da igual cómo lo formules: no menciones que viene otro mensaje. Sale " +
           "INMEDIATAMENTE después del tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
           "No lo negocies ni preguntes con cuánto quiere adelantar, y no le pidas su número de teléfono ni ningún dato de contacto: ya le escribes por su WhatsApp.");
       }
