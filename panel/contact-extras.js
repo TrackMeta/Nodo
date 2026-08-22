@@ -60,7 +60,10 @@ const CLAVES_INTERNAS = new Set([
 ]);
 export const esCampoInterno = (key) => {
   const k = String(key || "");
-  return k.startsWith("_") || CLAVES_INTERNAS.has(k.toLowerCase());
+  // `xt<hash>_*`: el motor crea UNA clave por cada presentación de extra con tallas
+  // ("xt" + los 10 primeros del version_id, engine.ts:856). Se acumulan una por
+  // variante, con nombre ilegible, y no son datos del cliente sino plumbing.
+  return k.startsWith("_") || /^xt[0-9a-f]{10}_/.test(k) || CLAVES_INTERNAS.has(k.toLowerCase());
 };
 
 // ¿El valor de un campo es un DATO DEL CLIENTE presentable (no un flag/artefacto

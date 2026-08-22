@@ -81,7 +81,10 @@ function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/
 // del cliente ni campos editables — se ocultan de "Capturados", igual que la ficha
 // (esCampoInterno en contact-extras.js). slug() ya evita que una clave del usuario
 // empiece con "_", así que solo caen acá los que crea el motor.
-const esInterno=(f)=> String((f&&f.key)||"").startsWith("_");
+// También `xt<hash>_*`: el motor crea UNA clave por cada presentación de extra con
+// tallas ("xt" + los 10 primeros del version_id, engine.ts:856). Se acumulan una por
+// variante y con nombre ilegible — llenaban la lista de "Capturados" con plumbing.
+const esInterno=(f)=>{ const k=String((f&&f.key)||""); return k.startsWith("_") || /^xt[0-9a-f]{10}_/.test(k); };
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
 const IC_VAR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>';
@@ -130,7 +133,7 @@ function render(){
   // en Capturados y en la vista "Todos", donde el usuario los notaría).
   const ocultos=(st.tab==="dinamico"&&(!Fbar||Fbar.current==="__all"))
     ? st.fields.filter(f=>(f.modo||"dinamico")==="dinamico"&&esInterno(f)).length : 0;
-  const notaTec=ocultos?`<div class="empty" style="margin-top:12px;text-align:left;font-size:12px">🔧 ${ocultos} campo(s) técnico(s) del motor ocultos (candados internos como <code>_once_*</code> o <code>_await</code>). No son datos del cliente y no se editan aquí.</div>`:"";
+  const notaTec=ocultos?`<div class="empty" style="margin-top:12px;text-align:left;font-size:12px">🔧 ${ocultos} campo(s) técnico(s) del motor ocultos (candados como <code>_once_*</code> y las tallas internas de cada extra, <code>xt…_talla</code>). No son datos del cliente y no se editan aquí.</div>`:"";
   if(!rows.length){ box.innerHTML=`<div class="empty">${st.tab==="fijo"?"Aún no hay campos fijos":"El bot todavía no capturó campos"}${(Fbar&&Fbar.current!=="__all")?" en esta carpeta":""}. ${st.tab==="fijo"?"Crea uno con “Nuevo campo”.":"Aparecerán solos cuando el bot recoja datos, o crea uno con “Nuevo campo”."}</div>`+notaTec; return; }
   box.innerHTML="";
   rows.forEach(f=>{
