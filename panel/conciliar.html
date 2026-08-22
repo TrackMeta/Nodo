@@ -82,7 +82,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { leerReporte, emparejar, pagosSinVenta } from "./conciliar.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayLima, endOfDayLima } from "./date-range.js";
@@ -155,10 +155,14 @@ async function conciliar(){
   const desde=startOfDayLima(r0.from); // corte del día en hora de Lima (no del navegador)
   const hasta=endOfDayLima(r0.to);
   // Ventas cobradas al 100% del rango (mismo criterio que Compras).
-  const { data:ords }=await supa.from("orders")
+  // PAGINADO: el .limit(4000) era una ilusión — PostgREST corta en 1000 filas por request y el
+  // .limit() del cliente NO lo sube (comprobado contra la base: 1200 filas guardadas → 1000
+  // devueltas). Con más de 1000 ventas en el rango, el conciliador comparaba contra una lista
+  // corta y cantaba "pago sin venta" sobre ventas que sí existían.
+  const { data:ords }=await pageAll((f,t)=>supa.from("orders")
     .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
     .eq("channel_id",st.channelId).gte("created_at",desde.toISOString()).lte("created_at",hasta.toISOString())
-    .limit(4000);
+    .order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
   const cerradas=(ords||[]).filter(o=>O.EST[o.estado] && O.EST[o.estado].cobro==="todo");
 
   // Cuándo llegó el comprobante: es la referencia horaria buena. La aprobación
@@ -168,10 +172,10 @@ async function conciliar(){
   // los que tienen venta cerrada. La cubeta "pagos sin venta" existe justamente
   // para encontrar a quien pagó y cuya venta NO se registró: filtrando por los
   // que ya tienen venta, esos clientes se quedaban sin señal y no aparecían.
-  const { data:ms }=await supa.from("messages").select("contact_id,ts,content")
+  const { data:ms }=await pageAll((f,t)=>supa.from("messages").select("contact_id,ts,content")
     .eq("channel_id",st.channelId).eq("direction","in").eq("type","image")
     .gte("ts",new Date(desde.getTime()-MARGEN_HORAS*3600000).toISOString())
-    .lte("ts",hasta.toISOString()).order("ts",{ascending:false}).limit(8000);
+    .lte("ts",hasta.toISOString()).order("ts",{ascending:false}).order("contact_id",{ascending:false}).range(f,t));
   const imgs=(ms||[]).map(m=>({ contact_id:m.contact_id, fecha:new Date(m.ts) }));
   // Hora EXACTA de cada comprobante por su URL: sirve para anclar el adelanto y
   // el saldo de un pedido de provincia CADA UNO a su propio pago (no al último a
@@ -223,11 +227,11 @@ async function conciliar(){
   // el ledger (no se muestran ni se re-concilian). Solo se usa su `_yaConciliado.mov`,
   // que sale del sello guardado (shipping.conciliacion), independiente de las imágenes.
   const LEDGER_LOOKBACK_DIAS=3;
-  const { data:prevOrds }=await supa.from("orders")
+  const { data:prevOrds }=await pageAll((f,t)=>supa.from("orders")
     .select("id,amount,order_bumps,estado,shipping,contact_id,confirmed_at,updated_at,created_at,product:product_id(nombre)")
     .eq("channel_id",st.channelId)
     .gte("created_at",new Date(desde.getTime()-LEDGER_LOOKBACK_DIAS*86400000).toISOString())
-    .lt("created_at",desde.toISOString()).limit(2000);
+    .lt("created_at",desde.toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
   const ledgerExtra=(prevOrds||[]).filter(o=>O.EST[o.estado] && O.EST[o.estado].cobro==="todo")
     .flatMap(entradasDe).filter(v=>v._yaConciliado);
 

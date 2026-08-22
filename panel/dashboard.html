@@ -305,7 +305,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
@@ -711,10 +711,16 @@ async function load(){
   const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR, admR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
-    supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
+    // PAGINADO, no una sola request: PostgREST corta en 1000 filas y no avisa. Un rango con
+    // más de 1000 pedidos dejaba TODOS los KPIs cortos (ventas, ganancia, ROAS, ROI) sin que
+    // nada lo dijera. `ads_insights` es peor todavía: es una fila por anuncio Y por día, así
+    // que 15 anuncios × 90 días ya pasa el tope → el gasto salía corto y el ROAS inflado.
+    // Mismo arreglo que ya llevaban Compras y Embudo. Orden estable (fecha + id) para no
+    // repetir ni saltarse filas entre páginas.
+    pageAll((f,t)=>supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     supa.from("products").select("id,nombre,clase,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
     supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
-    supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)),
+    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
     supa.from("manual_expenses").select("id,fecha,monto,descripcion,categoria").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}),
     supa.from("flows").select("product_id,role,estado").eq("channel_id",channelId),
     // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test) también
@@ -1239,9 +1245,11 @@ async function loadBitacora(monthStart){
   const from=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
   const to=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1); // exclusivo
   const [ordR,prodR,insR,expR]=await Promise.all([
-    supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",from.toISOString()).lt("created_at",to.toISOString()),
+    // Paginado por lo mismo que arriba: un mes con más de 1000 pedidos (o el cruce de
+    // anuncios × días de ads_insights) dejaba la Bitácora corta y sin avisar.
+    pageAll((f,t)=>supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",from.toISOString()).lt("created_at",to.toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     supa.from("products").select("id,config,product_versions(id,cantidad)").eq("channel_id",channelId),
-    supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)),
+    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
     supa.from("manual_expenses").select("fecha,monto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)),
   ]);
   const prods=prodR.error?[]:(prodR.data||[]);

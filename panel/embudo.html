@@ -239,7 +239,7 @@ async function load(){
   st.zonaMap={};
   try{
     const { data:zf }=await supa.from("custom_fields").select("id").eq("channel_id",st.channelId).eq("key","zona_entrega").maybeSingle();
-    if(zf&&zf.id){ const { data:zv }=await supa.from("contact_field_values").select("contact_id,value").eq("field_id",zf.id).limit(8000);
+    if(zf&&zf.id){ const { data:zv }=await pageAll((f,t)=>supa.from("contact_field_values").select("contact_id,value").eq("field_id",zf.id).order("contact_id",{ascending:false}).range(f,t));
       (zv||[]).forEach(r=>{ const v=String(r.value||"").toLowerCase(); if(v==="lima"||v==="provincia") st.zonaMap[r.contact_id]=v; }); }
   }catch(_){}
   if(gen!==st.loadGen) return;

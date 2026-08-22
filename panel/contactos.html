@@ -212,7 +212,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, askChoice, norm } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -283,17 +283,25 @@ function subscribe(){
 
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera: si cambias de bot a media carga, esta se descarta
-  const [{ data:cs, count:total }, { data:tg }, { data:os }] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,source,ad_id,ctwa_clid,bot_activo,bloqueado,no_remarketing,created_at,ultimo_mensaje_at,ultima_imagen_at,product_id,product:products(nombre,emoji),contact_tags(tag_id),conv:conversations(archivada)",{count:"exact"}).eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).limit(2000),
+  // El count va en su propia consulta (head:true, no trae filas): pageAll pagina y por eso
+  // no puede devolver el `count` de PostgREST, y sin él `st.total` caía a las filas cargadas
+  // → el aviso de truncado no se disparaba nunca.
+  const [{ data:cs, truncado:topeCs }, { data:tg }, { data:os }, { count:total }] = await Promise.all([
+    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,source,ad_id,ctwa_clid,bot_activo,bloqueado,no_remarketing,created_at,ultimo_mensaje_at,ultima_imagen_at,product_id,product:products(nombre,emoji),contact_tags(tag_id),conv:conversations(archivada)",{count:"exact"}).eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).order("id",{ascending:false}).range(f,t),{max:2000}),
     supa.from("tags").select("id,nombre,color").eq("channel_id",forChannel).order("nombre"),
-    supa.from("orders").select("contact_id,amount,order_bumps,estado,currency").eq("channel_id",forChannel).limit(8000),
+    pageAll((f,t)=>supa.from("orders").select("contact_id,amount,order_bumps,estado,currency").eq("channel_id",forChannel).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",forChannel),
   ]);
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó → no pintes datos viejos
   // Truncado: solo se cargan los 2000 más recientes. Con más contactos, los KPIs,
   // "seleccionar todo" y las acciones en lote solo abarcan lo cargado → hay que
   // AVISARLO (antes decía "2000" como si fuera el total y el bulk mentía en silencio).
   st.total=(typeof total==="number")?total:((cs||[]).length);
-  st.truncado=(cs||[]).length>=2000 && st.total>(cs||[]).length;
+  // `topeCs` lo da pageAll cuando llegó al tope de 2000; antes se comparaba
+  // `cs.length>=2000`, que NUNCA se cumplía porque PostgREST devuelve como mucho 1000 filas
+  // por request → el aviso de truncado no aparecía jamás y el bulk seguía mintiendo en
+  // silencio, justo lo que este bloque quería evitar.
+  st.truncado=!!topeCs && st.total>(cs||[]).length;
   st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test");
   st.tags=tg||[];
   st.ordersBy={}; _ltvCache={};
