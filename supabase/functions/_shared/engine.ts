@@ -7174,6 +7174,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 
   // Prompt de sistema en 3 niveles (§6-OCTIES): negocio → producto → nodo.
   let system = (cfg.system ?? cfg.contexto) ? resolve(String(cfg.system ?? cfg.contexto), ctx) : undefined;
+  // Pregunta del cliente que quedó sin responder (la detecta el bloque de abajo). Hay
+  // que saberla acá porque el mensaje de usuario cierra con "responde SOLO al último
+  // mensaje" — y esa línea, por estar más cerca, le gana a cualquier regla del system.
+  let preguntaColgada = "";
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
     const parts: string[] = [];
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
@@ -7373,6 +7377,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "automático— respóndela ahora, antes de seguir vendiendo. Revisa la conversación: si preguntó por garantía, " +
       "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.",
     );
+
+    // La regla de arriba, sola, no alcanzaba: el PRIMER mensaje del cliente lo
+    // contesta el rotador (un saludo fijo), así que su pregunta no queda "colgando"
+    // en ningún turno de la IA y se perdía para siempre — una clienta abrió con
+    // "¿son originales? ¿qué garantía tienen?" y nunca se le respondió, con la
+    // garantía escrita en la ficha del producto. Acá se detecta POR CÓDIGO y se le
+    // pone la pregunta textual delante, que es lo que sí mueve al modelo.
+    try {
+      const { data: ins } = await db.from("messages")
+        .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: true }).limit(4);
+      const linesIn = (ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim()).filter(Boolean);
+      const primera = linesIn[0] ?? "";
+      // Solo al principio de la conversación y solo si de verdad preguntó algo.
+      if (linesIn.length >= 2 && linesIn.length <= 3 && primera.includes("?")) {
+        preguntaColgada = primera.slice(0, 300);
+        parts.push(
+          "## ⚠️ Pregunta del cliente SIN responder\nSu primer mensaje fue: \"" + primera.slice(0, 300) + "\"\n" +
+          "Ese mensaje lo contestó un saludo automático, así que su pregunta sigue SIN respuesta y él la está esperando. " +
+          "Respóndela AHORA, al inicio de tu mensaje y con lo que dice la ficha del producto, antes de seguir con la venta. " +
+          "Si ya se la respondiste en un mensaje anterior, ignora este aviso.",
+        );
+      }
+    } catch (_) { /* sin historial → se sigue igual */ }
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
     // explícita de no contradecirlo — sabe qué decir, no qué decidir. (La IA no
@@ -7540,7 +7568,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // No se ve leyendo el código — solo corriendo un chat de verdad.
     if (op === "generar_texto" && cfg.usar_historial !== false) {
       const hist = await historial(db, run, Number(cfg.historial_max ?? 12));
-      if (hist) content = `${prompt}\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO al último mensaje del cliente. No repitas el saludo si ya saludaste.`;
+      // OJO: "responde SOLO al último mensaje" es lo correcto casi siempre, pero cuando
+      // el cliente abrió con una pregunta que se tragó el saludo automático, esa línea
+      // es justo la que hacía que nunca se la respondieran. Ahí se cambia por la orden
+      // contraria y explícita.
+      if (hist) {
+        content = `${prompt}\n\n## La conversación hasta ahora\n${hist}\n\n` + (preguntaColgada
+          ? `Antes que nada responde la pregunta que te hizo al inicio y que quedó sin contestar ("${preguntaColgada}"), y recién sigue con su último mensaje. No repitas el saludo si ya saludaste.`
+          : `Responde SOLO al último mensaje del cliente. No repitas el saludo si ya saludaste.`);
+      }
     }
     if (op === "analizar_imagen") {
       // La imagen viene de una variable de config, o del último input del contacto.
