@@ -173,7 +173,17 @@ function renderGrid(){
   if(Fbar) list=Fbar.filter(list);
   const query=($("cSearch")?.value||"").trim().toLowerCase();
   if(query) list=list.filter(c=>{ const tpl=st.templates.find(t=>t.id===c.template_id); return `${c.nombre||""} ${tpl?tpl.name:""}`.toLowerCase().includes(query); });
-  if(!list.length){ box.innerHTML=`<div class="empty">${query?`Nada coincide con “${esc(query)}”.`:(st.camps.length?"No hay campañas en esta vista.":"Aún no hay campañas. Crea una con “Nueva campaña”.")}</div>`; return; }
+  if(!list.length){
+    // `grid-column:1/-1` + `nodo-empty`, igual que Secuencias: el contenedor es una
+    // GRILLA de tarjetas (auto-fill minmax(320px,1fr)), así que sin abarcar las
+    // columnas el vacío caía dentro de UNA celda y salía chiquito y pegado a la
+    // izquierda, en vez de centrado en el espacio libre.
+    const vTit = query ? "Sin resultados" : (st.camps.length ? "Nada en esta vista" : "Aún no hay campañas");
+    const vTxt = query ? `Nada coincide con “${esc(query)}”.`
+      : (st.camps.length ? "Prueba con otro filtro o carpeta." : "Crea tu primera campaña para escribirle a varios clientes a la vez.");
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></div><h3>${vTit}</h3><p>${vTxt}</p></div>`;
+    return;
+  }
   box.innerHTML="";
   list.forEach(c=>{
     const tpl=st.templates.find(t=>t.id===c.template_id);
