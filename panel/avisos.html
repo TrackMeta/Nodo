@@ -108,6 +108,14 @@ async function callFn(name, body){
 }
 
 async function boot(){
+  // El ejemplo del comando /fecha estaba escrito a mano ("2026-07-20") y envejecía
+  // solo: se leía como una fecha rara meses después. Se pone la de AYER en hora de
+  // Lima, que además es el caso típico para el que se usa el comando.
+  try{
+    const ayer=new Date(Date.now()-864e5);
+    const f=new Intl.DateTimeFormat("en-CA",{ timeZone:"America/Lima" }).format(ayer);
+    const el=document.getElementById("exFecha"); if(el) el.textContent="/fecha "+f;
+  }catch(_){ /* si falla, queda el ejemplo del HTML */ }
   const sh=await mountShell({ active:"canales" });
   st.channelId=sh.channelId;
   try{
@@ -154,7 +162,7 @@ function render(){
         💬 <b style="color:var(--muted)">También a pedido:</b> escríbele a tu bot de Telegram
         <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/hoy</code>
         <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/ayer</code>
-        <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/fecha 2026-07-20</code>
+        <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)"  id="exFecha">/fecha 2026-07-20</code>
         y te manda el resumen de ese día al instante.
       </div>
     </div>
