@@ -777,7 +777,8 @@ async function load(){
   // decirlo confunden.
   const calle=orders.filter(O.enLaCalle).reduce((a,o)=>a+O.porCobrar(o),0);
   const espAdel=todas.filter(o=>o.estado==="esperando_adelanto");
-  const perdidos=orders.filter(O.esPerdido).length;
+  // (el conteo de perdidos se hace más abajo sobre `todas`, para incluir las
+  // anulaciones/cancelaciones que `orders` deja fuera por no ser `venta:true`)
 
   // ── Banda de rentabilidad: cuánto GANASTE de verdad (con el gasto de Meta) ──
   const ins = insR.error ? [] : (insR.data||[]);
@@ -896,7 +897,9 @@ async function load(){
       compras>cobradasFull
         ? `cobradas al 100% · ${compras-cobradasFull} en curso`
         : (cobradasFull?"cobradas al 100%":"ninguna cobrada del todo aún")),
-    kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto deja cada venta"),
+    // "cuánto DEJA cada venta" se lee como ganancia. Es el ingreso promedio: con
+    // ticket S/151.92 y margen real ~S/73, el texto prometía el doble de lo que deja.
+    kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto vale cada venta, en promedio"),
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
   );
@@ -953,7 +956,16 @@ async function load(){
   if(tipo!=="digital"){
     K.push(kpi("alert","#e2564a","Esperando adelanto", espAdel.length,
       `dieron sus datos y no pagaron la seña · ${money(espAdel.reduce((a,o)=>a+O.total(o),0))}`));
-    K.push(kpi("ban","#e2564a","Perdidos", perdidos, "rechazados o que nunca recogieron"));
+  }
+  // "Perdidos" NO es solo logística: una venta DIGITAL anulada (pago falso, botón
+  // Anular de Compras) también es una pérdida, y en la vista Digital este KPI ni
+  // se mostraba — anulabas una venta y no aparecía en ningún número. Se muestra
+  // siempre, y cuenta también anuladas/canceladas, que `orders` dejaba fuera por
+  // no ser `venta:true`.
+  const perdidosTodos = todas.filter(O.esPerdido).length;
+  if(tipo!=="digital" || perdidosTodos>0){
+    K.push(kpi("ban","#e2564a","Perdidos", perdidosTodos,
+      tipo==="digital" ? "ventas anuladas o canceladas" : "rechazos, no recogidos y anulaciones"));
   }
   // Estos tres son del BOT entero: ni el filtro de fechas ni el de operación los
   // tocan (salen de dashboard_stats, que cuenta en vivo). Se dice en el subtítulo
@@ -971,7 +983,7 @@ async function load(){
   // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
   // el panel mostraba un "vendido" distinto al KPI y el share por producto pasaba de 100%
   // (numerador con perdidos, denominador `vendido` sin ellos).
-  renderSales(ventasOk, r, dailyMargin, dailySpend, dailyExpense, hasAds);
+  renderSales(ventasOk, r, dailyMargin, dailySpend, dailyExpense, hasAds, sinCostoF);
   renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd);
   renderBumps(bumpMap, ingBump, ordersUnavailable);
   renderExpenses(expenses, tipo);
@@ -1165,7 +1177,7 @@ function renderFunnel(porStage){
   $("conv").innerHTML=`<span class="convpill">Conversión a compra: <b>${pct(c.comprado)}%</b></span><span class="convpill">Mostraron interés: <b>${pct(interes)}%</b></span><span class="convpill">Se perdieron: <b>${pct(c.perdido)}%</b></span>`;
 }
 
-function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds){
+function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds, sinCostoF){
   const days=[]; const ingMap={};
   const anchor=r.toDay||startOfDay(new Date(r.to.getTime()-864e5));
   const spanDays=Math.min(31,Math.max(1,Math.round((anchor-r.from)/864e5)+1));
@@ -1182,7 +1194,9 @@ function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds){
   { const fromD=startOfDay(r.from); for(let d=new Date(anchor); d>=fromD; d=new Date(d.getTime()-864e5)){ const k=ymd(d); totalGan+=(dailyMargin[k]||0)-(dailySpend[k]||0)-(dailyExpense[k]||0); } }
   const gl=hasAds?"ganancia neta":"ganancia";
   $("salesSum").innerHTML = totalIng>0
-    ? `<b>${money(totalIng)}</b> vendido · <b style="color:${totalGan<0?'var(--red)':'var(--green)'}">${money(totalGan)}</b> de ${gl} en el periodo`
+    // Si hay pedidos sin costo, esa "ganancia" solo cubre una parte de las ventas:
+    // decirlo, porque si no se lee como la ganancia de TODO lo vendido al lado.
+    ? `<b>${money(totalIng)}</b> vendido · <b style="color:${totalGan<0?'var(--red)':'var(--green)'}">${money(totalGan)}</b> de ${gl} en el periodo${sinCostoF?` <span style="color:var(--faint)">(sin ${sinCostoF} pedido${sinCostoF>1?"s":""} que aún no tiene${sinCostoF>1?"n":""} costo)</span>`:""}`
     : "Sin ventas registradas en el periodo";
   renderSalesChart(data, hasAds);
 }
@@ -1357,8 +1371,15 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   // Si NINGÚN producto tiene margen calculable, el total también es desconocido (no 0).
   const conMargen=list.filter(p=>p.margen!=null);
   const totM=conMargen.length?conMargen.reduce((a,p)=>a+p.margen,0):null;
-  const totMpct=(totM!=null&&totI>0)?Math.round(totM/totI*100):0;
-  rows+=`<tr class="total"><td>Total</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}<td class="r">100%</td></tr>`;
+  // El margen del TOTAL va sobre los ingresos de los productos que SÍ tienen ganancia
+  // conocida, no sobre todos. Dividir entre el total reintroducía por la puerta de
+  // atrás el error que la fila ya evita: con S/546 de ganancia conocida y S/1,975 de
+  // ingresos (S/1,429 de ellos con margen desconocido) mostraba "28%", como si las
+  // zapatillas no dejaran nada. Ahora es 100% sobre lo medible, y se avisa que es parcial.
+  const ingConMargen=conMargen.reduce((a,p)=>a+p.ing,0);
+  const totMpct=(totM!=null&&ingConMargen>0)?Math.round(totM/ingConMargen*100):0;
+  const parcial = totM!=null && conMargen.length<list.length;
+  rows+=`<tr class="total"><td>Total${parcial?` <span style="font-weight:400;color:var(--faint)">· margen solo de ${conMargen.length} de ${list.length} productos</span>`:""}</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}<td class="r">100%</td></tr>`;
   box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia</th><th class="r">Margen</th><th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
