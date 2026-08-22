@@ -807,7 +807,11 @@ async function load(){
   // total de "Costo de productos", para que ganancia e inversión hablen del MISMO
   // universo: un físico sin flete no aporta margen, así que tampoco debe aportar
   // costo — si no, el ROI mezclaría el costo de 13 pedidos con la ganancia de 3.
-  let bruta=0, sinCostoF=0, sinFlete=0, sinCogs=0, cogsBruta=0;
+  // `conMargen` = cuántas ventas SÍ pudieron calcular su ganancia. Si son cero y hay
+  // pedidos sin costo, la ganancia no es CERO: es DESCONOCIDA, y mostrar "S/ 0.00" es
+  // afirmar algo falso ("tu negocio físico no gana nada") cuando lo cierto es que
+  // falta un dato. Mismo criterio que ya se aplicó a "Rendimiento por producto".
+  let bruta=0, sinCostoF=0, sinFlete=0, sinCogs=0, cogsBruta=0, conMargen=0;
   // Ganancia sobre ventasOk (SIN perdidos): un rechazado/no_recogido resta su COGS
   // como si la mercadería se hubiera perdido, pero el paquete VUELVE (solo se pierde
   // el flete). El digest (order-stats.ts:131) ya excluye perdidos de la ganancia; el
@@ -818,7 +822,7 @@ async function load(){
       // Antes sumaba solo cobrado y el costo digital salía en el COGS pero nunca
       // se restaba → la neta quedaba inflada.
       const cd=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
-      bruta+=O.cobrado(o)-(cd||0); cogsBruta+=(cd||0); return;
+      bruta+=O.cobrado(o)-(cd||0); cogsBruta+=(cd||0); conMargen++; return;
     }
     const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     // cobrado − margen = todo lo que costó ese pedido (mercadería + flete + empaque),
@@ -829,8 +833,10 @@ async function load(){
       // separan los dos motivos para poder nombrarlos.
       sinCostoF++;
       if(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)==null) sinCogs++; else sinFlete++;
-    } else { bruta+=m; cogsBruta+=O.cobrado(o)-m; }
+    } else { bruta+=m; cogsBruta+=O.cobrado(o)-m; conMargen++; }
   });
+  // Ninguna venta pudo calcular su ganancia → el número no existe, no es cero.
+  const brutaDesconocida = conMargen===0 && sinCostoF>0;
   // Texto compartido por el KPI y la banda: dice qué falta exactamente.
   const faltaTxt = !sinCostoF ? ""
     : sinFlete && !sinCogs ? `falta el flete de ${sinFlete} pedido${sinFlete>1?"s":""}`
@@ -908,7 +914,9 @@ async function load(){
   // bruta − anuncios − gastos extra = neta. Pedido de Rodrigo para tenerlas a la vista.
   const brutaSub = tipo==="digital" ? "ingresos digitales (sin costo)"
     : (sinCostoF ? `tras mercadería y envío · ${faltaTxt}` : "tras mercadería y envío");
-  K.push(kpi("chart","#22c079","Ganancia bruta", money(bruta), brutaSub));
+  K.push(kpi("chart", brutaDesconocida?"#6d8ea0":"#22c079", "Ganancia bruta",
+    brutaDesconocida?"—":money(bruta),
+    brutaDesconocida?`no se puede calcular todavía · ${faltaTxt}`:brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
     (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · ⚠ moneda sin convertir":"")));
   // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
@@ -929,7 +937,11 @@ async function load(){
       : sinCostoF ? `⚠ ${faltaTxt} — cifra incompleta`
       : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
-  K.push(kpi("wallet", neta<0?"#e2564a":"#22c079", "Ganancia neta", money(neta), monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
+  // La neta sale de la bruta: si la bruta no se puede calcular, la neta tampoco.
+  K.push(kpi("wallet", brutaDesconocida?"#6d8ea0":neta<0?"#e2564a":"#22c079", "Ganancia neta",
+    brutaDesconocida?"—":money(neta),
+    brutaDesconocida ? `no se puede calcular todavía · ${faltaTxt}`
+      : monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
   // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
   if(vueltoTotal>0){
     K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
@@ -951,7 +963,7 @@ async function load(){
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
-  renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, tipo });
+  renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
 
   renderMetricas(porStage);
   renderFunnel(porStage);
@@ -1080,21 +1092,26 @@ function renderBand(b){
     // La banda tiene espacio: además de QUÉ falta, se dice DÓNDE ponerlo. Antes
     // decía "faltan costos en N pedidos" y no había forma de saber cuál costo era
     // ni dónde registrarlo — el dato se pide al mover el pedido en el tablero.
+    : b.brutaDesconocida ? `${b.faltaTxt} — se registra al mover el pedido en Pedidos`
     : (b.sinCostoF?`tras mercadería y envío · ${b.faltaTxt} — se registra al mover el pedido en Pedidos`:"tras mercadería y envío");
   const brutaSub = brutaS?`<span class="pb-s">${brutaS}</span>`:"";
+  // Sin ninguna venta con costo completo, la ganancia no es 0: no se sabe. Mostrar
+  // "S/ 0.00" en la banda principal es decirle al usuario que su negocio no gana nada.
+  const brutaTxt = b.brutaDesconocida ? "—" : money(b.bruta);
+  const netaTxt  = b.brutaDesconocida ? "—" : money(b.neta);
   const hasExtra = b.gastosExtra>0;
   if(!b.hasAds && !hasExtra){
     box.innerHTML=`
-      <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v green">${money(b.bruta)}</span>${brutaSub}</div>
+      <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
       <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";
   const roasTxt = b.roas>0?`ROAS ${b.roas.toFixed(1)}× · `:"";
-  const steps=[`<div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${money(b.bruta)}</span>${brutaSub}</div>`];
+  const steps=[`<div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${brutaTxt}</span>${brutaSub}</div>`];
   if(b.hasAds) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>`);
   if(hasExtra) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Gastos extra</span><span class="pb-v amber">${money(b.gastosExtra)}</span><span class="pb-s">operativos que registraste</span></div>`);
-  steps.push(`<span class="pb-op">=</span><div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${netaCls}">${money(b.neta)}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`);
+  steps.push(`<span class="pb-op">=</span><div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${b.brutaDesconocida?"":netaCls}">${netaTxt}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`);
   box.innerHTML=steps.join("");
 }
 // Dos métricas de conversión, foto EN VIVO (misma fuente que el Embudo):
