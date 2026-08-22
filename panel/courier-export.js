@@ -205,7 +205,10 @@ export async function generar(courier, orders, cfg) {
     const t = entradaPorNombre(entries, courier.tabla);
     if (t) ponerTexto(t, ajustarTablaRef(await textoDe(t), 1 + filas.length));
   }
-  const hoy = new Date().toISOString().slice(0, 10);
+  // Fecha del reloj DEL USUARIO, no UTC: toISOString() en Perú (UTC-5) ya devuelve el día
+  // siguiente a partir de las 7pm, así que el archivo bajado de noche se guardaba fechado
+  // mañana y descuadraba el archivo de despachos.
+  const hoy = new Intl.DateTimeFormat("en-CA").format(new Date());
   descargar(escribirZip(entries), `${courier.nombre.replace(/\s+/g, "_")}_por_despachar_${hoy}.${courier.ext}`);
   return filas.length;
 }
