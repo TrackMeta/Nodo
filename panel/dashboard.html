@@ -480,6 +480,14 @@ let tipo="todo";
 let bitaMonth=(()=>{ const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1); })();
 function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
 function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; }
+// Día calendario de un INSTANTE, en hora del negocio (Lima). `ymd` usa los getters
+// LOCALES, o sea la zona del navegador: una venta de las 21:30 de Lima se guarda como
+// 02:30 UTC del día SIGUIENTE, así que desde cualquier zona al este de Lima caía en el
+// día equivocado — el gráfico, el calendario de profit y el profit diario mostraban las
+// ventas corridas un día, y no coincidían con el Embudo (que sí corta en hora de Lima).
+// Para el EJE de días se sigue usando `ymd`, porque ahí las fechas ya son días
+// calendario elegidos en el selector, no instantes.
+function ymdLima(t){ return new Intl.DateTimeFormat("en-CA",{ timeZone:"America/Lima" }).format(new Date(t)); }
 function addDays(base,n){ const x=new Date(base); x.setDate(x.getDate()+n); return x; }
 
 // Un preset → {from, toDay} (Date a las 00:00). null = selección manual del calendario.
@@ -863,7 +871,7 @@ async function load(){
   // Mismo criterio que la banda: digital = cobrado (sin COGS), físico = margen.
   const margenPorProd={}, dailyMargin={}, dailySpend={};
   ventasOk.forEach(o=>{   // sin perdidos (mismo criterio que la banda de ganancia y el digest)
-    const k=ymd(new Date(o.created_at));
+    const k=ymdLima(o.created_at);
     const m = !O.esFisico(o)
       ? O.cobrado(o)-(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)||0)
       : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
@@ -1184,7 +1192,7 @@ function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds, s
   const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"2-digit"});
   for(let i=spanDays-1;i>=0;i--){ const d=startOfDay(new Date(anchor.getTime()-i*864e5)); const k=ymd(d); ingMap[k]=0; days.push({k,label:fmt.format(d)}); }
   let totalIng=0;
-  orders.forEach(o=>{ const k=ymd(new Date(o.created_at)); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in ingMap) ingMap[k]+=v; totalIng+=v; });
+  orders.forEach(o=>{ const k=ymdLima(o.created_at); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in ingMap) ingMap[k]+=v; totalIng+=v; });
   const data=days.map(d=>({ label:d.label, ing:ingMap[d.k]||0, gan:(dailyMargin[d.k]||0)-(dailySpend[d.k]||0)-(dailyExpense[d.k]||0) }));
   // La ganancia del RESUMEN cubre TODO el rango (igual que "vendido"/totalIng), aunque el
   // CHART solo dibuje los últimos 31 días. Antes totalGan sumaba solo los días graficados →
@@ -1249,7 +1257,7 @@ async function loadBitacora(monthStart){
   const adTipo={}; Object.keys(adCnt).forEach(a=>{ adTipo[a]=adCnt[a].fisico>=adCnt[a].digital?"fisico":"digital"; });
   const day={}; const D=(k)=> day[k]||(day[k]={margin:0,rev:0,spend:0,exp:0,sales:0});
   orders.forEach(o=>{
-    const k=ymd(new Date(o.created_at));
+    const k=ymdLima(o.created_at);
     // Digital = cobrado − COGS (producto digital + regalos + extras pagados), IGUAL que la banda
     // del Dashboard (:805/824) y el digest (order-stats.ts): antes usaba cobrado a secas → la
     // ganancia diaria de la Bitácora salía inflada y no cuadraba con el resto para el mismo periodo.
@@ -1271,7 +1279,7 @@ async function renderBitacora(){
   const profitOf=(k)=>{ const d=day[k]; return d?(d.margin-d.spend-d.exp):null; };
   const y=bitaMonth.getFullYear(), mo=bitaMonth.getMonth();
   const daysInMonth=new Date(y,mo+1,0).getDate();
-  const todayK=ymd(new Date());
+  const todayK=ymdLima(new Date());
   const series=[];
   for(let dd=1;dd<=daysInMonth;dd++){ const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(dd).padStart(2,"0")}`; series.push({dd,k,profit:profitOf(k)}); }
   renderBitaChart(series);

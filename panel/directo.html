@@ -287,7 +287,7 @@
 <script type="module">
 import { supa, mountShell, toast, askChoice, norm, icon } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable } from "./contact-extras.js";
-import { mountDateRange, computePreset, ymd } from "./date-range.js?v=2";
+import { mountDateRange, computePreset, ymd, ymdLima } from "./date-range.js?v=3";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 
@@ -409,7 +409,7 @@ function filtered(){
     if(!f.showDone && !enColaActiva(c)) return false;
     if(f.q){ if(!(norm(c.nombre).includes(f.q) || (c.wa_id||"").includes(f.q))) return false; }
     // Rango de fechas por última actividad (su último mensaje).
-    if(f.range && c.ultimo_mensaje_at){ const dd=ymd(new Date(c.ultimo_mensaje_at)); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
+    if(f.range && c.ultimo_mensaje_at){ const dd=ymdLima(c.ultimo_mensaje_at); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
     if(f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
     if(f.mios && d.assigned_to!==st.uid) return false;
     if(f.hoy && !(d.next_call_at && d.next_call_at<=today)) return false;

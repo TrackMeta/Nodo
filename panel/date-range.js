@@ -40,6 +40,14 @@ const hoyLima = () => {
 // día elegido), así que sus getters LOCALES dan el día correcto en cualquier zona.
 export const startOfDayLima = (d) => new Date(`${d.getFullYear()}-${_p2(d.getMonth() + 1)}-${_p2(d.getDate())}T00:00:00.000-05:00`);
 export const endOfDayLima = (d) => new Date(`${d.getFullYear()}-${_p2(d.getMonth() + 1)}-${_p2(d.getDate())}T23:59:59.999-05:00`);
+// Día calendario (YYYY-MM-DD) de un INSTANTE, en hora de Lima. `ymd()` usa los
+// getters LOCALES, o sea la zona del navegador: una venta de las 21:30 de Lima se
+// guarda como 02:30 UTC del día siguiente, así que desde cualquier zona al este de
+// Lima caía en el día equivocado — y el Dashboard (que agrupa con `ymd`) mostraba
+// días distintos que el Embudo (que sí corta en hora de Lima). Para AGRUPAR
+// timestamps por día se usa esta; `ymd` sigue valiendo para fechas-día ya elegidas
+// por el usuario en el selector de rango, que no son instantes.
+export const ymdLima = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date(t));
 
 export const PRESETS = [
   ["hoy", "Hoy", () => { const t = hoyLima(); return [t, t]; }],

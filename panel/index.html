@@ -552,7 +552,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
-import { mountDateRange, computePreset, rangeLabel, ymd } from "./date-range.js?v=2";
+import { mountDateRange, computePreset, rangeLabel, ymd, ymdLima } from "./date-range.js?v=3";
 import * as O from "./orders.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, openMetaDetalle, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm } from "./shell.js";
@@ -1095,7 +1095,7 @@ function applyFilters(cv){
   if (f.organico && !!c.source) return false;
   if (f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
   if (f.conimg && !c.ultima_imagen_at) return false;
-  if (f.range && cv.updated_at){ const dd=ymd(new Date(cv.updated_at)); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
+  if (f.range && cv.updated_at){ const dd=ymdLima(cv.updated_at); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
   if (f.producto && c.product_id !== f.producto) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
   return true;
