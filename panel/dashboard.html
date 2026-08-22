@@ -271,7 +271,7 @@
     <div id="dashView">
     <div class="cols">
       <div class="panel">
-        <h3>Ventas cerradas</h3><p class="ps" id="salesSum">—</p>
+        <h3>Ventas confirmadas</h3><p class="ps" id="salesSum">—</p>
         <div id="salesChart"></div>
       </div>
       <div class="panel">
@@ -733,8 +733,8 @@ async function load(){
   const todas=(ordR.error?[]:(ordR.data||[])).filter(delTipo);
   const orders=todas.filter(O.esVenta);
   // Ventas CERRADAS de verdad: rechazado (Lima) y no_recogido (provincia) son venta+perdido
-  // a la vez → NO deben contar como "Ventas cerradas" ni sumar a los ingresos/ticket (antes
-  // el mismo pedido salía en "Ventas cerradas" Y en "Perdidos", y su valor completo inflaba
+  // a la vez → NO deben contar como "Ventas confirmadas" ni sumar a los ingresos/ticket (antes
+  // el mismo pedido salía en "Ventas confirmadas" Y en "Perdidos", y su valor completo inflaba
   // el vendido). Se usan para las métricas de éxito; los conteos de dinero real (cobrado/por
   // cobrar) siguen sobre `orders` porque un adelanto ya cobrado es plata en mano.
   const ventasOk=orders.filter(o=>!O.esPerdido(o));
@@ -764,6 +764,9 @@ async function load(){
   const vendido=ventasOk.reduce((a,o)=>a+O.total(o),0);
   const vueltoTotal=ventasOk.reduce((a,o)=>a+(Number((o.shipping||{}).vuelto)||0),0);
   const compras=ventasOk.length;
+  // Cuántas de esas ventas ya están COBRADAS al 100% (lo que Compras y el Embudo
+  // llaman "cerradas"). Es el puente entre las tres pantallas.
+  const cobradasFull=ventasOk.filter(O.esCerrado).length;
   const ticket=compras?vendido/compras:0;
   const leads=ev.filter(e=>e.event_name==="Lead").length;
   // "En la calle" es lo ya despachado sin cobrar: va como DESGLOSE de Por cobrar,
@@ -845,7 +848,13 @@ async function load(){
       calle?`te deben · ${money(calle)} ya va en camino`:"vendido, todavía sin pagar"));
   }
   K.push(
-    kpi("cart","#22c079","Ventas cerradas", compras, "el cliente ya confirmó la compra"),
+    // "Cerrada" ya significa PAGADA AL 100% en Compras ("el cliente ya pagó todo") y
+    // en el Embudo ("cuántos terminas cerrando"). Acá se usaba para las CONFIRMADAS,
+    // así que la misma palabra daba dos números distintos en dos pantallas (13 vs 5) y
+    // parecía un error de cuentas. Este KPI son las confirmadas — se dice así, y se
+    // muestra cuántas ya se cobraron para que el puente con las otras pantallas se vea.
+    kpi("cart","#22c079","Ventas confirmadas", compras,
+      cobradasFull ? `el cliente ya dijo que sí · ${cobradasFull} ya cobrada${cobradasFull===1?"":"s"}` : "el cliente ya confirmó la compra"),
     kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto deja cada venta"),
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
@@ -894,7 +903,7 @@ async function load(){
 
   renderMetricas(porStage);
   renderFunnel(porStage);
-  // ventasOk (excluye rechazado/no_recogido): el panel "Ventas cerradas" y el desglose por
+  // ventasOk (excluye rechazado/no_recogido): el panel "Ventas confirmadas" y el desglose por
   // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
   // el panel mostraba un "vendido" distinto al KPI y el share por producto pasaba de 100%
   // (numerador con perdidos, denominador `vendido` sin ellos).
@@ -1247,7 +1256,7 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   });
   const list=Object.values(pmap).filter(p=>p.units>0);
   if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
-  if(!list.length){ box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><h4>Sin ventas todavía</h4>Aún no hay ventas cerradas en este período. Cuando cierres una, verás aquí el desempeño por producto.</div>`; return; }
+  if(!list.length){ box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><h4>Sin ventas todavía</h4>Aún no hay ventas confirmadas en este período. Cuando cierres una, verás aquí el desempeño por producto.</div>`; return; }
   const MG=margenPorProd||{};
   list.forEach(p=>{ p.margen=MG[p.id]||0; });
   list.sort((a,b)=>b.ing-a.ing);
