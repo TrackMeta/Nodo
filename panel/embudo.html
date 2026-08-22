@@ -383,7 +383,7 @@ function renderNeck(F){
     cierre.drop=cierre.arriba>0 ? Math.round(F.c.perdido/cierre.arriba*100) : 0;
   }
   const enCursoTxt=enCurso>0
-    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div><b>${nf.format(enCurso)}</b> ${enCurso===1?"venta confirmada sigue":"ventas confirmadas siguen"} en curso (aún sin cobrar del todo). No ${enCurso===1?"es":"son"} fuga: ${enCurso===1?"está":"están"} en camino — ${enCurso===1?"míralo":"míralas"} en <a href="pedidos.html">Pedidos</a>.</div></div>`
+    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div><b>${nf.format(enCurso)}</b> ${enCurso===1?"venta confirmada sigue":"ventas confirmadas siguen"} en curso (aún sin cobrar del todo). No ${enCurso===1?"es":"son"} fuga: ${enCurso===1?"está":"están"} en camino — ${enCurso===1?"míralo":"míralas"} en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`
     : "";
   const peor=saltos.reduce((a,b)=> (b.seCae>a.seCae?b:a));
   const drop=peor.drop, seCae=peor.seCae;
