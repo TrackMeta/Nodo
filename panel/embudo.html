@@ -327,7 +327,7 @@ function renderMetricas(F){
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
       <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>
       <div class="mdesc">De los que <b>se interesaron</b> de verdad, cuántos terminas <b>cerrando</b>. Mide qué tan bueno es el bot vendiendo — no cuenta a los curiosos que solo saludan.</div>
-      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} interesados</div>
+      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
     </div></div>
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
       <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"} <span class="mtag">base: ${zonaSub?`contactos de ${zonaNom}`:"todos los contactos"}</span></div>
@@ -369,13 +369,29 @@ function renderNeck(F){
   // pocos arriba (ej. 3 confirmados sin pagar aún) da 100% engañoso; lo que de
   // verdad duele es dónde pierdes más gente.
   saltos.forEach(s=>{ s.drop=100-s.paso; s.seCae=Math.round(s.arriba*s.drop/100); });
+  // El último salto (confirmados → comprar) NO es una fuga cuando los que faltan
+  // siguen EN CURSO. Un pedido confirmado hoy, o en reparto, o despachado a la
+  // agencia, todavía no se cayó: está en camino. Los que de verdad se perdieron
+  // salen de "confirmado" y pasan a la etapa `perdido`. Sin esta distinción, y con
+  // entrega a 1-2 días, SIEMPRE hay pedidos en tránsito, así que el embudo acusaba
+  // al cierre como "tu mayor fuga" aunque el cierre fuera perfecto (con 13 ventas
+  // sanas y CERO caídas decía "se cae el 62%, 8 personas").
+  const cierre=saltos.find(s=>s.a==="comprar");
+  const enCurso=cierre ? F.c.confirmado : 0;
+  if(cierre){
+    cierre.seCae=F.c.perdido;                                             // fuga REAL
+    cierre.drop=cierre.arriba>0 ? Math.round(F.c.perdido/cierre.arriba*100) : 0;
+  }
+  const enCursoTxt=enCurso>0
+    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div><b>${nf.format(enCurso)}</b> ${enCurso===1?"venta confirmada sigue":"ventas confirmadas siguen"} en curso (aún sin cobrar del todo). No ${enCurso===1?"es":"son"} fuga: ${enCurso===1?"está":"están"} en camino — ${enCurso===1?"míralo":"míralas"} en <a href="pedidos.html">Pedidos</a>.</div></div>`
+    : "";
   const peor=saltos.reduce((a,b)=> (b.seCae>a.seCae?b:a));
   const drop=peor.drop, seCae=peor.seCae;
   if(drop<=25 || seCae<2){
-    el.innerHTML=`<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`;
+    el.innerHTML=`<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`+enCursoTxt;
     return;
   }
-  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠️"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`;
+  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠️"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`+enCursoTxt;
 }
 
 function renderFunnel(F){
