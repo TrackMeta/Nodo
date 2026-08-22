@@ -3120,9 +3120,18 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     if (ctx.ctwa_clid) ship.ctwa_clid = ctx.ctwa_clid;
     if (ctx.ad_id) ship.ad_id = ctx.ad_id;
 
+    // `version_id`: la PRESENTACIÓN que compró (1 par / Pack 2 pares / Premium…).
+    // La venta manual (registrarVentaManual) siempre lo guardó; el pedido que crea el
+    // BOT no, así que TODOS los pedidos del flujo quedaban con version_id null. El
+    // dato existía suelto en `shipping.opcion` (texto), pero sin la relación: "Editar
+    // pedido" no podía preseleccionar la presentación (mostraba "— sin presentación —")
+    // y el Dashboard nunca podía desglosar las ventas por variante. Otra vez una rama
+    // implementada y su gemela no.
+    const _vid = String(ctx.opcion_id ?? "").trim();
+    const versionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_vid) ? _vid : null;
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
-      product_id: (c as any)?.product_id ?? null,
+      product_id: (c as any)?.product_id ?? null, version_id: versionId,
       amount, currency: String(ctx.moneda || "PEN"), estado: a.estado || "carrito", shipping: ship,
     }).select("id").single();
     if (error) throw new Error(error.message);
