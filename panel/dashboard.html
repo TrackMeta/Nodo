@@ -753,7 +753,12 @@ async function load(){
   // "Ventas extra": solo de ventas NO perdidas (un extra de un pedido rechazado/
   // no_recogido nunca se cobró → no debe inflar el conteo ni los ingresos de extras).
   ventasOk.forEach(o=>{
-    (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0); ingBump+=p; bumpUnits++;
+    // Los REGALOS también viven en order_bumps (a precio 0), así que contarlos acá
+    // inflaba "Ventas extra": con 14 gorras de regalo y 3 extras vendidos, el KPI
+    // decía 16 ventas extra (el ingreso sí era correcto). Un regalo no es una venta.
+    (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0);
+      if(b.regalo || p<=0) return;
+      ingBump+=p; bumpUnits++;
       const k=b.nombre||"Venta extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
   });
   const vendido=ventasOk.reduce((a,o)=>a+O.total(o),0);

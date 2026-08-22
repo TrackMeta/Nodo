@@ -61,7 +61,18 @@ export function total(o){
   return v;
 }
 
-const adelantoDe = (o) => Number(o?.shipping?.adelanto || 0) || 0;
+// Lo que el cliente REALMENTE abonó manda sobre el monto que se le PIDIÓ. `shipping
+// .adelanto` es lo pedido (ej. "20") y no se mueve aunque pague más: quien paga el
+// total como adelanto quedaba contado como S/20 cobrado y el resto figuraba "por
+// cobrar" — plata que ya entró apareciendo como deuda, y el ROAS subestimado.
+// `adelanto_abonado`/`pago_acreditado_adelanto` los escribe el motor con lo abonado
+// de verdad (saldoTrasAdelanto).
+const adelantoDe = (o) => {
+  const s = o?.shipping || {};
+  const real = Number(s.adelanto_abonado ?? s.pago_acreditado_adelanto);
+  if (Number.isFinite(real) && real > 0) return real;
+  return Number(s.adelanto || 0) || 0;
+};
 
 // Plata que YA entró por este pedido. El adelanto cuenta como lo que es: un
 // cobro parcial (ni el total, ni cero).
