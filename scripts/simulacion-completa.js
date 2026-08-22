@@ -122,7 +122,10 @@
     const mk = (o) => ({ product_id: o.pid, nombre: o.nombre, orden: o.orden, activo: true, cantidad: o.cantidad ?? 1, precio: o.precio ?? null, costo: o.costo ?? null, descripcion: o.descripcion ?? null, entrega: o.entrega ?? [], entrega_mensaje: o.entrega_mensaje ?? null, price_list: [], drive_link: null });
     const vs = await ins("product_versions", [
       mk({ pid: P.zap, nombre: "1 par", orden: 0, cantidad: 1, precio: 129, costo: 45, descripcion: "Un par" }),
-      mk({ pid: P.zap, nombre: "Pack 2 pares", orden: 1, cantidad: 2, precio: 230, costo: 90, descripcion: "Dos pares (ahorras S/ 28)" }),
+      // OJO: el costo de una presentación es POR UNIDAD (el motor lo multiplica por
+      // `cantidad`). Acá iba 90 pensando que era el costo total del pack, y el pedido
+      // registraba 180 de COGS — el margen del pack salía por el piso.
+      mk({ pid: P.zap, nombre: "Pack 2 pares", orden: 1, cantidad: 2, precio: 230, costo: 45, descripcion: "Dos pares (ahorras S/ 28)" }),
       mk({ pid: P.med, nombre: "Unica", orden: 0, cantidad: 1, precio: 19, costo: 4 }),
       mk({ pid: P.gorra, nombre: "Unica", orden: 0, cantidad: 1, precio: null, costo: 8 }),
       mk({ pid: P.curso, nombre: "Basica", orden: 0, cantidad: 1, precio: 99, costo: 0, descripcion: "Modulos 1 al 5", entrega: [{ tipo: "link", url: "https://nodo.demo/basica", nombre: "Acceso Basico", mensaje: "" }], entrega_mensaje: "Listo! Aqui tienes tu acceso Basico:" }),
