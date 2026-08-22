@@ -7367,7 +7367,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "4. Si le pasas datos de pago, di SIEMPRE el monto exacto en el MISMO mensaje. Nunca lo invites a pagar sin " +
       "decirle cuánto: termina pagando de más o de menos y hay que devolvérselo.\n" +
       "5. No ofrezcas nada que el negocio no controla: horarios o franjas de entrega (\"¿en la mañana o en la tarde?\"), " +
-      "días exactos que no te dieron, ni descuentos. El reparto va por ruta; solo puedes decir lo que te indica esta ficha.",
+      "días exactos que no te dieron, descuentos, ni RESERVAR o apartar stock (\"¿te reservo una talla?\"). No existe " +
+      "apartado: lo único que aparta unidades es un pedido creado. Tampoco metas presión con escasez inventada.\n" +
+      "6. Si el cliente hizo una pregunta y quedó sin responder —típico con su PRIMER mensaje, que lo contesta un saludo " +
+      "automático— respóndela ahora, antes de seguir vendiendo. Revisa la conversación: si preguntó por garantía, " +
+      "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.",
     );
     // Entrega física: el veredicto YA está calculado por el motor contra la
     // configuración del negocio. Se le da a la IA masticado y con la orden
