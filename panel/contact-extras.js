@@ -57,13 +57,24 @@ export function stagePickerHtml(current) {
 // filtro por valor no puede distinguir de un dato real.
 const CLAVES_INTERNAS = new Set([
   "zona_entrega", "zona_distrito_incierto", "entrega_motivo", "menu_eleccion",
+  // Datos de la TRANSACCIÓN, no del cliente. `esValorPresentable` filtra por VALOR,
+  // y "49" / "0366585427" / "Rodrigo Flores" son valores perfectamente normales, así
+  // que se colaban a "Para vender" como si fueran rasgos del comprador. El peor era
+  // `pago_titular`: es el titular de TU cuenta — el nombre del dueño del negocio
+  // apareciendo en la ficha del cliente, y la IA lo lee como contexto de él.
+  "pago_monto", "pago_operacion", "pago_titular", "pago_resultado", "datos_pago",
+  // Veredictos del clasificador y banderas de estado del pedido.
+  "pedido_creado", "datos_completos",
 ]);
 export const esCampoInterno = (key) => {
   const k = String(key || "");
   // `xt<hash>_*`: el motor crea UNA clave por cada presentación de extra con tallas
   // ("xt" + los 10 primeros del version_id, engine.ts:856). Se acumulan una por
   // variante, con nombre ilegible, y no son datos del cliente sino plumbing.
-  return k.startsWith("_") || /^xt[0-9a-f]{10}_/.test(k) || CLAVES_INTERNAS.has(k.toLowerCase());
+  // `extra_N_resp` / `extraf_N_resp`: lo que decidió el clasificador ("acepta"), no
+  // algo que el cliente contara de sí mismo.
+  return k.startsWith("_") || /^xt[0-9a-f]{10}_/.test(k) || /^extraf?_\d+_resp$/i.test(k)
+    || CLAVES_INTERNAS.has(k.toLowerCase());
 };
 
 // ¿El valor de un campo es un DATO DEL CLIENTE presentable (no un flag/artefacto

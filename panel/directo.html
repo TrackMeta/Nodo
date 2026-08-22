@@ -286,7 +286,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, askChoice, norm, icon } from "./shell.js";
-import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable } from "./contact-extras.js";
+import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable, esCampoInterno } from "./contact-extras.js";
 import { mountDateRange, computePreset, ymd, ymdLima } from "./date-range.js?v=3";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -713,7 +713,9 @@ async function openInfo(c){
       supa.from("contact_field_values").select("value, field:custom_fields(key,nombre)").eq("contact_id",c.id),
       supa.from("messages").select("direction,type,content,ts,sent_by").eq("contact_id",c.id).order("ts",{ascending:false}).limit(12),
     ]);
-    fields=(fv||[]).filter(r=>r?.field && !String(r.field.key||"").startsWith("_") && esValorPresentable(r.value));
+    // `esCampoInterno` en vez de solo `_`: así el detalle del lead tampoco muestra
+    // el monto, la operación ni el titular del pago (que es TU nombre, no el suyo).
+    fields=(fv||[]).filter(r=>r?.field && !esCampoInterno(r.field.key) && esValorPresentable(r.value));
     msgs=(ms||[]).reverse();
   }catch(_){}
   if(!$("infoModal").classList.contains("show")) return; // se cerró mientras cargaba
