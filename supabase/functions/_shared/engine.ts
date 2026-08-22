@@ -655,7 +655,12 @@ export async function crearVentaManual(
   // Entrega DIGITAL: el link del producto + los extras/regalos digitales.
   if (!esFisico && opts.entregarLink !== false) {
     const msg = String((prod as any)?.config?.entrega_mensaje || "¡Listo! 🎉 Acá tienes tu acceso:");
-    await deliverMessage(db, channelId, contactId, msg).catch(() => {});
+    // OJO: deliverMessage/deliverStep DEVUELVEN false cuando Meta rechaza el envío (emit no
+    // lanza) → un `.catch(() => {})` pelado se traga el rechazo y la venta manual queda como
+    // entregada con el cliente sin recibir nada. emit avisa por Telegram, pero genérico ("no
+    // pude enviar un mensaje"): sin esto el operador no sabe que lo que no llegó fue EL ACCESO
+    // que acaba de vender. Espeja entregarOpcion, que sí deja el rastro de qué falló.
+    let entregaOk = await deliverMessage(db, channelId, contactId, msg).catch(() => false);
     // Un entregable tipo ARCHIVO (PDF/video subido) va como ADJUNTO; solo los tipo link van
     // como texto. Antes se mandaba it.url como texto SIEMPRE → el cliente recibía un link de
     // storage pelado en vez del archivo. Espeja entregarExtrasDigitales/entregarOpcion.
@@ -665,7 +670,15 @@ export async function crearVentaManual(
       if (it.tipo === "archivo") bubbles.push({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
       else bubbles.push({ text: (it.nombre ? String(it.nombre) + ":\n" : "") + String(it.url) });
     }
-    if (bubbles.length) await deliverStep(db, channelId, contactId, { bubbles }).catch(() => {});
+    if (bubbles.length && (await deliverStep(db, channelId, contactId, { bubbles }).catch(() => false)) === false) entregaOk = false;
+    if (!entregaOk) {
+      const queCosa = String((ver as any)?.nombre || (prod as any)?.nombre || "la compra");
+      await logEvent(db, channelId, contactId, "error", "Entrega no completada",
+        `${queCosa} — WhatsApp rechazó el envío de la venta manual; mándaselo a mano`).catch(() => {});
+      await avisarEnvioFallido(db, channelId, contactId,
+        { message: `La venta manual de "${queCosa}" se registró pero NO pude entregar el acceso (WhatsApp rechazó el envío). Mándaselo a mano al cliente.` },
+        { critico: true }).catch(() => {});
+    }
     try { await entregarExtrasDigitales(db, channelId, contactId, orderId); } catch (e) { console.error("[ventaManual] extras dig:", (e as any)?.message ?? e); }
   }
 
@@ -674,7 +687,11 @@ export async function crearVentaManual(
   // solo se llamaba en el bloque `!esFisico` → un extra digital sumado a una venta
   // física cerrada quedaba pagado y SIN enviar, sin aviso. La entrega es idempotente
   // (marca `b.entregado`), así que no duplica si el pedido no está pagado aún.
-  if (esFisico && ["entregado_cobrado", "recogido", "saldo_pagado"].includes(estado)) {
+  // Los 4 estados de "cobro: todo" (ver EST en panel/orders.js). Antes faltaba "confirmada":
+  // el panel nunca la ofrece para un físico (renderSeg reajusta el estado al cambiar de
+  // producto), pero la función venta-manual acepta el estado que le manden SIN validar → un
+  // físico en "confirmada" cobraba su extra digital y no lo entregaba nunca, sin aviso.
+  if (esFisico && ["entregado_cobrado", "recogido", "saldo_pagado", "confirmada"].includes(estado)) {
     try { await entregarExtrasDigitales(db, channelId, contactId, orderId); } catch (e) { console.error("[ventaManual] extras dig fisico:", (e as any)?.message ?? e); }
   }
 
@@ -2946,7 +2963,10 @@ function pagoRealYVuelto(run: Run, esperadoTotal: number): { amount: number; vue
   // TOPE (decisión de Rodrigo, "topar en todo"): la venta cuenta SIEMPRE el precio
   // del producto; si pagó (o el OCR leyó) de más, el excedente es VUELTO, no venta.
   // Así ni el Dashboard ni Meta se inflan por un sobrepago o un misread del OCR.
-  const pagado = Number(run.vars.pago_monto);
+  // parseMonto, NO Number: el OCR devuelve el monto como lo ve en la captura ("1,234.00"),
+  // y Number() de eso es NaN → el vuelto salía 0 y al cliente que pagó de más NUNCA se le
+  // acreditaba el excedente, justo en las ventas grandes (≥ S/1,000) que es donde duele.
+  const pagado = parseMonto(run.vars.pago_monto, {}) ?? NaN;
   const vuelto = (Number.isFinite(pagado) && pagado > esperadoTotal + 0.5) ? +(pagado - esperadoTotal).toFixed(2) : 0;
   return { amount: +esperadoTotal.toFixed(2), vuelto };
 }
@@ -3986,7 +4006,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // confirmación (foto random, o sin IA configurada) NO interceptamos.
   if (!parsed || parsed.es_pago !== true) return false;
   await setField(db, channelId, contactId, "_prepago_adel_url", url);
-  await setField(db, channelId, contactId, "_prepago_adel_monto", String(Number(parsed?.monto) || ""));
+  await setField(db, channelId, contactId, "_prepago_adel_monto", String(parseMonto(parsed?.monto, {}) ?? ""));
   await setField(db, channelId, contactId, "_prepago_adel_oper", parsed?.operacion ? String(parsed.operacion).trim() : "");
   await setField(db, channelId, contactId, "_prepago_adel_ok", parsed?.valido ? "si" : "no");
   await logEvent(db, channelId, contactId, "nota", "Pago del adelanto recibido ANTES de sus datos", "Guardado — se engancha al crear el pedido");
@@ -4002,7 +4022,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
 async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: string, ctx: any): Promise<void> {
   const url = String(ctx._prepago_adel_url ?? "").trim();
   if (!url) return;
-  const monto = Number(ctx._prepago_adel_monto);
+  const monto = parseMonto(ctx._prepago_adel_monto, ctx) ?? NaN;
   const oper = String(ctx._prepago_adel_oper ?? "").trim() || null;
   const okIa = String(ctx._prepago_adel_ok ?? "") === "si";
   const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
@@ -4560,7 +4580,9 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // interceptamos: la IA sigue atendiendo normal.
   if (parsed && parsed.es_pago === false) return false;
 
-  const monto = Number(parsed?.monto);
+  // parseMonto, no Number: el OCR devuelve el monto tal como lo ve en la captura
+  // ("1,234.00") y Number() de eso es NaN → el adelanto entraba sin monto legible.
+  const monto = parseMonto(parsed?.monto, {}) ?? NaN;
   const oper = parsed?.operacion ? String(parsed.operacion).trim() : null;
   const metodo = metodoLeido(parsed);
   let reuse = false;
@@ -4752,7 +4774,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   // quedaba sin señal (ni tarjeta ni Telegram), la clave nunca salía → dead-air invisible.
   if (parsed && parsed.es_pago === false) return false;
 
-  const monto = Number(parsed?.monto);
+  // Ídem que el adelanto: un saldo de "1,234.00" leído con Number() daba NaN.
+  const monto = parseMonto(parsed?.monto, {}) ?? NaN;
   const oper = parsed?.operacion ? String(parsed.operacion).trim() : null;
   const metodo = metodoLeido(parsed ?? {});
 
@@ -7890,7 +7913,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // El pedido principal YA existe: se marca para aprobar el extra,
               // NO se crea otro pedido (el extra se suma como bump al aprobar).
               const oid = run.vars._order_id as string | undefined;
-              const montoX = Number(cfg.monto_esperado ? resolve(String(cfg.monto_esperado), ctx) : 0) || Number(run.vars.pago_monto) || 0;
+              // parseMonto en ambos: con Number(), un monto con coma de miles ("1,234.00")
+              // daba NaN → el aviso a Telegram salía sin monto (o en 0).
+              const montoX = (cfg.monto_esperado ? (parseMonto(cfg.monto_esperado, ctx) ?? 0) : 0) || (parseMonto(run.vars.pago_monto, ctx) ?? 0) || 0;
               if (oid) {
                 const { data: cur } = await db.from("orders").select("shipping").eq("id", oid).maybeSingle();
                 await db.from("orders").update({
@@ -7909,7 +7934,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 { cliente: quien, extra: cfg._extra_label ?? "Venta extra", monto: montoX || "" },
                 { foto: url, botones: oid ? [[{ text: "✅ Aprobar y entregar", data: `extra_ok:${oid}` }]] : undefined });
             } else {
-              const amount = Number(ctx.precio_esperado) || Number(run.vars.pago_monto) || 0;
+              // Ídem: si no hay precio_esperado se cae al monto leído por el OCR, y con
+              // Number() una venta de "1,299.00" aterrizaba como pedido digital en S/0.
+              const amount = (parseMonto(ctx.precio_esperado, ctx) ?? 0) || (parseMonto(run.vars.pago_monto, ctx) ?? 0) || 0;
               const ship: Record<string, unknown> = {
                 digital_pendiente: true, digital_comprobante: url,
                 digital_monto_leido: run.vars.pago_monto ?? null,

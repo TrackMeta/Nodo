@@ -703,7 +703,10 @@ async function openProduct(id){
 async function deleteProduct(){
   if(!st.prod) return;
   if(!await confirmDialog({title:"Eliminar producto",message:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones. Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
-  await supa.from("product_versions").delete().eq("product_id",st.prod.id);
+  // Igual que al borrar un flujo: product_versions cuelga del producto con `on delete
+  // cascade` (migración 0005). Borrarlas a mano ANTES y sin mirar el error significaba que,
+  // si el delete del producto fallaba, el producto quedaba vivo pero SIN presentaciones ni
+  // precios — el usuario leía "no se pudo eliminar" con el producto ya destrozado.
   const { error }=await supa.from("products").delete().eq("id",st.prod.id);
   if(error){ toast(error.message,true); return; }
   st.prod=null; toast("Producto eliminado ✓"); showGrid(); await loadProducts();

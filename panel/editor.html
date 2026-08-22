@@ -1411,8 +1411,11 @@ async function createFlow(){
 async function deleteFlow(){
   if(!st.flowId||!st.flow){ toast("No hay flujo abierto",true); return; }
   if(!await confirmDialog({title:"Eliminar flujo",message:`¿Eliminar "${st.flow.nombre}"? Se borrarán sus nodos y conexiones. Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
-  await supa.from("flow_edges").delete().eq("flow_id",st.flowId);
-  await supa.from("flow_nodes").delete().eq("flow_id",st.flowId);
+  // Solo se borra el FLUJO: flow_nodes/flow_edges/flow_triggers cuelgan de él con
+  // `on delete cascade` (migración 0005), así que la base los limpia en la MISMA
+  // transacción. Antes se borraban los nodos y las conexiones a mano ANTES y sin mirar
+  // el error: si el delete del flujo fallaba (RLS, red), el flujo seguía existiendo
+  // pero ya VACÍO — el usuario veía "no se pudo eliminar" con su flujo destruido.
   const { error }=await supa.from("flows").delete().eq("id",st.flowId);
   if(error){ toast(error.message,true); return; }
   // `dirty` también: si el flujo se borra CON cambios sin guardar, la bandera quedaba

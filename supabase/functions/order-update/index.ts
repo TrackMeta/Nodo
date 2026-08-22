@@ -472,8 +472,21 @@ Deno.serve(async (req) => {
       // que el negocio use una plantilla (como hace el scheduler).
       try {
         if (await ventana24hAbierta(db, (order as any).contact_id)) {
-          await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }, (order as any).id);
-          avisoEnviado = "default";
+          // Estar DENTRO de la ventana no garantiza que salga: Meta igual puede rechazar
+          // (número inválido, media mala, límite). deliverStep devuelve false en ese caso y
+          // NO lanza → marcar "default" a ciegas repite el mismo bug que el de fuera de
+          // ventana, y para saldo_pagado eso es la CLAVE DE RECOJO dada por enviada. Espeja
+          // la rama del aviso propio (arriba), que sí chequea el booleano.
+          if (await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles: [{ text: txt }] }, (order as any).id)) {
+            avisoEnviado = "default";
+          } else {
+            avisoError = "Meta rechazó el envío del aviso";
+            await avisarEnvioFallido(db, (order as any).channel_id, (order as any).contact_id, {
+              message: newEstado === "saldo_pagado"
+                ? "No pude enviar la CLAVE DE RECOJO (WhatsApp rechazó el envío). Mándasela a mano — la necesita para recoger su pedido ya pagado."
+                : `No pude avisar al cliente el cambio a "${newEstado}" (WhatsApp rechazó el envío). Avísale a mano.`,
+            }, { critico: true }).catch(() => {});
+          }
         } else {
           console.warn(`[order-update] aviso default de "${newEstado}" NO enviado: fuera de la ventana de 24h.`);
           // Fuera de la ventana el aviso NO salió. Para saldo_pagado eso es la CLAVE DE
