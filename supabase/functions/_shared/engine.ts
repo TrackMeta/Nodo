@@ -3127,8 +3127,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // pedido" no podía preseleccionar la presentación (mostraba "— sin presentación —")
     // y el Dashboard nunca podía desglosar las ventas por variante. Otra vez una rama
     // implementada y su gemela no.
-    const _vid = String(ctx.opcion_id ?? "").trim();
-    const versionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_vid) ? _vid : null;
+    const versionId = versionIdDe(ctx);
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionId,
@@ -4898,6 +4897,14 @@ const COMPRADO_STATES = new Set([
 // Provincia en FULFILLMENT con el SALDO todavía pendiente: pagó el adelanto pero
 // aún debe el saldo (y por eso no tiene su clave de recojo). Acá el bot NO está
 // en "soporte post-venta" sino COBRANDO el saldo — no re-vende y JAMÁS da la clave.
+// La PRESENTACIÓN comprada (product_versions.id), lista para guardar en
+// `orders.version_id`. Se valida que sea un UUID: `ctx.opcion_id` puede venir vacío
+// (el cliente aún no eligió) o con basura de un flujo viejo, y un texto suelto en una
+// FK rompe el insert entero — sin presentación es preferible null.
+function versionIdDe(ctx: any): string | null {
+  const v = String(ctx?.opcion_id ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+}
 const SALDO_PENDIENTE = new Set(["adelanto_validado", "por_despachar", "despachado", "en_agencia"]);
 
 // Limpia los candados `una_vez` de venta/aviso para que una RECOMPRA cree un
@@ -7952,7 +7959,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 if (!reusado) {
                   const { data: ord } = await db.from("orders").insert({
                     channel_id: run.channel_id, contact_id: run.contact_id,
-                    product_id: (cc as any)?.product_id ?? null,
+                    product_id: (cc as any)?.product_id ?? null, version_id: versionIdDe(ctx),
                     amount, currency: String(ctx.moneda || "PEN"), estado: "pendiente", shipping: ship,
                   }).select("id").single();
                   if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
@@ -8098,7 +8105,7 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
     await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
-      product_id: (c as any)?.product_id ?? null,
+      product_id: (c as any)?.product_id ?? null, version_id: versionIdDe(ctx),
       amount: Number.isFinite(value as number) ? value : 0,
       currency, order_id: orderId ?? null, estado: "confirmada",
       confirmed_at: new Date().toISOString(),

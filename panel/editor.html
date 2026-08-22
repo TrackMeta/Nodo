@@ -1379,7 +1379,10 @@ async function deleteFlow(){
   await supa.from("flow_nodes").delete().eq("flow_id",st.flowId);
   const { error }=await supa.from("flows").delete().eq("id",st.flowId);
   if(error){ toast(error.message,true); return; }
-  st.flowId=null; st.flow=null; toast("Flujo eliminado ✓"); showOverview(); await loadFlows();
+  // `dirty` también: si el flujo se borra CON cambios sin guardar, la bandera quedaba
+  // encendida y el navegador seguía avisando "tienes cambios sin guardar" al salir…
+  // de un flujo que ya no existe. El botón "atrás" (backBtn) sí la limpiaba; acá no.
+  st.dirty=false; st.flowId=null; st.flow=null; toast("Flujo eliminado ✓"); showOverview(); await loadFlows();
 }
 
 // ── Guardar ──
