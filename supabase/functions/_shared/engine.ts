@@ -3063,8 +3063,9 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
 
     // Congela el costo de la mercadería EN el pedido, para que cambiar el costo
     // del producto después no altere los márgenes ya cerrados (snapshot).
-    // Prioridad: costo de la OPCIÓN elegida (absoluto — para variantes/packs con
-    // costo distinto); si no lo tiene, el costo UNITARIO del producto × unidades.
+    // Prioridad: costo de la OPCIÓN elegida (por unidad — para variantes/packs con
+    // costo distinto); si no lo tiene, el costo del producto. Ambos son POR UNIDAD y
+    // se multiplican por las unidades de la presentación (ver detalle abajo).
     try {
       const pid = (c as any)?.product_id;
       if (pid) {

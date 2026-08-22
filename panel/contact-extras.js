@@ -2148,7 +2148,15 @@ export function copilotoEtapa(o) {
   const s = o.shipping || {};
   if (o.estado === "pendiente" && s.digital_pendiente) return { id: "digital", titulo: "Pago digital por validar", pill: "dig" };
   if (s.extra_pendiente) return { id: "extra", titulo: "Venta extra por validar", pill: "ext" };
-  if (o.estado === "esperando_adelanto") return { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" };
+  // Igual que el saldo (abajo): "Adelanto por validar" SOLO si el cliente YA mandó su
+  // comprobante. `esperando_adelanto` es "le pedí el adelanto", no "ya me pagó" — sin
+  // esta condición la tarjeta salía en todo lead al que se le pidió un adelanto, y como
+  // la imagen cae a `fallbackImg` (la última del chat) le pegaba una foto cualquiera
+  // como si fuera el comprobante.
+  if (o.estado === "esperando_adelanto") {
+    return (s.adelanto_comprobante || s.adelanto_recibido_at)
+      ? { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" } : null;
+  }
   // en_agencia es "Saldo por validar" SOLO si el cliente ya pagó el saldo (llegó
   // su comprobante). En agencia sin pago = esperando que paguen: no hay nada que
   // aprobar y NO se muestra el comprobante del ADELANTO como si fuera el del saldo.

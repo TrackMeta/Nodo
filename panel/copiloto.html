@@ -191,6 +191,13 @@ function render(){
     // paguen", no "por validar": no debe pedir aprobar+dar clave ni mostrar el
     // comprobante del ADELANTO como si fuera el del saldo.
     if(et.id==="saldo")   items=items.filter(o=>{ const s=o.shipping||{}; return s.saldo_comprobante||s.saldo_recibido_at; });
+    // Gemelo del de arriba, que faltaba: "Adelanto por validar" SOLO si el cliente YA
+    // mandó su comprobante. `esperando_adelanto` significa "le pedí el adelanto", no
+    // "ya me pagó": sin esto, TODO lead al que se le pidió un adelanto aparecía acá
+    // bajo el texto "El cliente pagó el adelanto, falta tu visto bueno" — y al abrirlo
+    // no había ningún pago (o peor, el fallback st.imgs le pegaba una imagen vieja
+    // cualquiera del chat como si fuera el comprobante).
+    if(et.id==="adelanto") items=items.filter(o=>{ const s=o.shipping||{}; return s.adelanto_comprobante||s.adelanto_recibido_at; });
     // Un pago RECHAZADO no debe reaparecer mostrando el mismo comprobante como si
     // siguiera pendiente: se excluye hasta que llegue uno NUEVO (recibido_at posterior
     // al rechazado_at). Digital/extra ya salen al rechazar (*_pendiente:false); acá se
