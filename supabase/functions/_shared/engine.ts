@@ -7358,6 +7358,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "2. NUNCA anuncies que va a llegar otro mensaje. Los del sistema (datos de pago, adelanto, guía, clave de " +
       "recojo, instrucciones de entrega) salen solos y al instante. Da igual cómo lo digas — \"en breve\", \"ahora\", " +
       "\"enseguida\", \"te va a llegar\", \"recibirás\" —: está prohibido en cualquier forma. Termina tu mensaje y ya.\n" +
+      "   MAL: \"Queda confirmado. En breve te llegará el monto del adelanto y los datos de pago.\"\n" +
+      "   MAL: \"Listo. Ahora recibirás un mensaje con los datos para el adelanto.\"\n" +
+      "   BIEN: \"Listo, queda confirmado tu pedido a nombre de Rosa, con recojo en la agencia de Cusco.\" (y cortas ahí)\n" +
       "3. No narres pasos que NO han pasado ni hables de \"el sistema\", \"un asesor\" o \"el área de pagos\" " +
       "en tercera persona. Habla del presente y de lo que le toca al cliente ahora.\n" +
       "4. Si le pasas datos de pago, di SIEMPRE el monto exacto en el MISMO mensaje. Nunca lo invites a pagar sin " +
