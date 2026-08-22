@@ -651,9 +651,15 @@ function addNode(tipo){
   const handles=[...def.handles];
   const ins = def.inputs===0 ? 0 : 1;
   const wrap=$("drawflow"), z=editor.zoom||1;
-  const jitter=(Object.keys(st.model).length%5)*26;
-  const x=((wrap.clientWidth/2)-(editor.canvas_x||0))/z - 110 + jitter;
-  const y=((wrap.clientHeight/2)-(editor.canvas_y||0))/z - 50 + jitter;
+  // Los nodos miden ~200×97, así que el desplazamiento en diagonal de 26 px que había
+  // antes NO los separaba: cada nodo nuevo tapaba al anterior y había que arrastrarlos
+  // uno por uno. Encima el `%5` hacía que el sexto cayera EXACTAMENTE sobre el primero.
+  // Ahora se reparten en una cuadrícula con paso mayor que el tamaño del nodo: 16
+  // posiciones sin pisarse antes de repetir.
+  const n=Object.keys(st.model).length;
+  const col=n%4, fila=Math.floor(n/4)%4;
+  const x=((wrap.clientWidth/2)-(editor.canvas_x||0))/z - 340 + col*230;
+  const y=((wrap.clientHeight/2)-(editor.canvas_y||0))/z - 180 + fila*125;
   // nota/fin nunca son el paso inicial; el resto sí si es el primero.
   const canInit = tipo!=="nota" && tipo!=="fin";
   const m={ uuid, tipo, nombre:NODE_TYPES[tipo]?.label||tipo, config:defaultConfig(tipo), handles, es_inicial:canInit && Object.keys(st.model).length===0 };
