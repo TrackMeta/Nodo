@@ -802,7 +802,12 @@ async function load(){
   const monedaAdsRara = gastoAds>0 && (_admRows.some(m=>m.account_currency && String(m.account_currency).toUpperCase()!==CUR) || _admRows.every(m=>!m.account_currency));
   // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
   // físico = margen (los que tienen costo registrado).
-  let bruta=0, sinCostoF=0;
+  // `cogsBruta` = lo que COSTÓ producir/entregar exactamente los pedidos que sí
+  // entraron en `bruta` (mercadería + flete + empaque). Se acumula acá, y no con el
+  // total de "Costo de productos", para que ganancia e inversión hablen del MISMO
+  // universo: un físico sin flete no aporta margen, así que tampoco debe aportar
+  // costo — si no, el ROI mezclaría el costo de 13 pedidos con la ganancia de 3.
+  let bruta=0, sinCostoF=0, cogsBruta=0;
   // Ganancia sobre ventasOk (SIN perdidos): un rechazado/no_recogido resta su COGS
   // como si la mercadería se hubiera perdido, pero el paquete VUELVE (solo se pierde
   // el flete). El digest (order-stats.ts:131) ya excluye perdidos de la ganancia; el
@@ -813,10 +818,12 @@ async function load(){
       // Antes sumaba solo cobrado y el costo digital salía en el COGS pero nunca
       // se restaba → la neta quedaba inflada.
       const cd=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
-      bruta+=O.cobrado(o)-(cd||0); return;
+      bruta+=O.cobrado(o)-(cd||0); cogsBruta+=(cd||0); return;
     }
     const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
-    if(m==null) sinCostoF++; else bruta+=m;
+    // cobrado − margen = todo lo que costó ese pedido (mercadería + flete + empaque),
+    // sin volver a sumarlo pieza por pieza.
+    if(m==null) sinCostoF++; else { bruta+=m; cogsBruta+=O.cobrado(o)-m; }
   });
   // Gastos extra (operativos, registrados a mano). Son overhead del negocio,
   // así que solo se restan en la vista general ("Todo"), no por segmento.
@@ -825,11 +832,13 @@ async function load(){
   const neta = bruta - gastoAds - gastosExtra;
   const roas = gastoAds>0 ? cobrado/gastoAds : 0;
   const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
-  // ROI ≠ ROAS. El ROAS mide FACTURACIÓN por sol de anuncios; el ROI mide GANANCIA
-  // por sol invertido, así que descuenta la mercadería, el envío y los gastos extra.
-  // Un ROAS de 3× con margen del 25% es plata perdida y el ROAS solo no lo dice.
-  // La inversión son los anuncios + los gastos operativos que registró el usuario.
-  const inversion = gastoAds + gastosExtra;
+  // ROI ≠ ROAS. El ROAS mide FACTURACIÓN por sol de ANUNCIOS; el ROI mide GANANCIA
+  // por sol invertido en TODO. La inversión no son solo los anuncios: la mercadería,
+  // el flete y el empaque también son plata que pusiste, y suelen ser la mayor parte.
+  // (Primera versión de esto solo dividía entre ads + gastos extra, lo que inflaba el
+  // ROI muchísimo: con S/665 de mercadería fuera de la cuenta, el número no significaba
+  // nada. Lo cazó Rodrigo.)
+  const inversion = cogsBruta + gastoAds + gastosExtra;
   const roiPct = inversion>0 ? Math.round(neta/inversion*100) : null;
 
   // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
@@ -905,9 +914,9 @@ async function load(){
   // confiable y el ROI tampoco — se dice, en vez de mostrar un número bonito.
   K.push(kpi("trending", roiPct==null?"#6d8ea0":roiPct>=0?"#22c079":"#e2564a", "ROI",
     roiPct==null ? "—" : (roiPct>0?"+":"")+roiPct+"%",
-    roiPct==null ? (inversion>0?"—":"registra anuncios o gastos para verlo")
+    roiPct==null ? "registra costos, anuncios o gastos para verlo"
       : sinCostoF ? `⚠ faltan costos en ${sinCostoF} pedido${sinCostoF>1?"s":""} — cifra incompleta`
-      : `ganas ${money(neta)} por ${money(inversion)} invertidos`));
+      : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
   K.push(kpi("wallet", neta<0?"#e2564a":"#22c079", "Ganancia neta", money(neta), monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
   // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
