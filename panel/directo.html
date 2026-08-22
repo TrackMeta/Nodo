@@ -425,11 +425,30 @@ function filtered(){
   else if(s==="intentos") list.sort((a,b)=>nInt(b)-nInt(a));
   else if(s==="activity") list.sort((a,b)=>new Date(b.ultimo_mensaje_at||b.created_at)-new Date(a.ultimo_mensaje_at||a.created_at));
   else{
-    // prioridad: reagendados vencidos/hoy primero, luego por etapa, luego actividad
+    // prioridad: reagendados vencidos/hoy primero, luego urgencia, luego actividad.
+    // La ETAPA sola ordenaba al revés de lo útil: "confirmado" pesa más que
+    // "interesado", así que arriba salían clientes cuyo pedido YA está despachado o en
+    // reparto (no hay nada que cerrar por teléfono) y al fondo quedaba justo a quién
+    // llamar — el que dio todos sus datos y no pagó el adelanto, o el que pidió hablar
+    // con una persona. Ahora manda el ESTADO DEL PEDIDO, que es lo que dice si la venta
+    // sigue en juego.
     const today=todayStr();
     const due=(c)=>{ const n=dirOf(c).next_call_at; return (n && n<=today)?0:1; };
+    // 3 = la venta está trabada y una llamada la rescata · 2 = sin pedido, aún se vende
+    // · 1 = pedido en curso, el bot/logística siguen · 0 = ya cobrado, nada que cerrar.
+    const urgencia=(c)=>{
+      const o=lastOrder(c);
+      if(!o) return c.bot_activo===false ? 3 : 2;   // sin pedido: si pidió humano, urge
+      const est=String(o.estado||"");
+      if(est==="esperando_adelanto"||est==="pendiente") return 3;
+      const m=O.EST[est]||{};
+      if(m.perdido) return 0;
+      if(m.cobro==="todo") return 0;                 // ya pagó todo
+      return 1;
+    };
     list.sort((a,b)=>{
       const da=due(a),db=due(b); if(da!==db) return da-db;
+      const ua=urgencia(a), ub=urgencia(b); if(ua!==ub) return ub-ua;
       const wa=STAGE_W[a.stage||"nuevo"]??2, wb=STAGE_W[b.stage||"nuevo"]??2; if(wa!==wb) return wb-wa;
       return new Date(b.ultimo_mensaje_at||b.created_at)-new Date(a.ultimo_mensaje_at||a.created_at);
     });
