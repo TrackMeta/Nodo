@@ -459,6 +459,9 @@ const IC={
   receipt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
   wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/><path d="M21 12a2 2 0 0 0-2-2h-4a2 2 0 0 0 0 4h4a2 2 0 0 0 2-2Z"/></svg>',
   box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.8 10A10 10 0 1 1 17 3.3"/><path d="m9 11 3 3L22 4"/></svg>',
+  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  trending:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>',
 };
 
 // ── Filtro de fechas (date-range picker: presets + 2 meses) ─────────
@@ -822,6 +825,12 @@ async function load(){
   const neta = bruta - gastoAds - gastosExtra;
   const roas = gastoAds>0 ? cobrado/gastoAds : 0;
   const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
+  // ROI ≠ ROAS. El ROAS mide FACTURACIÓN por sol de anuncios; el ROI mide GANANCIA
+  // por sol invertido, así que descuenta la mercadería, el envío y los gastos extra.
+  // Un ROAS de 3× con margen del 25% es plata perdida y el ROAS solo no lo dice.
+  // La inversión son los anuncios + los gastos operativos que registró el usuario.
+  const inversion = gastoAds + gastosExtra;
+  const roiPct = inversion>0 ? Math.round(neta/inversion*100) : null;
 
   // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
   // Mismo criterio que la banda: digital = cobrado (sin COGS), físico = margen.
@@ -853,8 +862,14 @@ async function load(){
     // así que la misma palabra daba dos números distintos en dos pantallas (13 vs 5) y
     // parecía un error de cuentas. Este KPI son las confirmadas — se dice así, y se
     // muestra cuántas ya se cobraron para que el puente con las otras pantallas se vea.
-    kpi("cart","#22c079","Ventas confirmadas", compras,
-      cobradasFull ? `el cliente ya dijo que sí · ${cobradasFull} ya cobrada${cobradasFull===1?"":"s"}` : "el cliente ya confirmó la compra"),
+    kpi("cart","#22c079","Ventas confirmadas", compras, "el cliente ya dijo que sí"),
+    // Las CERRADAS (cobradas al 100%) son su propio número: es el mismo criterio de
+    // Compras y del Embudo, así que tener las dos cifras juntas evita el "13 acá y 5
+    // allá" que parecía un descuadre. El resto está en curso, no perdido.
+    kpi("check","#22c079","Ventas cerradas", cobradasFull,
+      compras>cobradasFull
+        ? `cobradas al 100% · ${compras-cobradasFull} en curso`
+        : (cobradasFull?"cobradas al 100%":"ninguna cobrada del todo aún")),
     kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto deja cada venta"),
     kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
     kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
@@ -875,7 +890,24 @@ async function load(){
     : (sinCostoF ? `tras mercadería y envío · faltan ${sinCostoF} costo${sinCostoF>1?"s":""}` : "tras mercadería y envío");
   K.push(kpi("chart","#22c079","Ganancia bruta", money(bruta), brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
-    (hasAds ? `${pctAds}% de lo cobrado${roas>0?` · ROAS ${roas.toFixed(1)}×`:""}` : "conecta Meta en Ajustes") + (monedaAdsRara?" · ⚠ moneda sin convertir":"")));
+    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · ⚠ moneda sin convertir":"")));
+  // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
+  // anuncios"). Es el número por el que se decide subir o bajar la inversión, así que
+  // merece verse solo. Sin gasto cargado NO se inventa un número: se dice qué falta.
+  // Va sobre lo COBRADO, no lo vendido: mide plata que entró contra plata que salió.
+  K.push(kpi("target", roas>=2?"#22c079":roas>0?"#f0a92b":"#6d8ea0", "ROAS",
+    (hasAds && roas>0) ? roas.toFixed(1)+"×" : "—",
+    !hasAds ? "conecta Meta para verlo"
+      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · ⚠ moneda sin convertir":""}`
+      : "aún sin cobrar nada en este período"));
+  // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
+  // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
+  // confiable y el ROI tampoco — se dice, en vez de mostrar un número bonito.
+  K.push(kpi("trending", roiPct==null?"#6d8ea0":roiPct>=0?"#22c079":"#e2564a", "ROI",
+    roiPct==null ? "—" : (roiPct>0?"+":"")+roiPct+"%",
+    roiPct==null ? (inversion>0?"—":"registra anuncios o gastos para verlo")
+      : sinCostoF ? `⚠ faltan costos en ${sinCostoF} pedido${sinCostoF>1?"s":""} — cifra incompleta`
+      : `ganas ${money(neta)} por ${money(inversion)} invertidos`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
   K.push(kpi("wallet", neta<0?"#e2564a":"#22c079", "Ganancia neta", money(neta), monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
   // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
