@@ -6297,6 +6297,21 @@ const RUIDO_SEDE = /\b(shalom|olva|agencia|agencias|sede|oficina|sucursal|termin
 function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; motivo?: string } {
   const s = String(valor ?? "").trim();
   if (!s) return { ok: false, motivo: "vacío" };
+  // Atributo ENUMERABLE (talla, color…): el valor tiene que EXISTIR en el catálogo.
+  // snapValorVariante devuelve el valor crudo cuando no encaja con ninguna opción, así que
+  // nadie comprobaba que existiera: el cliente pedía una talla que no vendes ("42" con un
+  // catálogo de 38-40), la IA respondía "perfecto, ya tengo tu talla 42" y CERRABA la venta.
+  // Quedaba un pedido imposible de despachar, sin stock que descontar (la clave "Talla=42"
+  // no existe) y sin una sola alerta. Como el DNI y la sede: por prompt no alcanza, se
+  // verifica por código. El motivo le dice a la IA qué ofrecer en su lugar.
+  const opciones = parseValores((v as any).valores);
+  if (opciones.length) {
+    const canon = snapValorVariante(s, opciones.join(","));
+    const existe = opciones.some((o) => String(o).trim().toLowerCase() === String(canon).trim().toLowerCase());
+    if (!existe) {
+      return { ok: false, motivo: `no manejamos "${s}" — las opciones son: ${opciones.join(", ")}. Dile cuáles hay y pídele que elija una.` };
+    }
+  }
   if (v.validar === "dni") {
     const d = s.replace(/\D/g, "");
     if (d.length !== 8) return { ok: false, motivo: `el DNI debe tener 8 dígitos (mandó ${d.length})` };
@@ -7439,7 +7454,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "apartado: lo único que aparta unidades es un pedido creado. Tampoco metas presión con escasez inventada.\n" +
       "6. Si el cliente hizo una pregunta y quedó sin responder —típico con su PRIMER mensaje, que lo contesta un saludo " +
       "automático— respóndela ahora, antes de seguir vendiendo. Revisa la conversación: si preguntó por garantía, " +
-      "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.",
+      "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.\n" +
+      "7. Cuando el cliente YA decidió (\"quiero el básico\", \"me llevo el premium\", \"ya, lo quiero\", \"sí, ese\"), " +
+      "NO le pidas permiso para cobrarle. Ya te dijo que sí: cierra y sigue. Preguntarle \"¿te paso los datos de pago?\" " +
+      "lo obliga a decir que sí DOS veces, y en ese paso de más es donde se enfrían las ventas.\n" +
+      "   MAL: \"Perfecto, el plan Básica cuesta S/ 99. ¿Quieres que te envíe los datos de pago?\"\n" +
+      "   MAL: \"El Premium es S/ 199. ¿Te paso los datos para que puedas hacer el pago?\"\n" +
+      "   BIEN: \"¡Perfecto! Te confirmo el plan Básica por S/ 99.\" (y cortas ahí — los datos de pago salen solos)\n" +
+      "8. NUNCA des por confirmado un pedido si te falta un dato del producto (la talla, el color, la presentación). " +
+      "Si el cliente pidió una variante que no manejas, dile cuáles hay y espera a que elija: sin ese dato el pedido " +
+      "NO se crea, y si igual dices \"queda confirmado\" el cliente se queda esperando algo que nunca se registró.\n" +
+      "   MAL: \"Listo, queda confirmado tu pedido talla 41.\" (cuando solo manejas 38, 39 y 40)\n" +
+      "   BIEN: \"En la 41 no la tengo — manejo 38, 39 y 40. ¿Cuál te va?\"",
     );
 
     // La regla de arriba, sola, no alcanzaba: el PRIMER mensaje del cliente lo
