@@ -442,6 +442,12 @@ const IA_OPS = [
   ["generar_texto","Generar texto (respuesta al cliente)"],
   ["analizar_imagen","Analizar imagen (OCR de comprobante)"],
   ["extraer","Extraer datos (JSON)"],
+  // `clasificar` FALTABA aunque el motor la soporta (engine.ts) y el generador de
+  // flujos crea estos nodos (los "¿Lo quiere?" de cada extra). Sin la opción en la
+  // lista, el <select> caía al primer valor y mostraba "Generar texto" para un
+  // clasificador: la UI mentía, no se podían ver sus rutas, y tocar el selector
+  // DESTRUÍA su configuración (que/opciones/umbral/default).
+  ["clasificar","Clasificar respuesta (elige una ruta)"],
 ];
 const IA_PROV = [
   ["auto","Automático (el del canal)"],
@@ -498,6 +504,36 @@ function buildIA(m, body){
 
   body.appendChild(mkLabel("Operación"));
   body.appendChild(mkSelect(IA_OPS, op, (v)=>{ m.config.operacion=v; updateNodeDom(m); renderContent(); }));
+
+  // Un clasificador no usa "prompt": usa QUÉ decide + las RUTAS posibles. Se muestran
+  // sus campos propios en vez de los de generar_texto (que salían vacíos y confundían).
+  if(op==="clasificar"){
+    body.appendChild(mkLabel("¿Qué está decidiendo?"));
+    body.appendChild(mkTextarea(m.config.que, (v)=>m.config.que=v, "50px"));
+
+    const ops = Array.isArray(m.config.opciones) ? m.config.opciones : [];
+    body.appendChild(mkLabel(`Rutas (${ops.length}) — cada una es una salida del nodo`));
+    const box=document.createElement("div");
+    box.style.cssText="font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:9px 11px;line-height:1.6";
+    box.textContent = ops.length
+      ? ops.map(o=>`· ${o?.label||o?.clave||"?"}${o?.detalle?` — ${o.detalle}`:""}`).join("\n")
+      : "Sin rutas configuradas.";
+    box.style.whiteSpace="pre-wrap";
+    body.appendChild(box);
+
+    body.appendChild(mkLabel("Si no alcanza la confianza, usar esta ruta"));
+    body.appendChild(mkInput(m.config.default, (v)=>m.config.default=v));
+
+    body.appendChild(mkLabel("Confianza mínima (0 a 1)"));
+    body.appendChild(mkInput(m.config.umbral, (v)=>{ const n=Number(v); m.config.umbral=Number.isFinite(n)?n:v; }));
+
+    body.appendChild(mkLabel("Guardar la ruta elegida en (campo)"));
+    body.appendChild(mkInput(m.config.guardar_en, (v)=>{ m.config.guardar_en=v; updateNodeDom(m); }));
+
+    body.appendChild(mkLabel("Proveedor"));
+    body.appendChild(mkSelect(IA_PROV, prov, (v)=>{ m.config.proveedor=v; renderContent(); }));
+    return;
+  }
 
   body.appendChild(mkLabel(op==="analizar_imagen" ? "Prompt (qué extraer de la imagen)" : "Prompt (instrucción para la IA)"));
   body.appendChild(mkTextarea(m.config.prompt, (v)=>m.config.prompt=v, "90px"));
