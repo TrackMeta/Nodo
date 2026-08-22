@@ -212,7 +212,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -521,7 +521,10 @@ async function toggleBot(c){
 // Excluir / volver a incluir en el remarketing (secuencias y reenganche). Se
 // prende solo cuando el cliente pide baja; acá se puede quitar o poner a mano.
 async function setNoRemarketing(ids, val){
-  const { error }=await supa.from("contacts").update({ no_remarketing:val }).in("id",ids);
+  // Por trozos: con "seleccionar todo" la lista de ids viaja en la URL y el servidor la
+  // rechaza pasados ~600 (medido: 800 → 400). Antes la acción fallaba entera.
+  let error=null;
+  for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ no_remarketing:val }).in("id",trozo); if(r.error){ error=r.error; break; } }
   if(error){ toast(error.message,true); return; }
   toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing ✓`
            :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing ✓`);
@@ -586,14 +589,16 @@ async function bulk(act){
   if(act==="stage"){
     const k=await askChoice({ title:`Mover ${ids.length} a la etapa…`, options:EMBUDO_STAGES.map(s=>({label:s.label,value:s.k,desc:s.desc})) });
     if(!k) return;
-    const { error }=await supa.from("contacts").update({ stage:k }).eq("channel_id",ch).in("id",ids);
+    let error=null;
+    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ stage:k }).eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
     toast(`${ids.length} movido(s) a ${STAGE[k].label} ✓`); await load(); return;
   }
   if(act==="block"||act==="unblock"){
     const on=act==="block";
     if(on && !await confirmDialog({ title:`Bloquear ${ids.length} contacto(s)`, message:"El bot dejará de responderles y saldrán de la bandeja.", confirmText:"Bloquear", danger:true })) return;
-    const { error }=await supa.from("contacts").update({ bloqueado:on }).eq("channel_id",ch).in("id",ids);
+    let error=null;
+    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ bloqueado:on }).eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
     toast(on?`${ids.length} bloqueado(s) ✓`:`${ids.length} desbloqueado(s) ✓`); await load(); return;
   }
@@ -632,7 +637,8 @@ async function bulk(act){
   }
   if(act==="del"){
     if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones e historial. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
-    const { error }=await supa.from("contacts").delete().eq("channel_id",ch).in("id",ids);
+    let error=null;
+    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
     st.sel.clear(); toast(`${ids.length} eliminado(s) ✓`); await load(); return;
   }

@@ -34,34 +34,73 @@ async function expandCampaign(db: SupabaseClient, c: any) {
   await db.from("campaigns").update({ estado: "enviando", total: ids.length }).eq("id", c.id);
 }
 
+// Trae TODAS las filas de una consulta paginando con .range().
+//   PostgREST devuelve como MUCHO 1000 filas por request y el `.limit()` del cliente NO lo
+//   sube — medido contra la base: 1200 filas guardadas, `limit=5000` → 1000 devueltas. Por
+//   eso el viejo `.limit(20000)` de la audiencia no servía de nada.
+//   `makeQuery(from,to)` debe devolver una query FRESCA con `.range(from,to)` y un orden
+//   ESTABLE (un campo + `id` de desempate), o las páginas repiten y saltan filas.
+async function pageAll<T = any>(
+  makeQuery: (from: number, to: number) => any,
+  { pageSize = 1000, max = 50000 }: { pageSize?: number; max?: number } = {},
+): Promise<{ data: T[]; error: any }> {
+  const out: T[] = [];
+  let from = 0;
+  while (from < max) {
+    const { data, error } = await makeQuery(from, from + pageSize - 1);
+    if (error) return { data: out, error };
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: out, error: null };
+}
+// Parte una lista de ids en trozos: un `.in()` con miles de ids arma una URL enorme.
+const enTrozos = <T,>(arr: T[], n: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+};
+
 // Resuelve el segmento { stage:[], tags:[], modo } a ids de contacto.
 // Excluye el contacto de prueba (webchat-test) y los bloqueados de los masivos.
 async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Promise<string[]> {
   const stages: string[] = seg.stage ?? seg.stages ?? [];
-  const base = () => {
+  const base = (f: number, t: number) => {
     let q = db.from("contacts").select("id").eq("channel_id", channelId).neq("wa_id", "webchat-test");
     if (stages.length) q = q.in("stage", stages);
-    return q;
+    return q.order("id", { ascending: true }).range(f, t);
   };
   // Intenta filtrar bloqueados; si la columna no existe (0021 sin aplicar), reintenta sin ese filtro.
-  // Tope alto (20k) para no cortar audiencias grandes en silencio. Si algún día un
-  // canal supera esto, la solución de fondo es paginar con .range(); hoy 20k cubre
-  // de sobra (un negocio con más contactos que eso ya escaló a otro problema).
-  const CAP = 20000;
+  // PAGINADO, no `.limit(20000)`: ese tope era una ilusión (PostgREST corta en 1000 por
+  // request y el limit del cliente no lo sube), así que una campaña a una audiencia de más
+  // de 1000 contactos se enviaba SOLO a los primeros 1000 — y el reporte mostraba ese
+  // número como si fuera la audiencia entera. Justo el "cortar en silencio" que el
+  // comentario anterior creía estar evitando.
+  const CAP = 50000;
   // Excluye bloqueados Y opt-out (no_remarketing): un "no me escriban" es un rechazo
   // DURO que vale para TODO el remarketing (las secuencias y el nudge ya lo respetan;
   // las campañas masivas NO lo hacían → mandaban la plantilla HSM a quien pidió no
   // recibir → quejas, block-rate arriba, riesgo de baneo del número por Meta).
-  let res = await base().neq("bloqueado", true).neq("no_remarketing", true).limit(CAP);
-  if (res.error) res = await base().neq("bloqueado", true).limit(CAP); // por si falta la columna no_remarketing
-  if (res.error) res = await base().limit(CAP);                        // o falta también bloqueado
+  let res = await pageAll((f, t) => base(f, t).neq("bloqueado", true).neq("no_remarketing", true), { max: CAP });
+  if (res.error) res = await pageAll((f, t) => base(f, t).neq("bloqueado", true), { max: CAP }); // por si falta la columna no_remarketing
+  if (res.error) res = await pageAll((f, t) => base(f, t), { max: CAP });                        // o falta también bloqueado
   const { data } = res;
   let ids = (data ?? []).map((r: any) => r.id);
 
   const tags: string[] = seg.tags ?? [];
   if (tags.length && ids.length) {
-    const { data: ct } = await db.from("contact_tags")
-      .select("contact_id, tags!inner(nombre)").in("contact_id", ids);
+    // Por trozos de ids Y paginando: un contacto puede tener varias etiquetas, así que
+    // 1000 contactos ya pasan de 1000 filas. Truncado, el filtro descartaba gente que SÍ
+    // tenía la etiqueta (se quedaba sin sus filas y parecía no tenerla).
+    const ct: any[] = [];
+    for (const trozo of enTrozos(ids, 300)) {
+      const { data } = await pageAll((f, t) => db.from("contact_tags")
+        .select("contact_id, tags!inner(nombre)").in("contact_id", trozo)
+        .order("contact_id", { ascending: true }).range(f, t));
+      ct.push(...(data ?? []));
+    }
     const modo = seg.modo ?? "cualquiera";
     const byContact: Record<string, Set<string>> = {};
     (ct ?? []).forEach((r: any) => { (byContact[r.contact_id] ??= new Set()).add(r.tags.nombre); });
@@ -74,9 +113,17 @@ async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Pr
   // Segmento por estado del ÚLTIMO pedido (embudo de logística = Kanban de Pedidos).
   const orderStates: string[] = seg.order_estados ?? [];
   if (orderStates.length && ids.length) {
-    const { data: ords } = await db.from("orders")
-      .select("contact_id, estado, created_at").in("contact_id", ids)
-      .order("created_at", { ascending: false });
+    // Ídem: por trozos y paginando. Cada contacto entra ENTERO en un trozo, así que el
+    // "último pedido de cada uno" sigue siendo correcto. Truncado, el estado del último
+    // pedido se calculaba sobre una muestra y el segmento metía o dejaba fuera a quien no
+    // tocaba.
+    const ords: any[] = [];
+    for (const trozo of enTrozos(ids, 300)) {
+      const { data } = await pageAll((f, t) => db.from("orders")
+        .select("contact_id, estado, created_at").in("contact_id", trozo)
+        .order("created_at", { ascending: false }).order("id", { ascending: false }).range(f, t));
+      ords.push(...(data ?? []));
+    }
     const latest: Record<string, string> = {};
     (ords ?? []).forEach((o: any) => { if (o.contact_id && !(o.contact_id in latest)) latest[o.contact_id] = o.estado; });
     ids = ids.filter((id) => orderStates.includes(latest[id]));

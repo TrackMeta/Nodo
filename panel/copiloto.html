@@ -80,7 +80,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, enTrozos } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -158,18 +158,23 @@ async function load(){
   st.imgs={}; st.dudas={};
   if(ids.length){
     // Último comprobante entrante por contacto (respaldo si el pedido no lo guardó).
-    const { data:msgs }=await supa.from("messages").select("contact_id,content,ts")
-      .eq("channel_id",st.channelId).in("contact_id",ids).eq("direction","in").eq("type","image")
-      .order("ts",{ascending:false}).limit(400);
-    (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    // Por trozos: la lista de ids viaja en la URL y el servidor la rechaza pasados ~600.
+    for(const trozo of enTrozos(ids)){
+      const { data:msgs }=await supa.from("messages").select("contact_id,content,ts")
+        .eq("channel_id",st.channelId).in("contact_id",trozo).eq("direction","in").eq("type","image")
+        .order("ts",{ascending:false}).limit(400);
+      (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    }
     // Los ⚠️ que dejó el extractor (dirección imprecisa, falta apellido…).
     try{
-      const { data:fv }=await supa.from("contact_field_values")
-        .select("contact_id,value,custom_fields!inner(key)").in("contact_id",ids);
-      (fv||[]).forEach(f=>{
-        const k=f.custom_fields&&f.custom_fields.key;
-        if(k&&k.startsWith("_duda_")&&f.value){ (st.dudas[f.contact_id]=st.dudas[f.contact_id]||[]).push(f.value); }
-      });
+      for(const trozo of enTrozos(ids)){
+        const { data:fv }=await supa.from("contact_field_values")
+          .select("contact_id,value,custom_fields!inner(key)").in("contact_id",trozo);
+        (fv||[]).forEach(f=>{
+          const k=f.custom_fields&&f.custom_fields.key;
+          if(k&&k.startsWith("_duda_")&&f.value){ (st.dudas[f.contact_id]=st.dudas[f.contact_id]||[]).push(f.value); }
+        });
+      }
     }catch(_){ /* sin campos aún */ }
   }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó

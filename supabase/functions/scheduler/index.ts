@@ -146,9 +146,20 @@ Deno.serve(async (req) => {
 async function processResumenes(): Promise<number> {
   const now = new Date();
   let sent = 0;
-  const { data: chans } = await db.from("channels")
-    .select("id, nombre, timezone, moneda, resumenes, resumen_estado, telegram_chat_ids")
-    .not("resumenes", "is", null).limit(100);
+  // Paginado, no `.limit(100)`: a diferencia de flow_runs y sequence_subscriptions (que
+  // llevan ORDER BY justo para evitar inanición), acá no había orden NI nada que drene, así
+  // que con más de 100 canales con resúmenes activos siempre ganaban los mismos y al resto
+  // no le llegaba su digest nunca.
+  const chans: any[] = [];
+  for (let desde = 0; desde < 100000; desde += 1000) {
+    const { data, error } = await db.from("channels")
+      .select("id, nombre, timezone, moneda, resumenes, resumen_estado, telegram_chat_ids")
+      .not("resumenes", "is", null).order("id", { ascending: true }).range(desde, desde + 999);
+    if (error) break;
+    const filas = data ?? [];
+    chans.push(...filas);
+    if (filas.length < 1000) break;
+  }
   for (const ch of chans ?? []) {
     try {
       const cfg = (ch as any).resumenes ?? {};
@@ -204,7 +215,19 @@ async function processResumenes(): Promise<number> {
 //   }
 async function processAdelantos(now: number): Promise<{ recordados: number; vencidos: number }> {
   let recordados = 0, vencidos = 0;
-  const { data: chans } = await db.from("channels").select("id, pedidos_config").limit(50);
+  // Paginado en vez de `.limit(50)`: ese tope era arbitrario y MUDO — a partir de la cuenta
+  // 51 de la plataforma, esos canales dejaban de recibir recordatorios de adelanto y avisos
+  // de vencimiento sin que nada lo dijera. (Aparte, PostgREST corta en 1000 por request,
+  // así que subir el número tampoco habría bastado.)
+  const chans: any[] = [];
+  for (let desde = 0; desde < 100000; desde += 1000) {
+    const { data, error } = await db.from("channels").select("id, pedidos_config")
+      .order("id", { ascending: true }).range(desde, desde + 999);
+    if (error) break;
+    const filas = data ?? [];
+    chans.push(...filas);
+    if (filas.length < 1000) break;
+  }
   for (const ch of chans ?? []) {
     const cfg = (ch as any)?.pedidos_config?.adelanto;
     if (!cfg) continue;
@@ -288,9 +311,22 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
 }
 
 async function processOrderReminders(now: number): Promise<number> {
-  const { data: trigs } = await db.from("flow_triggers")
-    .select("flow_id, channel_id, config, interrumpe, flows!inner(estado)")
-    .eq("tipo", "pedido_recordatorio").eq("activo", true).limit(50);
+  // Paginado, no `.limit(50)`: esto NO es un lote que se drene (flow_triggers no marca nada
+  // como procesado, así que cada corrida traía los MISMOS 50 primeros). Con más de 50
+  // disparadores de este tipo en la plataforma, los de la cola de atrás no se procesaban
+  // NUNCA y esos recordatorios de pedido no salían jamás. El `.limit(25)` de los pedidos de
+  // abajo sí es un lote legítimo: marca `_nudge_<estado>` en shipping y no se repite.
+  const trigs: any[] = [];
+  for (let desde = 0; desde < 100000; desde += 1000) {
+    const { data, error } = await db.from("flow_triggers")
+      .select("flow_id, channel_id, config, interrumpe, flows!inner(estado)")
+      .eq("tipo", "pedido_recordatorio").eq("activo", true)
+      .order("flow_id", { ascending: true }).range(desde, desde + 999);
+    if (error) break;
+    const filas = data ?? [];
+    trigs.push(...filas);
+    if (filas.length < 1000) break;
+  }
   let n = 0;
   for (const t of trigs ?? []) {
     if ((t as any).flows?.estado !== "activo") continue;

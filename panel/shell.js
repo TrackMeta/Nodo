@@ -460,6 +460,14 @@ export async function pageAll(makeQuery, { pageSize = 1000, max = 100000 } = {})
   }
   return { data: out, error: null, truncado: true }; // llegó al tope de seguridad
 }
+// Parte una lista de ids en trozos para los `.in(...)`. NO es cosmético: la lista viaja en
+// la URL y el servidor la rechaza cuando se pasa. Medido contra la base: 500 ids (18 KB de
+// URL) pasan, 800 devuelven 400 y con 2000 la petición ni sale. 300 deja margen de sobra.
+export function enTrozos(arr, n = 300) {
+  const out = [];
+  for (let i = 0; i < (arr || []).length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
 // Se resetea al cambiar de página (teardown): la nueva vuelve a opt-in si toca.
 function _resetGuard() { _guardSel = null; _dirty = false; }
 // true = se puede salir; pregunta solo si hay cambios sin guardar.

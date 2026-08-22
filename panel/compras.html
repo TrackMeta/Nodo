@@ -130,7 +130,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, norm, confirmDialog, pageAll } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, norm, confirmDialog, pageAll, enTrozos } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, startOfDayLima, endOfDayLima } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -242,10 +242,17 @@ async function load(){
   const ids=[...new Set(st.list.map(o=>o.contact_id).filter(Boolean))];
   st.imgs={};
   if(ids.length){
-    const { data:msgs }=await supa.from("messages").select("contact_id,content,ts")
-      .eq("channel_id",st.channelId).in("contact_id",ids).eq("direction","in").eq("type","image")
-      .order("ts",{ascending:false}).limit(600);
-    (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    // Por TROZOS de ids: la lista entera viaja en la URL y el servidor la rechaza pasados
+    // ~600 ids (medido: 800 → 400 Bad Request). Como acá `ids` sale de TODAS las compras
+    // paginadas, un negocio con varios cientos de clientes se pasaba — y el error no se
+    // miraba, así que la columna de comprobantes se vaciaba sin decir por qué.
+    for(const trozo of enTrozos(ids)){
+      const { data:msgs, error }=await supa.from("messages").select("contact_id,content,ts")
+        .eq("channel_id",st.channelId).in("contact_id",trozo).eq("direction","in").eq("type","image")
+        .order("ts",{ascending:false}).limit(600);
+      if(error){ console.warn("[compras] comprobantes:",error.message); continue; }
+      (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    }
   }
   render();
 }
