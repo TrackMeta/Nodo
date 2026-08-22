@@ -7232,6 +7232,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       } catch (_) { /* sin tallas → clasifica como siempre */ }
     }
+    // Cómo dice que SÍ la gente de verdad. El catálogo de ejemplos del generador se queda
+    // en "sí / dale / súmalo / lo quiero", y al probar las formas reales de contestar, "bueno
+    // ya" y "sí confirmo" NO sumaban el extra: se perdía el upsell y —peor— el bot se
+    // despedía con "que disfrutes tus zapatillas y las medias" cuando las medias no estaban
+    // en el pedido. Va acá y no solo en el generador (panel/productos.html) para que valga
+    // también en los flujos YA creados, sin tener que regenerarlos.
+    if (cands.some((c: any) => c.clave === "acepta") && cands.some((c: any) => c.clave === "rechaza")) {
+      que += `\n\nCÓMO SE ACEPTA EN PERÚ (manda sobre los ejemplos de arriba): el sí suele ser corto y coloquial. ` +
+        `"ya", "ya está", "bueno ya", "ya dale", "va", "de una", "sale", "sale pues", "claro", "obvio", "listo", ` +
+        `"sí confirmo", "confirmado", "hágale", "mándalo", "échale" → TODAS son ACEPTAR. ` +
+        `Marca "rechaza" SOLO si hay una negación explícita ("no", "no gracias", "así está bien", "solo eso", ` +
+        `"déjalo así", "otro día", "ahorita no"). Ante la duda entre aceptar y rechazar, NUNCA elijas "rechaza": ` +
+        `usa "duda" para volver a preguntarle.`;
+    }
     // Sin IA, sin candidatos o sin confianza → queda el default. El flujo sigue
     // por la rama prudente en vez de inventar una decisión del cliente.
     let val = String(cfg.default ?? "duda");
