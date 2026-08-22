@@ -58,7 +58,11 @@ export function summarize(tipo, c={}){
     case "pregunta": return (clip(c.text,56)||"Sin pregunta aún")+(c.guardar_en?` → ${c.guardar_en}`:"");
     case "condicion": { const n=(c.rutas||[]).length; return n?`${n} ruta${n>1?"s":""} + si no cumple`:"Sin rutas definidas"; }
     case "accion": { const a=c.acciones||[]; if(!a.length) return "Sin acciones aún"; if(a.length===1) return ACCION_LABELS[a[0].tipo]||a[0].tipo; return `${a.length} acciones · ${ACCION_LABELS[a[0].tipo]||a[0].tipo}…`; }
-    case "ia": { const ops={generar_texto:"Generar texto",analizar_imagen:"Analizar imagen",extraer:"Extraer datos"}; return (ops[c.operacion]||"Generar texto")+(c.guardar_en?` → ${c.guardar_en}`:""); }
+    // `clasificar` faltaba en este mapa igual que en IA_OPS del editor, así que el
+    // resumen del nodo decía "Generar texto" para los clasificadores (los "¿Lo
+    // quiere?" del extra). Y el fallback ya no inventa una operación concreta: si
+    // aparece una nueva, es mejor un genérico honesto que un nombre equivocado.
+    case "ia": { const ops={generar_texto:"Generar texto",analizar_imagen:"Analizar imagen",extraer:"Extraer datos",clasificar:"Clasificar respuesta"}; return (ops[c.operacion]||"IA")+(c.guardar_en?` → ${c.guardar_en}`:""); }
     case "esperar": return `Pausa de ${c.segundos??"?"} s`;
     case "iniciar_flujo": return c.target_role?`Salta a: ${c.target_role}`:"Elige el flujo destino";
     case "evento_fb": return (c.event_name||"Lead")+(c.value?` · ${c.value}`:"");
