@@ -807,7 +807,7 @@ async function load(){
   // total de "Costo de productos", para que ganancia e inversión hablen del MISMO
   // universo: un físico sin flete no aporta margen, así que tampoco debe aportar
   // costo — si no, el ROI mezclaría el costo de 13 pedidos con la ganancia de 3.
-  let bruta=0, sinCostoF=0, cogsBruta=0;
+  let bruta=0, sinCostoF=0, sinFlete=0, sinCogs=0, cogsBruta=0;
   // Ganancia sobre ventasOk (SIN perdidos): un rechazado/no_recogido resta su COGS
   // como si la mercadería se hubiera perdido, pero el paquete VUELVE (solo se pierde
   // el flete). El digest (order-stats.ts:131) ya excluye perdidos de la ganancia; el
@@ -823,8 +823,19 @@ async function load(){
     const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     // cobrado − margen = todo lo que costó ese pedido (mercadería + flete + empaque),
     // sin volver a sumarlo pieza por pieza.
-    if(m==null) sinCostoF++; else { bruta+=m; cogsBruta+=O.cobrado(o)-m; }
+    if(m==null){
+      // "Faltan N costos" no decía QUÉ falta ni dónde ponerlo. Casi siempre es el
+      // FLETE (la mercadería viene del snapshot al crear el pedido), así que se
+      // separan los dos motivos para poder nombrarlos.
+      sinCostoF++;
+      if(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)==null) sinCogs++; else sinFlete++;
+    } else { bruta+=m; cogsBruta+=O.cobrado(o)-m; }
   });
+  // Texto compartido por el KPI y la banda: dice qué falta exactamente.
+  const faltaTxt = !sinCostoF ? ""
+    : sinFlete && !sinCogs ? `falta el flete de ${sinFlete} pedido${sinFlete>1?"s":""}`
+    : sinCogs && !sinFlete ? `falta el costo de mercadería de ${sinCogs} pedido${sinCogs>1?"s":""}`
+    : `faltan costos en ${sinCostoF} pedidos`;
   // Gastos extra (operativos, registrados a mano). Son overhead del negocio,
   // así que solo se restan en la vista general ("Todo"), no por segmento.
   const expenses = expR.error ? [] : (expR.data||[]);
@@ -896,7 +907,7 @@ async function load(){
   // Ganancia como tarjetas KPI (además de la banda de arriba). Mismos números:
   // bruta − anuncios − gastos extra = neta. Pedido de Rodrigo para tenerlas a la vista.
   const brutaSub = tipo==="digital" ? "ingresos digitales (sin costo)"
-    : (sinCostoF ? `tras mercadería y envío · faltan ${sinCostoF} costo${sinCostoF>1?"s":""}` : "tras mercadería y envío");
+    : (sinCostoF ? `tras mercadería y envío · ${faltaTxt}` : "tras mercadería y envío");
   K.push(kpi("chart","#22c079","Ganancia bruta", money(bruta), brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
     (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · ⚠ moneda sin convertir":"")));
@@ -915,7 +926,7 @@ async function load(){
   K.push(kpi("trending", roiPct==null?"#6d8ea0":roiPct>=0?"#22c079":"#e2564a", "ROI",
     roiPct==null ? "—" : (roiPct>0?"+":"")+roiPct+"%",
     roiPct==null ? "registra costos, anuncios o gastos para verlo"
-      : sinCostoF ? `⚠ faltan costos en ${sinCostoF} pedido${sinCostoF>1?"s":""} — cifra incompleta`
+      : sinCostoF ? `⚠ ${faltaTxt} — cifra incompleta`
       : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
   K.push(kpi("wallet", neta<0?"#e2564a":"#22c079", "Ganancia neta", money(neta), monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
@@ -940,7 +951,7 @@ async function load(){
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
-  renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, tipo });
+  renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, tipo });
 
   renderMetricas(porStage);
   renderFunnel(porStage);
@@ -1066,7 +1077,10 @@ function renderBand(b){
   const box=$("pband"); if(!box) return;
   const brutaS = b.tipo==="digital"
     ? ""
-    : (b.sinCostoF?`tras mercadería y envío · faltan costos en ${b.sinCostoF} pedido${b.sinCostoF>1?"s":""}`:"tras mercadería y envío");
+    // La banda tiene espacio: además de QUÉ falta, se dice DÓNDE ponerlo. Antes
+    // decía "faltan costos en N pedidos" y no había forma de saber cuál costo era
+    // ni dónde registrarlo — el dato se pide al mover el pedido en el tablero.
+    : (b.sinCostoF?`tras mercadería y envío · ${b.faltaTxt} — se registra al mover el pedido en Pedidos`:"tras mercadería y envío");
   const brutaSub = brutaS?`<span class="pb-s">${brutaS}</span>`:"";
   const hasExtra = b.gastosExtra>0;
   if(!b.hasAds && !hasExtra){
