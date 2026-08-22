@@ -3321,6 +3321,31 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const nuevo: Record<string, unknown> = { nombre, precio };
         if (vid) nuevo.version_id = vid;
         if (a.bump.digital) { nuevo.digital = true; nuevo.entregado = false; }
+        // 💰 COSTO del extra → COGS. `costoExtras()` (panel/orders.js) ya lo resta del
+        // margen, pero NADIE lo guardaba: la función leía un dato que no existía. Una
+        // media de S/19 que cuesta S/4 se contaba como S/19 de ganancia limpia, así que
+        // el margen de toda venta extra salía inflado (y el regalo sí lo guarda bien,
+        // vía adjuntarRegalos — faltaba el gemelo del extra pagado).
+        if (a.bump.costo != null && a.bump.costo !== "") {
+          nuevo.costo = Number(a.bump.costo) || 0;
+        } else if (vid) {
+          try {
+            const { data: pvc } = await db.from("product_versions").select("costo, cantidad, product_id").eq("id", vid).maybeSingle();
+            let cRaw: any = (pvc as any)?.costo;
+            if (cRaw == null || cRaw === "") {   // sin costo en la presentación → el del producto
+              const pidC = (pvc as any)?.product_id;
+              if (pidC) {
+                const { data: prC } = await db.from("products").select("config").eq("id", pidC).maybeSingle();
+                cRaw = (prC as any)?.config?.costo;
+              }
+            }
+            // El costo es POR UNIDAD (igual que en crearPedido): se multiplica por las
+            // unidades que trae la presentación del extra.
+            if (cRaw != null && cRaw !== "" && Number.isFinite(Number(cRaw))) {
+              nuevo.costo = +(Number(cRaw) * (Number((pvc as any)?.cantidad) || 1)).toFixed(2);
+            }
+          } catch { /* sin costo → como antes: no se resta (mejor que inventar) */ }
+        }
         // Un extra FÍSICO también descuenta stock. El bump no traía product_id →
         // lo resolvemos del version_id y lo guardamos. Si el extra tiene tallas
         // PROPIAS, no se descuenta aún: se marca stock_pendiente y el bot pregunta
