@@ -356,7 +356,10 @@ function card(o){
   const tipo=tipoDe(o);
   const el=document.createElement("div"); el.className="pcard";
   el.style.boxShadow=`inset 3px 0 0 0 ${TIPO_COLOR[tipo]||"var(--border)"}`;
-  const bumps=(o.order_bumps||[]).length;
+  // Solo las ventas EXTRA: los regalos también viven en order_bumps (precio 0) y
+  // contarlos hacía que una compra sin ningún upsell mostrara "+1 extra" por la
+  // gorra de regalo (mismo error que el KPI "Ventas extra" del Dashboard).
+  const bumps=(o.order_bumps||[]).filter(b=>!b?.regalo && Number(b?.precio||0)>0).length;
 
   // Detalle chico según el tipo.
   const meta=[];
