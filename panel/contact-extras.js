@@ -748,7 +748,11 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
     info.abierta = t > Date.now();
     if (info.abierta) {
       const m = Math.floor((t - Date.now()) / 60000);
-      info.restante = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+      // La ventana de WhatsApp dura 24 h (72 h como mucho con FEP). Un `expira_at`
+      // que dé MÁS que eso es un dato anómalo, no una ventana larguísima: se deja
+      // "abierta" pero sin contador, en vez de escupir cifras imposibles como
+      // "87583 h 34 min" (10 años), que solo hacen desconfiar del panel.
+      info.restante = m > 72 * 60 ? "" : (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
     }
   } catch (_) { /* sin conversación aún */ }
   // FEP (Free Entry Point): si el cliente llegó por un anuncio, tiene 72h en las
@@ -760,7 +764,8 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
     if (f > Date.now()) {
       info.fepActivo = true;
       const m = Math.floor((f - Date.now()) / 60000);
-      info.fepRestante = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+      // Mismo tope que la ventana: el FEP dura 72 h. Más que eso es dato anómalo.
+      info.fepRestante = m > 72 * 60 ? "" : (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
     }
   } catch (_) { /* sin FEP */ }
   try {
@@ -805,9 +810,11 @@ export function avisoBlockHtml(info) {
     </label>`;
   return `<div class="avz">
     <div class="avz-win ${info.abierta ? "ok" : "no"}">${info.abierta
-      ? `● Ventana abierta — le quedan ${esc(info.restante)} para escribirle libremente`
+      ? (info.restante
+          ? `● Ventana abierta — le quedan ${esc(info.restante)} para escribirle libremente`
+          : "● Ventana abierta — puedes escribirle libremente")
       : "● Ventana cerrada — WhatsApp solo acepta una plantilla aprobada"}</div>
-    ${info.fepActivo ? `<div class="avz-fep">Llegó por anuncio — aún gratis por ${esc(info.fepRestante)}: la plantilla no te cuesta</div>` : ""}
+    ${info.fepActivo ? `<div class="avz-fep">Llegó por anuncio${info.fepRestante ? ` — aún gratis por ${esc(info.fepRestante)}` : " — aún gratis"}: la plantilla no te cuesta</div>` : ""}
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
       info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
