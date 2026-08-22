@@ -302,6 +302,12 @@ function buildPalette(){
 function showOverview(){
   $("overview").style.display=""; $("editorTop").style.display="none"; $("editorMain").style.display="none";
   if(shell) shell.setCollapsed(shell.isCollapsedPref()); // restaura preferencia del usuario
+  // Al volver a la lista se quita el flujo de la URL, para que un F5 acá no reabra
+  // el que estabas viendo antes.
+  try{
+    const u=new URL(location.href);
+    if(u.searchParams.has("flow")){ u.searchParams.delete("flow"); history.replaceState(null,"",u); }
+  }catch(_){}
 }
 function showEditor(){
   $("overview").style.display="none"; $("editorTop").style.display="flex"; $("editorMain").style.display="flex";
@@ -573,6 +579,14 @@ function renderFlowCards(){
 
 async function openFlow(flowId){
   st.flowId=flowId;
+  // El flujo abierto se refleja en la URL con el MISMO parámetro `?flow=` que ya se
+  // sabía leer al arrancar (boot). Faltaba la otra mitad: abrir un flujo desde la
+  // lista no lo escribía, así que un F5 —o restaurar la pestaña— te devolvía a la
+  // lista, no se podía pasar el link de un flujo, ni tener dos en pestañas distintas.
+  try{
+    const u=new URL(location.href);
+    if(u.searchParams.get("flow")!==flowId){ u.searchParams.set("flow",flowId); history.replaceState(null,"",u); }
+  }catch(_){}
   showEditor();
   const { data:flow } = await supa.from("flows").select("*").eq("id",flowId).maybeSingle();
   st.flow=flow;
