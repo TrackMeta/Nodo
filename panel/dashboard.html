@@ -1024,7 +1024,7 @@ async function load(){
     // Asesor IA no reporte un número que no cuadra con el Dashboard. Antes usaba
     // O.margen para todos (excluía el digital sin costo) y divergía de `bruta`.
     ganancia: Math.round(bruta), ingresos: Math.round(vendido), ventas: compras,
-    ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidos,
+    ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidosTodos,
     interesados_sin_comprar: interesadosSinComprar,
     producto_estrella: rank[0]||null,
     producto_mas_flojo: rank.length>1?rank[rank.length-1]:null,
