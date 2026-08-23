@@ -66,7 +66,24 @@ export async function runAI(call: AiCall): Promise<string> {
     ? call.content.length
     : call.content.reduce((a, b) => a + (b.type === "text" ? b.text.length : 0), 0));
   if (textLen > MAX_INPUT_CHARS) throw new AiError({ provider: call.provider, type: "input_too_large", message: `input de texto demasiado grande (${textLen} > ${MAX_INPUT_CHARS})` });
-  return call.provider === "openai" ? await callOpenAI(call) : await callAnthropic(call);
+  const una = () => call.provider === "openai" ? callOpenAI(call) : callAnthropic(call);
+  try {
+    return await una();
+  } catch (e) {
+    // UN reintento, y solo ante los dos estados TRANSITORIOS del proveedor: 429 (límite de
+    // tasa) y 529 (sobrecargado). Sin esto, un pico de tráfico del proveedor se traducía en
+    // que ESE cliente recibiera el mensaje de respaldo genérico en vez de la respuesta del
+    // vendedor — con la venta a medias y sin que nada lo dijera.
+    //   · Se reintenta SOLO con un status HTTP: un timeout aborta (AbortError, sin status) y
+    //     NO se reintenta, así el peor caso sigue acotado (~1.2 s + el timeout de una llamada)
+    //     y no se encadenan dos esperas largas ante un cliente que está esperando respuesta.
+    //   · Un 401/400/refusal no se reintenta: reintentar lo que ya falló por configuración
+    //     solo gasta tiempo y tokens.
+    const st = (e as AiError)?.info?.status;
+    if (st !== 429 && st !== 529) throw e;
+    await new Promise((r) => setTimeout(r, 1200));
+    return await una();
+  }
 }
 
 // ── Claude (Anthropic Messages API) ────────────────────────────────
