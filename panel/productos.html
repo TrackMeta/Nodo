@@ -1882,7 +1882,7 @@ async function buildRideAlongExtras(N, E, entryNode, exitNode, extras, cat, espe
           `MUY IMPORTANTE: si el cliente solo responde una talla, color o dato de OTRO producto (por ejemplo la talla del regalo), o hace una pregunta, eso NO es aceptar el extra: es "duda". `+
           `Solo marca "acepta" cuando el cliente dice claramente que SÍ quiere sumar ESTE producto. Cualquier negación es "rechaza".`,
       opciones:[
-        { clave:"acepta", label:"Acepta", detalle:`Dice que SÍ quiere sumar ${label}. En Perú el sí es corto y coloquial: "sí", "dale", "ya", "ya está", "bueno ya", "ya dale", "va", "de una", "sale", "claro", "obvio", "listo", "sí confirmo", "confirmado", "súmalo", "agrégalo", "lo quiero"` },
+        { clave:"acepta", label:"Acepta", detalle:`Dice que SÍ quiere sumar ${label}. En Perú el sí es corto y coloquial: "sí", "dale", "ya", "bueno ya", "ya dale", "va", "de una", "sale", "claro", "obvio", "hágale", "súmalo", "agrégalo", "lo quiero". OJO: "confirmo"/"sí confirmo"/"listo"/"así está bien" NO son aceptar — cierran el pedido tal como está` },
         { clave:"rechaza", label:"Rechaza", detalle:`SOLO si hay una negación explícita: "no", "no gracias", "no lo quiero", "así está bien", "solo eso", "déjalo así", "otro día", "ahorita no". Ante la duda NUNCA marques rechaza: usa "duda"` },
         { clave:"duda", label:"Duda o pregunta", detalle:"Pide más info, responde otra cosa (una talla/color/dato de otro producto) o no decide todavía" },
       ],

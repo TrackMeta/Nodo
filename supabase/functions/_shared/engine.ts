@@ -7380,12 +7380,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // en el pedido. Va acá y no solo en el generador (panel/productos.html) para que valga
     // también en los flujos YA creados, sin tener que regenerarlos.
     if (cands.some((c: any) => c.clave === "acepta") && cands.some((c: any) => c.clave === "rechaza")) {
-      que += `\n\nCÓMO SE ACEPTA EN PERÚ (manda sobre los ejemplos de arriba): el sí suele ser corto y coloquial. ` +
-        `"ya", "ya está", "bueno ya", "ya dale", "va", "de una", "sale", "sale pues", "claro", "obvio", "listo", ` +
-        `"sí confirmo", "confirmado", "hágale", "mándalo", "échale" → TODAS son ACEPTAR. ` +
-        `Marca "rechaza" SOLO si hay una negación explícita ("no", "no gracias", "así está bien", "solo eso", ` +
-        `"déjalo así", "otro día", "ahorita no"). Ante la duda entre aceptar y rechazar, NUNCA elijas "rechaza": ` +
-        `usa "duda" para volver a preguntarle.`;
+      que += `\n\nCÓMO SE ACEPTA EN PERÚ (para los ejemplos de arriba): el sí suele ser corto y coloquial. ` +
+        `"ya", "bueno ya", "ya dale", "va", "de una", "sale", "sale pues", "claro", "obvio", "hágale", ` +
+        `"mándalo", "échale" → son ACEPTAR. ` +
+        `PERO NO confundas ACEPTAR el adicional con CERRAR el pedido: "confirmo", "sí confirmo", "confirmado", ` +
+        `"listo", "ya está", "así está bien", "eso es todo", "solo eso" cierran el pedido tal como está, ` +
+        `o sea NO agregan el adicional. Esa regla manda sobre esta lista. ` +
+        `Marca "rechaza" solo ante una negación o un cierre ("no", "no gracias", "así está bien", "solo eso", ` +
+        `"déjalo así", "otro día", "ahorita no"). Si dudas entre aceptar y rechazar y NO es un cierre, ` +
+        `usa "duda" para volver a preguntarle en vez de decidir por él.`;
     }
     // Sin IA, sin candidatos o sin confianza → queda el default. El flujo sigue
     // por la rama prudente en vez de inventar una decisión del cliente.
