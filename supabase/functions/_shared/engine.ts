@@ -8672,6 +8672,19 @@ async function buildContext(db: SupabaseClient, run: Run) {
         (run as any)._prodCtx = pc;
       }
       for (const [k, v] of Object.entries(pc)) if (k !== "_id") ctx[k] = v;
+      // El STOCK se relee FRESCO en cada turno. Todo lo demás de `_prodCtx` es estático
+      // ("no cambian a mitad"), pero el stock es justo lo que OTRO cliente puede cambiarte
+      // mientras este conversa. Congelado, la IA seguía viendo la unidad que ya se llevó otro
+      // y confirmaba: medido con 3 clientes peleando por la última talla 40 — el segundo
+      // recibió "listo, queda confirmado tu pedido talla 40" con el stock ya en 0 y sin que
+      // se creara ningún pedido. Solo se consulta si el producto maneja stock.
+      if ((pc as any)._stock && typeof (pc as any)._stock === "object") {
+        try {
+          const { data: pFresh } = await db.from("products").select("config").eq("id", prodId).maybeSingle();
+          const sFresh = (pFresh as any)?.config?.stock;
+          if (sFresh && typeof sFresh === "object") { ctx._stock = sFresh; (pc as any)._stock = sFresh; }
+        } catch (_) { /* si falla, queda el del caché: mejor eso que quedarse sin dato */ }
+      }
       // {{precio}} REBAJADO por oferta de remarketing: si el contacto tiene una oferta
       // vigente (el scheduler la graba en `oferta_activa` antes de enviar el paso), el
       // mensaje debe mostrar el precio rebajado — el MISMO que el validador de pago
