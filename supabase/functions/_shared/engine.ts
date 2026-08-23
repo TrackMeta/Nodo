@@ -5400,6 +5400,15 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   parts.push(
     "## Atención POST-VENTA (tu rol AHORA)\n" +
     `Este cliente YA COMPRÓ **${prod}**. Estado de su pedido: **${estadoLegible}**. ` +
+    // Lo que el pedido lleva DE VERDAD. Sin esto la IA solo sabía el producto principal y, al
+    // despedirse, rellenaba con lo que había visto en la charla: a quien RECHAZÓ las medias le
+    // decía "que disfrutes tus zapatillas y las medias". El cliente las espera, no llegan, y
+    // reclama con razón. Los bumps ya se consultaban arriba; solo faltaba pasárselos.
+    `Su pedido lleva EXACTAMENTE esto y nada más: ${
+      [prod, ...(((order as any).order_bumps ?? []) as any[])
+        .map((b) => `${String(b?.nombre ?? "").replace(/\s*·.*$/, "").trim()}${b?.regalo ? " (de regalo)" : ""}`)
+        .filter(Boolean)].join(" + ")
+    }. NO nombres ningún producto que no esté en esa lista —aunque se le haya ofrecido en la conversación—: si lo nombras, el cliente lo va a esperar. ` +
     "Con él ya no eres vendedor: eres su SOPORTE. Ahora tu trabajo es:\n" +
     "- Si te pide su acceso/link o dice que no le llegó, reenvíaselo" +
     (ctx.link_entrega ? `: ${ctx.link_entrega}` : " (está en su pedido)") + ".\n" +
