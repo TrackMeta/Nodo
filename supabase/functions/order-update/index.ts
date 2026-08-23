@@ -502,6 +502,17 @@ Deno.serve(async (req) => {
           }, { critico: true }).catch(() => {});
         }
       } catch (e) { console.error("[order-update] aviso default:", (e as any)?.message ?? e); }
+    } else if (newEstado === "saldo_pagado") {
+      // Sin `txt` no se envía NADA, y para saldo_pagado eso significa que el cliente pagó y
+      // se quedó SIN su clave de recojo. mensajeEstadoDefault devuelve null cuando el pedido
+      // no tiene `clave_recojo` registrada. Antes esta rama no existía: `aviso_enviado` y
+      // `aviso_error` volvían los DOS vacíos, así que el operador movía la tarjeta y daba
+      // por avisado a alguien que nunca recibió nada. Ahora se dice qué falta y cómo
+      // arreglarlo. (Las otras ramas de aviso ya dejaban su rastro; esta era la muda.)
+      avisoError = "el pedido no tiene clave de recojo — regístrala en el pedido y vuelve a avisarle";
+      await avisarEnvioFallido(db, (order as any).channel_id, (order as any).contact_id, {
+        message: "El cliente pagó el saldo pero el pedido NO tiene clave de recojo registrada, así que no pude enviársela. Anótala en el pedido y mándasela — la necesita para recoger.",
+      }, { critico: true }).catch(() => {});
     }
   }
 
