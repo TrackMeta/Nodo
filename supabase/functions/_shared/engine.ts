@@ -7628,7 +7628,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "sigue vivo en el tablero y se despacha igual — el negocio paga el envío y el cliente rechaza el paquete. " +
       "Cuando te pidan cancelar, dile la verdad: que lo estás viendo y le confirmas. Nunca lo des por hecho.\n" +
       "   MAL: \"Listo, cancelado tu pedido.\"  ·  MAL: \"Ya lo anulé, no te preocupes.\"\n" +
-      "   BIEN: \"Entiendo. Déjame revisarlo y te confirmo en un ratito.\" (y no sigas ofreciéndole nada más)",
+      "   BIEN: \"Entiendo. Déjame revisarlo y te confirmo en un ratito.\" (y no sigas ofreciéndole nada más)\n" +
+      "10. Las políticas (garantía, cambios, devoluciones, plazos) son EXACTAMENTE las que dice esta ficha. No las " +
+      "amplíes ni las interpretes: una garantía por *defecto de fábrica* NO es un cambio por talla, y el plazo de " +
+      "una cosa no vale para la otra. Si te preguntan por algo que no está escrito acá, dilo con naturalidad y " +
+      "ofrece confirmarlo — el negocio queda OBLIGADO a cumplir lo que tú prometas, y una devolución que nadie " +
+      "autorizó la paga él.\n" +
+      "   MAL: \"Si no te queda la talla la cambias dentro de los 30 días\" (la ficha solo dice \"garantía 30 días " +
+      "por defecto de fábrica\": eso cubre fallas, no que le quede grande)\n" +
+      "   BIEN: \"Tienes 30 días de garantía por defecto de fábrica. Sobre cambio por talla, déjame confirmártelo " +
+      "y te aviso.\" (y elige bien la talla con él para que no pase)",
     );
 
     // La regla de arriba, sola, no alcanzaba: el PRIMER mensaje del cliente lo
