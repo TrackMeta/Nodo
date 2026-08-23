@@ -164,6 +164,7 @@
       <div class="grow">
         <h1 class="nodo-title">Pedidos</h1>
         <p class="nodo-lead">Acá <b>mueves el pedido</b>: confirmar, despachar, avisar que llegó, entregar. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso.<br>
+        <span id="pedTrunc" style="display:none;color:var(--amber,#d97706);font-weight:700"></span>
         <span style="color:var(--faint)">Aprobar o rechazar un comprobante es de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions">
@@ -447,6 +448,18 @@ async function load(){
   }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   st.list=data||[]; render();
+  // El tablero carga los 1000 pedidos MÁS RECIENTES (tope de PostgREST: pedir más no sirve
+  // de nada, corta igual). Eso es razonable para una vista operativa, pero callarlo no: con
+  // más de 1000 quedaban tarjetas fuera del tablero sin que nada lo dijera, y no puedes mover
+  // un pedido que no ves. Se avisa con el número real, que sale de un count aparte.
+  try{
+    const { count } = await supa.from("orders").select("id",{count:"exact",head:true}).eq("channel_id",st.channelId);
+    const el=document.getElementById("pedTrunc");
+    if(el && typeof count==="number" && (data||[]).length>=1000 && count>(data||[]).length){
+      el.textContent=`⚠ Mostrando los ${(data||[]).length} pedidos más recientes de ${count}. Usa Compras o los filtros para ver los demás.`;
+      el.style.display="";
+    } else if(el){ el.style.display="none"; }
+  }catch(_){ /* el aviso es informativo: si el count falla, el tablero funciona igual */ }
 }
 
 function render(){
