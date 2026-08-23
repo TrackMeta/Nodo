@@ -276,6 +276,13 @@ async function runEngineInner(
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
     if (event.type !== "message") return;
+    // RECOMPRA primero, igual que en la rama de arriba (run vivo). Sin esto el orden quedaba
+    // invertido según hubiera run o no: con el run cerrado, "quiero comprar OTRO par más" lo
+    // agarraba maybeModificarPedido y lo leía como "cámbiame la presentación a Pack 2 pares"
+    // → contestaba "te lo dejo como pack de 2, ¿lo confirmo?" y NO nacía el segundo pedido.
+    // Comprar otro ≠ cambiar el que ya tengo: la frase de recompra manda sobre la de cambio.
+    try { if (await recompraEnRunActivo(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[recompra/postrun]", (e as any)?.message ?? e); }
     // Modificar el pedido ya creado (quitar item / cambiar cantidad) también cuando el
     // run de venta ya terminó pero el pedido sigue abierto (Lima confirmado sin run).
     try { if (await maybeModificarPedido(db, channelId, contactId, event)) return; }
@@ -5150,7 +5157,10 @@ async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: s
   return ok;
 }
 
-// Recompra mientras el run de venta SIGUE ACTIVO. Tras cerrar el pedido, el run
+// Recompra: el cliente que YA compró pide otro / más unidades.
+// (El nombre viene de su primer uso —con el run de venta vivo— pero se llama desde las DOS
+// ramas: con run parqueado y sin run. No usa el run para nada; decide con el último pedido.)
+// Tras cerrar el pedido, el run
 // de venta no muere: queda parqueado ofreciendo el extra (o en el "Fin"). Si en
 // esa ventana el cliente pide OTRO / más unidades con una frase clara, el
 // mensaje lo tragaba ese nodo parqueado —que ya NO puede crear otro pedido
