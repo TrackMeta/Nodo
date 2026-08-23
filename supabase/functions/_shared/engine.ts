@@ -5203,6 +5203,20 @@ async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contac
   const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   if ((ch as any)?.pedidos_config?.postventa?.activo === false) return false;
   const pidRun = otroPid || (order as any).product_id;
+  // ¿Ya estamos vendiéndole ESE producto? Entonces no se relanza: el cliente está DENTRO de
+  // esa venta y solo la está nombrando. Sin este guard había BUCLE — `otroProductoPorKeyword`
+  // compara contra el producto del ÚLTIMO PEDIDO (el anterior), no contra el que se vende
+  // ahora, así que cada vez que el cliente decía "el curso" se relanzaba la venta del curso y
+  // recibía otra vez "¡Hola de nuevo! ¿Qué necesitas esta vez?". Respondía, y vuelta a empezar:
+  // nunca avanzaba y la venta moría ahí.
+  {
+    const { data: runVivo } = await db.from("flow_runs")
+      .select("flow_id").eq("contact_id", contactId).in("estado", ["activo", "esperando"]).maybeSingle();
+    if (runVivo?.flow_id) {
+      const { data: fl } = await db.from("flows").select("product_id").eq("id", runVivo.flow_id).maybeSingle();
+      if ((fl as any)?.product_id && (fl as any).product_id === pidRun) return false;
+    }
+  }
   if (await relanzarVenta(db, channelId, contactId, pidRun)) {
     await logEvent(db, channelId, contactId, "nota", "🔁 Recompra (run de venta aún activo)", (event.text ?? "").slice(0, 80)).catch(() => {});
     return true;
