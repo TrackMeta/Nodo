@@ -4223,6 +4223,14 @@ async function saveProduct(){
     const { error } = await supa.from("product_versions").delete().eq("id",id);
     if(error){ toast(error.message,true); return; }
   }
+  // Precio/costo NEGATIVO: los inputs llevan min="0", pero eso solo marca el campo como
+  // inválido — no impide escribirlo ni guardarlo. Un guion de más creaba una presentación a
+  // -50: cada venta suya RESTA de lo cobrado y deja la ganancia y el ticket promedio sin
+  // sentido, sin que nada avise. Se corta acá, que es donde se persiste.
+  {
+    const mal=(st.versions||[]).find(v=>(v.precio!==""&&v.precio!=null&&Number(v.precio)<0)||(v.costo!==""&&v.costo!=null&&Number(v.costo)<0));
+    if(mal){ toast(`"${mal.nombre||"Única"}": el precio y el costo no pueden ser negativos`,true); return; }
+  }
   st.delVersions=[];
   for(let i=0;i<st.versions.length;i++){
     const v=st.versions[i]; v.orden=i; v.product_id=st.prod.id;
