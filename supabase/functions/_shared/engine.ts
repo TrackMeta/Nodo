@@ -5209,7 +5209,11 @@ async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contac
   // ahora, así que cada vez que el cliente decía "el curso" se relanzaba la venta del curso y
   // recibía otra vez "¡Hola de nuevo! ¿Qué necesitas esta vez?". Respondía, y vuelta a empezar:
   // nunca avanzaba y la venta moría ahí.
-  {
+  // OJO: solo cuando el disparo vino de NOMBRAR un producto (otroPid). Si el cliente pidió
+  // explícitamente otro ("quiero otro par", "de nuevo"), eso SÍ es una recompra aunque la
+  // venta de ese mismo producto siga viva —es justo el caso del run parqueado en el extra— y
+  // bloquearla dejaría al cliente sin su segundo pedido.
+  if (otroPid && !pideRecompra(event.text)) {
     const { data: runVivo } = await db.from("flow_runs")
       .select("flow_id").eq("contact_id", contactId).in("estado", ["activo", "esperando"]).maybeSingle();
     if (runVivo?.flow_id) {
