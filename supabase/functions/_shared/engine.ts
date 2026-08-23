@@ -904,6 +904,49 @@ async function propagarVarianteAlPedido(db: SupabaseClient, run: Run, ctx: any) 
   await logEvent(db, run.channel_id, run.contact_id, "campo", "Variante corregida en el pedido", cambios.join(" · ")).catch(() => {});
 }
 
+// Se ARREPIENTE del extra justo cuando le piden la talla.
+//   El flujo suma el bump al ACEPTAR y recién después pregunta la talla. Si ahí el cliente
+//   dice "no gracias", no había camino de vuelta: el nodo de captura sale por "timeout" a
+//   "Confirmar extra" ("no dio talla → igual confirma la suma"), así que el bump se quedaba
+//   en el pedido. Medido: el bot contestaba "Anotado, sin medias 👍" y el pedido igual subía
+//   a S/148 (129 + 19) → se le cobra en la puerta algo que rechazó, después de decirle que no.
+//   Se quita el bump y se baja el saldo. Solo actúa si hay un bump `stock_pendiente` (es
+//   decir, aceptado y esperando su talla): fuera de esa fase un "no" no toca nada.
+const RECHAZA_EXTRA_TRAS_ACEPTAR = [
+  "no", "no gracias", "no quiero", "no lo quiero", "mejor no", "ya no", "ya no lo quiero",
+  "olvidalo", "dejalo asi", "dejalo", "asi esta bien", "asi nomas", "sacalo", "quitalo",
+  "quitamelo", "sin eso", "no me lo pongas", "cancela eso", "mejor sin eso",
+];
+async function descartarExtraSiSeArrepiente(db: SupabaseClient, run: Run, ctx: any) {
+  const t = limpiaOpt(String(ctx?.last_input ?? ""));
+  if (!t || t.length > 60) return;                       // una talla es corta; un rechazo también
+  const rechaza = RECHAZA_EXTRA_TRAS_ACEPTAR.some((f) => {
+    const n = limpiaOpt(f); if (!n) return false;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+  if (!rechaza) return;
+  const oid = run.vars?._order_id as string | undefined;
+  if (!oid) return;
+  const { data: o } = await db.from("orders").select("estado, order_bumps, shipping").eq("id", oid).maybeSingle();
+  if (!o || VARIANTE_NO_TOCAR.includes(String((o as any).estado))) return;
+  const bumps: any[] = [...(((o as any).order_bumps ?? []) as any[])];
+  const idx = bumps.findIndex((b) => b?.stock_pendiente === true && !b?.regalo);
+  if (idx < 0) return;                                   // no hay extra esperando talla → nada que deshacer
+  const quitado = bumps[idx];
+  bumps.splice(idx, 1);
+  const ship: any = { ...(((o as any).shipping ?? {}) as any) };
+  const precio = Number(quitado?.precio) || 0;
+  if (precio > 0 && quitado?.sube_saldo !== false && Number.isFinite(Number(ship.saldo))) {
+    ship.saldo = String(Math.max(0, +(Number(ship.saldo) - precio).toFixed(2)));
+  }
+  await devolverStockBump(db, ship, quitado).catch(() => {});
+  await db.from("orders").update({ order_bumps: bumps, shipping: ship, updated_at: new Date().toISOString() }).eq("id", oid);
+  await syncPedidoSheet(db, oid).catch(() => {});
+  await logEvent(db, run.channel_id, run.contact_id, "nota", "🗑️ Se arrepintió del extra al pedirle la talla",
+    `${quitado?.nombre ?? "extra"}${precio > 0 ? ` (−${precio})` : ""}`).catch(() => {});
+}
+
 async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
   try {
     const oid = (run.vars as any)?._order_id;
@@ -7282,6 +7325,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }));
     const campos = [...(Array.isArray(cfg.campos) ? cfg.campos : []), ...attrCampos];
     if (campos.length) await extraerDatos(db, run, { ...cfg, campos }, ctx).catch(() => null);
+    // 🗑️ ¿Se arrepintió del extra justo al pedirle la talla? Quitarlo ANTES de reconciliar,
+    // para no descontarle stock (ni cobrarle) algo que acaba de rechazar.
+    await descartarExtraSiSeArrepiente(db, run, ctx).catch(() => null);
     // 📦 Si ya se capturó la talla de un extra físico pendiente, descuéntala.
     await reconciliarStockExtras(db, run, ctx).catch(() => null);
     // 📦 Y si CORRIGIÓ la variante del principal con el pedido ya creado ("mejor la 40"),
