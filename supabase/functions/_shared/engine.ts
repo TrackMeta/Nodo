@@ -3157,6 +3157,27 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
         if (v) bag[at.nombre] = snapValorVariante(v, (at.valores || []).join(","));
       }
       if (Object.keys(bag).length) ship.atributos = bag;
+      // ¿La variante que se está sellando está AGOTADA? Pasa cuando el bot avisó del agotado
+      // y ofreció VARIAS alternativas ("la 40 negra no hay: tengo 40 blanca, o 38 y 39"): el
+      // cliente contesta "confirmado" sin nombrar una, repararVarianteAgotada no adivina
+      // (guard `unicas.length !== 1`) y el pedido se cierra con la agotada — mientras el chat
+      // le prometió otra. Medido: bot dijo "talla 40 color BLANCO", el pedido salió NEGRO y
+      // el stock de negro quedó en -1. El cliente recibe el color equivocado y el inventario
+      // descuadra por los dos lados.
+      // No se bloquea la venta (diseño de Rodrigo: "avisa pero no bloquea"): se marca el
+      // pedido para que se confirme antes de despachar, igual que `sede_por_confirmar`.
+      try {
+        const cfgV = (ctx as any)._stock;
+        const atrsV = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
+        if (cfgV && typeof cfgV === "object" && atrsV.length && Object.keys(bag).length) {
+          const kV = stockKeyEngine(atrsV.map((a: any) => ({ nombre: a.nombre, valores: a.valores })), bag);
+          const nV = Number((cfgV as any)[kV]);
+          if (Number.isFinite(nV) && nV <= 0) {
+            ship.variante_agotada = true;
+            ship.variante_por_confirmar = Object.entries(bag).map(([k, v]) => `${k} ${v}`).join(" · ");
+          }
+        }
+      } catch (_) { /* el marcado es informativo: nunca debe tumbar la creación del pedido */ }
     }
 
     // Pago digital manual: el pedido YA se creó como 'pendiente' al parquear el
@@ -3329,6 +3350,14 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars.pedido_creado = "si";
     await setField(db, run.channel_id, run.contact_id, "pedido_creado", "si").catch(() => {});
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    // Pedido cerrado sobre una variante SIN stock (ver `variante_agotada` arriba): el chat le
+    // prometió otra cosa. No se bloquea, pero el operador tiene que verlo ANTES de despachar
+    // o manda el color/talla equivocado y come la devolución.
+    if ((ship as any).variante_agotada) {
+      await logEvent(db, run.channel_id, run.contact_id, "error", "⚠️ Pedido con una variante AGOTADA",
+        `${(ship as any).variante_por_confirmar ?? ""} — el bot le ofreció otra en el chat. Confirma con el cliente antes de despachar.`).catch(() => {});
+      await notifyAdmin(db, run, `⚠️ Pedido cerrado sobre una variante AGOTADA (${(ship as any).variante_por_confirmar ?? "?"}). En el chat se le ofreció otra alternativa — confírmala con el cliente antes de despachar.`).catch(() => {});
+    }
     await moverEtapa(db, run.channel_id, run.contact_id, stageDeEstado(a.estado || "carrito"));
     // Etiqueta automática de zona/tipo (filtrable en la Bandeja): Lima/Provincia
     // según la entrega física; Digital si el pedido no lleva zona (venta digital).
