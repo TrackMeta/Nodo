@@ -3177,7 +3177,17 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
         patch.confirmed_at = new Date().toISOString();
       }
-      await db.from("orders").update(patch).eq("id", run.vars._order_id);
+      // Se mira el error: si este update falla, el pedido se queda en 'pendiente' pero abajo
+      // igual se registra "Pedido confirmado", se sincroniza a Sheets, se reporta el Purchase
+      // a Meta y se entrega. Quedaba un pedido atascado en "Pagos por validar" con el producto
+      // ya entregado y la venta contada en Meta, sin que nada lo dijera. NO se corta la
+      // entrega (el cliente pagó y merece su producto): se avisa para que lo cuadres a mano.
+      const { error: errUpd } = await db.from("orders").update(patch).eq("id", run.vars._order_id);
+      if (errUpd) {
+        await logEvent(db, run.channel_id, run.contact_id, "error", "El pedido NO se pudo confirmar en la base",
+          `${errUpd.message} — se entrega igual; confírmalo a mano en Pedidos`).catch(() => {});
+        await notifyAdmin(db, run, `⚠️ Aprobaste el pago pero el pedido NO quedó confirmado en la base (${errUpd.message}). El cliente sí recibe su producto — confírmalo a mano en Pedidos para que cuadren tus números.`).catch(() => {});
+      }
       if (pr.vuelto > 0) await avisarVuelto(db, run, pr.amount, pr.vuelto);
       run.vars._order_precreado = false;
       run.vars.pedido_id = run.vars._order_id;
