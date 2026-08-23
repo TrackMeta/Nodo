@@ -399,18 +399,18 @@ async function operaComando(){
 async function operaExec(a){
   if(a.tipo==="precio"){
     const { error }=await supa.from("product_versions").update({ precio:a.valor }).eq("id",a.version_id); if(error) throw error;
-    return async()=>{ await supa.from("product_versions").update({ precio:a.actual }).eq("id",a.version_id); };
+    return async()=>{ const { error:e2 }=await supa.from("product_versions").update({ precio:a.actual }).eq("id",a.version_id); if(e2) throw e2; };
   }
   if(a.tipo==="estado_venta"){
     const nuevo=a.valor?"activo":"borrador", viejo=a.actual?"activo":"borrador";
     const { error }=await supa.from("flows").update({ estado:nuevo }).eq("id",a.flow_id); if(error) throw error;
-    return async()=>{ await supa.from("flows").update({ estado:viejo }).eq("id",a.flow_id); };
+    return async()=>{ const { error:e2 }=await supa.from("flows").update({ estado:viejo }).eq("id",a.flow_id); if(e2) throw e2; };
   }
   if(a.tipo==="adelanto"){
     const { data }=await supa.from("products").select("config").eq("id",a.product_id).maybeSingle();
     const cfg=(data&&data.config)||{}; const viejo=cfg.adelanto_override;
     const { error }=await supa.from("products").update({ config:{...cfg, adelanto_override:a.valor} }).eq("id",a.product_id); if(error) throw error;
-    return async()=>{ const c2={...cfg}; if(viejo==null) delete c2.adelanto_override; else c2.adelanto_override=viejo; await supa.from("products").update({ config:c2 }).eq("id",a.product_id); };
+    return async()=>{ const c2={...cfg}; if(viejo==null) delete c2.adelanto_override; else c2.adelanto_override=viejo; const { error:e2 }=await supa.from("products").update({ config:c2 }).eq("id",a.product_id); if(e2) throw e2; };
   }
   throw new Error("acción no soportada");
 }
