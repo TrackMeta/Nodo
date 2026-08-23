@@ -210,6 +210,23 @@ async function runEngineInner(
     }
   }
 
+  // ¿Pide CANCELAR un pedido que ya existe? El bot no puede cancelarlo (no tiene la acción,
+  // y aunque la tuviera es una decisión tuya: despacho, adelanto a devolver, stock). Al
+  // probarlo decía "Cancelado el pedido" y el pedido seguía CONFIRMADO con su stock
+  // descontado → se despachaba y el cliente lo rechazaba en la puerta. Ahora escala a una
+  // persona y te avisa, en vez de mentirle al cliente.
+  if (event.type === "message" && pideCancelar(event.text)) {
+    const ord = await tienePedidoVivo(db, contactId);
+    if (ord) {
+      await pasarAHumano(db, channelId, contactId,
+        `🚫 Quiere CANCELAR su pedido (${ord.estado}${ord.amount ? ` · ${ord.amount}` : ""}): “${String(event.text ?? "").slice(0, 120)}”. ` +
+        `Revisa si ya se despachó y si hay adelanto que devolver, y cancélalo desde Pedidos (así vuelve el stock).`,
+        { aviso: true });
+      return;
+    }
+    // Sin pedido vivo no hay nada que cancelar → sigue la conversación normal.
+  }
+
   // Reclama su vuelto (pagó de más) → el bot lo tranquiliza y te avisa para que
   // hagas la devolución, sin pausar ni traspasar (así el cliente no queda en el
   // aire si no estás). Si está desactivado, sigue el flujo normal (lo ve la IA).
@@ -1098,6 +1115,42 @@ function pideReclamo(text: string): boolean {
     const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
   });
+}
+
+// ── Pide CANCELAR un pedido que ya existe ─────────────────────────────
+// Cancelar no lo puede hacer el bot solo: hay que ver si ya se despachó, si dejó un
+// adelanto que devolver y si el stock vuelve o no. Y sobre todo, el bot NO TIENE cómo
+// cancelar — al probarlo respondía "Cancelado el pedido" y el pedido seguía vivo en el
+// tablero, con su stock descontado: se despachaba igual y el cliente lo rechazaba en la
+// puerta. Así que se trata como el reclamo: se escala a una persona, se le dice al cliente
+// la verdad (lo estoy viendo) y te llega el aviso.
+// Lista CORTA y explícita a propósito: "ya no lo quiero" queda FUERA porque es la respuesta
+// normal a un extra ofrecido y escalaría media venta.
+const PIDE_CANCELAR = [
+  "cancelalo", "cancelala", "cancelame el pedido", "cancela el pedido", "cancela mi pedido",
+  "cancelar el pedido", "cancelar mi pedido", "quiero cancelar", "quiero cancelarlo",
+  "deseo cancelar", "necesito cancelar", "puedo cancelar", "se puede cancelar",
+  "anula el pedido", "anula mi pedido", "anular el pedido", "anular mi pedido", "anulalo",
+  "me arrepenti", "ya no voy a comprar", "ya no quiero el pedido", "dejalo sin efecto",
+];
+function pideCancelar(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 200) return false;
+  return PIDE_CANCELAR.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
+// ¿Tiene un pedido VIVO (ni cerrado ni caído) al que se refiera la cancelación? Sin esto,
+// un "quiero cancelar" de alguien que todavía no compró escalaría sin motivo.
+async function tienePedidoVivo(db: SupabaseClient, contactId: string): Promise<any | null> {
+  const { data } = await db.from("orders").select("id, estado, amount, shipping")
+    .eq("contact_id", contactId)
+    .not("estado", "in", `(${["cancelado", "anulada", "rechazado", "no_recogido", "recogido", "entregado_cobrado"].map((e) => `"${e}"`).join(",")})`)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return (data as any) ?? null;
 }
 
 // ── Recompra (post-venta) → relanzar la venta ─────────────────────────
@@ -7479,7 +7532,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "Si el cliente pidió una variante que no manejas, dile cuáles hay y espera a que elija: sin ese dato el pedido " +
       "NO se crea, y si igual dices \"queda confirmado\" el cliente se queda esperando algo que nunca se registró.\n" +
       "   MAL: \"Listo, queda confirmado tu pedido talla 41.\" (cuando solo manejas 38, 39 y 40)\n" +
-      "   BIEN: \"En la 41 no la tengo — manejo 38, 39 y 40. ¿Cuál te va?\"",
+      "   BIEN: \"En la 41 no la tengo — manejo 38, 39 y 40. ¿Cuál te va?\"\n" +
+      "9. NO puedes CANCELAR ni ANULAR un pedido: no tienes esa herramienta. Si dices \"cancelado\", el pedido " +
+      "sigue vivo en el tablero y se despacha igual — el negocio paga el envío y el cliente rechaza el paquete. " +
+      "Cuando te pidan cancelar, dile la verdad: que lo estás viendo y le confirmas. Nunca lo des por hecho.\n" +
+      "   MAL: \"Listo, cancelado tu pedido.\"  ·  MAL: \"Ya lo anulé, no te preocupes.\"\n" +
+      "   BIEN: \"Entiendo. Déjame revisarlo y te confirmo en un ratito.\" (y no sigas ofreciéndole nada más)",
     );
 
     // La regla de arriba, sola, no alcanzaba: el PRIMER mensaje del cliente lo
