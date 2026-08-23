@@ -469,7 +469,12 @@ async function antispamOn(channelId: string): Promise<boolean> {
 }
 
 async function processSub(s: any, now: number): Promise<boolean> {
-  const { data: seq } = await db.from("sequences").select("*").eq("id", s.sequence_id).maybeSingle();
+  const { data: seq, error: errSeq } = await db.from("sequences").select("*").eq("id", s.sequence_id).maybeSingle();
+  // Distinguir "la secuencia ya no existe" de "no pude leerla". Sin esto, un error transitorio
+  // dejaba `seq` en null y caía en el branch de abajo, que marca la suscripción COMPLETADA:
+  // ese contacto se quedaba fuera del remarketing PARA SIEMPRE por un hipo de red, en silencio.
+  // Ante un error se sale sin tocar nada y el próximo tick reintenta.
+  if (errSeq) { console.error(`[secuencia] leer la secuencia ${s.sequence_id}: ${errSeq.message} — se reintenta`); return false; }
   const pasos = Array.isArray((seq as any)?.pasos) ? (seq as any).pasos : [];
   // Modo de disparo (0064). 'goteo' = programado: ignora el silencio y NO se
   // reinicia con la respuesta del cliente; corre su calendario desde que se

@@ -27,11 +27,25 @@ export async function processCampaigns(db: SupabaseClient) {
 
 async function expandCampaign(db: SupabaseClient, c: any) {
   const ids = await matchSegment(db, c.channel_id, c.segmento ?? {});
-  if (ids.length) {
-    const rows = ids.map((id) => ({ campaign_id: c.id, contact_id: id, estado: "pendiente" }));
-    await db.from("campaign_sends").upsert(rows, { onConflict: "campaign_id,contact_id", ignoreDuplicates: true });
+  // Por LOTES y mirando el error. Desde que matchSegment pagina, la audiencia ya no topa en
+  // 1000: un canal grande devuelve decenas de miles de ids y meterlos en un solo POST manda
+  // megabytes de body. Y el error no se miraba: si ese insert fallaba, la campaña pasaba
+  // igual a "enviando" con `total` lleno → quedaba marcada como en curso SIN un solo
+  // destinatario, y nadie recibía nada. Al fallar se deja en "programada" y el próximo tick
+  // lo reintenta: el upsert con ignoreDuplicates es idempotente, así que lo ya insertado no
+  // se duplica.
+  let insertados = 0;
+  for (const trozo of enTrozos(ids, 500)) {
+    const rows = trozo.map((id) => ({ campaign_id: c.id, contact_id: id, estado: "pendiente" }));
+    const { error } = await db.from("campaign_sends")
+      .upsert(rows, { onConflict: "campaign_id,contact_id", ignoreDuplicates: true });
+    if (error) {
+      console.error(`[campañas] expandir "${c.nombre ?? c.id}": ${error.message} — queda programada, se reintenta`);
+      return;
+    }
+    insertados += trozo.length;
   }
-  await db.from("campaigns").update({ estado: "enviando", total: ids.length }).eq("id", c.id);
+  await db.from("campaigns").update({ estado: "enviando", total: insertados }).eq("id", c.id);
 }
 
 // Trae TODAS las filas de una consulta paginando con .range().
@@ -168,8 +182,13 @@ async function sendBatch(db: SupabaseClient, c: any) {
   const token = secrets?.access_token;
   const canSend = (ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id && token;
 
-  const { data: pend } = await db.from("campaign_sends").select("id, contact_id")
+  const { data: pend, error: errPend } = await db.from("campaign_sends").select("id, contact_id")
     .eq("campaign_id", c.id).eq("estado", "pendiente").limit(BATCH);
+  // Distinguir "no quedan pendientes" de "no pude leerlos". Antes el error no se recogía:
+  // `data` venía undefined, `!pend?.length` daba true y la campaña se marcaba COMPLETADA por
+  // un hipo de red — a mitad del envío, con el resto de la audiencia sin recibir nada y sin
+  // forma de retomarla. Ahora un error deja la campaña 'enviando' y el próximo tick sigue.
+  if (errPend) { console.error(`[campañas] leer pendientes de "${c.nombre ?? c.id}": ${errPend.message} — se reintenta`); return; }
   if (!pend?.length) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
 
   let ok = 0, fail = 0;
