@@ -866,6 +866,44 @@ export async function aplicarStock(
 // prefijo xt<vid>_). Corre tras extraerDatos. Idempotente: al descontar marca
 // stock_pendiente=false. Añade el movimiento a shipping.stock_mov (para devolver
 // si la venta se cae). Avisa si baja/agota (no bloquea).
+// El cliente CORRIGIÓ su variante (talla/color) cuando el pedido YA existe.
+//   Antes la corrección solo se honraba ANTES de crear el pedido: después, el bot decía
+//   "anotado, talla 40" y el pedido seguía con la 39 — se despachaba la talla equivocada y
+//   el stock quedaba descontado en la que no era. El cambio se lleva al pedido y el stock se
+//   mueve en las dos direcciones (devuelve la vieja, descuenta la nueva) reusando
+//   reconciliarStockManual, la misma que usa "Editar pedido" del panel: recibe el shipping ya
+//   corregido, recalcula el stock deseado y persiste ambas cosas.
+//   Solo toca pedidos VIVOS: uno cerrado o caído ya no se reescribe.
+const VARIANTE_NO_TOCAR = ["cancelado", "anulada", "rechazado", "no_recogido", "recogido", "entregado_cobrado", "saldo_pagado"];
+async function propagarVarianteAlPedido(db: SupabaseClient, run: Run, ctx: any) {
+  const oid = run.vars?._order_id as string | undefined;
+  if (!oid) return;
+  const atrs: any[] = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
+  if (!atrs.length) return;
+  const { data: o } = await db.from("orders").select("estado, shipping, order_bumps, product_id").eq("id", oid).maybeSingle();
+  if (!o || VARIANTE_NO_TOCAR.includes(String((o as any).estado))) return;
+  const ship = ((o as any).shipping ?? {}) as any;
+  const actuales = (ship.atributos ?? {}) as Record<string, string>;
+  const nuevos: Record<string, string> = { ...actuales };
+  const cambios: string[] = [];
+  for (const at of atrs) {
+    const crudo = String(ctx[at.clave] ?? run.vars?.[at.clave] ?? "").trim();
+    if (!crudo) continue;
+    const canon = snapValorVariante(crudo, (at.valores || []).join(","));
+    const antes = String(actuales[at.nombre] ?? "").trim();
+    // Solo una CORRECCIÓN (ya había un valor y ahora es otro). Rellenar un hueco lo hace
+    // el camino normal; acá solo interesa el cambio de opinión.
+    if (antes && antes.toLowerCase() !== String(canon).trim().toLowerCase()) {
+      nuevos[at.nombre] = canon;
+      cambios.push(`${at.nombre}: ${antes} → ${canon}`);
+    }
+  }
+  if (!cambios.length) return;
+  const shipNuevo = { ...ship, atributos: nuevos };
+  await reconciliarStockManual(db, oid, String((o as any).estado), shipNuevo, ((o as any).order_bumps ?? []) as any[], ((o as any).product_id ?? null) as any);
+  await logEvent(db, run.channel_id, run.contact_id, "campo", "Variante corregida en el pedido", cambios.join(" · ")).catch(() => {});
+}
+
 async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
   try {
     const oid = (run.vars as any)?._order_id;
@@ -7246,6 +7284,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (campos.length) await extraerDatos(db, run, { ...cfg, campos }, ctx).catch(() => null);
     // 📦 Si ya se capturó la talla de un extra físico pendiente, descuéntala.
     await reconciliarStockExtras(db, run, ctx).catch(() => null);
+    // 📦 Y si CORRIGIÓ la variante del principal con el pedido ya creado ("mejor la 40"),
+    // llevar el cambio al pedido y mover el stock. Sin esto el bot decía "anotado, talla 40"
+    // y se despachaba la 39.
+    await propagarVarianteAlPedido(db, run, ctx).catch(() => null);
   }
 
   // Operación "clasificar": mete la última respuesta del cliente en una de las
