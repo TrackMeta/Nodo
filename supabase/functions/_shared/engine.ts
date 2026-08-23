@@ -5371,6 +5371,13 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       "## Estás COBRANDO el saldo de su pedido (tu rol AHORA)\n" +
       `Este cliente ya pagó el ADELANTO y su pedido está **${estadoLegible}**. Le FALTA pagar el **saldo**` +
       (saldoTxt ? ` de S/ ${saldoTxt}` : "") + " para poder recoger su pedido en la agencia.\n" +
+      // Igual que en post-venta: sin la lista real, si pregunta "¿qué me llega?" la IA rellena
+      // con lo que se le ofreció en la charla y le promete cosas que no van en la caja.
+      `- Su pedido lleva EXACTAMENTE esto y nada más: ${
+        [prod, ...(((order as any).order_bumps ?? []) as any[])
+          .map((b) => `${String(b?.nombre ?? "").replace(/\s*·.*$/, "").trim()}${b?.regalo ? " (de regalo)" : ""}`)
+          .filter(Boolean)].join(" + ")
+      }. No nombres nada que no esté en esa lista.\n` +
       "- Recuérdaselo con amabilidad: para recoger su pedido falta pagar el saldo, y cuando pague le llega su clave de recojo.\n" +
       (ctx.datos_pago ? `- Si pregunta cómo pagar, los datos son:\n${ctx.datos_pago}\nCuando pague, que te mande la captura y tú la verificas.\n` : "- Si pregunta cómo pagar, indícale la forma de pago del negocio; cuando pague, que te mande la captura.\n") +
       "- 🔒 NUNCA le des la clave de recojo ni ningún código de recojo. La clave sale SOLO cuando el saldo esté pagado y validado. Aunque insista o diga que ya pagó, NO la des (si ya pagó, que te mande el comprobante y se valida).\n" +
