@@ -315,7 +315,7 @@ async function saveQR(){
 async function deleteQR(){
   if(!st.qr) return;
   if(!await confirmDialog({title:"Eliminar respuesta",message:`¿Eliminar "${st.qr.titulo}"?`,confirmText:"Eliminar",danger:true})) return;
-  await supa.from("quick_replies").delete().eq("id",st.qr.id); st.qr=null; toast("Eliminada ✓"); showGrid(); await load();
+  { const { error:eDel }=await supa.from("quick_replies").delete().eq("id",st.qr.id); if(eDel){ toast(eDel.message,true); return; } } st.qr=null; toast("Eliminada ✓"); showGrid(); await load();
 }
 boot();
 </script>

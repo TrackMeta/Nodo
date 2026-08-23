@@ -478,7 +478,7 @@ async function saveTpl(){
 }
 async function deleteTpl(){
   if(!await confirmDialog({title:"Eliminar plantilla",message:"¿Eliminar esta plantilla?",confirmText:"Eliminar",danger:true})) return;
-  await supa.from("wa_templates").delete().eq("id",st.tpl.id); st.tpl=null; await loadList(); showGrid(); toast("Eliminada ✓");
+  { const { error:eDel }=await supa.from("wa_templates").delete().eq("id",st.tpl.id); if(eDel){ toast(eDel.message,true); return; } } st.tpl=null; await loadList(); showGrid(); toast("Eliminada ✓");
 }
 boot();
 </script>
