@@ -289,6 +289,14 @@ async function runEngineInner(
     catch (e) { console.error("[maybeModificarPedido/postrun]", (e as any)?.message ?? e); }
     try { if (await maybeCambioVariante(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeCambioVariante/postrun]", (e as any)?.message ?? e); }
+    // CORRECCIÓN de datos de despacho también sin run. Estaba solo en la rama de arriba, pero
+    // la corrección típica llega DESPUÉS de cerrar la venta ("me equivoqué, es Av Larco 500",
+    // "mi DNI es 45678901", "mejor a la agencia de Miraflores") y ahí el run ya murió: el
+    // cambio no se aplicaba al pedido y el paquete salía con los datos VIEJOS — dirección
+    // equivocada, o en provincia un DNI/sede con los que el cliente no puede recoger.
+    // No corta el flujo (es void): actualiza el pedido y deja que la respuesta siga su curso.
+    try { await maybeCambioDatos(db, channelId, contactId, event); }
+    catch (e) { console.error("[maybeCambioDatos/postrun]", (e as any)?.message ?? e); }
     // Modo soporte post-venta: si el contacto YA compró y escribe sin flujo
     // activo, lo atendemos como cliente (soporte), no re-vendemos. Si quiere
     // recomprar, dentro se relanza la venta. Solo entonces cae al ruteo normal.
