@@ -7819,11 +7819,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "   MAL: \"Perfecto, el plan Básica cuesta S/ 99. ¿Quieres que te envíe los datos de pago?\"\n" +
       "   MAL: \"El Premium es S/ 199. ¿Te paso los datos para que puedas hacer el pago?\"\n" +
       "   BIEN: \"¡Perfecto! Te confirmo el plan Básica por S/ 99.\" (y cortas ahí — los datos de pago salen solos)\n" +
-      "8. NUNCA des por confirmado un pedido si te falta un dato del producto (la talla, el color, la presentación). " +
-      "Si el cliente pidió una variante que no manejas, dile cuáles hay y espera a que elija: sin ese dato el pedido " +
-      "NO se crea, y si igual dices \"queda confirmado\" el cliente se queda esperando algo que nunca se registró.\n" +
+      "8. NUNCA des por confirmado un pedido si te falta ALGÚN dato obligatorio: ni del producto (talla, color, " +
+      "presentación) ni de la entrega (nombre, DNI, dirección, sede, celular). Mientras falte uno, el pedido NO se " +
+      "crea, y si igual dices \"queda confirmado\" el cliente se queda esperando algo que nunca se registró. Pide lo " +
+      "que falta sin afirmar que ya está cerrado: confirmas DESPUÉS, cuando lo tengas todo.\n" +
       "   MAL: \"Listo, queda confirmado tu pedido talla 41.\" (cuando solo manejas 38, 39 y 40)\n" +
+      "   MAL: \"Queda confirmado tu pedido, talla 39 negras con recojo en Trujillo. ¿Me pasas tu celular?\" " +
+      "(si le falta el celular, NO está confirmado: lo confirmas cuando te lo dé)\n" +
       "   BIEN: \"En la 41 no la tengo — manejo 38, 39 y 40. ¿Cuál te va?\"\n" +
+      "   BIEN: \"Perfecto, talla 39 negras con recojo en Trujillo. Pásame tu celular y te lo dejo listo.\"\n" +
       "9. NO puedes CANCELAR ni ANULAR un pedido: no tienes esa herramienta. Si dices \"cancelado\", el pedido " +
       "sigue vivo en el tablero y se despacha igual — el negocio paga el envío y el cliente rechaza el paquete. " +
       "Cuando te pidan cancelar, dile la verdad: que lo estás viendo y le confirmas. Nunca lo des por hecho.\n" +
