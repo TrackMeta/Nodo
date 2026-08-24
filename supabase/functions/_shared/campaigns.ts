@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getChannelSecrets } from "./db.ts";
-import { sendTemplate } from "./meta.ts";
+import { sendTemplate, esRechazoTemporal } from "./meta.ts";
 import { enParalelo } from "./concurrencia.ts";
 
 const BATCH = 25; // envíos por tick (por campaña)
@@ -306,6 +306,23 @@ async function sendBatch(db: SupabaseClient, c: any) {
       if (canSend) await db.from("contacts").update({ ultimo_auto_msg_at: new Date().toISOString() }).eq("id", s.contact_id).then(() => {}, () => {});
       ok++;
     } catch (e) {
+      // ¿Meta lo rechazó por un tope TEMPORAL (rate limit del número, spam/pair rate, 5xx)?
+      // Entonces no es culpa de este contacto ni es definitivo: se devuelve la fila a
+      // 'pendiente' para que salga más tarde. Marcarla "fallido" la sacaba de la cola para
+      // siempre y ese cliente se quedaba sin el mensaje que mañana sí habría llegado —
+      // audiencia quemada por un tope de una tarde.
+      // Y se CORTA el resto del lote de esta campaña en este tick: si el número está topado,
+      // los 24 envíos que siguen chocarían igual. Así se gastan 1-2 intentos por minuto en
+      // vez de 25, y el próximo tick retoma donde quedó.
+      const meta = (e as any)?.meta;
+      if (meta && esRechazoTemporal(meta)) {
+        await db.from("campaign_sends").update({
+          estado: "pendiente",
+          error: { message: "Meta frenó el envío por un tope temporal — se reintenta", code: meta?.code ?? null },
+        }).eq("id", s.id);
+        console.warn(`[campañas] "${c.nombre ?? c.id}": tope temporal de Meta (code ${meta?.code}) → se corta el lote y se reintenta`);
+        break;
+      }
       await db.from("campaign_sends").update({ estado: "fallido", error: { message: String((e as any)?.message ?? e) } }).eq("id", s.id);
       fail++;
     }

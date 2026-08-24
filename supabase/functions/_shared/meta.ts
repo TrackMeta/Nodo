@@ -136,6 +136,22 @@ export async function fetchMediaAsDataUri(mediaId: string, accessToken: string):
 // 80007 = rate limit de la app, 133016 = restauración en curso. Un 5xx también es transitorio.
 const META_RETRYABLE = new Set([130429, 131056, 80007, 133016]);
 
+// ¿Este rechazo de Meta se va a resolver SOLO con el tiempo? Sirve para no quemar un
+// destinatario por un tope temporal: en una campaña, marcarlo "fallido" es definitivo (esa
+// fila no se reintenta nunca) y ese cliente se queda sin recibir un mensaje que mañana sí
+// habría salido. Incluye los reintentables de arriba —que llegan acá solo si `postMessage`
+// ya agotó su backoff— más 131048 (spam/pair rate: te frena TEMPORALMENTE con ESE
+// destinatario) y cualquier 5xx.
+// OJO: el tope DIARIO de conversaciones iniciadas (el "messaging tier" de 250/1K/10K/100K)
+// no está acá porque no tengo confirmado su código; si aparece uno nuevo que sea temporal,
+// este es el sitio donde sumarlo.
+export function esRechazoTemporal(meta: any): boolean {
+  const code = Number(meta?.code);
+  if (META_RETRYABLE.has(code) || code === 131048) return true;
+  const st = Number(meta?.status);
+  return Number.isFinite(st) && st >= 500;
+}
+
 // POST genérico a /messages. Devuelve el wamid o lanza MetaApiError.
 // Reintenta con backoff los errores TRANSITORIOS: antes, un rate-limit momentáneo se
 // trataba como fallo permanente → el mensaje se marcaba 'failed', el flujo AVANZABA y una
