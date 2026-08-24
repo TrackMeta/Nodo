@@ -103,14 +103,33 @@ Deno.serve(async (req) => {
   }
 
   // ── 2) Secuencias de remarketing ──────────────────────────────────
+  // Se rota por `revisado_at` (0077), NO por `updated_at`. `processSub` sale sin escribir
+  // nada en casi todos sus caminos —el temporizador aún no vence, secuencia pausada, run
+  // activo, fuera de horario, antispam—, así que ordenar por `updated_at` devolvía LAS
+  // MISMAS 200 cada minuto: con más de 200 suscripciones activas, las que esperan un paso
+  // largo (las de updated_at más viejo, justo las que el orden ponía primero) tapaban a las
+  // demás y las que vencían hoy no se miraban nunca. El remarketing se apagaba en silencio
+  // para la mayoría. No se puede rotar tocando `updated_at` porque es el ANCLA del
+  // temporizador (cuándo se envió el paso anterior); por eso el cursor va aparte.
   const { data: subs } = await db.from("sequence_subscriptions")
     .select("id, channel_id, contact_id, sequence_id, paso_actual, updated_at, suscrito_at")
     .eq("estado", "activa")
-    .order("updated_at", { ascending: true })   // la menos tocada primero: evita inanición si hay más de 200 subs activas
+    .order("revisado_at", { ascending: true, nullsFirst: true })  // nunca revisadas primero, luego las más rancias
     .limit(200);
   for (const s of subs ?? []) {
     try { if (await processSub(s, now)) fired++; }
     catch (e) { console.error("[scheduler] seq:", (e as any)?.message ?? e); }
+  }
+  // Sellar el cursor de TODAS las revisadas (hayan disparado o no): es lo que hace avanzar
+  // la ventana al siguiente grupo. En lote y por trozos, para no mandar 200 ids en la URL.
+  // Si esto falla, el peor caso es repetir el mismo grupo el próximo tick — no se pierde ni
+  // se duplica ningún envío (el claim atómico de processSub sigue siendo el que manda).
+  const revisadas = (subs ?? []).map((s: any) => s.id);
+  for (let i = 0; i < revisadas.length; i += 100) {
+    const trozo = revisadas.slice(i, i + 100);
+    const { error: errRev } = await db.from("sequence_subscriptions")
+      .update({ revisado_at: new Date().toISOString() }).in("id", trozo);
+    if (errRev) { console.error("[scheduler] sellar revisado_at:", errRev.message); break; }
   }
 
   // ── 3) Campañas / broadcast ───────────────────────────────────────
