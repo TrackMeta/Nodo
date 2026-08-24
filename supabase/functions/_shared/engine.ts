@@ -4209,12 +4209,32 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // maneja el nodo "Validar el pago" del propio flujo digital (que entrega el link).
   // Sin esta guarda, el interceptor físico secuestraba la venta digital y respondía
   // "para despachar tu pedido a la agencia… tu DNI y la sede/oficina Shalom".
+  let sinVenta = false;
   {
     const { data: ct } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
     const pid = (ct as any)?.product_id;
     if (pid) {
       const { data: prod } = await db.from("products").select("tipo").eq("id", pid).maybeSingle();
       if ((prod as any)?.tipo === "digital") return false;
+    } else {
+      // NADIE eligió producto todavía. Este interceptor da por hecho que quien manda un
+      // comprobante está a mitad de una venta de provincia, y contestaba "¡Recibí tu pago!
+      // …para despachar tu pedido a la agencia" a alguien que entró en frío mandando una
+      // captura (recompra directa, chat equivocado, o alguien probando al bot). Peor: como
+      // nunca nacía un pedido, el cliente daba su DNI, escuchaba "tu pedido está listo para
+      // ser enviado" y esperaba un paquete que no existía en ningún lado — sin pedido, sin
+      // aviso y sin rastro para reclamar. Se comprueba si hay ALGUNA venta viva a la que ese
+      // pago pueda pertenecer; si no la hay, más abajo se reconoce la captura sin prometer
+      // nada y lo toma una persona: hay plata de por medio que el bot no puede identificar.
+      const { data: runVivo } = await db.from("flow_runs").select("id")
+        .eq("contact_id", contactId).in("estado", ["activo", "esperando"]).limit(1).maybeSingle();
+      if (!runVivo) {
+        const { data: ordVivo } = await db.from("orders").select("id")
+          .eq("channel_id", channelId).eq("contact_id", contactId)
+          .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
+          .limit(1).maybeSingle();
+        if (!ordVivo) sinVenta = true;
+      }
     }
   }
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
@@ -4239,6 +4259,20 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // Solo intervenimos si el OCR CONFIRMA que es un pago (es_pago true). Sin
   // confirmación (foto random, o sin IA configurada) NO interceptamos.
   if (!parsed || parsed.es_pago !== true) return false;
+  // Es un pago, pero no hay ninguna venta suya a la que atarlo. No se promete despacho ni se
+  // guarda como "prepago del adelanto" (no habría pedido que lo enganche y quedaría invisible
+  // para siempre): se reconoce la captura sin afirmar nada y lo toma una persona.
+  if (sinVenta) {
+    const monto = parseMonto(parsed?.monto, {});
+    await logEvent(db, channelId, contactId, "nota", "💸 Mandó un comprobante y no tiene ningún pedido",
+      `${monto != null ? "Monto leído: " + monto + ". " : ""}Sin producto elegido ni venta en curso.`).catch(() => {});
+    await deliverMessage(db, channelId, contactId,
+      "¡Gracias por la captura! 🙌 Para no equivocarme, cuéntame *qué producto compraste* y en un momento te confirmo todo. 😊").catch(() => {});
+    await pasarAHumano(db, channelId, contactId,
+      `Mandó un comprobante${monto != null ? ` de ${monto}` : ""} y no tiene ningún pedido ni producto elegido.`,
+      { aviso: true }).catch(() => {});
+    return true;
+  }
   await setField(db, channelId, contactId, "_prepago_adel_url", url);
   await setField(db, channelId, contactId, "_prepago_adel_monto", String(parseMonto(parsed?.monto, {}) ?? ""));
   await setField(db, channelId, contactId, "_prepago_adel_oper", parsed?.operacion ? String(parsed.operacion).trim() : "");

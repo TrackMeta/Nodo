@@ -523,8 +523,12 @@ async function toggleBot(c){
 async function setNoRemarketing(ids, val){
   // Por trozos: con "seleccionar todo" la lista de ids viaja en la URL y el servidor la
   // rechaza pasados ~600 (medido: 800 → 400). Antes la acción fallaba entera.
-  let error=null;
-  for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ no_remarketing:val }).in("id",trozo); if(r.error){ error=r.error; break; } }
+  // El `.eq("channel_id")` lo tienen las otras tres acciones en lote (etapa, bloquear,
+  // eliminar) y a esta le faltaba. Hoy los ids salen siempre de la lista del canal abierto,
+  // así que no cambia nada; se iguala para que el día que un id llegue de otro lado la
+  // escritura no pueda salirse del canal que tienes en pantalla.
+  let error=null; const chNR=st.channelId;
+  for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ no_remarketing:val }).eq("channel_id",chNR).in("id",trozo); if(r.error){ error=r.error; break; } }
   if(error){ toast(error.message,true); return; }
   toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing ✓`
            :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing ✓`);
