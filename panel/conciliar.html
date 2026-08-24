@@ -227,6 +227,18 @@ async function conciliar(){
         { id:o.id+"::saldo",    monto:saldo, cliente, producto, metodo:s.saldo_metodo||"",    fecha:fSaldo, _o:o, _orderId:o.id, _parte:"saldo",    _parteTxt:"saldo",    _yaConciliado:partes.saldo||null },
       ];
     }
+    // Una venta pagada en ABONOS (el bot acepta que el cliente complete de a poco: S/50 hoy
+    // y S/49 mañana) también entra al banco como varios movimientos. Buscar uno solo por el
+    // total no calzaba nunca y la venta salía "sin respaldo" con su plata completa en la
+    // cuenta. Mismo trato que adelanto+saldo: una entrada por abono.
+    const ab=Array.isArray(s.digital_abonos)?s.digital_abonos.filter(x=>Number(x&&x.monto)>0.005):[];
+    if(ab.length>1){
+      return ab.map((x,i)=>({
+        id:o.id+"::abono"+i, monto:+Number(x.monto).toFixed(2), cliente, producto, metodo:metodoDe(o),
+        fecha: (x.at?new Date(x.at):null) || ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
+        _o:o, _orderId:o.id, _parte:"abono"+i, _parteTxt:`abono ${i+1} de ${ab.length}`,
+        _yaConciliado:partes["abono"+i]||null }));
+    }
     return [{ id:o.id, monto:total, cliente, producto, metodo:metodoDe(o),
       fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
       _o:o, _orderId:o.id, _parte:null, _parteTxt:"", _yaConciliado:(conc.partes?null:(s.conciliacion||null)) }];

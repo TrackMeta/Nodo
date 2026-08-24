@@ -3191,6 +3191,19 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     const ship: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
 
+    // Datos del pago que ya validó el OCR, por si el nodo del flujo no los mapeó. El flujo
+    // digital generado solo guarda `opcion` y `comprobante`, así que la venta auto-aprobada
+    // nacía SIN con qué app pagó ni el nº de operación —que la rama de validación manual sí
+    // guarda—, y sobre todo sin los abonos cuando el cliente pagó en dos partes. El
+    // conciliador entonces buscaba UN movimiento por el total mientras en el banco había dos
+    // (S/50 y S/49) y marcaba como "sin respaldo" una venta perfectamente cobrada. Se hace
+    // acá y no en el generador para que valga también para los flujos ya creados.
+    if (!ship.digital_metodo && run.vars?.pago_metodo) ship.digital_metodo = run.vars.pago_metodo;
+    if (!ship.digital_operacion && run.vars?.pago_operacion) ship.digital_operacion = run.vars.pago_operacion;
+    if (!ship.digital_abonos && Array.isArray(run.vars?._pago_abonos) && (run.vars._pago_abonos as any[]).length > 1) {
+      ship.digital_abonos = run.vars._pago_abonos;
+    }
+
     // Atributos capturados (talla, color…) → quedan en el pedido, por su NOMBRE
     // legible, para el rótulo de envío y Compras. Se leen de las variables del
     // run por su clave (los pobló extraerDatos). Solo los que tienen valor.
