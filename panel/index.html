@@ -605,8 +605,12 @@ async function boot() {
   try {
     const cid = new URLSearchParams(location.search).get("c");
     if (cid) {
+      // Filtrado por canal: el id viene de la URL (?c=…). Sin esto, un enlace guardado de
+      // OTRO canal de la misma cuenta abría ese chat dentro de la Bandeja del canal actual
+      // —contacto y conversación de otro negocio, mezclados— y todo lo que se hiciera ahí
+      // (responder, etiquetar, pausar el bot) iba al contacto equivocado.
       const { data: c } = await supa.from("contacts")
-        .select("id,nombre,wa_id,bot_activo,stage").eq("id", cid).maybeSingle();
+        .select("id,nombre,wa_id,bot_activo,stage").eq("id", cid).eq("channel_id", state.channelId).maybeSingle();
       if (c) { openChat(c); history.replaceState(null, "", location.pathname); }
     }
     // Deep-link: ?stage=<etapa> abre la Bandeja ya filtrada por esa etapa del
