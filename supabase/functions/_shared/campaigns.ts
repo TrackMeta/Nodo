@@ -14,14 +14,19 @@ const BATCH = 25; // envíos por tick (por campaña)
 export async function processCampaigns(db: SupabaseClient) {
   const nowIso = new Date().toISOString();
   // 1) Programadas que ya toca → expandir a envíos.
+  // Orden explícito en las dos: sin `.order()` el orden que devuelve Postgres no está
+  // garantizado, así que con más campañas que el tope no había forma de saber cuáles
+  // entraban. FIFO por fecha — la que se programó primero, primero — y así el recorte
+  // es al menos predecible y no deja una campaña esperando por sorteo.
   const { data: prog } = await db.from("campaigns").select("*")
     .eq("estado", "programada")
-    .or(`programada_at.is.null,programada_at.lte.${nowIso}`).limit(10);
+    .or(`programada_at.is.null,programada_at.lte.${nowIso}`)
+    .order("programada_at", { ascending: true, nullsFirst: true }).order("id").limit(10);
   for (const c of prog ?? []) await expandCampaign(db, c);
 
   // 2) En curso → enviar el siguiente lote.
   const { data: sending } = await db.from("campaigns").select("*")
-    .eq("estado", "enviando").limit(5);
+    .eq("estado", "enviando").order("created_at", { ascending: true }).order("id").limit(5);
   for (const c of sending ?? []) await sendBatch(db, c);
 }
 
@@ -263,7 +268,24 @@ async function sendBatch(db: SupabaseClient, c: any) {
       fail++;
     }
   }
-  await db.from("campaigns").update({ enviados: (c.enviados || 0) + ok, fallidos: (c.fallidos || 0) + fail }).eq("id", c.id);
+  // Los contadores se RECUENTAN desde campaign_sends, no se acumulan sobre el valor que se
+  // leyó al empezar el tick. Ese `c.enviados` es una foto vieja: el cron corre cada minuto y
+  // un lote grande tarda más (por eso existe el claim atómico por fila), así que dos ticks
+  // solapados leían el mismo número y el segundo pisaba lo que sumó el primero. Los envíos
+  // no se duplicaban —eso lo cubre el claim— pero el progreso se quedaba corto: la campaña
+  // mostraba 300 de 1000 con 600 ya enviados, que es justo la lectura que hace pensar que se
+  // atascó. Dos counts con índice, al lado de 25 envíos con su retraso anti-baneo, no se notan.
+  const cnt = async (estado: string) => {
+    const { count, error } = await db.from("campaign_sends")
+      .select("id", { count: "exact", head: true }).eq("campaign_id", c.id).eq("estado", estado);
+    return error ? null : (count ?? 0);
+  };
+  const nOk = await cnt("enviado"), nFail = await cnt("fallido");
+  // Si el recuento falla, se cae al acumulado de siempre en vez de dejar el contador quieto.
+  await db.from("campaigns").update({
+    enviados: nOk ?? ((c.enviados || 0) + ok),
+    fallidos: nFail ?? ((c.fallidos || 0) + fail),
+  }).eq("id", c.id);
 }
 
 // Envío de plantilla a un contacto (secuencias fuera de 24h).
