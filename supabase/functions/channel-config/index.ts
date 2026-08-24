@@ -9,7 +9,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
-import { matchSegment } from "../_shared/campaigns.ts";
+import { matchSegment, BATCH } from "../_shared/campaigns.ts";
 
 const db = serviceClient();
 // Campos planos del canal editables desde el panel.
@@ -123,7 +123,9 @@ Deno.serve(async (req) => {
     if (action === "campana_audiencia") {
       try {
         const ids = await matchSegment(db, channel_id, (body as any).segmento ?? {});
-        return json({ ok: true, total: ids.length });
+        // `por_minuto` viaja con el total para que el panel no tenga que saberse el ritmo: es el
+        // BATCH real del envío (el cron corre cada minuto), no una copia que pueda quedar vieja.
+        return json({ ok: true, total: ids.length, por_minuto: BATCH });
       } catch (e) {
         return json({ error: "no_se_pudo", detalle: String((e as any)?.message ?? e) }, 500);
       }

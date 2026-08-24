@@ -271,9 +271,11 @@ function openModal(c){
   $("modal").classList.add("show");
 }
 // ── Cuánta gente y hasta qué hora ──────────────────────────────────
-// El ritmo real del envío: 25 por tick y el cron corre cada minuto (BATCH en campaigns.ts).
-// Si eso cambia allá, hay que cambiarlo acá — por eso el número va con su nombre a la vista.
-const ENVIOS_POR_MINUTO = 25;
+// El ritmo real lo DICE EL BACKEND junto con el total (es su BATCH, y el cron corre cada
+// minuto). No se escribe acá a propósito: un 25 copiado en el panel sobrevive a que alguien
+// cambie el ritmo del envío, y el aviso se pone a mentir sin que nadie se entere. Este valor
+// es solo el respaldo para el instante previo a la primera respuesta.
+let ENVIOS_POR_MINUTO = 25;
 let _estimT = null, _estimSeq = 0;
 function segmentoActual(){
   return { tags:[...st.pickTags], stage:[...st.pickStages], order_estados:[...st.pickOStates], modo:$("m_modo")?.value || "cualquiera" };
@@ -317,6 +319,7 @@ async function estimarAudiencia(){
     try{
       const { data, error }=await supa.functions.invoke("channel-config",{ body:{ action:"campana_audiencia", channel_id:st.channelId, segmento:segmentoActual() } });
       if(error || data?.error) throw new Error(error?.message || data?.detalle || data?.error);
+      if(Number(data?.por_minuto) > 0) ENVIOS_POR_MINUTO = Number(data.por_minuto);
       if(seq===_estimSeq) pintaEstimacion(Number(data?.total)||0);
     }catch(e){
       // Que no se pueda estimar NO puede impedir programar: se calla y ya.

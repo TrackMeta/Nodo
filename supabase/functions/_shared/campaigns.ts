@@ -9,7 +9,11 @@ import { getChannelSecrets } from "./db.ts";
 import { sendTemplate, esRechazoTemporal } from "./meta.ts";
 import { enParalelo } from "./concurrencia.ts";
 
-const BATCH = 25; // envíos por tick (por campaña)
+// Envíos por tick, por campaña. El cron corre cada minuto, así que ESTE número es el ritmo
+// real de una campaña. Se EXPORTA porque el panel lo muestra al programar ("salen de a N por
+// minuto"): si estuviera escrito también allá, cambiar el ritmo acá haría que el aviso
+// empezara a mentir sin que nadie se entere.
+export const BATCH = 25;
 // Campañas que envían a la vez. Los envíos DENTRO de una campaña siguen espaciados uno a uno
 // (el retraso anti-baneo no se toca); en paralelo van campañas distintas, normalmente de
 // números de WhatsApp distintos.
