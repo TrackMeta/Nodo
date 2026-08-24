@@ -296,10 +296,17 @@ function pintaEstimacion(total){
     const min=(s)=>{const[a,b]=String(s).split(":").map(Number);return a*60+b;};
     const fm=fin.getHours()*60+fin.getMinutes(), d=min(rm.desde), h=min(rm.hasta);
     const dentro = d<=h ? (fm>=d && fm<=h) : (fm>=d || fm<=h);
-    if(!dentro || otroDia) aviso=`<br><span style="color:var(--amber)">⚠️ Termina fuera de tu horario de envío (${esc(rm.desde)}–${esc(rm.hasta)}).</span> Puedes moverla a otra hora o partirla en dos.`;
+    // En su propio bloque (antes era un <br> suelto): ahora va detrás de la línea del ritmo.
+    if(!dentro || otroDia) aviso=`<div style="margin-top:6px"><span style="color:var(--amber)">⚠️ Termina fuera de tu horario de envío (${esc(rm.desde)}–${esc(rm.hasta)}).</span> Puedes moverla a otra hora o partirla en dos.</div>`;
   }
+  // Se dice el RITMO y POR QUÉ es así. Sin eso, "3 h 26 min" es un número mágico y el ritmo
+  // parece lentitud del sistema — cuando en realidad es deliberado: los envíos van espaciados
+  // uno a uno porque WhatsApp mide cómo reacciona la gente, y una ráfaga masiva desde el mismo
+  // número es lo que te baja la calidad o te lo banea. Sabiendo el porqué, el dueño puede
+  // decidir de verdad (moverla, partirla) en vez de solo leer una cifra.
   box.innerHTML = `Le llega a <b style="color:var(--text)">${total.toLocaleString("es-PE")}</b> ${total===1?"persona":"personas"}. `
     + `Tarda <b style="color:var(--text)">${dur}</b> en salir toda: empezando ${hh(inicio)}, termina cerca de las <b style="color:var(--text)">${hh(fin)}</b>${otroDia?" del día siguiente":""}.`
+    + `<div style="color:var(--faint);font-size:11.5px;margin-top:4px">Salen de a <b>${ENVIOS_POR_MINUTO} por minuto</b>, espaciados a propósito: WhatsApp mide cómo reacciona la gente, y una ráfaga masiva desde el mismo número es lo que te baja la calidad o te lo banea.</div>`
     + aviso;
 }
 async function estimarAudiencia(){
