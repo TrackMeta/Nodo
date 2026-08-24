@@ -495,7 +495,18 @@ async function saveRouter(){
     saludo:saludoTxt?[{text:saludoTxt}]:[],
     prompt:($("rPrompt")?.value||"").trim(),
   };
+  // Sobre lo que HAY en la base, no un objeto nuevo: `ia_router` no es solo de esta pantalla.
+  // Canales guarda ahí `solo_anuncios` (el bot atiende únicamente a quien llegó por un
+  // anuncio), y al reescribir el objeto entero con estas cinco claves esa bandera se
+  // BORRABA — activabas "solo anuncios" para no gastar IA con los orgánicos, editabas una
+  // palabra clave, y el bot volvía a atender a todo el mundo sin que nada lo dijera.
+  let base={};
+  try{
+    const { data:fresh }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
+    if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") base=fresh.ia_router;
+  }catch(_){ base=st.channel?.ia_router||{}; }
   const router={
+    ...base,
     activo:!!st.router.activo,
     umbral:Number($("rUmbral").value)/100,
     perfil:st.router.perfil||"extraccion",

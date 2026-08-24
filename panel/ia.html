@@ -709,6 +709,9 @@ function renderValidador(b){
     : defaultOcr();
   if(!Array.isArray(st.ocr.metodos)) st.ocr.metodos=[];
   if(!Array.isArray(st.ocr.ejemplos)) st.ocr.ejemplos=[];
+  // Foto de los ejemplos AL ABRIR. Sirve para distinguir, al guardar, entre "esto lo borró el
+  // usuario" y "esto apareció después" — ver el merge en ocrSave.
+  st.ocrEjOrig = st.ocr.ejemplos.map(e=>e&&e.url).filter(Boolean);
   const o=st.ocr, r=o.reglas;
   const chk=(key,label,desc)=>`<label class="ocrchk"><input type="checkbox" data-r="${key}" ${r[key]?"checked":""}/> <span><b>${label}</b><small>${desc}</small></span></label>`;
   b.innerHTML=`
@@ -860,6 +863,27 @@ function renderValidador(b){
   $("ocrSave").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     o.metodos=o.metodos.filter(m=>m.app||m.titular||m.numero);
+    // 🔒 Los EJEMPLOS del validador no son solo de esta pantalla: "Pagos por validar" los
+    // agrega solo cada vez que rechazas un comprobante falso (así el validador aprende). Al
+    // guardar acá el objeto entero con la lista que se cargó al abrir, esos ejemplos nuevos
+    // se borraban — el validador desaprendía justo lo que le acababas de enseñar.
+    // Se mezcla contra lo FRESCO respetando lo que hiciste: lo que borraste a mano se va,
+    // lo que agregaste se queda, y lo que apareció mientras tenías la pestaña abierta se
+    // conserva. Si no se puede leer lo fresco, se guarda como antes (no bloquear el guardado).
+    try{
+      const { data:fresh } = await supa.from("channels").select("ocr_config").eq("id",st.channelId).maybeSingle();
+      const dbEj = Array.isArray(fresh?.ocr_config?.ejemplos) ? fresh.ocr_config.ejemplos : null;
+      if(dbEj){
+        const orig=new Set(st.ocrEjOrig||[]);
+        const ahora=new Set((o.ejemplos||[]).map(e=>e&&e.url).filter(Boolean));
+        const borrados=new Set([...orig].filter(u=>!ahora.has(u)));      // los quitó el usuario
+        const merged=dbEj.filter(e=>e&&e.url&&!borrados.has(e.url));     // base: lo de la BD, sin lo borrado
+        for(const e of (o.ejemplos||[])){                                 // + lo que agregó acá
+          if(e&&e.url&&!merged.some(x=>x&&x.url===e.url)) merged.push(e);
+        }
+        o.ejemplos=merged;
+      }
+    }catch(_){ /* sin lo fresco, se guarda tal cual */ }
     const { error }=await supa.from("channels").update({ ocr_config:o }).eq("id",st.channelId);
     if(error){ btn.disabled=false; btn.textContent=old; toast(/ocr_config|column/.test(error.message)?"Falta aplicar la migración 0026":error.message,true); return; }
     st.channel.ocr_config=o;

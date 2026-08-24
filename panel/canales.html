@@ -253,7 +253,15 @@ function renderWA(){
   // pisar el resto del ruteo — fallback_flow_id, umbral, etc.).
   $("w_soloads").onclick=async(e)=>{
     const sw=e.currentTarget, on=!sw.classList.contains("on");
-    const ir={ ...(st.channel.ia_router||{}), solo_anuncios:on };
+    // Sobre el ia_router FRESCO, no sobre el que se cargó al abrir Canales: Palabras clave
+    // escribe en el mismo objeto (umbral, recepción…), así que con la copia vieja este
+    // toggle podía revertirle esos ajustes. El otro lado ya hace lo simétrico.
+    let actual=st.channel.ia_router||{};
+    try{
+      const { data:fresh }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
+      if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") actual=fresh.ia_router;
+    }catch(_){ /* sin lo fresco, se usa lo que hay en pantalla */ }
+    const ir={ ...actual, solo_anuncios:on };
     const { error }=await supa.from("channels").update({ ia_router:ir }).eq("id",st.channelId);
     if(error){ toast(error.message,true); return; }
     sw.classList.toggle("on",on); sw.setAttribute("aria-checked",on?"true":"false");
