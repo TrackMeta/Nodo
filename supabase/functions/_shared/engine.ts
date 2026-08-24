@@ -8412,12 +8412,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   }
                 }
                 if (!reusado) {
-                  const { data: ord } = await db.from("orders").insert({
+                  const { data: ord, error: errOrd } = await db.from("orders").insert({
                     channel_id: run.channel_id, contact_id: run.contact_id,
                     product_id: (cc as any)?.product_id ?? null, version_id: versionIdDe(ctx),
                     amount, currency: String(ctx.moneda || "PEN"), estado: "pendiente", shipping: ship,
                   }).select("id").single();
                   if (ord) { run.vars._order_id = (ord as any).id; run.vars._order_precreado = true; }
+                  // supabase-js NO lanza ante un error de escritura: devuelve {data:null,error}, y
+                  // este error no se miraba. Justo abajo sale igual el aviso de "pago digital por
+                  // validar" con su botón "Aprobar y entregar" — pero SIN pedido detrás: el botón
+                  // no tendría sobre qué operar y "Pagos por validar" quedaría vacío mientras el
+                  // cliente ya pagó y espera. Queda constancia para poder registrarlo a mano.
+                  else if (errOrd) {
+                    console.error("[digital manual] no se creó el pedido pendiente:", errOrd.message);
+                    await logEvent(db, run.channel_id, run.contact_id, "error",
+                      "💸 Pagó y NO se pudo registrar el pedido",
+                      `Hay que crearlo a mano: ${errOrd.message}`).catch(() => {});
+                  }
                   // Pago digital sin validar aún → sigue Interesado (no es Confirmado).
                   await moverEtapa(db, run.channel_id, run.contact_id, "interesado");
                 }
