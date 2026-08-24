@@ -29,8 +29,22 @@ Deno.serve(async (req) => {
   }
 
   // Canales que tienen al menos una cuenta de anuncios activa.
-  const { data: accts } = await db.from("ad_accounts")
-    .select("channel_id, account_id, activo").eq("activo", true);
+  // PAGINADO: este cron es GLOBAL de la plataforma, así que acá caben las cuentas de anuncios
+  // de TODOS los negocios juntos. PostgREST devuelve como mucho 1000 filas por pedido, y sin
+  // `.order()` ni siquiera está definido cuáles entran: pasadas las 1000, los negocios que
+  // quedaban afuera dejaban de sincronizar su gasto de Meta PARA SIEMPRE y en silencio — y un
+  // negocio sin gasto ve su ROAS y su ganancia infladas, que es la peor forma de mentir.
+  const accts: any[] = [];
+  for (let desde = 0; desde < 100000; desde += 1000) {
+    const { data, error } = await db.from("ad_accounts")
+      .select("channel_id, account_id, activo").eq("activo", true)
+      .order("channel_id", { ascending: true }).order("account_id", { ascending: true })
+      .range(desde, desde + 999);
+    if (error) { console.error("[ads-sync] leer cuentas:", error.message); break; }
+    const filas = data ?? [];
+    accts.push(...filas);
+    if (filas.length < 1000) break;
+  }
   const porCanal = new Map<string, string[]>();
   for (const a of accts ?? []) {
     const arr = porCanal.get((a as any).channel_id) ?? [];

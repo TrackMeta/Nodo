@@ -36,6 +36,14 @@ Deno.serve(async (req) => {
   if (!okContact) return json({ error: "contacto_invalido" }, 400);
   const { data: okProd } = await db.from("products").select("id").eq("id", product_id).eq("channel_id", channel_id).maybeSingle();
   if (!okProd) return json({ error: "producto_invalido" }, 400);
+  // …y que la VERSIÓN sea de ese producto. Se validaba el contacto y el producto pero no el
+  // par producto/versión, y `crearVentaManual` lee la versión por su id a secas: con un
+  // version_id de otro producto el pedido nacía cruzado — con el producto A pero la entrega
+  // (el link digital) de la versión de B, o sea el cliente recibiendo lo que no compró, y el
+  // stock descontándose del producto equivocado.
+  const { data: okVer } = await db.from("product_versions").select("id")
+    .eq("id", version_id).eq("product_id", product_id).maybeSingle();
+  if (!okVer) return json({ error: "version_invalida", detalle: "Esa presentación no es de ese producto." }, 400);
 
   try {
     const res = await crearVentaManual(db, channel_id, contact_id, {
