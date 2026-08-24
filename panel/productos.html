@@ -702,7 +702,13 @@ async function openProduct(id){
 }
 async function deleteProduct(){
   if(!st.prod) return;
-  if(!await confirmDialog({title:"Eliminar producto",message:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones. Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
+  // Borrar el producto se lleva por delante sus FLUJOS (cascade, migración 0005), así que
+  // se lleva también las conversaciones que estén dentro de ellos. El pedido histórico sí
+  // sobrevive (orders.product_id es `set null`), pero la venta en curso hay que retomarla
+  // a mano. Se cuenta antes para poder decirlo.
+  let flIds=[]; try{ const {data:fs}=await supa.from("flows").select("id").eq("product_id",st.prod.id); flIds=(fs||[]).map(f=>f.id); }catch(_){}
+  const vivasP = await charlasVivas(null, flIds);
+  if(!await confirmDialog({title:"Eliminar producto",messageHtml:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones y sus flujos. Esta acción no se puede deshacer.`+(vivasP?`<br><br>⚠️ Hay <b>${vivasP} conversación${vivasP===1?"":"es"}</b> a mitad de sus flujos ahora mismo: ${vivasP===1?"se queda":"se quedan"} sin flujo y ${vivasP===1?"pasa":"pasan"} a un humano. Los pedidos ya hechos no se borran.`:""),confirmText:"Eliminar",danger:true})) return;
   // Igual que al borrar un flujo: product_versions cuelga del producto con `on delete
   // cascade` (migración 0005). Borrarlas a mano ANTES y sin mirar el error significaba que,
   // si el delete del producto fallaba, el producto quedaba vivo pero SIN presentaciones ni
@@ -2783,16 +2789,39 @@ async function generarFlujoFisico(flowId, N, E){
   }
 }
 
+// Cuántos clientes están AHORA MISMO parados dentro de un flujo (o de cualquiera de los
+// flujos de un producto). Sirve para avisar antes de reescribir o borrar lo que tienen
+// debajo de los pies. Si la consulta falla devuelve 0: es un aviso extra, no puede ser el
+// motivo de que no se pueda regenerar un flujo.
+async function charlasVivas(flowId, flowIds){
+  try{
+    const ids = flowIds || (flowId?[flowId]:[]);
+    if(!ids.length) return 0;
+    const { count, error } = await supa.from("flow_runs")
+      .select("id",{count:"exact",head:true}).in("flow_id",ids).in("estado",["activo","esperando"]);
+    return error ? 0 : (count||0);
+  }catch(_){ return 0; }
+}
 async function generarFlujoVenta(skipConfirm){
   const ops=st.versions.filter(v=>v.activo!==false && v.precio!=null && v.precio!=="");
   if(!ops.length){ toast("Primero carga al menos una presentación con precio",true); return; }
   const ya=st.receta.fVenta;
+  // Regenerar BORRA los pasos viejos y crea otros nuevos. Quien esté a mitad de la
+  // conversación queda parado en un paso que dejó de existir: el motor ya no lo deja mudo
+  // (lo pasa a un humano), pero eso es una venta a medias que alguien tiene que retomar a
+  // mano. Se dice ANTES, con el número en la cara, porque es la diferencia entre regenerar
+  // un martes a las 3pm y esperar a la noche.
+  const vivas = ya ? await charlasVivas(ya.id) : 0;
   // skipConfirm===true: generación programática (harness de regresión). El click
   // del botón pasa un MouseEvent (no === true), así que el usuario SÍ ve el diálogo.
+  // El aviso lleva <b>, así que va por messageHtml (message se escapa) y el nombre del
+  // flujo —texto del usuario— se escapa a mano con esc().
+  const msgRegen = `Esto REESCRIBE por completo "${esc(ya?.nombre||"")}". Si lo editaste a mano en el editor visual, esos cambios se pierden.`
+    + (vivas?`<br><br>⚠️ Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo ahora mismo. Al regenerarlo ${vivas===1?"pasa":"pasan"} a un humano y vas a tener que retomar${vivas===1?"la":"las"} tú.`:"");
   if(skipConfirm!==true && !await confirmDialog({
     title: ya?"Regenerar flujo de venta":"Generar flujo de venta",
-    message: ya?`Esto REESCRIBE por completo "${esc(ya.nombre)}". Si lo editaste a mano en el editor visual, esos cambios se pierden.`
-               :"Se creará el flujo de venta con la IA como vendedora. Después puedes editarlo en el editor visual.",
+    ...(ya ? { messageHtml: msgRegen }
+           : { message: "Se creará el flujo de venta con la IA como vendedora. Después puedes editarlo en el editor visual." }),
     confirmText: ya?"Regenerar":"Generar", danger: !!ya })) return;
 
   toast("Generando…");

@@ -38,6 +38,7 @@ export type Order = {
   order_bumps?: Array<{ precio?: number | null; costo?: number | null; regalo?: boolean }> | null;
   estado?: string | null;
   shipping?: Record<string, unknown> | null;
+  product?: { tipo?: string | null } | null;
 };
 
 export function total(o: Order): number {
@@ -46,11 +47,23 @@ export function total(o: Order): number {
   return v;
 }
 
+// Lo que el cliente REALMENTE abonó manda sobre lo que se le PIDIÓ. Espejo de `adelantoDe`
+// de orders.js, que faltaba acá: `shipping.adelanto` es el monto pedido (ej. "20") y no se
+// mueve aunque pague más, así que quien pagaba el total como adelanto se contaba como S/20
+// cobrado y el resto salía "por cobrar" en el resumen de Telegram — plata que ya había
+// entrado, reportada como deuda, y distinta de la que mostraba el Dashboard.
+function adelantoDe(o: Order): number {
+  const s = (o?.shipping ?? {}) as any;
+  const real = Number(s.adelanto_abonado ?? s.pago_acreditado_adelanto);
+  if (Number.isFinite(real) && real > 0) return real;
+  return Number(s.adelanto || 0) || 0;
+}
+
 export function cobrado(o: Order): number {
   const m = EST[o?.estado ?? ""];
   if (!m) return 0;
   if (m.cobro === "todo") return total(o);
-  if (m.cobro === "adelanto") return Math.min(Number((o?.shipping as any)?.adelanto || 0) || 0, total(o));
+  if (m.cobro === "adelanto") return Math.min(adelantoDe(o), total(o));
   return 0;
 }
 
@@ -68,7 +81,11 @@ export const esFisico = (o: Order) => {
   // caía en la rama que exige flete → `sinDatos++` y su ganancia NUNCA se sumaba.
   const z = String((o?.shipping as any)?.zona ?? "").toLowerCase();
   if (z === "digital") return false;
-  return !!EST[o?.estado ?? ""]?.zona || z === "lima" || z === "provincia";
+  // `|| product.tipo === "fisico"` faltaba respecto a orders.js: un pedido de producto
+  // FÍSICO cuyo estado no declara zona y que quedó sin shipping.zona se contaba como
+  // digital, y la rama digital suma su cobrado a la ganancia SIN exigir flete ni costo →
+  // el resumen de Telegram reportaba una ganancia mejor que la del Dashboard.
+  return !!EST[o?.estado ?? ""]?.zona || z === "lima" || z === "provincia" || o?.product?.tipo === "fisico";
 };
 
 // 🎁 Costo de los regalos adjuntos (bumps regalo:true): no se venden (precio 0)
@@ -96,7 +113,11 @@ export function margenSnap(o: Order): number | null {
   if (cp == null || cp === "") return null;
   const f = (o?.shipping as any)?.flete;
   if (esFisico(o) && (f == null || f === "")) return null;
-  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o) - costoExtras(o) - (Number((o?.shipping as any)?.empaque) || 0);
+  // El empaque solo se resta en FÍSICO (caja/bolsa/etiqueta del despacho), igual que
+  // `margen` de orders.js: restárselo a un digital daba una ganancia distinta a la del
+  // Dashboard. Hoy nadie llama a esta función, pero el espejo tiene que quedar fiel.
+  return cobrado(o) - Number(cp) - (f === "" || f == null ? 0 : Number(f)) - costoRegalos(o) - costoExtras(o)
+    - (esFisico(o) ? (Number((o?.shipping as any)?.empaque) || 0) : 0);
 }
 
 // ── Resumen de un conjunto de pedidos (los KPIs del digest) ─────────

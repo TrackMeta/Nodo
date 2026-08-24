@@ -68,7 +68,7 @@ export async function construirResumen(
   const chId = ch.id;
 
   const [ordR, contR, leadR, adsR, expR, admR] = await Promise.all([
-    db.from("orders").select("amount, order_bumps, estado, shipping, created_at")
+    db.from("orders").select("amount, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
       .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO),
     db.from("contacts").select("id", { count: "exact", head: true })
       .eq("channel_id", chId).neq("wa_id", "webchat-test")
