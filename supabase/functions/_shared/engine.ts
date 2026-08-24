@@ -4284,6 +4284,15 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order) return;
+  // ¿El paquete YA salió? Justo abajo, `maybeModificarPedido` respeta ESTADOS_DESPACHADO
+  // para no dejar cambiar la CANTIDAD de un pedido en camino. Acá no se respetaba, y lo que
+  // se toca acá es peor: sede, dirección, DNI y destinatario, o sea a dónde va el paquete y
+  // quién puede recogerlo. Un cliente que escribía "mejor mándalo a la agencia de La
+  // Esperanza" al día siguiente del despacho cambiaba el pedido, pero la guía impresa seguía
+  // diciendo Trujillo Centro: el panel mostraba un destino y el paquete viajaba a otro, sin
+  // que nada avisara de la contradicción. Redirigir un paquete es gestión con el courier, no
+  // algo que el bot pueda ejecutar — así que no se toca nada y se avisa al dueño.
+  const yaSalio = ESTADOS_DESPACHADO.has(String((order as any).estado ?? ""));
   const sh = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
@@ -4302,7 +4311,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     sh.sede = nSede; sh.destino = nSede;
     const motivo = sedeImprecisa(nSede, String(sh.ciudad ?? ""));
     if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;
-    await setField(db, channelId, contactId, "sede", nSede).catch(() => {});
+    if (!yaSalio) await setField(db, channelId, contactId, "sede", nSede).catch(() => {});
     cambios.push("sede: " + nSede);
   }
   // TELÉFONO de contacto (celular peruano: 9 dígitos que empiezan en 9). Se extrae
@@ -4310,7 +4319,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const nTel = String(p.telefono ?? "").replace(/\D/g, "");
   if (/^9\d{8}$/.test(nTel) && txt.includes(nTel) && String(sh.tel ?? "") !== nTel) {
     sh.tel = nTel;
-    await setField(db, channelId, contactId, "tel", nTel).catch(() => {});
+    if (!yaSalio) await setField(db, channelId, contactId, "tel", nTel).catch(() => {});
     cambios.push("teléfono: " + nTel);
   }
   // DNI: 7-9 dígitos, presente en el mensaje, distinto del actual. NO acepta un
@@ -4322,14 +4331,14 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const dniEsCelular = /^9\d{8}$/.test(nDni);
   if (/^\d{7,9}$/.test(nDni) && !dniEsCelular && nDni !== nTel && txt.includes(nDni) && String(sh.dni ?? "") !== nDni) {
     sh.dni = nDni;
-    await setField(db, channelId, contactId, "dni", nDni).catch(() => {});
+    if (!yaSalio) await setField(db, channelId, contactId, "dni", nDni).catch(() => {});
     cambios.push("DNI: " + nDni);
   }
   // DIRECCIÓN (texto libre): guard por solape, distinta de la actual.
   const nDir = String(p.direccion ?? "").trim();
   if (nDir && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
     sh.direccion = nDir;
-    await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
+    if (!yaSalio) await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
     cambios.push("dirección: " + nDir);
   }
   // NOMBRE del destinatario (quien recoge/recibe). Vive en shipping.cliente y lo usa
@@ -4338,10 +4347,24 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const nNombre = String(p.nombre ?? "").trim();
   if (nNombre && valorLibreEnMensaje(nNombre, txt) && String(sh.cliente ?? "") !== nNombre) {
     sh.cliente = nNombre;
-    await setField(db, channelId, contactId, "cliente", nNombre).catch(() => {});
+    if (!yaSalio) await setField(db, channelId, contactId, "cliente", nNombre).catch(() => {});
     cambios.push("destinatario: " + nNombre);
   }
   if (!cambios.length) return;
+  if (yaSalio) {
+    // `sh` es una copia, así que con NO escribirla alcanza para que el pedido quede intacto.
+    // Queda la nota en la bitácora y el aviso al dueño, que es quien puede llamar al courier.
+    // No se pausa el bot: sigue atendiendo (regla de la casa — escalar poco, nunca dead air).
+    await logEvent(db, channelId, contactId, "nota", "🚚 Pidió cambiar datos con el pedido YA despachado — no se tocó",
+      cambios.join(" · ").slice(0, 120)).catch(() => {});
+    const { data: ctc } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+    await avisar(db, channelId, contactId, "cambio_tras_despacho", {
+      cliente: (ctc as any)?.nombre || "Cliente",
+      telefono: (ctc as any)?.wa_id || "—",
+      cambios: cambios.join(" · "),
+    }).catch(() => {});
+    return;
+  }
   await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "📍 Datos del pedido actualizados", cambios.join(" · ").slice(0, 120)).catch(() => {});
 }
@@ -5478,6 +5501,12 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     (ctx.link_entrega ? `: ${ctx.link_entrega}` : " (está en su pedido)") + ".\n" +
     `- Si pregunta por el estado o el seguimiento de su pedido, dile en qué va (${estadoLegible}) con naturalidad.\n` +
     "- Si necesita ayuda para usar el producto, oriéntalo con lo que sabes de él.\n" +
+    // El motor ya NO cambia sede/dirección/DNI/destinatario de un pedido despachado (la guía
+    // salió impresa con los datos viejos). Faltaba que la IA lo supiera: sin esta regla decía
+    // "listo, lo mando a la otra agencia", el cliente iba a esa agencia y su paquete no estaba.
+    (ESTADOS_DESPACHADO.has(String((order as any).estado ?? ""))
+      ? "- ⚠️ Su pedido YA SALIÓ al courier con los datos impresos en la guía. Si te pide cambiar la agencia, la dirección, su DNI o quién lo recibe, NO se lo confirmes ni digas «listo, lo cambié»: eso ya no depende de ti. Dile que el pedido ya está en camino, que lo consultas con el equipo y que le confirman si se puede redirigir.\n"
+      : "") +
     "- Si hay un problema real, un cambio o una devolución que no puedes resolver, escribe `[[humano]]`.\n" +
     "- Si el cliente SOLO agradece o se despide y no pide nada más (ya recibió lo suyo), CIERRA corto y cálido: NO ofrezcas más, NO preguntes «¿algo más?», NO re-vendas. Una despedida amable y listo." +
     (pv.cierre && String(pv.cierre).trim() ? ` Cuando toque cerrar así, usa este cierre: "${String(pv.cierre).trim()}".` : "") + "\n" +

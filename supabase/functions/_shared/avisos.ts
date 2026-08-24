@@ -232,6 +232,20 @@ export const AVISOS: AvisoDef[] = [
 
   // ── Atención ─────────────────────────────────────────────────────
   {
+    clave: "cambio_tras_despacho", grupo: "atencion",
+    titulo: "Quiere cambiar datos y ya despachaste",
+    desc: "El cliente corrigió la agencia, la dirección, su DNI o el nombre de quien recibe, pero ese pedido YA salió al courier con los datos viejos impresos en la guía. El bot NO cambia nada en el pedido: redirigir un paquete es gestión tuya con el courier.",
+    vars: ["cliente", "telefono", "cambios"],
+    texto:
+      "🚚 *QUIERE CAMBIAR DATOS Y YA DESPACHASTE*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "✏️ {{cambios}}\n" +
+      "\n" +
+      "❗ *No se cambió nada* en el pedido: la guía ya salió con los datos viejos. Si el courier deja redirigirlo, hazlo tú y corrige el pedido a mano.",
+  },
+  {
     clave: "pide_humano", grupo: "atencion",
     titulo: "Te necesita a ti",
     desc: "El cliente pidió hablar con una persona, o el bot detectó un reclamo. El bot queda en pausa en ese chat.",
