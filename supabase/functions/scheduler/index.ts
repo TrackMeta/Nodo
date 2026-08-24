@@ -12,6 +12,7 @@ import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStage
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
+import { enParalelo } from "../_shared/concurrencia.ts";
 
 const db = serviceClient();
 
@@ -36,6 +37,11 @@ async function marcarTocoMkt(contactId: string) {
   await db.from("contacts").update({ ultimo_auto_msg_at: new Date().toISOString() })
     .eq("id", contactId).then(() => {}, () => {}); // best-effort (columna 0056)
 }
+
+// Cuántas conversaciones se despiertan a la vez. Bajo a propósito: cada una puede llamar a
+// la IA, así que esto acota las llamadas simultáneas al proveedor (y su límite de tasa) y la
+// carga sobre la base. Subirlo rinde más por tick, pero conviene medir antes de tocarlo.
+const CONC_WAKE = 5;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -81,17 +87,26 @@ Deno.serve(async (req) => {
     .lte("wake_at", new Date().toISOString())
     .order("wake_at", { ascending: true })   // los más vencidos primero: sin ORDER BY, con más de 100 pendientes Postgres podía devolver siempre el mismo subconjunto y matar de hambre al resto
     .limit(100);
-  for (const r of runs ?? []) {
+  // EN PARALELO (de a CONC_WAKE). Cada `runEngine` puede llamar a la IA y esperar segundos,
+  // así que en fila india 100 conversaciones vencidas no entran ni de lejos en el minuto del
+  // tick — ni en el wall-clock de la Edge Function: el scheduler moría a media lista y el
+  // resto esperaba al tick siguiente. Y esto es GLOBAL: no son 100 conversaciones de un
+  // negocio, son 100 de TODOS los bots de TODOS los usuarios, así que el que más chats tiene
+  // le mete latencia a los demás. Cada run es de un contacto distinto y el lock por contacto
+  // (idx_runs_lock) los mantiene aislados, así que paralelizar es seguro. Conservador a
+  // propósito: 5 a la vez acota la carga simultánea sobre la base y sobre la API de IA
+  // (cuyos 429 ya tienen reintento), y aun así rinde ~5× más por tick.
+  await enParalelo(runs ?? [], CONC_WAKE, async (r: any) => {
     try {
       // El operador pudo TOMAR el chat mientras el run estaba parqueado en un "Esperar"/timeout.
       // Sin este chequeo, al vencer wake_at el scheduler reanudaba y disparaba el mensaje parqueado
       // ENCIMA del operador (el guard de bot_activo del webhook no cubre este camino). Igual que ya
       // hacen las inyecciones de remarketing de este archivo.
-      const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", (r as any).contact_id).maybeSingle();
-      if ((ct as any)?.bot_activo === false) continue;
-      await runEngine(db, (r as any).channel_id, (r as any).contact_id, { type: "resume" }); woke++;
+      const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", r.contact_id).maybeSingle();
+      if ((ct as any)?.bot_activo === false) return;
+      await runEngine(db, r.channel_id, r.contact_id, { type: "resume" }); woke++;
     } catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
-  }
+  });
 
   // ── 1b) Reaper de runs 'activo' zombis ────────────────────────────
   // Si el isolate murió entre el INSERT de startRun (estado='activo') y el primer

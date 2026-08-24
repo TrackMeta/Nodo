@@ -7,8 +7,13 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getChannelSecrets } from "./db.ts";
 import { sendTemplate } from "./meta.ts";
+import { enParalelo } from "./concurrencia.ts";
 
 const BATCH = 25; // envíos por tick (por campaña)
+// Campañas que envían a la vez. Los envíos DENTRO de una campaña siguen espaciados uno a uno
+// (el retraso anti-baneo no se toca); en paralelo van campañas distintas, normalmente de
+// números de WhatsApp distintos.
+const CONC_CAMP = 4;
 
 // Llamado por el scheduler cada tick.
 export async function processCampaigns(db: SupabaseClient) {
@@ -31,13 +36,31 @@ export async function processCampaigns(db: SupabaseClient) {
   }
 
   // 2) En curso → enviar el siguiente lote.
-  const { data: sending } = await db.from("campaigns").select("*")
-    .eq("estado", "enviando").order("created_at", { ascending: true }).order("id").limit(5);
-  // Igual que arriba: una campaña que reviente no puede dejar sin lote a las otras cuatro.
-  for (const c of sending ?? []) {
+  // 🌐 REPARTO ENTRE BOTS. Este cron es de TODA la plataforma: las campañas "enviando" son de
+  // todos los canales de todos los usuarios. Con un `limit(5)` pelado, un solo usuario con 5
+  // campañas en curso se llevaba los cinco cupos y NADIE más enviaba hasta que terminara — y
+  // una campaña grande tarda horas (25 envíos por tick). Se traen más y se reparte: como
+  // mucho MAX_POR_CANAL por canal, hasta MAX_TICK en total. Dentro de un mismo canal sigue
+  // mandando el orden de creación.
+  const MAX_POR_CANAL = 2, MAX_TICK = 8;
+  const { data: enCurso } = await db.from("campaigns").select("*")
+    .eq("estado", "enviando").order("created_at", { ascending: true }).order("id").limit(60);
+  const porCanal = new Map<string, number>();
+  const sending: any[] = [];
+  for (const c of enCurso ?? []) {
+    const usados = porCanal.get((c as any).channel_id) ?? 0;
+    if (usados >= MAX_POR_CANAL) continue;
+    porCanal.set((c as any).channel_id, usados + 1);
+    sending.push(c);
+    if (sending.length >= MAX_TICK) break;
+  }
+  // En paralelo entre campañas (los envíos DENTRO de cada una siguen espaciados por el
+  // retraso anti-baneo): en fila india, 8 campañas × 25 envíos con su pausa no entran en el
+  // minuto del tick. Cada una en su try — una que reviente no deja sin lote a las demás.
+  await enParalelo(sending, CONC_CAMP, async (c: any) => {
     try { await sendBatch(db, c); }
     catch (e) { console.error(`[campañas] enviar lote de "${c.nombre ?? c.id}":`, (e as any)?.message ?? e); }
-  }
+  });
 }
 
 async function expandCampaign(db: SupabaseClient, c: any) {
