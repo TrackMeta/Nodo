@@ -129,42 +129,33 @@ Deno.serve(async (req) => {
   }
 
   // ── 2) Secuencias de remarketing ──────────────────────────────────
-  // Se rota por `revisado_at` (0077), NO por `updated_at`. `processSub` sale sin escribir
-  // nada en casi todos sus caminos —el temporizador aún no vence, secuencia pausada, run
-  // activo, fuera de horario, antispam—, así que ordenar por `updated_at` devolvía LAS
-  // MISMAS 200 cada minuto: con más de 200 suscripciones activas, las que esperan un paso
-  // largo (las de updated_at más viejo, justo las que el orden ponía primero) tapaban a las
-  // demás y las que vencían hoy no se miraban nunca. El remarketing se apagaba en silencio
-  // para la mayoría. No se puede rotar tocando `updated_at` porque es el ANCLA del
-  // temporizador (cuándo se envió el paso anterior); por eso el cursor va aparte.
+  // DESPERTADOR (0078): se piden solo las suscripciones cuyo `proximo_at` ya venció, en vez
+  // de pasar lista a todas. Antes el trabajo del tick crecía con el TOTAL de suscritos
+  // aunque el 99% no tuviera nada que hacer, y una que no podía enviar —de madrugada, con
+  // el cliente a mitad de charla, frenada por el anti-spam— se revisaba igual cada minuto
+  // toda la noche. Ahora cada una lleva anotado CUÁNDO tiene sentido volver a mirarla, así
+  // que el tick depende de a cuántos les toca AHORA, no de cuántos hay.
+  //   · `proximo_at` NULL = nunca calculada → cuenta como vencida, para que las que ya
+  //     existían entren en la primera pasada y se sellen solas (sin backfill aparte).
+  //   · El orden pone primero a las más atrasadas, que es el reparto justo si un pico deja
+  //     más vencidas que el tope.
+  // Mismo patrón que `flow_runs.wake_at`, que es como el motor duerme las conversaciones.
   const { data: subs } = await db.from("sequence_subscriptions")
     .select("id, channel_id, contact_id, sequence_id, paso_actual, updated_at, suscrito_at")
     .eq("estado", "activa")
-    .order("revisado_at", { ascending: true, nullsFirst: true })  // nunca revisadas primero, luego las más rancias
-    // 500 y no más: el techo NO es la base, es el minuto que dura el tick. Una suscripción
-    // que NO dispara (el caso común) cuesta ahora 2 consultas —contacto y "¿ya compró?"—
-    // porque la secuencia, el horario y el mapa de productos se cachean por tick. 500 × 2
-    // secuenciales entran de sobra en el minuto, y en el mismo tick corren además el reaper,
-    // las campañas y los recordatorios de pedido. Subirlo más sin medir es arriesgar que el
-    // tick se pase de 60s y empiece a pisarse con el siguiente. Con más volumen que eso, lo
-    // correcto no es subir el número sino precalcular cuándo toca cada paso (como
-    // `flow_runs.wake_at`) y leer solo las vencidas.
+    .or(`proximo_at.is.null,proximo_at.lte.${new Date().toISOString()}`)
+    .order("proximo_at", { ascending: true, nullsFirst: true })
+    // Tope de seguridad, no de reparto: con el despertador lo normal es que venzan unas
+    // pocas por minuto. Existe para que un pico (el cron caído un rato, o una tanda que se
+    // suscribió junta) no intente vaciarse de golpe y se pase del minuto del tick.
     .limit(500);
   for (const s of subs ?? []) {
     try { if (await processSub(s, now)) fired++; }
     catch (e) { console.error("[scheduler] seq:", (e as any)?.message ?? e); }
   }
-  // Sellar el cursor de TODAS las revisadas (hayan disparado o no): es lo que hace avanzar
-  // la ventana al siguiente grupo. En lote y por trozos, para no mandar 200 ids en la URL.
-  // Si esto falla, el peor caso es repetir el mismo grupo el próximo tick — no se pierde ni
-  // se duplica ningún envío (el claim atómico de processSub sigue siendo el que manda).
-  const revisadas = (subs ?? []).map((s: any) => s.id);
-  for (let i = 0; i < revisadas.length; i += 100) {
-    const trozo = revisadas.slice(i, i + 100);
-    const { error: errRev } = await db.from("sequence_subscriptions")
-      .update({ revisado_at: new Date().toISOString() }).in("id", trozo);
-    if (errRev) { console.error("[scheduler] sellar revisado_at:", errRev.message); break; }
-  }
+  // Ya no hace falta sellar un cursor de rotación en lote: cada `processSub` deja anotado su
+  // propio `proximo_at` (envió → cuándo toca el siguiente paso; no pudo → cuándo reintentar),
+  // así que la ventana avanza sola y sin escrituras extra.
 
   // ── 3) Campañas / broadcast ───────────────────────────────────────
   try { await processCampaigns(db); }
@@ -535,6 +526,17 @@ async function leerSecuencia(sequenceId: string) {
   return res;
 }
 
+// "Vuelve a mirar esta suscripción dentro de X". Es lo que hace que el cron no la revise
+// cada minuto para nada: cuando algo la frena (horario, anti-spam, el cliente está a mitad
+// de charla) se anota CUÁNDO tendría sentido reintentar, en vez de volver a las 60 segundos.
+// Piso de 1 minuto para no crear un bucle apretado; no toca `updated_at`, que es el ancla
+// del temporizador del paso (y de la que depende el claim atómico).
+async function posponer(subId: string, ms: number) {
+  const at = new Date(Date.now() + Math.max(60_000, ms)).toISOString();
+  await db.from("sequence_subscriptions").update({ proximo_at: at })
+    .eq("id", subId).then(() => {}, () => {});
+}
+
 async function processSub(s: any, now: number): Promise<boolean> {
   const { data: seq, error: errSeq } = await leerSecuencia(s.sequence_id);
   // Distinguir "la secuencia ya no existe" de "no pude leerla". Sin esto, un error transitorio
@@ -552,7 +554,9 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // que 'borrada/terminada' y se marcaba 'completada' → al reactivar nadie se
   // reanudaba: los toques en vuelo se perdían para siempre (200 leads a mitad de
   // camino quedaban muertos con un solo toggle). "Pausar" debe ser reversible.
-  if (seq && (seq as any).activo === false) return false;
+  // Secuencia PAUSADA: no se toca la suscripción, pero se aparta un rato — sin esto se la
+  // revisaba cada minuto mientras siguiera pausada, que pueden ser semanas.
+  if (seq && (seq as any).activo === false) { await posponer(s.id, 30 * 60_000); return false; }
   if (!seq || s.paso_actual >= pasos.length) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
@@ -562,8 +566,10 @@ async function processSub(s: any, now: number): Promise<boolean> {
 
   const { data: c } = await db.from("contacts")
     .select("ultimo_mensaje_cliente_at, bot_activo, stage, no_remarketing, ultimo_auto_msg_at, product_id").eq("id", s.contact_id).maybeSingle();
-  if (!c) return false;
-  if ((c as any).bot_activo === false) return false; // humano tomó la conversación
+  if (!c) { await posponer(s.id, 60 * 60_000); return false; }   // contacto borrado: casi nunca
+  // El humano tomó el chat: mientras siga así no hay remarketing que valga. Se vuelve a mirar
+  // en un rato en vez de cada minuto.
+  if ((c as any).bot_activo === false) { await posponer(s.id, 30 * 60_000); return false; }
 
   // ── Salvaguardas (requisitos 2 y 16) ──
   // 1) Pidió que no le escriban → se cancela, no se reintenta nunca más.
@@ -585,7 +591,9 @@ async function processSub(s: any, now: number): Promise<boolean> {
   }
   // 3) Fuera del horario permitido → esperar al próximo tick (no se pierde el
   //    paso, solo se posterga hasta una hora decente).
-  if (!await enHorario(s.channel_id)) return false;
+  // Fuera del horario de remarketing. Antes se la revisaba cada minuto TODA la noche sin
+  // poder enviar; ahora se aparta y vuelve más tarde.
+  if (!await enHorario(s.channel_id)) { await posponer(s.id, 20 * 60_000); return false; }
 
   // Temporizador del paso: cuenta desde el MÁS RECIENTE entre (a) cuándo se envió
   // el paso anterior —`updated_at` se sella en cada avance— y (b) el último
@@ -604,7 +612,13 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const anchor = marcas.length ? Math.max(...marcas) : now;
   const silenceSec = (now - anchor) / 1000;
   const umbral = Number(paso.umbral_silencio_seg ?? paso.delay_seg ?? 0);
-  if (silenceSec < umbral) return false; // aún no toca
+  // Aún no toca. Este es EL caso común, y acá la hora exacta se sabe: falta
+  // `umbral - silenceSec`. Se anota y no se la vuelve a mirar hasta entonces — es lo que
+  // hace que un paso de "espera 3 días" cueste UNA revisión en tres días en vez de 4.320.
+  // Ojo con el ancla: en modo reenganche cuenta también el último mensaje del cliente, así
+  // que si contesta el plazo se corre hacia adelante; por eso se recalcula acá cada vez que
+  // se la mira, en lugar de fiarse del valor viejo.
+  if (silenceSec < umbral) { await posponer(s.id, (umbral - silenceSec) * 1000); return false; }
 
   // No interrumpir una conversación GENUINAMENTE activa → reintentar en el próximo
   // tick. Un run 'activo' se está ejecutando ahora → siempre espera. Uno 'esperando'
@@ -622,14 +636,23 @@ async function processSub(s: any, now: number): Promise<boolean> {
     // modo). El 'esperando' idle solo frena al reenganche (que respeta el
     // silencio); el goteo lo ignora — su gracia es no meterse a mitad de una
     // ejecución viva, no esperar a que el cliente se calle.
-    if ((active as any).estado === "activo") return false;
-    if (!esGoteo && idleMs < graceMs) return false;
+    // El cliente está a mitad de una conversación con el bot: no se le encima remarketing.
+    // Se vuelve en un rato (antes, cada minuto mientras durara la charla).
+    if ((active as any).estado === "activo") { await posponer(s.id, 15 * 60_000); return false; }
+    // Conversación reciente pero parada: se espera a que se enfríe lo que falte del margen.
+    if (!esGoteo && idleMs < graceMs) { await posponer(s.id, graceMs - idleMs); return false; }
   }
 
   // Anti-spam: no encimar envíos automáticos. Si ya recibió un toque de marketing
   // (otra secuencia, un nudge, o una campaña) dentro de la ventana de enfriamiento,
   // se posterga al próximo tick — no se pierde el paso, solo espera.
-  if (await antispamOn(s.channel_id) && tocoMktReciente(c, now)) return false;
+  // Ya recibió un toque automático hace poco. Se sabe exactamente cuándo se libera: cuando
+  // el último toque cumpla ANTISPAM_MS.
+  if (await antispamOn(s.channel_id) && tocoMktReciente(c, now)) {
+    const desde = new Date((c as any).ultimo_auto_msg_at).getTime();
+    await posponer(s.id, ANTISPAM_MS - (now - desde));
+    return false;
+  }
 
   // Claim ATÓMICO del paso: reclama ESTA sub reescribiendo updated_at solo si nadie
   // la tocó desde que la leímos (mismo paso_actual y mismo updated_at). El cron se
@@ -730,10 +753,17 @@ async function processSub(s: any, now: number): Promise<boolean> {
   if (toco) await marcarTocoMkt(s.contact_id);
 
   const next = s.paso_actual + 1;
+  // Cuándo volver a mirarla: la espera del paso QUE SIGUE, contada desde ahora (que es
+  // justo el ancla nueva, porque `updated_at` se sella en esta misma escritura). Es una
+  // cota INFERIOR y con eso basta: si el cliente responde antes, el ancla se corre hacia
+  // adelante y al mirarla se recalcula sola. Nunca puede adelantar un envío, solo atrasarlo.
+  const pasoSig = pasos[next];
+  const esperaSig = pasoSig ? Number(pasoSig.umbral_silencio_seg ?? pasoSig.delay_seg ?? 0) : 0;
   await db.from("sequence_subscriptions").update({
     paso_actual: next,
     estado: next >= pasos.length ? "completada" : "activa",
     updated_at: new Date().toISOString(),
+    proximo_at: new Date(Date.now() + Math.max(60_000, esperaSig * 1000)).toISOString(),
   }).eq("id", s.id);
   return true;
 }
