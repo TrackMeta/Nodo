@@ -14,6 +14,9 @@
 // Bundle auto-alojado (un solo archivo, mismo origen) en vez del `/+esm` de
 // jsdelivr, que se fragmentaba en ~9 peticiones encadenadas + DNS externo.
 import { createClient } from "./vendor/supabase.min.js";
+// La zona horaria del negocio vive en date-range.js (donde se usan los cortes de día); acá
+// solo se publica al cargar el canal activo. date-range NO importa shell, así que no hay ciclo.
+import { setTZ } from "./date-range.js";
 
 export const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
 export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
@@ -828,12 +831,18 @@ export async function mountShell({ active } = {}) {
   const brandName = nav.querySelector("#nodoBrandName");
   S.botBtn = botBtn; S.botLogo = botLogo; S.botName = botName; S.botPop = botPop; S.logo = logo; S.brandName = brandName;
   // Resiliente: si la columna logo_url aún no está migrada en la BD, reintenta sin ella.
-  let { data, error } = await supa.from("channels").select("id,nombre,logo_url").eq("activo", true).order("nombre");
+  let { data, error } = await supa.from("channels").select("id,nombre,logo_url,timezone").eq("activo", true).order("nombre");
+  if (error) ({ data } = await supa.from("channels").select("id,nombre,timezone").eq("activo", true).order("nombre"));
   if (error) ({ data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre"));
   S.channels = data || [];
   let saved = localStorage.getItem("nodo.channelId");
   if (!S.channels.find((c) => c.id === saved)) saved = S.channels[0]?.id || null;
   S.channelId = saved;
+  // Zona horaria del NEGOCIO (la que se elige en Ajustes). El panel calculaba todas sus
+  // fechas con Lima fija; el motor sí respeta esta columna, así que un negocio fuera de
+  // Perú veía sus reportes cortados a una hora que no era la suya. Se publica acá para que
+  // date-range.js y las pantallas la usen sin tener que consultar cada una por su lado.
+  setTZ(S.channels.find((c) => c.id === saved)?.timezone);
   S.loaded = true;
 
   // Selector de bot personalizado (con logos + "Crear nuevo bot")
@@ -896,6 +905,10 @@ export async function mountShell({ active } = {}) {
       if (!S.channels.find((c) => c.id === id)) return;
       S.channelId = id;
       localStorage.setItem("nodo.channelId", id);
+      // Cada bot puede tener SU zona horaria: al cambiar de bot hay que cambiarla también, o
+      // los reportes del nuevo se cortarían con la zona del anterior. Va ANTES de avisar a las
+      // pantallas (`S.subs`), que es cuando recargan sus datos con el rango recalculado.
+      setTZ(S.channels.find((c) => c.id === id)?.timezone);
       paintBrand();
       if (!silent) S.subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
     },

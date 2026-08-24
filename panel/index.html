@@ -552,13 +552,21 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
-import { mountDateRange, computePreset, rangeLabel, ymd, ymdLima } from "./date-range.js?v=3";
+import { mountDateRange, computePreset, rangeLabel, ymd, ymdTZ as ymdLima, getTZ } from "./date-range.js?v=4";
 import * as O from "./orders.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, openMetaDetalle, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
 import { norm, pageAll, enTrozos } from "./shell.js";
 injectExtrasCss();
 
-const fmtTime = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
+// La hora de cada mensaje, en la zona del NEGOCIO (Ajustes), no en Lima fija. Se resuelve al
+// formatear -- no al cargar el módulo -- para que al cambiar de bot tome la zona del nuevo;
+// el formateador se cachea por zona porque esto corre una vez por burbuja del hilo.
+let _ftz = null, _ftf = null;
+const fmtTime = { format: (d) => {
+  const tz = getTZ();
+  if (tz !== _ftz) { _ftz = tz; _ftf = new Intl.DateTimeFormat("es-PE", { timeZone: tz, hour: "2-digit", minute: "2-digit" }); }
+  return _ftf.format(d);
+} };
 
 const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {},
   filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, metapend:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map(), metaPendSet:new Set(), metaSalud:{total:0,enviadas:0} };

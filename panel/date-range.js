@@ -23,44 +23,86 @@ const dSame = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMo
 export const dFmt = (d) => `${d.getDate()} ${DR_MES[d.getMonth()]} ${d.getFullYear()}`;
 export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-// El negocio opera en HORA DE LIMA (UTC-5, sin horario de verano). Los presets
-// deben anclarse al día calendario de Lima, no al del navegador: un asistente que
-// entra desde otra zona (España, madrugada) tenía un "Hoy" que era otro día para
-// el negocio. `hoyLima()` = medianoche LOCAL del día calendario de Lima (round-trip
-// seguro: se lee con los mismos getters locales con que se construyó).
-const _p2 = (n) => String(n).padStart(2, "0");
-const hoyLima = () => {
-  const s = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date());
+// ── Zona horaria del NEGOCIO ───────────────────────────────────────
+// Los presets y los cortes de día se anclan al día calendario DEL NEGOCIO, no al del
+// navegador: un asistente que entra desde España a la madrugada tenía un "Hoy" que era otro
+// día para el negocio.
+//
+// Antes esto era "America/Lima" fijo, con el argumento de que el negocio opera en Perú. Pero
+// Ajustes YA deja elegir la zona (Colombia, México, Guatemala…) y el MOTOR sí la respeta:
+// un negocio fuera de Perú tenía sus reportes cortados a una hora que no era la suya — su
+// "Hoy" empezaba y terminaba corrido, y las ventas del borde caían en el día equivocado.
+// `shell.js` publica acá la zona del canal activo apenas lo carga; Lima queda de respaldo
+// para el instante previo a esa carga y para un canal sin zona configurada.
+let _TZ = "America/Lima";
+export const setTZ = (tz) => { if (tz && typeof tz === "string") _TZ = tz; };
+export const getTZ = () => _TZ;
+
+// Offset de una zona (en minutos respecto de UTC) EN UN INSTANTE dado. Se calcula
+// preguntándole a Intl qué hora local ve esa zona en ese instante: no se puede hardcodear
+// porque hay zonas con horario de verano, donde el mismo lugar cambia de offset según el mes.
+function offsetMin(tz, at) {
+  const p = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(at).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const h = p.hour === "24" ? "00" : p.hour;   // ICU a veces da "24" a medianoche
+  const comoUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +h, +p.minute, +p.second);
+  // Se le quitan los MILISEGUNDOS a `at` antes de restar: `comoUTC` se arma con precisión de
+  // segundos (Intl no da ms), así que comparar contra un instante con ms metía esa fracción
+  // dentro del offset. Con el fin de día (…23:59:59.999) eso corría el corte 999 ms —
+  // suficiente para que una venta justo en el borde cayera en el día equivocado.
+  return (comoUTC - (at.getTime() - at.getMilliseconds())) / 60000;
+}
+// Instante absoluto de una hora-de-pared (y/m/d h:m:s) EN la zona del negocio. El offset se
+// aplica dos veces a propósito: la primera pasada usa el offset del instante aproximado, y si
+// ese ajuste cruzó un cambio de horario de verano el offset real es otro, así que se corrige.
+function instanteEn(tz, y, m, d, hh, mi, ss, ms) {
+  const base = Date.UTC(y, m - 1, d, hh, mi, ss, ms);
+  const t1 = base - offsetMin(tz, new Date(base)) * 60000;
+  const t2 = base - offsetMin(tz, new Date(t1)) * 60000;
+  return new Date(t2);
+}
+
+// Hoy, como fecha-día (medianoche LOCAL del navegador) del día calendario del negocio.
+// Round-trip seguro: se lee después con los mismos getters locales con que se construyó.
+const hoyNegocio = () => {
+  const s = new Intl.DateTimeFormat("en-CA", { timeZone: _TZ }).format(new Date());
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
 };
-// Instante ABSOLUTO del inicio/fin del día calendario de `d`, en hora de Lima. Se
-// usa para filtrar registros (que son instantes absolutos) por día de Lima sin que
-// la zona del navegador corra el corte. `d` es una fecha-día (medianoche local del
-// día elegido), así que sus getters LOCALES dan el día correcto en cualquier zona.
-export const startOfDayLima = (d) => new Date(`${d.getFullYear()}-${_p2(d.getMonth() + 1)}-${_p2(d.getDate())}T00:00:00.000-05:00`);
-export const endOfDayLima = (d) => new Date(`${d.getFullYear()}-${_p2(d.getMonth() + 1)}-${_p2(d.getDate())}T23:59:59.999-05:00`);
-// Día calendario (YYYY-MM-DD) de un INSTANTE, en hora de Lima. `ymd()` usa los
-// getters LOCALES, o sea la zona del navegador: una venta de las 21:30 de Lima se
-// guarda como 02:30 UTC del día siguiente, así que desde cualquier zona al este de
-// Lima caía en el día equivocado — y el Dashboard (que agrupa con `ymd`) mostraba
-// días distintos que el Embudo (que sí corta en hora de Lima). Para AGRUPAR
-// timestamps por día se usa esta; `ymd` sigue valiendo para fechas-día ya elegidas
-// por el usuario en el selector de rango, que no son instantes.
-export const ymdLima = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date(t));
+// Instante ABSOLUTO del inicio/fin del día `d` en la zona del negocio. Se usa para filtrar
+// registros (que son instantes absolutos) sin que la zona del navegador corra el corte. `d`
+// es una fecha-día, así que sus getters LOCALES dan el día correcto en cualquier zona.
+export const startOfDayTZ = (d) => instanteEn(_TZ, d.getFullYear(), d.getMonth() + 1, d.getDate(), 0, 0, 0, 0);
+export const endOfDayTZ = (d) => instanteEn(_TZ, d.getFullYear(), d.getMonth() + 1, d.getDate(), 23, 59, 59, 999);
+// Día calendario (YYYY-MM-DD) de un INSTANTE, en la zona del negocio. `ymd()` usa los getters
+// LOCALES, o sea la zona del navegador: una venta de las 21:30 se guarda como 02:30 UTC del
+// día siguiente, así que desde cualquier zona al este caía en el día equivocado — y el
+// Dashboard (que agrupa con `ymd`) mostraba días distintos que el Embudo. Para AGRUPAR
+// timestamps por día se usa esta; `ymd` sigue valiendo para fechas-día ya elegidas por el
+// usuario en el selector, que no son instantes.
+export const ymdTZ = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: _TZ }).format(new Date(t));
+
+// Nombres viejos, mantenidos para no romper nada mientras quede algún uso. Apuntan a las
+// nuevas: ya NO son "de Lima" sino de la zona del negocio.
+export const startOfDayLima = startOfDayTZ;
+export const endOfDayLima = endOfDayTZ;
+export const ymdLima = ymdTZ;
 
 export const PRESETS = [
-  ["hoy", "Hoy", () => { const t = hoyLima(); return [t, t]; }],
-  ["ayer", "Ayer", () => { const y = dAdd(hoyLima(), -1); return [y, y]; }],
-  ["7d", "Últimos 7 días", () => { const t = hoyLima(); return [dAdd(t, -6), t]; }],
-  ["14d", "Últimos 14 días", () => { const t = hoyLima(); return [dAdd(t, -13), t]; }],
-  ["28d", "Últimos 28 días", () => { const t = hoyLima(); return [dAdd(t, -27), t]; }],
-  ["30d", "Últimos 30 días", () => { const t = hoyLima(); return [dAdd(t, -29), t]; }],
-  ["semana", "Esta semana", () => { const t = hoyLima(); return [dAdd(t, -((t.getDay() + 6) % 7)), t]; }],
-  ["semanaAnt", "La semana pasada", () => { const t = hoyLima(); const lun = dAdd(t, -((t.getDay() + 6) % 7)); return [dAdd(lun, -7), dAdd(lun, -1)]; }],
-  ["mes", "Este mes", () => { const t = hoyLima(); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; }],
-  ["mesAnt", "El mes pasado", () => { const t = hoyLima(); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; }],
-  ["max", "Máximo", () => { const t = hoyLima(); return [new Date(2020, 0, 1), t]; }], // TODO el historial (no 365 días): antes recortaba y ocultaba pedidos/plata de +1 año en Compras/Embudo, en la vista por defecto
+  ["hoy", "Hoy", () => { const t = hoyNegocio(); return [t, t]; }],
+  ["ayer", "Ayer", () => { const y = dAdd(hoyNegocio(), -1); return [y, y]; }],
+  ["7d", "Últimos 7 días", () => { const t = hoyNegocio(); return [dAdd(t, -6), t]; }],
+  ["14d", "Últimos 14 días", () => { const t = hoyNegocio(); return [dAdd(t, -13), t]; }],
+  ["28d", "Últimos 28 días", () => { const t = hoyNegocio(); return [dAdd(t, -27), t]; }],
+  ["30d", "Últimos 30 días", () => { const t = hoyNegocio(); return [dAdd(t, -29), t]; }],
+  ["semana", "Esta semana", () => { const t = hoyNegocio(); return [dAdd(t, -((t.getDay() + 6) % 7)), t]; }],
+  ["semanaAnt", "La semana pasada", () => { const t = hoyNegocio(); const lun = dAdd(t, -((t.getDay() + 6) % 7)); return [dAdd(lun, -7), dAdd(lun, -1)]; }],
+  ["mes", "Este mes", () => { const t = hoyNegocio(); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; }],
+  ["mesAnt", "El mes pasado", () => { const t = hoyNegocio(); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; }],
+  ["max", "Máximo", () => { const t = hoyNegocio(); return [new Date(2020, 0, 1), t]; }], // TODO el historial (no 365 días): antes recortaba y ocultaba pedidos/plata de +1 año en Compras/Embudo, en la vista por defecto
 ];
 export function computePreset(key) { const p = PRESETS.find((x) => x[0] === key) || PRESETS[5]; const [from, to] = p[2](); return { from, to, preset: p[0] }; }
 export function rangeLabel(r) {

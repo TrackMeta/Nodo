@@ -75,6 +75,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, confirmDialog } from "./shell.js";
+import { getTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -112,16 +113,18 @@ async function callFn(name, body){
 }
 
 async function boot(){
-  // El ejemplo del comando /fecha estaba escrito a mano ("2026-07-20") y envejecía
-  // solo: se leía como una fecha rara meses después. Se pone la de AYER en hora de
-  // Lima, que además es el caso típico para el que se usa el comando.
-  try{
-    const ayer=new Date(Date.now()-864e5);
-    const f=new Intl.DateTimeFormat("en-CA",{ timeZone:"America/Lima" }).format(ayer);
-    const el=document.getElementById("exFecha"); if(el) el.textContent="/fecha "+f;
-  }catch(_){ /* si falla, queda el ejemplo del HTML */ }
   const sh=await mountShell({ active:"canales" });
   st.channelId=sh.channelId;
+  // El ejemplo del comando /fecha estaba escrito a mano ("2026-07-20") y envejecía
+  // solo: se leía como una fecha rara meses después. Se pone la de AYER en la zona del
+  // NEGOCIO, que además es el caso típico para el que se usa el comando. Va DESPUÉS de
+  // mountShell porque es el shell el que carga esa zona; antes se calculaba con Lima fija
+  // y encima corría cuando la zona ni siquiera estaba disponible.
+  try{
+    const ayer=new Date(Date.now()-864e5);
+    const f=new Intl.DateTimeFormat("en-CA",{ timeZone:getTZ() }).format(ayer);
+    const el=document.getElementById("exFecha"); if(el) el.textContent="/fecha "+f;
+  }catch(_){ /* si falla, queda el ejemplo del HTML */ }
   try{
     const r=await callFn("channel-config",{ action:"avisos_catalogo", channel_id:st.channelId });
     st.catalogo=r.catalogo||[];

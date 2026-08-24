@@ -133,7 +133,7 @@
 <script type="module">
 import { supa, mountShell, icon, pageAll } from "./shell.js";
 import * as O from "./orders.js";
-import { mountDateRange, computePreset, rangeLabel, startOfDayLima, endOfDayLima } from "./date-range.js";
+import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
 function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)); }
@@ -156,7 +156,9 @@ const TAGLBL={digital:"DIGITAL",lima:"LIMA",provincia:"PROVINCIA",fisico:"FÍSIC
 const ymd=(d)=>{ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; };
 // Día de un INSTANTE en hora de Lima (ver dashboard.html): `ymd` usa la zona del
 // navegador y corría las ventas de la noche al día siguiente.
-const ymdLima=(t)=> new Intl.DateTimeFormat("en-CA",{ timeZone:"America/Lima" }).format(new Date(t));
+// Día calendario en la zona del NEGOCIO (date-range.js), no Lima fija: había una copia
+// local acá que ignoraba la zona elegida en Ajustes.
+const ymdLima = ymdTZ;
 async function loadData(){
   st.rows=[]; st.loaded=false;
   const cid=st.channelId; if(!cid){ st.loaded=true; return; }

@@ -232,10 +232,14 @@
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import * as O from "./orders.js";
+import { getTZ } from "./date-range.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, stagePickerHtml } from "./contact-extras.js";
 injectExtrasCss();
 const $=(id)=>document.getElementById(id);
-const fmtTime=new Intl.DateTimeFormat("es-PE",{timeZone:"America/Lima",hour:"2-digit",minute:"2-digit"});
+// Hora en la zona del NEGOCIO (Ajustes), no Lima fija. Se resuelve al formatear para que
+// tome la zona del bot activo; cacheada por zona.
+let _ftz=null,_ftf=null;
+const fmtTime={ format:(d)=>{ const tz=getTZ(); if(tz!==_ftz){ _ftz=tz; _ftf=new Intl.DateTimeFormat("es-PE",{timeZone:tz,hour:"2-digit",minute:"2-digit"}); } return _ftf.format(d); } };
 // Las etapas del embudo viven en contact-extras.js (fuente única).
 const EMOJI_CATS=[
   { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },

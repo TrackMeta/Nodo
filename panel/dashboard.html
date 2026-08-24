@@ -308,6 +308,7 @@
 import { supa, mountShell, toast, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
+import { ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 // Moneda del canal (se carga de channels.moneda; símbolo por código ISO).
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
@@ -497,7 +498,10 @@ function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getM
 // ventas corridas un día, y no coincidían con el Embudo (que sí corta en hora de Lima).
 // Para el EJE de días se sigue usando `ymd`, porque ahí las fechas ya son días
 // calendario elegidos en el selector, no instantes.
-function ymdLima(t){ return new Intl.DateTimeFormat("en-CA",{ timeZone:"America/Lima" }).format(new Date(t)); }
+// El día calendario de un instante, en la zona del NEGOCIO (no Lima fija: la elige el
+// dueño en Ajustes y el motor ya la respeta). Vive en date-range.js para no tener dos
+// definiciones que puedan divergir.
+const ymdLima = ymdTZ;
 function addDays(base,n){ const x=new Date(base); x.setDate(x.getDate()+n); return x; }
 
 // Un preset → {from, toDay} (Date a las 00:00). null = selección manual del calendario.
