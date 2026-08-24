@@ -42,6 +42,10 @@ async function marcarTocoMkt(contactId: string) {
 // la IA, así que esto acota las llamadas simultáneas al proveedor (y su límite de tasa) y la
 // carga sobre la base. Subirlo rinde más por tick, pero conviene medir antes de tocarlo.
 const CONC_WAKE = 5;
+// Suscripciones de remarketing que se procesan a la vez. Mismo criterio: cada una puede
+// terminar en un envío por red. Ojo — subir esto SIN el "una por contacto por tick" de abajo
+// rompería el anti-spam entre dos secuencias del mismo cliente.
+const CONC_SEQ = 5;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -149,10 +153,27 @@ Deno.serve(async (req) => {
     // pocas por minuto. Existe para que un pico (el cron caído un rato, o una tanda que se
     // suscribió junta) no intente vaciarse de golpe y se pase del minuto del tick.
     .limit(500);
-  for (const s of subs ?? []) {
+  // UNA suscripción por contacto y por tick. Un cliente puede estar en varias secuencias a
+  // la vez (la de zapatillas y la del curso), y el anti-spam que impide mandarle dos toques
+  // juntos funciona LEYENDO su último toque al empezar y MARCÁNDOLO al terminar — o sea que
+  // dependía de que las suscripciones se procesaran una tras otra. Al pasarlas en paralelo
+  // (abajo) las dos leerían antes de que ninguna marque y el cliente recibiría los dos
+  // mensajes a la vez. Como vienen ordenadas por cita más atrasada, se queda la que lleva
+  // más esperando y la otra sale en el tick siguiente.
+  const vistos = new Set<string>();
+  const lote = (subs ?? []).filter((s: any) => {
+    if (vistos.has(s.contact_id)) return false;
+    vistos.add(s.contact_id);
+    return true;
+  });
+  // En paralelo de a CONC_SEQ. Con el despertador, lo que vence son en su mayoría envíos de
+  // verdad, y un envío se va por la red a WhatsApp: en fila india, un pico de cientos no
+  // entra en el minuto del tick. Conservador (5), igual que al despertar conversaciones:
+  // muy por debajo de lo que Meta admite por segundo, y acota la carga sobre la base.
+  await enParalelo(lote, CONC_SEQ, async (s: any) => {
     try { if (await processSub(s, now)) fired++; }
     catch (e) { console.error("[scheduler] seq:", (e as any)?.message ?? e); }
-  }
+  });
   // Ya no hace falta sellar un cursor de rotación en lote: cada `processSub` deja anotado su
   // propio `proximo_at` (envió → cuándo toca el siguiente paso; no pudo → cuándo reintentar),
   // así que la ventana avanza sola y sin escrituras extra.
