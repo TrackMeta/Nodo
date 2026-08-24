@@ -152,6 +152,19 @@ async function runEngineInner(
       const _audMediaId = String(event.mediaRef ?? "").startsWith("wa-media:") ? String(event.mediaRef).slice("wa-media:".length) : undefined;
       await annotateAudioTranscript(db, contactId, texto, _audMediaId);
       await logEvent(db, channelId, contactId, "nota", "🎙️ Audio transcrito", texto.slice(0, 140));
+    } else if (!String(event.text ?? "").trim()) {
+      // No se pudo transcribir y el audio no traía texto. Antes se seguía con el mensaje
+      // VACÍO: la IA contestaba cualquier cosa sin saber qué le dijeron, o el run guardaba
+      // "" como si esa fuera la respuesta del cliente — quien mandaba su dirección por nota
+      // de voz se quedaba sin respuesta y con el dato perdido. Y no avisaba a nadie: solo
+      // un console.warn. La causa más común es que el canal use un proveedor de IA SIN key
+      // de OpenAI (el STT es de OpenAI), así que puede afectar TODOS los audios del canal,
+      // y en Perú la nota de voz es la mitad de la conversación. Se le pide por escrito.
+      await logEvent(db, channelId, contactId, "nota", "🎙️ No se pudo escuchar un audio",
+        "Sin transcripción (¿el canal no tiene API key de OpenAI?) → se le pidió por escrito").catch(() => {});
+      await deliverMessage(db, channelId, contactId,
+        "Perdona, no pude escuchar tu audio 🙈 ¿Me lo escribes en un mensajito?").catch(() => {});
+      return;
     }
   }
 

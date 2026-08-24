@@ -214,7 +214,10 @@ const IC={
 };
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
 const PROVIDERS = [
-  { id:"anthropic", nm:"Claude (Anthropic)", logo:LOGO.claude, desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR).",
+  // Nota de las notas de voz: transcribirlas (STT) es de OpenAI, así que un canal SOLO con
+  // Claude no puede escuchar los audios. El motor ya no deja mudo al cliente (le pide que lo
+  // escriba), pero conviene saberlo ANTES de elegir: en Perú media conversación es por audio.
+  { id:"anthropic", nm:"Claude (Anthropic)", logo:LOGO.claude, desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR). Para escuchar notas de voz hace falta además una clave de OpenAI: sin ella el bot le pide al cliente que escriba.",
     keyHint:"sk-ant-...", models:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"] },
   { id:"openai", nm:"ChatGPT (OpenAI)", logo:LOGO.chatgpt, desc:"Modelos GPT de OpenAI.",
     keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
