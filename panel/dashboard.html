@@ -305,7 +305,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, pageAll } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 const $=(id)=>document.getElementById(id);
@@ -407,10 +407,20 @@ async function operaExec(a){
     return async()=>{ const { error:e2 }=await supa.from("flows").update({ estado:viejo }).eq("id",a.flow_id); if(e2) throw e2; };
   }
   if(a.tipo==="adelanto"){
+    // Los dos pasos releen el config fresco y tocan SOLO adelanto_override. El "deshacer"
+    // reescribía el config que se había leído ANTES del cambio: si entremedio entraba una
+    // venta, deshacer el adelanto revertía también el stock descontado. Ahora deshacer
+    // deshace solo lo que se hizo. (patchProductConfig, shell.js.)
     const { data }=await supa.from("products").select("config").eq("id",a.product_id).maybeSingle();
-    const cfg=(data&&data.config)||{}; const viejo=cfg.adelanto_override;
-    const { error }=await supa.from("products").update({ config:{...cfg, adelanto_override:a.valor} }).eq("id",a.product_id); if(error) throw error;
-    return async()=>{ const c2={...cfg}; if(viejo==null) delete c2.adelanto_override; else c2.adelanto_override=viejo; const { error:e2 }=await supa.from("products").update({ config:c2 }).eq("id",a.product_id); if(e2) throw e2; };
+    const viejo=((data&&data.config)||{}).adelanto_override;
+    const r=await patchProductConfig(a.product_id,(cfg)=>{ cfg.adelanto_override=a.valor; });
+    if(!r.ok) throw (r.error||new Error("no se pudo guardar el adelanto"));
+    return async()=>{
+      const r2=await patchProductConfig(a.product_id,(cfg)=>{
+        if(viejo==null) delete cfg.adelanto_override; else cfg.adelanto_override=viejo;
+      });
+      if(!r2.ok) throw (r2.error||new Error("no se pudo deshacer"));
+    };
   }
   throw new Error("acción no soportada");
 }

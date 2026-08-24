@@ -265,7 +265,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, patchProductConfig } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{}, prodList:[], newKws:[] };
 
@@ -523,10 +523,13 @@ function renderIntents(){
   }
 }
 async function saveIntent(p, val){
-  const config={ ...(p.config||{}), intencion:val };
-  const { error }=await supa.from("products").update({ config }).eq("id",p.id);
-  if(error){ toast(error.message,true); return; }
-  p.config=config; st.intents[p.id]=val; toast("Guardado ✓");
+  // Sobre el config FRESCO, no sobre `p.config`: esa copia se cargó al abrir la pantalla y
+  // en products.config vive también el `stock`, que el motor descuenta con cada venta.
+  // Guardando la copia vieja entera se revertían esos descuentos — sobreventa muda — por
+  // escribir una frase de intención. (Ver patchProductConfig en shell.js.)
+  const r=await patchProductConfig(p.id,(cfg)=>{ cfg.intencion=val; });
+  if(!r.ok){ toast((r.error&&r.error.message)||"No se pudo guardar",true); return; }
+  p.config=r.config; st.intents[p.id]=val; toast("Guardado ✓");
 }
 
 // ── Simulador ──

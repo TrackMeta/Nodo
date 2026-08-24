@@ -22,12 +22,22 @@ export async function processCampaigns(db: SupabaseClient) {
     .eq("estado", "programada")
     .or(`programada_at.is.null,programada_at.lte.${nowIso}`)
     .order("programada_at", { ascending: true, nullsFirst: true }).order("id").limit(10);
-  for (const c of prog ?? []) await expandCampaign(db, c);
+  // Cada una en su try: si expandir UNA falla (ahora matchSegment lanza ante un error que no
+  // sea de columna faltante), las demás del tick tienen que seguir. La que falló se queda en
+  // "programada" y el próximo tick la reintenta.
+  for (const c of prog ?? []) {
+    try { await expandCampaign(db, c); }
+    catch (e) { console.error(`[campañas] expandir "${c.nombre ?? c.id}":`, (e as any)?.message ?? e); }
+  }
 
   // 2) En curso → enviar el siguiente lote.
   const { data: sending } = await db.from("campaigns").select("*")
     .eq("estado", "enviando").order("created_at", { ascending: true }).order("id").limit(5);
-  for (const c of sending ?? []) await sendBatch(db, c);
+  // Igual que arriba: una campaña que reviente no puede dejar sin lote a las otras cuatro.
+  for (const c of sending ?? []) {
+    try { await sendBatch(db, c); }
+    catch (e) { console.error(`[campañas] enviar lote de "${c.nombre ?? c.id}":`, (e as any)?.message ?? e); }
+  }
 }
 
 async function expandCampaign(db: SupabaseClient, c: any) {
@@ -102,9 +112,18 @@ async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Pr
   // DURO que vale para TODO el remarketing (las secuencias y el nudge ya lo respetan;
   // las campañas masivas NO lo hacían → mandaban la plantilla HSM a quien pidió no
   // recibir → quejas, block-rate arriba, riesgo de baneo del número por Meta).
+  // Los reintentos existen para una base sin la migración que agregó esas columnas, así que
+  // solo se degrada ante ESE error. Antes bastaba cualquier `res.error`: un hipo de red al
+  // paginar hacía caer al intento sin filtro y metía en la audiencia justo a quien pidió que
+  // no le escriban. El re-chequeo en vuelo de sendBatch lo frena antes de mandar, pero el
+  // total del reporte igual salía inflado con gente que nunca iba a recibir nada.
+  const faltaColumna = (e: any) => /column .* does not exist|42703/i.test(String(e?.message ?? e ?? ""));
   let res = await pageAll((f, t) => base(f, t).neq("bloqueado", true).neq("no_remarketing", true), { max: CAP });
-  if (res.error) res = await pageAll((f, t) => base(f, t).neq("bloqueado", true), { max: CAP }); // por si falta la columna no_remarketing
-  if (res.error) res = await pageAll((f, t) => base(f, t), { max: CAP });                        // o falta también bloqueado
+  if (res.error && faltaColumna(res.error)) res = await pageAll((f, t) => base(f, t).neq("bloqueado", true), { max: CAP }); // sin la columna no_remarketing
+  if (res.error && faltaColumna(res.error)) res = await pageAll((f, t) => base(f, t), { max: CAP });                        // ni bloqueado
+  // Un error que NO sea de columna (red, permisos) NO puede leerse como "audiencia vacía":
+  // la campaña se marcaría enviando/completada sin destinatarios. Se deja para el próximo tick.
+  if (res.error) throw new Error("matchSegment: " + (res.error.message ?? res.error));
   const { data } = res;
   let ids = (data ?? []).map((r: any) => r.id);
 

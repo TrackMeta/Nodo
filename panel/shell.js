@@ -1131,3 +1131,23 @@ function schedulePrefetchAll() {
     next();
   });
 }
+
+// Cambia UNA parte de products.config sin pisar el resto. `mutar(cfg)` recibe el config
+// FRESCO de la base y lo modifica en sitio; devuelve {ok, error}.
+//
+// 🔒 Por qué releer en vez de usar el config que la pantalla tiene cargado: en
+// products.config vive TODO el producto, y el `stock` lo descuenta el MOTOR con cada venta.
+// Las pantallas cargan el config al abrirse y se quedan abiertas horas; escribir esa copia
+// entera revierte los descuentos que ocurrieron mientras tanto — sobreventa muda — y de paso
+// puede pisar extras, precios o conocimiento editados desde otra pestaña. "Guardar producto"
+// ya se blinda así (reconcilia el stock por delta contra lo fresco); esto es lo mismo para
+// las pantallas que solo tocan una clave suelta.
+export async function patchProductConfig(id, mutar) {
+  const { data: fresh, error: eRead } = await supa
+    .from("products").select("config").eq("id", id).maybeSingle();
+  if (eRead) return { ok: false, error: eRead };
+  const cfg = { ...((fresh && fresh.config) || {}) };
+  mutar(cfg);
+  const { error } = await supa.from("products").update({ config: cfg }).eq("id", id);
+  return error ? { ok: false, error } : { ok: true, config: cfg };
+}

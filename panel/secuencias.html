@@ -116,7 +116,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 import { mountStepsEditor } from "./seq-editor.js?v=8";
 import { mountFolders } from "./folder-bar.js";
@@ -263,22 +263,41 @@ function findSeqLink(seqId){
 // Escribe el vínculo elegido (st.seqProduct + s.segmento) en products.config, y
 // quita el vínculo anterior si cambió de producto/segmento (una secuencia = un enlace
 // desde acá; múltiples enlaces se manejan desde cada producto).
+// Enlaza/desenlaza la secuencia con el producto. Toca UNA clave de products.config
+// (remarketing_seqs / remarketing_seq_id) y nada más.
+//
+// 🔒 Relee el config FRESCO antes de escribir, en vez de usar el de `st.prodConfig`. Esa
+// caché se llena al abrir la pantalla y la pestaña se queda abierta horas; en products.config
+// vive TODO el producto, incluido el `stock` que el motor descuenta con cada venta. Escribir
+// la copia vieja entera revertía esos descuentos — sobreventa muda — y de paso podía pisar
+// extras, regalos o precios editados desde otra pestaña. Es el mismo blindaje que ya tiene
+// "Guardar producto" en productos.html; acá faltaba. Y ahora se mira el error: si fallaba el
+// segundo update, la secuencia quedaba desenlazada del producto viejo y sin enlazar al nuevo
+// (remarketing muerto para ese producto, en silencio).
+async function patchProdConfig(pid, mutar){
+  const r = await patchProductConfig(pid, mutar);
+  if(!r.ok){ toast("No se pudo guardar el enlace con el producto: "+(r.error&&r.error.message||""),true); return false; }
+  st.prodConfig.set(pid, r.config);
+  return true;
+}
 async function syncSeqLink(seqId){
   const orig=st.seqOrigLink, newPid=st.seqProduct||"", newSeg=(st.seq.segmento||"general");
   if(orig && (orig.productId!==newPid || orig.segmento!==newSeg)){
-    const cfg={ ...(st.prodConfig.get(orig.productId)||{}) }; const rs={ ...(cfg.remarketing_seqs||{}) };
-    if(rs[orig.segmento]===seqId) delete rs[orig.segmento];
-    cfg.remarketing_seqs=rs;
-    if(orig.segmento==="general" && cfg.remarketing_seq_id===seqId) delete cfg.remarketing_seq_id;
-    await supa.from("products").update({ config:cfg }).eq("id",orig.productId);
-    st.prodConfig.set(orig.productId,cfg);
+    const ok=await patchProdConfig(orig.productId,(cfg)=>{
+      const rs={ ...(cfg.remarketing_seqs||{}) };
+      if(rs[orig.segmento]===seqId) delete rs[orig.segmento];
+      cfg.remarketing_seqs=rs;
+      if(orig.segmento==="general" && cfg.remarketing_seq_id===seqId) delete cfg.remarketing_seq_id;
+    });
+    if(!ok) return;   // no seguir: dejar el enlace viejo vivo es mejor que perder los dos
   }
   if(newPid){
-    const cfg={ ...(st.prodConfig.get(newPid)||{}) }; const rs={ ...(cfg.remarketing_seqs||{}) };
-    rs[newSeg]=seqId; cfg.remarketing_seqs=rs;
-    if(newSeg==="general") cfg.remarketing_seq_id=seqId;
-    await supa.from("products").update({ config:cfg }).eq("id",newPid);
-    st.prodConfig.set(newPid,cfg); st.seqOrigLink={ productId:newPid, segmento:newSeg };
+    const ok=await patchProdConfig(newPid,(cfg)=>{
+      const rs={ ...(cfg.remarketing_seqs||{}) };
+      rs[newSeg]=seqId; cfg.remarketing_seqs=rs;
+      if(newSeg==="general") cfg.remarketing_seq_id=seqId;
+    });
+    if(ok) st.seqOrigLink={ productId:newPid, segmento:newSeg };
   } else { st.seqOrigLink=null; }
 }
 function renderDetail(){
