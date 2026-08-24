@@ -62,6 +62,17 @@ Deno.serve(async (req) => {
   // que un Map de módulo que nunca se limpia congelaba la config → un cambio del
   // operador en las horas de remarketing no tomaba efecto hasta reciclar el isolate.
   horarioCache.clear();
+  // Mismo motivo para el mapa producto→secuencias: lo cambia la pantalla de Secuencias cada
+  // vez que enlazas o desenlazas una secuencia de un producto, y sin limpiarlo el veto "ya
+  // compró ESTE producto" seguía mirando el mapa viejo hasta que el isolate se reciclara —
+  // así que se le insistía a quien ya había comprado, o se sacaba del remarketing a quien no.
+  // Quedó fuera cuando se arregló el de horario; es el mismo bug, en el Map de al lado.
+  prodSeqCache.clear();
+  // La secuencia se leía UNA VEZ POR SUSCRIPCIÓN, y todas las de una misma secuencia piden
+  // la misma fila: con 200 personas en un reenganche eran 200 consultas idénticas por tick.
+  // Se cachea por tick (igual que las otras dos), lo que baja un tercio de las lecturas y
+  // deja margen para revisar más suscripciones en el mismo minuto.
+  seqCache.clear();
 
   // ── 1) Despertar Esperar/debounce vencidos ────────────────────────
   const { data: runs } = await db.from("flow_runs")
@@ -115,7 +126,15 @@ Deno.serve(async (req) => {
     .select("id, channel_id, contact_id, sequence_id, paso_actual, updated_at, suscrito_at")
     .eq("estado", "activa")
     .order("revisado_at", { ascending: true, nullsFirst: true })  // nunca revisadas primero, luego las más rancias
-    .limit(200);
+    // 500 y no más: el techo NO es la base, es el minuto que dura el tick. Una suscripción
+    // que NO dispara (el caso común) cuesta ahora 2 consultas —contacto y "¿ya compró?"—
+    // porque la secuencia, el horario y el mapa de productos se cachean por tick. 500 × 2
+    // secuenciales entran de sobra en el minuto, y en el mismo tick corren además el reaper,
+    // las campañas y los recordatorios de pedido. Subirlo más sin medir es arriesgar que el
+    // tick se pase de 60s y empiece a pisarse con el siguiente. Con más volumen que eso, lo
+    // correcto no es subir el número sino precalcular cuándo toca cada paso (como
+    // `flow_runs.wake_at`) y leer solo las vencidas.
+    .limit(500);
   for (const s of subs ?? []) {
     try { if (await processSub(s, now)) fired++; }
     catch (e) { console.error("[scheduler] seq:", (e as any)?.message ?? e); }
@@ -487,8 +506,22 @@ async function antispamOn(channelId: string): Promise<boolean> {
   } catch (_) { return true; }
 }
 
+// Secuencias leídas en este tick. Se limpia al inicio de cada invocación (ver arriba): dura
+// lo que dura el tick, así que un cambio del operador entra en el minuto siguiente.
+// Guarda TAMBIÉN el error, para no perder la distinción entre "no existe" y "no pude leerla"
+// —de la que depende no dar por completada una suscripción por un hipo de red—.
+const seqCache = new Map<string, { data: any; error: any }>();
+async function leerSecuencia(sequenceId: string) {
+  const hit = seqCache.get(sequenceId);
+  if (hit) return hit;
+  const { data, error } = await db.from("sequences").select("*").eq("id", sequenceId).maybeSingle();
+  const res = { data, error };
+  if (!error) seqCache.set(sequenceId, res);   // un fallo NO se cachea: se reintenta en la siguiente
+  return res;
+}
+
 async function processSub(s: any, now: number): Promise<boolean> {
-  const { data: seq, error: errSeq } = await db.from("sequences").select("*").eq("id", s.sequence_id).maybeSingle();
+  const { data: seq, error: errSeq } = await leerSecuencia(s.sequence_id);
   // Distinguir "la secuencia ya no existe" de "no pude leerla". Sin esto, un error transitorio
   // dejaba `seq` en null y caía en el branch de abajo, que marca la suscripción COMPLETADA:
   // ese contacto se quedaba fuera del remarketing PARA SIEMPRE por un hipo de red, en silencio.
