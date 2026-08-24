@@ -4035,8 +4035,18 @@ export function mensajeEstadoDefault(
   // clave). Se le quita el prefijo del courier a la sede antes de interpolarla.
   const sede = String(s.destino || s.sede || s.ciudad || "").trim()
     .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim();
+  // Lo que falta cobrar cuando `shipping.saldo` no está escrito (pedido creado a mano,
+  // venta manual, adelanto validado por un camino que no lo selló). El respaldo era el
+  // TOTAL pelado, así que a quien ya había adelantado se le pedía otra vez la plata
+  // completa — en el mensaje que lee justo antes de pagar. Se descuenta lo abonado; sin
+  // adelanto la cuenta da el total, igual que antes.
+  const porCobrarDe = (tot: number | null | undefined): number | null => {
+    if (tot == null) return null;
+    const ad = Number(s.adelanto_abonado ?? s.pago_acreditado_adelanto ?? s.adelanto);
+    return Math.max(0, tot - (Number.isFinite(ad) && ad > 0 ? ad : 0));
+  };
   if (estado === "en_reparto") {
-    const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : (amount != null ? amount : null);
+    const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
     const dir = String(s.direccion || "").trim();
     return `🛵 ¡Tu pedido ya salió! El motorizado va en camino${dir ? ` a ${dir}` : ""}. ` +
       `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir. ` : ""}¡Gracias por tu compra! 🎉`;
@@ -4060,7 +4070,7 @@ export function mensajeEstadoDefault(
           ? `Ya está *todo pagado* ✅ — tu *clave de recojo* es *${clave}*. Muéstrala en la agencia para recogerlo. ¡Gracias por tu compra! 🎉`
           : `Ya está *todo pagado* ✅, no debes nada. En breve te paso tu *clave de recojo* para que puedas recogerlo. 🙌`);
     }
-    const saldo = (s.saldo != null && s.saldo !== "") ? s.saldo : (amount != null ? amount : null);
+    const saldo = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
     return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
       `${saldo != null ? `Para recogerlo, paga el saldo de *${sym} ${saldo}* ` : "Para recogerlo, paga el saldo "}` +
       `y mándame la captura — apenas lo verifique te paso tu clave de recojo. 🙌`;
