@@ -518,6 +518,31 @@ async function enHorario(channelId: string): Promise<boolean> {
   } catch (_) { return true; } // ante la duda, no bloquear el remarketing
 }
 
+// Minutos que faltan para que ABRA el horario de remarketing de este canal (null si el canal
+// no tiene horario configurado). Reusa el mismo caché por tick que `enHorario`.
+async function minutosHastaApertura(channelId: string): Promise<number | null> {
+  try {
+    let cfg = horarioCache.get(channelId);
+    if (cfg === undefined) {
+      const { data } = await db.from("channels").select("remarketing, timezone").eq("id", channelId).maybeSingle();
+      cfg = data ?? null;
+      horarioCache.set(channelId, cfg);
+    }
+    const r = cfg?.remarketing;
+    if (!r || r.activo === false || !r.desde) return null;
+    const tz = cfg?.timezone || "America/Lima";
+    const hhmm = new Intl.DateTimeFormat("es-PE", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
+      .format(new Date()).replace(/^24/, "00");
+    const aMin = (s: string) => {
+      const [h, m] = String(s).split(":").map(Number);
+      return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+    };
+    let falta = aMin(String(r.desde)) - aMin(hhmm);
+    if (falta <= 0) falta += 24 * 60;        // ya pasó hoy → abre mañana
+    return Math.min(falta, 24 * 60);         // techo de seguridad
+  } catch (_) { return null; }
+}
+
 // ¿El anti-spam de 18h está activo en este canal? Recomendado ON (protege el
 // número de un baneo por sobre-envío), pero el negocio puede apagarlo. Default
 // ON si no está configurado. Reusa el caché de la config de remarketing.
@@ -612,9 +637,23 @@ async function processSub(s: any, now: number): Promise<boolean> {
   }
   // 3) Fuera del horario permitido → esperar al próximo tick (no se pierde el
   //    paso, solo se posterga hasta una hora decente).
-  // Fuera del horario de remarketing. Antes se la revisaba cada minuto TODA la noche sin
-  // poder enviar; ahora se aparta y vuelve más tarde.
-  if (!await enHorario(s.channel_id)) { await posponer(s.id, 20 * 60_000); return false; }
+  // Fuera del horario de remarketing. Se aparta hasta que ABRA (antes se la revisaba cada
+  // minuto toda la noche sin poder enviar), MÁS un desfase aleatorio de hasta 45 minutos.
+  //
+  // El desfase no es un detalle: sin él, todo lo que venció durante la noche vuelve a estar
+  // listo EXACTAMENTE en el minuto de apertura y sale en ráfaga desde el mismo número —
+  // cientos de mensajes de marketing en dos minutos, todos los días a la misma hora. Es justo
+  // el patrón que hace que WhatsApp te baje la calidad, o sea lo contrario de para lo que
+  // existe el horario. Las campañas ya espacian sus envíos uno a uno; las secuencias no lo
+  // necesitaban porque salen desparramadas solas... salvo después de la noche, que es cuando
+  // se amontonan. Con el desfase, la misma tanda se reparte a lo largo de tres cuartos de
+  // hora y cada cliente recibe su mensaje a una hora distinta, que además parece más humano.
+  if (!await enHorario(s.channel_id)) {
+    const falta = await minutosHastaApertura(s.channel_id);
+    const desfase = Math.floor(Math.random() * 45);
+    await posponer(s.id, ((falta ?? 20) + desfase) * 60_000);
+    return false;
+  }
 
   // Temporizador del paso: cuenta desde el MÁS RECIENTE entre (a) cuándo se envió
   // el paso anterior —`updated_at` se sella en cada avance— y (b) el último
