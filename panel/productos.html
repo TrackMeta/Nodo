@@ -2940,7 +2940,14 @@ async function generarFlujoVenta(skipConfirm){
     const nRe=await N("mensaje","Pedir el comprobante de nuevo",{
       // {{pago_resultado_motivo}} y no {{pago_resultado}}: el crudo trae el token
       // PAGO_NO y el JSON que el OCR agrega, y el cliente los estaba viendo.
-      bubbles:[{ text:"Mmm, no pude validar ese comprobante 🤔\n\n{{pago_resultado_motivo}}\n\n¿Me lo reenvías? Si tienes alguna duda, dime nomás." }],
+      // El texto de alrededor es NEUTRO a propósito. Antes decía "no pude validar ese
+      // comprobante" y cerraba con "¿me lo reenvías?", y varios motivos ya vienen
+      // completos y lo contradicen: al abono parcial ("¡Recibí tu abono de S/50! Van
+      // S/50 de S/99…") le anteponía que no se pudo validar, y al comprobante repetido
+      // ("envíame uno nuevo") le pedía justo reenviar el mismo. El cliente quedaba sin
+      // saber si su pago entró ni qué hacer, y eso es plata. Así funciona en los tres
+      // casos: motivo escueto del OCR, abono parcial y comprobante ya usado.
+      bubbles:[{ text:"Mmm, revisé tu comprobante 🤔\n\n{{pago_resultado_motivo}}\n\nCualquier duda, dime nomás. 🙂" }],
     },false,960,340);
 
     await E(nVender,"exito",nEsperar);

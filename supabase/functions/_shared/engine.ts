@@ -7377,7 +7377,7 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   ];
   p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
-  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
+  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no, y si NO lo es agrega qué tiene que hacer el cliente (mandarte la captura completa, reenviarla más nítida, pagar el monto exacto…): este texto se le manda TAL CUAL, así que tiene que poder leerse solo"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
   return p.join("\n\n");
 }
 // El hilo del chat, como lo vería una persona. Es lo que convierte al nodo IA
