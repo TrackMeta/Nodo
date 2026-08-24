@@ -388,23 +388,31 @@ export function printRotulo(o, remitente) {
   const pedido = [p.emoji, p.nombre, v.nombre ? "· " + v.nombre : ""].filter(Boolean).join(" ");
   const nro = (o.order_id || o.id || "").toString().slice(0, 8).toUpperCase();
   const row = (k, val, big) => val ? `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}">${esc(val)}</td></tr>` : "";
+  // Igual que `row`, pero para los datos SIN los que el envío no se puede despachar. `row`
+  // omite la fila cuando el valor está vacío, así que un pedido de provincia sin DNI salía
+  // impreso sin ninguna línea de DNI: el que empaca no ve que falta y lo descubre en la
+  // agencia, con el paquete ya allá. (El modal de despacho sí marca los vacíos; el rótulo,
+  // que es el papel que viaja, no.) Acá la fila SIEMPRE sale, y si falta el dato lo grita.
+  const rowReq = (k, val, big) => val
+    ? `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}">${esc(val)}</td></tr>`
+    : `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}" style="color:#c00;font-weight:800">⚠ FALTA</td></tr>`;
   const atrLine = Object.entries(s.atributos || {}).map(([k, val]) => `${k}: ${val}`).join("   ·   ");
   let filas = "";
   if (zona === "provincia") {
     filas =
-      row("Destinatario", s.cliente || c.nombre || "", true) +
-      row("DNI", s.dni || "", true) +
+      rowReq("Destinatario", s.cliente || c.nombre || "", true) +
+      rowReq("DNI", s.dni || "", true) +
       row("Teléfono", tel) +
-      row("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
+      rowReq("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
       row("Envío", s.aereo ? "✈️ AÉREO — despachar por avión" : "", true) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("N° pedido", nro);
   } else {
     filas =
-      row("Destinatario", c.nombre || s.cliente || "", true) +
+      rowReq("Destinatario", c.nombre || s.cliente || "", true) +
       row("Teléfono", tel) +
-      row("Dirección", s.direccion || "", true) +
+      rowReq("Dirección", s.direccion || "", true) +
       row("Distrito", (() => { const d = s.distrito || s.zona_nombre || ""; return d && d.toLowerCase() !== "lima" ? cap(d) : ""; })()) +
       row("Provincia", s.provincia || "Lima") +
       row("Referencia", s.referencia || "") +
