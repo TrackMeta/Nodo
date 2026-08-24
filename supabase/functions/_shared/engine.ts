@@ -1770,6 +1770,29 @@ async function startRun(db: SupabaseClient, channelId: string, contactId: string
 // ── Reanudar un run que esperaba input/botón/tiempo ────────────────
 async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Promise<boolean> {
   const aw = run.vars._await;
+  // ¿El paso donde este cliente quedó esperando TODAVÍA existe? Si se editó el flujo y se
+  // borró ese paso, las aristas se fueron con él: `nextNode` devuelve null, el run se cierra
+  // como si el flujo hubiera terminado bien, y el cliente —que estaba a mitad de dar su
+  // dirección— se queda sin respuesta a ese mensaje y pierde el hilo de la venta (el
+  // siguiente mensaje lo atiende la recepción y le vuelve a preguntar qué quiere comprar).
+  // Nada de eso avisaba. Es una consulta por PK sobre una tabla chica, y solo cuando había
+  // una espera viva: al lado de la llamada a la IA que viene después, no se nota.
+  // Consulta propia en vez de `getNode`: getNode se traga el error y devuelve null, así que
+  // un hipo de red se leería como "el paso ya no existe" y escalaría a un humano una venta
+  // que estaba sana. Solo cuenta como borrado si la consulta respondió BIEN y no hubo fila.
+  const chkNodo = aw?.node_id
+    ? await db.from("flow_nodes").select("id").eq("id", aw.node_id).maybeSingle()
+    : null;
+  if (chkNodo && !chkNodo.error && !chkNodo.data) {
+    run.estado = "completado"; run.current_node_id = null;
+    delete run.vars._await;
+    await saveRun(db, run);
+    await logEvent(db, run.channel_id, run.contact_id, "error", "El paso donde esperaba ya no existe",
+      "Se editó o borró el flujo con la conversación en curso → escalado a humano").catch(() => {});
+    await pasarAHumano(db, run.channel_id, run.contact_id,
+      "El flujo cambió mientras este cliente estaba a mitad de la conversación.", { aviso: true }).catch(() => {});
+    return false;
+  }
   run.estado = "activo";
 
   // Aprobación de un pago digital manual: order-update reanuda el run parqueado
@@ -1877,7 +1900,20 @@ async function execute(db: SupabaseClient, run: Run) {
   for (let i = 0; i < MAX_STEPS; i++) {
     if (!run.current_node_id) { run.estado = "completado"; break; }
     const node = await getNode(db, run.current_node_id);
-    if (!node) { run.estado = "completado"; break; }
+    if (!node) {
+      // El paso al que apuntaba este run YA NO EXISTE. Pasa al editar un flujo con clientes
+      // a mitad de conversación: se borra un paso (o el flujo entero) y los runs parados ahí
+      // quedan apuntando al vacío. Antes el run se cerraba en SILENCIO: el cliente estaba
+      // dando su dirección y el bot simplemente dejaba de contestarle, sin que nadie se
+      // enterara. Mismo trato que el destino inexistente de `iniciar_flujo`: escalar a un
+      // humano, que es quien puede retomar esa venta a medias.
+      run.estado = "completado"; run.current_node_id = null;
+      await logEvent(db, run.channel_id, run.contact_id, "error", "El paso del flujo ya no existe",
+        "Se editó o borró el flujo con la conversación en curso → escalado a humano").catch(() => {});
+      await pasarAHumano(db, run.channel_id, run.contact_id,
+        "El flujo cambió mientras este cliente estaba a mitad de la conversación.", { aviso: true }).catch(() => {});
+      break;
+    }
     await logEvent(db, run.channel_id, run.contact_id, "nodo", node.nombre || node.tipo, node.tipo);
 
     const ctx = await buildContext(db, run);
