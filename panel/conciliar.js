@@ -362,7 +362,12 @@ export function emparejar(ventas, movs, { modo = "prudente", op = OPCIONES } = {
 // Por qué se casó esta pareja, en palabras. La decisión tiene que poder
 // auditarse: un veredicto sin explicación no se puede corregir.
 function razones(c, v) {
-  const out = [`S/ ${c.mov.monto.toFixed(2)} exacto`];
+  // El monto va con la moneda del pedido: el conciliador tambien corre en canales que no
+  // facturan en soles, y una razon que dice "S/" sobre dolares es justo lo contrario de
+  // auditable, que es para lo que existe este texto.
+  const cur = v?._o?.currency || "PEN";
+  let montoTxt; try { montoTxt = new Intl.NumberFormat("es-PE",{style:"currency",currency:cur}).format(c.mov.monto); } catch(_) { montoTxt = "S/ "+c.mov.monto.toFixed(2); }
+  const out = [`${montoTxt} exacto`];
   const min = c.p.minutos;
   out.push(min === 0 ? "a la misma hora que la captura"
     : min > 0 ? `el pago entró ${min} min antes de la captura`

@@ -67,7 +67,7 @@ export function total(o){
 // cobrar" — plata que ya entró apareciendo como deuda, y el ROAS subestimado.
 // `adelanto_abonado`/`pago_acreditado_adelanto` los escribe el motor con lo abonado
 // de verdad (saldoTrasAdelanto).
-const adelantoDe = (o) => {
+export const adelantoDe = (o) => {
   const s = o?.shipping || {};
   const real = Number(s.adelanto_abonado ?? s.pago_acreditado_adelanto);
   if (Number.isFinite(real) && real > 0) return real;

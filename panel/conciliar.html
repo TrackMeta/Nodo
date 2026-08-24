@@ -88,7 +88,14 @@ import { leerReporte, emparejar, pagosSinVenta } from "./conciliar.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayLima, endOfDayLima } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const money=(v)=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+// La moneda sale de los pedidos del periodo (la consulta ya traía `currency` sin usarla),
+// como en Pagos por validar. Estaba fijo en "S/", así que un canal en dólares mostraba
+// soles sobre montos en USD justo en la pantalla donde se cuadra contra el banco.
+let CUR="PEN";
+const money=(v)=>{
+  try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:CUR}).format(Number(v||0)); }
+  catch(_){ return "S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+};
 const plu=(n,s,p)=>n===1?s:p;   // frase en singular o plural según el conteo
 const fFecha=(d)=>d?new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(d):"—";
 
@@ -164,6 +171,7 @@ async function conciliar(){
     .eq("channel_id",st.channelId).gte("created_at",desde.toISOString()).lte("created_at",hasta.toISOString())
     .order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
   const cerradas=(ords||[]).filter(o=>O.EST[o.estado] && O.EST[o.estado].cobro==="todo");
+  CUR=(cerradas.find(o=>o.currency)||{}).currency||"PEN";   // moneda real del periodo
 
   // Cuándo llegó el comprobante: es la referencia horaria buena. La aprobación
   // puede ser horas después (validación manual), y el pago ocurrió antes de la
@@ -202,7 +210,12 @@ async function conciliar(){
   // solo cobro, o efectivo) siguen como una sola entrada por el total.
   const entradasDe=(o)=>{
     const s=o.shipping||{}, cliente=s.cliente||(o.contact||{}).nombre||"", producto=(o.product||{}).nombre||"";
-    const total=O.total(o), adel=Number(s.adelanto)||0, saldo=+(total-adel).toFixed(2);
+    // adelantoDe = lo que REALMENTE abonó, no lo que se le pidió. Con `s.adelanto` pelado,
+    // el cliente que pagaba todo de una (adelanto pedido S/20, depósito real S/210) se partía
+    // en dos entradas de S/20 y S/190 que NO existen en el banco: ninguna calzaba y la venta
+    // salía SIN RESPALDO teniendo su depósito ahí. Con el monto real, saldo=0 y cae al camino
+    // de una sola entrada por el total, que es justo lo que hay que buscar en el extracto.
+    const total=O.total(o), adel=Math.min(O.adelantoDe(o), total), saldo=+(total-adel).toFixed(2);
     const conc=s.conciliacion||{}, partes=conc.partes||{};
     if(O.zonaDe(o)==="provincia" && adel>0.005 && saldo>0.005){
       // Cada pago anclado a SU comprobante (por la URL); si no se ubica, cae a la
