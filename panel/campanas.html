@@ -114,6 +114,11 @@
   </div>
 
   <label style="margin-top:16px">Programar envío <span style="color:var(--faint);font-weight:400">(opcional — vacío = al guardar)</span></label><input class="in" id="m_prog" type="datetime-local"/>
+  <!-- Cuánta gente y hasta qué hora. Programar una campaña era a ciegas: no se decía a
+       cuántos les llega ni cuánto tarda en salir, y a 25 envíos por minuto una lista de
+       5.000 son más de 3 horas — así una campaña de las 9pm sigue disparando pasada la
+       medianoche sin que nadie lo haya decidido. Es informativo: no bloquea nada. -->
+  <div id="m_estim" style="margin-top:12px;font-size:12.5px;line-height:1.6;color:var(--muted)"></div>
   <div class="warnbox" id="warnBox">Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo solo con listas que dieron su consentimiento.</div>
   <div class="mfoot"><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar campaña</button></div>
 </div></div>
@@ -151,11 +156,14 @@ async function boot(){
   await load();
 }
 async function load(){
-  const [{ data:c },{ data:tpl },{ data:tg }]=await Promise.all([
+  const [{ data:c },{ data:tpl },{ data:tg },{ data:ch }]=await Promise.all([
     supa.from("campaigns").select("*").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
     supa.from("wa_templates").select("id,name,language,activa,estado_meta,soporta_envio,body_preview,ejemplos").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
+    // El horario de envío del negocio, para poder avisar si una campaña larga termina fuera de él.
+    supa.from("channels").select("remarketing").eq("id",st.channelId).maybeSingle(),
   ]);
+  st.remarketing=(ch&&ch.remarketing)||{};
   // Solo plantillas APROBADAS por Meta (el copy lo promete). Una activa pero
   // pendiente/rechazada → Meta rechaza cada envío del lote (132001) y toda la
   // audiencia cae a fallido. null = legacy sin sync → se trata como aprobada.
@@ -247,17 +255,67 @@ function openModal(c){
   st.pickTags=new Set(seg.tags||[]); st.pickStages=new Set(seg.stage||[]); st.pickOStates=new Set(seg.order_estados||[]);
   $("m_tags").innerHTML=st.tags.length?st.tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}" style="${st.pickTags.has(t.nombre)?`background:${h}22;color:${h}`:''}">${esc(t.nombre)}</span>`;}).join(""):'<span style="color:var(--faint);font-size:12px">Sin etiquetas (crea en Etiquetas)</span>';
   $("m_stages").innerHTML=STAGES.map(([s,l])=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}" style="${st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
-  $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const n=el.dataset.t; if(st.pickTags.has(n))st.pickTags.delete(n); else st.pickTags.add(n); const t=st.tags.find(x=>x.nombre===n),h=tagHex(t?.color); el.classList.toggle("on"); el.style.cssText=st.pickTags.has(n)?`background:${h}22;color:${h}`:''; });
-  $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.s; if(st.pickStages.has(s))st.pickStages.delete(s); else st.pickStages.add(s); el.classList.toggle("on"); el.style.cssText=st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
+  $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const n=el.dataset.t; if(st.pickTags.has(n))st.pickTags.delete(n); else st.pickTags.add(n); estimarAudiencia(); const t=st.tags.find(x=>x.nombre===n),h=tagHex(t?.color); el.classList.toggle("on"); el.style.cssText=st.pickTags.has(n)?`background:${h}22;color:${h}`:''; });
+  $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.s; if(st.pickStages.has(s))st.pickStages.delete(s); else st.pickStages.add(s); estimarAudiencia(); el.classList.toggle("on"); el.style.cssText=st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
   $("m_ostates").innerHTML=ORDER_STATES.map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}" style="${st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
-  $("m_ostates").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.o; if(st.pickOStates.has(s))st.pickOStates.delete(s); else st.pickOStates.add(s); el.classList.toggle("on"); el.style.cssText=st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
+  $("m_ostates").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.o; if(st.pickOStates.has(s))st.pickOStates.delete(s); else st.pickOStates.add(s); estimarAudiencia(); el.classList.toggle("on"); el.style.cssText=st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
   $("m_modo").value=seg.modo||"cualquiera";
   // datetime-local espera hora LOCAL. toISOString() daba dígitos UTC → mostraba la
   // hora corrida (5h en Lima) y al re-guardar la volvía a correr. Se arma con los
   // componentes locales. (El guardado ya convierte local→UTC con new Date(value).)
   $("m_prog").value=c?.programada_at?(d=>{const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;})(new Date(c.programada_at)):"";
   paintModalPreview();
+  estimarAudiencia();                     // a cuánta gente le llega y hasta qué hora
+  $("m_prog").oninput = estimarAudiencia;  // cambiar la hora cambia dónde termina
+  $("m_modo").onchange = estimarAudiencia;
   $("modal").classList.add("show");
+}
+// ── Cuánta gente y hasta qué hora ──────────────────────────────────
+// El ritmo real del envío: 25 por tick y el cron corre cada minuto (BATCH en campaigns.ts).
+// Si eso cambia allá, hay que cambiarlo acá — por eso el número va con su nombre a la vista.
+const ENVIOS_POR_MINUTO = 25;
+let _estimT = null, _estimSeq = 0;
+function segmentoActual(){
+  return { tags:[...st.pickTags], stage:[...st.pickStages], order_estados:[...st.pickOStates], modo:$("m_modo")?.value || "cualquiera" };
+}
+function pintaEstimacion(total){
+  const box=$("m_estim"); if(!box) return;
+  if(total==null){ box.innerHTML=`<span style="color:var(--faint)">Calculando a cuánta gente le llega…</span>`; return; }
+  if(total===0){ box.innerHTML=`<b style="color:var(--amber)">No le llega a nadie</b> con estos filtros. Revisa el segmento antes de programarla.`; return; }
+  const mins=Math.ceil(total/ENVIOS_POR_MINUTO);
+  const dur = mins<60 ? `${mins} min` : `${Math.floor(mins/60)} h ${mins%60 ? (mins%60)+" min" : ""}`.trim();
+  const inicio = $("m_prog")?.value ? new Date($("m_prog").value) : new Date();
+  const fin = new Date(inicio.getTime() + mins*60000);
+  const hh = (d)=>`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  const otroDia = fin.toDateString()!==inicio.toDateString();
+  // ¿Termina fuera del horario de envío del negocio? Solo se avisa si ese horario está
+  // activado — si no lo usas, no hay nada contra qué comparar.
+  let aviso="";
+  const rm=st.remarketing||{};
+  if(rm.activo && rm.desde && rm.hasta){
+    const min=(s)=>{const[a,b]=String(s).split(":").map(Number);return a*60+b;};
+    const fm=fin.getHours()*60+fin.getMinutes(), d=min(rm.desde), h=min(rm.hasta);
+    const dentro = d<=h ? (fm>=d && fm<=h) : (fm>=d || fm<=h);
+    if(!dentro || otroDia) aviso=`<br><span style="color:var(--amber)">⚠️ Termina fuera de tu horario de envío (${esc(rm.desde)}–${esc(rm.hasta)}).</span> Puedes moverla a otra hora o partirla en dos.`;
+  }
+  box.innerHTML = `Le llega a <b style="color:var(--text)">${total.toLocaleString("es-PE")}</b> ${total===1?"persona":"personas"}. `
+    + `Tarda <b style="color:var(--text)">${dur}</b> en salir toda: empezando ${hh(inicio)}, termina cerca de las <b style="color:var(--text)">${hh(fin)}</b>${otroDia?" del día siguiente":""}.`
+    + aviso;
+}
+async function estimarAudiencia(){
+  clearTimeout(_estimT);
+  pintaEstimacion(null);
+  const seq=++_estimSeq;                       // anti-carrera: solo pinta la última
+  _estimT=setTimeout(async ()=>{
+    try{
+      const { data, error }=await supa.functions.invoke("channel-config",{ body:{ action:"campana_audiencia", channel_id:st.channelId, segmento:segmentoActual() } });
+      if(error || data?.error) throw new Error(error?.message || data?.detalle || data?.error);
+      if(seq===_estimSeq) pintaEstimacion(Number(data?.total)||0);
+    }catch(e){
+      // Que no se pueda estimar NO puede impedir programar: se calla y ya.
+      if(seq===_estimSeq){ const b=$("m_estim"); if(b) b.innerHTML=""; }
+    }
+  }, 350);
 }
 async function saveCampaign(){
   const nombre=$("m_nombre").value.trim();

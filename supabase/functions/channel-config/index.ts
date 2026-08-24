@@ -9,6 +9,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
+import { matchSegment } from "../_shared/campaigns.ts";
 
 const db = serviceClient();
 // Campos planos del canal editables desde el panel.
@@ -112,6 +113,20 @@ Deno.serve(async (req) => {
     if (action === "avisos_catalogo") {
       const { data: c } = await db.from("channels").select("telegram_avisos, resumenes").eq("id", channel_id).maybeSingle();
       return json({ ok: true, catalogo: AVISOS, config: (c as any)?.telegram_avisos ?? null, resumenes: (c as any)?.resumenes ?? null });
+    }
+
+    // A cuánta gente le llegaría una campaña con ESTE segmento, antes de programarla.
+    // Usa la MISMA función que arma la audiencia de verdad (matchSegment), no una copia en
+    // el navegador: una copia diverge al primer cambio de reglas y el número empieza a
+    // mentir. Con eso el panel puede además decir cuánto va a tardar en salir, que es el
+    // dato que nadie calcula de cabeza (25 envíos por minuto: 5.000 personas son 3 horas).
+    if (action === "campana_audiencia") {
+      try {
+        const ids = await matchSegment(db, channel_id, (body as any).segmento ?? {});
+        return json({ ok: true, total: ids.length });
+      } catch (e) {
+        return json({ error: "no_se_pudo", detalle: String((e as any)?.message ?? e) }, 500);
+      }
     }
 
     // Resúmenes diarios (mañana/noche) a Telegram. Solo config; el estado

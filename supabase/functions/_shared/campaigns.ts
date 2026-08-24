@@ -117,7 +117,11 @@ const enTrozos = <T,>(arr: T[], n: number): T[][] => {
 
 // Resuelve el segmento { stage:[], tags:[], modo } a ids de contacto.
 // Excluye el contacto de prueba (webchat-test) y los bloqueados de los masivos.
-async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Promise<string[]> {
+// Se EXPORTA para que el panel pueda decir, antes de programar una campaña, a cuánta gente
+// le va a llegar. Tiene que ser esta misma función y no una copia en el navegador: una copia
+// diverge al primer cambio de reglas y el numerito que ve el dueño empieza a mentir justo
+// cuando más lo mira.
+export async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Promise<string[]> {
   const stages: string[] = seg.stage ?? seg.stages ?? [];
   const base = (f: number, t: number) => {
     let q = db.from("contacts").select("id").eq("channel_id", channelId).neq("wa_id", "webchat-test");
