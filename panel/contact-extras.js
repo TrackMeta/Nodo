@@ -2086,14 +2086,21 @@ export async function openDespachoLoteModal(orders, deps) {
       toast("Clave puesta en todos");
     };
     // Leer guías desde fotos: OCR + emparejar por DNI del destinatario
+    // El índice guarda TODOS los pedidos de cada DNI, no el último. Antes era `dniMap[d] = o.id`:
+    // si un cliente tenía dos pedidos por despachar (recompra, pasa seguido) el segundo pisaba al
+    // primero, así que las DOS fotos se asignaban al MISMO pedido —la segunda guía sobreescribía a
+    // la primera— y el otro paquete salía sin guía, con el toast diciendo "2 asignadas". El cliente
+    // terminaba rastreando el paquete de otro. Con el DNI repetido no se adivina: se deja sin
+    // emparejar para que el operador elija, que es un minuto de trabajo y no un paquete perdido.
     const dniMap = {};
-    orders.forEach((o) => { const d = String((o.shipping || {}).dni || "").replace(/\D/g, "").replace(/^0+/, ""); if (d) dniMap[d] = o.id; });
+    orders.forEach((o) => { const d = String((o.shipping || {}).dni || "").replace(/\D/g, "").replace(/^0+/, ""); if (d) (dniMap[d] = dniMap[d] || []).push(o.id); });
     ov.querySelector("[data-ocr]").onclick = () => {
       const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.multiple = true;
       inp.onchange = async () => {
         const files = [...(inp.files || [])]; if (!files.length) return;
         const btn = ov.querySelector("[data-ocr]"); btn.disabled = true;
-        let asign = 0, sin = 0;
+        let asign = 0, sin = 0, ambig = 0;
+        const yaLeido = {};
         for (let i = 0; i < files.length; i++) {
           btn.textContent = `Leyendo ${i + 1}/${files.length}…`;
           const f = files[i]; if (f.size > 16 * 1024 * 1024) { sin++; continue; }
@@ -2102,21 +2109,31 @@ export async function openDespachoLoteModal(orders, deps) {
           try { const { data, error } = await supa.functions.invoke("guia-ocr", { body: { channel_id: channelId, image_url: up.url } }); if (!error) g = data && data.guia; } catch (_) { /* sigue */ }
           if (!g) { sin++; continue; }
           const dni = String(g.dni || "").replace(/\D/g, "").replace(/^0+/, "");
-          let id = dni ? dniMap[dni] : null;
+          const cand = dni ? (dniMap[dni] || []) : [];
+          let id = cand.length === 1 ? cand[0] : null;   // DNI repetido → ambiguo, no se adivina
+          if (cand.length > 1) { ambig++; continue; }
           if (!id && g.nombre) {
-            const nn = g.nombre.toLowerCase();
-            const o = orders.find((x) => { const nm = ((x.contact || {}).nombre || (x.shipping || {}).cliente || "").toLowerCase(); return nm && (nm.includes(nn) || nn.includes(nm)); });
-            if (o) id = o.id;
+            // Por nombre solo se empareja si la coincidencia es ÚNICA. Antes tomaba el primer
+            // `.find()` que calzara con un `includes` en cualquier dirección: un OCR que leía
+            // "Luis" pescaba a cualquier Luis del lote y le pegaba la guía de otro.
+            const nn = g.nombre.toLowerCase().trim();
+            const hits = nn.length < 4 ? [] : orders.filter((x) => { const nm = ((x.contact || {}).nombre || (x.shipping || {}).cliente || "").toLowerCase(); return nm && (nm.includes(nn) || nn.includes(nm)); });
+            if (hits.length > 1) { ambig++; continue; }
+            if (hits.length === 1) id = hits[0].id;
           }
           const tr = id && ov.querySelector(`.dl-tbl tbody tr[data-id="${id}"]`);
           if (!tr) { sin++; continue; }
+          // Dos fotos distintas que caen en el mismo pedido: la segunda pisaba a la primera en
+          // silencio. Se avisa en vez de sobreescribir.
+          if (yaLeido[id]) { ambig++; continue; }
+          yaLeido[id] = true;
           if (g.guia) tr.querySelector('[data-k="guia"]').value = g.guia;
           if (g.codigo) tr.querySelector('[data-k="codigo"]').value = g.codigo;
           fotos[id] = up; const fb = tr.querySelector(".dl-foto"); if (fb) { fb.classList.add("has"); fb.textContent = "✓"; }
           tr.classList.remove("bad"); asign++;
         }
         btn.disabled = false; btn.textContent = "📷 Leer guías de fotos";
-        toast(`${asign} guía(s) leída(s) y asignada(s)${sin ? ` · ${sin} sin emparejar` : ""}`, sin > 0 && asign === 0);
+        toast(`${asign} guía(s) leída(s) y asignada(s)${sin ? ` · ${sin} sin emparejar` : ""}${ambig ? ` · ${ambig} ambigua(s): ponlas a mano` : ""}`, (sin > 0 && asign === 0) || ambig > 0);
       };
       inp.click();
     };

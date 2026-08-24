@@ -131,7 +131,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, icon } from "./shell.js";
+import { supa, mountShell, icon, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayLima, endOfDayLima } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -171,10 +171,19 @@ async function loadData(){
   const ordHasta=endOfDayLima(r.to).toISOString();     // fin del día de Lima (inclusive .999) → se usa con .lte
   let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
   try{ [insR,metaR,ordR]=await Promise.all([
-    supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to),
-    supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency").eq("channel_id",cid),
-    supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta),
+    // Las tres van PAGINADAS: PostgREST corta en 1000 filas por pedido y esta pantalla es la
+    // que decide qué anuncio se apaga. Con el corte, `ads_insights` (una fila por anuncio por
+    // día: 30 anuncios × 90 días ya son 2700) perdía gasto → ROAS inflado; y `orders` perdía
+    // ventas → un anuncio rentable se veía perdedor. Los dos errores empujan a la decisión
+    // equivocada y ninguno avisaba. Orden estable + desempate para no repetir ni saltar filas.
+    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to).order("fecha",{ascending:false}).order("ad_id").range(f,t)),
+    pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency").eq("channel_id",cid).order("ad_id").range(f,t)),
+    pageAll((f,t)=>supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta).order("created_at",{ascending:false}).order("id").range(f,t)),
   ]); }catch(_){ st.loaded=true; return; }
+  // pageAll DEVUELVE el error en vez de lanzarlo, así que el catch de arriba ya no lo ve: sin
+  // esto, una consulta que falla a media paginación se veía como un periodo con menos ventas
+  // (o menos gasto) en vez de como un fallo, que es justo la lectura que hace apagar un anuncio.
+  if(insR.error||metaR.error||ordR.error){ st.loaded=true; return; }
   const meta=Object.fromEntries((metaR.data||[]).map(m=>[m.ad_id,m]));
   // Ángulos (aparte, con su propio try/catch: si falta la migración 0063 no debe
   // romper toda la carga). Mapa ad_id → nombre del ángulo.

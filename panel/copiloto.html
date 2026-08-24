@@ -80,7 +80,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, enTrozos } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, enTrozos, pageAll } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -139,10 +139,15 @@ const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   const sel="id,amount,currency,estado,shipping,order_bumps,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)";
-  let { data, error }=await supa.from("orders").select(sel)
-    .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true});
-  if(error){ ({ data }=await supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
-    .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true})); }
+  // PAGINADO: `esperando_adelanto` se acumula para siempre (todo lead de provincia que dejó
+  // sus datos y nunca pagó se queda ahí), así que esta cola cruza las 1000 filas donde
+  // PostgREST corta. Y como el orden es ascendente, lo que quedaba afuera era justo lo MÁS
+  // NUEVO: los comprobantes recién llegados no aparecían nunca en la cola y esos pagos se
+  // quedaban sin validar, sin ningún aviso de que la lista estaba recortada.
+  let { data, error }=await pageAll((f,t)=>supa.from("orders").select(sel)
+    .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true}).order("id").range(f,t));
+  if(error){ ({ data }=await pageAll((f,t)=>supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
+    .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true}).order("id").range(f,t))); }
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
   st.list=data||[];
 
