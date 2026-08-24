@@ -142,6 +142,52 @@ export function flete(o){
 // no altera los márgenes ya cerrados. Solo si el pedido no lo tiene (pedidos
 // viejos, previos al snapshot) se cae al costo vivo del producto × cantidad.
 // null = no hay dato de costo → no se puede hablar de margen.
+// ── En cuántos DEPÓSITOS entró este pedido al banco ────────────────
+// Un pedido casi nunca es un solo movimiento en el extracto:
+//   · provincia → adelanto + saldo (dos yapes en momentos distintos)
+//   · pago en abonos → el cliente completa de a poco (S/50 hoy, S/49 mañana)
+//   · digital con venta extra → el extra se ofrece DESPUÉS de pagar y se cobra aparte
+// Buscar un único movimiento por el total no calza en ninguno de los tres, y la venta sale
+// "sin respaldo" con su plata completa en la cuenta. Devuelve las partes esperadas, o null
+// si de verdad fue un solo cobro.
+//
+// Vive acá, y no copiada en cada pantalla, porque Conciliar (que las busca en el banco) y
+// Compras (que decide si una venta quedó verificada) TIENEN que contar lo mismo: si una
+// parte existe para una y no para la otra, la compra se queda "a medias" para siempre.
+export function partesDePago(o){
+  const s = o?.shipping || {};
+  const tot = total(o);
+  // 1) Provincia con adelanto: el extra físico va sumado al saldo (sube_saldo), así que
+  //    estas dos partes ya lo incluyen y no se subdivide más.
+  const adel = Math.min(adelantoDe(o), tot);
+  if (zonaDe(o) === "provincia" && adel > 0.005 && (tot - adel) > 0.005) {
+    return [
+      { clave:"adelanto", monto:+adel.toFixed(2),          metodo:s.adelanto_metodo||"", comprobante:s.adelanto_comprobante||"", txt:"adelanto", extremo:"primera" },
+      { clave:"saldo",    monto:+(tot-adel).toFixed(2),  metodo:s.saldo_metodo||"",    comprobante:s.saldo_comprobante||"",    txt:"saldo",    extremo:"ultima" },
+    ];
+  }
+  const partes = [];
+  // 2) Los bumps PAGADOS de un digital son cobros aparte (en físico no: van al saldo).
+  const extras = zonaDe(o) === "digital"
+    ? (o?.order_bumps || []).filter((b) => !b?.regalo && Number(b?.precio || 0) > 0.005)
+    : [];
+  const principal = +(tot - extras.reduce((a,b)=>a+Number(b.precio||0), 0)).toFixed(2);
+  // 3) El principal pudo pagarse en varios abonos.
+  const abonos = Array.isArray(s.digital_abonos)
+    ? s.digital_abonos.filter((x) => Number(x?.monto) > 0.005) : [];
+  if (abonos.length > 1) {
+    abonos.forEach((x,i)=>partes.push({ clave:"abono"+i, monto:+Number(x.monto).toFixed(2),
+      metodo:s.digital_metodo||"", comprobante:"", at:x.at||null, txt:`abono ${i+1} de ${abonos.length}` }));
+  } else if (principal > 0.005) {
+    partes.push({ clave:"principal", monto:principal, metodo:s.digital_metodo||s.adelanto_metodo||s.saldo_metodo||"",
+      comprobante:s.comprobante||s.digital_comprobante||"", txt:"la compra", extremo:"primera" });
+  }
+  extras.forEach((b,i)=>partes.push({ clave:"extra"+i, monto:+Number(b.precio).toFixed(2),
+    metodo:s.extra_metodo||s.digital_metodo||"", comprobante:s.extra_comprobante||"",
+    txt:`venta extra${extras.length>1?" "+(i+1):""}`, extremo:"ultima" }));
+  return partes.length > 1 ? partes : null;   // un solo cobro → sin split
+}
+
 // 🎁 Costo de los regalos adjuntos (bumps con regalo:true). Un regalo no se
 // vende (precio 0 → no suma en total()), pero SÍ te cuesta: se cuenta como COGS.
 export function costoRegalos(o){

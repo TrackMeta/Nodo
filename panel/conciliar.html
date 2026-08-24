@@ -202,44 +202,35 @@ async function conciliar(){
   // última imagen; sobrescribiendo hasta el final queda la primera (la más vieja).
   for(const m of imgs){ if(!ultimaImg.has(m.contact_id)) ultimaImg.set(m.contact_id,m.fecha); primeraImg.set(m.contact_id,m.fecha); }
 
-  // Un pedido de PROVINCIA pagado por Yape entra al banco como DOS transferencias
-  // (adelanto + saldo). Buscar UNA sola igual al total nunca calzaría, y salía
-  // "sin respaldo" aunque los dos pagos estuvieran en el banco. Se divide en sus
-  // dos pagos esperados y se concilia cada uno por separado, con las MISMAS reglas
-  // conservadoras del motor (monto exacto, elección mutua). Digital y Lima (un
-  // solo cobro, o efectivo) siguen como una sola entrada por el total.
+  // Un pedido casi nunca entra al banco como UN solo movimiento: provincia paga adelanto y
+  // saldo, un digital puede completarse en abonos, y su venta extra se cobra aparte porque
+  // se ofrece después. Cada parte se concilia por separado, con las MISMAS reglas
+  // conservadoras del motor (monto exacto, elección mutua). Los que sí son un solo cobro
+  // (Lima contraentrega, digital simple) siguen como una entrada por el total.
   const entradasDe=(o)=>{
     const s=o.shipping||{}, cliente=s.cliente||(o.contact||{}).nombre||"", producto=(o.product||{}).nombre||"";
-    // adelantoDe = lo que REALMENTE abonó, no lo que se le pidió. Con `s.adelanto` pelado,
-    // el cliente que pagaba todo de una (adelanto pedido S/20, depósito real S/210) se partía
-    // en dos entradas de S/20 y S/190 que NO existen en el banco: ninguna calzaba y la venta
-    // salía SIN RESPALDO teniendo su depósito ahí. Con el monto real, saldo=0 y cae al camino
-    // de una sola entrada por el total, que es justo lo que hay que buscar en el extracto.
-    const total=O.total(o), adel=Math.min(O.adelantoDe(o), total), saldo=+(total-adel).toFixed(2);
     const conc=s.conciliacion||{}, partes=conc.partes||{};
-    if(O.zonaDe(o)==="provincia" && adel>0.005 && saldo>0.005){
-      // Cada pago anclado a SU comprobante (por la URL); si no se ubica, cae a la
-      // primera/última imagen del contacto, y por último a la fecha del pedido.
-      const fAdel = imgTimeByUrl.get(s.adelanto_comprobante) || primeraImg.get(o.contact_id) || new Date(o.created_at);
-      const fSaldo= imgTimeByUrl.get(s.saldo_comprobante)    || ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at);
-      return [
-        { id:o.id+"::adelanto", monto:adel,  cliente, producto, metodo:s.adelanto_metodo||"", fecha:fAdel,  _o:o, _orderId:o.id, _parte:"adelanto", _parteTxt:"adelanto", _yaConciliado:partes.adelanto||null },
-        { id:o.id+"::saldo",    monto:saldo, cliente, producto, metodo:s.saldo_metodo||"",    fecha:fSaldo, _o:o, _orderId:o.id, _parte:"saldo",    _parteTxt:"saldo",    _yaConciliado:partes.saldo||null },
-      ];
+    // En cuántos depósitos entró este pedido al banco. La regla vive en orders.js porque
+    // Compras tiene que contar EXACTAMENTE las mismas partes para dar una venta por
+    // verificada; con una copia en cada pantalla, una parte que existe para una y no para
+    // la otra deja la compra "a medias" para siempre. Cubre los tres casos que no son un
+    // solo depósito: provincia (adelanto+saldo), pago en abonos, y digital con venta extra
+    // (que se ofrece DESPUÉS de pagar y se cobra aparte). Buscar un único movimiento por el
+    // total no calzaba en ninguno y la venta salía "sin respaldo" con su plata en la cuenta.
+    const ps=O.partesDePago(o);
+    if(ps){
+      // Cada pago anclado a SU comprobante (por la URL); si no se ubica, cae a la primera o
+      // la última imagen del contacto según sea el primer o el último cobro de la venta.
+      return ps.map((p)=>({
+        id:o.id+"::"+p.clave, monto:p.monto, cliente, producto, metodo:p.metodo||metodoDe(o),
+        fecha: imgTimeByUrl.get(p.comprobante)
+            || (p.at?new Date(p.at):null)
+            || (p.extremo==="primera"?primeraImg.get(o.contact_id):ultimaImg.get(o.contact_id))
+            || ultimaImg.get(o.contact_id)
+            || new Date(p.extremo==="primera"?o.created_at:(o.confirmed_at||o.updated_at||o.created_at)),
+        _o:o, _orderId:o.id, _parte:p.clave, _parteTxt:p.txt||"", _yaConciliado:partes[p.clave]||null }));
     }
-    // Una venta pagada en ABONOS (el bot acepta que el cliente complete de a poco: S/50 hoy
-    // y S/49 mañana) también entra al banco como varios movimientos. Buscar uno solo por el
-    // total no calzaba nunca y la venta salía "sin respaldo" con su plata completa en la
-    // cuenta. Mismo trato que adelanto+saldo: una entrada por abono.
-    const ab=Array.isArray(s.digital_abonos)?s.digital_abonos.filter(x=>Number(x&&x.monto)>0.005):[];
-    if(ab.length>1){
-      return ab.map((x,i)=>({
-        id:o.id+"::abono"+i, monto:+Number(x.monto).toFixed(2), cliente, producto, metodo:metodoDe(o),
-        fecha: (x.at?new Date(x.at):null) || ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
-        _o:o, _orderId:o.id, _parte:"abono"+i, _parteTxt:`abono ${i+1} de ${ab.length}`,
-        _yaConciliado:partes["abono"+i]||null }));
-    }
-    return [{ id:o.id, monto:total, cliente, producto, metodo:metodoDe(o),
+    return [{ id:o.id, monto:O.total(o), cliente, producto, metodo:metodoDe(o),
       fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
       _o:o, _orderId:o.id, _parte:null, _parteTxt:"", _yaConciliado:(conc.partes?null:(s.conciliacion||null)) }];
   };

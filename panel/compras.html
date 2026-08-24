@@ -161,21 +161,12 @@ const tipoDe = O.zonaDe;
 // conciliador (Conciliar pagos). Por eso marcar a mano una compra la SACA de la
 // próxima conciliación con el banco. Provincia guarda 2 partes (adelanto+saldo,
 // como lo hizo el split del conciliador); digital/lima, un sello plano.
-// Qué partes debería tener este pedido en el banco, con los MISMOS nombres que usa el split
-// del conciliador. Antes esto estaba escrito a mano como "adelanto" y "saldo": cuando el
-// conciliador empezó a partir también las ventas pagadas en ABONOS (S/50 hoy, S/49 mañana),
-// sus partes se llaman abono0/abono1 y esta función no las encontraba → la compra se quedaba
-// en "parcialmente verificada" para siempre aunque las dos estuvieran cuadradas.
-function partesEsperadas(o){
-  const s=o.shipping||{};
-  const ab=Array.isArray(s.digital_abonos)?s.digital_abonos.filter(x=>Number(x&&x.monto)>0.005):[];
-  if(ab.length>1) return ab.map((_,i)=>"abono"+i);
-  if(tipoDe(o)==="provincia"){
-    const total=O.total(o), adel=Math.min(O.adelantoDe(o),total);
-    if(adel>0.005 && (total-adel)>0.005) return ["adelanto","saldo"];
-  }
-  return null;   // un solo cobro → sello plano
-}
+// En cuántas partes entró este pedido al banco. Lo decide orders.js, el MISMO sitio que usa
+// el conciliador para buscarlas: antes acá estaba escrito a mano como "adelanto" y "saldo",
+// así que cuando el conciliador empezó a partir también los pagos en abonos y las ventas
+// extra, esas partes no se encontraban y la compra se quedaba "parcialmente verificada"
+// para siempre aunque el banco las hubiera cuadrado todas.
+const partesEsperadas=(o)=>{ const ps=O.partesDePago(o); return ps?ps.map(p=>p.clave):null; };
 function verifDe(o){
   const c=(o.shipping||{}).conciliacion; if(!c) return null;
   if(c.partes){
