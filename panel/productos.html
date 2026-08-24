@@ -649,7 +649,14 @@ async function createProduct(){
   // un producto simple no obliga a configurar nada extra.
   await supa.from("product_versions")
     .insert({ product_id:data.id, nombre:"Única", orden:0, activo:true, cantidad:1, entrega:[] })
-    .then(r=>{ if(r.error) console.warn("[productos] sin opción inicial:", r.error.message); });
+    .then(r=>{ if(r.error){
+      // Si esto falla el producto queda SIN ninguna opción de compra — un estado que el
+      // resto del modelo no espera (no se le puede poner precio ni generar su flujo de
+      // venta). Antes solo quedaba un console.warn que nadie ve, y el dueño descubría el
+      // problema más adelante sin saber de dónde venía.
+      console.warn("[productos] sin opción inicial:", r.error.message);
+      toast("El producto se creó, pero no su presentación inicial. Agrégala en «Presentaciones y precios» antes de generar el flujo.", true);
+    } });
   await loadProducts(); openProduct(data.id);
 }
 async function openProduct(id){

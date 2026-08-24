@@ -1479,7 +1479,10 @@ async function save(){
   const { data:oldNodes } = await supa.from("flow_nodes").select("id").eq("flow_id",st.flowId);
   const keep=new Set(rows.map(r=>r.id));
   const toDel=(oldNodes||[]).map(n=>n.id).filter(id=>!keep.has(id));
-  if(toDel.length) await supa.from("flow_nodes").delete().in("id",toDel);
+  // Se mira el error: si el borrado falla, los pasos que quitaste siguen en la base. No
+  // rompen el flujo (quedan sin aristas, así que no se ejecutan), pero se acumulan invisibles
+  // y el próximo guardado los vuelve a intentar borrar. Mejor enterarse.
+  if(toDel.length){ const { error }=await supa.from("flow_nodes").delete().in("id",toDel); if(error){ toast("No se pudieron borrar los pasos quitados: "+error.message,true); return false; } }
   if(rows.length){ const { error } = await supa.from("flow_nodes").upsert(rows); if(error){ toast(error.message,true); return false; } }
   // 2) Reconstruir aristas de forma SEGURA. Antes se borraban TODAS y luego se
   //    insertaban en pasos separados: no era atómico, así que si el insert fallaba

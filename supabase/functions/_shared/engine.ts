@@ -96,6 +96,11 @@ export async function runEngine(
     } catch { break; }                                // RPC ausente → proceder sin lock
     if (!locked) await new Promise((r) => setTimeout(r, 250));
   }
+  // Si tras ~5s no se consiguió el lock se procede IGUAL, a propósito: preferimos atender al
+  // cliente con riesgo de carrera antes que dejarlo sin respuesta (aguas abajo protegen el
+  // índice único de runs vivos y los CAS de pedido/pago). Pero queda el rastro: si algún día
+  // aparece una doble respuesta o un dato pisado, esta línea es la que lo explica.
+  if (!locked) console.warn(`[runEngine] sin lock tras ~5s (contacto ${contactId}) — se procede igual`);
   try {
     return await runEngineInner(db, channelId, contactId, event);
   } finally {
@@ -1293,8 +1298,11 @@ function pideRecompra(text: string): boolean {
 //   · "off": sin manejo especial (lo ve la IA como cualquier mensaje).
 // Devuelve true si lo manejó (entonces runEngine no procesa más ese mensaje).
 async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: string, texto: string): Promise<boolean> {
-  const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+  // La moneda va en el mismo select: los mensajes del vuelto decían "S/" a mano, así que un
+  // canal en dólares le prometía al cliente devolverle soles.
+  const { data: ch } = await db.from("channels").select("pedidos_config, moneda").eq("id", channelId).maybeSingle();
   const cfg = (ch as any)?.pedidos_config?.vuelto ?? {};
+  const sym = simboloMoneda((ch as any)?.moneda);
   // Compat con la forma vieja {activo}: activo:false → off; si no, tranquilizar.
   const modo = cfg.modo ?? (cfg.activo === false ? "off" : "tranquilizar");
   if (modo === "off") return false; // lo maneja la IA normal
@@ -1312,7 +1320,7 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   if (modo === "humano") {
     const frag = String(texto ?? "").slice(0, 100);
     const motivo = vuelto > 0
-      ? `💸 Pide su vuelto (pagó de más). Saldo a favor: S/ ${vuelto}. “${frag}”`
+      ? `💸 Pide su vuelto (pagó de más). Saldo a favor: ${sym} ${vuelto}. “${frag}”`
       : `💸 Reclama un vuelto / devolución. “${frag}”`;
     await pasarAHumano(db, channelId, contactId, motivo, { aviso: true }); // pausa + traspasa + avisa al cliente
     return true;
@@ -1321,8 +1329,8 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   // modo "tranquilizar" (default): responde, avisa y SIGUE atendiendo.
   const def = "¡No te preocupes! 🙌 Registramos que pagaste de más. Un administrador está gestionando la devolución de tu vuelto{{monto}} y te enviaremos la constancia por aquí en un momentito. Seguimos con tu pedido con normalidad. 🙂";
   let msg = (cfg?.mensaje && String(cfg.mensaje).trim()) ? String(cfg.mensaje) : def;
-  msg = msg.replace(/\{\{\s*vuelto\s*\}\}/g, vuelto > 0 ? `S/ ${vuelto}` : "")
-           .replace(/\{\{\s*monto\s*\}\}/g, vuelto > 0 ? ` (S/ ${vuelto})` : "");
+  msg = msg.replace(/\{\{\s*vuelto\s*\}\}/g, vuelto > 0 ? `${sym} ${vuelto}` : "")
+           .replace(/\{\{\s*monto\s*\}\}/g, vuelto > 0 ? ` (${sym} ${vuelto})` : "");
   await deliverMessage(db, channelId, contactId, msg).catch(() => {});
   await avisar(db, channelId, contactId, "reclama_vuelto",
     { cliente: quien, vuelto: vuelto > 0 ? vuelto : "" });
@@ -5678,8 +5686,8 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
   if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
   if (ctx.pedido_estado) {
     let p = "## Estado del pedido del cliente\n" + (EST_HOJA[String(ctx.pedido_estado)] ?? String(ctx.pedido_estado));
-    if (ctx.pedido_saldo) p += `\nSaldo pendiente: S/ ${ctx.pedido_saldo}`;
-    if (ctx.pedido_adelanto) p += `\nAdelanto: S/ ${ctx.pedido_adelanto}`;
+    if (ctx.pedido_saldo) p += `\nSaldo pendiente: ${simboloMoneda(ctx.moneda as string)} ${ctx.pedido_saldo}`;
+    if (ctx.pedido_adelanto) p += `\nAdelanto: ${simboloMoneda(ctx.moneda as string)} ${ctx.pedido_adelanto}`;
     parts.push(p);
   }
   parts.push(
@@ -7732,7 +7740,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // precio real, pero al cliente hay que decirle el monto correcto.
         const p = ctx.precio != null ? ctx.precio : (ops[0] as any)?.precio;
         if (p != null && String(p) !== "") {
-          parts.push(`## Precio\nEste producto cuesta **S/ ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad, y si quiere varias tranquilízalo en PRIMERA PERSONA (como si TÚ mismo lo coordinaras: "te lo dejo anotado y coordino tu pedido de X unidades"). ⛔ NUNCA lo derives a "un asesor" ni a "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. NUNCA cierres un pedido por una cantidad mayor a 1.`);
+          parts.push(`## Precio\nEste producto cuesta **${simboloMoneda(ctx.moneda as string)} ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad, y si quiere varias tranquilízalo en PRIMERA PERSONA (como si TÚ mismo lo coordinaras: "te lo dejo anotado y coordino tu pedido de X unidades"). ⛔ NUNCA lo derives a "un asesor" ni a "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. NUNCA cierres un pedido por una cantidad mayor a 1.`);
         }
       }
     }
@@ -7949,7 +7957,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // del flujo mandaba otro: el cliente oía "S/ 20", pagaba 20, y el pedido
         // esperaba 30. Ahora manda el del motor, que es el que se cobra de verdad.
         if (ctx.adelanto != null && String(ctx.adelanto).trim() !== "") {
-          L.push(`El adelanto de este pedido es de **S/ ${ctx.adelanto}** — ese monto exacto, no otro. ` +
+          L.push(`El adelanto de este pedido es de **${simboloMoneda(ctx.moneda as string)} ${ctx.adelanto}** — ese monto exacto, no otro. ` +
             `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.`);
         }
         L.push("El adelanto **no lo pides tú**: sale solo, en el mensaje siguiente, con los datos de pago. " +
@@ -8475,6 +8483,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "fallo")) ??
       (await nextNode(db, run.flow_id, node.id, "continuar"));
+    // El flujo NO tiene salida de fallo. Los flujos que genera el panel cablean solo "exito"
+    // desde los nodos IA, así que este es el caso NORMAL, no el raro: sin esto el run se
+    // cerraba y el cliente quedaba MUDO a mitad de la venta — y justo cuando más se nota,
+    // porque la IA falla toda junta (se acabó el crédito del proveedor, se cayó su API, el
+    // token quedó inválido): no es un cliente, son TODOS los que estén conversando.
+    // Se escala a un humano, que además le avisa al cliente y manda el aviso a Telegram.
+    if (!run.current_node_id) {
+      run.estado = "completado";
+      await pasarAHumano(db, run.channel_id, run.contact_id,
+        "La IA no pudo responder (revisa el crédito o la clave del proveedor) y el flujo no tiene salida de error.",
+        { aviso: true }).catch(() => {});
+    }
   }
 }
 
