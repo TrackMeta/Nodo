@@ -7976,10 +7976,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         L.push("Todavía NO sabes su **distrito** de Lima. Pregúntaselo con naturalidad para coordinar la entrega; recién con el distrito podrás decirle si llega hoy. No prometas el mismo día hasta saberlo.");
       } else if (ctx.zona_entrega === "lima") {
         L.push(`El cliente es de **${ctx.zona_nombre || "Lima"}** → entrega en Lima, CONTRAENTREGA (paga al recibir).`);
+        // El motivo lo calcula entregaHoy() y NO siempre es de horario: puede ser que en esa
+        // zona NUNCA se entregue el mismo día (mismo_dia:false). Antes se le pedía a la IA
+        // "explícale ese motivo real de horario/día de reparto" en los dos casos, así que
+        // cuando la razón era la zona, la IA igual hablaba de la hora de corte: el cliente se
+        // quedaba creyendo que pidiendo más temprano le llegaba hoy, que es falso. Y de paso
+        // salía con frases como "hoy ya no hay entrega en tu zona", que es justo lo que las
+        // dos líneas de abajo prohíben. Se distingue el caso.
+        const _nuncaHoy = /no tiene entrega el mismo d[ií]a/i.test(String(ctx.entrega_motivo ?? ""));
+        const _noHoy = _nuncaHoy
+          ? `SÍ entregamos en su distrito, pero ahí la entrega es **al día siguiente**, nunca el mismo día. ` +
+            `Díselo con naturalidad, como cómo funciona el reparto en su zona. ` +
+            `NO le des a entender que se pasó una hora de corte ni que "hoy ya no alcanza": no es eso, en su zona no hay entrega el mismo día ningún día. `
+          : `SÍ entregamos en su distrito, pero HOY ya no alcanza${ctx.entrega_motivo ? ` porque ${ctx.entrega_motivo}` : ""} → le llega el **día siguiente**. ` +
+            `Explícale ese motivo real con amabilidad. `;
         L.push(ctx.entrega_hoy === "si"
           ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo."
-          : `SÍ entregamos en su distrito, pero HOY ya no alcanza${ctx.entrega_motivo ? ` porque ${ctx.entrega_motivo}` : ""} → le llega el **día siguiente**. ` +
-            `Explícale ese motivo real de horario/día de reparto con amabilidad. ` +
+          : _noHoy +
             `PROHIBIDO decirle que "no hacemos entrega en tu zona" o dar a entender que no cubrimos su distrito: sí lo cubrimos, solo que no en el mismo día. ` +
             `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
       } else {
@@ -8058,7 +8071,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // el pedido y mandaba los datos de pago. El cliente recibía "¿me confirmas
       // la sede?" y justo debajo "paga S/ 30": dos burbujas que se contradicen.
       parts.push("## Datos\nYa tienes todo lo necesario para el pedido: no le pidas más datos ni le pidas que confirme los que ya te dio. " +
-        "En este mismo turno el sistema cierra el pedido y le manda cómo pagar, así que NO termines con una pregunta: cierra la venta.");
+        "En este mismo turno el sistema cierra el pedido y le manda cómo pagar, así que NO termines con una pregunta: cierra la venta. " +
+        // Sin esto, el cliente recibía DOS burbujas seguidas diciendo lo mismo: la de la IA
+        // ("tu pedido está confirmado, con entrega en tal dirección") y justo debajo la del
+        // sistema ("¡Listo! ✅ Tu pedido quedó confirmado. Pagas al recibirlo"). Pasaba en
+        // todas las ventas de Lima. El sistema es el que tiene los datos exactos, así que la
+        // confirmación la da él y la IA solo cierra la conversación.
+        "Ese mensaje del sistema YA le dice que su pedido quedó confirmado y cómo paga, así que NO lo repitas: no escribas «tu pedido está confirmado» ni le vuelvas a listar la dirección, el monto ni la forma de pago. Cierra corto y cálido, y déjale a él esa parte.");
     }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
