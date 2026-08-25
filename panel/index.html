@@ -1807,9 +1807,12 @@ async function updateWindow() {
   const svcOpen = svcEnd > now, fepOpen = fepEnd > now;
   const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>0?`${h}h ${m}m`:`${m}m`; };
   // Chip 1 — servicio 24h.
+  // "Solo plantillas" SOLO cuando de verdad no hay por dónde escribir. Con el FEP del anuncio
+  // vivo sí se puede (y gratis), así que ahí este chip se calla y habla el de abajo: decir
+  // las dos cosas a la vez era contradecirse en la misma barra.
   const svcChip = svcOpen
     ? `<span class="win svc">${icon("clock")} Escribe libre · ${fmt(svcEnd-now)}</span>`
-    : `<span class="win closed">${icon("lock")} Solo plantillas</span>`;
+    : (fepOpen ? "" : `<span class="win closed">${icon("lock")} Solo plantillas</span>`);
   // Chip 2 — FEP: solo si sigue vivo. En las últimas 6h → "aprovecha" con pulso.
   let fepChip = "";
   if (fepOpen) {
@@ -1819,7 +1822,14 @@ async function updateWindow() {
       : `<span class="win fep">${icon("megaphone")} Gratis por anuncio · ${fmt(rem)}</span>`;
   }
   w.innerHTML = svcChip + fepChip;
-  setComposerLock(!svcOpen);
+  // El candado mira las DOS ventanas, no solo la de servicio. El servidor ya lo hacía así
+  // (whatsapp-send valida contra conversations.expira_at, que es la MAYOR entre las 24h y el
+  // FEP del anuncio), pero acá solo se miraba `svcOpen`. Resultado: un cliente que llegó por
+  // un anuncio te da 72h gratis, y pasadas 24h sin que escriba el panel escondía el
+  // compositor y mostraba "Solo plantillas" JUNTO al chip "Gratis por anuncio · 47h" — dos
+  // cosas que se contradicen en la misma barra. Y empujaba a mandar una plantilla, que
+  // cuesta plata y pausa el bot, pudiendo escribirle gratis.
+  setComposerLock(!(svcOpen || fepOpen));
 }
 // Bloqueo del compositor: fuera de ventana WhatsApp rechaza texto/media, así
 // que se cambia la barra de escribir por la de "enviar plantilla".
