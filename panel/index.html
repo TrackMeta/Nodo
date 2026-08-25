@@ -1621,13 +1621,20 @@ async function loadThread() {
   let painted = false;
   if (chatMode && state.threadCache[cid]) { renderThread(state.threadCache[cid], []); painted = true; }
   else { $("thread").innerHTML = ""; }   // limpia el chat anterior de inmediato
+  // Los 300 mensajes MÁS RECIENTES, no los 300 primeros. Iba ordenado ascendente con tope
+  // de 300, o sea que en un chat largo se traía el ARRANQUE de la conversación: abrías el
+  // chat de un cliente de varias compras y veías lo de hace meses, no lo que acababa de
+  // escribir. Se piden al revés y se da vuelta la lista para pintarla del más viejo al más
+  // nuevo, que es como la espera el render.
   const [{ data:msgs }, evRes] = await Promise.all([
-    supa.from("messages").select("*").eq("contact_id", cid).order("ts").limit(300),
+    supa.from("messages").select("*").eq("contact_id", cid)
+      .order("ts",{ascending:false}).order("id",{ascending:false}).limit(300),
     chatMode ? Promise.resolve({ data: [] })
-      : supa.from("contact_events").select("*").eq("contact_id", cid).order("created_at").limit(300),
+      : supa.from("contact_events").select("*").eq("contact_id", cid)
+          .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(300),
   ]);
   if (reqId !== threadReqId || cid !== state.contactId) return;   // cambiaste de chat: descarta
-  const fresh = msgs || [];
+  const fresh = (msgs || []).slice().reverse();
   if (chatMode) {
     // Conserva mensajes que llegaron por realtime durante el fetch (no perder nada).
     const freshIds = new Set(fresh.map(m=>m.id));
@@ -1639,7 +1646,7 @@ async function loadThread() {
     if (unchanged) return;
     renderThread(merged, []);
   } else {
-    renderThread(fresh, evRes.data||[]);
+    renderThread(fresh, (evRes.data||[]).slice().reverse()); // ver arriba: vienen del más nuevo al más viejo
   }
 }
 function renderEvent(e){

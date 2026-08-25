@@ -349,8 +349,11 @@ async function startTest(){
 // junto a los mensajes. Apagado, muestra solo los mensajes.
 async function loadThread(){
   const [{ data:msgs }, evRes]=await Promise.all([
-    supa.from("messages").select("*").eq("contact_id",st.contactId).order("ts").limit(300),
-    st.showActivity ? supa.from("contact_events").select("*").eq("contact_id",st.contactId).order("created_at").limit(300) : Promise.resolve({ data:[] }),
+    // Los 300 MÁS RECIENTES (ver el mismo arreglo en index.html): ordenado ascendente, el
+    // tope de 300 dejaba fuera lo último y mostraba el arranque de la conversación. Acá
+    // ordena `items` más abajo, así que no hace falta darles vuelta.
+    supa.from("messages").select("*").eq("contact_id",st.contactId).order("ts",{ascending:false}).order("id",{ascending:false}).limit(300),
+    st.showActivity ? supa.from("contact_events").select("*").eq("contact_id",st.contactId).order("created_at",{ascending:false}).order("id",{ascending:false}).limit(300) : Promise.resolve({ data:[] }),
   ]);
   const items=[
     ...(msgs||[]).map(m=>({ kind:"msg", ts:m.ts, data:m })),
