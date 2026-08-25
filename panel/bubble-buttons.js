@@ -17,6 +17,11 @@
 // de título. Pasarse hace que Meta rechace el mensaje entero.
 export const MAX_BOTONES = 3;
 export const MAX_TITULO = 20;
+// Cuerpo de un mensaje CON botones: 1024 (sin botones son 4096). Pasarse hacía que Meta
+// rechazara el mensaje entero; hoy el motor lo recorta para que al menos llegue, pero
+// recortar en silencio tampoco es bueno: el cliente recibe la frase cortada a la mitad.
+// Por eso se avisa acá, mientras se escribe, que es cuando se puede arreglar.
+export const MAX_CUERPO_BOTONES = 1024;
 
 const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -62,6 +67,9 @@ export function botonesHtml(bub) {
       ${bs.length < MAX_BOTONES
         ? `<button class="btn bb-add" type="button" style="height:29px;font-size:11.5px;margin-top:${bs.length ? "7px" : "0"}">+ Botón</button>`
         : `<div style="font-size:11px;color:var(--faint);margin-top:7px">Máximo ${MAX_BOTONES} — es el límite de WhatsApp.</div>`}
+      ${bs.length && String(bub.text ?? "").length > MAX_CUERPO_BOTONES
+        ? `<div style="font-size:11.5px;color:var(--amber);font-weight:600;margin-top:8px;line-height:1.45">⚠ El texto tiene ${String(bub.text).length} caracteres y, con botones, WhatsApp solo deja ${MAX_CUERPO_BOTONES}: al cliente le va a llegar cortado. Acórtalo, o quita los botones (sin ellos el tope sube a 4096).</div>`
+        : ""}
     </div>`;
 }
 
