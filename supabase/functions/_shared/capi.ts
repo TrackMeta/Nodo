@@ -7,6 +7,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sha256Hex } from "./crypto.ts";
 import { getChannelSecrets } from "./db.ts";
+import { fetchConTimeout } from "./http.ts";
 
 const GRAPH_VERSION = "v25.0";
 
@@ -163,7 +164,7 @@ export async function sendCapiEvent(
 
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${channel.pixel_id}/events`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchConTimeout(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: [evt], access_token: capiToken }),

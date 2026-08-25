@@ -6,6 +6,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { getAccessToken, sheetsAppend, sheetsBootstrap } from "../_shared/gsheets.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 
@@ -68,7 +69,7 @@ Deno.serve(async (req) => {
     return json({ error: "url_invalida", detalle: "La URL debe ser una app web de Apps Script (/exec)" }, 400);
   }
   try {
-    const res = await fetch(url, {
+    const res = await fetchConTimeout(url, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hoja: body.tab || undefined, fila: { Prueba: "Nodo ✓", Fecha: fecha } }),
     });

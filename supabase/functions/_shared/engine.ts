@@ -15,6 +15,7 @@ import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
 import { sedeReconocida, candidatasAgencia } from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
+import { fetchConTimeout } from "./http.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -8555,7 +8556,7 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
       if (!/^https:\/\/script\.google\.com\/[^\s]*\/exec(\?.*)?$/.test(String(g.webhook_url))) throw new Error("webhook_url de Apps Script inválida");
       const payload: Record<string, unknown> = { accion, hoja, fila };
       if (accion === "update") payload.buscar = buscar;
-      const res = await fetch(g.webhook_url, {
+      const res = await fetchConTimeout(g.webhook_url, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Apps Script respondió " + res.status);

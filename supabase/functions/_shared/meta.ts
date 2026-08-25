@@ -1,4 +1,5 @@
 // Llamadas a la WhatsApp Cloud API (Graph API).
+import { fetchConTimeout } from "./http.ts";
 const GRAPH_VERSION = "v25.0";
 
 export interface MetaError {
@@ -124,21 +125,31 @@ export async function sendTemplate(
   });
 }
 
+// El porqué de los timeouts está en http.ts. Acá solo los plazos:
+const META_TIMEOUT_MS = 15_000;        // POST y consultas a Graph
+const META_TIMEOUT_BAJADA_MS = 45_000; // descarga del archivo en sí (puede ser un video)
+
 // Descarga un media entrante de WhatsApp (imagen, audio…) como bytes crudos.
 // Los media de WhatsApp NO tienen URL pública: hay que pedir la URL firmada a
 // Graph y descargarla con el token del canal.
 export async function fetchMediaBytes(
   mediaId: string, accessToken: string,
 ): Promise<{ bytes: Uint8Array; mime: string }> {
-  const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const metaRes = await fetchConTimeout(
+    `https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+    META_TIMEOUT_MS,
+  );
   const meta = await metaRes.json();
   if (!metaRes.ok || meta.error || !meta.url) {
     const e = meta.error ?? {};
     throw new MetaApiError({ code: e.code, subcode: e.error_subcode, message: e.message ?? "media sin url", type: e.type, fbtrace_id: e.fbtrace_id });
   }
-  const bin = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const bin = await fetchConTimeout(
+    meta.url,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+    META_TIMEOUT_BAJADA_MS,
+  );
   if (!bin.ok) throw new MetaApiError({ code: bin.status, message: "no se pudo descargar el media" });
   const mime = meta.mime_type || bin.headers.get("content-type") || "application/octet-stream";
   return { bytes: new Uint8Array(await bin.arrayBuffer()), mime };
@@ -184,11 +195,21 @@ async function postMessage(phoneNumberId: string, accessToken: string, payload: 
   let lastErr: MetaApiError | null = null;
   for (let intento = 0; intento < 3; intento++) {
     if (intento) await new Promise((r) => setTimeout(r, intento === 1 ? 400 : 1100));
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    // Un envío colgado se comía el tiempo de la función entera sin lanzar nunca, así que ni
+    // los reintentos de acá abajo ni el aviso de "no se pudo enviar" llegaban a correr. Con
+    // el timeout el intento falla, se reintenta, y si igual no sale, alguien se entera.
+    let res: Response;
+    try {
+      res = await fetchConTimeout(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }, META_TIMEOUT_MS);
+    } catch (e) {
+      // Timeout o caída de red: transitorio por definición → que lo agarre el reintento.
+      lastErr = new MetaApiError({ message: `red o timeout hablando con Meta: ${String((e as any)?.message ?? e)}` });
+      continue;
+    }
     let data: any = {};
     try { const t = await res.text(); data = t ? JSON.parse(t) : {}; } catch (_) { data = {}; }
     if (res.ok && !data.error) return data.messages?.[0]?.id ?? "";

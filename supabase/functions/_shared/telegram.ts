@@ -2,6 +2,7 @@
 // Nodo · telegram.ts — Notificaciones a los admins vía bot de Telegram.
 // El bot token vive cifrado en Vault por canal; los chat ids en channels.
 // ═══════════════════════════════════════════════════════════════════
+import { fetchConTimeout } from "./http.ts";
 
 // Botón inline. Dos formas, excluyentes:
 //  · `data` → viaja en el callback cuando lo tocan (máx 64 bytes, así que va
@@ -33,7 +34,7 @@ export async function sendTelegram(
         ? { chat_id: chatId, photo: photoUrl, caption: text.slice(0, 1024), parse_mode: "HTML" }
         : { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true };
       if (markup) body.reply_markup = markup;
-      let res = await fetch(url, {
+      let res = await fetchConTimeout(url, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
 
@@ -49,7 +50,7 @@ export async function sendTelegram(
             ? { chat_id: chatId, photo: photoUrl, caption: plano.slice(0, 1024) }
             : { chat_id: chatId, text: plano, disable_web_page_preview: true };
           if (markup) bodyPlano.reply_markup = markup;
-          res = await fetch(url, {
+          res = await fetchConTimeout(url, {
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyPlano),
           });
         }
@@ -58,7 +59,7 @@ export async function sendTelegram(
       // aviso). OJO: hay que rehacer el reply_markup — sin él llegaría el aviso
       // pero SIN los botones, o sea sin forma de aprobar nada.
       if (!res.ok && usePhoto) {
-        res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        res = await fetchConTimeout(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id: chatId, text: text + "\n" + photoUrl, parse_mode: "HTML",
@@ -77,7 +78,7 @@ export async function sendTelegram(
 // contestás. `alerta` lo muestra como popup en vez de un aviso arriba.
 export async function answerCallback(botToken: string, callbackId: string, text?: string, alerta = false): Promise<void> {
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+    await fetchConTimeout(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ callback_query_id: callbackId, text: text?.slice(0, 200), show_alert: alerta }),
     });
@@ -90,7 +91,7 @@ export async function editButtons(
   botToken: string, chatId: string | number, messageId: number, buttons?: TgButton[][],
 ): Promise<void> {
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
+    await fetchConTimeout(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId, message_id: messageId,
@@ -107,7 +108,7 @@ export async function editButtons(
 // viene de Telegram y no de cualquiera que adivine la URL.
 export async function setWebhook(botToken: string, url: string, secret: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+    const res = await fetchConTimeout(`https://api.telegram.org/bot${botToken}/setWebhook`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url, secret_token: secret, allowed_updates: ["callback_query", "message"],
@@ -122,7 +123,7 @@ export async function setWebhook(botToken: string, url: string, secret: string):
 // Quita el webhook del bot (para desconectar Telegram). Best-effort: no lanza.
 export async function deleteWebhook(botToken: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`, {
+    const res = await fetchConTimeout(`https://api.telegram.org/bot${botToken}/deleteWebhook`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ drop_pending_updates: true }),
     });

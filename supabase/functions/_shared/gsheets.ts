@@ -4,11 +4,12 @@
 // llama a la Sheets API v4. Alinea por encabezados (fila 1) como el
 // Apps Script: agrega columnas que falten y respeta el orden.
 // ═══════════════════════════════════════════════════════════════════
+import { fetchConTimeout } from "./http.ts";
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 
 // refresh_token → access_token (Client ID/Secret de la app en env).
 export async function getAccessToken(refreshToken: string): Promise<string> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetchConTimeout("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -24,7 +25,7 @@ export async function getAccessToken(refreshToken: string): Promise<string> {
 }
 
 async function api(token: string, url: string, method = "GET", body?: unknown) {
-  const res = await fetch(url, {
+  const res = await fetchConTimeout(url, {
     method,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
