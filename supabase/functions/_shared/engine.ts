@@ -8895,10 +8895,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // TERCERA regla de prompt de esta tanda que falla, así que se recorta por código.
       // Conservador: solo quita la ÚLTIMA frase y solo si es interrogativa; si al quitarla
       // no queda nada, se deja el texto tal cual (mejor una pregunta de más que el silencio).
-      if (op === "generar_texto" && ctx.datos_completos === "si" && !(ctx as any)._falta_opcion) {
-        result = sinPreguntaFinal(String(result));
-      }
-      const handoff = await emitIaText(db, run, String(result), ctx);
+      const salida = (op === "generar_texto" && ctx.datos_completos === "si" && !(ctx as any)._falta_opcion)
+        ? sinPreguntaFinal(String(result))
+        : String(result);
+      const handoff = await emitIaText(db, run, salida, ctx);
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
       // ("y por último…", un link), justo tras decir "te paso con una persona". Los handoffs
