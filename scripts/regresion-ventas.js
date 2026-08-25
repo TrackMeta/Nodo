@@ -309,7 +309,16 @@
       const antes = (await outMsgs(wa, 1))[0] || "";
       await send(wa, N(wa), "no gracias, así está bien"); await sleep(2200);
       const outs = await outMsgs(wa, 2); const ultimo = outs[outs.length - 1] || "";
-      return [ck(ultimo !== antes && /queda tal cual|cualquier cosa|perfecto/i.test(ultimo), `respondió al 'no gracias': "${ultimo.slice(0, 50)}"`)];
+      // Lo que este caso comprueba es que NO haya silencio tras el "no gracias" (ese era el
+      // bug: el bot se quedaba mudo al declinar el extra). Lo que NO puede exigir es una
+      // redacción concreta: la IA no es determinista y contesta distinto cada vez — "perfecto,
+      // queda tal cual", "listo", "¡gracias! que disfrutes tus zapatillas"… Con la lista corta
+      // de palabras, el caso fallaba con el bot comportándose BIEN, que es la peor clase de
+      // falso positivo: la que enseña a desconfiar de la suite. Se exige respuesta NUEVA y con
+      // sustancia, y se rechaza lo que sí sería un fallo real: pedir de nuevo el extra.
+      const acuseOk = ultimo !== antes && ultimo.trim().length > 12
+        && !/¿le sumas|te sumo|quieres agregar|añadir/i.test(ultimo);
+      return [ck(acuseOk, `respondió al 'no gracias': "${ultimo.slice(0, 50)}"`)];
     } },
 
     { name: "Prospecto no compra → queda interesado, sin pedido", run: async () => {
