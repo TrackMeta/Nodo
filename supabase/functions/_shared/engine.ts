@@ -1755,7 +1755,12 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
     parts.push("## Productos que vendemos\n" + cands.map((c) => `- ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
-      "\n\nGuía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
+      "\n\n⛔ EXCEPCIÓN, y manda sobre todo lo de abajo: si el cliente escribe por un PROBLEMA, un reclamo, una " +
+      "consulta sobre un pedido que ya hizo, una devolución o un cambio, NO le ofrezcas productos ni le hables de " +
+      "comprar: eso lo enfurece. Atiéndelo, pídele el detalle y escribe `[[humano]]` para que lo tome una persona. " +
+      "(Medido: a una clienta que abrió con «tengo un problema con un pedido anterior» se le respondió «¿te gustaría " +
+      "conocer nuestros productos actuales?» — publicidad a alguien que viene a reclamar.)\n" +
+      "\nEn cualquier otro caso, guía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
   } else {
     parts.push("Aún no hay productos configurados; responde con amabilidad y ofrece tomar sus datos.");
   }
@@ -2342,34 +2347,47 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   if (/\[\[\s*humano\s*\]\]/i.test(result)) {
     hizoHandoff = true;
     result = result.replace(/\[\[\s*humano\s*\]\]/gi, "").trim();
-    // `aviso: true` (antes "fuera") → pasarAHumano SIEMPRE le manda un acuse al cliente:
-    // dentro de horario "en un momento te atiende un asesor", fuera el aviso fuera. Los
-    // LLM devuelven MUY seguido SOLO el marcador `[[humano]]` sin texto → con "fuera" el
-    // cliente quedaba en SILENCIO al escalar dentro de horario (dead-air, justo el momento
-    // más sensible). Si la IA además escribió texto, se envía + el acuse (handoff claro).
-    await pasarAHumano(db, run.channel_id, run.contact_id,
-      "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: true }).catch(() => {});
   }
-  const re = /\[\[media:([\w-]+)\]\]/g;
-  if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx); return hizoHandoff; }
-  const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
-  re.lastIndex = 0;
-  let last = 0; let m: RegExpExecArray | null;
-  while ((m = re.exec(result)) !== null) {
-    const before = result.slice(last, m.index).trim();
-    if (before) await emit(db, run, { text: before, _noTpl: true }, ctx);
-    const asset = catalog.find((x) => x && x.tag === m![1]);
-    if (asset && asset.media_url) {
-      await emit(db, run, {
-        media_kind: asset.media_kind, media_url: asset.media_url,
-        mime: asset.mime, filename: asset.filename, caption: "",
-      }, ctx);
+  // El acuse del traspaso va DESPUÉS del mensaje que escribió la IA, no antes.
+  // `pasarAHumano` estaba arriba, así que el cliente leía primero "en un momento te
+  // atiende un asesor" y RECIÉN DESPUÉS "lamento lo que te pasa, ¿me das más detalles?"
+  // — el orden al revés, como si el asesor ya estuviera y el bot siguiera hablando
+  // encima. Medido con "tengo un problema con un pedido, no me llegó". El comentario
+  // de abajo ya describía el orden correcto ("se envía + el acuse"); el código no lo
+  // hacía. Va en `finally` para que el traspaso ocurra igual si el envío falla: quedarse
+  // sin escalar es peor que un acuse suelto.
+  // `aviso: true` (antes "fuera") → pasarAHumano SIEMPRE le manda un acuse al cliente:
+  // dentro de horario "en un momento te atiende un asesor", fuera el aviso fuera. Los
+  // LLM devuelven MUY seguido SOLO el marcador `[[humano]]` sin texto → con "fuera" el
+  // cliente quedaba en SILENCIO al escalar dentro de horario (dead-air, justo el momento
+  // más sensible). Si la IA además escribió texto, se envía + el acuse (handoff claro).
+  try {
+    const re = /\[\[media:([\w-]+)\]\]/g;
+    if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx); return hizoHandoff; }
+    const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
+    re.lastIndex = 0;
+    let last = 0; let m: RegExpExecArray | null;
+    while ((m = re.exec(result)) !== null) {
+      const before = result.slice(last, m.index).trim();
+      if (before) await emit(db, run, { text: before, _noTpl: true }, ctx);
+      const asset = catalog.find((x) => x && x.tag === m![1]);
+      if (asset && asset.media_url) {
+        await emit(db, run, {
+          media_kind: asset.media_kind, media_url: asset.media_url,
+          mime: asset.mime, filename: asset.filename, caption: "",
+        }, ctx);
+      }
+      last = m.index + m[0].length;
     }
-    last = m.index + m[0].length;
+    const rest = result.slice(last).trim();
+    if (rest) await emit(db, run, { text: rest, _noTpl: true }, ctx);
+    return hizoHandoff;
+  } finally {
+    if (hizoHandoff) {
+      await pasarAHumano(db, run.channel_id, run.contact_id,
+        "La IA pidió ayuda: no pudo resolverlo sola.", { aviso: true }).catch(() => {});
+    }
   }
-  const rest = result.slice(last).trim();
-  if (rest) await emit(db, run, { text: rest, _noTpl: true }, ctx);
-  return hizoHandoff;
 }
 
 // Arranca un flujo concreto para un contacto (usado por el scheduler para
@@ -8178,8 +8196,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // donde cambiarle el producto por debajo sería peor: al menos que no lo niegue.
     // Se listan los que tienen puerta de entrada propia (trigger de keyword activo) =
     // los que un cliente puede pedir por su nombre. Cacheado por run.
+    // Solo con una venta EN CURSO. Sin producto (Recepción con IA) esta lista sobra —
+    // ahí la IA ya tiene su propio guion— y encima se le desobedecía el "no los ofrezcas
+    // por tu cuenta": visto en vivo, a una clienta que escribió "tengo un problema con un
+    // pedido anterior" le contestó "¿le interesa conocer nuestros productos actuales?
+    // Tenemos zapatillas Runner Pro y un curso Master de Trading". Publicidad a alguien
+    // que viene con un reclamo.
     try {
-      if ((run as any)._otrosProd === undefined) {
+      if (ctx._product_id && (run as any)._otrosProd === undefined) {
         const { data: trs } = await db.from("flow_triggers")
           .select("config, flows:flow_id(estado, product_id, products:product_id(nombre))")
           .eq("channel_id", run.channel_id).eq("tipo", "keyword").eq("activo", true);
@@ -8193,7 +8217,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         (run as any)._otrosProd = nombres.slice(0, 15);
       }
-      const otros = (run as any)._otrosProd as string[];
+      const otros = ctx._product_id ? (run as any)._otrosProd as string[] : null;
       if (otros?.length) {
         parts.push("## Lo demás que vende el negocio\n" + otros.map((n) => "- " + n).join("\n") +
           "\nEstos productos SÍ existen y SÍ se venden: nunca digas que no los tenemos ni que no sabes de ellos. " +
@@ -8202,6 +8226,35 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "No inventes su precio, su contenido ni su stock: de esos NO tienes la ficha.");
       }
     } catch (_) { /* sin catálogo → la IA sigue como antes */ }
+    // El cliente ANUNCIA que va a pagar ("ya te yapeo", "ya te paso el yape") sin que
+    // nadie le haya dicho A DÓNDE, y el bot le contesta "mándame la captura" — de un
+    // pago que no puede hacer. Visto en TRES chats de la misma corrida (Melissa, Pedro,
+    // Sandra). El prompt del flujo digital ya dice "cuando diga que va a pagar, pásale
+    // de una los datos de pago", y la IA igual lo saltea: es una regla más entre muchas,
+    // al final de un prompt largo. Por eso va por CÓDIGO — se comprueba contra los
+    // mensajes REALMENTE enviados si los datos ya salieron, y si no, se le ordena darlos.
+    // Solo en venta DIGITAL: en la física de provincia el adelanto lo manda el flujo con
+    // su propio mensaje, y hay una regla explícita de no adelantarse a él.
+    try {
+      const dp = String(ctx.datos_pago ?? "").trim();
+      if (dp && String(ctx._tipo ?? "") === "digital") {
+        const dijoQuePaga = /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i
+          .test(String(ctx.last_input ?? ""));
+        if (dijoQuePaga) {
+          const nums = dp.match(/\d{6,}/g) ?? [];
+          const { data: outs } = await db.from("messages").select("content")
+            .eq("contact_id", run.contact_id).eq("direction", "out")
+            .order("ts", { ascending: false }).limit(12);
+          const dicho = (outs ?? []).map((m: any) => String(m.content?.text ?? "")).join(" ");
+          const yaSeLosDio = nums.length ? nums.some((n) => dicho.includes(n)) : /yape|plin|cuenta|cci/i.test(dicho);
+          if (!yaSeLosDio) {
+            parts.push("## ⚠️ Le falta saber DÓNDE pagar\nAcaba de decir que va a pagar y TODAVÍA no le pasaste los datos de pago " +
+              "(los revisé: no salen en ningún mensaje tuyo de esta conversación). Dáselos AHORA, al inicio de tu mensaje, tal cual:\n" + dp + "\n" +
+              "Recién después pídele la captura. NO le pidas el comprobante de un pago que todavía no sabe a dónde hacer.");
+          }
+        }
+      }
+    } catch (_) { /* sin datos de pago → la IA sigue como antes */ }
     // Mandó su UBICACIÓN de WhatsApp. Si compartió un lugar con nombre/dirección, eso
     // ya viaja como texto y el extractor lo pesca solo. Si mandó un pin suelto, lo que
     // llega son coordenadas: el courier no reparte con eso. Sin decírselo, la IA leía
@@ -9013,10 +9066,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
     if (prodId) {
       let pc = (run as any)._prodCtx;
       if (!pc || pc._id !== prodId) {
-        const { data: p } = await db.from("products").select("nombre, config").eq("id", prodId).maybeSingle();
+        const { data: p } = await db.from("products").select("nombre, tipo, config").eq("id", prodId).maybeSingle();
         pc = { _id: prodId };
         if (p) {
           pc.producto_nombre = (p as any).nombre;
+          // Físico o digital. No se leía, así que el prompt NUNCA sabía de qué tipo de
+          // venta se trataba y aplicaba el guion físico a una venta digital.
+          pc._tipo = (p as any).tipo ?? "";
           for (const [k, v] of Object.entries((p as any).config ?? {})) {
             if (v == null || typeof v === "object") continue;
             pc[k] = v;
