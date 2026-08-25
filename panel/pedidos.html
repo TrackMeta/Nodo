@@ -709,6 +709,24 @@ function rotuloInner(o){
   const nro=(o.order_id||o.id||"").toString().slice(0,8).toUpperCase();
   const row=(k,val,big)=> val?`<tr><td class="k">${esc(k)}</td><td class="v ${big?'big':''}">${esc(val)}</td></tr>`:"";
   const atrLine=Object.entries(s.atributos||{}).map(([k,v])=>`${k}: ${v}`).join("   ·   ");
+  // Ventas extra y regalos: van en el MISMO paquete. Sin esta fila el rótulo
+  // mostraba SOLO el producto principal, así que quien empaca guiándose por él
+  // mandaba el pedido incompleto — el cliente pagó las medias (S/19, ya cobradas
+  // en el "A COBRAR" de abajo) y le llegaban solo las zapatillas, más la gorra de
+  // regalo que le prometimos y nunca salió. Los digitales se excluyen: se entregan
+  // por link, no viajan en la caja.
+  // La variante sale del `stock_key`, no del `nombre`: el nombre trae la
+  // PRESENTACIÓN ("· Unica") y la talla real vive en el stock_key ("Talla=m"),
+  // igual que en la ficha del pedido.
+  const bumpsTxt=(o.order_bumps||[]).filter(b=>b&&b.digital!==true).map(b=>{
+    const va=(b.stock_key&&b.stock_key!=="_")
+      ? b.stock_key.split("|").map(kv=>{const[k,val]=kv.split("=");return `${k} ${cap(val||"")}`;}).join(", ")
+      : "";
+    let nom=String(b.nombre||"").replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i,"").trim();
+    if(va) nom=nom.replace(/\s*·\s*[Uu]nica\s*$/,"").trim();   // "· Unica" + "Talla M" se contradicen
+    const esRegalo=b.regalo===true||Number(b.precio||0)===0;
+    return `${esRegalo?"🎁 ":"+ "}${nom||"Extra"}${va?` (${va})`:""}`;
+  }).join("   ·   ");
   let filas="";
   if(zona==="provincia"){
     filas =
@@ -719,6 +737,7 @@ function rotuloInner(o){
       row("Envío", s.aereo?"✈️ AÉREO — despachar por avión":"", true)+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
+      row("Incluye", bumpsTxt, true)+
       // Sin Guía a propósito: el rótulo se imprime ANTES de despachar, cuando la
       // agencia (Shalom/Olva) todavía no te dio la guía. Vive en la tarjeta del
       // Kanban una vez registrado el despacho.
@@ -732,6 +751,7 @@ function rotuloInner(o){
       row("Referencia", s.referencia||"")+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
+      row("Incluye", bumpsTxt, true)+
       row("A COBRAR", money(O.porCobrar(o),o.currency)+"  ·  CONTRAENTREGA", true);
   }
   return `<div class="lbl">

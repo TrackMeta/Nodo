@@ -304,6 +304,14 @@ function emptyStateHtml(){
     <p>${n
       ? `Estás conectado a ${n} cuenta${n>1?'s':''}. Los números aparecen tras la <b>primera sincronización con Meta</b> (según la frecuencia que elijas en Ajustes → Meta). Si acabas de conectar, dale unos minutos o prueba otro periodo.`
       : `Para ver tu <b>CPA real</b>, <b>ganancia neta</b> y <b>ROAS</b> por anuncio, <a href="config.html" style="color:var(--brand)">conecta tu cuenta de anuncios en Ajustes → Meta</a>. Las ventas, el margen y la atribución por anuncio ya los tiene Nodo; solo falta el gasto de Meta.`}</p>
+    ${/* Toda esta sección se arma sobre el gasto por ANUNCIO: las vistas "Por producto"
+          y "Por ángulo" agrupan esos mismos anuncios, así que sin Meta tampoco tienen
+          filas. Dicho así, el cartel deja al dueño buscando una tabla que no va a
+          aparecer — y encima le acaba de decir que "las ventas y el margen ya los tiene
+          Nodo", que es verdad pero se ven en otro lado. Se le dice dónde. */""}
+    ${st.vista!=="anuncio" ? `<p style="margin-top:10px">Esta vista agrupa tus <b>anuncios</b> por ${st.vista==="angulo"?"ángulo":"producto"}, así que también necesita el gasto de Meta.
+      Tus <b>ventas y tu margen por producto</b> —que no dependen de los anuncios— los ves ya mismo en el
+      <a href="dashboard.html" style="color:var(--brand)">Dashboard</a>.</p>` : ""}
   </div>`;
 }
 

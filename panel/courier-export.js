@@ -14,9 +14,27 @@ const N = (v) => ({ t: "n", v: Number(v) || 0 });
 // Los couriers piden el celular sin código de país (9 dígitos en Perú).
 const tel9 = (wa) => String(wa || "").replace(/\D/g, "").slice(-9);
 const atrTexto = (s) => Object.entries((s && s.atributos) || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+// Lo que va DENTRO del paquete: el principal y también los extras y regalos
+// físicos. Sin ellos la descripción declaraba un solo producto para una caja que
+// lleva dos o tres — el cliente pagó las medias y le prometimos la gorra, y en un
+// reclamo o un extravío la descripción no cuadra con el contenido. Los digitales
+// se excluyen: se entregan por link, no viajan.
+// La variante del extra sale del `stock_key`: el `nombre` trae la presentación
+// ("· Unica") y la talla real vive ahí ("Talla=m").
+const bumpsDesc = (o) => (o.order_bumps || []).filter((b) => b && b.digital !== true).map((b) => {
+  const va = (b.stock_key && b.stock_key !== "_")
+    ? b.stock_key.split("|").map((kv) => { const [k, val] = kv.split("="); return `${k}: ${val || ""}`; }).join(", ")
+    : "";
+  let nom = String(b.nombre || "").replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "").trim();
+  if (va) nom = nom.replace(/\s*·\s*[Uu]nica\s*$/, "").trim();
+  return `${nom || "extra"}${va ? ` (${va})` : ""}`;
+}).filter(Boolean);
 const productoDesc = (o) => {
   const p = o.product || {}, v = o.version || {}, atr = atrTexto(o.shipping);
-  return [p.nombre, v.nombre, atr && `(${atr})`].filter(Boolean).join(" ");
+  const base = [p.nombre, v.nombre, atr && `(${atr})`].filter(Boolean).join(" ");
+  const mas = bumpsDesc(o);
+  // Tope defensivo: la celda del Excel del courier no es un campo libre infinito.
+  return [base, ...mas].filter(Boolean).join(" + ").slice(0, 250);
 };
 
 // Estados que cuentan como "por despachar" por zona = la columna homónima del

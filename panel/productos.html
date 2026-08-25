@@ -2835,8 +2835,15 @@ async function generarFlujoVenta(skipConfirm){
   try{
     let flowId=ya?.id;
     if(flowId){
-      await supa.from("flow_edges").delete().eq("flow_id",flowId);
-      await supa.from("flow_nodes").delete().eq("flow_id",flowId);
+      // Si el borrado falla y seguimos, los nodos VIEJOS se quedan y encima se
+      // insertan los nuevos: el flujo queda con dos copias de cada paso, activo y
+      // vendiendo, comportándose de forma impredecible — y sin que nadie se entere,
+      // porque el error se tragaba. Mejor abortar: el flujo anterior sigue intacto.
+      // (Lo recoge el catch de abajo, que sí avisa.)
+      const { error:eDel1 }=await supa.from("flow_edges").delete().eq("flow_id",flowId);
+      if(eDel1) throw new Error("no se pudo limpiar el flujo anterior — "+eDel1.message);
+      const { error:eDel2 }=await supa.from("flow_nodes").delete().eq("flow_id",flowId);
+      if(eDel2) throw new Error("no se pudo limpiar el flujo anterior — "+eDel2.message);
       // Al REGENERAR no se toca el estado: si el flujo ya estaba vendiendo, se
       // lo dejaba en borrador y el producto se quedaba mudo sin avisar.
       await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}`, folder:prodFolder() }).eq("id",flowId);
@@ -3927,7 +3934,8 @@ async function saveActivacion(opts){
   if(eN){ toast(eN.message,true); return; }
   const kwArr=(($("actKw")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);
   const matchV=($("actMatch")?.value)||"contiene";
-  await saveTrigger("keyword","kw", kwArr.length?{keywords:kwArr,match:matchV}:null);
+  const eKw2=await saveTrigger("keyword","kw", kwArr.length?{keywords:kwArr,match:matchV}:null);
+  if(eKw2){ toast("No se pudieron guardar las palabras clave: "+eKw2.message,true); return; }
   // El ruteo por ID de anuncio se maneja ahora en el Banco de anuncios del
   // producto (products.config.ad_bank). Ya no se toca el disparador "referral"
   // desde aquí: lo que exista se queda intacto y no se crea uno nuevo.
@@ -4146,17 +4154,26 @@ async function saveWelcome(){
   // Disparadores
   const kwArr=($("actKw").value||"").split(",").map(s=>s.trim()).filter(Boolean);
   const match=$("actMatch").value;
-  await saveTrigger("keyword", "kw", kwArr.length?{keywords:kwArr,match}:null);
+  const eKw=await saveTrigger("keyword", "kw", kwArr.length?{keywords:kwArr,match}:null);
+  if(eKw){ toast("No se pudieron guardar las palabras clave: "+eKw.message,true); return; }
   const adArr=($("actAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
-  await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
+  const eAd=await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
+  if(eAd){ toast("No se pudieron guardar los anuncios: "+eAd.message,true); return; }
   toast("Guardado ✓"); accRerender("activacion"); refreshActivacionRow();
 }
+// Devuelve el error (o null). El disparador es lo que hace que el producto se
+// VENDA: sin él, quien escribe la palabra clave no entra a ningún flujo. Se tragaba
+// el error y el caller cantaba "Guardado ✓" igual, así que un fallo dejaba el
+// producto mudo sin que nadie se enterara — justo el update del nodo, dos líneas
+// más arriba, sí revisa su error.
 async function saveTrigger(tipo, key, config){
   const existing=st.act[key];
   if(config){
-    if(existing){ await supa.from("flow_triggers").update({config}).eq("id",existing.id); }
-    else { await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:st.act.flow.id, tipo, config, activo:true }); }
-  } else if(existing){ await supa.from("flow_triggers").delete().eq("id",existing.id); }
+    if(existing) return (await supa.from("flow_triggers").update({config}).eq("id",existing.id)).error;
+    return (await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:st.act.flow.id, tipo, config, activo:true })).error;
+  }
+  if(existing) return (await supa.from("flow_triggers").delete().eq("id",existing.id)).error;
+  return null;
 }
 
 async function saveProduct(){
