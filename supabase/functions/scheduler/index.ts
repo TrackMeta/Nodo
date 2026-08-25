@@ -12,7 +12,7 @@ import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStage
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
-import { enParalelo } from "../_shared/concurrencia.ts";
+import { enParalelo, repartoJusto } from "../_shared/concurrencia.ts";
 
 const db = serviceClient();
 
@@ -46,6 +46,11 @@ const CONC_WAKE = 5;
 // terminar en un envío por red. Ojo — subir esto SIN el "una por contacto por tick" de abajo
 // rompería el anti-spam entre dos secuencias del mismo cliente.
 const CONC_SEQ = 5;
+// Cuánto se atiende por tick y de qué pool sale. Se pide MÁS de lo que se procesa para poder
+// repartir entre bots: si se pidiera justo lo que se atiende, el reparto no serviría de nada
+// (ya vendrían todas del negocio con más movimiento). El pool es barato: son 2 columnas.
+const WAKE_TICK = 100, WAKE_POOL = 600;
+const SEQ_TICK = 500, SEQ_POOL = 2000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -85,12 +90,18 @@ Deno.serve(async (req) => {
   seqCache.clear();
 
   // ── 1) Despertar Esperar/debounce vencidos ────────────────────────
-  const { data: runs } = await db.from("flow_runs")
+  // Se pide un POOL más grande del que se va a procesar y después se reparte por bot (ver
+  // repartoJusto). Con "los 100 más vencidos" a secas, un negocio con mucho movimiento se
+  // llevaba los 100 cupos y los bots de los demás usuarios no retomaban ni una conversación
+  // hasta el tick siguiente — y si el grande seguía llenando la cola, nunca. Es el mismo
+  // reparto que ya tenían las campañas; despertar conversaciones se había quedado sin él.
+  const { data: pool } = await db.from("flow_runs")
     .select("channel_id, contact_id")
     .eq("estado", "esperando").not("wake_at", "is", null)
     .lte("wake_at", new Date().toISOString())
     .order("wake_at", { ascending: true })   // los más vencidos primero: sin ORDER BY, con más de 100 pendientes Postgres podía devolver siempre el mismo subconjunto y matar de hambre al resto
-    .limit(100);
+    .limit(WAKE_POOL);
+  const runs = repartoJusto(pool ?? [], (r: any) => r.channel_id, WAKE_TICK);
   // EN PARALELO (de a CONC_WAKE). Cada `runEngine` puede llamar a la IA y esperar segundos,
   // así que en fila india 100 conversaciones vencidas no entran ni de lejos en el minuto del
   // tick — ni en el wall-clock de la Edge Function: el scheduler moría a media lista y el
@@ -149,10 +160,11 @@ Deno.serve(async (req) => {
     .eq("estado", "activa")
     .or(`proximo_at.is.null,proximo_at.lte.${new Date().toISOString()}`)
     .order("proximo_at", { ascending: true, nullsFirst: true })
-    // Tope de seguridad, no de reparto: con el despertador lo normal es que venzan unas
-    // pocas por minuto. Existe para que un pico (el cron caído un rato, o una tanda que se
-    // suscribió junta) no intente vaciarse de golpe y se pase del minuto del tick.
-    .limit(500);
+    // Se pide un pool y luego se reparte por bot. Con el despertador lo normal es que venzan
+    // unas pocas por minuto, pero un pico (el cron caído un rato, o una tanda que se
+    // suscribió junta) sí llena la cola — y ahí, sin reparto, el negocio del pico se llevaba
+    // los 500 cupos y el remarketing de todos los demás usuarios se quedaba esperando.
+    .limit(SEQ_POOL);
   // UNA suscripción por contacto y por tick. Un cliente puede estar en varias secuencias a
   // la vez (la de zapatillas y la del curso), y el anti-spam que impide mandarle dos toques
   // juntos funciona LEYENDO su último toque al empezar y MARCÁNDOLO al terminar — o sea que
@@ -161,11 +173,14 @@ Deno.serve(async (req) => {
   // mensajes a la vez. Como vienen ordenadas por cita más atrasada, se queda la que lleva
   // más esperando y la otra sale en el tick siguiente.
   const vistos = new Set<string>();
-  const lote = (subs ?? []).filter((s: any) => {
+  const unaPorContacto = (subs ?? []).filter((s: any) => {
     if (vistos.has(s.contact_id)) return false;
     vistos.add(s.contact_id);
     return true;
   });
+  // El reparto va DESPUÉS de quitar las repetidas por contacto: si fuera antes, un bot podría
+  // gastar su turno en dos suscripciones del mismo cliente y una de las dos se descartaría.
+  const lote = repartoJusto(unaPorContacto, (s: any) => s.channel_id, SEQ_TICK);
   // En paralelo de a CONC_SEQ. Con el despertador, lo que vence son en su mayoría envíos de
   // verdad, y un envío se va por la red a WhatsApp: en fila india, un pico de cientos no
   // entra en el minuto del tick. Conservador (5), igual que al despertar conversaciones:
