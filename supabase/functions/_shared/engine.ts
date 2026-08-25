@@ -7496,9 +7496,17 @@ async function operacionYaUsada(db: SupabaseClient, channelId: string, op: strin
 export async function registrarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<void> {
   const n = normOperacion(op);
   if (n.length < 4) return;
-  await db.from("payment_operations").insert({
+  const insOp = await db.from("payment_operations").insert({
     channel_id: channelId, operacion: n, order_id: orderId, contexto,
-  }).then(() => {}, () => { /* choca con el único = ya estaba: ok */ });
+  });
+  // Se tragaba CUALQUIER error, no solo el del duplicado. El 23505 sí es el caso esperado
+  // (choca con el único = ya estaba registrada, todo bien). Pero con otro error la operación
+  // NO queda marcada como usada, así que ese mismo comprobante se puede volver a aprobar en
+  // otro pedido — que es exactamente el doble cobro que esta tabla existe para impedir.
+  // No se puede reintentar acá sin arriesgar un bucle, pero callarlo era lo peor.
+  if (insOp.error && (insOp.error as any).code !== "23505") {
+    console.error(`[anti-reuso] la operación ${n} NO quedó registrada (${insOp.error.message}) — se podría reusar`);
+  }
 }
 // CLAIM ATÓMICO del anti-reúso: intenta INSERTAR la operación y devuelve true SOLO si ESTE
 // llamador ganó la fila (el índice único (channel_id, operacion) serializa). Si otra ruta
@@ -8635,13 +8643,22 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // Dashboard) y un evento de compra en el Timeline.
   if (res.ok && eventName === "Purchase") {
     const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
-    await db.from("orders").insert({
+    const insOrd = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionIdDe(ctx),
       amount: Number.isFinite(value as number) ? value : 0,
       currency, order_id: orderId ?? null, estado: "confirmada",
       confirmed_at: new Date().toISOString(),
-    }); // si la tabla orders no existe (0017 pendiente) o el order_id se repite, el error se ignora
+    });
+    // El error se ignoraba entero, y eso dejaba al sistema AFIRMANDO una venta que no
+    // registró: el timeline decía "Compra registrada" y el contacto pasaba a comprado, pero
+    // en el Dashboard y en Compras esa venta no existía. El 23505 sí es benigno (order_id
+    // repetido = ya había un pedido con ese comprobante, no hay nada que registrar de nuevo);
+    // cualquier otro error queda anotado, porque significa una venta que no vas a ver.
+    if (insOrd.error && (insOrd.error as any).code !== "23505") {
+      await logEvent(db, run.channel_id, run.contact_id, "error", "La compra NO se pudo registrar",
+        `${insOrd.error.message} — el evento salió a Meta, pero esta venta no va a aparecer en el Dashboard ni en Compras`).catch(() => {});
+    }
     await logEvent(db, run.channel_id, run.contact_id, "compra", "Compra registrada", value ? `${currency} ${value}` : "");
     await moverEtapa(db, run.channel_id, run.contact_id, "comprado");
   }
