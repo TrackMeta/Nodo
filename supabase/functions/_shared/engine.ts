@@ -277,6 +277,11 @@ async function runEngineInner(
     // parqueado la "confirme" sin poder grabarla. Ver recompraEnRunActivo.
     try { if (await recompraEnRunActivo(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[recompraEnRun]", (e as any)?.message ?? e); }
+    // Pidió OTRO producto del catálogo a mitad de esta venta (y todavía no hay pedido):
+    // se le abre la venta de ese, en vez de que la IA —que solo conoce la ficha del
+    // producto en curso— le diga que no lo vendemos. Ver maybeCambioProducto.
+    try { if (await maybeCambioProducto(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[maybeCambioProducto]", (e as any)?.message ?? e); }
     // Modificar el pedido ya creado: QUITAR un item o CAMBIAR la cantidad. Toca plata
     // y stock → confirma antes de aplicar (no auto-muta). Corta la cadena si atendió.
     // Se le pasa `run` para el anti-secuestro (no pisar una respuesta a la oferta del
@@ -5392,6 +5397,51 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
   return null;
 }
 
+// El cliente está a MITAD de la venta de un producto y pregunta por OTRO que también
+// vendemos. Medido en vivo: con las zapatillas abiertas, "mejor dime del curso de
+// trading, ¿cuánto cuesta?" → «Por ahora solo trabajo con las Zapatillas Runner Pro,
+// no tengo información sobre cursos de trading». La MISMA frase, con un contacto
+// nuevo, entra derechito a la venta del curso: el matcher funciona bien, solo que
+// NADIE lo consultaba con un run vivo — `otroProductoPorKeyword` existía, pero se
+// llamaba únicamente desde recompra y post-venta (clientes que YA compraron). O sea:
+// el bot le decía a un cliente que no vendemos algo que sí vendemos.
+//
+// Conservador a propósito:
+// · solo por keyword DETERMINISTA (nunca por adivinanza del router: equivocarse de
+//   producto es peor que quedarse en el conocido — mismo criterio que la recompra);
+// · solo si NO hay un pedido vivo. Si ya dio sus datos o está pagando, cambiarle el
+//   producto por debajo sería peor que no hacer nada; ese caso lo cubre la regla del
+//   prompt, que al menos evita que le diga que no lo vendemos.
+// Entra por `mensajes_iniciales` (el saludo presenta el producto nuevo) y SIN la
+// marca `_recompra`: este cliente no está volviendo, está cambiando de idea.
+async function maybeCambioProducto(
+  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
+): Promise<boolean> {
+  if (event.type !== "message" || !event.text) return false;
+  const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+  const actual = ((c as any)?.product_id as string | null) ?? null;
+  if (!actual) return false; // sin producto en curso el ruteo normal ya lo atiende
+  const otro = await otroProductoPorKeyword(db, channelId, event.text, actual);
+  if (!otro) return false;
+  const { data: viv } = await db.from("orders").select("id")
+    .eq("channel_id", channelId).eq("contact_id", contactId)
+    .not("estado", "in", "(cancelado,rechazado,no_recogido)").limit(1);
+  if ((viv ?? []).length) return false;
+  const { data: flows } = await db.from("flows")
+    .select("id, role").eq("channel_id", channelId).eq("product_id", otro).eq("estado", "activo");
+  const list = (flows ?? []) as any[];
+  const flow = list.find((f) => f.role === "mensajes_iniciales") ?? list.find((f) => f.role === "venta") ?? list[0];
+  if (!flow) return false;
+  await limpiarCandadosVenta(db, contactId);
+  await resetItemFields(db, channelId, contactId, otro);
+  const ok = await startFlowRun(db, channelId, contactId, (flow as any).id, { force: true });
+  if (ok) {
+    await logEvent(db, channelId, contactId, "nota", "🔀 Cambió de producto",
+      "Nombró otro producto del catálogo por palabra clave — se abrió su venta").catch(() => {});
+  }
+  return ok;
+}
+
 // Relanza el flujo de venta del producto para una RECOMPRA (pedido nuevo). Elige el
 // producto que el cliente realmente pidió: si nombró OTRO por keyword, ese; si no,
 // el que ya compró (fallback) — así "quiero otro par" re-vende lo mismo y "ahora
@@ -8120,6 +8170,38 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
     }
+    // Qué MÁS vende el negocio. La IA solo recibe la ficha del producto en curso, así
+    // que ante "¿y el curso de trading?" contestaba «Por ahora solo trabajo con las
+    // Zapatillas Runner Pro, no tengo información sobre cursos» — negándole al cliente
+    // un producto que el negocio SÍ vende. `maybeCambioProducto` ya lo desvía a la venta
+    // correcta cuando todavía no hay pedido; esto cubre el resto (pedido ya en curso),
+    // donde cambiarle el producto por debajo sería peor: al menos que no lo niegue.
+    // Se listan los que tienen puerta de entrada propia (trigger de keyword activo) =
+    // los que un cliente puede pedir por su nombre. Cacheado por run.
+    try {
+      if ((run as any)._otrosProd === undefined) {
+        const { data: trs } = await db.from("flow_triggers")
+          .select("config, flows:flow_id(estado, product_id, products:product_id(nombre))")
+          .eq("channel_id", run.channel_id).eq("tipo", "keyword").eq("activo", true);
+        const vistos = new Set<string>(); const nombres: string[] = [];
+        for (const t of (trs ?? []) as any[]) {
+          const f = t?.flows; if (!f || f.estado !== "activo") continue;
+          const nom = String(f?.products?.nombre ?? "").trim();
+          if (!nom || !f.product_id || vistos.has(f.product_id)) continue;
+          vistos.add(f.product_id);
+          if (f.product_id !== ctx._product_id) nombres.push(nom);
+        }
+        (run as any)._otrosProd = nombres.slice(0, 15);
+      }
+      const otros = (run as any)._otrosProd as string[];
+      if (otros?.length) {
+        parts.push("## Lo demás que vende el negocio\n" + otros.map((n) => "- " + n).join("\n") +
+          "\nEstos productos SÍ existen y SÍ se venden: nunca digas que no los tenemos ni que no sabes de ellos. " +
+          "No los ofrezcas por tu cuenta ni te desvíes de la venta en curso; solo si el cliente pregunta por alguno, " +
+          "confírmale que sí lo manejamos y dile que apenas cerremos esto se lo ves. " +
+          "No inventes su precio, su contenido ni su stock: de esos NO tienes la ficha.");
+      }
+    } catch (_) { /* sin catálogo → la IA sigue como antes */ }
     // Mandó su UBICACIÓN de WhatsApp. Si compartió un lugar con nombre/dirección, eso
     // ya viaja como texto y el extractor lo pesca solo. Si mandó un pin suelto, lo que
     // llega son coordenadas: el courier no reparte con eso. Sin decírselo, la IA leía
