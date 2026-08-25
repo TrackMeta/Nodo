@@ -22,9 +22,20 @@ Deno.serve(async (req) => {
   const state = url.searchParams.get("state");
   if (url.searchParams.get("error") || !code || !state) return back("error");
 
-  const { data: st } = await db.from("gsheets_oauth_state").select("channel_id").eq("nonce", state).maybeSingle();
+  const { data: st } = await db.from("gsheets_oauth_state").select("channel_id, created_at").eq("nonce", state).maybeSingle();
   if (!st) return back("expirado");
   await db.from("gsheets_oauth_state").delete().eq("nonce", state);
+  // El `state` es de un solo uso Y ahora también CADUCA. Sin esto, uno generado y nunca
+  // usado seguía siendo válido para siempre: es la pieza que protege de que a alguien le
+  // cuelen la conexión de OTRA cuenta de Google en su canal, y una ventana infinita es
+  // justo lo que no debe tener. 10 minutos sobra para autorizar en Google.
+  {
+    const nacido = new Date((st as any).created_at ?? 0).getTime();
+    if (!nacido || Date.now() - nacido > 10 * 60 * 1000) return back("expirado");
+  }
+  // Barrido de los que quedaron colgados (el usuario abrió el consentimiento y no terminó).
+  await db.from("gsheets_oauth_state").delete()
+    .lt("created_at", new Date(Date.now() - 60 * 60 * 1000).toISOString()).then(() => {}, () => {});
 
   try {
     const tokRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -36,7 +47,12 @@ Deno.serve(async (req) => {
       }),
     });
     const tok = await tokRes.json();
-    if (!tokRes.ok) { console.error("[gsheets-callback] token:", tok); return back("error"); }
+    // Se loguea SOLO el motivo, no la respuesta entera: ese objeto es la respuesta del
+    // endpoint de tokens de Google y no tiene por qué acabar en los logs por completo.
+    if (!tokRes.ok) {
+      console.error("[gsheets-callback] token:", tokRes.status, (tok as any)?.error ?? "", (tok as any)?.error_description ?? "");
+      return back("error");
+    }
     // refresh_token solo viene si pedimos prompt=consent + access_type=offline.
     if (!tok.refresh_token) return back("sin_refresh");
 
