@@ -284,7 +284,11 @@ function previsualizar(plantilla, a){
     const out=linea.replace(/\{\{\s*([\w.-]+)\s*\}\}/g,(_,k)=>{
       tot++;
       const v=DEMO[k];
-      if(v===undefined||String(v).trim()==="") return HUECO;
+      // El `null` va explícito para no separarse de renderAviso (avisos.ts), que sí lo
+      // trata como hueco: String(null) da "null", así que sin esto la vista previa
+      // escribiría "null" donde el aviso de verdad pone "—". Hoy ningún DEMO es null,
+      // pero el espejo tiene que seguir siendo espejo.
+      if(v===null||v===undefined||String(v).trim()==="") return HUECO;
       con++; return esc(String(v));
     });
     if(tot>0&&con===0) return null;

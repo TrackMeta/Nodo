@@ -1354,8 +1354,12 @@ function renderContactPanel(){
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
   p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada ✓"); renderContactPanel(); loadConversations(); });
+  // Mismo motivo que el toggle del bot: sin mirar el error, la etiqueta se veía puesta (o
+  // quitada) aunque la escritura hubiera fallado, y al recargar volvía como estaba. Peor
+  // todavía si con esa etiqueta filtras o segmentas una campaña: creías tenerlos marcados.
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{
-    await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
+    const { error }=await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag);
+    if(error){ toast("No se pudo quitar la etiqueta: "+error.message, true); return; }
     const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre);
     assigned.delete(b.dataset.tag); renderContactPanel();
   });
@@ -1364,7 +1368,8 @@ function renderContactPanel(){
     addBtn.onclick=(e)=>{ e.stopPropagation(); pop.hidden=!pop.hidden; };
     pop.querySelectorAll("[data-add]").forEach(b=> b.onclick=async(e)=>{
       e.stopPropagation();
-      await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:b.dataset.add }, { onConflict:"contact_id,tag_id" });
+      const { error }=await supa.from("contact_tags").upsert({ contact_id:contact.id, tag_id:b.dataset.add }, { onConflict:"contact_id,tag_id" });
+      if(error){ toast("No se pudo añadir la etiqueta: "+error.message, true); return; }
       const t=allTags.find(x=>x.id===b.dataset.add); logEvent(contact.id,"etiqueta_add","Etiqueta añadida",t?.nombre);
       assigned.add(b.dataset.add); renderContactPanel();
     });
@@ -1485,7 +1490,11 @@ async function actionHandler(a){
     toast("Chat eliminado ✓"); backToList(); loadConversations(); return; }
 }
 async function exportMessages(){
-  const { data }=await supa.from("messages").select("direction,type,content,ts").eq("contact_id",state.contactId).order("ts");
+  // Paginado: un chat largo se cortaba en 1000 mensajes y el archivo salía incompleto sin
+  // avisar. Es una descarga que la gente guarda como respaldo o para un reclamo, así que
+  // que le falte la mitad y parezca entera es justo lo que no puede pasar.
+  const { data }=await pageAll((f,t)=>supa.from("messages").select("direction,type,content,ts")
+    .eq("contact_id",state.contactId).order("ts",{ascending:true}).order("id",{ascending:true}).range(f,t));
   const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Nodo"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
   const blob=new Blob([`Conversación con ${state.contactName||""}\n\n`+lines.join("\n")],{type:"text/plain;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`chat_${(state.contactName||state.contactId).toString().replace(/\W+/g,"_")}.txt`; a.click(); URL.revokeObjectURL(a.href);

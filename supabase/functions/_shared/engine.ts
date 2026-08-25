@@ -4220,7 +4220,15 @@ function evaluarAbono(
   // (≥ esperado) dejaba `esperado - tol ≤ 0` → CUALQUIER abono > 0 "cubría" (un S/1
   // aprobaba un adelanto de S/20). Se clampa a [0, esperado].
   const tolSafe = Math.max(0, Math.min(Number(tol) || 0, Number(esperado) || 0));
-  const cubre = !ambiguo && Number.isFinite(esperado) && esperado > 0 && total >= (esperado - tolSafe);
+  // Los dos lados se comparan REDONDEADOS a céntimos. Sin esto la comparación se hacía con
+  // los números crudos, y con decimales eso miente: 19.90+19.90+19.90 da 59.699999999999996
+  // en coma flotante (comprobado), así que un cliente que pagó los S/59.70 exactos en tres
+  // partes "no cubría". El mismo tropiezo lo puede traer el esperado, que también sale de
+  // una suma (precio + envío + extras). Y el modo de fallar es de los que enloquecen: el
+  // pedido se traba pidiendo "falta S/ 0.00", porque el faltante SÍ se redondeaba al
+  // mostrarlo. Con la tolerancia por defecto del adelanto (S/1) el margen lo tapaba, pero
+  // la del SALDO es 0 — justo donde no había red.
+  const cubre = !ambiguo && Number.isFinite(esperado) && esperado > 0 && r2(total) >= r2(esperado - tolSafe);
   return { key, abonos, total: r2(total), cubre, falta: Math.max(0, r2(esperado - total)), dup, ambiguo };
 }
 function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }

@@ -655,7 +655,13 @@ async function loadAdAccounts(){
     ${a.nombre?`<span style="color:var(--muted);font-size:12px">${esc(a.nombre)}</span>`:""}
     <button class="btn" data-del="${a.id}" style="margin-left:auto;height:30px;padding:0 11px;font-size:12px">Quitar</button>
   </div>`).join("");
-  box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{ await supa.from("ad_accounts").delete().eq("id",b.dataset.del); loadAdAccounts(); });
+  // Sin mirar el error, la cuenta simplemente reaparecía al recargar la lista y no había
+  // forma de saber por qué no se fue.
+  box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{
+    const { error }=await supa.from("ad_accounts").delete().eq("id",b.dataset.del);
+    if(error) toast("No se pudo quitar la cuenta: "+error.message, true);
+    loadAdAccounts();
+  });
 }
 async function addAdAccount(){
   let v=$("m_ad_acc_new").value.trim();

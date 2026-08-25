@@ -172,7 +172,16 @@ Deno.serve(async (req) => {
   // muy por debajo de lo que Meta admite por segundo, y acota la carga sobre la base.
   await enParalelo(lote, CONC_SEQ, async (s: any) => {
     try { if (await processSub(s, now)) fired++; }
-    catch (e) { console.error("[scheduler] seq:", (e as any)?.message ?? e); }
+    catch (e) {
+      console.error("[scheduler] seq:", (e as any)?.message ?? e);
+      // Un fallo inesperado NO puede volverse un bucle a toda velocidad. Sin esto, la sub
+      // conservaba su `proximo_at` vencido, así que el siguiente tick la elegía otra vez —
+      // y si el error saltó DESPUÉS de enviar, el cliente recibía el mismo mensaje una y
+      // otra vez. Se aparta 10 minutos: el paso no se pierde (se reintenta), pero deja de
+      // repetirse cada minuto. El anti-spam del contacto ya frenaba parte de esto, salvo
+      // que el canal lo tenga apagado — que es justo cuando más falta hacía.
+      await posponer(s.id, 10 * 60_000).catch(() => {});
+    }
   });
   // Ya no hace falta sellar un cursor de rotación en lote: cada `processSub` deja anotado su
   // propio `proximo_at` (envió → cuándo toca el siguiente paso; no pudo → cuándo reintentar),

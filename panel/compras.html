@@ -258,12 +258,27 @@ async function load(){
     // ~600 ids (medido: 800 → 400 Bad Request). Como acá `ids` sale de TODAS las compras
     // paginadas, un negocio con varios cientos de clientes se pasaba — y el error no se
     // miraba, así que la columna de comprobantes se vaciaba sin decir por qué.
-    for(const trozo of enTrozos(ids)){
-      const { data:msgs, error }=await supa.from("messages").select("contact_id,content,ts")
-        .eq("channel_id",st.channelId).in("contact_id",trozo).eq("direction","in").eq("type","image")
-        .order("ts",{ascending:false}).limit(600);
-      if(error){ console.warn("[compras] comprobantes:",error.message); continue; }
-      (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    // De cada cliente solo queremos su ÚLTIMA imagen, pero el tope de filas es del lote
+    // entero, no por cliente: bastaba UN cliente con muchas fotos para llevarse el cupo y
+    // dejar a los demás del lote sin comprobante, como si nunca hubieran mandado nada.
+    // Ahora se insiste sacando de la búsqueda a los que ya tienen la suya, así el cupo de
+    // la vuelta siguiente se reparte entre los que faltan. Cada vuelta resuelve al menos
+    // uno, y cuando ya no vienen filas es que a los pendientes no les queda ninguna.
+    for(const trozo of enTrozos(ids,100)){
+      let pend=trozo.filter(id=>!st.imgs[id]);
+      for(let vuelta=0; vuelta<12 && pend.length; vuelta++){
+        const { data:msgs, error }=await supa.from("messages").select("contact_id,content,ts")
+          .eq("channel_id",st.channelId).in("contact_id",pend).eq("direction","in").eq("type","image")
+          .order("ts",{ascending:false}).limit(500);
+        if(error){ console.warn("[compras] comprobantes:",error.message); break; }
+        if(!msgs || !msgs.length) break; // a los que faltan no les queda ninguna imagen
+        msgs.forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+        const antes=pend.length;
+        pend=pend.filter(id=>!st.imgs[id]);
+        // Si la vuelta no resolvió a nadie, insistir traería las MISMAS filas (pasa cuando
+        // las imágenes de ese cliente no tienen URL guardada). Cortar acá evita dar vueltas.
+        if(pend.length===antes) break;
+      }
     }
   }
   render();
