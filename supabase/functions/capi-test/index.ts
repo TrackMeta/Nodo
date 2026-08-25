@@ -8,6 +8,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
 import { sha256Hex } from "../_shared/crypto.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 const GRAPH_VERSION = "v25.0";
@@ -62,7 +63,7 @@ Deno.serve(async (req) => {
   if (body.test_event_code && body.test_event_code.trim()) payload.test_event_code = body.test_event_code.trim();
 
   try {
-    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${channel.pixel_id}/events`, {
+    const res = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_VERSION}/${channel.pixel_id}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

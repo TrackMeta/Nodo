@@ -2530,7 +2530,7 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
   } else {
     const su = urlDescargaSegura(mediaRef);
     if (!su) { console.warn("[STT] URL de media no permitida (SSRF guard)"); return null; }
-    const r = await fetch(su);
+    const r = await fetchConTimeout(su, {}, 45_000);
     if (!r.ok) return null;
     mime = r.headers.get("content-type") || "audio/ogg";
     bytes = new Uint8Array(await r.arrayBuffer());
@@ -2573,7 +2573,7 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
 async function urlToDataUri(url: string): Promise<string> {
   const su = urlDescargaSegura(url);
   if (!su) throw new Error("URL de imagen no permitida");
-  const r = await fetch(su);
+  const r = await fetchConTimeout(su, {}, 45_000);
   if (!r.ok) throw new Error(`no se pudo descargar la imagen (${r.status})`);
   const mime = r.headers.get("content-type") || "image/jpeg";
   const buf = new Uint8Array(await r.arrayBuffer());
@@ -2985,7 +2985,7 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
       // por RLS, así que la validación del front no basta (un admin podría apuntar el POST
       // con los datos del pedido a una URL arbitraria). Solo se acepta la app web de Apps Script.
       if (!/^https:\/\/script\.google\.com\/[^\s]*\/exec(\?.*)?$/.test(String(g.webhook_url))) throw new Error("webhook_url de Apps Script inválida");
-      const res = await fetch(String(g.webhook_url), {
+      const res = await fetchConTimeout(String(g.webhook_url), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hoja, fila, buscar: { "ID": ord.id }, accion: "update" }),
       });

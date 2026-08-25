@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -104,7 +105,7 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
   // del negocio (los números no están convertidos). Best-effort: si falla, queda null.
   let accountCurrency: string | null = null;
   try {
-    const cr = await fetch(`${GRAPH}/${acctId}?fields=currency&access_token=${encodeURIComponent(token)}`);
+    const cr = await fetchConTimeout(`${GRAPH}/${acctId}?fields=currency&access_token=${encodeURIComponent(token)}`);
     const cj = await cr.json();
     if (cr.ok && cj?.currency) accountCurrency = String(cj.currency);
   } catch (_) { /* sin moneda → null */ }
@@ -125,7 +126,7 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
   let guard = 0;
 
   while (url && guard++ < 50) {
-    const res = await fetch(url);
+    const res = await fetchConTimeout(url, {}, 30_000);
     const body = await res.json();
     if (!res.ok || body.error) {
       const e = body?.error ?? {};

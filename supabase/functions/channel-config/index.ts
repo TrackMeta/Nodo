@@ -10,6 +10,7 @@ import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsCh
 import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 import { matchSegment, BATCH } from "../_shared/campaigns.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 // Campos planos del canal editables desde el panel.
@@ -185,7 +186,7 @@ Deno.serve(async (req) => {
 
       const tg = async (m: string) => {
         try {
-          const r = await fetch(`https://api.telegram.org/bot${token}/${m}`);
+          const r = await fetchConTimeout(`https://api.telegram.org/bot${token}/${m}`);
           return await r.json();
         } catch (e) { return { ok: false, description: String((e as any)?.message ?? e) }; }
       };
@@ -201,7 +202,7 @@ Deno.serve(async (req) => {
       const detalle: { chat: string; ok: boolean; error?: string }[] = [];
       for (const chat of chatIds) {
         try {
-          const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          const r = await fetchConTimeout(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chat, parse_mode: "HTML", disable_web_page_preview: true,
@@ -251,7 +252,7 @@ Deno.serve(async (req) => {
       const V = "v25.0";
       const g = async (path: string) => {
         try {
-          const r = await fetch(`https://graph.facebook.com/${V}/${path}`, {
+          const r = await fetchConTimeout(`https://graph.facebook.com/${V}/${path}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           return { status: r.status, body: await r.json() };
@@ -305,7 +306,7 @@ Deno.serve(async (req) => {
       const V = "v25.0";
       let res: any;
       try {
-        const r = await fetch(`https://graph.facebook.com/${V}/${wabaId}/message_templates?fields=name,language,status,category,components&limit=200`, {
+        const r = await fetchConTimeout(`https://graph.facebook.com/${V}/${wabaId}/message_templates?fields=name,language,status,category,components&limit=200`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         res = await r.json();
@@ -415,7 +416,7 @@ Deno.serve(async (req) => {
       const V = "v25.0";
       let res: any;
       try {
-        const r = await fetch(`https://graph.facebook.com/${V}/${wabaId}/message_templates`, {
+        const r = await fetchConTimeout(`https://graph.facebook.com/${V}/${wabaId}/message_templates`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ name, language, category, components }),

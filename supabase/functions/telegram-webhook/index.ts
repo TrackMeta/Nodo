@@ -18,6 +18,7 @@ import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { answerCallback, editButtons, sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, parseFecha, localParts, localDayStartUTC, ymd, type Cual } from "../_shared/resumen.ts";
 import { timingSafeEqual } from "../_shared/crypto.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 
@@ -203,7 +204,7 @@ Deno.serve(async (req) => {
   // Se reusa order-update para que el camino sea EXACTAMENTE el mismo que el
   // del panel: cambia el estado y dispara el flujo que le escribe al cliente.
   // Si esto se duplicara acá, tarde o temprano las dos versiones se separan.
-  const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`, {
+  const res = await fetchConTimeout(`${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

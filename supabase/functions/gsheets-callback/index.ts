@@ -5,6 +5,7 @@
 //   Seguridad: el `state` (nonce) se validó al iniciar (gsheets-connect).
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient } from "../_shared/db.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
@@ -38,7 +39,7 @@ Deno.serve(async (req) => {
     .lt("created_at", new Date(Date.now() - 60 * 60 * 1000).toISOString()).then(() => {}, () => {});
 
   try {
-    const tokRes = await fetch("https://oauth2.googleapis.com/token", {
+    const tokRes = await fetchConTimeout("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -58,7 +59,7 @@ Deno.serve(async (req) => {
 
     let email: string | null = null;
     try {
-      const ui = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${tok.access_token}` } });
+      const ui = await fetchConTimeout("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${tok.access_token}` } });
       email = (await ui.json())?.email ?? null;
     } catch { /* opcional */ }
 
