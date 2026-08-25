@@ -49,8 +49,22 @@ const CONC_SEQ = 5;
 // Cuánto se atiende por tick y de qué pool sale. Se pide MÁS de lo que se procesa para poder
 // repartir entre bots: si se pidiera justo lo que se atiende, el reparto no serviría de nada
 // (ya vendrían todas del negocio con más movimiento). El pool es barato: son 2 columnas.
-const WAKE_TICK = 100, WAKE_POOL = 600;
+const WAKE_TICK = 300, WAKE_POOL = 900;
 const SEQ_TICK = 500, SEQ_POOL = 2000;
+// PRESUPUESTO DE TIEMPO del tick. Es el freno que de verdad importa, más que los topes de
+// cantidad de arriba: el cron dispara cada 60 s sin esperar respuesta, así que un tick que se
+// pasa no da error — el siguiente arranca encima y el atraso se acumula en silencio.
+//
+// Medido contra esta base (nodo de mensaje, sin IA): 100 conversaciones = 20,8 s y 400 = 83 s,
+// o sea ~208 ms por conversación, lineal. Un tope FIJO no sirve porque ese costo depende del
+// trabajo: una conversación que consulta a la IA cuesta varias veces más, y el mismo número
+// que entra cómodo sin IA se pasa del minuto con ella.
+//
+// Con presupuesto se regula solo: mientras alcance el tiempo se atienden todas las que se
+// pueda, y al agotarse se para. Lo que queda tiene su hora ya vencida, así que lo toma el
+// tick siguiente — no se pierde nada, solo se atrasa un minuto. 40 s deja margen para el
+// resto del tick (remarketing, campañas, recordatorios) dentro de los 60.
+const PRESUPUESTO_MS = 40_000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -111,7 +125,11 @@ Deno.serve(async (req) => {
   // (idx_runs_lock) los mantiene aislados, así que paralelizar es seguro. Conservador a
   // propósito: 5 a la vez acota la carga simultánea sobre la base y sobre la API de IA
   // (cuyos 429 ya tienen reintento), y aun así rinde ~5× más por tick.
+  let cortadasWake = 0;
   await enParalelo(runs ?? [], CONC_WAKE, async (r: any) => {
+    // Se acabó el tiempo del tick: lo que queda tiene su hora vencida, así que lo toma el
+    // tick siguiente. Vale más atrasar un minuto que pasarse y que los ticks se encimen.
+    if (Date.now() - now > PRESUPUESTO_MS) { cortadasWake++; return; }
     try {
       // El operador pudo TOMAR el chat mientras el run estaba parqueado en un "Esperar"/timeout.
       // Sin este chequeo, al vencer wake_at el scheduler reanudaba y disparaba el mensaje parqueado
@@ -185,7 +203,11 @@ Deno.serve(async (req) => {
   // verdad, y un envío se va por la red a WhatsApp: en fila india, un pico de cientos no
   // entra en el minuto del tick. Conservador (5), igual que al despertar conversaciones:
   // muy por debajo de lo que Meta admite por segundo, y acota la carga sobre la base.
+  let cortadasSeq = 0;
   await enParalelo(lote, CONC_SEQ, async (s: any) => {
+    // Mismo presupuesto que al despertar, y por el mismo motivo: lo que no entra en el
+    // minuto queda con su cita vencida y lo agarra el tick siguiente.
+    if (Date.now() - now > PRESUPUESTO_MS + 8_000) { cortadasSeq++; return; }
     try { if (await processSub(s, now)) fired++; }
     catch (e) {
       console.error("[scheduler] seq:", (e as any)?.message ?? e);
@@ -225,7 +247,25 @@ Deno.serve(async (req) => {
   try { resumenes = await processResumenes(); }
   catch (e) { console.error("[scheduler] resumenes:", (e as any)?.message ?? e); }
 
-  return json({ ok: true, woke, fired, reaped, nudged, recordados, vencidos, resumenes });
+  // ── Cuánto tardó el tick ──────────────────────────────────────────
+  // El cron dispara cada 60 s sin esperar respuesta, así que un tick que se pase del minuto
+  // NO da error: simplemente el siguiente arranca encima. No se procesa nada dos veces (los
+  // locks lo impiden), pero el atraso se acumula y los bots tardan cada vez más en retomar
+  // conversaciones — y no hay forma de enterarse mirando el cron, que informa "succeeded"
+  // igual. Por eso el tick se mide a sí mismo: el número viaja en la respuesta (queda
+  // guardado en net._http_response) y pasado el 70% del minuto lo grita en los logs.
+  const ms = Date.now() - now;
+  const atendidos = {
+    despertadas: (runs ?? []).length - cortadasWake,
+    remarketing: lote.length - cortadasSeq,
+    // Lo que no entró en el minuto. Si esto sale distinto de 0 tick tras tick, el reloj no
+    // da abasto: hay que subir la concurrencia o repartir el cron en varias funciones.
+    aplazadas: cortadasWake + cortadasSeq,
+  };
+  if (ms > 42_000) {
+    console.warn(`[scheduler] TICK LENTO: ${ms}ms (despertó ${woke}, remarketing ${fired}). Pasado el minuto los ticks se solapan: sube CONC_WAKE/CONC_SEQ o parte el cron.`);
+  }
+  return json({ ok: true, ms, atendidos, woke, fired, reaped, nudged, recordados, vencidos, resumenes });
 });
 
 // ── Resúmenes diarios ───────────────────────────────────────────────
