@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resumirPedidos, type Order } from "./order-stats.ts";
+import { pageAll } from "./paginar.ts";
 
 export const CUR_SYM: Record<string, string> = {
   PEN: "S/", USD: "$", MXN: "$", COP: "$", ARS: "$", CLP: "$", BOB: "Bs", EUR: "€",
@@ -68,12 +69,19 @@ export async function construirResumen(
   const chId = ch.id;
 
   const [ordR, contR, leadR, adsR, expR, admR] = await Promise.all([
-    db.from("orders").select("amount, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
-      .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO),
+    // PAGINADO: un día con más de 1000 pedidos devolvía solo los 1000 primeros y TODO el
+    // resumen salía corto — ventas, ingresos, ganancia y ROAS — justo el día que más
+    // vendiste. Y sin avisar de nada, que es lo peor para un mensaje que se lee de reojo.
+    pageAll((f, t) => db.from("orders").select("amount, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
+      .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO)
+      .order("created_at", { ascending: true }).order("id", { ascending: true }).range(f, t)),
     db.from("contacts").select("id", { count: "exact", head: true })
       .eq("channel_id", chId).neq("wa_id", "webchat-test")
       .gte("created_at", fromISO).lt("created_at", toISO),
-    db.from("capi_events").select("event_name")
+    // Los Lead solo se CUENTAN: se traían las filas para medir su largo, y ahí el tope de
+    // 1000 hacía que el número se quedara corto en cuanto un día pasara de mil leads — que
+    // con anuncios andando no es raro. Se cuenta en la base: exacto y sin traer una fila.
+    db.from("capi_events").select("id", { count: "exact", head: true })
       .eq("channel_id", chId).eq("event_name", "Lead")
       .gte("created_at", fromISO).lt("created_at", toISO),
     db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd),
@@ -91,7 +99,7 @@ export async function construirResumen(
   const orders = (ordR.data ?? []) as Order[];
   const dg = resumirPedidos(orders);
   const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
-  const leads = (leadR.data ?? []).length;
+  const leads = typeof leadR.count === "number" ? leadR.count : 0;
   const gastoAds = (adsR.data ?? []).reduce((a: number, r: any) => a + Number(r?.gasto || 0), 0);
   const gastosExtra = (expR.data ?? []).reduce((a: number, r: any) => a + Number(r?.monto || 0), 0);
   // Ganancia neta = bruta − anuncios − gastos extra (igual que la banda del Dashboard).

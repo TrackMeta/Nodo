@@ -8,6 +8,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getChannelSecrets } from "./db.ts";
 import { sendTemplate, esRechazoTemporal } from "./meta.ts";
 import { enParalelo } from "./concurrencia.ts";
+import { pageAll } from "./paginar.ts";
 
 // Envíos por tick, por campaña. El cron corre cada minuto, así que ESTE número es el ritmo
 // real de una campaña. Se EXPORTA porque el panel lo muestra al programar ("salen de a N por
@@ -90,28 +91,6 @@ async function expandCampaign(db: SupabaseClient, c: any) {
   await db.from("campaigns").update({ estado: "enviando", total: insertados }).eq("id", c.id);
 }
 
-// Trae TODAS las filas de una consulta paginando con .range().
-//   PostgREST devuelve como MUCHO 1000 filas por request y el `.limit()` del cliente NO lo
-//   sube — medido contra la base: 1200 filas guardadas, `limit=5000` → 1000 devueltas. Por
-//   eso el viejo `.limit(20000)` de la audiencia no servía de nada.
-//   `makeQuery(from,to)` debe devolver una query FRESCA con `.range(from,to)` y un orden
-//   ESTABLE (un campo + `id` de desempate), o las páginas repiten y saltan filas.
-async function pageAll<T = any>(
-  makeQuery: (from: number, to: number) => any,
-  { pageSize = 1000, max = 50000 }: { pageSize?: number; max?: number } = {},
-): Promise<{ data: T[]; error: any }> {
-  const out: T[] = [];
-  let from = 0;
-  while (from < max) {
-    const { data, error } = await makeQuery(from, from + pageSize - 1);
-    if (error) return { data: out, error };
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-  return { data: out, error: null };
-}
 // Parte una lista de ids en trozos: un `.in()` con miles de ids arma una URL enorme.
 const enTrozos = <T,>(arr: T[], n: number): T[][] => {
   const out: T[][] = [];
