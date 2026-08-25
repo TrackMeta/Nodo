@@ -311,8 +311,25 @@ function renderCards(){
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
   });
 }
+// Meta solo admite minúsculas, números y guion bajo en el nombre de una plantilla. Un nombre
+// con mayúsculas, espacios o tildes NO PUEDE existir allá, así que registrarlo es siempre un
+// error de tipeo. Y al registrar se da por "aprobada" (esta pantalla asume que ya la
+// aprobaste en Meta), o sea que ese nombre imposible quedaba disponible en Campañas y
+// Secuencias y reventaba con TODOS los destinatarios (132001: la plantilla no existe).
+// Devuelve el nombre bueno, o null si hay que abortar.
+async function nombreValidoMeta(name){
+  if(/^[a-z0-9_]{1,512}$/.test(name)) return name;
+  const sug=name.toLowerCase().normalize("NFD").replace(new RegExp("[̀-ͯ]","g"),"")
+    .replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"").slice(0,512);
+  if(!sug){ toast("El nombre solo admite minúsculas, números y guion bajo (ej: recordatorio_pedido)",true); return null; }
+  const ok=await confirmDialog({ title:"Ese nombre no existe en Meta",
+    messageHtml:`Meta solo acepta <b>minúsculas, números y guion bajo</b>, así que «${esc(name)}» no puede ser el nombre de una plantilla aprobada.<br><br>¿La registro como <b>${esc(sug)}</b>?`,
+    confirmText:"Usar ese nombre" });
+  return ok ? sug : null;
+}
 async function createTpl(){
-  const name=await askText({title:"Registrar plantilla",message:"Debe coincidir EXACTAMENTE con el nombre aprobado en Meta.",label:"Nombre de la plantilla",placeholder:"Ej. remarketing_pago",confirmText:"Registrar"}); if(!name) return;
+  let name=await askText({title:"Registrar plantilla",message:"Debe coincidir EXACTAMENTE con el nombre aprobado en Meta.",label:"Nombre de la plantilla",placeholder:"Ej. remarketing_pago",confirmText:"Registrar"}); if(!name) return;
+  name=await nombreValidoMeta(name.trim()); if(!name) return;
   const folder=(Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none"&&Fbar.current!=="__reco")?Fbar.current:null;
   let { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING", folder }).select("id").single();
   if(error && /folder|column/.test(error.message)){ ({ data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING" }).select("id").single()); }
@@ -399,16 +416,7 @@ async function enviarMeta(){
   // espacios o tildes la rechaza — y el error que devuelve es técnico y en inglés, así que
   // uno se queda mirando la pantalla sin saber que el problema era el nombre. Se avisa
   // antes de mandarla y se ofrece el nombre ya corregido.
-  if(!/^[a-z0-9_]{1,512}$/.test(name)){
-    const sug=name.toLowerCase().normalize("NFD").replace(new RegExp("[\u0300-\u036f]","g"),"")
-      .replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"").slice(0,512);
-    if(!sug){ toast("El nombre solo admite minúsculas, números y guion bajo (ej: recordatorio_pedido)",true); return; }
-    const ok=await confirmDialog({ title:"El nombre no le sirve a Meta",
-      message:`Meta solo acepta minúsculas, números y guion bajo. ¿Lo cambio a «${sug}»?`,
-      confirmText:"Usar ese nombre" });
-    if(!ok) return;
-    name=sug; $("f_name").value=sug;
-  }
+  { const bueno=await nombreValidoMeta(name); if(!bueno) return; if(bueno!==name){ name=bueno; $("f_name").value=bueno; } }
   const btn=$("sendMetaBtn"), old=btn.textContent; btn.disabled=true; btn.textContent="Enviando…";
   // Meta EXIGE un valor de ejemplo por CADA {{N}} del cuerpo, o rechaza la plantilla. Una
   // plantilla hecha a mano no guarda `ejemplos` → antes se enviaba examples:[] y Meta la
