@@ -724,7 +724,11 @@ async function load(){
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
   const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR, admR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
-    supa.from("capi_events").select("event_name,value,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO),
+    // Solo se usa para CONTAR los Lead. Traer las filas era doblemente malo: PostgREST
+    // corta en 1000 y, sin .order(), esas 1000 son arbitrarias — el KPI no se quedaba
+    // "corto pero estable", salía caprichoso (podía decir 300 con 900 reales). Se cuenta
+    // en la base con head:true: exacto, sin tope y sin traer una sola fila.
+    supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").gte("created_at",fromISO).lt("created_at",toISO),
     // PAGINADO, no una sola request: PostgREST corta en 1000 filas y no avisa. Un rango con
     // más de 1000 pedidos dejaba TODOS los KPIs cortos (ventas, ganancia, ROAS, ROI) sin que
     // nada lo dijera. `ads_insights` es peor todavía: es una fila por anuncio Y por día, así
@@ -753,7 +757,7 @@ async function load(){
     const wk = wsR.data.stage==null ? "null" : wsR.data.stage;
     if(porStage[wk]!=null) porStage[wk]=Math.max(0, Number(porStage[wk])-1);
   }
-  const ev=evR.error?[]:(evR.data||[]);
+  const leadsCount=(evR&&!evR.error&&typeof evR.count==="number")?evR.count:0;
   // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
   // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
   const prods=prodR.error?[]:(prodR.data||[]);
@@ -799,7 +803,7 @@ async function load(){
   // llaman "cerradas"). Es el puente entre las tres pantallas.
   const cobradasFull=ventasOk.filter(O.esCerrado).length;
   const ticket=compras?vendido/compras:0;
-  const leads=ev.filter(e=>e.event_name==="Lead").length;
+  const leads=leadsCount;
   // "En la calle" es lo ya despachado sin cobrar: va como DESGLOSE de Por cobrar,
   // no como KPI aparte — está dentro de él y dos números que se solapan sin
   // decirlo confunden.

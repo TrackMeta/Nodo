@@ -665,23 +665,39 @@ async function loadConversations() {
   // Los archivados se conservan en state.convs (para contarlos y para el filtro
   // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.
   state.convs = (data||[]).filter(cv=>cv.contact && !cv.contact.bloqueado && cv.contact.wa_id!=="webchat-test");
-  // Recompra en curso: trae SOLO los pedidos vivos (pocos, una columna) y arma
-  // el set de contactos que tienen uno. En render, dorado + este set = recompra.
+  // Los dos mapas de acá abajo (recompra y entrega) SOLO se consultan contra las
+  // conversaciones que la bandeja tiene cargadas, así que se piden nada más para esos
+  // contactos. Antes se traían todos los pedidos vivos del canal entero: PostgREST corta
+  // en 1000 y, sin .order(), esas 1000 son arbitrarias — y como los "carrito" abandonados
+  // no se cierran nunca, con los meses el dorado de recompra y el filtro de entrega
+  // empezaban a fallar en silencio. Acotado a lo visible el resultado es exacto, y de
+  // paso la consulta es mucho más chica.
+  const idsVis = [...new Set(state.convs.map(cv=>cv.contact?.id).filter(Boolean))];
+  // Recompra en curso: solo importa en los que YA compraron (ver esRecompra).
+  // En render, dorado + este set = recompra.
   try {
-    const { data: ro } = await supa.from("orders").select("contact_id")
-      .eq("channel_id", state.channelId).in("estado", RECOMPRA_ESTADOS);
-    state.recompraSet = new Set((ro||[]).map(o=>o.contact_id));
+    const idsComprado = [...new Set(state.convs.filter(cv=>cv.contact?.stage==="comprado").map(cv=>cv.contact.id))];
+    const set = new Set();
+    for (const trozo of enTrozos(idsComprado)) {
+      const { data: ro } = await supa.from("orders").select("contact_id")
+        .eq("channel_id", state.channelId).in("estado", RECOMPRA_ESTADOS).in("contact_id", trozo);
+      (ro||[]).forEach(o=>set.add(o.contact_id));
+    }
+    state.recompraSet = set;
   } catch(_){ state.recompraSet = state.recompraSet || new Set(); }
   // Embudo de entrega · Provincia: mapa contact_id → grupo del estado ACTUAL de su
   // pedido de provincia (el más reciente). Alimenta el filtro y sus contadores.
   try {
     const estados = Object.keys(ENTREGA_ESTADO_K);
-    const { data: eo } = await supa.from("orders").select("contact_id,estado,shipping,created_at")
-      .eq("channel_id", state.channelId).in("estado", estados).order("created_at", { ascending: false });
     const m = new Map();
-    for (const o of (eo||[])) {
-      if ((o.shipping||{}).zona !== "provincia") continue; // solo provincia (agencia)
-      if (!m.has(o.contact_id)) m.set(o.contact_id, ENTREGA_ESTADO_K[o.estado]); // el más reciente gana
+    for (const trozo of enTrozos(idsVis)) {
+      const { data: eo } = await supa.from("orders").select("contact_id,estado,shipping,created_at")
+        .eq("channel_id", state.channelId).in("estado", estados).in("contact_id", trozo)
+        .order("created_at", { ascending: false });
+      for (const o of (eo||[])) {
+        if ((o.shipping||{}).zona !== "provincia") continue; // solo provincia (agencia)
+        if (!m.has(o.contact_id)) m.set(o.contact_id, ENTREGA_ESTADO_K[o.estado]); // el más reciente gana
+      }
     }
     state.entregaMap = m;
   } catch(_){ state.entregaMap = state.entregaMap || new Map(); }
@@ -717,6 +733,10 @@ async function loadConversations() {
     state.metaPendSet = pend;
     state.metaSalud = { total: adOrders.length, enviadas: sent.size };
   } catch(_){ state.metaPendSet = state.metaPendSet || new Set(); state.metaSalud = state.metaSalud || { total:0, enviadas:0 }; }
+  // Segundo control de generación: los mapas de arriba son varios awaits y el primero
+  // se hizo antes de ellos. Si cambiaste de bot en el medio, la carga VIEJA llegaba
+  // acá y pisaba los mapas (y repintaba) sobre la bandeja del bot nuevo.
+  if (gen!==state.loadGen) return;
   renderConversations();
 }
 
