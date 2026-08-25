@@ -1160,10 +1160,14 @@ function renderConversations(){
     const recomprando = esRecompra(c);
     const el = document.createElement("div");
     el.className = "conv" + (state.contactId === c.id ? " active" : "") + (bought ? " bought" : "");
-    // Origen anuncio (CTWA): verde si la ventana gratis de 72h sigue viva.
+    // Origen anuncio (CTWA): verde mientras la ventana de 72h siga viva. Acá NO dice "gratis"
+    // a propósito: para afirmarlo hay que comprobar que el negocio respondió dentro de las
+    // 24h del clic (así la abre Meta), y eso es una consulta POR CHAT — cara en una lista de
+    // 200. La promesa de "sin costo" se hace donde se decide gastar y sí está verificada: la
+    // barra del chat abierto y el modal de aviso al despachar. Acá solo se marca el origen.
     const fepViva = cv.window_type === "fep_72h" && cv.expira_at && new Date(cv.expira_at) > new Date();
     const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
-      + (fepViva?`<span class="idot fep">${icon("megaphone")} Anuncio · gratis</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
+      + (fepViva?`<span class="idot fep">${icon("megaphone")} Anuncio · 72h</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
       + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
       + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'')
       + (recomprando?`<span class="idot recompra">${icon("refresh")} Recompra</span>`:'');
