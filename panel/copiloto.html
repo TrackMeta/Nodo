@@ -154,8 +154,9 @@ async function load(){
   // Pedidos con un pago de VENTA EXTRA pendiente de aprobar: ya están
   // 'confirmada' (fuera de TODOS), así que se traen aparte y se suman.
   try{
-    const { data:ex }=await supa.from("orders").select(sel)
-      .eq("channel_id",st.channelId).eq("shipping->>extra_pendiente","true").order("created_at",{ascending:true});
+    const { data:ex }=await pageAll((f,t)=>supa.from("orders").select(sel)
+      .eq("channel_id",st.channelId).eq("shipping->>extra_pendiente","true")
+      .order("created_at",{ascending:true}).order("id",{ascending:true}).range(f,t));
     if(ex&&ex.length){ const ids=new Set(st.list.map(o=>o.id)); ex.forEach(o=>{ if(!ids.has(o.id)) st.list.push(o); }); }
   }catch(_){ /* sin la marca aún */ }
 
@@ -164,11 +165,27 @@ async function load(){
   if(ids.length){
     // Último comprobante entrante por contacto (respaldo si el pedido no lo guardó).
     // Por trozos: la lista de ids viaja en la URL y el servidor la rechaza pasados ~600.
-    for(const trozo of enTrozos(ids)){
-      const { data:msgs }=await supa.from("messages").select("contact_id,content,ts")
-        .eq("channel_id",st.channelId).in("contact_id",trozo).eq("direction","in").eq("type","image")
-        .order("ts",{ascending:false}).limit(400);
-      (msgs||[]).forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+    // De cada cliente solo queremos su ÚLTIMA imagen, pero el tope de filas es del lote
+    // entero, no por cliente: bastaba UN cliente con muchas fotos para llevarse el cupo y
+    // dejar al resto del lote sin comprobante, como si nunca hubieran mandado nada. Se
+    // insiste sacando de la búsqueda a los que ya tienen la suya, así el cupo de la vuelta
+    // siguiente se reparte entre los que faltan. (Mismo arreglo que en compras.html — esta
+    // era la copia que se había quedado atrás.)
+    for(const trozo of enTrozos(ids,100)){
+      let pend=trozo.filter(id=>!st.imgs[id]);
+      for(let vuelta=0; vuelta<12 && pend.length; vuelta++){
+        const { data:msgs, error }=await supa.from("messages").select("contact_id,content,ts")
+          .eq("channel_id",st.channelId).in("contact_id",pend).eq("direction","in").eq("type","image")
+          .order("ts",{ascending:false}).limit(500);
+        if(error){ console.warn("[copiloto] comprobantes:",error.message); break; }
+        if(!msgs || !msgs.length) break; // a los que faltan no les queda ninguna imagen
+        msgs.forEach(m=>{ const u=m.content&&m.content.media_url; if(u&&!st.imgs[m.contact_id]) st.imgs[m.contact_id]=u; });
+        const antes=pend.length;
+        pend=pend.filter(id=>!st.imgs[id]);
+        // Si una vuelta no resolvió a nadie, insistir traería las MISMAS filas (pasa cuando
+        // esas imágenes no tienen URL guardada). Cortar acá evita dar vueltas en vano.
+        if(pend.length===antes) break;
+      }
     }
     // Los ⚠️ que dejó el extractor (dirección imprecisa, falta apellido…).
     try{
