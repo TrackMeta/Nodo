@@ -224,7 +224,12 @@ async function processInbound(
     ultimo_mensaje_at: new Date().toISOString(),
     ultimo_mensaje_cliente_at: new Date().toISOString(),
   };
-  if (sender.profileName) patch.nombre = sender.profileName;
+  // El nombre del perfil de WhatsApp NO va en el upsert: pisaba el que el dueño hubiera
+  // puesto a mano. Uno renombra al contacto en el panel para reconocerlo ("Ana · mayorista",
+  // o corrige "ana" por su nombre real) y al siguiente mensaje del cliente se revertía solo,
+  // en silencio. Mismo criterio que ya usa el panel al crear un contacto repetido: no
+  // sobrescribir lo que hay. Se aplica más abajo SOLO si el contacto aún no tiene nombre.
+  const nombrePerfil = sender.profileName || null;
   // BSUID / username / número real (migración 0062). `telefono` se setea SOLO
   // cuando el número llega (no se pisa con null): telefono==null ⇒ cliente sin
   // número ⇒ el flujo físico se lo pide. El upsert de abajo es defensivo por si
@@ -259,6 +264,14 @@ async function processInbound(
       .select("id, bot_activo, fep_hasta").single());
   }
   if (upErr || !contact) throw new Error(`upsert contact: ${upErr?.message ?? "sin contacto"}`);
+
+  // El nombre del perfil de WhatsApp solo se pone si el contacto TODAVÍA no tiene uno: sirve
+  // para estrenar el contacto, no para revertir lo que el dueño escribió. Best-effort — si
+  // falla, el mensaje se procesa igual (el nombre es lo de menos frente a atender al cliente).
+  if (nombrePerfil) {
+    await db.from("contacts").update({ nombre: nombrePerfil })
+      .eq("id", contact.id).or("nombre.is.null,nombre.eq.").then(() => {}, () => {});
+  }
 
   // Asegurar la conversación y refrescar la ventana ANTES de insertar el
   // mensaje (el trigger de no_leidos necesita la fila). La ventana efectiva
