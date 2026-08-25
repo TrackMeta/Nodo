@@ -679,8 +679,13 @@ async function loadConversations() {
     const idsComprado = [...new Set(state.convs.filter(cv=>cv.contact?.stage==="comprado").map(cv=>cv.contact.id))];
     const set = new Set();
     for (const trozo of enTrozos(idsComprado)) {
-      const { data: ro } = await supa.from("orders").select("contact_id")
-        .eq("channel_id", state.channelId).in("estado", RECOMPRA_ESTADOS).in("contact_id", trozo);
+      // pageAll, no la consulta pelada: 300 contactos por trozo × varios pedidos cada
+      // uno pasa de las 1000 filas que devuelve PostgREST, y el corte es MUDO — la
+      // marca de recompra simplemente no aparecía en parte de la lista. Orden por `id`
+      // (único) para que la paginación no repita ni saltee filas.
+      const { data: ro } = await pageAll((f,t)=>supa.from("orders").select("contact_id")
+        .eq("channel_id", state.channelId).in("estado", RECOMPRA_ESTADOS).in("contact_id", trozo)
+        .order("id").range(f,t));
       (ro||[]).forEach(o=>set.add(o.contact_id));
     }
     state.recompraSet = set;
@@ -691,9 +696,12 @@ async function loadConversations() {
     const estados = Object.keys(ENTREGA_ESTADO_K);
     const m = new Map();
     for (const trozo of enTrozos(idsVis)) {
-      const { data: eo } = await supa.from("orders").select("contact_id,estado,shipping,created_at")
+      // Ídem: paginado, y con `id` como desempate del orden. Sin un orden ÚNICO la
+      // paginación puede repetir o saltear filas cuando varios pedidos comparten
+      // created_at, y acá el orden decide cuál pedido "gana" por contacto.
+      const { data: eo } = await pageAll((f,t)=>supa.from("orders").select("contact_id,estado,shipping,created_at")
         .eq("channel_id", state.channelId).in("estado", estados).in("contact_id", trozo)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }).order("id", { ascending: false }).range(f,t));
       for (const o of (eo||[])) {
         if ((o.shipping||{}).zona !== "provincia") continue; // solo provincia (agencia)
         if (!m.has(o.contact_id)) m.set(o.contact_id, ENTREGA_ESTADO_K[o.estado]); // el más reciente gana

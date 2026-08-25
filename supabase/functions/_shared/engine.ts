@@ -8120,6 +8120,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
     }
+    // Mandó su UBICACIÓN de WhatsApp. Si compartió un lugar con nombre/dirección, eso
+    // ya viaja como texto y el extractor lo pesca solo. Si mandó un pin suelto, lo que
+    // llega son coordenadas: el courier no reparte con eso. Sin decírselo, la IA leía
+    // "[ubicación] -12.09, -77.03" y o lo ignoraba o daba la dirección por recibida.
+    if (String(ctx.last_input_type ?? "") === "location" && !/[a-záéíóúñ]{3}/i.test(String(ctx.last_input ?? "").replace(/^\[ubicación\]\s*/i, ""))) {
+      parts.push("## Te mandó su ubicación\nCompartió un pin de WhatsApp (solo coordenadas), no una dirección escrita. " +
+        "Agradéceselo y pídele la dirección en texto — calle y número, y una referencia — porque el courier no puede repartir con un pin. " +
+        "NO des su dirección por recibida ni la inventes a partir del pin.");
+    }
     // Falta ELEGIR la opción (hay varias con precio y el cliente no eligió): sin
     // opción no hay precio y el pedido saldría en S/0. Prioridad sobre "cierra": la
     // IA primero consigue la elección.

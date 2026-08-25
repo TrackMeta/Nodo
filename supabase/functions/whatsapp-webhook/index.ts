@@ -498,12 +498,24 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
     }
     case "button":
       return { text: msg.button?.text ?? "", type: "button", content: { text: msg.button?.text } };
-    case "location":
+    case "location": {
+      // Compartir la ubicación es de lo más normal para coordinar un delivery, y
+      // llegaba como el texto pelado "[ubicación]": el extractor de dirección no
+      // sacaba nada y la IA le volvía a pedir la dirección que el cliente cree que
+      // ya dio. WhatsApp manda `name`/`address` cuando comparte un LUGAR (no un
+      // pin suelto) y se estaban tirando — eso sí es una dirección de verdad, y así
+      // el extractor la pesca igual que si la hubiera escrito. Sin lugar, van las
+      // coordenadas: no son una dirección, pero al menos quedan a la vista del
+      // operador en el chat en vez de perderse.
+      const L = msg.location ?? {};
+      const lugar = [L.name, L.address].map((x: unknown) => String(x ?? "").trim()).filter(Boolean).join(" · ");
+      const coords = L.latitude != null && L.longitude != null ? `${L.latitude}, ${L.longitude}` : "";
       return {
-        text: "[ubicación]",
+        text: lugar ? `[ubicación] ${lugar}` : coords ? `[ubicación] ${coords}` : "[ubicación]",
         type: "location",
-        content: { lat: msg.location?.latitude, lng: msg.location?.longitude },
+        content: { lat: L.latitude, lng: L.longitude, name: L.name ?? null, address: L.address ?? null },
       };
+    }
     default:
       return { text: `[${t}]`, type: "system", content: { raw_type: t } };
   }
