@@ -782,13 +782,28 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
       info.restante = m > 72 * 60 ? "" : (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
     }
   } catch (_) { /* sin conversación aún */ }
-  // FEP (Free Entry Point): si el cliente llegó por un anuncio, tiene 72h en las
-  // que TODO —incluida la plantilla— es GRATIS. Se muestra para que, al despachar
-  // fuera de la ventana de 24h, se vea que mandar la plantilla no cuesta.
+  // FEP (Free Entry Point): si el cliente llegó por un anuncio hay 72h en las que la
+  // PLANTILLA no se cobra (no da texto libre: para eso está la ventana de 24h de arriba).
+  // Se muestra para que, al despachar fuera de esa ventana, se vea que avisarle no cuesta.
+  //
+  // Ojo con la letra chica: esa ventana la abre Meta cuando el NEGOCIO responde dentro de
+  // las 24h siguientes al clic, no por el solo hecho de que el cliente escriba. Acá se marca
+  // al recibir el mensaje, así que antes de decir "gratis" se comprueba que esa respuesta
+  // exista: si nadie contestó y ya pasaron las 24h, la ventana nunca se abrió y la plantilla
+  // SÍ se cobra. Prometer gratis ahí es hacerte gastar creyendo que no gastas.
   try {
     const { data: ct } = await supa.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
     const f = ct?.fep_hasta ? new Date(ct.fep_hasta).getTime() : 0;
-    if (f > Date.now()) {
+    let abierto = f > Date.now();
+    if (abierto) {
+      const inicioFep = f - 72 * 3600 * 1000;
+      const { count } = await supa.from("messages").select("id", { count: "exact", head: true })
+        .eq("contact_id", contactId).eq("direction", "out")
+        .gte("ts", new Date(inicioFep).toISOString())
+        .lte("ts", new Date(inicioFep + 24 * 3600 * 1000).toISOString());
+      abierto = (count ?? 0) > 0;
+    }
+    if (abierto) {
       info.fepActivo = true;
       const m = Math.floor((f - Date.now()) / 60000);
       // Mismo tope que la ventana: el FEP dura 72 h. Más que eso es dato anómalo.

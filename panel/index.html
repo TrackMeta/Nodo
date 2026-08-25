@@ -1804,7 +1804,23 @@ async function updateWindow() {
   const now = Date.now();
   const svcEnd = data?.ultimo_mensaje_cliente_at ? new Date(data.ultimo_mensaje_cliente_at).getTime() + 24*3.6e6 : 0;
   const fepEnd = data?.fep_hasta ? new Date(data.fep_hasta).getTime() : 0;
-  const svcOpen = svcEnd > now, fepOpen = fepEnd > now;
+  const svcOpen = svcEnd > now;
+  // La ventana gratis del anuncio NO se abre porque el cliente escriba: Meta la abre cuando
+  // el NEGOCIO le responde dentro de las 24h siguientes. Acá se marca al recibir el mensaje
+  // (que es lo que sabemos en ese momento), así que antes de prometer "gratis" se comprueba
+  // que esa respuesta exista de verdad. Si nadie contestó y ya pasaron las 24h, esa ventana
+  // nunca se abrió y la plantilla SÍ se cobra — decir lo contrario es hacerte gastar
+  // creyendo que no gastas. La comprobación es un conteo con índice y solo al abrir el chat.
+  let fepOpen = fepEnd > now;
+  if (fepOpen) {
+    const inicioFep = fepEnd - 72*3.6e6;          // el clic en el anuncio
+    const { count } = await supa.from("messages").select("id", { count:"exact", head:true })
+      .eq("contact_id", cid).eq("direction","out")
+      .gte("ts", new Date(inicioFep).toISOString())
+      .lte("ts", new Date(inicioFep + 24*3.6e6).toISOString());
+    if (cid !== state.contactId) return;          // cambiaste de chat mientras contaba
+    fepOpen = (count ?? 0) > 0;
+  }
   const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>0?`${h}h ${m}m`:`${m}m`; };
   // Chip 1 — servicio 24h.
   const svcChip = svcOpen
