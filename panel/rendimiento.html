@@ -479,7 +479,14 @@ function kpiMini(k,v,c){ return `<div class="kpi"><div class="k"><span class="kd
 // ── Gráficos SVG (sin librerías) ──
 const CW=440, CH=150, PX=6, PB=18;
 function xFor(i,n){ return PX + (CW-2*PX) * (n<=1?0.5:i/(n-1)); }
+// Serie vacía → lienzo vacío. Sin esta guarda, `S[S.length-1]` es `S[-1]` (undefined) y la
+// línea siguiente le pide una propiedad: revienta. Y como el gráfico se arma DENTRO del HTML
+// de la pantalla, esa excepción no rompe solo el dibujo — deja el detalle entero en blanco.
+// Hoy no se puede llegar acá desde la interfaz (el selector de fechas invierte el rango si
+// eliges el día final antes que el inicial), pero el costo de la guarda es una línea y el de
+// equivocarse es una pantalla vacía sin explicación.
 function chartBarsLine(S,fBar,fLine){
+  if(!S || !S.length) return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/></svg>`;
   const n=S.length; const maxB=Math.max(...S.map(fBar),1), maxL=Math.max(...S.map(fLine),1);
   const bw=(CW-2*PX)/n*0.6;
   const bars=S.map((d,i)=>{ const h=(CH-PB)*(fBar(d)/maxB); const x=xFor(i,n)-bw/2; return `<rect x="${x.toFixed(1)}" y="${(CH-PB-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--brand)" opacity=".85"/>`; }).join("");
@@ -488,6 +495,7 @@ function chartBarsLine(S,fBar,fLine){
   return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/>${bars}<polyline points="${pts}" fill="none" stroke="var(--green)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.2" fill="var(--green)"/></svg>`;
 }
 function chartTwoLines(S,fA,fB){
+  if(!S || !S.length) return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/></svg>`; // ver chartBarsLine
   const n=S.length; const mx=Math.max(...S.map(fA),...S.map(fB),1);
   const line=(f,col)=>{ const pts=S.map((d,i)=>`${xFor(i,n).toFixed(1)},${(CH-PB-(CH-PB)*(f(d)/mx)).toFixed(1)}`).join(" "); const li=S.length-1; return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${xFor(li,n).toFixed(1)}" cy="${(CH-PB-(CH-PB)*(f(S[li])/mx)).toFixed(1)}" r="3.2" fill="${col}"/>`; };
   return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/>${line(fA,"var(--amber)")}${line(fB,"var(--green)")}</svg>`;
