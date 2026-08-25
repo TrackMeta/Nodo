@@ -471,6 +471,27 @@ export function enTrozos(arr, n = 300) {
   for (let i = 0; i < (arr || []).length; i += n) out.push(arr.slice(i, i + n));
   return out;
 }
+// Freno para el realtime de las pantallas cuya carga es CARA (las que se traen el
+// histórico completo del canal: Directo, Contactos, Embudo). El realtime de `contacts`
+// se dispara con CADA mensaje que entra, porque cada mensaje toca `ultimo_mensaje_at`.
+// Un handler que llamaba a recargar directo dejaba al panel bajando todo una y otra vez
+// mientras el bot tuviera movimiento — y también en una pestaña de fondo que nadie mira.
+// Devuelve la función que se le pasa al `.on(...)`: agrupa las ráfagas en una sola carga,
+// respeta un mínimo entre cargas, y con la pestaña oculta no hace nada (deja la recarga
+// pendiente y la ejecuta al volver, así no te encuentras datos viejos).
+// `.marcar()` avisa de una carga hecha por otro camino (la inicial, o cambiar de bot).
+export function recargaConFreno(cargar, { minEntre = 8000, esperaMin = 1500 } = {}) {
+  let timer = null, ultima = 0, pendiente = false;
+  const disparar = () => {
+    if (document.hidden) { pendiente = true; return; }
+    clearTimeout(timer);
+    const espera = Math.max(esperaMin, minEntre - (Date.now() - ultima));
+    timer = setTimeout(() => { ultima = Date.now(); pendiente = false; cargar(); }, espera);
+  };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && pendiente) disparar(); });
+  disparar.marcar = () => { ultima = Date.now(); };
+  return disparar;
+}
 // Se resetea al cambiar de página (teardown): la nueva vuelve a opt-in si toca.
 function _resetGuard() { _guardSel = null; _dirty = false; }
 // true = se puede salir; pregunta solo si hay cambios sin guardar.

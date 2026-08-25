@@ -212,7 +212,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos, recargaConFreno } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -274,11 +274,15 @@ async function boot(){
   await load();
 }
 
+// Ver recargaConFreno en shell.js: esta pantalla se trae los contactos del canal, y el
+// realtime de `contacts` se dispara con cada mensaje que entra. Sin freno, el bot con
+// movimiento dejaba el panel recargando todo cada 600 ms, incluso en segundo plano.
+const recargarPronto=recargaConFreno(()=>load());
 function subscribe(){
   try{ st.rt && supa.removeChannel(st.rt); }catch(_){}
-  let t; st.rt=supa.channel("nodo-contactos-"+st.channelId).on("postgres_changes",
+  st.rt=supa.channel("nodo-contactos-"+st.channelId).on("postgres_changes",
     { event:"*", schema:"public", table:"contacts", filter:`channel_id=eq.${st.channelId}` },
-    ()=>{ clearTimeout(t); t=setTimeout(load,600); }).subscribe();
+    recargarPronto).subscribe();
 }
 
 async function load(){

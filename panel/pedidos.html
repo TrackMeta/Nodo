@@ -189,7 +189,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice, norm } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
@@ -215,6 +215,10 @@ const KB_PROV=[
   ["flag","Finalizados",["recogido","no_recogido","cancelado"]],
 ];
 const FIS_STATES=new Set([...KB_LIMA,...KB_PROV].flatMap(c=>c[2]));
+// Estados EN CURSO (todo lo que no es la columna "Finalizados"). Son los pedidos que
+// todavía tienes que mover, y por eso ninguno puede quedar fuera del tablero por viejo.
+const KB_FINALES=new Set(["entregado_cobrado","rechazado","cancelado","recogido","no_recogido"]);
+const KB_ACTIVOS=[...FIS_STATES].filter(e=>!KB_FINALES.has(e));
 
 // Estados que se resuelven con TU decisión en "Pagos por validar" (validar un pago):
 // en el tablero mostramos un salto en vez de un avance directo, para que las
@@ -448,15 +452,35 @@ async function load(){
   }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   st.list=data||[]; render();
-  // El tablero carga los 1000 pedidos MÁS RECIENTES (tope de PostgREST: pedir más no sirve
-  // de nada, corta igual). Eso es razonable para una vista operativa, pero callarlo no: con
-  // más de 1000 quedaban tarjetas fuera del tablero sin que nada lo dijera, y no puedes mover
-  // un pedido que no ves. Se avisa con el número real, que sale de un count aparte.
+  // RESCATE de los pedidos en curso que quedaron fuera del corte por fecha. El tablero
+  // trae los 1000 más recientes, y eso dejaba fuera justo los que más importa ver: el
+  // pedido que se atascó (el que lleva 40 días "en agencia" porque el cliente no fue a
+  // recoger). Como el corte es por fecha, ese pedido desaparecía del tablero para siempre
+  // y no se podía mover; los filtros tampoco lo rescataban, porque filtran la lista ya
+  // cortada. Los en curso son pocos por definición, así que se traen TODOS aparte.
+  if(!error && (data||[]).length>=1000){
+    try{
+      const masViejo=data[data.length-1]?.created_at;
+      const extra=masViejo ? await pageAll((f,t)=>supa.from("orders").select(full)
+        .eq("channel_id",st.channelId).in("estado",KB_ACTIVOS).lt("created_at",masViejo)
+        .order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)) : [];
+      if(gen!==st.loadGen) return;
+      if(extra?.length){
+        const vistos=new Set(st.list.map(o=>o.id));
+        st.list=[...st.list, ...extra.filter(o=>!vistos.has(o.id))];
+        render();
+      }
+    }catch(_){ /* el tablero ya está pintado: el rescate es un extra, no puede tumbarlo */ }
+  }
+  // El tablero carga los 1000 pedidos más recientes (tope de PostgREST: pedir más no sirve
+  // de nada, corta igual) MÁS el rescate de arriba. Lo que queda fuera son finalizados
+  // antiguos, que no se mueven, pero callarlo tampoco corresponde: se avisa con el número
+  // real, que sale de un count aparte.
   try{
     const { count } = await supa.from("orders").select("id",{count:"exact",head:true}).eq("channel_id",st.channelId);
     const el=document.getElementById("pedTrunc");
-    if(el && typeof count==="number" && (data||[]).length>=1000 && count>(data||[]).length){
-      el.textContent=`⚠ Mostrando los ${(data||[]).length} pedidos más recientes de ${count}. Usa Compras o los filtros para ver los demás.`;
+    if(el && typeof count==="number" && (data||[]).length>=1000 && count>st.list.length){
+      el.textContent=`Mostrando ${st.list.length} de ${count} pedidos. Los que están en curso salen todos, por viejos que sean; lo que no cabe son finalizados antiguos, y esos los ves en Compras.`;
       el.style.display="";
     } else if(el){ el.style.display="none"; }
   }catch(_){ /* el aviso es informativo: si el count falla, el tablero funciona igual */ }

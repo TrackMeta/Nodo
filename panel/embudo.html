@@ -182,7 +182,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, pageAll } from "./shell.js";
+import { supa, mountShell, toast, icon, pageAll, recargaConFreno } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima } from "./date-range.js";
@@ -598,12 +598,15 @@ function renderProductos(){
   }).join("");
 }
 
+// Ver recargaConFreno en shell.js: el embudo recalcula sobre el histórico del canal, y el
+// realtime de `contacts` se dispara con cada mensaje que entra. Sin freno, el bot con
+// movimiento dejaba el panel recargando todo cada 600 ms, incluso en segundo plano.
+const recargarPronto=recargaConFreno(()=>load());
 function subscribe(){
   if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} }
-  let t=null;
   st.rt=supa.channel("nodo-embudo-"+st.channelId).on("postgres_changes",
     { event:"*", schema:"public", table:"contacts", filter:`channel_id=eq.${st.channelId}` },
-    ()=>{ clearTimeout(t); t=setTimeout(load,600); }).subscribe();
+    recargarPronto).subscribe();
 }
 boot();
 </script>

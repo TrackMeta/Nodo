@@ -285,7 +285,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, askChoice, norm, icon, pageAll } from "./shell.js";
+import { supa, mountShell, toast, askChoice, norm, icon, pageAll, recargaConFreno } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable, esCampoInterno } from "./contact-extras.js";
 import { mountDateRange, computePreset, ymd, ymdLima } from "./date-range.js?v=3";
 import * as O from "./orders.js";
@@ -358,14 +358,24 @@ async function loadTeam(){
   }catch(_){}
 }
 
+// La cola trae TODOS los contactos del canal y TODOS sus pedidos: así está pensada (es la
+// lista de a quién llamar, no una vista de los últimos). Eso la hace una carga cara, y el
+// realtime la disparaba a los 700 ms de cualquier cambio en `contacts` — una tabla que se
+// toca en CADA mensaje que entra (ultimo_mensaje_at). Con el bot con movimiento, tener esta
+// pantalla abierta dejaba al panel recargando el histórico entero una y otra vez, incluso
+// en una pestaña de fondo que nadie estaba mirando. Tres frenos: nada de recargar en
+// segundo plano (queda pendiente y se hace al volver), un mínimo entre recargas, y una
+// espera inicial más larga para que una ráfaga de mensajes cuente como una sola.
+const recargarPronto=recargaConFreno(()=>load());
 function subscribe(){
   try{ st.rt && supa.removeChannel(st.rt); }catch(_){}
-  let t; st.rt=supa.channel("nodo-directo-"+st.channelId).on("postgres_changes",
+  st.rt=supa.channel("nodo-directo-"+st.channelId).on("postgres_changes",
     { event:"*", schema:"public", table:"contacts", filter:`channel_id=eq.${st.channelId}` },
-    ()=>{ clearTimeout(t); t=setTimeout(load,700); }).subscribe();
+    recargarPronto).subscribe();
 }
 
 async function load(){
+  recargarPronto.marcar(); // cuenta también la carga inicial y la de cambiar de bot
   const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId;
   const COLS="id,nombre,wa_id,stage,source,ad_id,ctwa_clid,directo,memoria_ia,created_at,ultimo_mensaje_at,product_id,product:products(nombre,emoji),conv:conversations(archivada)";
   let csRes=await pageAll((f,t)=>supa.from("contacts").select(COLS).eq("channel_id",forChannel).order("ultimo_mensaje_at",{ascending:false,nullsFirst:false}).order("id",{ascending:false}).range(f,t),{max:2000});
