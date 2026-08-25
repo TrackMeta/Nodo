@@ -8526,7 +8526,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                     extra_pendiente: true, extra_comprobante: url,
                     extra_monto_leido: run.vars.pago_monto ?? montoX,
                     extra_operacion: run.vars.pago_operacion ?? null,
-                    extra_ok_ia: true, extra_label: cfg._extra_label ?? "Venta extra",
+                    // NO fijo en true: este flag pinta el semáforo verde "La IA lo leyó y
+                    // cuadra" en Pagos por validar, justo al lado del motivo de la duda.
+                    // Si el extra llegó acá porque el monto NO cuadra, decir "cuadra" es
+                    // empujar al operador a aprobar de un toque algo que hay que mirar.
+                    extra_ok_ia: !extraMontoDudoso, extra_label: cfg._extra_label ?? "Venta extra",
                   },
                   updated_at: new Date().toISOString(),
                 }).eq("id", oid);
@@ -8546,12 +8550,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // Con qué app pagó → lo usa el conciliador para no marcar como
                 // sospechosa una venta que se cobró por otro banco.
                 digital_metodo: run.vars.pago_metodo ?? null,
-                digital_ok_ia: true,
+                // Ídem: el semáforo tiene que decir la verdad. Medido en vivo — un pago de
+                // S/50 por un curso de S/99 se mostraba como "La IA lo leyó y cuadra · leyó
+                // S/ 50" y una línea más abajo "el monto no calza con ninguna": dos frases
+                // seguidas que se contradicen, en la pantalla donde se decide sobre plata.
+                // Verde solo cuando la única razón de venir a manual es que TÚ lo pediste
+                // (modo manual) o que faltó el nº de operación; si el monto es dudoso, no.
+                digital_ok_ia: !(sobrepagoSospechoso || montoIlegible || precioSinResolver),
                 // Freno (Capa 1): nota para que el humano revise el sobrepago sospechoso.
                 ...(sobrepagoSospechoso ? { digital_revisar: `El bot leyó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto} para un precio de ${simboloMoneda(ctx.moneda as string)}${amount}. Revisa el comprobante antes de aprobar.` } : {}),
                 // No se supo qué presentación compró (ni por la charla ni por el monto):
                 // el humano tiene que fijarla antes de aprobar, o la entrega saldría vacía.
                 ...(precioSinResolver ? { digital_revisar: `No se pudo identificar qué presentación compró: pagó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto ?? "?"} y el monto no calza con ninguna. Confirma la presentación (y el monto) antes de aprobar y entregar.` } : {}),
+                // El monto no se pudo LEER del comprobante. Era el único de los tres frenos
+                // que no escribía motivo: el pago aparecía en la cola sin decir por qué, y
+                // ahora que el semáforo ya no miente ("La IA no lo dio por bueno") quedaría
+                // en rojo sin explicación. El operador tiene que abrir la imagen y mirarlo.
+                ...(montoIlegible ? { digital_revisar: "No se pudo leer el monto del comprobante. Ábrelo y confirma cuánto pagó antes de aprobar." } : {}),
                 ...(run.vars._pago_abonos ? { digital_abonos: run.vars._pago_abonos } : {}),
               };
               // Atribución congelada desde que nace el pedido (ver crearPedido):
