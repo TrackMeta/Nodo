@@ -2261,6 +2261,15 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // plano llega a 4096). Pasarse hace que Meta rechace el mensaje ENTERO (400) y el cliente
   // no reciba nada. Se recorta solo en el caso interactivo.
   if (isInteractive && body.length > 1024) body = body.slice(0, 1024);
+  // El texto plano tiene tope 4096. Pasarse no es teórico: una respuesta larga de la IA, o
+  // una burbuja con varias variables que expanden mucho, llega ahí. Y falla de la peor
+  // manera: Meta rechaza el mensaje ENTERO con un 400 y el cliente se queda sin NADA, o sea
+  // que se pierde todo el mensaje por unos caracteres de más. Recortado recibe casi todo.
+  // El corte busca el último espacio para no partir una palabra por la mitad.
+  else if (body.length > 4096) {
+    const corte = body.lastIndexOf(" ", 4096);
+    body = body.slice(0, corte > 3500 ? corte : 4096);
+  }
   const content: any = {};
   if (body) content.text = body;
   if (bubble.media_id) content.media_id = bubble.media_id;

@@ -42,8 +42,23 @@ export async function sendMedia(
 ): Promise<string> {
   const media: Record<string, unknown> = { link };
   // El audio no admite caption en la Cloud API.
-  if (caption && kind !== "audio") media.caption = caption;
-  if (kind === "document" && filename) media.filename = filename;
+  // El pie de foto tiene tope 1024 en Meta y pasarse tira el envío ENTERO con un 400: no
+  // llega la foto del producto, no solo el texto de más. Como el pie sale de una burbuja
+  // con variables, es fácil pasarse sin darse cuenta. Se recorta acá (y no en cada sitio
+  // que llama) para que valga para todos. telegram.ts ya lo hacía; esta era la gemela que
+  // se quedó sin el recorte.
+  if (caption && kind !== "audio") media.caption = caption.slice(0, 1024);
+  // El nombre de archivo también tiene tope. Se recorta por el medio para que la extensión
+  // sobreviva: sin ella, al cliente le llega un archivo que su teléfono no sabe abrir.
+  if (kind === "document" && filename) {
+    let fn = filename;
+    if (fn.length > 240) {
+      const p = fn.lastIndexOf(".");
+      const ext = p > 0 && fn.length - p <= 10 ? fn.slice(p) : "";
+      fn = fn.slice(0, 240 - ext.length) + ext;
+    }
+    media.filename = fn;
+  }
   return await postMessage(phoneNumberId, accessToken, {
     messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
     type: kind, [kind]: media,
@@ -67,7 +82,10 @@ export async function sendButtons(
   return await postMessage(phoneNumberId, accessToken, {
     messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
     type: "interactive",
-    interactive: { type: "button", body: { text: bodyText || "…" }, action },
+    // El cuerpo de un interactivo tope 1024 (el motor ya lo recorta antes de llegar acá;
+    // esto es la red para que un futuro sitio que llame a sendButtons no reviva el fallo:
+    // pasarse hace que Meta rechace el mensaje entero y el cliente no reciba nada).
+    interactive: { type: "button", body: { text: (bodyText || "…").slice(0, 1024) }, action },
   });
 }
 
@@ -87,7 +105,11 @@ export async function sendTemplate(
   // el motor pre-resuelve sus params con resolve() → llegan como literales sin {{}}, el
   // regex de resolveP no matchea y el \n pasa intacto. Colapsar acá, en el punto ÚNICO de
   // paso, blinda TODAS las rutas (motor, campañas, secuencias, avisos, envío manual).
-  const clean = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim();
+  // El recorte va junto al colapso de espacios y por el mismo motivo: cada parámetro tiene
+  // un tope de 1024 y pasarse tumba la plantilla ENTERA. Un {{producto}} o un {{motivo}}
+  // largo dejaba sin enviar todo el mensaje, que además es de los que salen fuera de las
+  // 24h (recordatorios, avisos de pedido) — justo los que no se pueden reintentar gratis.
+  const clean = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 1024);
   const components: any[] = [];
   if (headerParams.length) {
     components.push({ type: "header", parameters: headerParams.map((t) => ({ type: "text", text: clean(t) })) });
