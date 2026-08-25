@@ -38,9 +38,18 @@ async function marcarTocoMkt(contactId: string) {
     .eq("id", contactId).then(() => {}, () => {}); // best-effort (columna 0056)
 }
 
-// Cuántas conversaciones se despiertan a la vez. Bajo a propósito: cada una puede llamar a
+// Cuántas conversaciones se despiertan a la vez. MEDIDO (2026-08-24, ver prueba de carga):
+//   5 en paralelo → ~207 ms por conversación
+//  10 en paralelo → ~150-207 ms (inconsistente, no mejora de forma fiable)
+//  20 en paralelo → ~243 ms — PEOR: la base se satura y cada operación tarda más
+// O sea que subir este número NO amplía la capacidad; con 20 la empeora. El cuello no es
+// este paralelismo: es la cantidad de consultas que hace cada conversación (una decena de
+// viajes de ida y vuelta a la base, ~1 s en total, que entre 5 dan los ~200 ms). Para
+// ampliar de verdad hay que bajar ese número de consultas o repartir el cron en varias
+// funciones — no tocar esta constante. Se queda en 5, que es el valor estable.
+// Bajo a propósito además porque cada una puede llamar a
 // la IA, así que esto acota las llamadas simultáneas al proveedor (y su límite de tasa) y la
-// carga sobre la base. Subirlo rinde más por tick, pero conviene medir antes de tocarlo.
+// carga sobre la base y sobre el límite de tasa del proveedor de IA.
 const CONC_WAKE = 5;
 // Suscripciones de remarketing que se procesan a la vez. Mismo criterio: cada una puede
 // terminar en un envío por red. Ojo — subir esto SIN el "una por contacto por tick" de abajo
