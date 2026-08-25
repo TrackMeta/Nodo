@@ -4145,6 +4145,22 @@ export function mensajeEstadoDefault(
   return null;
 }
 
+// El cliente de provincia que paga el TOTAL de una (en vez del adelanto): el motor
+// lo registra bien —saldo 0, `pagado_total`, bitácora "nada por cobrar al recoger"—
+// pero al CLIENTE solo le llegaba el mensaje fijo del flujo, "¡Adelanto recibido! Ya
+// empiezo a preparar tu despacho", que suena exactamente a que todavía debe el saldo
+// en la agencia. Medido en vivo: pagó S/129 de S/129 y se quedó creyendo que tenía
+// que pagar otra vez al recoger — el que cree que le falta plata no va a recoger.
+// El aviso de llegada (`en_agencia`) ya contempla el caso; faltaba decirlo en el
+// momento del pago, que es cuando el cliente se queda con la duda.
+export async function avisarPagadoTotal(
+  db: SupabaseClient, channelId: string, contactId: string,
+): Promise<void> {
+  await deliverMessage(db, channelId, contactId,
+    "✅ Con ese pago tu pedido queda *cubierto por completo*: al recogerlo en la agencia no pagas nada más por él. 🙌",
+  ).catch(() => {});
+}
+
 // Manda la clave de recojo por defecto (envoltorio del anterior, usado por el
 // camino AUTOMÁTICO del saldo). Devuelve true si la mandó.
 export async function enviarClaveRecojo(
@@ -5058,6 +5074,8 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // (sin extras post, o el run ya no está esperando), cae al aviso normal.
     const ofrecio = await resumeIntoExtras(db, channelId, contactId).catch(() => false);
     if (!ofrecio) await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
+    // Pagó el total de una → decírselo (ver avisarPagadoTotal).
+    if (pagadoTotal) await avisarPagadoTotal(db, channelId, contactId);
     await avisar(db, channelId, contactId, "adelanto_auto",
       { monto, operacion: oper ?? "" }, { foto: url });
     return true;
@@ -7291,8 +7309,30 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   if (!prodId) return null;
   const list = await loadOpciones(db, run, prodId);
   if (list.length < 2) return null; // una sola opción → nada que elegir
+  // Lo que el cliente ya dijo ANTES, no solo su último mensaje — mismo problema que
+  // ya se arregló en extraerDatos: el PRIMER mensaje lo atiende el rotador (el saludo)
+  // y este nodo recién corre en el turno siguiente, así que "hola quiero el curso de
+  // trading BÁSICA" se perdía. Medido: el cliente nombró el plan de entrada, después
+  // solo dijo "ya te yapeo", y al llegar el comprobante no había opción sellada → sin
+  // precio esperado contra el que medir el pago, la venta se fue a validación manual
+  // (antes de los guards, salía un pedido en S/0).
+  // Solo se mira atrás cuando NO hay opción sellada todavía: con una ya elegida se usa
+  // el último mensaje a secas, para que "mejor la premium" siga pesando como cambio de
+  // opinión y el historial no reviva la anterior.
+  let texto2 = texto;
+  if (!String(ctx.opcion_id ?? "").trim()) {
+    try {
+      const { data: previos } = await db.from("messages")
+        .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(5);
+      const lineas = (previos ?? []).reverse()
+        .map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim())
+        .filter(Boolean);
+      if (lineas.length > 1) texto2 = lineas.join("\n");
+    } catch (_) { /* sin historial, se sigue con el último mensaje */ }
+  }
   const cls = await classify(db, run.channel_id, {
-    texto,
+    texto: texto2,
     que: "compra disponibles",
     candidatos: list.map((o) => ({
       clave: o.id,
@@ -7962,8 +8002,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const linesIn = (ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim()).filter(Boolean);
       const primera = linesIn[0] ?? "";
       // Solo al principio de la conversación y solo si de verdad preguntó algo.
-      if (linesIn.length >= 2 && linesIn.length <= 3 && primera.includes("?")) {
+      // Y UNA SOLA VEZ: el rango `<= 3` volvía a inyectar la pregunta en el turno
+      // siguiente, cuando la IA YA la había contestado, así que el bot recitaba el
+      // mismo pitch dos mensajes seguidos. Medido en dos chats: a "¿son originales?
+      // ¿qué garantía tienen?" le respondió bien, y al turno siguiente —el cliente ya
+      // había dicho "lo voy a pensar"— volvió a soltarle lo de "100% originales, 30
+      // días de garantía". Suena a bot y quema la conversación. La línea "si ya se la
+      // respondiste, ignora este aviso" no alcanzaba: el modelo la re-respondía igual.
+      // Se marca en el contacto en cuanto se inyecta, y no se vuelve a inyectar.
+      if (linesIn.length >= 2 && linesIn.length <= 3 && primera.includes("?") &&
+          !String((ctx as any)._colgada_resp ?? "").trim()) {
         preguntaColgada = primera.slice(0, 300);
+        await setField(db, run.channel_id, run.contact_id, "_colgada_resp", "si").catch(() => {});
+        (ctx as any)._colgada_resp = "si";
         parts.push(
           "## ⚠️ Pregunta del cliente SIN responder\nSu primer mensaje fue: \"" + primera.slice(0, 300) + "\"\n" +
           "Ese mensaje lo contestó un saludo automático, así que su pregunta sigue SIN respuesta y él la está esperando. " +
@@ -7985,6 +8036,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         L.push("Todavía NO sabes su **distrito** de Lima. Pregúntaselo con naturalidad para coordinar la entrega; recién con el distrito podrás decirle si llega hoy. No prometas el mismo día hasta saberlo.");
       } else if (ctx.zona_entrega === "lima") {
         L.push(`El cliente es de **${ctx.zona_nombre || "Lima"}** → entrega en Lima, CONTRAENTREGA (paga al recibir).`);
+        // Visto en vivo: "queda confirmado tu pedido… con RECOJO en Barranco, Av Grau 300".
+        // "Recojo" es vocabulario de provincia (agencia): en Lima va un motorizado a la
+        // puerta, y decirle recojo lo deja pensando que tiene que ir a buscarlo él.
+        L.push("Es entrega A DOMICILIO: un motorizado se la lleva a su dirección. NUNCA hables de «recojo», «recoger» ni de que pase a buscarlo: eso es solo para provincia (agencia).");
         // El motivo lo calcula entregaHoy() y NO siempre es de horario: puede ser que en esa
         // zona NUNCA se entregue el mismo día (mismo_dia:false). Antes se le pedía a la IA
         // "explícale ese motivo real de horario/día de reparto" en los dos casos, así que
@@ -8048,7 +8103,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "Y TAMPOCO lo anuncies, de NINGUNA forma: ni \"en breve\", ni \"ahora\", ni \"enseguida\", ni \"te va a llegar\", " +
           "ni \"recibirás un mensaje con…\". Da igual cómo lo formules: no menciones que viene otro mensaje. Sale " +
           "INMEDIATAMENTE después del tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
-          "No lo negocies ni preguntes con cuánto quiere adelantar, y no le pidas su número de teléfono ni ningún dato de contacto: ya le escribes por su WhatsApp.");
+          "No lo negocies ni preguntes con cuánto quiere adelantar.");
+      }
+      // "Solo me falta tu número de celular" a alguien que te escribe POR WhatsApp.
+      // La regla vivía únicamente en la rama de provincia (y encima colgada del
+      // bloque del adelanto), así que en LIMA la IA pedía el celular igual: visto
+      // en vivo pidiéndolo en el MISMO turno en que el motor ya había cerrado el
+      // pedido ("Listo, queda confirmado… pásame tu número para completar" seguido
+      // de "✅ Tu pedido quedó confirmado"). Vale para las dos zonas. Única
+      // excepción real: el cliente que llegó por username/BSUID y no compartió su
+      // número (sin_numero=si) — ahí el courier sí lo necesita y el campo
+      // `telefono` está de verdad en los pendientes (ver migración 0062).
+      if (ctx.sin_numero !== "si") {
+        L.push("NO le pidas su número de celular ni ningún dato de contacto: ya le escribes por su WhatsApp, su número ya lo tenemos.");
       }
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));

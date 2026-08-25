@@ -2893,7 +2893,11 @@ async function generarFlujoVenta(skipConfirm){
              "· CIERRE ASUMIDO: da por hecha la compra ('¿te paso los datos de pago para enviártelo al toque?') en vez de '¿lo quieres?'.\n"+
              "· UNA sola cosa a la vez: mensaje corto, una pregunta.\n"+
              "· Prueba social/urgencia/multimedia SOLO si el conocimiento del producto te la dio. NUNCA inventes datos, precios, reseñas ni escasez.\n"+
-             "Cuando decida comprar, dile el precio de la opción que eligió y pásale los datos de pago ({{datos_pago}}). No inventes precios ni promesas.",
+             "· Esto es un producto DIGITAL: se entrega por un LINK, al instante, apenas se verifique el pago. NO hay envío. "+
+             "Por eso NUNCA le pidas datos de despacho ni «tus datos» en general (dirección, distrito, DNI, agencia, teléfono): no los necesitas para nada. "+
+             "Lo ÚNICO que falta es que elija su opción y pague.\n"+
+             "Cuando decida comprar (o diga que va a pagar/yapear), dile el precio de la opción que eligió y pásale de una los datos de pago ({{datos_pago}}), sin pedirle ningún otro dato. "+
+             "No inventes precios ni promesas.",
     },false,80,220);
     const nEsperar=await N("pregunta","Escuchar al cliente",{ text:"" },true,380,220);
     const nEsImg=await N("condicion","¿Mandó comprobante?",{

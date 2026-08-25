@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -253,6 +253,7 @@ Deno.serve(async (req) => {
   // adelanto, se reanuda la conversación hacia el ofrecimiento (que saluda
   // "¡recibido!") en vez del aviso normal. Si no aplica, cae al aviso de siempre.
   let extrasOfrecidos = false;
+  let avisoPagadoTotal = false;
   if (newEstado === "adelanto_validado" && (order as any).contact_id) {
     // 🔒 Anti-reúso: al aprobar el adelanto a mano, registra su operación en el
     // ledger unificado (payment_operations) → no se podrá reusar como pago
@@ -293,6 +294,9 @@ Deno.serve(async (req) => {
       // adelanto_validado → esperando_adelanto → adelanto_validado, sin esta guarda
       // se volvía a restar sobre el saldo YA reducido (cobraba de menos en la agencia).
       const yaAcreditado = Number(shipNow.pago_acreditado_adelanto);
+      // Se avisa DESPUÉS del bloque (tras resumeIntoExtras), para que el mensaje no
+      // se le adelante al "¡Adelanto recibido!" del flujo. Ver avisarPagadoTotal.
+      avisoPagadoTotal = pagadoTotal && saldoNuevo < (Number(shipNow.saldo) || 0) && yaAcreditado !== totalAdel;
       if (saldoNuevo < (Number(shipNow.saldo) || 0) && yaAcreditado !== totalAdel) {
         // MERGE atómico (order_patch_shipping, 0068), NO write del shipping completo:
         // order-update no toma el contact_lock y el handler del cliente escribe shipping
@@ -308,6 +312,9 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("[order-update] resume extras:", (e as any)?.message ?? e);
     }
+    // Pagó el total de una: decírselo. Si no, se queda creyendo que todavía debe
+    // el saldo en la agencia (ver avisarPagadoTotal en engine.ts).
+    if (avisoPagadoTotal) await avisarPagadoTotal(db, (order as any).channel_id, (order as any).contact_id);
   }
 
   // 🔒 Anti-reúso: al aprobar el saldo a mano (o al cerrar el pedido cobrado),
