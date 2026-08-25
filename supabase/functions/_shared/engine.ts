@@ -5004,12 +5004,27 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // Acreditar al saldo lo pagado de más (o el total si pagó completo de una).
     const totalAdel = ab ? ab.total : monto;
     const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(ship, totalAdel);
-    await db.from("orders").update({
+    const _patchAdel = {
       estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
         saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}),
         ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos } : {}) },
-    }).eq("id", (order as any).id);
+    };
+    // Acá NO se puede seguir de largo si la escritura falla. La operación ya quedó reclamada
+    // como usada unas líneas arriba, así que el cliente no puede arreglarlo reenviando el
+    // comprobante (se detectaría como repetido): el pago se quedaría sin registrar y sin que
+    // nadie se entere, mientras el bot le dice al cliente que está todo listo. Un reintento
+    // (casi siempre es un tropiezo de red) y, si tampoco, va a manos de un humano.
+    let _upAdel = await db.from("orders").update(_patchAdel).eq("id", (order as any).id);
+    if (_upAdel.error) _upAdel = await db.from("orders").update(_patchAdel).eq("id", (order as any).id);
+    if (_upAdel.error) {
+      await logEvent(db, channelId, contactId, "error", "Adelanto validado pero NO se pudo guardar en el pedido",
+        `${_upAdel.error.message} · monto ${monto}${oper ? " · op " + oper : ""} — registrarlo a mano`).catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `Le validé el adelanto de ${monto}${oper ? ` (op ${oper})` : ""} pero no pude guardarlo en el pedido. El cobro ya quedó marcado como usado, así que hay que registrarlo a mano.`,
+        { aviso: true }).catch(() => {});
+      return true; // ya está en manos de un humano: que el motor no siga como si nada
+    }
     if (saldoNuevo < (Number(ship.saldo) || 0)) {
       await logEvent(db, channelId, contactId, "nota", pagadoTotal ? "Pagó el TOTAL en el adelanto" : "Pagó de más en el adelanto",
         `Saldo actualizado a ${saldoNuevo}${pagadoTotal ? " (nada por cobrar al recoger)" : ""}`).catch(() => {});
@@ -5182,11 +5197,24 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 
   if (puedeAuto && !reuse) {
     // ✅ Todo cuadra → saldo_pagado (la operación ya la reclamó el claim de arriba) + entrega.
-    await db.from("orders").update({
+    const _patchSaldo = {
       estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
         ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
-    }).eq("id", (order as any).id);
+    };
+    // Igual que en el adelanto: la operación ya está reclamada, así que un fallo de escritura
+    // acá deja el pago sin registrar y sin manera de que el cliente lo arregle reenviando el
+    // comprobante. Y esto es el pago FINAL: lo siguiente es darle su clave de recojo.
+    let _upSaldo = await db.from("orders").update(_patchSaldo).eq("id", (order as any).id);
+    if (_upSaldo.error) _upSaldo = await db.from("orders").update(_patchSaldo).eq("id", (order as any).id);
+    if (_upSaldo.error) {
+      await logEvent(db, channelId, contactId, "error", "Saldo validado pero NO se pudo guardar en el pedido",
+        `${_upSaldo.error.message} · monto ${monto}${oper ? " · op " + oper : ""} — registrarlo a mano`).catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `Le validé el saldo de ${monto}${oper ? ` (op ${oper})` : ""} pero no pude guardarlo en el pedido. El cobro ya quedó marcado como usado: hay que registrarlo a mano y darle su clave de recojo.`,
+        { aviso: true }).catch(() => {});
+      return true; // en manos de un humano: no seguir entregando sobre un pedido que no se guardó
+    }
     await logEvent(db, channelId, contactId, "nota", "Saldo validado automáticamente", `Monto ${monto}${oper ? " · op " + oper : ""}`);
     await moverEtapa(db, channelId, contactId, "comprado");
     await syncPedidoSheet(db, (order as any).id);

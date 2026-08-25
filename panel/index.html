@@ -724,9 +724,12 @@ async function loadConversations() {
       for(const trozo of enTrozos(ids)){
         const { data: ce } = await pageAll((f,t)=>supa.from("capi_events").select("order_id")
           .eq("channel_id", state.channelId).eq("event_name","Purchase").eq("estado","enviado")
-          // Desempate por `id`: un pedido con upsell tiene DOS Purchase (principal y extra),
-          // así que order_id solo no ordena de forma estable y al paginar se podía perder
-          // una fila — el pedido salía como "falta enviar a Meta" habiéndose enviado ya.
+          // Desempate por `id`, solo como red: hoy order_id YA es único acá (uq_capi_order
+          // es unique sobre (channel_id, order_id) para los Purchase, y el del upsell va con
+          // order_id nulo justo para no chocar), así que el orden no puede empatar. Se deja
+          // porque no cuesta nada y porque si mañana ese índice cambia, paginar con un orden
+          // que empata pierde filas en silencio y este pedido saldría como "falta enviar a
+          // Meta" habiéndose enviado ya.
           .in("order_id", trozo).order("order_id",{ascending:false}).order("id",{ascending:false}).range(f,t));
         (ce||[]).forEach(e=>sent.add(e.order_id));
       }

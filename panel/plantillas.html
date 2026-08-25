@@ -391,9 +391,24 @@ function renderDetail(){
 // Crea la plantilla EN Meta y la manda a aprobación (usa el cuerpo actual + los
 // ejemplos guardados). El estado vuelve por el webhook o por "Sincronizar".
 async function enviarMeta(){
-  const name=$("f_name").value.trim(), body=$("f_body").value.trim();
+  let name=$("f_name").value.trim();
+  const body=$("f_body").value.trim();
   const language=$("f_lang").value.trim()||"es", category=$("f_cat").value;
   if(!name||!body){ toast("Falta el nombre o el cuerpo de la plantilla",true); return; }
+  // Meta solo acepta minúsculas, números y guion bajo en el nombre. Con mayúsculas,
+  // espacios o tildes la rechaza — y el error que devuelve es técnico y en inglés, así que
+  // uno se queda mirando la pantalla sin saber que el problema era el nombre. Se avisa
+  // antes de mandarla y se ofrece el nombre ya corregido.
+  if(!/^[a-z0-9_]{1,512}$/.test(name)){
+    const sug=name.toLowerCase().normalize("NFD").replace(new RegExp("[\u0300-\u036f]","g"),"")
+      .replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"").slice(0,512);
+    if(!sug){ toast("El nombre solo admite minúsculas, números y guion bajo (ej: recordatorio_pedido)",true); return; }
+    const ok=await confirmDialog({ title:"El nombre no le sirve a Meta",
+      message:`Meta solo acepta minúsculas, números y guion bajo. ¿Lo cambio a «${sug}»?`,
+      confirmText:"Usar ese nombre" });
+    if(!ok) return;
+    name=sug; $("f_name").value=sug;
+  }
   const btn=$("sendMetaBtn"), old=btn.textContent; btn.disabled=true; btn.textContent="Enviando…";
   // Meta EXIGE un valor de ejemplo por CADA {{N}} del cuerpo, o rechaza la plantilla. Una
   // plantilla hecha a mano no guarda `ejemplos` → antes se enviaba examples:[] y Meta la
