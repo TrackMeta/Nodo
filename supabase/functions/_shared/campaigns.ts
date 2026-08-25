@@ -166,8 +166,14 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
     const ct: any[] = [];
     for (const trozo of enTrozos(ids, 300)) {
       const { data } = await pageAll((f, t) => db.from("contact_tags")
-        .select("contact_id, tags!inner(nombre)").in("contact_id", trozo)
-        .order("contact_id", { ascending: true }).range(f, t));
+        .select("contact_id, tag_id, tags!inner(nombre)").in("contact_id", trozo)
+        // Desempate por tag_id: un contacto tiene VARIAS etiquetas, así que ordenar solo
+        // por contacto deja filas empatadas y en orden indefinido. Al paginar, eso repite
+        // unas y se salta otras — y como con esto se decide a quién le entra la campaña,
+        // el precio es un destinatario de menos (o de más). Con 300 contactos del trozo y
+        // 4 etiquetas de media ya se pasan las 1000 filas y la paginación entra en juego.
+        // (contact_id, tag_id) es la clave primaria de la tabla: orden único garantizado.
+        .order("contact_id", { ascending: true }).order("tag_id", { ascending: true }).range(f, t));
       ct.push(...(data ?? []));
     }
     const modo = seg.modo ?? "cualquiera";

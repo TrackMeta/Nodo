@@ -395,7 +395,11 @@ async function processOrderReminders(now: number): Promise<number> {
     const { data, error } = await db.from("flow_triggers")
       .select("flow_id, channel_id, config, interrumpe, flows!inner(estado)")
       .eq("tipo", "pedido_recordatorio").eq("activo", true)
-      .order("flow_id", { ascending: true }).range(desde, desde + 999);
+      // Desempate por id: un mismo flujo puede tener VARIOS recordatorios de pedido (uno a
+      // las 24h, otro a las 72h), así que flow_id no ordena de forma única y al paginar se
+      // perdía alguno. Esta consulta es global (todos los canales), o sea que las 1000
+      // filas se alcanzan sumando los recordatorios de todos los negocios.
+      .order("flow_id", { ascending: true }).order("id", { ascending: true }).range(desde, desde + 999);
     if (error) break;
     const filas = data ?? [];
     trigs.push(...filas);
