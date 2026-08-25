@@ -2180,7 +2180,10 @@ export async function openDespachoLoteModal(orders, deps) {
 // "Despacho registrado" se leía igual cuando el cliente recibió el aviso y
 // cuando no le llegó nada.
 export function avisoMsg(r, aviso, base) {
-  if (r.aviso_error) return `${base} · ⚠️ la plantilla no salió: ${r.aviso_error}`;
+  // "el aviso", no "la plantilla": este mismo error llega también cuando el aviso iba como
+  // MENSAJE (p. ej. fuera de la ventana de 24h), y ahí se leía "la plantilla no salió: …usa
+  // una plantilla", que se contradice solo.
+  if (r.aviso_error) return `${base} · ⚠️ el aviso no salió: ${r.aviso_error}`;
   if (r.aviso_enviado) return `${base} · plantilla enviada`;
   if (aviso.modo === "ninguno") return `${base} · sin avisar al cliente`;
   return r.flow_started ? `${base} · el bot está avisando al cliente` : `${base} · no hay aviso armado para este estado`;

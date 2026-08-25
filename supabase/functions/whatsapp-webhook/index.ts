@@ -246,8 +246,14 @@ async function processInbound(
     if (ref.source_id) patch.ad_id = ref.source_id;
     if (ref.ctwa_clid) patch.ctwa_clid = ref.ctwa_clid;
     patch.source = ref.source_type ?? "ctwa";
-    // Free Entry Point: el mensaje que entra desde un anuncio abre 72h de
-    // mensajería gratis (Meta). Un clic nuevo en un anuncio la re-abre.
+    // Free Entry Point: el mensaje que entra desde un anuncio abre 72h en las que Meta NO
+    // cobra los mensajes. Ojo con qué significa eso: NO habilita texto libre —para eso hace
+    // falta la ventana de 24h— sino que la PLANTILLA sale gratis. Ver ventana24hAbierta.
+    // Un clic nuevo en un anuncio la re-abre.
+    // Matiz de la letra chica: Meta abre esa conversación cuando el negocio RESPONDE dentro
+    // de las 24h, no por el solo hecho de que el cliente escriba. Acá se marca al recibir
+    // porque con el bot activo la respuesta sale en segundos y siempre se cumple; si el bot
+    // estuviera apagado y nadie contestara, el panel diría "plantilla gratis" y no lo sería.
     patch.fep_hasta = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
   }
 
