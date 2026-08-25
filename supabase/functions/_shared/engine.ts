@@ -12,7 +12,7 @@ import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, type AvisosConfig
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
-import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, sendButtons, sendMedia, sendText } from "./meta.ts";
+import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
 import { sedeReconocida, candidatasAgencia } from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
@@ -3931,7 +3931,10 @@ export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, 
       if (ahora - previo < 10 * 60 * 1000) return;
       ultimoAvisoFallo.set(channelId, ahora);
     }
-    const motivo = String(error?.message ?? error?.error?.message ?? "WhatsApp no aceptó el mensaje").slice(0, 300);
+    // motivoLegible traduce los códigos que de verdad salen (24h vencidas, número inválido,
+    // token caído…) y conserva el texto de Meta al final. Antes el aviso llegaba en inglés y
+    // crudo, que es justo cuando menos ganas hay de descifrar un error.
+    const motivo = motivoLegible(error).slice(0, 300);
     await avisar(db, channelId, contactId, "envio_fallido", { motivo });
   } catch (_) { /* avisar de un fallo no puede provocar otro */ }
 }

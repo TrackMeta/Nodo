@@ -220,3 +220,28 @@ async function postMessage(phoneNumberId: string, accessToken: string, payload: 
   }
   throw lastErr ?? new MetaApiError({ message: "envío falló tras reintentos" });
 }
+
+// ── Qué salió mal, en cristiano ────────────────────────────────────
+// Los errores de Meta llegan en inglés y crudos ("Message failed to send because more than
+// 24 hours have passed…"). El operador los ve en el aviso de Telegram y en el chat, y ahí lo
+// único que importa es qué pasó y qué hacer. Se traducen los códigos que de verdad aparecen;
+// del resto se deja el texto original, y el original se conserva SIEMPRE al final para no
+// perder el detalle técnico cuando toque investigar.
+const MOTIVOS: Record<number, string> = {
+  131047: "Pasaron más de 24 h desde el último mensaje del cliente: fuera de esa ventana solo se le puede escribir con una plantilla aprobada.",
+  131026: "Ese número no puede recibir el mensaje (puede que no tenga WhatsApp o que esté mal escrito).",
+  131049: "Meta frenó el envío para cuidar la experiencia del usuario: se le está mandando demasiado marketing a esta persona.",
+  131048: "Meta frenó el envío a este cliente por límite antispam. Se reintenta más tarde.",
+  130429: "Se pasó el límite de mensajes por segundo del número. Se reintenta solo.",
+  132000: "La plantilla no cuadra con los datos enviados: faltan o sobran variables.",
+  132001: "Esa plantilla no existe o no está aprobada en Meta.",
+  133016: "WhatsApp está restaurando la cuenta. Se reintenta solo.",
+  190: "El token de WhatsApp venció o fue revocado: hay que reconectar el número en Canales.",
+};
+export function motivoLegible(meta: any): string {
+  const code = Number(meta?.code ?? meta?.error?.code ?? 0);
+  const original = String(meta?.message ?? meta?.error?.message ?? "").trim();
+  const claro = MOTIVOS[code];
+  if (!claro) return original || "WhatsApp no aceptó el mensaje";
+  return original ? `${claro} (Meta ${code}: ${original})` : `${claro} (Meta ${code})`;
+}
