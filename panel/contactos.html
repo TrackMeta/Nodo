@@ -698,10 +698,15 @@ async function importCsv(file){
     const telCell=(ti>=0?head[ti]:head[1])||"";
     if(!/\d/.test(telCell)){ ci.tel=ti<0?1:ti; ci.nombre=ni<0?0:ni; start=1; }
   }
-  const rows=[]; let sinCP=0;
+  const rows=[]; let sinCP=0, sinTel=0;
   for(let i=start;i<lines.length;i++){
     const cols=parseCsvLine(lines[i], delim);
-    const wa=(cols[ci.tel]||"").replace(/[^0-9]/g,""); if(!wa) continue;
+    const wa=(cols[ci.tel]||"").replace(/[^0-9]/g,"");
+    // Las filas sin número se saltaban EN SILENCIO. Si la columna del teléfono no era la que
+    // el archivo trae (o el CSV usa otro separador), se descartaban casi todas y el aviso
+    // final igual decía "Importados ✓" — te quedabas creyendo que subiste tu lista entera.
+    // Se cuentan (solo las que traen ALGO, para no sumar líneas vacías del final) y se dicen.
+    if(!wa){ if(cols.some(c=>String(c||"").trim())) sinTel++; continue; }
     if(wa.length<10) sinCP++; // probablemente sin código de país (wa_id real = internacional)
     rows.push({ channel_id:st.channelId, wa_id:wa, nombre:(cols[ci.nombre]||"")||null });
   }
@@ -713,9 +718,18 @@ async function importCsv(file){
   // (ej. del courier) con el nombre en blanco o distinto RENOMBRABA/borraba el nombre de tus
   // clientes actuales de golpe e irreversible. El alta de UN contacto ya tiene este guard;
   // la importación en lote debe respetarlo igual — solo se AGREGAN los nuevos.
-  const { error }=await supa.from("contacts").upsert(rows,{ onConflict:"channel_id,wa_id", ignoreDuplicates:true });
+  // `.select()` para saber CUÁNTOS entraron de verdad. El aviso decía "Importados ✓" a secas:
+  // con ignoreDuplicates, importar una lista de 500 donde 497 ya existían se veía idéntico a
+  // importar 500 nuevos, y no había forma de saber qué pasó.
+  const { data:ins, error }=await supa.from("contacts")
+    .upsert(rows,{ onConflict:"channel_id,wa_id", ignoreDuplicates:true }).select("id");
   if(error){ toast(error.message,true); return; }
-  toast(`Importados ✓ (los que ya existían se conservaron tal cual)`); await load();
+  const nuevos=(ins||[]).length, repes=Math.max(0, rows.length-nuevos);
+  const p=(n,a,b)=>n===1?a:b;
+  const partes=[`${nuevos} ${p(nuevos,"contacto nuevo","contactos nuevos")}`];
+  if(repes) partes.push(`${repes} ya ${p(repes,"estaba","estaban")} (sin tocar)`);
+  if(sinTel) partes.push(`${sinTel} ${p(sinTel,"fila sin teléfono, no entró","filas sin teléfono, no entraron")}`);
+  toast(`Importado ✓ — ${partes.join(" · ")}`, sinTel>nuevos); await load();
 }
 boot();
 </script>
