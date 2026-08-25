@@ -1525,6 +1525,15 @@ async function publish(){
   // flujo que no arranca quedaba "activo"). Ahora se corta si el guardado no pasó.
   if(!(await save())) return;
   const nuevo = st.flow.estado==="activo" ? "borrador" : "activo";
+  // Publicar un flujo SIN PASOS activa algo que no puede responder: el motor busca su nodo
+  // inicial, no encuentra ninguno y el cliente se queda sin contestación. La validación de
+  // "falta el nodo inicial" que hay en save() vive dentro de un `if(nodos.length)`, así que
+  // justo el flujo vacío —el peor caso— se saltaba TODAS las comprobaciones. Guardar vacío sí
+  // se permite (estás construyendo); activarlo, no. Volver a borrador tampoco se toca.
+  if(nuevo==="activo" && !Object.keys(st.model||{}).length){
+    toast("Este flujo no tiene ningún paso: agrégale al menos uno antes de publicarlo, o el bot no sabría qué responder.",true);
+    return;
+  }
   const { error } = await supa.from("flows").update({ estado:nuevo }).eq("id",st.flowId);
   if(error){ toast(error.message,true); return; }
   st.flow.estado=nuevo; setStateBadge(nuevo); loadFlows();
