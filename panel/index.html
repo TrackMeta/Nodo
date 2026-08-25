@@ -568,7 +568,7 @@ const fmtTime = { format: (d) => {
   return _ftf.format(d);
 } };
 
-const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {},
+const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", mode: "bot", convs: [], search: "", searchOps: new Set(), threadCache: {}, drafts: {},
   filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, metapend:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map(), metaPendSet:new Set(), metaSalud:{total:0,enviadas:0} };
 const $ = (id) => document.getElementById(id);
 
@@ -604,7 +604,7 @@ async function boot() {
   });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); subscribeRealtime(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; state.drafts = {}; /* los borradores no cruzan de un negocio a otro */ $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); subscribeRealtime(); });
   // Cargas independientes en PARALELO (antes eran 5 en serie → arranque lento).
   await Promise.all([loadTestFlows(), loadFilters(), loadQuickReplies(), loadInboxFlows(), loadConversations()]);
   subscribeRealtime();
@@ -1179,6 +1179,18 @@ function renderConversations(){
 
 // ── Chat ──
 async function openChat(c) {
+  // Borrador POR conversación (como WhatsApp). Antes el compositor no se tocaba al cambiar
+  // de chat: lo que habías escrito para Juan seguía ahí al abrir el de Pedro, y un Enter se
+  // lo mandaba a Pedro. Guardar en vez de limpiar evita el otro extremo, que es perder de
+  // golpe un mensaje largo por haber ido a mirar otro chat un segundo.
+  {
+    const inp0 = $("msgInput");
+    if (inp0 && state.contactId && state.contactId !== c.id) {
+      const v = inp0.value;
+      if (v.trim()) state.drafts[state.contactId] = v; else delete state.drafts[state.contactId];
+    }
+    if (inp0 && state.contactId !== c.id) inp0.value = state.drafts[c.id] || "";
+  }
   state.contactId = c.id;
   state.contactName = c.nombre || c.wa_id;
   state.isTest = (c.wa_id === "webchat-test");
@@ -1948,16 +1960,16 @@ async function sendMsg() {
           channel_id: state.channelId, contact_id: state.contactId,
           direction: "out", type: "text", content: { text }, status: "sent", sent_by: "bot",
         });
-        if (error) { toast(error.message, true); } else { input.value = ""; }
+        if (error) { toast(error.message, true); } else { input.value = ""; delete state.drafts[state.contactId]; }
       } else {
         await callFn("webchat", { channel_id: state.channelId, text });
-        input.value = "";
+        input.value = ""; delete state.drafts[state.contactId];
       }
     } else {
       const res = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, text });
       const out = await res.json();
       if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); }
-      else { input.value = ""; setBotPill(false); }
+      else { input.value = ""; delete state.drafts[state.contactId]; setBotPill(false); }
     }
   } catch { toast("Error de red", true); }
   finally { sending = false; $("sendBtn").disabled = false; }

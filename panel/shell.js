@@ -946,8 +946,16 @@ export async function mountShell({ active } = {}) {
     // Multi-pestaña: si cambias de bot en OTRA pestaña, ESTA se sincroniza. Sin esto seguía
     // mostrando/editando datos del bot VIEJO mientras el resto del sistema cree que el activo
     // es otro → el operador podía actuar sobre el bot equivocado (riesgo multi-tenant).
-    window.addEventListener("storage", (e) => {
+    window.addEventListener("storage", async (e) => {
       if (e.key === "nodo.channelId" && e.newValue && e.newValue !== S.channelId) {
+        // Con cambios sin guardar se PREGUNTA, igual que al cambiar de bot desde el menú.
+        // Este camino se saltaba el aviso: si tenías un producto o los ajustes de IA a medio
+        // editar y cambiabas de bot en OTRA pestaña, esta recargaba sola y el trabajo se
+        // perdía sin que nada lo dijera. Si eliges quedarte, esta pestaña se queda en SU bot
+        // y no se toca la clave guardada: reescribirla dispararía este mismo evento en la
+        // otra pestaña y le desharía el cambio que acaba de hacer. La única secuela es que,
+        // si recargas ESTA pestaña, abrirá en el otro bot — que es justo lo que pediste allá.
+        if (!(await _dirtyGate())) return;
         try { S.api.setChannel(e.newValue); } catch (_) {}
       }
     });
