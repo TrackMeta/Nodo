@@ -2346,6 +2346,31 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   return status !== "failed";   // false = no salió → el caller no debe darlo por entregado
 }
 
+// Quita la pregunta con la que la IA cierra un mensaje, cuando preguntar ya no
+// corresponde (ver el turno de cierre en el nodo generar_texto). Trabaja sobre la
+// ÚLTIMA línea no vacía: si esa línea es una pregunta, se corta; si la línea mezcla
+// afirmación y pregunta ("Listo, queda confirmado. ¿Te lo envío a Surco?"), se corta
+// solo la última oración. Nunca devuelve vacío: sin nada que enviar, el cliente se
+// queda en silencio justo al cerrar la compra, que es peor que la pregunta de más.
+function sinPreguntaFinal(texto: string): string {
+  const t = String(texto ?? "").trimEnd();
+  if (!t || !t.endsWith("?")) return texto;
+  const lineas = t.split("\n");
+  let i = lineas.length - 1;
+  while (i >= 0 && !lineas[i].trim()) i--;
+  if (i < 0) return texto;
+  const linea = lineas[i];
+  // Corta la última oración de esa línea (por . ! ? … o el signo de apertura ¿).
+  const corte = Math.max(
+    linea.lastIndexOf("¿"),
+    ...[".", "!", "…", "?"].map((s) => linea.lastIndexOf(s, linea.length - 2)),
+  );
+  const recortada = corte > 0 ? linea.slice(0, linea.startsWith("¿") ? 0 : corte + (linea[corte] === "¿" ? 0 : 1)).trimEnd() : "";
+  lineas[i] = recortada;
+  const out = lineas.join("\n").trimEnd();
+  return out.replace(/[\s\n]+$/, "").trim() ? out : texto;
+}
+
 // Emite el texto que generó la IA, resolviendo los marcadores [[media:tag]]:
 // por cada marcador envía el archivo correspondiente del catálogo del producto
 // (config.ia_multimedia, expuesto en ctx._ia_multimedia) intercalado con el
@@ -8861,6 +8886,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Enviar el resultado al usuario (por defecto sí, salvo que se desactive).
     const enviar = cfg.enviar ?? (op === "generar_texto");
     if (enviar && result) {
+      // Turno de CIERRE: con los datos ya completos, el flujo crea el pedido y manda la
+      // confirmación en este mismo turno. Si la IA cierra con una pregunta, el cliente lee
+      // "¿A qué dirección te la envío?" y JUSTO debajo "✅ Tu pedido quedó confirmado" —
+      // le preguntan algo que ya se resolvió, y encima queda esperando para responder.
+      // Visto en tres chats (Andrea, Silvia, Ana). El prompt ya se lo ordena explícitamente
+      // ("NO termines con una pregunta: cierra la venta") y la IA lo ignora igual: es la
+      // TERCERA regla de prompt de esta tanda que falla, así que se recorta por código.
+      // Conservador: solo quita la ÚLTIMA frase y solo si es interrogativa; si al quitarla
+      // no queda nada, se deja el texto tal cual (mejor una pregunta de más que el silencio).
+      if (op === "generar_texto" && ctx.datos_completos === "si" && !(ctx as any)._falta_opcion) {
+        result = sinPreguntaFinal(String(result));
+      }
       const handoff = await emitIaText(db, run, String(result), ctx);
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
