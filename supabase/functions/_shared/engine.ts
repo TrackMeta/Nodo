@@ -282,6 +282,9 @@ async function runEngineInner(
     // producto en curso— le diga que no lo vendemos. Ver maybeCambioProducto.
     try { if (await maybeCambioProducto(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeCambioProducto]", (e as any)?.message ?? e); }
+    // Anunció que va a pagar y todavía no sabe A DÓNDE: se le mandan los datos de pago
+    // antes de que la IA le pida la captura. No corta el flujo. Ver maybeDatosPago.
+    await maybeDatosPago(db, channelId, contactId, event);
     // Modificar el pedido ya creado: QUITAR un item o CAMBIAR la cantidad. Toca plata
     // y stock → confirma antes de aplicar (no auto-muta). Corta la cadena si atendió.
     // Se le pasa `run` para el anti-secuestro (no pisar una respuesta a la oferta del
@@ -332,6 +335,15 @@ async function runEngineInner(
     if (!event.adId) {
       try { if (await maybePostventa(db, channelId, contactId, event)) return; }
       catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
+      // Reclama por una compra que NO figura a su nombre. `maybePostventa` exige un pedido
+      // suyo en la base, así que a este se le escapaba y caía en el ruteo por keyword:
+      // medido en vivo, "compré el curso premium ayer y no me llega el link" recibió
+      // «Gracias por tu interés en el Curso Master de Trading. ¿Te cuento los planes?» —
+      // le vende lo que ya compró e ignora su problema. Pasa de verdad: compró desde otro
+      // número, el pedido se cargó a mano, o vino de otro canal. Se atiende y va a un
+      // humano, que sí puede buscar su compra. Ver maybeReclamoSinPedido.
+      try { if (await maybeReclamoSinPedido(db, channelId, contactId, event)) return; }
+      catch (e) { console.error("[reclamoSinPedido]", (e as any)?.message ?? e); }
     }
     // Para el ruteo por anuncio: el ad_id del mensaje (referral fresco) o, si no vino en
     // este mensaje, el que ya quedó guardado en el contacto (vino de un anuncio antes).
@@ -5415,6 +5427,66 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
   return null;
 }
 
+// Reclamo de alguien que dice haber comprado y NO tiene ningún pedido en la base. La lista
+// es corta y explícita a propósito: tiene que ganarle al ruteo por palabra clave, así que un
+// falso positivo le mata la venta a un comprador de verdad. Por eso NO entra "quiero
+// comprar", "cuánto cuesta" ni nada que suene a intención de compra: solo frases que ya dan
+// la compra por hecha o describen una falla.
+const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|ya (compr[ée]|pagu[ée])|compr[ée] (ayer|anteayer|hace|el|la|un|una)|mi (pedido|compra|paquete)|lleg[oó] (roto|mal|incompleto|fallado)|no (me )?funciona|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso)\b/i;
+async function maybeReclamoSinPedido(
+  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
+): Promise<boolean> {
+  if (event.type !== "message" || !event.text || !RE_RECLAMO.test(event.text)) return false;
+  const { data: o } = await db.from("orders").select("id")
+    .eq("channel_id", channelId).eq("contact_id", contactId).limit(1);
+  if ((o ?? []).length) return false; // tiene pedidos → es cosa de maybePostventa
+  await deliverMessage(db, channelId, contactId,
+    "Lamento el inconveniente 🙏 Déjame revisarlo con alguien del equipo y te respondemos por acá.").catch(() => {});
+  await pasarAHumano(db, channelId, contactId,
+    `Reclama por una compra que NO figura a su nombre en el bot: “${String(event.text).slice(0, 160)}”. ` +
+    `Puede haber comprado desde otro número o estar cargada a mano.`, { aviso: true }).catch(() => {});
+  await logEvent(db, channelId, contactId, "nota", "🛟 Reclamo sin pedido registrado",
+    "Se atendió y pasó a un humano en vez de arrancarle la venta").catch(() => {});
+  return true;
+}
+
+// "Ya te yapeo" / "¿a qué número pago?" cuando TODAVÍA no le pasamos los datos de pago.
+// El bot le contestaba "mándame la captura" de un pago que el cliente no sabe dónde hacer.
+// Ya se intentó por prompt DOS veces (la regla del flujo digital y una sección dedicada
+// que le dice a la IA "dáselos AHORA"): la IA obedece a veces y a veces no — verificado en
+// vivo, con el mismo cliente respondiendo distinto según el turno. Así que lo manda el
+// MOTOR: es un dato fijo, verificable contra los mensajes ya enviados, y no hay nada que
+// la IA aporte redactándolo. No corta el flujo — sale el dato y la IA sigue conversando.
+// Idempotente por construcción: una vez enviado, el número aparece en los salientes y no
+// se repite. Solo venta DIGITAL: en provincia el adelanto lo manda el flujo con su propio
+// mensaje y hay una regla explícita de no adelantarse a él.
+const RE_ANUNCIA_PAGO =
+  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i;
+async function maybeDatosPago(
+  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
+): Promise<void> {
+  try {
+    if (event.type !== "message" || !event.text || !RE_ANUNCIA_PAGO.test(event.text)) return;
+    const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+    const pid = (c as any)?.product_id;
+    if (!pid) return;
+    const { data: p } = await db.from("products").select("tipo").eq("id", pid).maybeSingle();
+    if (String((p as any)?.tipo ?? "") !== "digital") return;
+    const { data: f } = await db.from("custom_fields").select("valor")
+      .eq("channel_id", channelId).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
+    const dp = String((f as any)?.valor ?? "").trim();
+    if (!dp) return;
+    const nums = dp.match(/\d{6,}/g) ?? [];
+    const { data: outs } = await db.from("messages").select("content")
+      .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
+    const dicho = (outs ?? []).map((m: any) => String(m.content?.text ?? "")).join(" ");
+    if (nums.length ? nums.some((n) => dicho.includes(n)) : /yape|plin|cuenta|cci/i.test(dicho)) return;
+    await deliverMessage(db, channelId, contactId, dp);
+    await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago enviados",
+      "Dijo que iba a pagar y todavía no los tenía").catch(() => {});
+  } catch (e) { console.error("[maybeDatosPago]", (e as any)?.message ?? e); }
+}
+
 // El cliente está a MITAD de la venta de un producto y pregunta por OTRO que también
 // vendemos. Medido en vivo: con las zapatillas abiertas, "mejor dime del curso de
 // trading, ¿cuánto cuesta?" → «Por ahora solo trabajo con las Zapatillas Runner Pro,
@@ -8185,6 +8257,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (ctx.sin_numero !== "si") {
         L.push("NO le pidas su número de celular ni ningún dato de contacto: ya le escribes por su WhatsApp, su número ya lo tenemos.");
       }
+      // Dos deslices vistos en chats reales, los dos al confirmar:
+      // · "Tu pedido está listo y ya en camino" cuando el motorizado NO ha salido (en Lima
+      //   la entrega suele ser al día siguiente). El cliente se queda esperando ese día.
+      //   El aviso de que salió lo manda el sistema solo, cuando sale de verdad.
+      // · Hablarle en TERCERA persona: "las zapatillas llegan a Trujillo y **el cliente**
+      //   las recoge en la oficina que prefiera" — suena a plantilla interna, no a alguien
+      //   escribiéndole a él.
+      L.push("Al confirmar, NO digas que el pedido «ya está en camino», «ya salió» ni «va en camino»: todavía no salió. " +
+        "Cuando salga de verdad, el sistema le avisa solo. Y háblale SIEMPRE a él, de tú — nunca «el cliente» en tercera persona.");
       L.push("Estos datos los calculó el sistema con la configuración real del negocio: NO los contradigas ni los negocies.");
       parts.push("## Entrega de este cliente\n" + L.map((x) => "- " + x).join("\n"));
     }
