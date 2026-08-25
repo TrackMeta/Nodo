@@ -191,6 +191,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll } from "./shell.js";
 import * as O from "./orders.js";
+import { inicioDeHoyTZ } from "./date-range.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
@@ -317,7 +318,7 @@ function abrirExport(courier){
   function filtrar(){
     let arr=st.list.filter(o=>isFisico(o) && zonaDe(o)===zona);
     if(S.periodo!=="todos"){
-      const now=new Date(), hoy0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+      const hoy0=inicioDeHoyTZ().getTime(); // hoy segun la zona del NEGOCIO, no la del navegador
       if(S.periodo==="hoy") arr=arr.filter(o=>cuandoT(o)>=hoy0);
       else if(S.periodo==="ayer") arr=arr.filter(o=>cuandoT(o)>=hoy0-86400000 && cuandoT(o)<hoy0);
       else { const d=Number(S.periodo); arr=arr.filter(o=>(Date.now()-cuandoT(o))<=d*86400000); }
@@ -776,7 +777,7 @@ function abrirImprimirRotulos(){
   function filtrar(){
     let arr=st.list.filter(o=>isFisico(o) && zonaDe(o)===zona && POR_DESPACHAR[zona].has(o.estado));
     if(S.periodo!=="todos"){
-      const now=new Date(), hoy0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+      const hoy0=inicioDeHoyTZ().getTime(); // hoy segun la zona del NEGOCIO, no la del navegador
       if(S.periodo==="hoy") arr=arr.filter(o=>cuandoT(o)>=hoy0);
       else if(S.periodo==="ayer") arr=arr.filter(o=>cuandoT(o)>=hoy0-86400000 && cuandoT(o)<hoy0);
       else { const d=Number(S.periodo); arr=arr.filter(o=>(Date.now()-cuandoT(o))<=d*86400000); }

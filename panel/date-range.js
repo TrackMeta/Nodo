@@ -1,6 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════
 // Nodo · date-range.js — el selector de rango de fechas de la app.
 //
+// ⚠ IMPORTARLO SIEMPRE COMO "./date-range.js", SIN ?v=algo.
+// Este módulo GUARDA ESTADO: la zona horaria del negocio, que shell.js le pone
+// con setTZ al arrancar y al cambiar de bot. El navegador cachea los módulos por
+// URL, así que "./date-range.js?v=4" NO es el mismo módulo que "./date-range.js":
+// es una SEGUNDA copia, con su propia zona, y a esa nadie le llama setTZ nunca.
+// Pasó de verdad: la Bandeja (?v=4) y Directo (?v=3) se quedaban en America/Lima
+// pasara lo que pasara, mientras el resto del panel sí respetaba la zona elegida
+// — y los números de una pantalla y otra no cuadraban. Si alguna vez hace falta
+// romper caché, se cambia en TODOS los que lo importan a la vez, o en ninguno.
+//
 // Nació dentro de rendimiento.html (estilo Ads Manager: 11 atajos + dos meses
 // + rango a mano). Vive acá porque ya lo usan dos pantallas, y copiarlo era
 // repetir el error que estuvimos limpiando: dos copias divergen y terminas con
@@ -84,6 +94,15 @@ export const endOfDayTZ = (d) => instanteEn(_TZ, d.getFullYear(), d.getMonth() +
 // timestamps por día se usa esta; `ymd` sigue valiendo para fechas-día ya elegidas por el
 // usuario en el selector, que no son instantes.
 export const ymdTZ = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: _TZ }).format(new Date(t));
+
+// Medianoche de HOY en la zona del NEGOCIO. Lo que la hace distinta de startOfDayTZ(new
+// Date()) es de dónde sale el día: acá se deriva con ymdTZ, o sea en la zona del negocio.
+// Tomar el día del navegador falla justo en las horas en que los dos husos no están en la
+// misma fecha — y ahí un filtro "hoy" muestra el día equivocado sin avisar.
+export const inicioDeHoyTZ = () => {
+  const [Y, M, D] = ymdTZ(Date.now()).split("-").map(Number);
+  return instanteEn(_TZ, Y, M, D, 0, 0, 0, 0);
+};
 
 // Nombres viejos, mantenidos para no romper nada mientras quede algún uso. Apuntan a las
 // nuevas: ya NO son "de Lima" sino de la zona del negocio.
