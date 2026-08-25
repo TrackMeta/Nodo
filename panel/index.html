@@ -1807,29 +1807,32 @@ async function updateWindow() {
   const svcOpen = svcEnd > now, fepOpen = fepEnd > now;
   const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>0?`${h}h ${m}m`:`${m}m`; };
   // Chip 1 — servicio 24h.
-  // "Solo plantillas" SOLO cuando de verdad no hay por dónde escribir. Con el FEP del anuncio
-  // vivo sí se puede (y gratis), así que ahí este chip se calla y habla el de abajo: decir
-  // las dos cosas a la vez era contradecirse en la misma barra.
   const svcChip = svcOpen
     ? `<span class="win svc">${icon("clock")} Escribe libre · ${fmt(svcEnd-now)}</span>`
-    : (fepOpen ? "" : `<span class="win closed">${icon("lock")} Solo plantillas</span>`);
+    : `<span class="win closed">${icon("lock")} Solo plantillas</span>`;
   // Chip 2 — FEP: solo si sigue vivo. En las últimas 6h → "aprovecha" con pulso.
   let fepChip = "";
   if (fepOpen) {
     const rem = fepEnd - now, poco = rem < 6*3.6e6;
-    fepChip = poco
-      ? `<span class="win fep urge">${icon("megaphone")} Aprovecha · ${fmt(rem)} gratis</span>`
-      : `<span class="win fep">${icon("megaphone")} Gratis por anuncio · ${fmt(rem)}</span>`;
+    // El texto cambia según si además puedes escribir libre. Las 72h del anuncio NO dan
+    // escritura libre: dan que los mensajes no se cobren. Con las 24h cerradas, lo único
+    // que se puede mandar es una plantilla — y decir "gratis por anuncio" a secas hacía
+    // pensar que se podía escribir de corrido y no se cobraba. Se dice qué es lo gratis.
+    fepChip = svcOpen
+      ? (poco
+        ? `<span class="win fep urge">${icon("megaphone")} Aprovecha · ${fmt(rem)} sin costo</span>`
+        : `<span class="win fep">${icon("megaphone")} Sin costo por anuncio · ${fmt(rem)}</span>`)
+      : `<span class="win fep${poco ? " urge" : ""}" title="Las 24h para escribir libre ya cerraron, pero por venir de un anuncio la plantilla no te cuesta">${icon("megaphone")} Plantilla gratis · ${fmt(rem)}</span>`;
   }
   w.innerHTML = svcChip + fepChip;
-  // El candado mira las DOS ventanas, no solo la de servicio. El servidor ya lo hacía así
-  // (whatsapp-send valida contra conversations.expira_at, que es la MAYOR entre las 24h y el
-  // FEP del anuncio), pero acá solo se miraba `svcOpen`. Resultado: un cliente que llegó por
-  // un anuncio te da 72h gratis, y pasadas 24h sin que escriba el panel escondía el
-  // compositor y mostraba "Solo plantillas" JUNTO al chip "Gratis por anuncio · 47h" — dos
-  // cosas que se contradicen en la misma barra. Y empujaba a mandar una plantilla, que
-  // cuesta plata y pausa el bot, pudiendo escribirle gratis.
-  setComposerLock(!(svcOpen || fepOpen));
+  // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.
+  // Las 72h del anuncio (Free Entry Point) son sobre el COBRO, no sobre el permiso: durante
+  // esa ventana los mensajes no se cobran, pero para mandar TEXTO LIBRE sigue haciendo falta
+  // la ventana de 24h abierta. Si las 24h se cerraron y el FEP sigue vivo, lo único que se
+  // puede mandar es una plantilla — que ahí sale gratis.
+  // (Se intentó "arreglar" esto abriendo el compositor durante el FEP: era incorrecto, Meta
+  // rechaza el texto libre con 131047. Documentado en la referencia de precios de WhatsApp.)
+  setComposerLock(!svcOpen);
 }
 // Bloqueo del compositor: fuera de ventana WhatsApp rechaza texto/media, así
 // que se cambia la barra de escribir por la de "enviar plantilla".

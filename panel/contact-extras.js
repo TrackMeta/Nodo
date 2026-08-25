@@ -762,8 +762,16 @@ function injectDespachoCss() {
 export async function cargarAviso(supa, channelId, contactId, momento) {
   const info = { abierta: false, restante: "", fepActivo: false, fepRestante: "", tpls: [], preferida: null, flujo: null, flujoId: null, texto: "" };
   try {
-    const { data: conv } = await supa.from("conversations").select("expira_at").eq("contact_id", contactId).maybeSingle();
-    const t = conv?.expira_at ? new Date(conv.expira_at).getTime() : 0;
+    // Ventana de SERVICIO (24h desde el último mensaje del cliente): es la que habilita
+    // mandar texto libre. NO se usa `conversations.expira_at`, que es la MAYOR entre esas
+    // 24h y el FEP de 72h del anuncio: las 72h del FEP son sobre el COBRO, no sobre el
+    // permiso — con las 24h cerradas solo entra una plantilla (que ahí sale gratis, y eso
+    // es justo lo que informa el bloque de abajo). Tomando el máximo, este panel daba la
+    // ventana por abierta durante el FEP y ofrecía mandar el aviso como mensaje libre:
+    // Meta lo rechaza (131047) y el cliente se queda sin su aviso de despacho.
+    const { data: ct24 } = await supa.from("contacts").select("ultimo_mensaje_cliente_at").eq("id", contactId).maybeSingle();
+    const ult = ct24?.ultimo_mensaje_cliente_at ? new Date(ct24.ultimo_mensaje_cliente_at).getTime() : 0;
+    const t = ult ? ult + 24 * 3600 * 1000 : 0;
     info.abierta = t > Date.now();
     if (info.abierta) {
       const m = Math.floor((t - Date.now()) / 60000);

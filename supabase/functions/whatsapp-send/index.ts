@@ -90,11 +90,16 @@ Deno.serve(async (req) => {
   }
 
   // ── Validar ventana (gate único de salida para texto y media) ─────
-  // expira_at ya es la MAYOR entre la ventana de servicio (24h) y la
-  // Free Entry Point (72h del anuncio), calculada por el webhook.
-  const { data: conv } = await db
-    .from("conversations").select("expira_at").eq("contact_id", contact_id).maybeSingle();
-  const abierta = conv?.expira_at && new Date(conv.expira_at) > new Date();
+  // Se mide la ventana de SERVICIO (24h desde el último mensaje del cliente), que es la que
+  // habilita el texto libre. Antes se usaba `conversations.expira_at`, que es la MAYOR entre
+  // esas 24h y el Free Entry Point de 72h del anuncio — y eso deja pasar envíos que Meta
+  // rechaza: las 72h del FEP son sobre el COBRO (los mensajes no se cobran), no sobre el
+  // permiso. Con las 24h cerradas solo entra una plantilla, aunque el FEP siga vivo.
+  // El resultado de dejarlo pasar era un mensaje "enviado" que en realidad rebotaba (131047).
+  const { data: ct24 } = await db
+    .from("contacts").select("ultimo_mensaje_cliente_at").eq("id", contact_id).maybeSingle();
+  const _ult = (ct24 as any)?.ultimo_mensaje_cliente_at ? new Date((ct24 as any).ultimo_mensaje_cliente_at).getTime() : 0;
+  const abierta = _ult > 0 && (Date.now() - _ult) < 24 * 60 * 60 * 1000;
   if (!abierta) {
     return json({ error: "ventana_cerrada", detalle: "La ventana se cerró: solo puedes iniciar con una plantilla aprobada." }, 403);
   }
