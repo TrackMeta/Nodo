@@ -103,9 +103,6 @@ Deno.serve(async (req) => {
   const secrets = await getChannelSecrets(db, channel_id);
   if (!secrets?.access_token) return json({ error: "sin_token" }, 500);
 
-  // Pausar el bot para este contacto (humano interviene).
-  await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
-
   const caption = text?.trim() || "";
   const msgType = mediaKind ?? "text";
   const outContent = mediaKind
@@ -123,6 +120,12 @@ Deno.serve(async (req) => {
       content: outContent, wamid: wamid || null, status: "sent",
       sent_by: "human", sent_by_user: uid,
     });
+    // El bot se pausa recién con el envío CONFIRMADO, igual que en la rama de plantilla.
+    // Estaba antes del envío: si Meta rechazaba el mensaje, al cliente no le llegaba nada
+    // Y ADEMÁS el bot quedaba apagado, así que nadie lo atendía hasta reactivarlo a mano.
+    // Con un problema de canal (token vencido) eso se multiplicaba: cada cliente al que
+    // intentaras escribir se quedaba, de una sola vez, sin respuesta tuya y sin bot.
+    await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
     // El operador está atendiendo → marcar leído.
     await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
     return json({ ok: true, wamid });
