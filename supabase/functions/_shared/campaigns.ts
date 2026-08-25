@@ -21,7 +21,12 @@ export const BATCH = 25;
 const CONC_CAMP = 4;
 
 // Llamado por el scheduler cada tick.
-export async function processCampaigns(db: SupabaseClient) {
+// `hastaMs`: instante en el que hay que dejar de tomar trabajo nuevo. Las campañas corren
+// DESPUÉS de despertar conversaciones y del remarketing, y sus envíos van espaciados a
+// propósito (retraso anti-baneo), así que pueden sumar decenas de segundos por su cuenta.
+// Sin este corte, el presupuesto de las dos fases anteriores no servía de nada: el tick se
+// pasaba igual del minuto por acá. Lo que no sale queda "pendiente" y sale en el siguiente.
+export async function processCampaigns(db: SupabaseClient, hastaMs?: number) {
   const nowIso = new Date().toISOString();
   // 1) Programadas que ya toca → expandir a envíos.
   // Orden explícito en las dos: sin `.order()` el orden que devuelve Postgres no está
@@ -63,7 +68,8 @@ export async function processCampaigns(db: SupabaseClient) {
   // retraso anti-baneo): en fila india, 8 campañas × 25 envíos con su pausa no entran en el
   // minuto del tick. Cada una en su try — una que reviente no deja sin lote a las demás.
   await enParalelo(sending, CONC_CAMP, async (c: any) => {
-    try { await sendBatch(db, c); }
+    if (hastaMs && Date.now() > hastaMs) return; // se acabo el minuto: esta campana sale en el proximo tick
+    try { await sendBatch(db, c, hastaMs); }
     catch (e) { console.error(`[campañas] enviar lote de "${c.nombre ?? c.id}":`, (e as any)?.message ?? e); }
   });
 }
@@ -185,7 +191,7 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
   return ids;
 }
 
-async function sendBatch(db: SupabaseClient, c: any) {
+async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
   if (!tpl) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
   // Defensa en profundidad: si Meta pausó/rechazó la plantilla DESPUÉS de crear la
@@ -234,6 +240,10 @@ async function sendBatch(db: SupabaseClient, c: any) {
   let ok = 0, fail = 0;
   let first = true;
   for (const s of pend) {
+    // Corte por tiempo a mitad del lote: lo ya enviado quedo marcado y lo que falta sigue
+    // "pendiente", asi que el proximo tick retoma justo aca. Cortar es seguro porque cada
+    // envio se reclama de a uno con el claim atomico de abajo.
+    if (hastaMs && Date.now() > hastaMs) break;
     // Claim ATÓMICO: marca la fila 'enviando' SOLO si sigue 'pendiente'. Si un tick
     // solapado (el cron corre cada minuto y un lote grande puede pasar de 60s) ya la
     // tomó, el update no afecta filas → se salta. Sin esto, dos ticks seleccionaban

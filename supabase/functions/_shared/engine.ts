@@ -1884,6 +1884,14 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return true;
   }
   if (aw.type === "button" && event.type === "button") {
+    // `next` no puede salir null acá, y conviene saber por qué antes de "arreglarlo": para
+    // llegar a esta rama el evento tuvo que seguir siendo de tipo botón, y runEngine solo lo
+    // deja así si `esperaEsteBoton` confirmó que ESTE paso tiene salida para ESE botón. Si no
+    // la tiene —un botón viejo del historial (en WhatsApp se quedan en el chat para siempre)
+    // o uno que quedó sin conectar en el editor—, el toque se convierte antes en un mensaje
+    // de texto con el título del botón, y lo atiende la IA como si el cliente lo hubiera
+    // escrito. Las dos comprobaciones pasan DENTRO del lock por contacto, así que tampoco hay
+    // ventana para que el run cambie entre una y otra.
     const handle = `boton:${event.buttonId}`;
     const next = await nextNode(db, run.flow_id, aw.node_id, handle);
     run.current_node_id = next;

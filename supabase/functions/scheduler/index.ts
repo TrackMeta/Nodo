@@ -47,9 +47,8 @@ async function marcarTocoMkt(contactId: string) {
 // viajes de ida y vuelta a la base, ~1 s en total, que entre 5 dan los ~200 ms). Para
 // ampliar de verdad hay que bajar ese número de consultas o repartir el cron en varias
 // funciones — no tocar esta constante. Se queda en 5, que es el valor estable.
-// Bajo a propósito además porque cada una puede llamar a
-// la IA, así que esto acota las llamadas simultáneas al proveedor (y su límite de tasa) y la
-// carga sobre la base y sobre el límite de tasa del proveedor de IA.
+// Mantenerlo bajo tiene además otra razón: cada conversación puede llamar a la IA, así que
+// este número acota las llamadas simultáneas al proveedor y su límite de tasa.
 const CONC_WAKE = 5;
 // Suscripciones de remarketing que se procesan a la vez. Mismo criterio: cada una puede
 // terminar en un envío por red. Ojo — subir esto SIN el "una por contacto por tick" de abajo
@@ -234,7 +233,13 @@ Deno.serve(async (req) => {
   // así que la ventana avanza sola y sin escrituras extra.
 
   // ── 3) Campañas / broadcast ───────────────────────────────────────
-  try { await processCampaigns(db); }
+  // Hasta cuándo pueden enviar. El `Math.max` es un MÍNIMO GARANTIZADO: si despertar
+  // conversaciones y el remarketing ya se comieron el presupuesto, sin esto las campañas se
+  // quedarían con cero segundos y una campaña grande no avanzaría NUNCA en un sistema con
+  // mucha conversación en vivo. Con el mínimo siempre sale un pedacito del lote, y el resto
+  // queda pendiente para el tick siguiente. 6 s sobre un tope de 60 no descuadran el minuto.
+  const hastaCampanas = Math.max(now + PRESUPUESTO_MS + 12_000, Date.now() + 6_000);
+  try { await processCampaigns(db, hastaCampanas); }
   catch (e) { console.error("[scheduler] campaigns:", (e as any)?.message ?? e); }
 
   // ── 4) Recordatorios anclados a pedido (§6-SEPTIES) ───────────────
@@ -253,7 +258,7 @@ Deno.serve(async (req) => {
 
   // ── 6) Resúmenes diarios a Telegram (mañana / noche) ──────────────
   let resumenes = 0;
-  try { resumenes = await processResumenes(); }
+  try { resumenes = await processResumenes(now); }
   catch (e) { console.error("[scheduler] resumenes:", (e as any)?.message ?? e); }
 
   // ── Cuánto tardó el tick ──────────────────────────────────────────
@@ -281,7 +286,7 @@ Deno.serve(async (req) => {
 // Dos avisos que el operador programa (Canales → Avisos): mañana = cómo fue
 // AYER, noche = cómo va HOY. Cada tick (por minuto) revisa si toca mandarlos.
 // El texto lo arma construirResumen() (compartido con los comandos de Telegram).
-async function processResumenes(): Promise<number> {
+async function processResumenes(tickInicio: number): Promise<number> {
   const now = new Date();
   let sent = 0;
   // Paginado, no `.limit(100)`: a diferencia de flow_runs y sequence_subscriptions (que
@@ -299,6 +304,10 @@ async function processResumenes(): Promise<number> {
     if (filas.length < 1000) break;
   }
   for (const ch of chans ?? []) {
+    // Corte por tiempo: con muchos negocios este recorrido es largo y va DESPUÉS de todo lo
+    // demás del tick. El resumen tiene una ventana de 60 min desde su hora, así que el que
+    // no entra en este minuto sale en el siguiente sin perderse.
+    if (Date.now() - tickInicio > PRESUPUESTO_MS + 16_000) break;
     try {
       const cfg = (ch as any).resumenes ?? {};
       const chatIds = (ch as any).telegram_chat_ids ?? [];
@@ -367,6 +376,9 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
     if (filas.length < 1000) break;
   }
   for (const ch of chans ?? []) {
+    // Mismo corte por tiempo. Lo que no se revisa en este tick sigue cumpliendo la condición
+    // (el pedido no se movió), así que lo agarra el siguiente: solo se atrasa un minuto.
+    if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;
     const cfg = (ch as any)?.pedidos_config?.adelanto;
     if (!cfg) continue;
     const chId = (ch as any).id;
@@ -471,6 +483,9 @@ async function processOrderReminders(now: number): Promise<number> {
   }
   let n = 0;
   for (const t of trigs ?? []) {
+    // Último corte por tiempo del tick. Estos recordatorios miran pedidos que llevan HORAS
+    // en un estado, así que atrasarse un minuto no cambia nada; encimar los ticks sí.
+    if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;
     if ((t as any).flows?.estado !== "activo") continue;
     const estado = (t as any).config?.estado;
     const horas = Number((t as any).config?.horas ?? 24);
