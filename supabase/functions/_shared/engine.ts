@@ -357,14 +357,49 @@ async function runEngineInner(
       const kw = await routeDecision(db, channelId, event.text, undefined);
       if (kw.tier === "keyword" && kw.flow) decision = kw;
     }
-    const flow = decision.flow;
+    let flow = decision.flow;
+    // 🔁 Segunda pasada CON MEMORIA: el ruteo por IA juzga SOLO el mensaje de este turno.
+    // Si el cliente ya viene hablando con la RECEPCIÓN, sus mensajes siguientes son
+    // respuestas cortas ("sí, las dos tallas", "Marco Ríos, Av Larco 500") que sueltas no
+    // calzan con ningún producto → volvía a caer en Recepción, y ahí se quedaba PARA
+    // SIEMPRE. Medido: pidió "2 pares talla 39 y 40 negras", Recepción le aceptó las tallas
+    // y le tomó la dirección completa… y nunca nació el pedido (product_id null, cero
+    // flow_runs): entregó todos sus datos y quedó en el aire.
+    // Arreglo: si no hubo producto, se reintenta el ruteo con sus últimos mensajes PEGADOS
+    // — ahí "sí, las dos tallas" viaja junto a "quiero 2 pares negras" y sí rutea. Solo
+    // cuando ya hay historial suyo (no gasta IA en el primer "hola").
+    if (!flow) {
+      try {
+        const { data: prev } = await db.from("messages").select("content")
+          .eq("contact_id", contactId).eq("direction", "in")
+          .order("ts", { ascending: false }).limit(4);
+        const hist = (prev ?? []).map((m: any) => String(m?.content?.text ?? m?.content?.caption ?? "").trim()).filter(Boolean).reverse();
+        if (hist.length >= 2) {
+          const junto = hist.join(". ").slice(0, 600);
+          const d2 = await routeDecision(db, channelId, junto, adIdRuteo);
+          if (d2.flow) {
+            flow = d2.flow;
+            await logEvent(db, channelId, contactId, "nota", "🧭 Ruteo con memoria",
+              `Sus mensajes sueltos no routeaban; leídos juntos sí → ${d2.flow.nombre ?? ""}`).catch(() => {});
+          }
+        }
+      } catch (e) { console.error("[ruteo/memoria]", (e as any)?.message ?? e); }
+    }
     if (!flow) {
       // Sin producto claro (hola / anuncio sin banco / mensaje vago): la RECEPCIÓN
       // con IA lo recibe y lo encamina a un producto. Si está apagada o no hay IA,
       // no responde y queda en la Bandeja para un humano (comportamiento anterior).
-      try { await runReception(db, channelId, contactId, event); }
+      let recFlowId: string | undefined;
+      try { recFlowId = (await runReception(db, channelId, contactId, event)).flowId; }
       catch (e) { console.error("[recepcion]", (e as any)?.message ?? e); }
-      return;
+      // Recepción ya sabe qué quiere el cliente y lo entrega: se abre la venta de ese
+      // producto en ESTE mismo turno (si no, el cliente esperaría un mensaje más).
+      if (recFlowId) {
+        const { data: fRec } = await db.from("flows")
+          .select("id, nombre, estado").eq("id", recFlowId).eq("channel_id", channelId).maybeSingle();
+        if (fRec && (fRec as any).estado === "activo") flow = { id: (fRec as any).id, nombre: (fRec as any).nombre };
+      }
+      if (!flow) return;
     }
     // Registrar en la Timeline si el ruteo lo decidió la IA (transparencia).
     if (decision.tier === "ia" || decision.tier === "fallback") {
@@ -930,6 +965,10 @@ async function propagarVarianteAlPedido(db: SupabaseClient, run: Run, ctx: any) 
   if (!oid) return;
   const atrs: any[] = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
   if (!atrs.length) return;
+  // Pedir OTRA unidad no es corregir la propia: "ahora el par talla 40" (con el par 39 ya
+  // cerrado) le reescribía la talla al pedido existente en vez de abrir el segundo. Acá solo
+  // se sale sin tocar nada; quien crea el pedido nuevo es la recompra.
+  if (pideUnidadAdicional(String(ctx.last_input ?? run.vars?.last_input ?? ""))) return;
   const { data: o } = await db.from("orders").select("estado, shipping, order_bumps, product_id").eq("id", oid).maybeSingle();
   if (!o || VARIANTE_NO_TOCAR.includes(String((o as any).estado))) return;
   const ship = ((o as any).shipping ?? {}) as any;
@@ -1229,7 +1268,14 @@ function pideVuelto(text: string): boolean {
 // "esto no me funciona" o "tengo un problema con la talla" (que el bot SÍ puede
 // resolver) escale. Solo enojo/disputa real. Configurable (humano.reclamos).
 const PIDE_RECLAMO = [
-  "estafa", "estafador", "estafadores", "me estafaron", "es un robo", "esto es un robo", "me robaron",
+  // OJO: "estafa" a secas NO está, y es a propósito. Matcheaba igual las dos intenciones
+  // opuestas: "esto es una estafa" (cliente enojado → escalar) y "¿no será estafa?" (cliente
+  // DESCONFIADO antes de comprar → hay que venderle). Medido: a "hola, ¿esto no será estafa?
+  // ¿cómo sé que me van a mandar el producto?" el bot no contestó nada y lo mandó a un
+  // humano — y esa es LA objeción más común en venta por WhatsApp, la que el bot cierra
+  // solo diciendo que paga al recibir. Escalarla satura al operador y regala ventas.
+  // Quedan las formas AFIRMATIVAS, que sí son una acusación.
+  "estafador", "estafadores", "me estafaron", "es un robo", "esto es un robo", "me robaron",
   "son unos ladrones", "ladrones", "son unos rateros", "son unos abusivos", "esto es un abuso",
   "voy a denunciar", "los voy a denunciar", "los denuncio", "indecopi",
   "voy a reportar", "los voy a reportar", "los voy a demandar", "voy a demandar",
@@ -1237,9 +1283,15 @@ const PIDE_RECLAMO = [
   "exijo mi devolucion", "quiero mi devolucion", "devuelvanme mi dinero", "quiero que me devuelvan mi dinero",
   "estoy indignado", "estoy indignada", "es una estafa", "esto es una estafa",
 ];
+// El MISMO sustantivo cambia de bando según cómo venga: "es una estafa" acusa, "¿no será
+// estafa?" duda. Y el que duda todavía no compró — escalarlo es regalar la venta. Estas
+// formas dubitativas vetan la escalada aunque la frase pegue con la lista de arriba.
+const RE_DUDA_NO_RECLAMO =
+  /\b(no ser[aá]|ser[aá] que|no sea|espero que no|c[oó]mo s[eé] que|como se que|me da (miedo|cosa|desconfianza)|desconf[ií]|es seguro|son seguros?|es confiable|puedo confiar)\b/i;
 function pideReclamo(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 240) return false; // los reclamos suelen ser largos (rants)
+  if (RE_DUDA_NO_RECLAMO.test(String(text))) return false; // duda previa a comprar, no acusación
   return PIDE_RECLAMO.some((f) => {
     const n = limpiaOpt(f);
     if (!n) return false;
@@ -1296,6 +1348,18 @@ const PIDE_RECOMPRA = [
   "quiero pedir otro", "pedir otro", "quiero comprar de nuevo", "me vendes otro",
   "quiero comprar nuevamente", "necesito otro par", "quiero mas pares",
 ];
+// Pide una unidad ADICIONAL, no corregir la suya. Se exige un sustantivo de unidad
+// ("ahora el PAR talla 40", "el otro PEDIDO") para no confundirlo con un dato que llega
+// tarde: "ahora la dirección es Av X" NO puede leerse como una segunda compra.
+const RE_UNIDAD_ADICIONAL =
+  /\b(ahora (el|la|un|una|otro|otra|los|las) (par|unidad|pedido|juego|caja|combo|producto|item|kit)|tambien (quiero|dame|mandame|me llevo|agregame|sumame)|ademas (quiero|dame)|(el|la) (otro|otra|segundo|segunda) (par|pedido|unidad|talla|color)|falta (el|la) (otro|otra|segundo|segunda))\b/;
+// Señales de que está CORRIGIENDO lo suyo (mandan sobre lo de arriba).
+const RE_ES_CORRECCION = /\b(mejor|en vez|en lugar|cambi|me equivoque|equivocad|no era|corrige|corregir|anula|cancela)\b/;
+function pideUnidadAdicional(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 200) return false;
+  return RE_UNIDAD_ADICIONAL.test(t) && !RE_ES_CORRECCION.test(t);
+}
 function pideRecompra(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 200) return false;
@@ -1699,6 +1763,15 @@ async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: stri
   } catch (_) { return null; }
 }
 
+// Español del cliente: acá se le escribe a peruanos, de TÚ. Los modelos se van solos al
+// voseo rioplatense cuando el prompt no lo fija — medido en Recepción: "eso es genial
+// porque el cambio de talla es gratis si necesitás", "¿querés que te enseñe?". Suena a
+// bot extranjero y le baja la confianza a alguien que ya duda si le va a llegar su pedido.
+const REGLA_TUTEO =
+  "## Cómo hablas\nEscribes en español peruano y tratas al cliente de TÚ (tú, avísame, cuéntame, " +
+  "dime, tienes, quieres, necesitas). ⛔ NUNCA voseo argentino: nada de «querés», «tenés», " +
+  "«necesitás», «podés», «vos», «acá tenés». Tampoco español de España («vale», «os», «vosotros»).";
+
 export async function routeDecision(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
   const det = await matchTrigger(db, channelId, text, adId);
   if (det.flow) return det;
@@ -1713,7 +1786,7 @@ export async function routeDecision(db: SupabaseClient, channelId: string, text:
 
 // Productos "de entrada" del canal (los que un cliente puede pedir), con su
 // intención/descripción — para que la RECEPCIÓN sepa qué ofrecer y encaminar.
-async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ label: string; intent: string }[]> {
+async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ label: string; intent: string; flow_id: string }[]> {
   const { data: trg } = await db.from("flow_triggers")
     .select("tipo, flows!inner(id, nombre, estado, product_id, descripcion)")
     .eq("channel_id", channelId).eq("activo", true).in("tipo", ["keyword", "entrada"]);
@@ -1726,7 +1799,7 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
     const p = f.product_id ? prods.get(f.product_id) : null;
     const c = (p as any)?.config ?? {};
     const intent = c.intencion || c.contexto_producto || c.faq || f.descripcion || "";
-    return { label: (p as any)?.nombre || f.nombre || "Producto", intent: String(intent).slice(0, 300) };
+    return { label: (p as any)?.nombre || f.nombre || "Producto", intent: String(intent).slice(0, 300), flow_id: String(f.id) };
   });
 }
 
@@ -1735,14 +1808,14 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
 // qué se vende y lo guía a un producto — en vez de dejarlo sin respuesta. En el
 // SIGUIENTE mensaje, si ya quedó claro, el IA Router lo rutea a la venta de ese
 // producto. Configurable en channels.ia_router.recepcion {activo, saludo[], prompt}.
-async function runReception(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
-  if (event.type !== "message") return false;
+async function runReception(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<{ hecho: boolean; flowId?: string }> {
+  if (event.type !== "message") return { hecho: false };
   const { data: ch } = await db.from("channels").select("ia_router").eq("id", channelId).maybeSingle();
   const rec = (ch as any)?.ia_router?.recepcion ?? {};
-  if (rec.activo === false) return false; // recepción apagada → a la Bandeja (humano)
+  if (rec.activo === false) return { hecho: false }; // recepción apagada → a la Bandeja (humano)
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) return false; // sin IA configurada → a la Bandeja
+  if (!ai?.api_key) return { hecho: false }; // sin IA configurada → a la Bandeja
   const run: any = { id: null, channel_id: channelId, contact_id: contactId, flow_id: null, current_node_id: null, vars: { last_input: event.text ?? "" } };
   const ctx = await buildContext(db, run);
   ctx.last_input = event.text ?? "";
@@ -1763,9 +1836,18 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   const parts: string[] = [];
   parts.push("## Tu rol AHORA: RECEPCIÓN\n" + (String(rec.prompt || "").trim() ||
     "Eres la recepción de este negocio. Saluda con calidez, cuenta brevemente qué vendemos y ayuda al cliente a decir qué producto le interesa."));
+  parts.push(REGLA_TUTEO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
-    parts.push("## Productos que vendemos\n" + cands.map((c) => `- ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
+    parts.push("## Productos que vendemos\n" + cands.map((c, i) => `[${i + 1}] ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
+      "\n\n## 🎯 Cómo lo pasas a la venta (lo más importante de tu trabajo)\n" +
+      "En cuanto sepas cuál de esos productos quiere —porque lo nombró, lo describió o te confirmó el que le " +
+      "propusiste— tu respuesta debe ser ÚNICAMENTE la etiqueta `[[ir:N]]`, con N el número del producto entre " +
+      "corchetes de la lista de arriba. Nada de texto además de la etiqueta: el cliente NO la ve, y el sistema " +
+      "abre ahí mismo la venta de ese producto, que es quien sabe precios, stock, cobertura y toma el pedido. " +
+      "Si sigues conversando en vez de pasarlo, el cliente se queda contigo dando vueltas y su pedido nunca " +
+      "existe (medido en vivo: entregó tallas y dirección completa y no se registró nada). " +
+      "Escribe respuesta normal SOLO mientras de verdad no sepas qué quiere.\n" +
       "\n\n⛔ NO prometas cobertura ni plazos de entrega. Acá NO tienes el veredicto de zonas del negocio (ese lo " +
       "calcula el motor recién dentro de la venta), así que no digas «sí llegamos a X», «demora N días» ni des fechas: " +
       "medido, a un «¿tienen delivery a Chosica? ¿cuánto demora?» se le contestó «sí, sin problema, 2 a 3 días hábiles» " +
@@ -1775,6 +1857,12 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "comprar: eso lo enfurece. Atiéndelo, pídele el detalle y escribe `[[humano]]` para que lo tome una persona. " +
       "(Medido: a una clienta que abrió con «tengo un problema con un pedido anterior» se le respondió «¿te gustaría " +
       "conocer nuestros productos actuales?» — publicidad a alguien que viene a reclamar.)\n" +
+      "\n⛔ NO TOMES DATOS NI CIERRES NADA. Tú solo recibes: no pidas ni anotes nombre, dirección, DNI ni " +
+      "teléfono, no confirmes tallas, colores ni cantidades («te preparo la 39 y la 40»), y nunca digas que el " +
+      "pedido está listo o «casi listo». Nada de eso se guarda desde acá: eso lo hace la venta del producto, un " +
+      "paso después. Medido: a un cliente que pidió 2 pares se le aceptaron las tallas y se le pidió la dirección " +
+      "completa — y su pedido NUNCA existió. Si él te da esos datos por su cuenta, no los repitas como confirmados: " +
+      "dile con calidez que ya lo estás encaminando y pregúntale por el producto que quiere.\n" +
       "\nEn cualquier otro caso, guía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
   } else {
     parts.push("Aún no hay productos configurados; responde con amabilidad y ofrece tomar sus datos.");
@@ -1789,10 +1877,29 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   let result = "";
   try {
     result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
-  } catch (e) { console.error("[recepcion/ai]", (e as any)?.message ?? e); return false; }
+  } catch (e) { console.error("[recepcion/ai]", (e as any)?.message ?? e); return { hecho: false }; }
+  // 🎯 ENTREGA A LA VENTA. La etiqueta [[ir:N]] jamás debe llegar al cliente, así que se
+  // saca del texto pase lo que pase. Si N es válido, este turno NO lo contesta Recepción:
+  // arranca el flujo de venta de ese producto (que saluda y pregunta lo suyo) — mandar
+  // además el texto de Recepción serían dos burbujas seguidas diciendo casi lo mismo.
+  // Antes esto dependía del IA Router, que es OTRA perilla y viene APAGADA: con Recepción
+  // encendida y Router apagado, quien no escribía la keyword exacta no llegaba NUNCA a la
+  // venta — se quedaba conversando con Recepción para siempre.
+  let flowId: string | undefined;
+  const mIr = /\[\[\s*ir\s*:\s*(\d+)\s*\]\]/i.exec(result || "");
+  if (mIr) {
+    result = String(result).replace(/\[\[\s*ir\s*:\s*\d+\s*\]\]/gi, "").trim();
+    const n = Number(mIr[1]);
+    if (Number.isInteger(n) && n >= 1 && n <= cands.length) flowId = cands[n - 1].flow_id;
+  }
+  if (flowId) {
+    await logEvent(db, channelId, contactId, "nota", "👋 Recepción → venta",
+      `Encaminado a "${cands.find((c) => c.flow_id === flowId)?.label ?? ""}"`).catch(() => {});
+    return { hecho: true, flowId };
+  }
   await logEvent(db, channelId, contactId, "nota", "👋 Recepción (IA)", (event.text ?? "").slice(0, 80)).catch(() => {});
   await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
-  return true;
+  return { hecho: true };
 }
 
 async function startRun(db: SupabaseClient, channelId: string, contactId: string, flow: any, initialVars: Record<string, unknown> = {}): Promise<Run | null> {
@@ -2355,6 +2462,27 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
 // afirmación y pregunta ("Listo, queda confirmado. ¿Te lo envío a Surco?"), se corta
 // solo la última oración. Nunca devuelve vacío: sin nada que enviar, el cliente se
 // queda en silencio justo al cerrar la compra, que es peor que la pregunta de más.
+// Anuncio de cierre que es MENTIRA: la IA escribe "listo, queda confirmado tu pedido" en un
+// turno donde el motor NO creó ningún pedido (falta un dato, falta elegir variante, el pack
+// pedido no cabe en un pedido). El cliente se va tranquilo a esperar un paquete que nadie
+// va a preparar, y como para él la venta está hecha, no vuelve a escribir: es una venta
+// perdida que ni siquiera figura como pendiente. Como regla de prompt falló dos veces
+// seguidas, se recorta por código (regla del proyecto): se quitan SOLO las frases que
+// afirman el cierre, no el resto del mensaje.
+const RE_FALSO_CIERRE =
+  /(qued[oó]|queda|est[aá]|dej[oé]|dejo)\s+(todo\s+)?(confirmad|list[oa])|pedido\s+(confirmad|registrad|anotad)|confirmo\s+tu\s+pedido|tu\s+pedido\s+(ya\s+)?(est[aá]|qued)/i;
+function sinFalsoCierre(texto: string, cierre: string): string {
+  const t = String(texto ?? "");
+  if (!RE_FALSO_CIERRE.test(t)) return texto;
+  const frases = t.split(/(?<=[.!?…])\s+/);
+  const limpio = frases.filter((f) => !RE_FALSO_CIERRE.test(f)).join(" ").replace(/\s+/g, " ").trim();
+  // Si al quitarlas casi no queda mensaje (a veces TODO el texto era el anuncio falso), se
+  // cierra con la frase honesta que toca según el motivo: así el cliente no se queda sin
+  // respuesta ni con la idea de que ya compró.
+  if (limpio.replace(/[\s\p{P}]/gu, "").length >= 25) return limpio;
+  return (limpio ? limpio + " " : "") + cierre;
+}
+
 function sinPreguntaFinal(texto: string): string {
   const t = String(texto ?? "").trimEnd();
   if (!t || !t.endsWith("?")) return texto;
@@ -4543,6 +4671,9 @@ const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|di
 // corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
 const NOMBRE_KW = /\b(a nombre|nombre de|nombre del|destinatari|lo recoge|la recoge|lo recoje|la recoje|recoja|figure a|figura a|a mi (esposa|esposo|mama|mamá|papa|papá|hijo|hija|hermano|hermana|amig|vecin))\b/i;
 const TEL_KW = /\b(telefono|teléfono|celular|numero|número|whatsapp|contacto|llam)/i;
+// Lo que el cliente dice cuando NO quiere cambiar la dirección (no es un destino).
+const RE_DIR_NO_ES_DIR =
+  /^(a |en |la |el |lo )*(misma|mismo|igual|de siempre|siempre|anterior|de antes|otra vez)( direccion| dir| lugar| sitio| casa| lado)?( que (antes|siempre|el anterior|la anterior))?\.?$|^(donde|como) (siempre|antes|la (vez )?pasada|el otro pedido|el anterior)\.?$|^la (de|del) (siempre|antes|otro pedido|anterior)\.?$/;
 async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
   const txt = event.text; const low = txt.toLowerCase();
@@ -4610,7 +4741,12 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   }
   // DIRECCIÓN (texto libre): guard por solape, distinta de la actual.
   const nDir = String(p.direccion ?? "").trim();
-  if (nDir && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
+  // ⛔ "misma dirección", "la de siempre", "donde el otro pedido" NO son direcciones: son el
+  // cliente diciendo que NO cambia nada. Se guardaban tal cual y el rótulo salía con
+  // "misma direccion" como destino — un paquete imposible de entregar. Medido en vivo al
+  // pedir un segundo par ("un par talla 40, misma direccion").
+  const esReferencia = RE_DIR_NO_ES_DIR.test(nDir.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+  if (nDir && !esReferencia && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
     sh.direccion = nDir;
     if (!yaSalio) await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
     cambios.push("dirección: " + nDir);
@@ -5710,7 +5846,11 @@ async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contac
   // OTRO producto del catálogo. Sin lo segundo, "ya compré las zapatillas, ahora
   // quiero el curso" lo tragaba el nodo parqueado y el bot NEGABA vender el curso.
   const otroPid = await otroProductoPorKeyword(db, channelId, event.text, (order as any).product_id);
-  if (!pideRecompra(event.text) && !otroPid) return false;
+  // "ahora el par talla 40" tras cerrar el primero: es el SEGUNDO pedido, no una corrección
+  // del que acaba de comprar. Sin esto, propagarVarianteAlPedido le cambiaba la talla al
+  // pedido ya cerrado (medido: el par 39 se convirtió en 40 y el segundo par nunca existió —
+  // el cliente creía haber comprado dos y le llegaba uno).
+  if (!pideRecompra(event.text) && !pideUnidadAdicional(event.text) && !otroPid) return false;
   const { data: ch } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   if ((ch as any)?.pedidos_config?.postventa?.activo === false) return false;
   const pidRun = otroPid || (order as any).product_id;
@@ -5754,6 +5894,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (!ai?.api_key) { await deliverMessage(db, run.channel_id, run.contact_id, fallback).catch(() => {}); return; }
     const parts: string[] = [];
+    parts.push(REGLA_TUTEO);
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     parts.push(
@@ -5899,6 +6040,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const estadoLegible = EST_HOJA[estado] ?? "compra registrada";
   const prod = (order as any).product?.nombre || ctx.producto_nombre || "tu compra";
   const parts: string[] = [];
+    parts.push(REGLA_TUTEO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + resolve(String(ctx.contexto_producto), ctx));
 
@@ -7377,6 +7519,29 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // no hay alerta y el cliente cree que todo va bien.
   // Solo actúa si en lo que dijo el cliente calza UN único valor del catálogo; si hay
   // dos (dijo "negro o blanco") no adivina y lo deja pendiente para que se lo pregunten.
+  // La misma red, para los campos de FORMATO FIJO (teléfono y DNI). Son los más fáciles de
+  // recuperar por código y el extractor igual se los salta: medido, el cliente mandó
+  // "un par talla 39 negras. Luis Vega, Lima Miraflores, Av Pardo 300, 987222333" y el
+  // teléfono no se guardó → datos_completos "no", pedido nunca creado, y la IA —que no
+  // sabía cuál faltaba— cerró con "¿te lo mando mañana a Av Pardo 300?". Venta muerta en
+  // silencio con TODOS los datos ya dados. Se distinguen por longitud: celular peruano = 9
+  // dígitos empezando en 9; DNI = 8. Si el mensaje trae dos números que compiten, no adivina.
+  for (const c of campos) {
+    if (String(ctx[c.clave] ?? "").trim()) continue;
+    const tipo = String((c as any).validar ?? "");
+    if (tipo !== "telefono" && tipo !== "dni") continue;
+    const nums = [...String(contexto ?? "").matchAll(/(?<![\d])(\d{8,9})(?![\d])/g)].map((m) => m[1]);
+    const cand = [...new Set(tipo === "telefono"
+      ? nums.filter((n) => n.length === 9 && n.startsWith("9"))
+      : nums.filter((n) => n.length === 8))];
+    if (cand.length !== 1) continue;                              // ninguno o ambiguo
+    const chk = validarDato(c, cand[0], ctx);
+    if (!chk.ok) continue;
+    ctx[c.clave] = cand[0]; run.vars[c.clave] = cand[0];
+    await setField(db, run.channel_id, run.contact_id, c.clave, cand[0]).catch(() => {});
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "Dato recuperado del mensaje",
+      `${c.clave}: ${cand[0]} (el extractor no lo trajo)`).catch(() => {});
+  }
   for (const c of campos) {
     if (String(ctx[c.clave] ?? "").trim()) continue;              // ya está
     const vals = parseValores((c as any).valores);
@@ -7428,10 +7593,16 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // no se llegó a resolver (ver simulacion-e2e-2026-08-09). Solo aplica a flujos con
   // campos de despacho (físicos); el digital cierra por otra vía.
   let faltaOpcion = false;
+  // Unidades de la presentación elegida. Se lee del catálogo y NO de `ctx.cantidad`:
+  // ctx.cantidad la fija buildContext MÁS TARDE en el turno, así que acá siempre venía
+  // vacía y el guard de pack mixto (abajo) no disparaba nunca.
+  let unidadesOpcion = 1;
   if (campos.length) {
     const opId = String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
     try {
       const ops = await loadOpciones(db, run, ctx._product_id);
+      const opSel = (ops || []).find((o: any) => String(o?.id) === opId);
+      if (opSel) unidadesOpcion = Number((opSel as any).cantidad) || 1;
       const conPrecio = (ops || []).filter((o: any) => o && o.precio != null && Number.isFinite(Number(o.precio)) && Number(o.precio) > 0);
       // La opción elegida debe ser del producto ACTUAL. `opcion_id` persiste como campo del
       // contacto ENTRE conversaciones; si viene de OTRO producto (el cliente vio A, se fue
@@ -7478,7 +7649,35 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   } catch (_) { /* sin stock legible → como antes */ }
   (ctx as any)._falta_variante = faltaVariante;
   run.vars._falta_variante = faltaVariante;
-  const completo = pendientes.length === 0 && !faltaOpcion && !faltaVariante;
+  // 📦 Pack de VARIAS unidades con variantes DISTINTAS: el pedido guarda UNA sola
+  // variante (shipping.atributos + un stock_key), así que "el pack de 2, una talla 39 y
+  // otra 40" no cabe en el modelo. Medido: se cerró un "Pack 2 pares" de S/230 con
+  // `Talla: 40` a secas — la 39 que el cliente pidió DOS veces se evaporó, el stock
+  // descontó dos 40 y a su casa iban a llegar dos pares iguales (cambio y flete perdidos).
+  // Mientras no exista variante por unidad, esto NO se cierra solo: se detecta acá y la IA
+  // le explica y le ofrece la salida que el sistema sí sabe hacer (un pedido por talla).
+  let packMixto = false;
+  try {
+    const cantP = Math.max(unidadesOpcion, Number(ctx.cantidad) || 1);
+    const atrsP = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
+    if (cantP > 1 && atrsP.length && !faltaOpcion) {
+      const { data: ins } = await db.from("messages").select("content")
+        .eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(6);
+      const nrm = (t: string) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const txtIn = nrm((ins ?? []).map((m: any) => String(m?.content?.text ?? m?.content?.caption ?? "")).join(" · ") +
+        " · " + String(ctx.last_input ?? ""));
+      for (const a of atrsP) {
+        const vals = [...new Set(((a as any).valores || []).map((v: any) => nrm(String(v))).filter(Boolean))];
+        const vistos = vals.filter((v: any) =>
+          new RegExp(`(^|[^\\p{L}\\p{N}])${String(v).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(s|es)?([^\\p{L}\\p{N}]|$)`, "u").test(txtIn));
+        if (vistos.length >= 2) { packMixto = true; break; }
+      }
+    }
+  } catch (_) { /* si no se puede leer, se comporta como antes */ }
+  (ctx as any)._pack_mixto = packMixto;
+  run.vars._pack_mixto = packMixto;
+  const completo = pendientes.length === 0 && !faltaOpcion && !faltaVariante && !packMixto;
   run.vars.datos_completos = completo ? "si" : "no";
   ctx.datos_completos = completo ? "si" : "no";
   await setField(db, run.channel_id, run.contact_id, "datos_completos", completo ? "si" : "no");
@@ -8115,6 +8314,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   let preguntaColgada = "";
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
     const parts: string[] = [];
+    parts.push(REGLA_TUTEO);
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     // Formas de pago (fuente única = Validador de comprobantes): la IA sabe
     // responder "¿cómo pago?" sin repetir los datos en el Conocimiento.
@@ -8399,6 +8599,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // "Recojo" es vocabulario de provincia (agencia): en Lima va un motorizado a la
         // puerta, y decirle recojo lo deja pensando que tiene que ir a buscarlo él.
         L.push("Es entrega A DOMICILIO: un motorizado se la lleva a su dirección. NUNCA hables de «recojo», «recoger» ni de que pase a buscarlo: eso es solo para provincia (agencia).");
+        // La desconfianza ("¿no será estafa?", "¿cómo sé que me van a mandar?") es LA objeción
+        // más común comprando por WhatsApp, y en Lima se responde sola: paga cuando lo tiene
+        // en la mano. Antes ni se llegaba a esto —la palabra "estafa" escalaba el chat a un
+        // humano sin contestar nada— y era regalar la venta más fácil de cerrar.
+        L.push("Si duda de si es confiable o teme que no le llegue, tienes LA respuesta y es tu mejor argumento: paga RECIÉN cuando " +
+          "recibe el pedido, en la puerta de su casa. No adelanta nada, así que no arriesga nada. Díselo con seguridad y calidez, sin ofenderte " +
+          "ni ponerte a la defensiva, y cierra pidiéndole el siguiente dato.");
         // ¿El delivery lleva POS? Es una perilla del negocio (Negocio → Entrega), porque
         // depende del courier con el que trabaje. Sin saberlo, la IA respondía a "¿puedo
         // pagar con tarjeta?" que solo se acepta efectivo — y con POS eso es una venta
@@ -8595,11 +8802,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Pidió una variante AGOTADA y todavía no dijo con cuál se queda (ver el guard en
     // extraerDatos). Hasta que elija, el pedido NO se cierra: si no, sale despachado lo
     // que no hay.
-    if ((ctx as any)._falta_variante) {
+    // El pack mixto manda sobre el aviso de agotado: si los dos aplican, el de agotado la
+    // empujaba a ofrecer OTRO mix imposible ("te armo el pack con 39 negro y 40 blanco").
+    if ((ctx as any)._falta_variante && !(ctx as any)._pack_mixto) {
       parts.push("## Falta elegir con cuál se queda\nLo que pidió está AGOTADO y todavía no eligió el reemplazo. " +
         "Nómbrale SOLO lo que sí tienes en stock (mira el detalle de existencias) y pregúntale con cuál se queda, en una sola pregunta clara. " +
         "NO des el pedido por confirmado, NO le digas «queda confirmado» y NO asumas por él: mientras no elija, el pedido no se puede crear. " +
         "Si insiste en lo agotado, pásalo a una persona con [[humano]].");
+    }
+    if ((ctx as any)._pack_mixto) {
+      parts.push("## ⛔ Ese pack no puede llevar variantes distintas\nEl cliente quiere varias unidades pero con " +
+        "valores DISTINTOS (dos tallas, dos colores). Un mismo pedido sale con UNA sola variante: si lo cierras así, " +
+        "le llegan todas iguales. NO lo cierres ni lo des por confirmado.\n" +
+        "Díselo sin trabar la venta y en primera persona, cálido y breve: el pack va todo de la misma talla/color. " +
+        "Ofrécele las DOS salidas y pregúntale cuál prefiere: (a) el pack completo con una sola talla/color, o " +
+        "(b) la presentación de UNA unidad, dos veces: le tomas un pedido de 1 con la primera y, apenas quede " +
+        "cerrado, otro pedido de 1 con la otra — van juntos en el mismo envío. En (b) dile el precio de la " +
+        "presentación de 1 unidad y nómbrala tal cual está en la lista de opciones, para que quede elegida.\n" +
+        "⛔ Cuida las unidades y va de a UN pedido por vez: si quiere una de cada, cada pedido lleva UNA unidad " +
+        "(dos pedidos del pack de 2 serían CUATRO pares, no dos). No anuncies los dos pedidos en el mismo mensaje " +
+        "y no digas «queda confirmado»: mientras esto no se resuelva no hay ningún pedido creado. No lo derives a " +
+        "nadie ni le pidas que escriba de nuevo.");
     }
     if ((ctx as any)._falta_opcion) {
       parts.push("## Falta elegir la opción\nEl cliente TODAVÍA no eligió qué opción/presentación quiere, y hay VARIAS con precio distinto. " +
@@ -8618,6 +8841,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "Pídelos de forma natural dentro de la conversación, **de a uno**, sin sonar a formulario, y sin volver a pedir lo que ya te dio.",
       ];
       if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
+      // ⛔ Mentir el cierre es peor que no cerrar: mientras falte UN dato el pedido no existe
+      // en el sistema, y el cliente que lee "queda confirmado" se va tranquilo a esperar un
+      // paquete que nadie va a preparar (medido: "Listo, queda confirmado tu pedido talla 39
+      // y 40, a Av Larco 500" — cero pedidos en la base). Es una venta perdida que además
+      // parece cumplida, así que ni siquiera aparece como pendiente.
+      L.push("⛔ Mientras falte cualquiera de esos datos el pedido NO existe todavía: no digas «queda confirmado», " +
+        "«tu pedido está listo/registrado» ni le anuncies la entrega. Puedes resumirle lo que ya tienes, pero cierra " +
+        "pidiéndole el dato que falta.");
       parts.push("## Datos que faltan\n" + L.join("\n"));
     } else if (ctx.datos_completos === "si") {
       // Ojo con el "confírmame": con todo capturado, la IA seguía pidiendo
@@ -9229,11 +9460,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // esta condición seguía activo DESPUÉS, y se comió la pregunta de la talla del extra
       // ("Perfecto, ¿qué talla prefieres, S o M?" quedó en un "Perfecto," suelto): ahí
       // preguntar es justo lo que toca, y el cliente recibió una frase cortada.
-      const salida = (op === "generar_texto" && ctx.datos_completos === "si"
+      let salida = (op === "generar_texto" && ctx.datos_completos === "si"
         && String(ctx.pedido_creado ?? "") !== "si"
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
         ? sinPreguntaFinal(String(result))
         : String(result);
+      // Anunciar el cierre cuando el motor NO va a cerrar nada: mientras los datos no estén
+      // completos este turno NO crea pedido, así que un "queda confirmado" acá es falso.
+      // Se recorta esa frase (ver sinFalsoCierre); el resto del mensaje sale igual.
+      if (op === "generar_texto" && ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si") {
+        const cierreHonesto = (ctx as any)._pack_mixto
+          ? "Dime cuál de las dos formas prefieres y te lo dejo cerrado. 🙂"
+          : (ctx as any)._falta_variante
+          ? "Dime con cuál te quedas y te lo dejo cerrado. 🙂"
+          : (ctx as any)._falta_opcion
+          ? "Dime cuál prefieres y te lo dejo cerrado. 🙂"
+          : "Con ese último dato te lo dejo cerrado. 🙂";
+        salida = sinFalsoCierre(salida, cierreHonesto);
+      }
       const handoff = await emitIaText(db, run, salida, ctx);
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
       // acaba de salir, se los manda el motor. Va acá (después) para no duplicarlos.
