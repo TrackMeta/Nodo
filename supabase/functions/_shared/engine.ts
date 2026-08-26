@@ -2367,7 +2367,12 @@ function sinPreguntaFinal(texto: string): string {
   const recortada = corte > 0 ? linea.slice(0, linea.startsWith("¿") ? 0 : corte + (linea[corte] === "¿" ? 0 : 1)).trimEnd() : "";
   lineas[i] = recortada;
   const out = lineas.join("\n").trimEnd();
-  return out.replace(/[\s\n]+$/, "").trim() ? out : texto;
+  // No basta con que quede ALGO: "Perfecto, ¿qué talla prefieres?" recortado deja un
+  // "Perfecto," suelto, que al cliente le llega como un mensaje cortado a la mitad. Si lo
+  // que sobrevive no llega a una frase con sustancia, se manda el original: una pregunta
+  // de más se perdona, un mensaje truncado parece que el bot se rompió.
+  const util = out.replace(/[\s\p{P}]/gu, "");
+  return util.length >= 25 ? out : texto;
 }
 
 // Emite el texto que generó la IA, resolviendo los marcadores [[media:tag]]:
@@ -9038,7 +9043,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // TERCERA regla de prompt de esta tanda que falla, así que se recorta por código.
       // Conservador: solo quita la ÚLTIMA frase y solo si es interrogativa; si al quitarla
       // no queda nada, se deja el texto tal cual (mejor una pregunta de más que el silencio).
-      const salida = (op === "generar_texto" && ctx.datos_completos === "si" && !(ctx as any)._falta_opcion)
+      // `pedido_creado !== "si"`: el corte es SOLO para el turno en que nace el pedido. Sin
+      // esta condición seguía activo DESPUÉS, y se comió la pregunta de la talla del extra
+      // ("Perfecto, ¿qué talla prefieres, S o M?" quedó en un "Perfecto," suelto): ahí
+      // preguntar es justo lo que toca, y el cliente recibió una frase cortada.
+      const salida = (op === "generar_texto" && ctx.datos_completos === "si"
+        && String(ctx.pedido_creado ?? "") !== "si"
+        && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
         ? sinPreguntaFinal(String(result))
         : String(result);
       const handoff = await emitIaText(db, run, salida, ctx);
