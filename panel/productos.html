@@ -1299,6 +1299,7 @@ function renderProductoIA(host){
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div>
         <div class="tt">Venta con IA</div>
+        <div id="iaHuecos"></div>
         <div class="ds">Lo que tu vendedor necesita saber de <b>este</b> producto para venderlo y responder dudas. Todo es opcional — cuanto más, mejor vende. (La personalidad general del vendedor va en <a href="ia.html">IA → Vendedor IA</a>.)</div>
       </div>
     </div>
@@ -1467,6 +1468,40 @@ function renderProductoIA(host){
   };
   paintFaq();
   $("faqAdd").onclick=()=>{ c.faq_items.push({q:"",a:""}); paintFaq(); };
+  pintaHuecosFicha();
+}
+
+// Lo que los clientes PREGUNTAN y esta ficha no contesta. Nadie puede anticipar todas las
+// preguntas, así que en vez de pedirle al dueño que adivine qué escribir, el motor le va
+// marcando los huecos REALES: registra un `ficha_hueco` cada vez que alguien toca un tema
+// que no está en el conocimiento del producto, con la frase textual del cliente. Cada uno
+// que complete convierte un "te confirmo y te aviso" en una respuesta que cierra la venta.
+async function pintaHuecosFicha(){
+  const host=$("iaHuecos"); if(!host||!st.prod) return;
+  try{
+    const { data:ev }=await supa.from("contact_events")
+      .select("titulo,detalle,created_at").eq("channel_id",st.channelId).eq("tipo","ficha_hueco")
+      .order("created_at",{ascending:false}).limit(200);
+    if(!ev||!ev.length) return;
+    // Agrupa por TEMA y guarda un ejemplo real de cómo lo preguntaron.
+    const m=new Map();
+    for(const e of ev){
+      const tema=String(e.titulo||"").replace(/^❓ Preguntó por\s*/,"").replace(/\s*y no está en la ficha$/,"").trim();
+      for(const t of tema.split(",").map(s=>s.trim()).filter(Boolean)){
+        const r=m.get(t)||{n:0,ej:""};
+        r.n++; if(!r.ej && e.detalle) r.ej=String(e.detalle);
+        m.set(t,r);
+      }
+    }
+    if(!m.size) return;
+    const filas=[...m.entries()].sort((a,b)=>b[1].n-a[1].n).slice(0,6)
+      .map(([t,r])=>`<li style="margin-bottom:5px"><b>${esc(t)}</b> · ${r.n} ${r.n===1?"vez":"veces"}`
+        +(r.ej?`<div style="color:var(--faint);font-size:11px;margin-top:1px">“${esc(r.ej.slice(0,90))}”</div>`:"")+`</li>`).join("");
+    host.innerHTML=`<div style="border:1px solid var(--amber,#f59e0b);background:rgba(245,158,11,.08);border-radius:11px;padding:11px 12px;margin:8px 0 10px">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">❓ Te preguntaron esto y tu ficha no lo contesta</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">Cuando el dato no está acá, el bot no lo inventa: dice que te lo confirma y sigue vendiendo. Si lo completas, lo responde al toque y cierra.</div>
+      <ul style="margin:0;padding-left:17px;font-size:12px">${filas}</ul></div>`;
+  }catch(_){ /* sin datos todavía → no se muestra nada */ }
 }
 
 // Formulario ligero de "Venta con IA" para un producto EXTRA (complemento).

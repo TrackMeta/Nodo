@@ -8652,11 +8652,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // el turno siguiente traía apenas un "dime lo de la lluvia" — el tema estaba en la
       // conversación pero no en `last_input`, y la detección no disparaba.
       let preg = String(ctx.last_input ?? "").toLowerCase();
+      // `lineas` guarda los mensajes por separado para poder citar, en el registro del
+      // hueco, la frase EXACTA donde el cliente tocó el tema. Con el historial pegado se
+      // guardaba el último mensaje ("si, dime eso porfa") y el ejemplo no servía de nada.
+      let lineas: string[] = [String(ctx.last_input ?? "")];
       try {
         const { data: ins } = await db.from("messages").select("content")
           .eq("contact_id", run.contact_id).eq("direction", "in")
           .order("ts", { ascending: false }).limit(5);
-        const hist = (ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "")).join(" \n ");
+        const previos = (ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "")).filter(Boolean);
+        if (previos.length) lineas = [...lineas, ...previos];
+        const hist = previos.join(" \n ");
         if (hist.trim()) preg = (preg + " \n " + hist).toLowerCase();
       } catch (_) { /* sin historial → queda el último mensaje */ }
       const TEMAS: Array<[string, RegExp, RegExp]> = [
@@ -8685,9 +8691,31 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
         ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/],
       ];
-      const faltan = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt))
-        .map(([nombre]) => nombre);
+      const huecos = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt));
+      const faltan = huecos.map(([nombre]) => nombre);
+      // La frase donde de verdad lo preguntó — para citarla en el registro del hueco.
+      const citaDe = (re: RegExp) => lineas.find((l) => re.test(l.toLowerCase())) ?? "";
       if (faltan.length) {
+        // Queda REGISTRADO qué le preguntaron y la ficha no cubría. Nadie puede anticipar
+        // todas las preguntas de los clientes, así que en vez de pedirle al dueño que
+        // adivine qué escribir, el bot le va marcando los huecos REALES: lo que la gente
+        // pregunta de verdad, con su frase. Cada uno que complete convierte un "te
+        // confirmo" en una respuesta que cierra — y de paso apaga esta red para ese tema.
+        // Lo lee la ficha del producto (Productos → el producto) para mostrárselo ahí,
+        // que es donde lo arregla. Una sola vez por tema y contacto: no llena la bitácora.
+        try {
+          const yaVisto = String(ctx._temas_faltan ?? "");
+          const nuevos = faltan.filter((t) => !yaVisto.includes(t));
+          if (nuevos.length) {
+            await setField(db, run.channel_id, run.contact_id, "_temas_faltan",
+              (yaVisto ? yaVisto + "|" : "") + nuevos.join("|")).catch(() => {});
+            const cita = huecos.filter(([n]) => nuevos.includes(n))
+              .map(([, re]) => citaDe(re)).find(Boolean) ?? String(ctx.last_input ?? "");
+            await logEvent(db, run.channel_id, run.contact_id, "ficha_hueco",
+              `❓ Preguntó por ${nuevos.join(", ")} y no está en la ficha`,
+              String(cita).slice(0, 180)).catch(() => {});
+          }
+        } catch (_) { /* el registro nunca debe tumbar la respuesta */ }
         // Esta pregunta suele DECIDIR la compra, así que la respuesta tiene que vender.
         // Primero se prohibió inventar (el bot negaba atributos y hasta desaconsejaba
         // comprar). Pero quedarse en un "déjame confirmarlo" pelado enfría igual: el
