@@ -8339,7 +8339,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "   MAL: \"Si no te queda la talla la cambias dentro de los 30 días\" (la ficha solo dice \"garantía 30 días " +
       "por defecto de fábrica\": eso cubre fallas, no que le quede grande)\n" +
       "   BIEN: \"Tienes 30 días de garantía por defecto de fábrica. Sobre cambio por talla, déjame confirmártelo " +
-      "y te aviso.\" (y elige bien la talla con él para que no pase)",
+      "y te aviso.\" (y elige bien la talla con él para que no pase)\n" +
+      "   Y vale para las dos direcciones: que la ficha no lo mencione NO significa que no exista. Tampoco lo NIEGUES. " +
+      "Medido: a \"¿el curso tiene certificado?\" —algo que la ficha ni nombra— contestó \"el curso no incluye " +
+      "certificado\", y con eso le tumbó la venta a un interesado por un dato que nadie verificó.\n" +
+      "   MAL: \"No, no incluye certificado.\"  ·  MAL: \"Sí, claro que trae certificado.\"\n" +
+      "   BIEN: \"Déjame confirmarte eso del certificado y te aviso. Mientras, te cuento lo que sí incluye…\" " +
+      "(sigues la venta con lo que SÍ sabes, sin frenarla ni inventar)",
     );
 
     // La regla de arriba, sola, no alcanzaba: el PRIMER mensaje del cliente lo
@@ -8629,6 +8635,36 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }
     if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
+    // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
+    // ofrécele confirmarlo") no basta: medido, a "¿el curso tiene certificado?" —palabra
+    // que la ficha ni nombra— contestó "el curso no incluye certificado" y le tumbó la
+    // venta a un interesado por un dato que nadie verificó. Negar de más cuesta igual que
+    // prometer de más. Así que el hueco se detecta por CÓDIGO —el tema está en su mensaje
+    // y no en el conocimiento del producto— y se le pone delante, concreto: las órdenes
+    // puntuales sí se cumplen, las reglas genéricas al final del prompt no.
+    // Lista corta y de temas caros: los que deciden una compra o comprometen al negocio.
+    try {
+      const fichaTxt = [ctx.contexto_producto, ctx.faq, info.negocio, ctx.producto_nombre]
+        .map((x) => String(x ?? "")).join(" ").toLowerCase();
+      const preg = String(ctx.last_input ?? "").toLowerCase();
+      const TEMAS: Array<[string, RegExp, RegExp]> = [
+        ["certificado", /certificad/, /certificad/],
+        ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/],
+        ["garantía", /garant[ií]a/, /garant[ií]a/],
+        ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/],
+        ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/],
+        ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/],
+      ];
+      const faltan = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt))
+        .map(([nombre]) => nombre);
+      if (faltan.length) {
+        parts.push("## ⚠️ Te preguntó por algo que NO está en la ficha\n" +
+          `Sobre esto no tienes dato: **${faltan.join(", ")}**. No lo afirmes NI lo niegues — que la ficha no lo mencione no significa que no exista, ` +
+          `y una negación inventada le tumba la compra a alguien que iba a comprar. ` +
+          `Dile con naturalidad que se lo confirmas y sigue la venta con lo que SÍ sabes. ` +
+          `Si insiste o es determinante para él, pásalo a una persona con [[humano]].`);
+      }
+    } catch (_) { /* sin ficha legible → queda la regla general */ }
     // Agentes de pedidos físicos: instrucciones y mensajes del embudo actual
     // (confirmaciones/logística) según el estado del pedido y el tipo de envío.
     const ped = buildPedidosSystem(info.pedidos, funnel, agencia);
