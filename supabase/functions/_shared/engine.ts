@@ -6808,6 +6808,36 @@ function ahoraEnTz(tz: string): { hhmm: string; dia: string; iso: string } {
   return { hhmm, dia: map[wd] ?? "lun", iso };
 }
 
+// CUÁNDO le llega, en cristiano. Si no alcanza hoy, el bot decía "al día siguiente" o
+// "demora un día": el cliente lo lee como una espera larga ("¿un día entero?") y frena la
+// compra, cuando en realidad casi siempre es MAÑANA. Se calcula el próximo día con reparto
+// de verdad —respetando días apagados, domingos y feriados— y se le da masticado a la IA:
+// "mañana", "el lunes"… Nunca se adivina: si en 14 días no hay ninguno (config rota o todo
+// apagado), devuelve "" y la IA simplemente no habla de fechas.
+const DIA_NOMBRE: Record<string, string> = {
+  lun: "el lunes", mar: "el martes", mie: "el miércoles", jue: "el jueves",
+  vie: "el viernes", sab: "el sábado", dom: "el domingo",
+};
+function proximaEntrega(cfg: any, tz: string): string {
+  const e = cfg?.entregas ?? {};
+  const orden = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
+  const feriados: string[] = Array.isArray(e.feriados_fechas) ? e.feriados_fechas : [];
+  const base = new Date();
+  for (let i = 1; i <= 14; i++) {
+    const d = new Date(base.getTime() + i * 86400000);
+    // El día de la semana y la fecha SIEMPRE en la zona del negocio, no en la del servidor.
+    const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(d).toLowerCase();
+    const map: Record<string, string> = { mon: "lun", tue: "mar", wed: "mie", thu: "jue", fri: "vie", sat: "sab", sun: "dom" };
+    const dia = map[wd] ?? orden[0];
+    const iso = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    if (dia === "dom" && e.domingos !== true) continue;
+    if (dia !== "dom" && e.dias && e.dias[dia] === false) continue;
+    if (e.feriados !== true && feriados.includes(iso)) continue;
+    return i === 1 ? "mañana" : (DIA_NOMBRE[dia] ?? "");
+  }
+  return "";
+}
+
 // ¿Se puede entregar HOY en esta zona? Todo calculado, nada opinado.
 function entregaHoy(cfg: any, zona: Zona): { hoy: boolean; motivo: string } {
   const e = cfg?.entregas ?? {};
@@ -6926,6 +6956,8 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
       const { hoy, motivo } = entregaHoy(cfg, z);
       await set("entrega_hoy", hoy ? "si" : "no");
       await set("entrega_motivo", motivo);
+      // Cuándo le llega si hoy no alcanza: "mañana", "el lunes"… Ver proximaEntrega.
+      await set("entrega_cuando", hoy ? "hoy" : proximaEntrega(cfg, cfg?.timezone || "America/Lima"));
     } else {
       await set("entrega_hoy", "no");
       await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
@@ -8382,16 +8414,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // salía con frases como "hoy ya no hay entrega en tu zona", que es justo lo que las
         // dos líneas de abajo prohíben. Se distingue el caso.
         const _nuncaHoy = /no tiene entrega el mismo d[ií]a/i.test(String(ctx.entrega_motivo ?? ""));
+        // CÓMO se dice la fecha. "Al día siguiente" / "demora un día" el cliente lo lee como
+        // una espera larga —"¿un día entero?"— y frena la compra, cuando lo cierto es que le
+        // llega MAÑANA. Se le da el día ya calculado (`entrega_cuando`) y se le prohíbe la
+        // otra forma de decirlo. Si el motor no pudo calcularlo, no se habla de fechas.
+        const _cuando = String(ctx.entrega_cuando ?? "").trim();
+        const _diLo = _cuando
+          ? `Dile que le llega **${_cuando}**, así de simple y en positivo. ` +
+            `PROHIBIDO decirlo como demora: nada de «al día siguiente», «demora un día», «tarda 24 horas», «en 1 día hábil» ni plazos en días. ` +
+            `Se dice CUÁNDO llega ("${_cuando}"), no cuánto tarda. `
+          : `NO le des fecha ni plazo de entrega: no lo tienes calculado y no se inventa. `;
         const _noHoy = _nuncaHoy
-          ? `SÍ entregamos en su distrito, pero ahí la entrega es **al día siguiente**, nunca el mismo día. ` +
-            `Díselo con naturalidad, como cómo funciona el reparto en su zona. ` +
-            `NO le des a entender que se pasó una hora de corte ni que "hoy ya no alcanza": no es eso, en su zona no hay entrega el mismo día ningún día. `
-          : `SÍ entregamos en su distrito, pero HOY ya no alcanza${ctx.entrega_motivo ? ` porque ${ctx.entrega_motivo}` : ""} → le llega el **día siguiente**. ` +
-            `Explícale ese motivo real con amabilidad. `;
+          ? `SÍ entregamos en su distrito. ${_diLo}` +
+            `NO le des a entender que se pasó una hora de corte ni que "hoy ya no alcanza": en su zona el reparto funciona así siempre. `
+          : `SÍ entregamos en su distrito, pero HOY ya no alcanza${ctx.entrega_motivo ? ` porque ${ctx.entrega_motivo}` : ""}. ${_diLo}` +
+            `Explícale ese motivo real con amabilidad, en una línea y sin dramatizar. `;
         L.push(ctx.entrega_hoy === "si"
-          ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo."
+          ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo: le llega **hoy**."
           : _noHoy +
-            `PROHIBIDO decirle que "no hacemos entrega en tu zona" o dar a entender que no cubrimos su distrito: sí lo cubrimos, solo que no en el mismo día. ` +
+            `PROHIBIDO decirle que "no hacemos entrega en tu zona" o dar a entender que no cubrimos su distrito: sí lo cubrimos. ` +
             `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
       } else {
         L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);
