@@ -294,7 +294,9 @@ async function runEngineInner(
     catch (e) { console.error("[maybeCambioVariante]", (e as any)?.message ?? e); }
     // Cambio de datos de despacho (sede/DNI/dirección) mientras el pedido ya existe
     // y está parqueado en un nodo que no re-captura datos. Actualiza antes de responder.
-    try { await maybeCambioDatos(db, channelId, contactId, event); }
+    // Corta si aplicó: el motor ya emitió el acuse con lo que cambió. Sin cortar, la IA
+    // respondía sin enterarse y contradecía al sistema ("no se puede cambiar" ya cambiado).
+    try { if (await maybeCambioDatos(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeCambioDatos]", (e as any)?.message ?? e); }
     const ready = await resumeRun(db, run, event);
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
@@ -318,8 +320,8 @@ async function runEngineInner(
     // "mi DNI es 45678901", "mejor a la agencia de Miraflores") y ahí el run ya murió: el
     // cambio no se aplicaba al pedido y el paquete salía con los datos VIEJOS — dirección
     // equivocada, o en provincia un DNI/sede con los que el cliente no puede recoger.
-    // No corta el flujo (es void): actualiza el pedido y deja que la respuesta siga su curso.
-    try { await maybeCambioDatos(db, channelId, contactId, event); }
+    // Corta si aplicó: el acuse con lo que cambió lo manda el propio motor.
+    try { if (await maybeCambioDatos(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeCambioDatos/postrun]", (e as any)?.message ?? e); }
     // Modo soporte post-venta: si el contacto YA compró y escribe sin flujo
     // activo, lo atendemos como cliente (soporte), no re-vendemos. Si quiere
@@ -3479,6 +3481,37 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // y el Dashboard nunca podía desglosar las ventas por variante. Otra vez una rama
     // implementada y su gemela no.
     const versionId = versionIdDe(ctx);
+    // 🔁 Anti-pedido DUPLICADO. El candado `pedido_creado` es un campo que se LEE y se
+    // escribe en pasos separados, así que no protege de dos turnos corriendo a la vez.
+    // Y sí ocurre: el lock de runEngine espera 5 s y, si no lo consigue, procede igual a
+    // propósito (mejor atender con riesgo de carrera que dejar al cliente mudo) — pero un
+    // turno con IA tarda 10-20 s, así que dos mensajes seguidos del cliente ("si confirmo"
+    // + "porfa", o el mismo tocado dos veces) se solapan de sobra. Medido: dos "si
+    // confirmo" con UN segundo de diferencia dejaron DOS pedidos de S/129 del mismo
+    // producto, con doble descuento de stock y doble despacho esperando al operador.
+    // El comentario del lock confía en que "aguas abajo protegen los CAS de pedido"; para
+    // el pedido no había ninguno. Este es el guard que faltaba: si el MISMO contacto ya
+    // tiene un pedido vivo del MISMO producto de hace menos de 2 minutos, se reusa en vez
+    // de crear otro. No estorba a la recompra: esa pasa por relanzarVenta, que limpia los
+    // campos y llega acá mucho después de esa ventana.
+    {
+      const _desde = new Date(Date.now() - 120_000).toISOString();
+      const { data: dup } = await db.from("orders").select("id, estado, created_at")
+        .eq("channel_id", run.channel_id).eq("contact_id", run.contact_id)
+        .eq("product_id", (c as any)?.product_id ?? null)
+        .gte("created_at", _desde)
+        .not("estado", "in", "(cancelado,rechazado)")
+        .order("created_at", { ascending: false }).limit(1);
+      const previo = (dup ?? [])[0] as any;
+      if (previo?.id) {
+        run.vars._order_id = previo.id; run.vars.pedido_id = previo.id; ctx.pedido_id = previo.id;
+        ctx.pedido_creado = "si"; run.vars.pedido_creado = "si";
+        await setField(db, run.channel_id, run.contact_id, "pedido_creado", "si").catch(() => {});
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Pedido duplicado evitado",
+          `Ya existía uno de este producto creado hace segundos (${previo.estado}) — se reusa`).catch(() => {});
+        return;
+      }
+    }
     const { data: ord, error } = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionId,
@@ -4491,21 +4524,21 @@ const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|di
 // corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
 const NOMBRE_KW = /\b(a nombre|nombre de|nombre del|destinatari|lo recoge|la recoge|lo recoje|la recoje|recoja|figure a|figura a|a mi (esposa|esposo|mama|mamá|papa|papá|hijo|hija|hermano|hermana|amig|vecin))\b/i;
 const TEL_KW = /\b(telefono|teléfono|celular|numero|número|whatsapp|contacto|llam)/i;
-async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<void> {
-  if (event.type !== "message" || event.msgType === "image" || !event.text) return;
+async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+  if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
   const txt = event.text; const low = txt.toLowerCase();
   const sigSede = AGENCIA_KW.test(low);          // AGENCIA_KW no tiene flag i → normalizar
   const sigDni = /\b\d{7,9}\b/.test(txt);
   const sigDir = DIRECCION_KW.test(low);
   const sigNombre = NOMBRE_KW.test(low);
   const sigTel = /\b9\d{8}\b/.test(txt) || TEL_KW.test(low);
-  if (!sigSede && !sigDni && !sigDir && !sigNombre && !sigTel) return;    // sin señal de cambio → nada que hacer
+  if (!sigSede && !sigDni && !sigDir && !sigNombre && !sigTel) return false;    // sin señal de cambio → nada que hacer
   // Último pedido AÚN editable (no despachado/pagado/cerrado).
   const { data: order } = await db.from("orders").select("id, shipping, estado")
     .eq("channel_id", channelId).eq("contact_id", contactId)
     .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!order) return;
+  if (!order) return false;
   // ¿El paquete YA salió? Justo abajo, `maybeModificarPedido` respeta ESTADOS_DESPACHADO
   // para no dejar cambiar la CANTIDAD de un pedido en camino. Acá no se respetaba, y lo que
   // se toca acá es peor: sede, dirección, DNI y destinatario, o sea a dónde va el paquete y
@@ -4518,7 +4551,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const sh = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) return;
+  if (!ai?.api_key) return false;
   const raw = await runAI({
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
     system: "Extraes datos de despacho que un cliente peruano CORRIGE/cambia para su pedido. Respondes SOLO con un JSON, sin explicaciones. Copia el valor TAL CUAL lo dijo. Si un dato NO aparece en el mensaje, déjalo vacío (jamás lo inventes).",
@@ -4572,7 +4605,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     if (!yaSalio) await setField(db, channelId, contactId, "cliente", nNombre).catch(() => {});
     cambios.push("destinatario: " + nNombre);
   }
-  if (!cambios.length) return;
+  if (!cambios.length) return false;
   if (yaSalio) {
     // `sh` es una copia, así que con NO escribirla alcanza para que el pedido quede intacto.
     // Queda la nota en la bitácora y el aviso al dueño, que es quien puede llamar al courier.
@@ -4585,10 +4618,34 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
       telefono: (ctc as any)?.wa_id || "—",
       cambios: cambios.join(" · "),
     }).catch(() => {});
-    return;
+    return false;
+  }
+  // Cambió la DIRECCIÓN y el distrito guardado ya no aparece en ella → probablemente se
+  // mudó de distrito ("mejor mándalo a Av Primavera 1500, SURCO" con el pedido en
+  // SURQUILLO). Solo se actualizaba `direccion`: el distrito, la zona y por tanto el
+  // reparto y el flete quedaban con el valor VIEJO, y el motorizado salía al distrito
+  // equivocado con una dirección que no existe ahí. No se adivina el distrito nuevo
+  // (eso es de la lista de zonas del negocio): se marca para que el operador lo confirme
+  // en Pedidos antes de despachar, igual que `sede_por_confirmar` en provincia.
+  const _dist = String(sh.distrito ?? "").trim();
+  if (nDir && _dist) {
+    const _n = (s: string) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    if (!_n(nDir).includes(_n(_dist))) {
+      sh.distrito_por_confirmar = true;
+      await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as Run,
+        `📍 Cambió su dirección a “${nDir}” pero el pedido sigue con distrito ${_dist}. Confirma el distrito en Pedidos antes de despachar.`).catch(() => {});
+    }
   }
   await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
   await logEvent(db, channelId, contactId, "nota", "📍 Datos del pedido actualizados", cambios.join(" · ").slice(0, 120)).catch(() => {});
+  // Acuse por CÓDIGO y corte del flujo. Sin esto la IA respondía por su cuenta y, como no
+  // se entera de que el motor ya aplicó el cambio, le decía justo lo contrario: medido —
+  // "el pedido ya está confirmado con la dirección original, contáctame por soporte para
+  // ver si es posible" cuando la dirección YA estaba cambiada en el pedido. El cliente se
+  // queda creyendo que va a la vieja mientras el paquete sale a la nueva.
+  await deliverMessage(db, channelId, contactId,
+    `✅ Listo, actualicé tu pedido — ${cambios.join(" · ")}. Cualquier otra cosa me avisas. 🙌`).catch(() => {});
+  return true;
 }
 
 // Estados de pedido en los que YA salió al courier: modificar item/cantidad ahí es
