@@ -2586,7 +2586,10 @@ async function generarFlujoFisico(flowId, N, E){
     // WhatsApp y no compartió su número (sin_numero=si). Al que tiene número no se
     // le molesta (ya lo tenemos). El courier necesita SÍ o SÍ un celular para
     // coordinar la entrega. Ver migración 0062 / {{sin_numero}}.
-    { clave:"telefono", label:"Número de celular para la entrega", detalle:"9 dígitos; el courier lo llama para coordinar el envío", requerido:true, solo_si_sin_numero:true },
+    // `validar:"telefono"` — la ficha prometía "9 dígitos" y no lo verificaba nadie: un
+    // "no tengo" o un número a medias se guardaba igual y el paquete salía con un teléfono
+    // que no llama a nadie. El DNI y la sede sí tenían validación dura; su gemelo no.
+    { clave:"telefono", label:"Número de celular para la entrega", detalle:"9 dígitos; el courier lo llama para coordinar el envío", requerido:true, validar:"telefono", solo_si_sin_numero:true },
     // VA ÚLTIMO y solo en LIMA: tener los datos NO es lo mismo que querer
     // comprar. En Lima el pedido nace "confirmado" y sale un motorizado, así que
     // un mensaje de consulta bien completo ("¿tienen talla 38? soy Juan Pérez,

@@ -7003,6 +7003,30 @@ function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; mot
   if (v.validar === "dni") {
     const d = s.replace(/\D/g, "");
     if (d.length !== 8) return { ok: false, motivo: `el DNI debe tener 8 dígitos (mandó ${d.length})` };
+    // Relleno: al que no quiere dar su DNI le sale "12345678" o "00000000". Son 8 dígitos,
+    // así que pasaban — y con un DNI falso la agencia NO le entrega el paquete: viaja,
+    // nadie lo recoge y vuelve, con el flete perdido. Se piden solo los patrones que
+    // nadie tiene de verdad (todos iguales, o la secuencia corrida en cualquier sentido).
+    // Solo los rellenos que la gente usa de verdad. NO se rechaza cualquier secuencia
+    // ("23456789" es un DNI perfectamente posible): un falso rechazo deja al comprador
+    // real dando vueltas sin poder cerrar, que es peor que dejar pasar un relleno raro.
+    if (/^(\d)\1{7}$/.test(d) || d === "12345678" || d === "87654321") {
+      return { ok: false, motivo: `ese DNI no parece real (${d}). Pídeselo otra vez con amabilidad: sin el DNI correcto la agencia no le entrega el paquete` };
+    }
+    return { ok: true };
+  }
+  // TELÉFONO del courier. La ficha del campo promete "9 dígitos" pero NADIE lo verificaba:
+  // el DNI y la sede tenían validación dura y su gemelo no. Este dato solo se le pide al
+  // cliente que llegó sin número (username/BSUID), y es el ÚNICO modo que tiene el courier
+  // de ubicarlo: un "no tengo", un "123" o el número a medias se guardaba tal cual y el
+  // paquete salía con un teléfono que no llama a nadie. Se valida solo el largo y el
+  // relleno, no el formato de un país: el negocio puede vender fuera de Perú.
+  if (v.validar === "telefono") {
+    const d = s.replace(/\D/g, "");
+    if (d.length < 9 || d.length > 15) {
+      return { ok: false, motivo: `ese número no parece completo (${d.length} dígitos). Pídele su celular completo — el courier lo llama para coordinar la entrega` };
+    }
+    if (/^(\d)\1+$/.test(d)) return { ok: false, motivo: `ese número no parece real (${d}). Pídele su celular de verdad, el courier lo llama para coordinar` };
     return { ok: true };
   }
   // La sede NO puede ser la ciudad. El modelo lo hace igual aunque el detalle del
@@ -7087,6 +7111,8 @@ function valorLibreEnMensaje(val: string, fuente: string): boolean {
 // la dirección) — sin esto, re-extraer cada turno agrega latencia a TODA venta.
 function mensajeTieneValorDe(c: any, texto: string): boolean {
   if (c.validar === "dni") return /\b\d{7,9}\b/.test(texto);
+  // Teléfono: lo corrige mandando otro número, y suele escribirlo con espacios o guiones.
+  if (c.validar === "telefono") return /\d{6,15}/.test(String(texto).replace(/[\s()+-]/g, ""));
   // Sede: el cliente la CAMBIA nombrando una agencia/oficina ("mejor en el Shalom
   // Cerro Colorado"). Si el mensaje trae una palabra de agencia, vale re-extraerla
   // (el pre-filtro barato antes de gastar una llamada a la IA).
@@ -7158,7 +7184,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // mejor la 40" / "mi DNI es otro"): antes `faltan` los excluía para siempre y el bot
   // acataba el cambio en la charla pero el pedido/stock salían con el valor viejo. El
   // guard (valorEnMensaje) evita pisar el valor bueno cuando el mensaje no trae uno.
-  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni" || c.validar === "sede";
+  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni" || c.validar === "sede" || c.validar === "telefono";
   const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim()
     && mensajeTieneValorDe(c, texto));   // solo si el último msg realmente trae un valor de ESTE campo
   const desdeUltimo = [...soloUlt, ...correcciones];
