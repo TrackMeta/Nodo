@@ -5546,11 +5546,26 @@ async function maybeReclamoSinPedido(
 // IA obedezca. Idempotente igual entre turnos: el número queda en los salientes.
 const RE_ANUNCIA_PAGO =
   /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i;
+// La IA ANUNCIA que va a pasar los datos de pago… y no los pasa. Medido: "Te paso los
+// datos para que puedas hacer el pago." y ahí terminaba el mensaje. Prometer y no cumplir
+// deja al cliente esperando igual que no decir nada.
+const RE_PROMETE_PAGO =
+  /\b(te (paso|comparto|env[ií]o|mando|dejo) (los |el )?(datos|n[uú]mero|yape|m[eé]todos?)|los datos (de pago|para (el|tu) pago)|te (los|lo) (paso|comparto|env[ií]o))\b/i;
 async function maybeDatosPago(
-  db: SupabaseClient, channelId: string, contactId: string, texto: string,
+  db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
 ): Promise<void> {
   try {
-    if (!texto || !RE_ANUNCIA_PAGO.test(texto)) return;
+    // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
+    // el rotador y se perdía — mismo agujero que ya se tapó en detectarOpcion), o si la
+    // propia IA acaba de prometer los datos sin darlos.
+    let pidio = RE_ANUNCIA_PAGO.test(texto) || (!!respuestaIa && RE_PROMETE_PAGO.test(respuestaIa));
+    if (!pidio) {
+      const { data: ins } = await db.from("messages").select("content")
+        .eq("contact_id", contactId).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(5);
+      pidio = (ins ?? []).some((m: any) => RE_ANUNCIA_PAGO.test(String(m.content?.text ?? m.content?.caption ?? "")));
+    }
+    if (!pidio) return;
     const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
     const pid = (c as any)?.product_id;
     if (!pid) return;
@@ -9004,7 +9019,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
       // acaba de salir, se los manda el motor. Va acá (después) para no duplicarlos.
       if (op === "generar_texto" && !handoff) {
-        await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""));
+        await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""), salida);
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
