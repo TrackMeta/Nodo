@@ -2368,7 +2368,13 @@ function sinPreguntaFinal(texto: string): string {
     linea.lastIndexOf("¿"),
     ...[".", "!", "…", "?"].map((s) => linea.lastIndexOf(s, linea.length - 2)),
   );
-  const recortada = corte > 0 ? linea.slice(0, linea.startsWith("¿") ? 0 : corte + (linea[corte] === "¿" ? 0 : 1)).trimEnd() : "";
+  let recortada = corte > 0 ? linea.slice(0, linea.startsWith("¿") ? 0 : corte + (linea[corte] === "¿" ? 0 : 1)).trimEnd() : "";
+  // Puntuación colgante: cuando la pregunta iba pegada con coma ("…gorra de regalo
+  // incluida, ¿te lo confirmo?"), el corte dejaba la frase terminando en COMA —
+  // "…gorra de regalo incluida," — que se lee como un mensaje cortado a la mitad. Se
+  // limpia el conector suelto y se cierra con punto.
+  recortada = recortada.replace(/[\s]*(?:,|;|:|—|-|\by\b|\be\b|\bo\b|\bpero\b|\bademás\b)\s*$/i, "").trimEnd();
+  if (recortada && !/[.!?…]$/.test(recortada)) recortada += ".";
   lineas[i] = recortada;
   const out = lineas.join("\n").trimEnd();
   // No basta con que quede ALGO: "Perfecto, ¿qué talla prefieres?" recortado deja un
