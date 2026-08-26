@@ -7262,7 +7262,7 @@ function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; mot
 
 // Heurísticas de "dato dudoso": se ACEPTA igual, solo se marca. No se le
 // pregunta al modelo si el dato "está bien" — eso lo decide el operador.
-function datoDudoso(clave: string, valor: string): string | null {
+function datoDudoso(clave: string, valor: string, ctx?: any): string | null {
   const s = String(valor ?? "").trim();
   if (clave === "direccion") {
     const tieneNumero = /\d/.test(s);
@@ -7270,6 +7270,15 @@ function datoDudoso(clave: string, valor: string): string | null {
   }
   if (clave === "nombre") {
     if (s.split(/\s+/).filter(Boolean).length < 2) return "falta el apellido";
+  }
+  // El campo del flujo se llama `nombre_completo` — la clave `nombre` está tomada por el
+  // nombre de WhatsApp del contacto (ver el comentario del generador). O sea que la marca
+  // de arriba apuntaba a una clave que los flujos no usan y NUNCA se encendió.
+  // Y solo tiene sentido en PROVINCIA: ahí la agencia no entrega si el nombre no coincide
+  // con el DNI que presenta quien recoge. En Lima va un motorizado a una dirección y con el
+  // nombre de pila basta, así que marcarlo sería ruido en la lista de pendientes.
+  if (clave === "nombre_completo" && String(ctx?.zona_entrega ?? "") === "provincia") {
+    if (s.split(/\s+/).filter(Boolean).length < 2) return "falta el apellido (la agencia lo exige igual al DNI)";
   }
   return null;
 }
@@ -7459,7 +7468,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             run.vars[c.clave] = val;
             ctx[c.clave] = val;
             await setField(db, run.channel_id, run.contact_id, c.clave, val);
-            const duda = datoDudoso(c.clave, val);
+            const duda = datoDudoso(c.clave, val, ctx);
             if (duda) {
               await setField(db, run.channel_id, run.contact_id, "_duda_" + c.clave, duda);
               await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ " + duda, `${c.clave}: ${val}`);

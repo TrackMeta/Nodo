@@ -2612,7 +2612,21 @@ async function generarFlujoFisico(flowId, N, E){
   //    mayúsculas, ante "soy de Trujillo" devuelve sede="trujillo", y como
   //    después no se pisa lo capturado, la sede real se perdía.
   const campos=[
-    { clave:"nombre_completo", label:"Nombre y apellido del que recibe", requerido:true },
+    // El MISMO dato, pedido distinto según la zona (la zona ya está resuelta cuando se
+    // arman los campos, así que solo uno de los dos está activo a la vez):
+    //  · Lima: va un motorizado a una dirección y el cliente paga al recibir. Nadie exige
+    //    apellidos, así que pedir "el nombre completo de la persona que recibe" suena a
+    //    trámite en una compra que debería ser de dos frases. Medido: el bot no insiste, ya
+    //    cerraba pedidos con "Luis" a secas — o sea el apellido nunca hizo falta acá.
+    //  · Provincia: Shalom NO entrega si el nombre no coincide con el DNI que presentan,
+    //    así que ahí sí se piden los apellidos, y se dice POR QUÉ (el cliente colabora
+    //    mucho más cuando entiende que es la agencia la que se lo va a exigir).
+    { clave:"nombre_completo", label:"¿A nombre de quién se lo dejamos?",
+      detalle:"cómo se llama quien recibe, para que el motorizado pregunte por él al llegar; " +
+              "con su nombre basta, NO le exijas apellidos", requerido:true, solo_si_zona:"lima" },
+    { clave:"nombre_completo", label:"Nombre y apellidos del que recoge",
+      detalle:"tal como figuran en su DNI — la agencia no entrega el paquete si no coinciden",
+      requerido:true, solo_si_zona:"provincia" },
     { clave:"direccion", label:"Dirección exacta", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
     { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
