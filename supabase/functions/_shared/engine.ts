@@ -8682,14 +8682,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const faltan = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt))
         .map(([nombre]) => nombre);
       if (faltan.length) {
-        parts.push("## ⚠️ Te preguntó por algo que NO está en la ficha\n" +
-          `Sobre esto no tienes dato: **${faltan.join(", ")}**. No lo afirmes NI lo niegues — que la ficha no lo mencione no significa que no exista, ` +
-          `y una negación inventada le tumba la compra a alguien que iba a comprar. ` +
-          `Dile con naturalidad que se lo confirmas y sigue la venta con lo que SÍ sabes. ` +
-          `Y NO le desaconsejes la compra por esto ("para eso quizás necesites otra cosa"): estarías tumbando una venta ` +
-          `con un dato que nadie escribió. Tampoco lo rellenes con vaguedades ("de un proceso controlado", "materiales de alta calidad"): ` +
-          `si no lo sabes, se dice que se lo confirmas y ya. ` +
-          `Si insiste o es determinante para él, pásalo a una persona con [[humano]].`);
+        // Esta pregunta suele DECIDIR la compra, así que la respuesta tiene que vender.
+        // Primero se prohibió inventar (el bot negaba atributos y hasta desaconsejaba
+        // comprar). Pero quedarse en un "déjame confirmarlo" pelado enfría igual: el
+        // cliente se queda esperando y la conversación se muere. La salida no es mentir
+        // ni evadir, es CONDUCIRLA: reconoces, confirmas ese dato, y puenteas a un
+        // beneficio que SÍ está escrito y que juegue a favor de su preocupación.
+        parts.push("## ⚠️ Te preguntó algo que NO está en la ficha (y puede decidir su compra)\n" +
+          `Sobre esto no tienes dato: **${faltan.join(", ")}**. Que la ficha no lo mencione NO significa que no exista: ` +
+          `no lo afirmes ni lo niegues, y NUNCA le desaconsejes la compra por esto ("para eso quizás necesites otra cosa") — ` +
+          `estarías tumbando una venta con un dato que nadie escribió.\n` +
+          `Pero tampoco la sueltes con un "déjame confirmarlo" a secas: eso enfría igual que una negativa. ` +
+          `Respóndele como un buen vendedor, en UN solo mensaje y en este orden:\n` +
+          `1. Toma la duda en serio y dile que le confirmas ese dato exacto — una línea, sin disculpas ni rodeos.\n` +
+          `2. Puentea a lo que la ficha SÍ dice y que juegue a favor de lo que a él le preocupa. ` +
+          `Solo beneficios REALES de la ficha: nada inventado, ni insinuado, ni relleno tipo "materiales de alta calidad".\n` +
+          `3. Cierra con el siguiente paso de la venta (la talla, el color, la dirección), para que la conversación avance.\n` +
+          `Ejemplo del tono, con lo que sí sabes: "Te confirmo ese detalle y te aviso 👍 Lo que sí te puedo decir es que ` +
+          `[beneficio real de la ficha]. ¿En qué talla te las mando?"\n` +
+          `Si insiste, o ves que sin ese dato no compra, pásalo a una persona con [[humano]].`);
       }
     } catch (_) { /* sin ficha legible → queda la regla general */ }
     // Agentes de pedidos físicos: instrucciones y mensajes del embudo actual
