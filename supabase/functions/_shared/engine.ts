@@ -1766,7 +1766,11 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
     parts.push("## Productos que vendemos\n" + cands.map((c) => `- ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
-      "\n\n⛔ EXCEPCIÓN, y manda sobre todo lo de abajo: si el cliente escribe por un PROBLEMA, un reclamo, una " +
+      "\n\n⛔ NO prometas cobertura ni plazos de entrega. Acá NO tienes el veredicto de zonas del negocio (ese lo " +
+      "calcula el motor recién dentro de la venta), así que no digas «sí llegamos a X», «demora N días» ni des fechas: " +
+      "medido, a un «¿tienen delivery a Chosica? ¿cuánto demora?» se le contestó «sí, sin problema, 2 a 3 días hábiles» " +
+      "— inventado. Dile que lo ves apenas sepas qué producto quiere, y encamínalo al producto.\n" +
+      "\n⛔ EXCEPCIÓN, y manda sobre todo lo de abajo: si el cliente escribe por un PROBLEMA, un reclamo, una " +
       "consulta sobre un pedido que ya hizo, una devolución o un cambio, NO le ofrezcas productos ni le hables de " +
       "comprar: eso lo enfurece. Atiéndelo, pídele el detalle y escribe `[[humano]]` para que lo tome una persona. " +
       "(Medido: a una clienta que abrió con «tengo un problema con un pedido anterior» se le respondió «¿te gustaría " +
@@ -5517,10 +5521,16 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
 
 // Reclamo de alguien que dice haber comprado y NO tiene ningún pedido en la base. La lista
 // es corta y explícita a propósito: tiene que ganarle al ruteo por palabra clave, así que un
-// falso positivo le mata la venta a un comprador de verdad. Por eso NO entra "quiero
-// comprar", "cuánto cuesta" ni nada que suene a intención de compra: solo frases que ya dan
-// la compra por hecha o describen una falla.
-const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|ya (compr[ée]|pagu[ée])|compr[ée] (ayer|anteayer|hace|el|la|un|una)|mi (pedido|compra|paquete)|lleg[oó] (roto|mal|incompleto|fallado)|no (me )?funciona|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso)\b/i;
+// falso positivo le mata la venta a un comprador de verdad.
+//
+// Ya pasó: con "ya compré/ya pagué" en la lista, un "quiero el curso de trading, pero ya lo
+// compré el mes pasado y quiero el premium AHORA" —que es una intención de compra clarísima—
+// se fue a un humano en vez de a la venta. Esas frases NO son un reclamo por sí solas: son
+// contexto, y aparecen igual en una recompra. Quedan solo las que describen una FALLA
+// concreta ("no me llega", "llegó roto", "quiero devolver"), que nadie escribe queriendo
+// comprar.
+const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|no me (entregan|entregaron|responden|contestan)|lleg[oó] (roto|mal|incompleto|fallado|otra cosa)|no (me )?funciona|no sirve|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso|me estafaron)\b/i;
+
 async function maybeReclamoSinPedido(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ): Promise<boolean> {

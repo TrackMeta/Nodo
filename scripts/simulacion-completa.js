@@ -459,11 +459,15 @@
           // pedido como venta cerrada — y menos en S/0 (señal de que la opción no se
           // resolvió y el motor tomó lo pagado como `vuelto`).
           ck(o?.estado !== "confirmada", `el pedido NO quedó cerrado como venta (estado=${o?.estado})`),
-          ck(Number(o?.amount) > 0, `el pedido NO nació en S/0 (amount=${o?.amount}, vuelto=${o?.shipping?.vuelto ?? "—"})`),
-          // OJO: acá el sistema NO sabe qué compró (la presentación nunca se selló), así
-          // que NO puede decir "te faltan S/49" — sería inventar. Lo correcto es acusar
-          // recibo y parquear para revisión. El aviso de "faltan S/X" corresponde al
-          // pago parcial CON presentación resuelta, que es otro camino (bolsa de abonos).
+          // Desde que `detectarOpcion` mira el HISTORIAL y no solo el último mensaje, el
+          // "basica" del primer mensaje SÍ se sella → hay precio esperado (99) → el pago
+          // corto entra como ABONO PARCIAL y no nace pedido hasta cubrirlo. Antes no se
+          // sabía qué había comprado y se parqueaba un pedido 'pendiente' para revisión.
+          // Por eso ya no se exige que exista pedido: se exige que, si existe, no sea S/0.
+          ck(!o || Number(o.amount) > 0, `si hay pedido, NO nació en S/0 (amount=${o?.amount}, vuelto=${o?.shipping?.vuelto ?? "—"})`),
+          // Y lo que de verdad importa para el cliente: que le digan cuánto le falta, en vez
+          // de dejarlo esperando una entrega que no va a llegar.
+          ck(/falta/i.test(outs.join(" ")), `le dijo cuánto falta: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
           ck(!!(outs[outs.length - 1]), `acusó recibo, no quedó mudo: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`),
         ];
       } },
