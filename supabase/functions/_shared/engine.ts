@@ -282,9 +282,6 @@ async function runEngineInner(
     // producto en curso— le diga que no lo vendemos. Ver maybeCambioProducto.
     try { if (await maybeCambioProducto(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeCambioProducto]", (e as any)?.message ?? e); }
-    // Anunció que va a pagar y todavía no sabe A DÓNDE: se le mandan los datos de pago
-    // antes de que la IA le pida la captura. No corta el flujo. Ver maybeDatosPago.
-    await maybeDatosPago(db, channelId, contactId, event);
     // Modificar el pedido ya creado: QUITAR un item o CAMBIAR la cantidad. Toca plata
     // y stock → confirma antes de aplicar (no auto-muta). Corta la cadena si atendió.
     // Se le pasa `run` para el anti-secuestro (no pisar una respuesta a la oferta del
@@ -5481,17 +5478,22 @@ async function maybeReclamoSinPedido(
 // que le dice a la IA "dáselos AHORA"): la IA obedece a veces y a veces no — verificado en
 // vivo, con el mismo cliente respondiendo distinto según el turno. Así que lo manda el
 // MOTOR: es un dato fijo, verificable contra los mensajes ya enviados, y no hay nada que
-// la IA aporte redactándolo. No corta el flujo — sale el dato y la IA sigue conversando.
-// Idempotente por construcción: una vez enviado, el número aparece en los salientes y no
-// se repite. Solo venta DIGITAL: en provincia el adelanto lo manda el flujo con su propio
-// mensaje y hay una regla explícita de no adelantarse a él.
+// la IA aporte redactándolo. Solo venta DIGITAL: en provincia el adelanto lo manda el
+// flujo con su propio mensaje y hay una regla explícita de no adelantarse a él.
+//
+// Corre DESPUÉS de que la IA respondió, no antes. Puesto antes, el número salía DOS veces
+// —una del motor y otra de la IA, que lo dice por su propia instrucción del flujo— y el
+// cliente recibía el Yape repetido en dos burbujas seguidas. Yendo detrás, el chequeo de
+// "¿ya se los dijimos?" incluye la respuesta que la IA acaba de mandar: si ella lo dijo,
+// el motor se calla; si no, lo completa. Sin duplicado posible y sin depender de que la
+// IA obedezca. Idempotente igual entre turnos: el número queda en los salientes.
 const RE_ANUNCIA_PAGO =
   /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i;
 async function maybeDatosPago(
-  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
+  db: SupabaseClient, channelId: string, contactId: string, texto: string,
 ): Promise<void> {
   try {
-    if (event.type !== "message" || !event.text || !RE_ANUNCIA_PAGO.test(event.text)) return;
+    if (!texto || !RE_ANUNCIA_PAGO.test(texto)) return;
     const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
     const pid = (c as any)?.product_id;
     if (!pid) return;
@@ -7290,7 +7292,41 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   }
   ctx._falta_opcion = faltaOpcion;
   run.vars._falta_opcion = faltaOpcion;
-  const completo = pendientes.length === 0 && !faltaOpcion;
+  // Guardia anti-despacho-de-lo-que-no-hay: la variante que el cliente pidió está
+  // AGOTADA y todavía no eligió cuál se lleva en su lugar. Medido: pidió la talla 40
+  // BLANCA, el bot le dijo "agotada, tengo 40 negro o 39/38 en blanco, ¿cuál
+  // prefieres?", el cliente contestó "si confirmo" sin elegir… y el motor cerró el
+  // pedido con la 40 BLANCA — stock a −1 y un color que no existe camino a su casa,
+  // mientras la IA en esa misma burbuja le repetía la pregunta.
+  //
+  // Esto NO es "bloquear la venta" (la regla del negocio es avisar y seguir vendiendo):
+  // es no CERRARLA con el dato que el propio bot acaba de declarar inválido. La venta
+  // sigue viva; solo no se da por completa hasta que diga cuál quiere, igual que con la
+  // opción de arriba. Y solo aplica si hay OTRA variante con stock: si está todo
+  // agotado no hay nada que preguntar, y ahí sí se cierra y se avisa como siempre.
+  let faltaVariante = false;
+  try {
+    const stockV = (ctx as any)._stock;
+    const atrsV = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
+    if (!faltaOpcion && stockV && typeof stockV === "object" && atrsV.length) {
+      const bag: Record<string, string> = {};
+      for (const a of atrsV) {
+        const v = String(ctx[(a as any).clave] ?? "").trim();
+        if (v) bag[(a as any).nombre] = v;
+      }
+      // Solo cuando ya sabemos TODOS los ejes (si falta uno, la clave no identifica variante).
+      if (Object.keys(bag).length === atrsV.length) {
+        const kV = stockKeyEngine(atrsV.map((a: any) => ({ nombre: a.nombre, valores: a.valores })), bag);
+        const nV = Number((stockV as any)[kV]);
+        const hayAlternativa = Object.entries(stockV as Record<string, unknown>)
+          .some(([k, v]) => k !== kV && Number(v) > 0);
+        if (Number.isFinite(nV) && nV <= 0 && hayAlternativa) faltaVariante = true;
+      }
+    }
+  } catch (_) { /* sin stock legible → como antes */ }
+  (ctx as any)._falta_variante = faltaVariante;
+  run.vars._falta_variante = faltaVariante;
+  const completo = pendientes.length === 0 && !faltaOpcion && !faltaVariante;
   run.vars.datos_completos = completo ? "si" : "no";
   ctx.datos_completos = completo ? "si" : "no";
   await setField(db, run.channel_id, run.contact_id, "datos_completos", completo ? "si" : "no");
@@ -8373,6 +8409,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Falta ELEGIR la opción (hay varias con precio y el cliente no eligió): sin
     // opción no hay precio y el pedido saldría en S/0. Prioridad sobre "cierra": la
     // IA primero consigue la elección.
+    // Pidió una variante AGOTADA y todavía no dijo con cuál se queda (ver el guard en
+    // extraerDatos). Hasta que elija, el pedido NO se cierra: si no, sale despachado lo
+    // que no hay.
+    if ((ctx as any)._falta_variante) {
+      parts.push("## Falta elegir con cuál se queda\nLo que pidió está AGOTADO y todavía no eligió el reemplazo. " +
+        "Nómbrale SOLO lo que sí tienes en stock (mira el detalle de existencias) y pregúntale con cuál se queda, en una sola pregunta clara. " +
+        "NO des el pedido por confirmado, NO le digas «queda confirmado» y NO asumas por él: mientras no elija, el pedido no se puede crear. " +
+        "Si insiste en lo agotado, pásalo a una persona con [[humano]].");
+    }
     if ((ctx as any)._falta_opcion) {
       parts.push("## Falta elegir la opción\nEl cliente TODAVÍA no eligió qué opción/presentación quiere, y hay VARIAS con precio distinto. " +
         "Antes de cerrar el pedido: nómbrale las opciones con su precio y pregúntale con naturalidad cuál quiere. " +
@@ -8899,6 +8944,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ? sinPreguntaFinal(String(result))
         : String(result);
       const handoff = await emitIaText(db, run, salida, ctx);
+      // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
+      // acaba de salir, se los manda el motor. Va acá (después) para no duplicarlos.
+      if (op === "generar_texto" && !handoff) {
+        await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""));
+      }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
       // ("y por último…", un link), justo tras decir "te paso con una persona". Los handoffs
