@@ -8678,6 +8678,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/],
         ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/],
         ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/],
+        // Cuánto peso aguanta. OJO: NO es lo mismo que cuánto PESA el producto (eso suele
+        // estar en la ficha, "240 g"), por eso la regex pide "si peso X", "aguantan",
+        // "soportan" — no la palabra "peso" suelta. Medido: a "¿aguantan si peso 95 kilos?"
+        // contestó "y claro, aguantan sin problema hasta 95 kilos, la suela está diseñada
+        // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
+        ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/],
       ];
       const faltan = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt))
         .map(([nombre]) => nombre);
