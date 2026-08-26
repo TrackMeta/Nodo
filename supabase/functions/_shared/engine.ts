@@ -8471,10 +8471,34 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const alt = hay.length
           ? `\nDISPONIBLE ahora: ${hay.slice(0, 20).join(", ")}.`
           : "\nAhora mismo NO queda stock: no confirmes pedidos, avisa que estás reponiendo.";
+        // Veredicto de LO QUE ESTE CLIENTE PIDIÓ, ya resuelto por código. Leyendo la lista, el
+        // modelo llega a cruzar los ejes: medido una vez, con 40 negro en 3 y 40 blanco en 0,
+        // le dijo al cliente "la 40 negra está agotada, solo tengo la blanca" — al revés. Negar
+        // lo que sí hay cuesta la venta igual que prometer lo que no hay, así que cuando la
+        // variante que pidió está completa se le dice en una línea, sin que tenga que deducirlo.
+        let veredicto = "";
+        try {
+          const atrsE = Array.isArray((ctx as any)._atributos) ? (ctx as any)._atributos : [];
+          const bagE: Record<string, string> = {};
+          for (const a of atrsE) {
+            const val = String(ctx[(a as any).clave] ?? "").trim();
+            if (val) bagE[(a as any).nombre] = val;
+          }
+          if (atrsE.length && Object.keys(bagE).length === atrsE.length) {
+            const kE = stockKeyEngine(atrsE.map((a: any) => ({ nombre: a.nombre, valores: a.valores })), bagE);
+            const nE = Number((stockMap as any)[kE]);
+            if (Number.isFinite(nE) && nE > 0) {
+              veredicto = `\n✅ Lo que ESTE cliente pidió (${legible(kE)}) SÍ está disponible: NO le digas que está ` +
+                `agotado ni le ofrezcas otra cosa en su lugar.`;
+            }
+          }
+        } catch (_) { /* sin variante resuelta → solo la lista de arriba */ }
         parts.push(
           "## Existencias (dato del sistema — NO lo contradigas ni lo negocies)\n" +
-          `AGOTADO: ${agotadas.slice(0, 20).join(", ")}.` + alt +
-          "\nSi el cliente pide algo AGOTADO: díselo de frente y ofrécele lo disponible. NO se lo confirmes " +
+          `AGOTADO: ${agotadas.slice(0, 20).join(", ")}.` + alt + veredicto +
+          "\nCada línea es una combinación EXACTA y sus valores van juntos: no mezcles la talla de una con el " +
+          "color de otra al responder.\n" +
+          "Si el cliente pide algo AGOTADO: díselo de frente y ofrécele lo disponible. NO se lo confirmes " +
           "ni le prometas entrega. Si insiste en lo agotado, pásalo a un humano con [[humano]].",
         );
       }
