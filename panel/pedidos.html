@@ -752,7 +752,10 @@ function rotuloInner(o){
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       row("Incluye", bumpsTxt, true)+
-      row("A COBRAR", money(O.porCobrar(o),o.currency)+"  ·  CONTRAENTREGA", true);
+      // Si el delivery lleva POS (Negocio → Entrega), el rótulo lo dice: quien entrega
+      // sabe que puede cobrar con tarjeta y no discute en la puerta por el efectivo.
+      row("A COBRAR", money(O.porCobrar(o),o.currency)+"  ·  CONTRAENTREGA"
+        +(st.entregas&&st.entregas.pos_tarjeta===true?"  ·  EFECTIVO O TARJETA (POS)":""), true);
   }
   return `<div class="lbl">
       <div class="hd">

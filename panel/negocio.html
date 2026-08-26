@@ -324,6 +324,9 @@ function renderEntregas(b){
       </div>
       ${rowSw("Entrego domingos","",E.domingos===true,"domingos")}
       ${rowSw("Entrego feriados","Si está apagado, las fechas de abajo no tienen reparto.",E.feriados===true,"feriados")}
+      ${rowSw("Mi delivery lleva POS (cobra con tarjeta)",
+        "Solo Lima contraentrega. Con esto encendido, el bot le dice al cliente que también puede pagar con tarjeta al recibir. Apagado, solo efectivo.",
+        E.pos_tarjeta===true,"pos_tarjeta")}
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
         <label style="margin:0;font-size:12.5px;font-weight:700">Horario de entrega</label>
         <input class="in" id="entDesde" type="time" value="${esc(E.horario.desde||"09:00")}" style="width:120px"/>

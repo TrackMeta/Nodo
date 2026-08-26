@@ -4182,6 +4182,7 @@ async function triggerPedidoEstado(
 // null si ese estado no manda nada por defecto (o le falta el dato clave).
 export function mensajeEstadoDefault(
   estado: string, shipping: Record<string, any> | null, amount?: number | null, moneda?: string | null,
+  posTarjeta?: boolean,
 ): string | null {
   const s = shipping || {};
   const sym = moneda === "USD" ? "$" : "S/";
@@ -4204,8 +4205,12 @@ export function mensajeEstadoDefault(
   if (estado === "en_reparto") {
     const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
     const dir = String(s.direccion || "").trim();
+    // Con POS (Negocio → Entrega) se le dice acá, que es el mensaje que lee justo antes
+    // de que toquen su puerta: si no, sale a sacar efectivo para nada — o peor, no tiene
+    // el monto a mano y se cae la entrega.
+    const _comoPaga = posTarjeta ? " (en efectivo o con tarjeta, el motorizado lleva POS)" : "";
     return `🛵 ¡Tu pedido ya salió! El motorizado va en camino${dir ? ` a ${dir}` : ""}. ` +
-      `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir. ` : ""}¡Gracias por tu compra! 🎉`;
+      `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir${_comoPaga}. ` : ""}¡Gracias por tu compra! 🎉`;
   }
   if (estado === "despachado") {
     const guia = String(s.guia || "").trim();
@@ -8344,6 +8349,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // "Recojo" es vocabulario de provincia (agencia): en Lima va un motorizado a la
         // puerta, y decirle recojo lo deja pensando que tiene que ir a buscarlo él.
         L.push("Es entrega A DOMICILIO: un motorizado se la lleva a su dirección. NUNCA hables de «recojo», «recoger» ni de que pase a buscarlo: eso es solo para provincia (agencia).");
+        // ¿El delivery lleva POS? Es una perilla del negocio (Negocio → Entrega), porque
+        // depende del courier con el que trabaje. Sin saberlo, la IA respondía a "¿puedo
+        // pagar con tarjeta?" que solo se acepta efectivo — y con POS eso es una venta
+        // perdida por una respuesta falsa. Solo aplica a Lima contraentrega: en provincia
+        // se paga por adelantado a la agencia, ahí no hay POS que valga.
+        try {
+          const _entPos = await loadEntregas(db, run);
+          if ((_entPos as any)?.entregas?.pos_tarjeta === true) {
+            L.push("💳 El motorizado lleva **POS**: puede cobrar con TARJETA al momento de entregar, además de efectivo. " +
+              "Si pregunta cómo paga, dile las dos opciones. NO le pidas datos de la tarjeta por acá: se paga en la puerta, con su tarjeta en el POS.");
+          } else {
+            L.push("El pago es en EFECTIVO al recibir. Si pregunta por tarjeta, dile con naturalidad que por ahora solo efectivo contra entrega.");
+          }
+        } catch (_) { /* sin config de entregas → no se afirma nada de la tarjeta */ }
         // El motivo lo calcula entregaHoy() y NO siempre es de horario: puede ser que en esa
         // zona NUNCA se entregue el mismo día (mismo_dia:false). Antes se le pedía a la IA
         // "explícale ese motivo real de horario/día de reparto" en los dos casos, así que

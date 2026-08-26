@@ -469,7 +469,14 @@ Deno.serve(async (req) => {
     const _amt = Number((patch.amount as number) ?? (order as any).amount) || 0;
     const _bumps = Array.isArray(patch.order_bumps) ? patch.order_bumps : ((order as any).order_bumps ?? []);
     const _total = _amt + (_bumps as any[]).reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
-    const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency);
+    // ¿El delivery lleva POS? (Negocio → Entrega). Solo lo usa el aviso de "en reparto",
+    // para decirle que puede pagar con tarjeta y no salga a sacar efectivo al vicio.
+    let _pos = false;
+    try {
+      const { data: chPos } = await db.from("channels").select("entregas").eq("id", (order as any).channel_id).maybeSingle();
+      _pos = (chPos as any)?.entregas?.pos_tarjeta === true;
+    } catch (_) { /* sin config → efectivo, como siempre */ }
+    const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency, _pos);
     if (txt) {
       // Este aviso por defecto es TEXTO LIBRE. Meta lo rechaza fuera de la ventana de
       // servicio de 24h (mover una tarjeta a "despachado"/"en_agencia" suele pasar días
