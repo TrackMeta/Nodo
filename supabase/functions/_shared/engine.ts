@@ -6814,10 +6814,7 @@ function ahoraEnTz(tz: string): { hhmm: string; dia: string; iso: string } {
 // de verdad —respetando días apagados, domingos y feriados— y se le da masticado a la IA:
 // "mañana", "el lunes"… Nunca se adivina: si en 14 días no hay ninguno (config rota o todo
 // apagado), devuelve "" y la IA simplemente no habla de fechas.
-const DIA_NOMBRE: Record<string, string> = {
-  lun: "el lunes", mar: "el martes", mie: "el miércoles", jue: "el jueves",
-  vie: "el viernes", sab: "el sábado", dom: "el domingo",
-};
+// (Reusa DIA_NOMBRE, declarado arriba para proximaApertura: mismo mapa día→nombre.)
 function proximaEntrega(cfg: any, tz: string): string {
   const e = cfg?.entregas ?? {};
   const orden = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
