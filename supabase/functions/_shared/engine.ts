@@ -8646,7 +8646,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     try {
       const fichaTxt = [ctx.contexto_producto, ctx.faq, info.negocio, ctx.producto_nombre]
         .map((x) => String(x ?? "")).join(" ").toLowerCase();
-      const preg = String(ctx.last_input ?? "").toLowerCase();
+      // Se mira lo que dijo en los ÚLTIMOS mensajes, no solo el último. Tercera vez que
+      // este mismo patrón muerde (ya pasó con detectarOpcion y con los datos de pago): el
+      // PRIMER mensaje lo atiende el rotador, así que "¿son impermeables?" quedaba fuera y
+      // el turno siguiente traía apenas un "dime lo de la lluvia" — el tema estaba en la
+      // conversación pero no en `last_input`, y la detección no disparaba.
+      let preg = String(ctx.last_input ?? "").toLowerCase();
+      try {
+        const { data: ins } = await db.from("messages").select("content")
+          .eq("contact_id", run.contact_id).eq("direction", "in")
+          .order("ts", { ascending: false }).limit(5);
+        const hist = (ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "")).join(" \n ");
+        if (hist.trim()) preg = (preg + " \n " + hist).toLowerCase();
+      } catch (_) { /* sin historial → queda el último mensaje */ }
       const TEMAS: Array<[string, RegExp, RegExp]> = [
         ["certificado", /certificad/, /certificad/],
         ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/],
@@ -8654,6 +8666,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/],
         ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/],
         ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/],
+        // Atributos del producto que la gente pregunta ANTES de comprar y que casi nunca
+        // están escritos. Medidos los cuatro en chats reales, y en las dos direcciones:
+        // "no son impermeables" y "no tenemos tienda física" (negó sin saber), "son 100%
+        // originales, vienen de un proceso controlado" (afirmó y encima relleno), y el peor,
+        // "están diseñadas más para pavimento, para trail quizás necesites otro calzado"
+        // — desaconsejó la compra con un dato que nadie escribió.
+        ["si resiste el agua", /\b(impermeable|resisten? el agua|se moja|con lluvia|a prueba de agua|waterproof)/, /\b(impermeable|waterproof|resistente al agua|sumergible)/],
+        ["el material", /\b(material|de qu[eé] est[aá]n? hech|cuero|sint[eé]tic|tela)\b/, /\b(material|malla|cuero|sint[eé]tic|eva|tela|algod[oó]n|poli[eé]ster)/],
+        ["la marca o el origen", /\b(originales?|de qu[eé] pa[ií]s|de d[oó]nde vienen|importad|marca|chin|r[eé]plica)/, /\b(original|importad|marca|fabricad|hecho en|procedencia)/],
+        ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/],
+        ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/],
+        ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/],
       ];
       const faltan = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt))
         .map(([nombre]) => nombre);
@@ -8662,6 +8686,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           `Sobre esto no tienes dato: **${faltan.join(", ")}**. No lo afirmes NI lo niegues — que la ficha no lo mencione no significa que no exista, ` +
           `y una negación inventada le tumba la compra a alguien que iba a comprar. ` +
           `Dile con naturalidad que se lo confirmas y sigue la venta con lo que SÍ sabes. ` +
+          `Y NO le desaconsejes la compra por esto ("para eso quizás necesites otra cosa"): estarías tumbando una venta ` +
+          `con un dato que nadie escribió. Tampoco lo rellenes con vaguedades ("de un proceso controlado", "materiales de alta calidad"): ` +
+          `si no lo sabes, se dice que se lo confirmas y ya. ` +
           `Si insiste o es determinante para él, pásalo a una persona con [[humano]].`);
       }
     } catch (_) { /* sin ficha legible → queda la regla general */ }
