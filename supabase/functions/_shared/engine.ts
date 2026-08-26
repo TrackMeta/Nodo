@@ -4182,7 +4182,6 @@ async function triggerPedidoEstado(
 // null si ese estado no manda nada por defecto (o le falta el dato clave).
 export function mensajeEstadoDefault(
   estado: string, shipping: Record<string, any> | null, amount?: number | null, moneda?: string | null,
-  posTarjeta?: boolean,
 ): string | null {
   const s = shipping || {};
   const sym = moneda === "USD" ? "$" : "S/";
@@ -4205,12 +4204,12 @@ export function mensajeEstadoDefault(
   if (estado === "en_reparto") {
     const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
     const dir = String(s.direccion || "").trim();
-    // Con POS (Negocio → Entrega) se le dice acá, que es el mensaje que lee justo antes
-    // de que toquen su puerta: si no, sale a sacar efectivo para nada — o peor, no tiene
-    // el monto a mano y se cae la entrega.
-    const _comoPaga = posTarjeta ? " (en efectivo o con tarjeta, el motorizado lleva POS)" : "";
+    // El POS NO se menciona acá (decisión de Rodrigo): el aviso va a TODOS los pedidos de
+    // Lima y nombrar la tarjeta en cada uno es ruido. La IA sí lo dice, pero solo cuando
+    // viene al caso —si pregunta cómo paga o si dice que no tiene efectivo—, y el rótulo lo
+    // lleva para quien entrega. Ver la perilla en Negocio → Entrega.
     return `🛵 ¡Tu pedido ya salió! El motorizado va en camino${dir ? ` a ${dir}` : ""}. ` +
-      `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir${_comoPaga}. ` : ""}¡Gracias por tu compra! 🎉`;
+      `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir. ` : ""}¡Gracias por tu compra! 🎉`;
   }
   if (estado === "despachado") {
     const guia = String(s.guia || "").trim();
@@ -8357,8 +8356,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           const _entPos = await loadEntregas(db, run);
           if ((_entPos as any)?.entregas?.pos_tarjeta === true) {
-            L.push("💳 El motorizado lleva **POS**: puede cobrar con TARJETA al momento de entregar, además de efectivo. " +
-              "Si pregunta cómo paga, dile las dos opciones. NO le pidas datos de la tarjeta por acá: se paga en la puerta, con su tarjeta en el POS.");
+            L.push("💳 El motorizado lleva **POS**: puede cobrar con TARJETA al entregar, además de efectivo. " +
+              "Menciónalo SOLO cuando venga al caso: si pregunta cómo paga, si dice que no tiene efectivo, o si duda por eso. " +
+              "NO lo saques de la nada, no lo repitas en cada mensaje y no lo uses como argumento de venta — es un dato útil, no un gancho. " +
+              "Y NO le pidas datos de la tarjeta por acá: se paga en la puerta, con su tarjeta en el POS.");
           } else {
             L.push("El pago es en EFECTIVO al recibir. Si pregunta por tarjeta, dile con naturalidad que por ahora solo efectivo contra entrega.");
           }
