@@ -2196,16 +2196,25 @@ async function execute(db: SupabaseClient, run: Run) {
             active = delAngulo.length ? delAngulo : (generales.length ? generales : active);
             const rotOn = node.config?.activo !== false && active.length > 1;
             const chosen = rotOn ? pickWeighted(active) : active[0];
-            for (const b of (chosen.bubbles ?? [])) await emit(db, run, b, ctx);
+            // `emit` devuelve false cuando Meta rechaza (no lanza). Se guarda para no
+            // contar como enviado un saludo que el cliente nunca vio: igual que en los
+            // pasos de secuencia, un envío fantasma nunca puede recibir respuesta y le
+            // hunde la tasa a esa variante con casos que no existieron.
+            let salioOk = true;
+            for (const b of (chosen.bubbles ?? [])) {
+              if ((await emit(db, run, b, ctx)) === false) salioOk = false;
+            }
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial",
               (chosen.nombre ?? "") + (delAngulo.length ? ` · ángulo ${slug}` : ""));
             // Queda medible: la nota de arriba es para leer un chat suelto, esta fila es
             // la que se puede sumar (cuántos la recibieron, contestaron y compraron).
-            await registrarVariante(db, run.channel_id, run.contact_id, {
-              ambito: "inicial", ref_id: run.flow_id,
-              variante: chosen, indice: active.indexOf(chosen), angulo: slug,
-              waId: String(ctx.wa_id ?? ""),
-            });
+            if (salioOk) {
+              await registrarVariante(db, run.channel_id, run.contact_id, {
+                ambito: "inicial", ref_id: run.flow_id,
+                variante: chosen, indice: active.indexOf(chosen), angulo: slug,
+                waId: String(ctx.wa_id ?? ""),
+              });
+            }
           }
         }
         // "Y después": tras el saludo, el bot CONTINÚA SOLO a vender. Ya no se le

@@ -525,8 +525,22 @@ function veredictoHtml(gIn){
   if(todos.size>1) return S("⚖️ <b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.","245,158,11");
   const [a,b]=g;                                    // ya vienen ordenadas por tasa
   const t=testProporciones(a,b);
+  const pc=x=>Math.round(x.resp/x.env*100)+"%";
+  // Con 3+ versiones no basta el duelo de arriba. Medido: A 50%, B 48%, C 20% sobre 200
+  // clientes cada una — el cartel decía "todavía no se puede decidir" (por el empate de A
+  // y B) y NO mencionaba a C, que estaba quemando un tercio del tráfico a menos de la
+  // mitad de tasa. Lo accionable quedaba fuera del consejo. Se compara la mejor contra
+  // TODAS, y las que rinden claramente menos se nombran aparte.
+  const flojas=g.slice(1).filter(x=>{ const tt=testProporciones(a,x); return tt.valido && tt.difiere; });
+  const aviso=flojas.length
+    ? ` <b>${flojas.map(x=>`“${esc(x.nombre)}”`).join(" y ")}</b> rinde${flojas.length>1?"n":""} bastante menos (${flojas.map(pc).join(" y ")} contra ${pc(a)}): puedes apagarla${flojas.length>1?"s":""}.`
+    : "";
   if(t.valido && t.difiere){
-    return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${Math.round(a.resp/a.env*100)}% contra el ${Math.round(b.resp/b.env*100)}%, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.${pie}`,"34,197,94");
+    return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${pc(a)} contra el ${pc(b)}, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.${pie}`,"34,197,94");
+  }
+  // Las de arriba empatan, pero alguna de abajo es claramente peor: eso SÍ se puede decidir.
+  if(flojas.length){
+    return S(`✓ <b>“${esc(a.nombre)}” y “${esc(b.nombre)}” van parejas</b> (${pc(a)} y ${pc(b)}), así que entre esas dos da igual cuál dejes.${aviso}${pie}`,"34,197,94");
   }
   // Hay DOS motivos distintos por los que no se puede decidir, y confundirlos deja mensajes
   // absurdos. Con 9 de 10 contra 1 de 10 la fórmula del total pide "9 clientes" cuando ya
