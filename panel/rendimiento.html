@@ -120,7 +120,7 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Rendimiento</h1>
-        <p class="nodo-lead">El gasto de tus anuncios de Meta cruzado con la venta <b>real</b> de Nodo — tu CPA de confirmación, tu CPA real y tu ganancia neta, por anuncio y por producto. Toca un anuncio para ver su detalle día por día.</p>
+        <p class="nodo-lead" id="lead">El gasto de tus anuncios de Meta cruzado con la venta <b>real</b> de Nodo — tu CPA de confirmación, tu CPA real y tu ganancia neta, por anuncio y por producto. Toca un anuncio para ver su detalle día por día.</p>
       </div>
       <div class="nodo-actions" id="statusSlot"></div>
     </div>
@@ -289,6 +289,14 @@ async function loadAccount(){
 }
 function renderStatus(){
   const n=st.adAccounts.length;
+  // En "Por copy" no se mide gasto de Meta: ni la pastilla de conexión ni el texto de CPA/
+  // ganancia vienen a cuento — con la pastilla en "SIN CONECTAR" encima parecía que la vista
+  // estaba vacía por falta de conexión cuando sus números estaban ahí, completos.
+  const _lead=$("lead");
+  if(_lead) _lead.innerHTML = st.vista==="copy"
+    ? `Qué versión de los mensajes que manda tu bot funciona mejor. Mide el <b>texto</b>, no los anuncios: no necesita Meta conectado.`
+    : `El gasto de tus anuncios de Meta cruzado con la venta <b>real</b> de Nodo — tu CPA de confirmación, tu CPA real y tu ganancia neta, por anuncio y por producto. Toca un anuncio para ver su detalle día por día.`;
+  if(st.vista==="copy"){ $("statusSlot").innerHTML=""; $("noticeSlot").innerHTML=""; return; }
   $("statusSlot").innerHTML = n
     ? `<span class="okpill">${icon("megaphone")} ${n} cuenta${n>1?'s':''} conectada${n>1?'s':''}</span>`
     : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
@@ -341,6 +349,7 @@ function render(){
     ${st.hayVentaSinGasto?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ Hay ventas atribuidas a anuncios <b>sin gasto registrado</b> en este periodo (un anuncio borrado en Meta, o un mes anterior a lo que se sincronizó). El <b>ROAS</b> y la <b>ganancia neta</b> salen mejor de lo real porque falta ese gasto — tómalos con cuidado.</div>`:""}
     <div id="content"></div>`;
   wireToolbar();
+  renderStatus();   // el encabezado cambia según la vista (copy no habla de Meta)
   // "Por copy" NO depende del gasto de Meta: mide los mensajes que manda el bot, no los
   // anuncios. Por eso se atiende antes de los cortes de abajo — si no, con Meta sin
   // conectar la página se apagaría entera y esta vista no se vería nunca.
@@ -530,13 +539,16 @@ function renderCopys(){
       const claves=[...new Set(delAmb.map(f=>(f.prod||"")+"#"+(f.paso??"")))];
       return claves.map(k=>{ const [pid,ps]=k.split("#");
         return [amb,titulo,sub,pid,delAmb.filter(f=>(f.prod||"")===pid && String(f.paso??"")===ps), ps]; });
-    }).map(([amb,titulo,sub,pid,gg,ps])=>{
+    }).map(([amb,titulo,sub,pid,gg,ps],idx,arr)=>{
+      // El subtitulo explica el ambito, no la tarjeta: repetido en cada producto/toque era
+      // ruido. Sale solo en la primera tarjeta de su ambito.
+      const primeraDelAmbito = arr.findIndex(r=>r[0]===amb)===idx;
       const g=gg.sort((a,b)=>(b.resp/b.env)-(a.resp/a.env));
       if(!g.length) return "";
       const nomProd=(window.__prodNombre||{})[pid];
       return `<div class="panel" style="margin-bottom:16px">
         <div style="padding:13px 15px 0"><div style="font-weight:700;font-size:14px">${titulo}${nomProd?` · <span style="color:var(--muted);font-weight:600">${esc(nomProd)}</span>`:""}${(ps!==""&&ps!=null&&amb==="secuencia")?` · <span style="color:var(--faint);font-weight:600">toque ${Number(ps)+1}</span>`:""}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${sub}</div>
+${primeraDelAmbito?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${sub}</div>`:""}
           ${veredictoHtml(g)}</div>
         <div class="scroll"><table><thead><tr>
           <th>Versión</th><th>Recibieron</th><th>${amb==="secuencia"?"Reengancharon":"Contestaron"}</th>
@@ -544,7 +556,7 @@ function renderCopys(){
         <tbody>${g.map(f=>`<tr${f.vigente?"":' style="opacity:.62"'}>
           <td>${nameCell(f.nombre,"","",false)}${f.vigente?"":'<div style="font-size:10.5px;color:var(--faint);margin-top:1px">ya no está en uso</div>'}</td>
           <td class="num">${f.env}</td><td class="num">${f.resp}</td>
-          <td class="num">${Math.round(f.resp/f.env*100)}%</td>
+          <td class="num" style="font-weight:800;color:${f.resp===0?"var(--faint)":"var(--text)"}">${Math.round(f.resp/f.env*100)}%</td>
           <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`).join("")}
         </tbody></table></div></div>`;
     }).join("") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
