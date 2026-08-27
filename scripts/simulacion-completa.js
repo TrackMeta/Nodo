@@ -568,6 +568,190 @@
         checks.push(ck(!!(outs[outs.length - 1]), `respondió la consulta post-venta: "${(outs[outs.length - 1] || "SILENCIO").slice(0, 70)}"`));
         return checks;
       } },
+
+    // ═════ NUEVOS (2026-08-27) · caminos que ningún escenario cubría ═════════
+    { id: "N1", wa: "51987000119", nombre: "Paola Nunez",
+      titulo: "Recepción con IA · escribe sin palabra clave → la IA lo rutea al producto",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola buenas tardes"); await sleep(3000);
+        const r1 = (await outMsgs(wa, 2)).join(" ");
+        await send(wa, nombre, "queria ver unas zapatillas para correr"); await sleep(3500);
+        const outs = await outMsgs(wa, 6); const todo = outs.join(" ");
+        const { c } = await order(wa);
+        return [
+          ck(!!r1.trim(), `contestó al saludo sin palabra clave: "${(r1 || "SILENCIO").slice(0, 70)}"`),
+          ck(/runner|zapatilla/i.test(todo), `llegó al producto correcto (menciona las zapatillas)`),
+          ck(!/(no s[eé] (de )?qu[eé]|no entiendo|no tengo esa informaci)/i.test(todo), `no se rindió con un "no sé"`),
+          ck(!!c, `quedó el contacto en la Bandeja`),
+        ];
+      } },
+
+    { id: "N2", wa: "51987000120", nombre: "Hugo Bravo",
+      titulo: "Zona ambigua · dice que es de Lima pero la dirección es Huancayo → debe ser PROVINCIA",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "soy de Lima, un par talla 39 negras"); await sleep(2500);
+        await send(wa, nombre, "Hugo Bravo Rojas, DNI 41223344, en realidad estoy en Huancayo, lo recojo en el Shalom de Huancayo Real"); await sleep(3200);
+        const { o } = await order(wa); const outs = (await outMsgs(wa, 5)).join(" ");
+        return [
+          ck(o?.shipping?.zona === "provincia", `zona=${o?.shipping?.zona} (esperado provincia — la ciudad manda)`),
+          ck(o?.estado === "esperando_adelanto", `estado=${o?.estado} (esperado esperando_adelanto)`),
+          ck(!/contraentrega|pagas al recibir/i.test(outs), `no le prometió contraentrega de Lima`),
+        ];
+      } },
+
+    { id: "N3", wa: "51987000121", nombre: "Cecilia Ortiz",
+      titulo: "Pregunta fuera de ficha · ni la niega ni la inventa, y sigue vendiendo",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "vienen con certificado de originalidad y factura con RUC?"); await sleep(3500);
+        const outs = await outMsgs(wa, 4); const r = outs[outs.length - 1] || "";
+        await send(wa, nombre, "ya, un par talla 38 negras"); await sleep(2500);
+        await send(wa, nombre, "Cecilia Ortiz, Lima, Jesus Maria, Av Salaverry 500"); await sleep(2500);
+        await send(wa, nombre, "si confirmo"); await sleep(2800);
+        const { o } = await order(wa);
+        return [
+          ck(!/^(no|lamentablemente no|no incluye|no contamos|no manejamos)/i.test(r.trim()), `no arrancó negando: "${r.slice(0, 80)}"`),
+          ck(!/(s[ií],? (incluye|viene con) (certificado|factura))/i.test(r), `no prometió certificado/factura que no están en la ficha`),
+          ck(!!r.trim(), `contestó algo (no dead-air)`),
+          ck(o?.estado === "confirmado", `la venta igual se cerró (estado=${o?.estado})`),
+        ];
+      } },
+
+    { id: "N4", wa: "51987000122", nombre: "Tomas Iglesias",
+      titulo: "Cambia de producto a mitad de venta · zapatillas → curso (no debe negar el catálogo)",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "cuanto estan?"); await sleep(2500);
+        await send(wa, nombre, "mejor dime del curso de trading, ese me interesa mas"); await sleep(3500);
+        const outs = await outMsgs(wa, 5); const todo = outs.join(" ");
+        return [
+          ck(/trading|curso/i.test(todo), `sí habla del curso (menciona trading/curso)`),
+          ck(!/(no (vendemos|tenemos|manejamos) (ese|el) curso|no trabajo con)/i.test(todo), `no negó un producto que SÍ está en el catálogo`),
+          ck(/99|199|b[aá]sic|premium/i.test(todo), `le dio los planes o el precio del curso`),
+        ];
+      } },
+
+    { id: "N5", wa: "51987000123", nombre: "Fiorella Nieto",
+      titulo: "Corrige la talla después de darla · debe despachar la ÚLTIMA, no la primera",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "un par talla 38 negras"); await sleep(2500);
+        await send(wa, nombre, "espera, mejor la 39, la 38 me queda justa"); await sleep(3000);
+        await send(wa, nombre, "Fiorella Nieto, Lima, Barranco, Av Grau 300"); await sleep(2500);
+        await send(wa, nombre, "si confirmo"); await sleep(2800);
+        const { o } = await order(wa);
+        const v = JSON.stringify(o?.shipping?.variante || o?.shipping || {});
+        return [
+          ck(/39/.test(v), `la variante del pedido dice 39 (${v.slice(0, 90)})`),
+          ck(!/\b38\b/.test(String(o?.shipping?.variante || "")), `ya no quedó la 38`),
+          ck(o?.estado === "confirmado", `estado=${o?.estado}`),
+        ];
+      } },
+
+    { id: "N6", wa: "51987000124", nombre: "Gonzalo Rey",
+      titulo: "Digital · paga de MÁS (S/150 de 99) → entrega igual y avisa del excedente",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero el curso de trading"); await sleep(1500);
+        await send(wa, nombre, "el plan basico"); await sleep(2500);
+        await yape(wa, nombre, { monto: 150, quien: nombre, op: "0" + Date.now().toString().slice(-9) }); await sleep(4000);
+        const outs = await outMsgs(wa, 6); const todo = outs.join(" ");
+        const { o } = await order(wa);
+        return [
+          ck(tieneLink(outs, /https?:\/\//), `entregó el acceso (hay link)`),
+          ck(Number(o?.amount) === 99, `la venta vale 99, no 150 (amount=${o?.amount}) — el excedente no infla la venta`),
+          ck(/(de m[aá]s|excedente|vuelto|diferencia|saldo a favor)/i.test(todo), `le dijo algo del pago de más`),
+        ];
+      } },
+
+    { id: "N7", wa: "51987000125", nombre: "Ariana Delgado",
+      titulo: "Cancela el pedido · si dice cancelado, tiene que estarlo de verdad",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        const st0 = await stockOf(ids.P.zap);
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "un par talla 39 blancas"); await sleep(2500);
+        await send(wa, nombre, "Ariana Delgado, Lima, Magdalena, Av Brasil 900"); await sleep(2500);
+        await send(wa, nombre, "si confirmo"); await sleep(2800);
+        const a = await order(wa);
+        await send(wa, nombre, "disculpa, me arrepenti, cancelame el pedido por favor"); await sleep(3500);
+        const b = await order(wa); const st1 = await stockOf(ids.P.zap);
+        const outs = await outMsgs(wa, 4); const r = outs[outs.length - 1] || "";
+        const k = "Talla=39|Color=blanco";
+        const dijoCancelado = /cancel|anulad/i.test(r);
+        return [
+          ck(!!a.o, `llegó a haber pedido (${a.o?.estado})`),
+          ck(!!r.trim(), `contestó a la cancelación: "${r.slice(0, 80)}"`),
+          ck(!dijoCancelado || /anulad|cancel/i.test(b.o?.estado || ""), `si dijo cancelado, el pedido quedó anulado (estado=${b.o?.estado})`),
+          ck(!dijoCancelado || st1[k] === st0[k], `si canceló, el stock volvió (${st0[k]}→${st1[k]})`),
+        ];
+      } },
+
+    { id: "N8", wa: "51987000126", nombre: "Renzo Ferrari",
+      titulo: "Dos mensajes a la vez · no debe abrir DOS pedidos",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "un par talla 38 negras"); await sleep(2500);
+        await Promise.all([
+          send(wa, nombre, "Renzo Ferrari, Lima, Surquillo, Av Angamos 450"),
+          send(wa, nombre, "si confirmo porfa"),
+        ]);
+        await sleep(4500);
+        const { all } = await order(wa);
+        const vivos = all.filter((o) => !/anulad|cancel/i.test(o.estado || ""));
+        return [
+          ck(vivos.length === 1, `quedó 1 pedido vivo (hay ${vivos.length}: ${all.map((o) => o.estado).join(", ")})`),
+          ck(Number(vivos[0]?.amount) === 129, `amount=${vivos[0]?.amount} (esperado 129)`),
+        ];
+      } },
+
+    { id: "N9", wa: "51987000127", nombre: "Silvia Aguirre",
+      titulo: "Reclamo · llegó mal el pedido → atiende el reclamo, NO le vende otra vez",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "un par talla 40 negras"); await sleep(2500);
+        await send(wa, nombre, "Silvia Aguirre, Lima, Chorrillos, Av Huaylas 250"); await sleep(2500);
+        await send(wa, nombre, "si confirmo"); await sleep(2800);
+        const { o } = await order(wa);
+        if (o?.id) { await mover(o.id, "en_reparto"); await sleep(1500); await mover(o.id, "entregado_cobrado"); await sleep(2500); }
+        await send(wa, nombre, "me llegaron las zapatillas pero vinieron manchadas, estoy molesta"); await sleep(3800);
+        const outs = await outMsgs(wa, 4); const r = outs[outs.length - 1] || "";
+        const { all } = await order(wa);
+        return [
+          ck(!!r.trim(), `contestó al reclamo: "${r.slice(0, 90)}"`),
+          ck(!/(te sumo|le sumas|quieres agregar|aprovecha|promoci[oó]n|descuento en tu pr[oó]xima)/i.test(r), `no intentó venderle encima del reclamo`),
+          ck(all.length === 1, `no abrió un pedido nuevo (tiene ${all.length})`),
+        ];
+      } },
+
+    { id: "N10", wa: "51987000128", nombre: "Martin Zegarra",
+      titulo: "Recompra · ya compró y vuelve a pedir otro par → SÍ abre un pedido nuevo",
+      run: async (ids, s) => {
+        const { wa, nombre } = s;
+        await send(wa, nombre, "hola quiero las zapatillas runner"); await sleep(1500);
+        await send(wa, nombre, "un par talla 39 negras"); await sleep(2500);
+        await send(wa, nombre, "Martin Zegarra, Lima, La Molina, Av Javier Prado 1500"); await sleep(2500);
+        await send(wa, nombre, "si confirmo"); await sleep(2800);
+        const a = await order(wa);
+        if (a.o?.id) { await mover(a.o.id, "en_reparto"); await sleep(1200); await mover(a.o.id, "entregado_cobrado"); await sleep(2500); }
+        await send(wa, nombre, "hola de nuevo, me encantaron, quiero pedir otro par talla 40 blancas"); await sleep(3800);
+        await send(wa, nombre, "la misma direccion de antes"); await sleep(3000);
+        await send(wa, nombre, "si confirmo"); await sleep(3000);
+        const { all } = await order(wa);
+        return [
+          ck(all.length === 2, `abrió un SEGUNDO pedido (tiene ${all.length})`),
+          ck(/(40|blanc)/i.test(JSON.stringify(all[0]?.shipping || {})), `el nuevo es el par correcto (40 blancas)`),
+          ck(/molina|javier prado/i.test(JSON.stringify(all[0]?.shipping || {})), `reusó la dirección sin volver a pedírsela`),
+        ];
+      } },
   ];
 
   // ═══════════════════════════════════════════════════════════════════════════
