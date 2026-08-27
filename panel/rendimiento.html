@@ -439,6 +439,30 @@ async function variantesVigentes(){
   }catch(_){ }
   return vivas;
 }
+// De qué PRODUCTO es cada envío. El `ref_id` guarda el flujo (saludo) o la secuencia
+// (remarketing); de ahí se llega al producto. Hace falta porque los copys de productos
+// distintos NUNCA compiten por el mismo cliente: mezclarlos es el mismo error que comparar
+// ángulos distintos — el saludo del curso contra el de las zapatillas, y un "ganador" que
+// no significa nada.
+async function productoPorRef(){
+  const map={};
+  try{
+    const { data:fls }=await supa.from("flows").select("id,product_id").eq("channel_id",st.channelId);
+    for(const f of fls||[]) if(f.product_id) map[f.id]=f.product_id;
+  }catch(_){ }
+  try{
+    const { data:ps }=await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId);
+    window.__prodNombre={};
+    for(const p of ps||[]){
+      window.__prodNombre[p.id]=p.nombre;
+      const cfg=p.config||{};
+      const m=(cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
+      for(const v of Object.values(m)) if(v) map[v]=p.id;
+      if(cfg.remarketing_seq_id) map[cfg.remarketing_seq_id]=p.id;
+    }
+  }catch(_){ }
+  return map;
+}
 async function cargaCopys(){
   const r=st.range||computePreset("30d");
   // ⚠️ `r.to` es la MEDIANOCHE del último día (su instante de inicio), no su final: usarlo
@@ -452,15 +476,17 @@ async function cargaCopys(){
   // y la otra con 100 solo por dónde cayó el corte, mostrando un "ganador" inventado.
   // pageAll pagina de verdad; el `order` estable es lo que hace que las páginas no se pisen.
   const { data, error, truncado }=await pageAll((a,b)=>supa.from("variante_envios")
-    .select("ambito,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
+    .select("ambito,ref_id,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
     .eq("channel_id", st.channelId).gte("enviado_at",desde).lte("enviado_at",hasta)
     .order("enviado_at",{ascending:true}).order("id",{ascending:true}).range(a,b));
   if(error) return { error };
+  const refProd=await productoPorRef();
   if(truncado) console.warn("[copys] periodo con demasiados envíos: los números pueden estar incompletos");
   const m=new Map();
   for(const x of data||[]){
-    const k=`${x.ambito}|${x.variante_id}|${x.variante_rev}`;
-    const s=m.get(k)||{ ambito:x.ambito, id:x.variante_id, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
+    const prod=refProd[x.ref_id]||"";
+    const k=`${x.ambito}|${prod}|${x.variante_id}|${x.variante_rev}`;
+    const s=m.get(k)||{ ambito:x.ambito, prod, id:x.variante_id, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
     // El nombre se guarda en cada envío, así que si la renombraste hay filas con el viejo y
     // filas con el nuevo. Como se recorre de más antigua a más reciente, quedarse con el
     // último deja el nombre ACTUAL — si no, la tabla te mostraría un nombre que ya no existe
@@ -490,11 +516,19 @@ function renderCopys(){
     }
     const grupos=[["inicial","Saludo inicial","El primer mensaje del bot. Decide si el cliente contesta o no."],
                   ["secuencia","Remarketing","Los pasos que reenganchan al que se quedó callado."]];
-    box.innerHTML=grupos.map(([amb,titulo,sub])=>{
-      const g=filas.filter(f=>f.ambito===amb).sort((a,b)=>(b.resp/b.env)-(a.resp/a.env));
+    // Una tabla por ÁMBITO y por PRODUCTO. Los copys de productos distintos no compiten
+    // por el mismo cliente: mezclarlos daba un "ganador" sin sentido — medido, el saludo del
+    // curso (1 cliente, 100%) salía encabezando la lista de las zapatillas.
+    box.innerHTML=grupos.flatMap(([amb,titulo,sub])=>{
+      const delAmb=filas.filter(f=>f.ambito===amb);
+      const prods=[...new Set(delAmb.map(f=>f.prod||""))];
+      return prods.map(pid=>[amb,titulo,sub,pid,delAmb.filter(f=>(f.prod||"")===pid)]);
+    }).map(([amb,titulo,sub,pid,gg])=>{
+      const g=gg.sort((a,b)=>(b.resp/b.env)-(a.resp/a.env));
       if(!g.length) return "";
+      const nomProd=(window.__prodNombre||{})[pid];
       return `<div class="panel" style="margin-bottom:16px">
-        <div style="padding:13px 15px 0"><div style="font-weight:700;font-size:14px">${titulo}</div>
+        <div style="padding:13px 15px 0"><div style="font-weight:700;font-size:14px">${titulo}${nomProd?` · <span style="color:var(--muted);font-weight:600">${esc(nomProd)}</span>`:""}</div>
           <div style="font-size:12px;color:var(--muted);margin-top:2px">${sub}</div>
           ${veredictoHtml(g)}</div>
         <div class="scroll"><table><thead><tr>
