@@ -94,8 +94,8 @@ export function waBubbles(list, smp){
     let media=''; const cap=bText(b);
     if(b.media_url&&b.media_kind==='image') media=`<img src="${esc(b.media_url)}" style="max-width:100%;border-radius:6px;display:block;margin-bottom:${cap?'4px':'0'}">`;
     else if(b.media_url&&b.media_kind==='video') media=`<div style="position:relative;background:#0b141a;border-radius:6px;padding:20px 0;text-align:center;margin-bottom:${cap?'4px':'0'}"><span style="display:inline-flex;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.85);color:#0b141a;align-items:center;justify-content:center;font-size:13px">▶</span><span style="position:absolute;right:6px;bottom:4px;color:#fff;font-size:8.5px;background:rgba(0,0,0,.4);border-radius:4px;padding:0 4px">0:12</span></div>`;
-    else if(b.media_url&&b.media_kind==='audio') media=`<div style="display:flex;align-items:center;gap:6px;color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}"><span style="width:20px;height:20px;border-radius:50%;background:#c7e6d3;display:inline-flex;align-items:center;justify-content:center">🎤</span><span style="flex:1;height:3px;background:#a9d3ba;border-radius:3px;position:relative"><span style="position:absolute;left:0;top:-2.5px;width:8px;height:8px;border-radius:50%;background:#4fa97e"></span></span><span>0:07</span></div>`;
-    else if(b.media_url) media=`<div style="color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}">📎 archivo</div>`;
+    else if(b.media_url&&b.media_kind==='audio') media=`<div style="display:flex;align-items:center;gap:6px;color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}"><span style="width:20px;height:20px;border-radius:50%;background:#c7e6d3;display:inline-flex;align-items:center;justify-content:center">${icon("mic")}</span><span style="flex:1;height:3px;background:#a9d3ba;border-radius:3px;position:relative"><span style="position:absolute;left:0;top:-2.5px;width:8px;height:8px;border-radius:50%;background:#4fa97e"></span></span><span>0:07</span></div>`;
+    else if(b.media_url) media=`<div style="color:#5b8a72;font-size:11px;margin-bottom:${cap?'4px':'0'}">${icon("file")} archivo</div>`;
     const txt=cap?smp(esc(cap)).replace(/\n/g,"<br>"):'';
     const tail=i===0?`<span style="position:absolute;top:0;right:-6px;width:0;height:0;border-top:7px solid #DCF8C6;border-right:7px solid transparent"></span>`:'';
     const bubble=`<div style="position:relative;background:#DCF8C6;color:#111b21;border-radius:8px 8px 3px 8px;padding:5px 8px 4px;font-size:12px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.13);word-break:break-word">${tail}${media}${txt}<div style="font-size:9px;color:#667781;text-align:right;margin-top:1px;line-height:1;white-space:nowrap">10:24 <span style="color:#53bdeb">✓✓</span></div></div>`;
@@ -111,7 +111,7 @@ export function waBubbles(list, smp){
 // con papel tapiz, separador "HOY" y las burbujas. La usan el editor de pasos y
 // "Cómo llegan los clientes" para verse idénticas.
 export function waScreenHtml({ title, logoUrl, emoji, bubblesHtml, empty }={}){
-  const ava = logoUrl ? `<img src="${esc(logoUrl)}" style="width:100%;height:100%;object-fit:cover">` : esc(emoji||"💬");
+  const ava = logoUrl ? `<img src="${esc(logoUrl)}" style="width:100%;height:100%;object-fit:cover">` : (emoji?esc(emoji):icon("message"));
   const body = bubblesHtml
     ? `<div style="align-self:center;background:rgba(225,245,254,.92);color:#54656f;font-size:9px;font-weight:600;padding:2px 9px;border-radius:7px;box-shadow:0 1px 1px rgba(0,0,0,.08);margin-bottom:2px">HOY</div>${bubblesHtml}`
     : `<div style="font-size:11.5px;color:#667781;text-align:center;padding:16px 6px">${esc(empty||"Escribe el mensaje para ver cómo llega…")}</div>`;
@@ -121,7 +121,7 @@ export function waScreenHtml({ title, logoUrl, emoji, bubblesHtml, empty }={}){
       <span style="color:#e9f5ef;font-size:16px;line-height:1;margin-right:-3px">‹</span>
       <div style="width:27px;height:27px;border-radius:50%;background:#128C7E;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;overflow:hidden;flex:none">${ava}</div>
       <div style="flex:1;min-width:0"><div style="color:#fff;font-size:11.5px;font-weight:600;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title||"Tu negocio")}</div><div style="color:#a7d3c7;font-size:9px;line-height:1.2">en línea</div></div>
-      <span style="color:#cfe9d8;font-size:12px">📹</span><span style="color:#cfe9d8;font-size:12px">📞</span>
+      <span style="color:#cfe9d8;font-size:12px">${icon("video")}</span><span style="color:#cfe9d8;font-size:12px">${icon("directo")}</span>
     </div>
     <div style="background-color:#E5DDD5;background-image:${WA_WALL};background-repeat:repeat;padding:9px 8px;display:flex;flex-direction:column;gap:5px;min-height:112px">${body}</div>
   </div>`;

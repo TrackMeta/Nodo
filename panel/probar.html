@@ -388,7 +388,7 @@ function renderMsg(m){
   }
   t.scrollTop=t.scrollHeight;
 }
-function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"falló",pending:"…"}[s]||s; }
+function statusLabel(s){ return {sent:"enviado",delivered:"entregado",read:"leído",failed:"falló",pending:"…"}[s]||s; }
 function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; const u=esc(url);
   const cap=m.content?.caption?`<div style="margin-top:5px">${esc(m.content.caption)}</div>`:"";
   if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}"/></a>${cap}`;
