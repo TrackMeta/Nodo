@@ -2476,11 +2476,37 @@ const RE_FALSO_CIERRE =
 // todo a favor. Se le pega la petición que toca. Por código porque como regla de prompt no
 // alcanzó: se le dijo que el mensaje SIEMPRE termina pidiendo el dato y siguió contestando
 // con el acuse solo — y es la clase de fallo que no deja rastro, solo una venta que se apaga.
+// Ya pide algo sin signo de interrogación ("dime cuál prefieres", "pásame tu dirección"):
+// pegarle otra petición encima suena a insistencia y repite lo mismo dos veces.
+const RE_YA_PIDE = /\b(dime|dime\s|av[ií]same|cu[eé]ntame|p[aá]same|m[aá]ndame|env[ií]ame|ind[ií]came|escribe|elige|escoge|confirma|comp[aá]rteme)\b/i;
+// "Lo voy a pensar" / se despide: no es un no, pero tampoco es momento de empujar.
+const RE_LO_PIENSA =
+  /\b(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|déjame pensarlo|dejame pensarlo|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo)|despu[eé]s te (escribo|aviso|digo)|te (escribo|aviso) (luego|despu[eé]s|m[aá]s tarde)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)\b/i;
 function conPeticionFinal(texto: string, peticion: string): string {
   const t = String(texto ?? "").trimEnd();
   if (!t || !peticion) return texto;
   if (t.includes("?")) return texto;                    // ya pregunta algo
+  if (RE_YA_PIDE.test(t)) return texto;                 // ya pide algo, en imperativo
   return t + (/[.!…]$/.test(t) ? " " : ". ") + peticion;
+}
+
+// "¿Te paso los datos para el pago?" — y el motor manda el Yape en la burbuja siguiente, sin
+// esperar respuesta. La pregunta queda de adorno y encima suena a que el bot duda de si debe
+// cobrar. Se le quita: los datos salen solos cuando toca (ver maybeDatosPago), así que pedir
+// permiso no aporta nada. Por código: como regla de prompt ya falló.
+const RE_PERMISO_PAGO =
+  /[^.!?…]*¿?\s*te\s+(paso|mando|env[ií]o|comparto|doy)\s+(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…]*[.!?…]?/gi;
+function sinPedirPermisoPago(texto: string): string {
+  const t = String(texto ?? "");
+  RE_PERMISO_PAGO.lastIndex = 0;
+  if (!RE_PERMISO_PAGO.test(t)) return texto;
+  RE_PERMISO_PAGO.lastIndex = 0;
+  // ⚠️ Solo se borra la frase que PIDE PERMISO, nunca una que traiga los datos de verdad:
+  // "acá te paso el Yape: 977533352" también matchea, y borrarla dejaría al cliente sin
+  // número al que pagar. Si la frase tiene un número largo o un link, se respeta entera.
+  const limpio = t.replace(RE_PERMISO_PAGO, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
+    .replace(/\s{2,}/g, " ").trim();
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
 }
 
 function sinFalsoCierre(texto: string, cierre: string): string {
@@ -5886,6 +5912,20 @@ async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contac
   }
   if (await relanzarVenta(db, channelId, contactId, pidRun)) {
     await logEvent(db, channelId, contactId, "nota", "🔁 Recompra (run de venta aún activo)", (event.text ?? "").slice(0, 80)).catch(() => {});
+    // 🔁 Y se le REINYECTA el mensaje con el que pidió la recompra. Sin esto, el cliente
+    // escribía "ahora el par talla 40 negro" y recibía "¡Hola de nuevo! ¿Qué necesitas esta
+    // vez?" — ya lo acababa de decir, y tiene que repetirlo. El saludo cálido está bien; lo
+    // que sobra es preguntarle algo que ya contestó. El run recién arrancado quedó parqueado
+    // esperando input, así que se le entrega ESE mismo mensaje y la venta arranca con la
+    // talla ya puesta. Se hace sobre el run directamente (no re-entrando al motor) para no
+    // recursionar ni pelearse con el lock del contacto.
+    try {
+      const runNuevo = await getActiveRun(db, contactId);
+      if (runNuevo && (runNuevo.vars as any)?._await) {
+        const listo = await resumeRun(db, runNuevo, event);
+        if (listo) await execute(db, runNuevo);
+      }
+    } catch (e) { console.error("[recompra/reinyectar]", (e as any)?.message ?? e); }
     return true;
   }
   return false;
@@ -8596,6 +8636,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "regalo, la contraentrega, el envío y las bondades del producto todos juntos — cada cosa se " +
       "dice una vez, cuando suma, y no se repite.\n" +
       "Y cuando le pides un dato, la pregunta va sola y al final: sin párrafo de venta detrás.");
+    // Al que dice que lo va a pensar, no se le empuja. Medido: "ah ya, lo voy a pensar,
+    // gracias" y el bot contestó recordándole el regalo y cerrando con "¿En qué talla te las
+    // mando?" — insistir ahí no convence a nadie y sí quema el chat. La venta no se pierde:
+    // el remarketing lo retoma después, y si él vuelve la conversación sigue viva.
+    parts.push(
+      "## Si te dice que lo va a pensar\n" +
+      "«lo voy a pensar», «luego te escribo», «lo consulto con mi esposa»: respétalo. UNA línea " +
+      "cálida y corta, dejando la puerta abierta («cualquier cosa acá estoy»), y listo. ⛔ NO le " +
+      "repitas la pregunta de cierre («¿en qué talla te las mando?»), NO le recuerdes el regalo " +
+      "ni la promoción para retenerlo, y NO le preguntes por qué lo duda. Presionar ahí no " +
+      "convence: solo hace que no vuelva a escribir. Si él retoma, sigues vendiendo normal.");
     parts.push(
       "## Cómo cerrar (evita pisarte con el sistema)\n" +
       "1. Si ya tienes todos los datos, CIERRA afirmando (\"listo, queda confirmado\"). NO preguntes " +
@@ -8606,6 +8657,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "\"enseguida\", \"te va a llegar\", \"recibirás\" —: está prohibido en cualquier forma. Termina tu mensaje y ya.\n" +
       "   MAL: \"Queda confirmado. En breve te llegará el monto del adelanto y los datos de pago.\"\n" +
       "   MAL: \"Listo. Ahora recibirás un mensaje con los datos para el adelanto.\"\n" +
+      // Tampoco PEDIR PERMISO para mandarlos: medido en digital, "¿Te paso los datos para que
+      // puedas hacer el pago?" y el motor mandaba el Yape en la misma burbuja siguiente. La
+      // pregunta queda de adorno (nadie esperó la respuesta) y encima suena a que el bot duda.
+      "   MAL: \"¿Te paso los datos para el pago?\" / \"¿Te mando el Yape?\" — no pidas permiso " +
+      "para algo que sale solo: si toca pagar, los datos ya van saliendo. Dilo afirmando o no lo digas.\n" +
       "   BIEN: \"Listo, queda confirmado tu pedido a nombre de Rosa, con recojo en la agencia de Cusco.\" (y cortas ahí)\n" +
       "3. No narres pasos que NO han pasado ni hables de \"el sistema\", \"un asesor\" o \"el área de pagos\" " +
       "en tercera persona. Habla del presente y de lo que le toca al cliente ahora.\n" +
@@ -9602,6 +9658,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
         ? sinPreguntaFinal(String(result))
         : String(result);
+      if (op === "generar_texto") salida = sinPedirPermisoPago(salida);
       // Anunciar el cierre cuando el motor NO va a cerrar nada: mientras los datos no estén
       // completos este turno NO crea pedido, así que un "queda confirmado" acá es falso.
       // Se recorta esa frase (ver sinFalsoCierre); el resto del mensaje sale igual.
@@ -9626,7 +9683,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = sinFalsoCierre(salida, cierreHonesto);
         // Y si encima no pide nada (ni una pregunta en todo el mensaje), se le pega la
         // petición que toca: la misma frase honesta de arriba sirve de pedido.
-        salida = conPeticionFinal(salida, cierreHonesto);
+        // ⛔ Salvo que el cliente acabe de decir que se lo va a pensar o se despida: ahí
+        // forzarle una pregunta es justo la insistencia que apaga el chat (y contradice la
+        // regla de arriba). Se le deja cerrar tranquilo; el remarketing lo retoma después.
+        // Solo se pega la petición cuando hay algo CONCRETO que pedir. Sin dato pendiente
+        // identificado, la frase genérica queda fuera de lugar: medido en una venta digital
+        // —donde el bot ya había mandado el Yape y pedido la captura— terminó con "Con ese
+        // último dato te lo dejo cerrado. 🙂", que no venía a cuento.
+        const _hayQuePedir = !!((ctx as any)._pack_mixto || (ctx as any)._falta_variante ||
+          (ctx as any)._falta_opcion || _falta1);
+        if (_hayQuePedir && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+          salida = conPeticionFinal(salida, cierreHonesto);
+        }
       }
       const handoff = await emitIaText(db, run, salida, ctx);
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
