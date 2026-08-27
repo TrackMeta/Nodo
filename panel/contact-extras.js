@@ -43,7 +43,7 @@ export function stagePickerHtml(current) {
   const cur = String(current || "nuevo");
   return `<div class="cx-stagepick">${EMBUDO_STAGES.map((s) => {
     const on = s.k === cur;
-    return `<button type="button" class="cx-stagechip${on ? " on" : ""}" data-stagepick="${s.k}"${on ? ` style="background:${s.color}1c;border-color:${s.color};color:${s.color}"` : ""}><span class="cx-sd" style="background:${s.color}"></span><span class="cx-sl">${esc(s.label)}</span>${on ? '<span class="cx-sck">${icon("check")}</span>' : ""}</button>`;
+    return `<button type="button" class="cx-stagechip${on ? " on" : ""}" data-stagepick="${s.k}"${on ? ` style="background:${s.color}1c;border-color:${s.color};color:${s.color}"` : ""}><span class="cx-sd" style="background:${s.color}"></span><span class="cx-sl">${esc(s.label)}</span>${on ? `<span class="cx-sck">${icon("check")}</span>` : ""}</button>`;
   }).join("")}</div>`;
 }
 

@@ -544,7 +544,7 @@ function render(){
     // hay pedidos terrestres ahí. (Antes buscaba "Por despachar", que NO es una
     // columna real de KB_PROV, así que el botón nunca aparecía.)
     const esLote = st.kbZona==="provincia" && label==="Confirmado" && items.some(o=>!(o.shipping&&o.shipping.aereo));
-    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?'<button class="kh-lote" title="Registrar guías de varios pedidos a la vez (despacho en lote)">${icon("disparadores")} Lote</button>':""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
+    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?`<button class="kh-lote" title="Registrar guías de varios pedidos a la vez (despacho en lote)">${icon("disparadores")} Lote</button>`:""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
     const lb=col.querySelector(".kh-lote"); if(lb) lb.onclick=(ev)=>{ ev.stopPropagation(); despachoLote(); };
     const body=col.querySelector(".kbody");
     items.forEach(o=>body.appendChild(kcard(o)));
