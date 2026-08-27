@@ -436,6 +436,11 @@ async function cargaCopys(){
   for(const x of data||[]){
     const k=`${x.ambito}|${x.variante_id}|${x.variante_rev}`;
     const s=m.get(k)||{ ambito:x.ambito, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
+    // El nombre se guarda en cada envío, así que si la renombraste hay filas con el viejo y
+    // filas con el nuevo. Como se recorre de más antigua a más reciente, quedarse con el
+    // último deja el nombre ACTUAL — si no, la tabla te mostraría un nombre que ya no existe
+    // en el editor y no sabrías cuál de tus versiones es.
+    if (x.variante_nom) s.nombre = x.variante_nom;
     s.env++; if(x.respondio_at) s.resp++; if(x.compro_at){ s.compras++; s.monto+=Number(x.monto)||0; }
     if(x.angulo) s.angulos.add(x.angulo);
     m.set(k,s);
