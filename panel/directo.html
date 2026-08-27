@@ -131,7 +131,7 @@
   .reschoice{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;text-align:left}
   .reschoice:hover{border-color:var(--brand)}
   .reschoice.on{border-color:currentColor}
-  .reschoice .rc-e{font-size:16px}
+  .reschoice .rc-e{font-size:16px;color:var(--rc);display:inline-flex;align-items:center}
   .rowin{display:none;margin-top:12px}
   .rowin.show{display:block}
   .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 12px;font-size:13.5px;outline:none;font-family:inherit}
@@ -557,7 +557,7 @@ function rowEl(c){
   if(ints.length){
     const li=ints[ints.length-1];
     const r=RES[li.resultado];
-    segHtml=`<div class="att"><span class="n">${icon("directo")} ×${ints.length}</span><span class="last">${r?`${r.e} ${esc(r.label)}`:""} · ${ago(li.at)}</span></div>`;
+    segHtml=`<div class="att"><span class="n">${icon("directo")} ×${ints.length}</span><span class="last">${r?`<span style="color:${r.color}">${r.e}</span> ${esc(r.label)}`:""} · ${ago(li.at)}</span></div>`;
   } else segHtml=`<span class="segnone">Sin contactar aún</span>`;
   const nc=nextChip(d);
   // Asesora
@@ -635,7 +635,7 @@ function openReg(c){
   // historial
   const ints=dirOf(c).intentos||[];
   $("rHist").classList.remove("show");
-  $("rHist").innerHTML=ints.length? ints.slice().reverse().map(it=>{ const r=RES[it.resultado]; return `<div class="hitem"><span class="he">${r?r.e:"•"}</span><div style="flex:1"><div>${r?esc(r.label):esc(it.resultado)} <span class="ht">· ${esc(it.medio||"")} · ${esc(it.by_name||"")}</span></div>${it.nota?`<div class="ht">${esc(it.nota)}</div>`:""}<div class="ht">${new Date(it.at).toLocaleString("es-PE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div></div></div>`; }).join("") : `<div class="hitem"><span class="ht">Aún sin intentos registrados.</span></div>`;
+  $("rHist").innerHTML=ints.length? ints.slice().reverse().map(it=>{ const r=RES[it.resultado]; return `<div class="hitem"><span class="he" style="color:${r?r.color:"var(--faint)"}">${r?r.e:"•"}</span><div style="flex:1"><div>${r?esc(r.label):esc(it.resultado)} <span class="ht">· ${esc(it.medio||"")} · ${esc(it.by_name||"")}</span></div>${it.nota?`<div class="ht">${esc(it.nota)}</div>`:""}<div class="ht">${new Date(it.at).toLocaleString("es-PE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div></div></div>`; }).join("") : `<div class="hitem"><span class="ht">Aún sin intentos registrados.</span></div>`;
   $("rHistBtn").textContent=ints.length?`Historial (${ints.length})`:"Historial";
   $("regModal").classList.add("show");
 }

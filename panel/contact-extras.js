@@ -511,7 +511,7 @@ export const EXTRAS_CSS = `
   .cpanel .cx-stagechip.on{font-weight:700;box-shadow:0 1px 6px rgba(0,0,0,.06)}
   .cpanel .cx-stagechip .cx-sd{width:10px;height:10px;border-radius:50%;flex:none}
   .cpanel .cx-stagechip .cx-sl{flex:1}
-  .cpanel .cx-stagechip .cx-sck{font-size:13px;font-weight:800;flex:none}
+  .cpanel .cx-stagechip .cx-sck{font-size:13px;font-weight:800;flex:none;margin-left:1px;display:inline-flex}
   /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */
   .cpanel .cx-sec:not([open])>.cx-sec-body{display:none}
   .cpanel .cf-tech:not([open])>*:not(summary){display:none}
@@ -589,6 +589,7 @@ export const EXTRAS_CSS = `
   .pd-k{color:var(--muted);font-size:11px}
   .pd-v{color:var(--text);word-break:break-word} .pd-v b{color:var(--text)}
   .pd-v .mono{font-variant-numeric:tabular-nums;letter-spacing:.4px}
+  .pd-chip svg{width:1.2em;height:1.2em;vertical-align:-.25em}
   .pd-chip{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;border:1px solid;border-radius:5px;padding:0 5px;vertical-align:middle;white-space:nowrap}
   .pd-chip.air{color:#3b82f6;border-color:#3b82f6}
   .pd-chip.warn{color:var(--amber);border-color:var(--amber)}
