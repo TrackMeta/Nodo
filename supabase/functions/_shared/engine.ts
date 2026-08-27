@@ -2106,8 +2106,12 @@ async function execute(db: SupabaseClient, run: Run) {
         // RECOMPRA: el cliente ya compró y vuelve por más. En vez del pitch de
         // bienvenida ("gracias por tu interés"), un saludo cálido de recompra;
         // el vendedor IA (nodo siguiente) retoma preguntando qué quiere esta vez.
+        // Sin pregunta: el mensaje con el que pidió la recompra se le reinyecta enseguida
+        // (ver recompraEnRunActivo), así que el bot contestaba su propia pregunta en la
+        // burbuja siguiente — "¿Qué necesitas esta vez?" / "Claro, tienes el par talla 40…".
+        // Y si de verdad no dijo qué quiere, el vendedor IA se lo pregunta acto seguido.
         if ((run.vars as any)?._recompra) {
-          await emit(db, run, { text: "¡Hola de nuevo! 🎉 Con gusto te preparo tu nuevo pedido. ¿Qué necesitas esta vez?" }, ctx);
+          await emit(db, run, { text: "¡Hola de nuevo! 🎉 Con gusto te preparo tu nuevo pedido." }, ctx);
         } else {
           const all = (node.config?.variantes ?? []) as any[];
           let active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
@@ -2495,7 +2499,7 @@ function conPeticionFinal(texto: string, peticion: string): string {
 // cobrar. Se le quita: los datos salen solos cuando toca (ver maybeDatosPago), así que pedir
 // permiso no aporta nada. Por código: como regla de prompt ya falló.
 const RE_PERMISO_PAGO =
-  /[^.!?…]*¿?\s*te\s+(paso|mando|env[ií]o|comparto|doy)\s+(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…]*[.!?…]?/gi;
+  /[^.!?…]*¿?\s*te\s+(paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|comparta|doy|d[eé])\s+(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…]*[.!?…]?/gi;
 function sinPedirPermisoPago(texto: string): string {
   const t = String(texto ?? "");
   RE_PERMISO_PAGO.lastIndex = 0;
@@ -5752,12 +5756,20 @@ const RE_PROMETE_PAGO =
   /\b(te (paso|comparto|env[ií]o|mando|dejo) (los |el )?(datos|n[uú]mero|yape|m[eé]todos?)|los datos (de pago|para (el|tu) pago)|te (los|lo) (paso|comparto|env[ií]o))\b/i;
 async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
+  yaEligio = false,
 ): Promise<void> {
   try {
     // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
     // el rotador y se perdía — mismo agujero que ya se tapó en detectarOpcion), o si la
     // propia IA acaba de prometer los datos sin darlos.
-    let pidio = RE_ANUNCIA_PAGO.test(texto) || (!!respuestaIa && RE_PROMETE_PAGO.test(respuestaIa));
+    // OJO: `respuestaIa` debe ser lo que la IA ESCRIBIÓ, no lo que se emitió — el recorte de
+    // `sinPedirPermisoPago` borra justo esa promesa. Que los datos ya hayan salido se
+    // comprueba abajo contra los mensajes reales, así que no hay riesgo de duplicarlos.
+    // Y en DIGITAL, con el plan ya elegido: ahí el único paso que queda es pagar. Antes los
+    // datos solo salían si el cliente los pedía o si la IA los prometía — medido: "quiero la
+    // básica" → "Perfecto, el plan Básica cuesta S/ 99 y te da acceso a los módulos 1 al 5." y
+    // se acabó el chat. Eligió, quiso comprar, y nadie le dijo a quién pagarle.
+    let pidio = yaEligio || RE_ANUNCIA_PAGO.test(texto) || (!!respuestaIa && RE_PROMETE_PAGO.test(respuestaIa));
     if (!pidio) {
       const { data: ins } = await db.from("messages").select("content")
         .eq("contact_id", contactId).eq("direction", "in")
@@ -9700,7 +9712,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
       // acaba de salir, se los manda el motor. Va acá (después) para no duplicarlos.
       if (op === "generar_texto" && !handoff) {
-        await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""), salida);
+        // Se le pasa el texto ORIGINAL, no el recortado: `sinPedirPermisoPago` borra
+        // justamente la frase que anunciaba los datos ("¿te paso el Yape?"), y con ella
+        // desaparecía la señal que hace que el motor los mande. Medido: el cliente dijo
+        // "quiero la premium", se recortó la pregunta… y no llegó ningún dato de pago —
+        // se quedó sin saber a quién pagarle. El recorte es cosmético; la decisión de
+        // mandar los datos se toma sobre lo que la IA REALMENTE quiso decir.
+        const _digitalElegido = String((ctx as any)._tipo ?? "") === "digital"
+          && !!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
+        await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
+          String(result), _digitalElegido);
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
