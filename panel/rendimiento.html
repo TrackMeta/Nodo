@@ -333,6 +333,7 @@ function render(){
         <button class="${st.vista==='anuncio'?'on':''}" data-v="anuncio">${icon("megaphone")} Por anuncio</button>
         <button class="${st.vista==='producto'?'on':''}" data-v="producto">${icon("box")} Por producto</button>
         <button class="${st.vista==='angulo'?'on':''}" data-v="angulo">🎯 Por ángulo</button>
+        <button class="${st.vista==='copy'?'on':''}" data-v="copy">💬 Por copy</button>
       </div>
       <div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>
     </div>
@@ -340,6 +341,10 @@ function render(){
     ${st.hayVentaSinGasto?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ Hay ventas atribuidas a anuncios <b>sin gasto registrado</b> en este periodo (un anuncio borrado en Meta, o un mes anterior a lo que se sincronizó). El <b>ROAS</b> y la <b>ganancia neta</b> salen mejor de lo real porque falta ese gasto — tómalos con cuidado.</div>`:""}
     <div id="content"></div>`;
   wireToolbar();
+  // "Por copy" NO depende del gasto de Meta: mide los mensajes que manda el bot, no los
+  // anuncios. Por eso se atiende antes de los cortes de abajo — si no, con Meta sin
+  // conectar la página se apagaría entera y esta vista no se vería nunca.
+  if(st.vista==="copy"){ renderCopys(); return; }
   if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }
   if(!st.rows.length){ $("content").innerHTML=emptyStateHtml(); return; }
   $("content").innerHTML=`<div class="kpis" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;
@@ -384,6 +389,102 @@ function renderAnuncio(){
   $("tbody").querySelectorAll("tr.camp").forEach(tr=>tr.onclick=()=>{ tr.classList.toggle("closed"); $("tbody").querySelectorAll(".k"+tr.dataset.c).forEach(k=>k.classList.toggle("hide")); });
   $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>{ st.sel=Number(tr.dataset.ad); render(); });
 }
+// ══════ POR COPY ══════════════════════════════════════════════════════
+// Qué versión de los mensajes que manda el bot rinde mejor. Nada que ver con el gasto de
+// Meta: acá se mide el TEXTO (el saludo inicial y cada paso de remarketing), que el motor
+// ya reparte al azar por peso. La fuente es `variante_envios` (migración 0079).
+//
+// ⚠️ SOBRE CUÁNDO SE PUEDE DECIDIR. No hay un mínimo fijo de clientes: ese número depende
+// de qué tan grande sea la diferencia que buscas. Para una tasa de respuesta del 40%,
+// detectar +10 puntos pide ~385 por versión; +20 puntos, ~95; +30 puntos, ~40. Por eso el
+// criterio es el test de dos proporciones, que ya escala solo — una diferencia enorme se
+// confirma con pocos casos y una chica exige muchos. El único mínimo que queda es el de
+// validez de la fórmula (≥5 respuestas y ≥5 no-respuestas por lado), no una regla de dedo.
+function testProporciones(a,b){
+  const n1=a.env,n2=b.env,x1=a.resp,x2=b.resp;
+  if(Math.min(x1,n1-x1,x2,n2-x2)<5) return { valido:false };
+  const p=(x1+x2)/(n1+n2), se=Math.sqrt(p*(1-p)*(1/n1+1/n2));
+  if(!se) return { valido:false };
+  const z=Math.abs(x1/n1-x2/n2)/se;
+  return { valido:true, difiere:z>=1.96 };     // 95% de confianza
+}
+// Cuántos clientes por versión harían falta para confirmar la diferencia que HOY se ve.
+// Es lo honesto para reemplazar el "faltan N" inventado: el N sale de la diferencia real.
+function nNecesario(p1,p2){
+  const d=Math.abs(p1-p2); if(d<0.005) return null;             // prácticamente iguales
+  return Math.ceil(7.85*(p1*(1-p1)+p2*(1-p2))/(d*d));           // 95% conf · 80% poder
+}
+async function cargaCopys(){
+  const r=st.range||computePreset("30d");
+  const desde=new Date(r.from).toISOString(), hasta=new Date(r.to).toISOString();
+  const { data, error }=await supa.from("variante_envios")
+    .select("ambito,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
+    .eq("channel_id", st.channelId).gte("enviado_at",desde).lte("enviado_at",hasta).limit(10000);
+  if(error) return { error };
+  const m=new Map();
+  for(const x of data||[]){
+    const k=`${x.ambito}|${x.variante_id}|${x.variante_rev}`;
+    const s=m.get(k)||{ ambito:x.ambito, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
+    s.env++; if(x.respondio_at) s.resp++; if(x.compro_at){ s.compras++; s.monto+=Number(x.monto)||0; }
+    if(x.angulo) s.angulos.add(x.angulo);
+    m.set(k,s);
+  }
+  return { filas:[...m.values()] };
+}
+function renderCopys(){
+  const box=$("content");
+  box.innerHTML=`<div class="nodo-empty" style="border:none;padding:40px 20px"><p>Cargando…</p></div>`;
+  cargaCopys().then(({filas,error})=>{
+    if(error){
+      box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><h3>Falta aplicar la migración 0079</h3>
+        <p>Esta vista lee la tabla <code>variante_envios</code>, que todavía no existe en tu base.</p></div>`;
+      return;
+    }
+    if(!filas.length){
+      box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px">
+        <h3>Todavía no hay copys medidos en este periodo</h3>
+        <p style="max-width:52ch;margin:8px auto 0;line-height:1.6">Se llena solo: cada vez que el bot manda un saludo inicial o un paso de remarketing que tiene <b>varias versiones</b>, queda registrado cuál mandó y si el cliente contestó.<br><br>Si tus mensajes tienen una sola versión, no hay nada que comparar — agrega una segunda en el flujo o en la secuencia.</p></div>`;
+      return;
+    }
+    const grupos=[["inicial","Saludo inicial","El primer mensaje del bot. Decide si el cliente contesta o no."],
+                  ["secuencia","Remarketing","Los pasos que reenganchan al que se quedó callado."]];
+    box.innerHTML=grupos.map(([amb,titulo,sub])=>{
+      const g=filas.filter(f=>f.ambito===amb).sort((a,b)=>(b.resp/b.env)-(a.resp/a.env));
+      if(!g.length) return "";
+      return `<div class="panel" style="margin-bottom:16px">
+        <div style="padding:13px 15px 0"><div style="font-weight:700;font-size:14px">${titulo}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${sub}</div>
+          ${veredictoHtml(g)}</div>
+        <div class="scroll"><table><thead><tr>
+          <th>Versión</th><th>Recibieron</th><th>${amb==="secuencia"?"Reengancharon":"Contestaron"}</th>
+          <th>Tasa</th><th>Compraron</th><th>Ingresos</th></tr></thead>
+        <tbody>${g.map(f=>`<tr>
+          <td>${nameCell(f.nombre,"","",false)}</td>
+          <td class="num">${f.env}</td><td class="num">${f.resp}</td>
+          <td class="num">${Math.round(f.resp/f.env*100)}%</td>
+          <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`).join("")}
+        </tbody></table></div></div>`;
+    }).join("") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
+  }).catch(e=>{ box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><p>No se pudo cargar: ${esc(String(e?.message||e))}</p></div>`; });
+}
+// El cintillo: qué se puede concluir HOY. Es la parte que más importa que sea honesta —
+// un "gana A" con datos flojos hace apagar la versión buena.
+function veredictoHtml(g){
+  const S=(t,c)=>`<div style="margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;line-height:1.55;background:rgba(${c},.09);border:1px solid rgba(${c},.32)">${t}</div>`;
+  if(g.length<2) return S("Solo hay una versión, así que no hay con qué compararla. Agrega una segunda para empezar a medir cuál rinde mejor.","148,163,184");
+  const todos=new Set(); g.forEach(f=>f.angulos.forEach(a=>todos.add(a)));
+  if(todos.size>1) return S("⚖️ <b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.","245,158,11");
+  const [a,b]=g;                                    // ya vienen ordenadas por tasa
+  const t=testProporciones(a,b);
+  if(t.valido && t.difiere){
+    return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${Math.round(a.resp/a.env*100)}% contra el ${Math.round(b.resp/b.env*100)}%, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.`,"34,197,94");
+  }
+  const n=nNecesario(a.resp/a.env, b.resp/b.env);
+  const cuanto=n ? `Para confirmar una diferencia de este tamaño harían falta unos <b>${n} clientes por versión</b> (llevas ${a.env} y ${b.env}).`
+                 : `Van casi empatadas: por ahora da igual cuál dejes.`;
+  return S(`🌱 <b>Todavía no se puede decidir.</b> ${cuanto} Los números de abajo son reales, pero la diferencia aún puede ser casualidad.`,"148,163,184");
+}
+
 function renderAngulo(){
   const rows=visibleRows();
   // Los ángulos son POR PRODUCTO (tabla angulos: único por channel+product+slug), así que dos

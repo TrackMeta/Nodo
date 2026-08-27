@@ -63,16 +63,6 @@
   /* Tarjeta de sección dentro del panel de config */
   .fcard{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-bottom:10px}
   .fcard>label:first-child{margin-top:0}
-  /* Cómo rinde cada variante de copy: los números pegados al texto que se edita. */
-  .vstats{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:9px}
-  .vstat{font-size:11px;font-variant-numeric:tabular-nums;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:2px 8px;color:var(--muted)}
-  .vstat b{color:var(--text)}
-  .vstat.plain{background:none;border:none;padding:0;color:var(--faint)}
-  .vstat.plain:empty{display:none}
-  .vverdict{display:flex;gap:8px;align-items:flex-start;font-size:11.5px;line-height:1.5;color:var(--muted);
-    background:rgba(245,158,11,.09);border:1px solid rgba(245,158,11,.32);border-radius:10px;padding:9px 11px;margin-bottom:10px}
-  .vverdict b{color:var(--text)}
-  .vverdict.ok{background:rgba(34,197,94,.09);border-color:rgba(34,197,94,.32)}
   .fhint{font-size:11px;color:var(--faint);margin:5px 0 0;line-height:1.45}
   .frow{display:flex;gap:6px;align-items:center}
   .frow .in{min-width:0}
@@ -1090,78 +1080,6 @@ function sellaVarIds(lista){
 // Texto plano de una variante: con esto se decide si el copy CAMBIÓ (y toca subir rev).
 function textoVar(v){ return (v?.bubbles||[]).map(b=>String(b?.text||"")).join("\n"); }
 
-// ══════ Cómo rinde cada variante ══════════════════════════════════════
-// Los números van PEGADOS al copy, no en un reporte aparte: un tablero al que hay que
-// acordarse de entrar es un tablero al que no se entra, y la decisión (qué texto dejo)
-// se toma acá mismo.
-const VAR_MIN = 30;   // por debajo de esto no se opina: con 5 y 4 casos la diferencia es azar
-
-// Trae los envíos del canal y los agrupa por (id, rev). Se piden solo las columnas
-// necesarias y de los últimos 90 días: es una lectura para pintar, no un data warehouse.
-async function statsVariantes(channelId){
-  const desde=new Date(Date.now()-90*24*3600*1000).toISOString();
-  const { data, error }=await supa.from("variante_envios")
-    .select("variante_id,variante_rev,angulo,enviado_at,respondio_at,compro_at,monto")
-    .eq("channel_id",channelId).gte("enviado_at",desde).limit(5000);
-  if(error) return null;                       // tabla aún sin migrar → no se pinta nada
-  const m=new Map();
-  for(const r of data||[]){
-    const k=`${r.variante_id}|${r.variante_rev}`;
-    const s=m.get(k)||{env:0,resp:0,compras:0,monto:0,desde:r.enviado_at,angulos:new Set()};
-    s.env++; if(r.respondio_at) s.resp++; if(r.compro_at){ s.compras++; s.monto+=Number(r.monto)||0; }
-    if(r.enviado_at<s.desde) s.desde=r.enviado_at;
-    if(r.angulo) s.angulos.add(r.angulo);
-    m.set(k,s);
-  }
-  return m;
-}
-
-// ¿La diferencia entre dos tasas es de verdad o es ruido? Test de dos proporciones (z).
-// El cálculo va por dentro; a la vista solo sale "alcanza" o "todavía no", en castellano.
-function difieren(a,b){
-  const n1=a.env,n2=b.env,x1=a.resp,x2=b.resp;
-  if(n1<VAR_MIN||n2<VAR_MIN) return false;
-  const p=(x1+x2)/(n1+n2), se=Math.sqrt(p*(1-p)*(1/n1+1/n2));
-  if(!se) return false;
-  return Math.abs(x1/n1-x2/n2)/se >= 1.645;    // ~90% de confianza
-}
-
-// Pinta el cintillo de veredicto + una línea de números bajo cada variante.
-// Solo compara variantes que se disputaron los MISMOS clientes: si tienen ángulos
-// distintos nunca compitieron, y la diferencia sería del anuncio, no del copy.
-function pintaStatsVariantes(lista, cont, stats){
-  if(!stats||!Array.isArray(lista)) return;
-  const filas=lista.map(v=>({ v, s:stats.get(`${v.id}|${Number(v.rev)||1}`) })).filter(x=>x.s);
-  if(!filas.length) return;
-  const activas=filas.filter(x=>x.v.activo!==false);
-  const tasa=x=>x.s.env?x.s.resp/x.s.env:0;
-  let cint="";
-  if(activas.length>=2){
-    const ord=[...activas].sort((a,b)=>tasa(b)-tasa(a));
-    const [g,se]=ord;
-    const mismoAngulo=(()=>{ const t=new Set(); activas.forEach(x=>x.s.angulos.forEach(a=>t.add(a))); return t.size<=1; })();
-    if(!mismoAngulo){
-      cint=`<div class="vverdict">⚖️ <div><b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.</div></div>`;
-    }else if(difieren(g.s,se.s)){
-      cint=`<div class="vverdict ok">✓ <div><b>“${escHtml(g.v.nombre||"—")}” rinde mejor.</b> Contesta el ${pc(tasa(g))} contra el ${pc(tasa(se))}, sobre ${g.s.env} y ${se.s.env} clientes. Puedes subirle el peso o apagar la otra.</div></div>`;
-    }else{
-      const falta=Math.max(0,VAR_MIN-Math.min(...activas.map(x=>x.s.env)));
-      cint=`<div class="vverdict">🌱 <div><b>Todavía no alcanza para decidir.</b> ${falta?`Faltan ${falta} clientes en la que menos tiene.`:"La diferencia entre ellas todavía puede ser casualidad."} Los números de abajo son reales, pero aún se mueven solos.</div></div>`;
-    }
-  }
-  if(cint) cont.insertAdjacentHTML("afterbegin",cint);
-  filas.forEach(({v,s})=>{
-    const card=cont.querySelector(`[data-vid="${v.id}"]`); if(!card) return;
-    const editada=v.medido_desde?` · <span title="Cambiaste el texto: la medición arrancó de cero">✎ desde ${new Date(v.medido_desde).toLocaleDateString("es-PE",{day:"numeric",month:"short"})}</span>`:"";
-    card.insertAdjacentHTML("beforeend",
-      `<div class="vstats"><span class="vstat"><b>${s.env}</b> recibieron</span>`
-      +`<span class="vstat"><b>${s.resp}</b> contestaron · ${pc(s.env?s.resp/s.env:0)}</span>`
-      +`<span class="vstat"><b>${s.compras}</b> ${s.compras===1?"compró":"compraron"}${s.monto?` · S/ ${s.monto.toFixed(0)}`:""}</span>`
-      +`<span class="vstat plain">${editada}</span></div>`);
-  });
-}
-const pc=x=>Math.round(x*100)+"%";
-const escHtml=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function buildRotadorCfg(m, body){
   const c=m.config; c.variantes=c.variantes||[];
@@ -1196,9 +1114,6 @@ function buildRotadorCfg(m, body){
     });
   };
   paint(); body.appendChild(list);
-  // Cómo viene rindiendo cada una. Va después de pintar (es una consulta) y en silencio:
-  // si la tabla todavía no existe o no hay envíos, el panel se ve igual que antes.
-  statsVariantes(st.channelId).then(s=>{ if(s) pintaStatsVariantes(c.variantes, list, s); }).catch(()=>{});
   const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" variante";
   add.onclick=()=>{ c.variantes.push({id:nuevoVarId(),rev:1,_txt0:"",nombre:"Variante "+(c.variantes.length+1),peso:1,activo:true,bubbles:[{text:""}]}); paint(); updateNodeDom(m); };
   body.appendChild(add);
