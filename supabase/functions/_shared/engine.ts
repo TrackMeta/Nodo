@@ -2775,15 +2775,30 @@ export async function deliverStep(
   // Devuelve si TODAS las burbujas se enviaron OK (false si Meta rechazó alguna). Los
   // callers que "marcan entregado" (entregarExtrasDigitales, enviarClaveRecojo) lo usan
   // para NO dar por entregado un envío que falló — emit no lanza en un rechazo de Meta.
+  // Sin NADA que enviar no es un envío exitoso. Pasa de verdad: un toque de secuencia al
+  // que le apagaron todas sus versiones (o que quedó sin contenido) salía de acá como
+  // `true`, así que el scheduler lo marcaba como "toque de marketing dado" y le quemaba al
+  // contacto el cooldown de remarketing sin que le llegara un solo mensaje — el siguiente
+  // toque se retrasaba por un envío que nunca existió. Los otros llamadores ya comprueban
+  // que haya contenido antes de llamar, así que esto solo cambia el caso vacío.
+  let enviadas = 0;
   let allOk = true;
   for (const b of bubbles) {
     // También deja pasar una burbuja con BOTONES aunque su texto esté vacío/sin resolver:
     // emit le pone un cuerpo mínimo para no perderlos. El texto se filtra en CRUDO acá
     // (una var sin resolver es truthy) pero emit ya maneja el cuerpo vacío al resolver.
     if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) {
+      enviadas++;
       if ((await emit(db, run, b, ctx)) === false) allOk = false;
     }
   }
+  // Nada salió → no fue un envío exitoso, aunque no haya habido ningún error. Pasa de
+  // verdad con un toque de secuencia al que le apagaron todas sus versiones, o que quedó
+  // sin contenido: devolvía `true`, el scheduler lo contaba como "toque de marketing dado"
+  // y le quemaba al cliente el cooldown de remarketing sin que le llegara un solo mensaje
+  // — el siguiente toque se retrasaba por un envío que nunca existió. Lo mismo protege a
+  // los llamadores que marcan "entregado" con este valor.
+  if (!enviadas) return false;
   // 📊 El copy se cuenta como enviado SOLO si de verdad salió. Antes se registraba al
   // elegirlo, y un paso que Meta rechazaba —lo normal fuera de la ventana de 24h, que es
   // justo cuando corre el remarketing— quedaba contado igual: ese cliente nunca lo recibió,
