@@ -9040,6 +9040,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "la venta se enfría. Acuse corto + la pregunta, en el mismo mensaje.",
       ];
       if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
+      // Lo que YA está capturado, con su valor. Decir "no repitas lo que ya te dio" no basta:
+      // medido, con la dirección guardada ("Av Grau 300") el bot igual preguntó "¿a qué
+      // dirección exacta te lo envío en Barranco?" — la clienta ya la había escrito, y que se
+      // la vuelvan a pedir da la sensación de que no la están leyendo.
+      const tengo = (Array.isArray(cfg.campos) ? cfg.campos : [])
+        .filter((c: any) => c?.clave && c.clave !== "confirmo" && String(ctx[c.clave] ?? "").trim())
+        .map((c: any) => `${c.label || c.clave}: **${String(ctx[c.clave]).trim()}**`);
+      if (tengo.length) {
+        L.push("YA tienes estos datos suyos, no vuelvas a pedirlos ni a preguntar por ellos:\n" +
+          tengo.map((t: string) => `- ${t}`).join("\n"));
+      }
+      // Único pendiente = la confirmación. Sin decírselo, la IA rellenaba el turno pidiendo
+      // cualquier otra cosa (justo la dirección que ya tenía).
+      if (faltan.length === 1 && faltan[0]?.clave === "confirmo") {
+        L.push("⚠️ Ya tienes TODOS sus datos: lo único que falta es que te diga que sí. Pídele la " +
+          "confirmación en una línea («¿lo confirmo y te lo mando?») y NO le pidas ningún otro dato.");
+      }
       // ⛔ Mentir el cierre es peor que no cerrar: mientras falte UN dato el pedido no existe
       // en el sistema, y el cliente que lee "queda confirmado" se va tranquilo a esperar un
       // paquete que nadie va a preparar (medido: "Listo, queda confirmado tu pedido talla 39
