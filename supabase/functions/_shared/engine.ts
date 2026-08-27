@@ -239,13 +239,60 @@ async function runEngineInner(
   // probarlo decía "Cancelado el pedido" y el pedido seguía CONFIRMADO con su stock
   // descontado → se despachaba y el cliente lo rechazaba en la puerta. Ahora escala a una
   // persona y te avisa, en vez de mentirle al cliente.
-  if (event.type === "message" && pideCancelar(event.text)) {
+  if (event.type === "message" && pideCancelar(event.text) && !cancelarSignificaPagar(event.text)) {
     const ord = await tienePedidoVivo(db, contactId);
     if (ord) {
+      const yaSalio = ESTADOS_DESPACHADO.has(String(ord.estado ?? ""));
+      const conAdelanto = Number((ord.shipping as any)?.adelanto ?? 0) > 0
+        || !!(ord.shipping as any)?.adelanto_comprobante;
+      if (yaSalio) {
+        // Ya está en la calle: cancelar solo saldría caro (flete, devolución). Decide una persona.
+        await pasarAHumano(db, channelId, contactId,
+          `🚫 Quiere CANCELAR su pedido y YA SALIÓ (${ord.estado}${ord.amount ? ` · ${ord.amount}` : ""}): “${String(event.text ?? "").slice(0, 120)}”. ` +
+          `Míralo con el courier antes de cancelar${conAdelanto ? " y ojo que dejó adelanto" : ""}.`,
+          { aviso: true });
+        return;
+      }
+      // 🇵🇪 "Cancelar" a secas, con un pedido que justo está ESPERANDO PLATA, es la
+      // ambigüedad más cara del español peruano: "quiero cancelar" puede ser dar de
+      // baja o PAGAR. Cuando no hay una palabra que lo desempate ("mi pedido", "ya no
+      // quiero", "me arrepentí"), se pregunta en vez de decidir: cancelar por error el
+      // pedido de alguien que venía a pagar es mucho peor que un turno de más.
+      const ESPERA_PLATA = new Set(["esperando_adelanto", "pendiente", "en_agencia", "adelanto_validado"]);
+      const desempata = /\b(pedido|orden|compra|envio|env[ií]o|arrepent|ya no (lo |la )?(quiero|voy)|anula|devolver)\b/i
+        .test(String(event.text ?? ""));
+      if (!desempata && ESPERA_PLATA.has(String(ord.estado ?? ""))) {
+        await deliverMessage(db, channelId, contactId,
+          "Para no equivocarme 🙂 ¿quieres *anular* tu pedido, o *cancelar el pago* (osea pagarlo)? Dime cuál y lo hacemos al toque.")
+          .catch(() => {});
+        await logEvent(db, channelId, contactId, "nota", "🤔 \"Cancelar\" ambiguo",
+          `pedido ${ord.estado} — se le preguntó si anula o paga: “${String(event.text ?? "").slice(0, 90)}”`).catch(() => {});
+        return;
+      }
+      const ok = await cancelarPedidoDelCliente(db, channelId, contactId, ord, String(event.text ?? ""));
+      if (ok) {
+        // El stock ya volvió y el pedido salió de la cola: se le dice al cliente la verdad
+        // (antes se le decía "lo estoy viendo" y el pedido seguía vivo).
+        await deliverMessage(db, channelId, contactId,
+          conAdelanto
+            ? "Listo, cancelé tu pedido 🙌 Como dejaste un adelanto, un asesor te escribe para coordinar la devolución. Cualquier cosa, acá estoy."
+            : "Listo, cancelé tu pedido 🙌 No te preocupes, no queda nada pendiente. Si más adelante lo quieres, me escribes y lo vemos.").catch(() => {});
+        const { data: cC } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+        await avisar(db, channelId, contactId, "pedido_cancelado", {
+          cliente: (cC as any)?.nombre || (cC as any)?.wa_id || "Un cliente",
+          telefono: (cC as any)?.wa_id || "",
+          pedido: String(ord.estado ?? ""),
+          monto: ord.amount ? `S/ ${ord.amount}` : "",
+          texto: String(event.text ?? "").slice(0, 120),
+          adelanto: conAdelanto ? "\n\n⚠️ Dejó ADELANTO: hay que devolvérselo." : "",
+        }).catch(() => {});
+        // Con adelanto de por medio hay plata que devolver: eso sí lo ve una persona.
+        if (conAdelanto) await pasarAHumano(db, channelId, contactId, "Canceló y tiene adelanto por devolver", { aviso: false });
+        return;
+      }
+      // No se pudo cancelar (error de BD): mejor una persona que un silencio.
       await pasarAHumano(db, channelId, contactId,
-        `🚫 Quiere CANCELAR su pedido (${ord.estado}${ord.amount ? ` · ${ord.amount}` : ""}): “${String(event.text ?? "").slice(0, 120)}”. ` +
-        `Revisa si ya se despachó y si hay adelanto que devolver, y cancélalo desde Pedidos (así vuelve el stock).`,
-        { aviso: true });
+        `🚫 Quiere cancelar su pedido y NO pude cancelarlo solo (${ord.estado}). Hazlo desde Pedidos.`, { aviso: true });
       return;
     }
     // Sin pedido vivo no hay nada que cancelar → sigue la conversación normal.
@@ -1380,6 +1427,41 @@ function pideCancelar(text: string): boolean {
     return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
   });
 }
+// ⚠️ EN PERÚ "CANCELAR" TAMBIÉN ES PAGAR ("ya cancelé el saldo", "puedo cancelar
+// en efectivo"). Antes de tratar un "cancelar" como baja del pedido hay que
+// descartar ese sentido, o se le cancela el pedido a quien estaba avisando que lo
+// PAGA. La lista de arriba ya traía frases de riesgo ("quiero cancelar", "puedo
+// cancelar", "necesito cancelar", "se puede cancelar"): con un objeto de pago
+// detrás ("...el saldo", "...en efectivo") son pago, no baja.
+const CANCELAR_ES_PAGO = [
+  // qué se cancela (= qué se paga)
+  "saldo", "deuda", "adelanto", "sena", "seña", "monto", "total", "resto", "diferencia",
+  "cuota", "cuotas", "letra", "factura", "boleta", "recibo", "importe", "pago",
+  // cómo se cancela (= forma de pago)
+  "efectivo", "yape", "yapeo", "plin", "transferencia", "deposito", "depósito", "tarjeta",
+  "bcp", "interbank", "bbva", "scotiabank", "contraentrega", "contra entrega", "al contado",
+  "partes", "adelantado",
+];
+// Verbo en PASADO = ya pagó ("ya cancelé", "acabo de cancelar", "cancelé ayer").
+// Nadie pide dar de baja su pedido en pasado; para eso se dice "quiero cancelar".
+const RE_CANCELE_PASADO = /\b(ya\s+)?(cancele|cancelé|cancelado|cancelamos|cancelaron)\b/i;
+
+// ¿El "cancelar" del mensaje es en realidad PAGAR? Devuelve true = no tocar el pedido.
+function cancelarSignificaPagar(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t) return false;
+  // "S/ 129", "129 soles" pegado a cancelar → está hablando de plata
+  if (/\bcancel\w*\b[^.]{0,30}\b(s\/?\s*\d|\d+\s*(soles|lucas))/i.test(t)) return true;
+  if (CANCELAR_ES_PAGO.some((p) => {
+    const n = limpiaOpt(p);
+    return n && new RegExp(`(^|\\s)${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(t);
+  })) return true;
+  // "ya cancelé" sin objeto: pasado = pagó. Con "el pedido" detrás es ambiguo y NO
+  // se toca (cae al camino de siempre, que pregunta).
+  if (RE_CANCELE_PASADO.test(t) && !/\b(pedido|orden|compra)\b/.test(t)) return true;
+  return false;
+}
+
 // ¿Tiene un pedido VIVO (ni cerrado ni caído) al que se refiera la cancelación? Sin esto,
 // un "quiero cancelar" de alguien que todavía no compró escalaría sin motivo.
 async function tienePedidoVivo(db: SupabaseClient, contactId: string): Promise<any | null> {
@@ -1388,6 +1470,49 @@ async function tienePedidoVivo(db: SupabaseClient, contactId: string): Promise<a
     .not("estado", "in", `(${["cancelado", "anulada", "rechazado", "no_recogido", "recogido", "entregado_cobrado"].map((e) => `"${e}"`).join(",")})`)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   return (data as any) ?? null;
+}
+
+// Cancela DE VERDAD el pedido que el cliente pidió dar de baja: estado `cancelado`,
+// stock devuelto, etapa recalculada y bandera para que en Pedidos se vea quién y por
+// qué. Antes esto solo escalaba a un humano: el pedido seguía "confirmado" en la cola
+// con su stock reservado y, si nadie miraba el aviso a tiempo, salía a despacho un
+// pedido que el cliente ya había cancelado (flete perdido y devolución).
+// No cancela sola si YA SALIÓ (despachado/en reparto/en agencia): ahí el paquete está
+// en la calle y la decisión tiene costo — eso sigue yendo a una persona.
+async function cancelarPedidoDelCliente(
+  db: SupabaseClient, channelId: string, contactId: string, ord: any, texto: string,
+): Promise<boolean> {
+  try {
+    const ship = { ...((ord.shipping || {}) as any) };
+    // 📦 Devolver lo reservado. Igual que order-update: solo se marca devuelto si el
+    // +1 aplicó de verdad (si el CAS agotó reintentos, la unidad queda pendiente en
+    // vez de darse por devuelta sin estarlo).
+    let devuelto = false;
+    if (ship.stock_descontado && !ship.stock_devuelto && Array.isArray(ship.stock_mov)) {
+      const { ok } = await aplicarStock(db, ship.stock_mov, 1);
+      devuelto = ok;
+    }
+    const patch: any = {
+      cancelado_por_cliente: true,
+      cancelado_motivo: String(texto ?? "").slice(0, 160),
+      cancelado_at: new Date().toISOString(),
+    };
+    if (devuelto) patch.stock_devuelto = true;
+    // Patch atómico del shipping (0068), no un write completo: no puede pisar una
+    // sede/dirección que se esté editando en paralelo.
+    try { await db.rpc("order_patch_shipping", { p_order_id: ord.id, p_patch: patch }); }
+    catch (_) { await db.from("orders").update({ shipping: { ...ship, ...patch } }).eq("id", ord.id); }
+    const { error } = await db.from("orders")
+      .update({ estado: "cancelado", updated_at: new Date().toISOString() }).eq("id", ord.id);
+    if (error) throw new Error(error.message);
+    await recomputeStageOnLoss(db, channelId, contactId).catch(() => {});
+    await logEvent(db, channelId, contactId, "nota", "🚫 Pedido cancelado por el cliente",
+      `${ord.estado}${ord.amount ? ` · S/ ${ord.amount}` : ""} — “${String(texto ?? "").slice(0, 90)}”`).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error("[cancelarPedidoDelCliente]", (e as any)?.message ?? e);
+    return false;
+  }
 }
 
 // ── Recompra (post-venta) → relanzar la venta ─────────────────────────

@@ -632,7 +632,7 @@
         return [
           ck(/trading|curso/i.test(todo), `sí habla del curso (menciona trading/curso)`),
           ck(!/(no (vendemos|tenemos|manejamos) (ese|el) curso|no trabajo con)/i.test(todo), `no negó un producto que SÍ está en el catálogo`),
-          ck(/99|199|b[aá]sic|premium/i.test(todo), `le dio los planes o el precio del curso`),
+          ck(!/(zapatilla|runner)/i.test(outs[outs.length - 1] || ""), `su última respuesta ya no habla de zapatillas`),
         ];
       } },
 
@@ -655,7 +655,7 @@
       } },
 
     { id: "N6", wa: "51987000124", nombre: "Gonzalo Rey",
-      titulo: "Digital · paga de MÁS (S/150 de 99) → entrega igual y avisa del excedente",
+      titulo: "Digital · paga de MÁS (S/150 de 99) → freno anti-error: NO entrega, va a revisar",
       run: async (ids, s) => {
         const { wa, nombre } = s;
         await send(wa, nombre, "hola quiero el curso de trading"); await sleep(1500);
@@ -664,9 +664,10 @@
         const outs = await outMsgs(wa, 6); const todo = outs.join(" ");
         const { o } = await order(wa);
         return [
-          ck(tieneLink(outs, /https?:\/\//), `entregó el acceso (hay link)`),
+          ck(!tieneLink(outs, /https?:\/\//), `NO entregó a ciegas un pago que no cuadra`),
           ck(Number(o?.amount) === 99, `la venta vale 99, no 150 (amount=${o?.amount}) — el excedente no infla la venta`),
-          ck(/(de m[aá]s|excedente|vuelto|diferencia|saldo a favor)/i.test(todo), `le dijo algo del pago de más`),
+          ck(/revis|verific|confirm/i.test(todo), `le dijo que lo está revisando`),
+          ck(!!o?.shipping?.digital_revisar, `quedó en Pagos por validar con la nota del OCR`),
         ];
       } },
 
@@ -742,13 +743,13 @@
         await send(wa, nombre, "si confirmo"); await sleep(2800);
         const a = await order(wa);
         if (a.o?.id) { await mover(a.o.id, "en_reparto"); await sleep(1200); await mover(a.o.id, "entregado_cobrado"); await sleep(2500); }
-        await send(wa, nombre, "hola de nuevo, me encantaron, quiero pedir otro par talla 40 blancas"); await sleep(3800);
+        await send(wa, nombre, "hola de nuevo, me encantaron, quiero pedir otro par talla 38 negras"); await sleep(3800);
         await send(wa, nombre, "la misma direccion de antes"); await sleep(3000);
         await send(wa, nombre, "si confirmo"); await sleep(3000);
         const { all } = await order(wa);
         return [
           ck(all.length === 2, `abrió un SEGUNDO pedido (tiene ${all.length})`),
-          ck(/(40|blanc)/i.test(JSON.stringify(all[0]?.shipping || {})), `el nuevo es el par correcto (40 blancas)`),
+          ck(/38/.test(JSON.stringify(all[0]?.shipping?.atributos || {})), `el nuevo es el par correcto (38 negras)`),
           ck(/molina|javier prado/i.test(JSON.stringify(all[0]?.shipping || {})), `reusó la dirección sin volver a pedírsela`),
         ];
       } },

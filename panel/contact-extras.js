@@ -362,6 +362,7 @@ export function pedidoResumenHtml(o) {
       </div>
       <div class="pd-row">
         <span class="pd-badge" style="color:${col};background:${col}1e;border-color:${col}55">${esc(O.label(o.estado))}</span>
+        ${s.cancelado_por_cliente ? `<span class="pd-chip warn" title="${esc(s.cancelado_motivo || "")}">lo canceló el cliente</span>` : ""}
         <span class="pd-money">${moneyLine}</span>
       </div>
       ${pedidoProgresoHtml(o)}

@@ -246,6 +246,21 @@ export const AVISOS: AvisoDef[] = [
       "❗ *No se cambió nada* en el pedido: la guía ya salió con los datos viejos. Si el courier deja redirigirlo, hazlo tú y corrige el pedido a mano.",
   },
   {
+    clave: "pedido_cancelado", grupo: "atencion",
+    titulo: "El cliente canceló su pedido",
+    desc: "El cliente pidió dar de baja un pedido que todavía no salía, y el bot lo canceló: el pedido sale del tablero y el stock vuelve al inventario. Si había dejado adelanto, además te lo traspasa para que coordines la devolución.",
+    vars: ["cliente", "telefono", "pedido", "monto", "adelanto", "texto"],
+    texto:
+      "🚫 *PEDIDO CANCELADO POR EL CLIENTE*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "📦 {{pedido}} · {{monto}}\n" +
+      "💬 “{{texto}}”\n" +
+      "\n" +
+      "El stock ya volvió al inventario.{{adelanto}}",
+  },
+  {
     clave: "pide_humano", grupo: "atencion",
     titulo: "Te necesita a ti",
     desc: "El cliente pidió hablar con una persona, o el bot detectó un reclamo. El bot queda en pausa en ese chat.",
