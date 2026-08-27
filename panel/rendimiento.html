@@ -416,7 +416,11 @@ function nNecesario(p1,p2){
 }
 async function cargaCopys(){
   const r=st.range||computePreset("30d");
-  const desde=new Date(r.from).toISOString(), hasta=new Date(r.to).toISOString();
+  // ⚠️ `r.to` es la MEDIANOCHE del último día (su instante de inicio), no su final: usarlo
+  // tal cual como tope dejaba fuera todo lo de hoy — medido, con envíos de las 00:28 de Lima
+  // la vista salía vacía teniendo 320 filas. Se toma el fin del día en la zona del negocio.
+  const desde=startOfDayLima(new Date(r.from)).toISOString();
+  const hasta=endOfDayLima(new Date(r.to)).toISOString();
   const { data, error }=await supa.from("variante_envios")
     .select("ambito,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
     .eq("channel_id", st.channelId).gte("enviado_at",desde).lte("enviado_at",hasta).limit(10000);
