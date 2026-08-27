@@ -2471,6 +2471,18 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
 // afirman el cierre, no el resto del mensaje.
 const RE_FALSO_CIERRE =
   /(qued[oó]|queda|est[aá]|dej[oé]|dejo)\s+(todo\s+)?(confirmad|list[oa])|pedido\s+(confirmad|registrad|anotad)|confirmo\s+tu\s+pedido|tu\s+pedido\s+(ya\s+)?(est[aá]|qued)/i;
+// Respuesta que no pide NADA teniendo datos pendientes: un acuse suelto ("Perfecto, un par
+// talla 38 negras por S/ 129.") deja al cliente sin saber qué sigue y la venta se enfría con
+// todo a favor. Se le pega la petición que toca. Por código porque como regla de prompt no
+// alcanzó: se le dijo que el mensaje SIEMPRE termina pidiendo el dato y siguió contestando
+// con el acuse solo — y es la clase de fallo que no deja rastro, solo una venta que se apaga.
+function conPeticionFinal(texto: string, peticion: string): string {
+  const t = String(texto ?? "").trimEnd();
+  if (!t || !peticion) return texto;
+  if (t.includes("?")) return texto;                    // ya pregunta algo
+  return t + (/[.!…]$/.test(t) ? " " : ". ") + peticion;
+}
+
 function sinFalsoCierre(texto: string, cierre: string): string {
   const t = String(texto ?? "");
   if (!RE_FALSO_CIERRE.test(t)) return texto;
@@ -7335,6 +7347,24 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     // `solo_si_sin_numero`: campo (ej. el teléfono para el courier) que SOLO se
     // pide/valida cuando el cliente no compartió su número (username/BSUID).
     (!(c as any).solo_si_sin_numero || ctx.sin_numero === "si"));
+  // 🕳️ Dato que existe en LAS DOS zonas pero con texto distinto en cada una (el nombre de
+  // quien recibe: "¿a nombre de quién?" en Lima, "nombre y apellidos como en su DNI" en
+  // provincia). Mientras la zona no se conoce, NINGUNA de las dos variantes pasa el filtro
+  // de arriba… y el dato deja de ser requerido: medido, un cliente que solo dijo "un par
+  // talla 38 negras" ya tenía `datos_completos = si` sin nombre ni dirección — el flujo se
+  // creía listo para cerrar y, de paso, `sinPreguntaFinal` le recortaba la pregunta a la IA,
+  // así que le contestaba con un acuse mudo y la venta se quedaba ahí.
+  // Se repone UNA variante (la primera) para no perder el requisito; en cuanto se resuelve
+  // la zona manda la que toca. Solo aplica a claves que EXISTEN en ambas zonas: la dirección
+  // (solo Lima) o el DNI (solo provincia) siguen esperando a saber a dónde va.
+  if (!String(ctx.zona_entrega ?? "").trim()) {
+    const presentes = new Set(campos.map((c) => c.clave));
+    for (const c of todos) {
+      if (!c.solo_si_zona || presentes.has(c.clave) || (c as any).solo_si_sin_numero) continue;
+      const zonasDeLaClave = new Set(todos.filter((x) => x.clave === c.clave && x.solo_si_zona).map((x) => x.solo_si_zona));
+      if (zonasDeLaClave.size >= 2) { campos.push(c); presentes.add(c.clave); }
+    }
+  }
   const texto = String(ctx.last_input ?? "");
   if (!campos.length || !texto) return;
 
@@ -8675,6 +8705,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // "Recojo" es vocabulario de provincia (agencia): en Lima va un motorizado a la
         // puerta, y decirle recojo lo deja pensando que tiene que ir a buscarlo él.
         L.push("Es entrega A DOMICILIO: un motorizado se la lleva a su dirección. NUNCA hables de «recojo», «recoger» ni de que pase a buscarlo: eso es solo para provincia (agencia).");
+        // El DNI y la sede son datos de AGENCIA (provincia). Acá ni se le piden ni están en su
+        // lista de datos, pero la IA los pedía igual — medido: a un cliente de Pueblo Libre se
+        // le pidió el DNI dos veces seguidas, y el pedido se cerró sin él (nunca hizo falta).
+        // Pedirle un documento a alguien que solo va a abrir la puerta y pagar en efectivo
+        // enfría la venta y da justo la desconfianza que la contraentrega venía a quitar.
+        L.push("⛔ En Lima NO le pidas DNI, ni sede/agencia, ni datos de recojo: no se usan y no se los estás pidiendo. " +
+          "Con su nombre y su dirección ya está.");
         // La desconfianza ("¿no será estafa?", "¿cómo sé que me van a mandar?") es LA objeción
         // más común comprando por WhatsApp, y en Lima se responde sola: paga cuando lo tiene
         // en la mano. Antes ni se llegaba a esto —la palabra "estafa" escalaba el chat a un
@@ -8884,6 +8921,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       parts.push("## Falta elegir con cuál se queda\nLo que pidió está AGOTADO y todavía no eligió el reemplazo. " +
         "Nómbrale SOLO lo que sí tienes en stock (mira el detalle de existencias) y pregúntale con cuál se queda, en una sola pregunta clara. " +
         "NO des el pedido por confirmado, NO le digas «queda confirmado» y NO asumas por él: mientras no elija, el pedido no se puede crear. " +
+        // Medido: le ofreció negro porque el blanco estaba agotado, la clienta contestó con su
+        // dirección (sin decir el color) y el bot siguió con "la talla 40 en negro QUE ELEGISTE".
+        // Nunca lo eligió: se le puso en la boca, y así recibe un color que no pidió.
+        "⛔ Y no le atribuyas una elección que no hizo: nada de «el negro que elegiste» si él no lo nombró. " +
+        "Si no eligió todavía, se le pregunta otra vez, en corto. " +
         "Si insiste en lo agotado, pásalo a una persona con [[humano]].");
     }
     if ((ctx as any)._pack_mixto) {
@@ -8921,6 +8963,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // parece trámite y más gente se cae justo antes de cerrar.
         "La pregunta va CORTA: una línea, directa. No expliques para qué necesitas el dato ni " +
         "adornes con beneficios — eso va antes o después, no dentro de la pregunta.",
+        // Corto NO es mudo. Al bajarle el relleno empezó a contestar solo con un acuse —
+        // "Perfecto, un par talla 38 negras." y nada más—: cuatro chats seguidos donde el
+        // cliente queda sin saber qué hacer y la venta se enfría con todo a favor. Un
+        // mensaje que no pide nada, teniendo datos pendientes, es una venta parada.
+        "⛔ Y tu mensaje SIEMPRE termina pidiendo ese dato. Nunca respondas solo con un acuse " +
+        "(«perfecto, un par talla 38 negras») y te quedes ahí: el cliente no sabe qué sigue y " +
+        "la venta se enfría. Acuse corto + la pregunta, en el mismo mensaje.",
       ];
       if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
       // ⛔ Mentir el cierre es peor que no cerrar: mientras falte UN dato el pedido no existe
@@ -9041,11 +9090,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           `estarías tumbando una venta con un dato que nadie escribió.\n` +
           `Pero tampoco la sueltes con un "déjame confirmarlo" a secas: eso enfría igual que una negativa. ` +
           `Respóndele como un buen vendedor, en UN solo mensaje y en este orden:\n` +
-          `1. Toma la duda en serio y dile que le confirmas ese dato exacto — una línea, sin disculpas ni rodeos.\n` +
+          // ⛔ Antes acá decía "dile que le confirmas ese dato" y el EJEMPLO era "te confirmo ese
+          // detalle y te aviso 👍". Eso es prometer un seguimiento que NO existe: nadie vuelve
+          // después con esa respuesta, la conversación sigue y el cliente se queda esperando un
+          // aviso que no llega. Peor que no contestar, porque además promete.
+          `1. Reconoce la duda en UNA línea, sin disculpas ni rodeos. ⛔ NUNCA le prometas que lo averiguas y le avisas ` +
+          `("te confirmo y te aviso", "lo consulto y te digo", "déjame verificarlo"): nadie va a volver con ese dato ` +
+          `y lo dejarías esperando. Si de verdad necesita esa respuesta para comprar, va a una persona con [[humano]].\n` +
           `2. Puentea a lo que la ficha SÍ dice y que juegue a favor de lo que a él le preocupa. ` +
           `Solo beneficios REALES de la ficha: nada inventado, ni insinuado, ni relleno tipo "materiales de alta calidad".\n` +
           `3. Cierra con el siguiente paso de la venta (la talla, el color, la dirección), para que la conversación avance.\n` +
-          `Ejemplo del tono, con lo que sí sabes: "Te confirmo ese detalle y te aviso 👍 Lo que sí te puedo decir es que ` +
+          `Ejemplo del tono, con lo que sí sabes: "Buena pregunta 👍 Lo que sí te puedo asegurar es que ` +
           `[beneficio real de la ficha]. ¿En qué talla te las mando?"\n` +
           `Si insiste, o ves que sin ese dato no compra, pásalo a una persona con [[humano]].`);
       }
@@ -9551,14 +9606,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // completos este turno NO crea pedido, así que un "queda confirmado" acá es falso.
       // Se recorta esa frase (ver sinFalsoCierre); el resto del mensaje sale igual.
       if (op === "generar_texto" && ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si") {
+        // La frase de reemplazo tiene que PEDIR lo que falta, no solo sonar honesta. Medido:
+        // una clienta mandó nombre + distrito + dirección y recibió "Con ese último dato te lo
+        // dejo cerrado. 🙂" — una frase suelta que no pide nada, después de que ella diera
+        // todo. Se nombra el dato pendiente, que el motor ya sabe cuál es.
+        const _falta1: any = Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan[0] : null;
+        const _lbl = String(_falta1?.label ?? "").replace(/[¿?¡!]/g, "").trim().toLowerCase();
         const cierreHonesto = (ctx as any)._pack_mixto
           ? "Dime cuál de las dos formas prefieres y te lo dejo cerrado. 🙂"
           : (ctx as any)._falta_variante
           ? "Dime con cuál te quedas y te lo dejo cerrado. 🙂"
           : (ctx as any)._falta_opcion
           ? "Dime cuál prefieres y te lo dejo cerrado. 🙂"
+          : _falta1?.clave === "confirmo"
+          ? "¿Lo confirmo y te lo mando? 🙂"
+          : _lbl
+          ? `Me falta un dato: ${_lbl}. ¿Me lo pasas? 🙂`
           : "Con ese último dato te lo dejo cerrado. 🙂";
         salida = sinFalsoCierre(salida, cierreHonesto);
+        // Y si encima no pide nada (ni una pregunta en todo el mensaje), se le pega la
+        // petición que toca: la misma frase honesta de arriba sirve de pedido.
+        salida = conPeticionFinal(salida, cierreHonesto);
       }
       const handoff = await emitIaText(db, run, salida, ctx);
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
