@@ -3851,13 +3851,21 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // tiene un pedido vivo del MISMO producto de hace menos de 2 minutos, se reusa en vez
     // de crear otro. No estorba a la recompra: esa pasa por relanzarVenta, que limpia los
     // campos y llega acá mucho después de esa ventana.
-    {
+    // Se salta en una RECOMPRA: ahí el cliente PIDIÓ otro, así que un pedido reciente
+    // del mismo producto es justo lo esperable y no un duplicado.
+    if (!(run.vars as any)?._recompra) {
       const _desde = new Date(Date.now() - 120_000).toISOString();
       const { data: dup } = await db.from("orders").select("id, estado, created_at")
         .eq("channel_id", run.channel_id).eq("contact_id", run.contact_id)
         .eq("product_id", (c as any)?.product_id ?? null)
         .gte("created_at", _desde)
-        .not("estado", "in", "(cancelado,rechazado)")
+        // Un pedido cuyo ciclo YA TERMINÓ no es "el mismo que se está creando": es otra
+        // compra. Antes solo se excluían cancelado/rechazado, así que un pedido ENTREGADO
+        // hace un minuto se "reusaba" y el segundo pedido no nacía nunca — mientras el
+        // chat le decía al cliente "✅ Tu pedido quedó confirmado" y hasta le ofrecía el
+        // extra. Medido en la simulación N10: compró, le llegó, pidió otro par a los 54 s
+        // y se quedó esperando un motorizado que nadie mandó.
+        .not("estado", "in", `(${ORDER_FINAL.join(",")},anulado)`)
         .order("created_at", { ascending: false }).limit(1);
       const previo = (dup ?? [])[0] as any;
       if (previo?.id) {
@@ -4962,7 +4970,13 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   // cliente diciendo que NO cambia nada. Se guardaban tal cual y el rótulo salía con
   // "misma direccion" como destino — un paquete imposible de entregar. Medido en vivo al
   // pedir un segundo par ("un par talla 40, misma direccion").
-  const esReferencia = RE_DIR_NO_ES_DIR.test(nDir.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+  // Dos redes: la regex de siempre y esAnafora() (exige que TODAS las palabras sean
+  // del vocabulario anaforico). La regex sola dejaba pasar "la misma direccion de
+  // antes" —no contemplaba "de antes" al final— y esa frase acababa siendo la
+  // direccion del pedido: el rotulo salia con ella y el motorizado sin destino.
+  // Medido en la simulacion de recompra del 2026-08-27.
+  const esReferencia = esAnafora(nDir) ||
+    RE_DIR_NO_ES_DIR.test(nDir.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
   if (nDir && !esReferencia && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
     sh.direccion = nDir;
     if (!yaSalio) await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
@@ -7565,6 +7579,22 @@ function mensajeTieneValorDe(c: any, texto: string): boolean {
   return vals.some((v) => valorEnMensaje(v, texto));
 }
 
+// Respuestas que APUNTAN a un dato anterior en vez de darlo ("la misma dirección de
+// antes", "donde siempre", "igual que la otra vez"). Se compara contra el valor COMPLETO
+// que extrajo la IA, no contra el mensaje: así "Av Siempre Viva 123" nunca cae acá.
+// Un valor es ANÁFORA solo si TODAS sus palabras son de este vocabulario y al menos una
+// es un núcleo (misma/igual/siempre/anterior). Con un prefijo no bastaba: una calle
+// llamada "Mismos Ángeles 300" daba falso positivo y se perdía la dirección de verdad.
+const ANAFORA_OK = new Set(["a","la","el","los","las","de","del","que","en","misma","mismo","mismas","mismos","igual","iguales","siempre","donde","antes","anterior","otra","vez","pasada","ultima","direccion","dir","lugar","sitio","casa","ya","te","le","dije","di","dada","dado","indicada","indicado","registrada","registrado","de_antes"]);
+const ANAFORA_NUCLEO = new Set(["misma","mismo","mismas","mismos","igual","iguales","siempre","anterior"]);
+function esAnafora(val: string): boolean {
+  const pal = String(val ?? "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  if (!pal.length || pal.length > 8) return false;
+  return pal.every((p) => ANAFORA_OK.has(p)) && pal.some((p) => ANAFORA_NUCLEO.has(p));
+}
+
 async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): Promise<void> {
   const todos: CampoDato[] = Array.isArray(cfg.campos) ? cfg.campos : [];
   // Los datos que aplican dependen del camino: mientras no sepamos la zona, se
@@ -7714,6 +7744,17 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // Correcciones: si el valor re-extraído es IGUAL al que ya teníamos, no hay
             // nada que cambiar (evita re-loguear "dato capturado" cada turno).
             if (guard && String(ctx[c.clave] ?? "").trim() === val) continue;
+            // 🔁 "la misma dirección de antes" NO es un dato: es un puntero al que ya
+            // tenemos. El recomprador contesta así casi siempre, y guardarlo PISABA la
+            // dirección buena del contacto —el pedido nuevo y su rótulo salían con la
+            // frase literal, y el motorizado sin destino—. Si el campo ya tiene valor se
+            // conserva; si no, se deja vacío para que el bot lo pregunte.
+            // Medido en la simulación de recompra del 2026-08-27.
+            if (esAnafora(val)) {
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "Dato por referencia",
+                `${c.clave}: "${val}" → se conserva "${String(ctx[c.clave] ?? "") || "(vacío)"}"`).catch(() => {});
+              continue;
+            }
             const v = validarDato(c, val, ctx);
             if (!v.ok) {
               // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
