@@ -2734,6 +2734,8 @@ export async function deliverStep(
 
   // Elegir las burbujas a enviar.
   let bubbles: any[] = [];
+  // Qué variante tocó, para registrarla DESPUÉS de saber si el envío salió.
+  let elegida: { v: any; i: number; angulo: string } | null = null;
   const variantes = Array.isArray(paso?.variantes) ? paso.variantes : null;
   if (variantes && variantes.length) {
     let active = variantes.filter((v: any) => v.activo !== false && (v.bubbles?.length));
@@ -2751,14 +2753,8 @@ export async function deliverStep(
       const rotOn = paso.rotacion !== false && active.length > 1;
       const chosen = rotOn ? pickWeighted(active) : active[0];
       bubbles = chosen.bubbles ?? [];
-      // Antes de esto, del remarketing NO quedaba nada: el motor elegía una variante y
-      // nadie sabía cuál había mandado, así que era imposible saber qué copy reengancha.
-      if (meta?.sequence_id) {
-        await registrarVariante(db, channelId, contactId, {
-          ambito: "secuencia", ref_id: meta.sequence_id, paso: meta.paso ?? null,
-          variante: chosen, indice: active.indexOf(chosen), angulo: slug,
-        });
-      }
+      // Se anota cuál tocó, pero el registro se hace ABAJO, recién cuando se sabe si salió.
+      elegida = { v: chosen, i: active.indexOf(chosen), angulo: slug };
     }
   } else if (Array.isArray(paso?.bubbles) && paso.bubbles.length) {
     bubbles = paso.bubbles;
@@ -2777,6 +2773,17 @@ export async function deliverStep(
     if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) {
       if ((await emit(db, run, b, ctx)) === false) allOk = false;
     }
+  }
+  // 📊 El copy se cuenta como enviado SOLO si de verdad salió. Antes se registraba al
+  // elegirlo, y un paso que Meta rechazaba —lo normal fuera de la ventana de 24h, que es
+  // justo cuando corre el remarketing— quedaba contado igual: ese cliente nunca lo recibió,
+  // así que jamás iba a contestar, y la variante se llenaba de envíos fantasma que le
+  // hundían la tasa. El scheduler ya hacía esta misma distinción para el cooldown.
+  if (allOk && elegida && meta?.sequence_id) {
+    await registrarVariante(db, channelId, contactId, {
+      ambito: "secuencia", ref_id: meta.sequence_id, paso: meta.paso ?? null,
+      variante: elegida.v, indice: elegida.i, angulo: elegida.angulo,
+    });
   }
   return allOk;
 }

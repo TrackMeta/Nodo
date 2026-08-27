@@ -325,9 +325,9 @@ function render(){
     <div class="toolbar">
       <span class="tlabel">Periodo</span>
       <div id="dr"></div>
-      <span class="tlabel">Tipo</span>
-      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["fisico","Físico"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
-      ${st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
+      ${st.vista==="copy"?"":`<span class="tlabel">Tipo</span>
+      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["fisico","Físico"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>`}
+      ${st.vista!=="copy"&&st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
       <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
       <div class="seg" id="vista">
         <button class="${st.vista==='anuncio'?'on':''}" data-v="anuncio">${icon("megaphone")} Por anuncio</button>
@@ -335,7 +335,7 @@ function render(){
         <button class="${st.vista==='angulo'?'on':''}" data-v="angulo">🎯 Por ángulo</button>
         <button class="${st.vista==='copy'?'on':''}" data-v="copy">💬 Por copy</button>
       </div>
-      <div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>
+      ${st.vista==="copy"?"":`<div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>`}
     </div>
     ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ ${monedaMismatch==="desconocida"?`No pude confirmar en qué <b>moneda</b> factura tu cuenta de Meta (la sincronización no la trajo).`:`Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>.`} El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) puede NO estar convertido — no compares estos números hasta confirmar la moneda.</div>`:""}
     ${st.hayVentaSinGasto?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">⚠️ Hay ventas atribuidas a anuncios <b>sin gasto registrado</b> en este periodo (un anuncio borrado en Meta, o un mes anterior a lo que se sincronizó). El <b>ROAS</b> y la <b>ganancia neta</b> salen mejor de lo real porque falta ese gasto — tómalos con cuidado.</div>`:""}
@@ -532,17 +532,22 @@ function renderProducto(){
 }
 function wireToolbar(){
   $("vista").querySelectorAll("button").forEach(b=>b.onclick=()=>{ st.vista=b.dataset.v; render(); });
-  $("tipoChips").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; render(); });
+  // En la vista "Por copy" estos controles no se pintan (no aplican al copy): se comprueba
+  // antes de cablearlos, porque un $().querySelectorAll sobre null tira y deja la barra a
+  // medias — el selector de fechas y el de vista dejarían de responder.
+  const tc=$("tipoChips"); if(tc) tc.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; render(); });
   const acct=$("acctChips"); if(acct) acct.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{ st.account=b.dataset.a; render(); });
   // Selector de fechas
   mountDateRange($("dr"), { valor:st.range, onChange:(r)=>{ st.range=r; reload(); } });
   // Columnas
   const pop=$("colPop");
+  if(pop){
   const groups=[...new Set(COLS.map(c=>c.g))];
   pop.innerHTML=groups.map(g=>`<div class="gl">${g}</div>`+COLS.filter(c=>c.g===g).map(c=>`<label><input type="checkbox" data-col="${c.k}" ${c.fix?"checked disabled":st.cols.has(c.k)?"checked":""}/> ${c.l}${c.fix?' <span style="color:var(--faint);font-size:10px">fija</span>':''}</label>`).join("")).join("");
   $("colBtn").onclick=(e)=>{ e.stopPropagation(); pop.classList.toggle("show"); };
   pop.querySelectorAll("input[data-col]").forEach(inp=>inp.onchange=()=>{ inp.checked?st.cols.add(inp.dataset.col):st.cols.delete(inp.dataset.col); renderTable(); });
   document.addEventListener("click",(e)=>{ if(!e.target.closest(".colbtn")) pop.classList.remove("show"); },{once:true});
+  }
 }
 
 // ── Selector de rango de fechas ────────────────────────────────────
