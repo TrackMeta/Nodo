@@ -421,6 +421,24 @@ function nNecesario(x1,n1,x2,n2){
   const d=Math.abs(p1-p2); if(d<0.005) return null;             // prácticamente iguales
   return Math.ceil(7.85*(p1*(1-p1)+p2*(1-p2))/(d*d));           // 95% conf · 80% poder
 }
+// Qué versiones siguen VIVAS hoy (activas en un flujo o en una secuencia). Sin esto el
+// veredicto comparaba también las que el dueño ya borró o apagó, y salían consejos
+// imposibles de seguir: medido, "«Vieja borrada» rinde mejor, súbele el peso" — de una
+// versión que ya no existe en el flujo, contra otra que ya estaba apagada. Lo que pasó
+// pasó y se muestra igual en la tabla, pero para DECIDIR solo cuentan las que están vivas.
+async function variantesVigentes(){
+  const vivas=new Set();
+  try{
+    const { data:nodos }=await supa.from("flow_nodes")
+      .select("config, flows!inner(channel_id)").eq("tipo","rotador").eq("flows.channel_id", st.channelId);
+    for(const n of nodos||[]) for(const v of (n.config?.variantes||[])) if(v?.id && v.activo!==false) vivas.add(v.id);
+  }catch(_){ /* sin flujos legibles → se comportan todas como vigentes */ }
+  try{
+    const { data:seqs }=await supa.from("sequences").select("pasos").eq("channel_id", st.channelId);
+    for(const s of seqs||[]) for(const p of (s.pasos||[])) for(const v of (p?.variantes||[])) if(v?.id && v.activo!==false) vivas.add(v.id);
+  }catch(_){ }
+  return vivas;
+}
 async function cargaCopys(){
   const r=st.range||computePreset("30d");
   // ⚠️ `r.to` es la MEDIANOCHE del último día (su instante de inicio), no su final: usarlo
@@ -442,7 +460,7 @@ async function cargaCopys(){
   const m=new Map();
   for(const x of data||[]){
     const k=`${x.ambito}|${x.variante_id}|${x.variante_rev}`;
-    const s=m.get(k)||{ ambito:x.ambito, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
+    const s=m.get(k)||{ ambito:x.ambito, id:x.variante_id, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
     // El nombre se guarda en cada envío, así que si la renombraste hay filas con el viejo y
     // filas con el nuevo. Como se recorre de más antigua a más reciente, quedarse con el
     // último deja el nombre ACTUAL — si no, la tabla te mostraría un nombre que ya no existe
@@ -452,7 +470,8 @@ async function cargaCopys(){
     if(x.angulo) s.angulos.add(x.angulo);
     m.set(k,s);
   }
-  return { filas:[...m.values()] };
+  const vivas=await variantesVigentes();
+  return { filas:[...m.values()].map(f=>({ ...f, vigente: vivas.has(f.id) })) };
 }
 function renderCopys(){
   const box=$("content");
@@ -481,8 +500,8 @@ function renderCopys(){
         <div class="scroll"><table><thead><tr>
           <th>Versión</th><th>Recibieron</th><th>${amb==="secuencia"?"Reengancharon":"Contestaron"}</th>
           <th>Tasa</th><th>Compraron</th><th>Ingresos</th></tr></thead>
-        <tbody>${g.map(f=>`<tr>
-          <td>${nameCell(f.nombre,"","",false)}</td>
+        <tbody>${g.map(f=>`<tr${f.vigente?"":' style="opacity:.62"'}>
+          <td>${nameCell(f.nombre,"","",false)}${f.vigente?"":'<div style="font-size:10.5px;color:var(--faint);margin-top:1px">ya no está en uso</div>'}</td>
           <td class="num">${f.env}</td><td class="num">${f.resp}</td>
           <td class="num">${Math.round(f.resp/f.env*100)}%</td>
           <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`).join("")}
@@ -492,27 +511,34 @@ function renderCopys(){
 }
 // El cintillo: qué se puede concluir HOY. Es la parte que más importa que sea honesta —
 // un "gana A" con datos flojos hace apagar la versión buena.
-function veredictoHtml(g){
+function veredictoHtml(gIn){
+  let g=gIn;
   const S=(t,c)=>`<div style="margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;line-height:1.55;background:rgba(${c},.09);border:1px solid rgba(${c},.32)">${t}</div>`;
-  if(g.length<2) return S("Solo hay una versión, así que no hay con qué compararla. Agrega una segunda para empezar a medir cuál rinde mejor.","148,163,184");
+  // Solo deciden las que siguen vivas: recomendar sobre una versión borrada o apagada da
+  // un consejo que no se puede ejecutar.
+  const hist=g.filter(f=>!f.vigente).length;
+  const pie=hist?` <span style="color:var(--faint)">(${hist} versión${hist>1?"es":""} de la tabla ya no está${hist>1?"n":""} en uso; sale${hist>1?"n":""} solo como historial)</span>`:"";
+  g=g.filter(f=>f.vigente);
+  if(!g.length) return S(`Ninguna de las versiones medidas sigue activa hoy. Lo de abajo es historial de copys que ya cambiaste o apagaste.`,"148,163,184");
+  if(g.length<2) return S(`Solo hay una versión activa, así que no hay con qué compararla. Agrega una segunda para empezar a medir cuál rinde mejor.${pie}`,"148,163,184");
   const todos=new Set(); g.forEach(f=>f.angulos.forEach(a=>todos.add(a)));
   if(todos.size>1) return S("⚖️ <b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.","245,158,11");
   const [a,b]=g;                                    // ya vienen ordenadas por tasa
   const t=testProporciones(a,b);
   if(t.valido && t.difiere){
-    return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${Math.round(a.resp/a.env*100)}% contra el ${Math.round(b.resp/b.env*100)}%, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.`,"34,197,94");
+    return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${Math.round(a.resp/a.env*100)}% contra el ${Math.round(b.resp/b.env*100)}%, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.${pie}`,"34,197,94");
   }
   // Hay DOS motivos distintos por los que no se puede decidir, y confundirlos deja mensajes
   // absurdos. Con 9 de 10 contra 1 de 10 la fórmula del total pide "9 clientes" cuando ya
   // llevas 10: ahí lo que falta no es volumen, son casos en el lado flaco (solo 1 silencio
   // en una y 1 respuesta en la otra). Se dice el motivo real.
   if(!t.valido){
-    return S(`🌱 <b>Todavía no se puede decidir.</b> Para que la comparación sea fiable hacen falta al menos <b>5 respuestas y 5 silencios en cada versión</b>; por ahora tienes ${a.resp} de ${a.env} y ${b.resp} de ${b.env}. Los números de abajo son reales, pero con tan pocos casos la diferencia puede darse vuelta con un solo cliente.`,"148,163,184");
+    return S(`🌱 <b>Todavía no se puede decidir.</b> Para que la comparación sea fiable hacen falta al menos <b>5 respuestas y 5 silencios en cada versión</b>; por ahora tienes ${a.resp} de ${a.env} y ${b.resp} de ${b.env}. Los números de abajo son reales, pero con tan pocos casos la diferencia puede darse vuelta con un solo cliente.${pie}`,"148,163,184");
   }
   const n=nNecesario(a.resp,a.env,b.resp,b.env);
   const cuanto=n ? `Para confirmar una diferencia de este tamaño harían falta unos <b>${n} clientes por versión</b> (llevas ${a.env} y ${b.env}).`
                  : `Van casi empatadas: por ahora da igual cuál dejes.`;
-  return S(`🌱 <b>Todavía no se puede decidir.</b> ${cuanto} Los números de abajo son reales, pero la diferencia aún puede ser casualidad.`,"148,163,184");
+  return S(`🌱 <b>Todavía no se puede decidir.</b> ${cuanto} Los números de abajo son reales, pero la diferencia aún puede ser casualidad.${pie}`,"148,163,184");
 }
 
 function renderAngulo(){
