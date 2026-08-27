@@ -74,7 +74,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, icon } from "./shell.js";
 import { getTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -149,24 +149,24 @@ function render(){
   const b=$("body");
   b.innerHTML=`
     <div class="card">
-      <div style="font-weight:700;font-size:14px;margin-bottom:2px">📊 Resúmenes diarios</div>
+      <div style="font-weight:700;font-size:14px;margin-bottom:2px;display:flex;align-items:center;gap:7px">${icon("rendimiento")} Resúmenes diarios</div>
       <div style="color:var(--muted);font-size:12px;line-height:1.55;margin-bottom:6px">Un mensaje automático a Telegram con tus números. Elige la hora de cada uno.</div>
       <div class="rrow">
-        <span class="ri">🌅</span>
+        <span class="ri">${icon("clock")}</span>
         <div class="rt"><div class="n">En la mañana — cómo te fue ayer</div>
           <div class="d">Ventas, ingresos, ticket, pedidos y contactos del día anterior.</div></div>
         <input type="time" class="tin" id="rManHora" value="${esc(st.resumen.manana.hora)}"/>
         <span class="sw ${st.resumen.manana.on?'on':''}" id="rManSw"></span>
       </div>
       <div class="rrow">
-        <span class="ri">🌙</span>
+        <span class="ri">${icon("clock")}</span>
         <div class="rt"><div class="n">En la noche — cómo te fue hoy</div>
           <div class="d">El mismo resumen, pero del día que está terminando.</div></div>
         <input type="time" class="tin" id="rNocHora" value="${esc(st.resumen.noche.hora)}"/>
         <span class="sw ${st.resumen.noche.on?'on':''}" id="rNocSw"></span>
       </div>
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--faint);line-height:1.6">
-        💬 <b style="color:var(--muted)">También a pedido:</b> escríbele a tu bot de Telegram
+        <b style="color:var(--muted)">También a pedido:</b> escríbele a tu bot de Telegram
         <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/hoy</code>
         <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)">/ayer</code>
         <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--brand)"  id="exFecha">/fecha 2026-07-20</code>
@@ -259,7 +259,7 @@ function fila(a){
           ${a.comprobante?`
           <div style="display:flex;align-items:center;gap:12px;margin-top:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px">
             <div style="flex:1">
-              <div style="font-weight:600;font-size:13px">📎 Adjuntar el comprobante de pago</div>
+              <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">${icon("file")} Adjuntar el comprobante de pago</div>
               <div style="color:var(--muted);font-size:11.5px;margin-top:3px;line-height:1.5">Manda también la captura que envió el cliente, como foto en el mismo aviso. Si no hay comprobante, el aviso sale igual (solo texto).</div>
             </div>
             <span class="sw ${conFoto(a)?'on':''}" data-foto="${a.clave}"></span>

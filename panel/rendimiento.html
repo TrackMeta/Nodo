@@ -340,8 +340,8 @@ function render(){
       <div class="seg" id="vista">
         <button class="${st.vista==='anuncio'?'on':''}" data-v="anuncio">${icon("megaphone")} Por anuncio</button>
         <button class="${st.vista==='producto'?'on':''}" data-v="producto">${icon("box")} Por producto</button>
-        <button class="${st.vista==='angulo'?'on':''}" data-v="angulo">🎯 Por ángulo</button>
-        <button class="${st.vista==='copy'?'on':''}" data-v="copy">💬 Por copy</button>
+        <button class="${st.vista==='angulo'?'on':''}" data-v="angulo">${icon("compass")} Por ángulo</button>
+        <button class="${st.vista==='copy'?'on':''}" data-v="copy">${icon("message")} Por copy</button>
       </div>
       ${st.vista==="copy"?"":`<div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>`}
     </div>
@@ -566,7 +566,11 @@ ${primeraDelAmbito?`<div style="font-size:12px;color:var(--muted);margin-top:2px
 // un "gana A" con datos flojos hace apagar la versión buena.
 function veredictoHtml(gIn){
   let g=gIn;
-  const S=(t,c)=>`<div style="margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;line-height:1.55;background:rgba(${c},.09);border:1px solid rgba(${c},.32)">${t}</div>`;
+  // El cintillo lleva icono Lucide, no emoji: en el cromo del panel la iconografía es una
+  // sola (ver DESIGN_SYSTEM §8) y los emojis quedan para el contenido — el emoji del
+  // producto y los mensajes que se le mandan al cliente.
+  const ICO={ "34,197,94":"flag", "245,158,11":"alert", "148,163,184":"clock" };
+  const S=(t,c)=>`<div style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;line-height:1.55;background:rgba(${c},.09);border:1px solid rgba(${c},.32)"><span style="flex:none;color:rgb(${c});margin-top:2px">${icon(ICO[c]||"clock")}</span><div>${t}</div></div>`;
   // Solo deciden las que siguen vivas: recomendar sobre una versión borrada o apagada da
   // un consejo que no se puede ejecutar.
   const hist=g.filter(f=>!f.vigente).length;
@@ -575,7 +579,7 @@ function veredictoHtml(gIn){
   if(!g.length) return S(`Ninguna de las versiones medidas sigue activa hoy. Lo de abajo es historial de copys que ya cambiaste o apagaste.`,"148,163,184");
   if(g.length<2) return S(`Solo hay una versión activa, así que no hay con qué compararla. Agrega una segunda para empezar a medir cuál rinde mejor.${pie}`,"148,163,184");
   const todos=new Set(); g.forEach(f=>f.angulos.forEach(a=>todos.add(a)));
-  if(todos.size>1) return S("⚖️ <b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.","245,158,11");
+  if(todos.size>1) return S("<b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.","245,158,11");
   const [a,b]=g;                                    // ya vienen ordenadas por tasa
   const t=testProporciones(a,b);
   const pc=x=>Math.round(x.resp/x.env*100)+"%";
@@ -589,23 +593,23 @@ function veredictoHtml(gIn){
     ? ` <b>${flojas.map(x=>`“${esc(x.nombre)}”`).join(" y ")}</b> rinde${flojas.length>1?"n":""} bastante menos (${flojas.map(pc).join(" y ")} contra ${pc(a)}): puedes apagarla${flojas.length>1?"s":""}.`
     : "";
   if(t.valido && t.difiere){
-    return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${pc(a)} contra el ${pc(b)}, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.${pie}`,"34,197,94");
+    return S(`<b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${pc(a)} contra el ${pc(b)}, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.${pie}`,"34,197,94");
   }
   // Las de arriba empatan, pero alguna de abajo es claramente peor: eso SÍ se puede decidir.
   if(flojas.length){
-    return S(`✓ <b>“${esc(a.nombre)}” y “${esc(b.nombre)}” van parejas</b> (${pc(a)} y ${pc(b)}), así que entre esas dos da igual cuál dejes.${aviso}${pie}`,"34,197,94");
+    return S(`<b>“${esc(a.nombre)}” y “${esc(b.nombre)}” van parejas</b> (${pc(a)} y ${pc(b)}), así que entre esas dos da igual cuál dejes.${aviso}${pie}`,"34,197,94");
   }
   // Hay DOS motivos distintos por los que no se puede decidir, y confundirlos deja mensajes
   // absurdos. Con 9 de 10 contra 1 de 10 la fórmula del total pide "9 clientes" cuando ya
   // llevas 10: ahí lo que falta no es volumen, son casos en el lado flaco (solo 1 silencio
   // en una y 1 respuesta en la otra). Se dice el motivo real.
   if(!t.valido){
-    return S(`🌱 <b>Todavía no se puede decidir.</b> Para que la comparación sea fiable hacen falta al menos <b>5 respuestas y 5 silencios en cada versión</b>; por ahora tienes ${a.resp} de ${a.env} y ${b.resp} de ${b.env}. Los números de abajo son reales, pero con tan pocos casos la diferencia puede darse vuelta con un solo cliente.${pie}`,"148,163,184");
+    return S(`<b>Todavía no se puede decidir.</b> Para que la comparación sea fiable hacen falta al menos <b>5 respuestas y 5 silencios en cada versión</b>; por ahora tienes ${a.resp} de ${a.env} y ${b.resp} de ${b.env}. Los números de abajo son reales, pero con tan pocos casos la diferencia puede darse vuelta con un solo cliente.${pie}`,"148,163,184");
   }
   const n=nNecesario(a.resp,a.env,b.resp,b.env);
   const cuanto=n ? `Para confirmar una diferencia de este tamaño harían falta unos <b>${n} clientes por versión</b> (llevas ${a.env} y ${b.env}).`
                  : `Van casi empatadas: por ahora da igual cuál dejes.`;
-  return S(`🌱 <b>Todavía no se puede decidir.</b> ${cuanto} Los números de abajo son reales, pero la diferencia aún puede ser casualidad.${pie}`,"148,163,184");
+  return S(`<b>Todavía no se puede decidir.</b> ${cuanto} Los números de abajo son reales, pero la diferencia aún puede ser casualidad.${pie}`,"148,163,184");
 }
 
 function renderAngulo(){

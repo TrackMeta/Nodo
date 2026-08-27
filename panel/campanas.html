@@ -199,16 +199,16 @@ function renderGrid(){
     const chips=[
       ...(seg.tags||[]).map(t=>{ const tg=st.tags.find(x=>x.nombre===t); const h=tagHex(tg?.color); return `<span class="segchip" style="background:${h}1f;color:${h};border-color:${h}44">${esc(t)}</span>`; }),
       ...(seg.stage||[]).map(s=>`<span class="segchip">${esc(STAGE_LBL[s]||s)}</span>`),
-      ...(seg.order_estados||[]).map(s=>`<span class="segchip">📦 ${esc(OSTATE_LBL[s]||s)}</span>`),
+      ...(seg.order_estados||[]).map(s=>`<span class="segchip">${icon("box")} ${esc(OSTATE_LBL[s]||s)}</span>`),
     ];
-    const segHtml=chips.length?`<div class="segchips">${chips.join("")}</div>`:`<div class="segall">👥 Todos los contactos del canal</div>`;
+    const segHtml=chips.length?`<div class="segchips">${chips.join("")}</div>`:`<div class="segall">${icon("users")} Todos los contactos del canal</div>`;
     const pct=total?Math.round(sent/total*100):0;
     const el=document.createElement("div"); el.className="cc";
     el.innerHTML=`
       <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${(c.estado||"").replace(/^./,ch=>ch.toUpperCase())}</span></div>
       <div class="tplrow">${TPL_ICON}<b>${tpl?esc(tpl.name):"Sin plantilla"}</b></div>
       ${segHtml}
-      <div class="cstat" style="margin-top:8px">${c.programada_at?`🗓 Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:"⚡ Envío inmediato al activar"}</div>
+      <div class="cstat" style="margin-top:8px">${c.programada_at?`${icon("clock")} Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:icon("sparkles")+" Envío inmediato al activar"}</div>
       ${c.estado!=="borrador"?`<div class="cprog"><div class="bars" style="flex:1;margin:0"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div><span class="pct">${pct}%</span></div>
         <div class="cstat">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
       <div class="cacts">

@@ -381,7 +381,7 @@ function pintarWA(r){
   const hero=$("waNumHero"); if(hero){ if(r.numero) pintarHero(hero,r.numero); else hero.innerHTML=""; }
   const fila=(ok,txt,ayuda)=>`
     <div style="display:flex;gap:8px;align-items:flex-start;margin-top:7px">
-      <span style="flex:0 0 16px;line-height:1.5">${ok?"✅":"⚠️"}</span>
+      <span style="flex:0 0 16px;line-height:1.5;color:${ok?"var(--green)":"var(--amber)"}">${icon(ok?"flag":"alert")}</span>
       <span style="font-size:12.5px;line-height:1.5">${txt}
       ${ayuda?`<div style="color:var(--faint);font-size:11.5px;margin-top:1px">${ayuda}</div>`:""}</span>
     </div>`;
@@ -502,7 +502,7 @@ function pintarDiag(r){
   const box=$("tgDiag"); if(!box) return;
   const fila=(ok,txt,ayuda)=>`
     <div style="display:flex;gap:8px;align-items:flex-start;margin-top:7px">
-      <span style="flex:0 0 16px;line-height:1.5">${ok?"✅":"⚠️"}</span>
+      <span style="flex:0 0 16px;line-height:1.5;color:${ok?"var(--green)":"var(--amber)"}">${icon(ok?"flag":"alert")}</span>
       <span style="font-size:12.5px;line-height:1.5">${txt}
       ${ayuda?`<div style="color:var(--faint);font-size:11.5px;margin-top:1px">${ayuda}</div>`:""}</span>
     </div>`;
