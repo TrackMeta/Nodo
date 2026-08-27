@@ -390,6 +390,44 @@ async function runEngineInner(
         }
       } catch (e) { console.error("[ruteo/memoria]", (e as any)?.message ?? e); }
     }
+    let reinyectarTrasArranque = false;
+    // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
+    // sin nombrarlo ("sí, apártamela, talla 39 negra" / "¿qué precio tenía?"), así que el
+    // ruteo por keyword no encuentra nada y lo mandaba al saludo de bienvenida o a Recepción
+    // preguntándole qué producto quiere — del producto del que el bot mismo le escribió un
+    // minuto antes. El cliente ya dijo que sí y se le devuelve al principio: se pierde la
+    // venta que el propio remarketing acababa de abrir.
+    // Acotado a propósito: solo si recibió un envío automático en las últimas 72h. Fuera de
+    // esa ventana, un mensaje vago vuelve a Recepción como siempre.
+    if (!flow) {
+      try {
+        const { data: ct } = await db.from("contacts")
+          .select("product_id, ultimo_auto_msg_at").eq("id", contactId).maybeSingle();
+        const pid = (ct as any)?.product_id;
+        const ult = (ct as any)?.ultimo_auto_msg_at;
+        if (pid && ult && (Date.now() - new Date(ult).getTime()) < 72 * 3600 * 1000) {
+          // Se busca en `flows` por producto, NO por sus triggers: el flujo de VENTA no
+          // tiene keyword propia (se llega a él desde el saludo), así que buscando por
+          // triggers solo aparecía "Mensajes iniciales" — y por eso al que respondía el
+          // reenganche se le soltaba otra vez la bienvenida.
+          const { data: fls } = await db.from("flows")
+            .select("id, nombre, estado, role").eq("channel_id", channelId).eq("product_id", pid)
+            .eq("estado", "activo").order("id");
+          const cands = (fls ?? []) as any[];
+          // El de VENTA primero: a quien responde un reenganche ya se le saludó hace un
+          // minuto; entrar por "Mensajes iniciales" le repite la bienvenida y le pregunta lo
+          // que acaba de decir ("¿qué talla usas?" a quien escribió "talla 39 negra"). El de
+          // venta lo atiende con IA y aprovecha su mensaje.
+          const elegido = cands.find((f: any) => f.role === "venta") ?? cands[0];
+          if (elegido) {
+            flow = { id: elegido.id, nombre: elegido.nombre };
+            reinyectarTrasArranque = true;
+            await logEvent(db, channelId, contactId, "nota", "📣 Responde al remarketing",
+              `Sigue con el producto del que le escribimos (${elegido.nombre ?? ""})`).catch(() => {});
+          }
+        }
+      } catch (e) { console.error("[ruteo/remarketing]", (e as any)?.message ?? e); }
+    }
     if (!flow) {
       // Sin producto claro (hola / anuncio sin banco / mensaje vago): la RECEPCIÓN
       // con IA lo recibe y lo encamina a un producto. Si está apagada o no hay IA,
@@ -418,6 +456,17 @@ async function runEngineInner(
       if (!run) return;
       const ready = await resumeRun(db, run, event);
       if (!ready) return;
+    } else if (reinyectarTrasArranque) {
+      // El flujo de venta arranca escuchando, así que sin esto su mensaje —el que abrió la
+      // conversación— se quedaría sin atender y el cliente vería silencio justo después de
+      // decir que sí. Se le entrega ese mismo mensaje al run recién parqueado, igual que en
+      // la recompra.
+      await execute(db, run);
+      const vivo = await getActiveRun(db, contactId);
+      if (vivo && (vivo.vars as any)?._await) {
+        const listo = await resumeRun(db, vivo, event);
+        if (listo) { run = vivo; } else return;
+      } else return;
     }
   }
   // Imagen entrante (ej. comprobante): se sube a almacenamiento propio para

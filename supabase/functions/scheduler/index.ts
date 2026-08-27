@@ -906,6 +906,20 @@ async function processSub(s: any, now: number): Promise<boolean> {
     }
   }
   if (toco) await marcarTocoMkt(s.contact_id);
+  // 🎯 El toque habla de UN producto: se le deja sellado al contacto para que su RESPUESTA
+  // entre a la venta de ese producto. Sin esto el cliente contestaba al reenganche y el bot
+  // no sabía de qué le hablaba él mismo un minuto antes — medido: recibió "me quedan pocas
+  // en tu talla, ¿te la aparto?", contestó "sí, apártamela, talla 39 negra" y le respondió
+  // el saludo de bienvenida preguntándole qué producto quería; a otro que preguntó "¿qué
+  // precio tenía?" le contestó "¿qué producto te interesa?". El cliente ya dijo que sí y el
+  // bot lo manda al principio: se pierde la venta que el propio remarketing acababa de abrir.
+  // Se escribe solo product_id (no markProduct: ese además auto-suscribe a secuencias, y
+  // llamarlo desde el propio remarketing lo realimentaría). Solo tras un envío REAL, y el
+  // scheduler ya no toca a quien está a mitad de conversación, así que no pisa una venta viva.
+  if (toco && subProductId) {
+    await db.from("contacts").update({ product_id: subProductId }).eq("id", s.contact_id)
+      .then(() => {}, () => {});
+  }
 
   const next = s.paso_actual + 1;
   // Cuándo volver a mirarla: la espera del paso QUE SIGUE, contada desde ahora (que es
