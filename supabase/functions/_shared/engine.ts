@@ -1803,6 +1803,39 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
   });
 }
 
+// Temas que la gente pregunta antes de comprar y que casi nunca están escritos. Cada entrada:
+// [nombre legible, cómo se detecta en lo que ESCRIBE el cliente, cómo se detecta si el texto
+// del negocio/producto YA lo cubre]. Vive a nivel de módulo porque lo usan los DOS sitios que
+// atienden preguntas: la venta (contra la ficha del producto) y la recepción (contra el
+// conocimiento del negocio) — antes solo la venta, así que una pregunta hecha en la puerta no
+// quedaba registrada en ningún lado.
+const TEMAS_FICHA: Array<[string, RegExp, RegExp]> = [
+  ["certificado", /certificad/, /certificad/],
+  ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/],
+  ["garantía", /garant[ií]a/, /garant[ií]a/],
+  ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/],
+  ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/],
+  ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/],
+  // Atributos del producto que la gente pregunta ANTES de comprar y que casi nunca
+  // están escritos. Medidos los cuatro en chats reales, y en las dos direcciones:
+  // "no son impermeables" y "no tenemos tienda física" (negó sin saber), "son 100%
+  // originales, vienen de un proceso controlado" (afirmó y encima relleno), y el peor,
+  // "están diseñadas más para pavimento, para trail quizás necesites otro calzado"
+  // — desaconsejó la compra con un dato que nadie escribió.
+  ["si resiste el agua", /\b(impermeable|resisten? el agua|se moja|con lluvia|a prueba de agua|waterproof)/, /\b(impermeable|waterproof|resistente al agua|sumergible)/],
+  ["el material", /\b(material|de qu[eé] est[aá]n? hech|cuero|sint[eé]tic|tela)\b/, /\b(material|malla|cuero|sint[eé]tic|eva|tela|algod[oó]n|poli[eé]ster)/],
+  ["la marca o el origen", /\b(originales?|de qu[eé] pa[ií]s|de d[oó]nde vienen|importad|marca|chin|r[eé]plica)/, /\b(original|importad|marca|fabricad|hecho en|procedencia)/],
+  ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/],
+  ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/],
+  ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/],
+  // Cuánto peso aguanta. OJO: NO es lo mismo que cuánto PESA el producto (eso suele
+  // estar en la ficha, "240 g"), por eso la regex pide "si peso X", "aguantan",
+  // "soportan" — no la palabra "peso" suelta. Medido: a "¿aguantan si peso 95 kilos?"
+  // contestó "y claro, aguantan sin problema hasta 95 kilos, la suela está diseñada
+  // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
+  ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/],
+];
+
 // RECEPCIÓN con IA: cuando el ruteo NO encontró producto (un "hola", un anuncio
 // sin banco, un mensaje vago), un "recepcionista" con IA recibe al cliente, cuenta
 // qué se vende y lo guía a un producto — en vez de dejarlo sin respuesta. En el
@@ -1893,6 +1926,27 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   // Antes esto dependía del IA Router, que es OTRA perilla y viene APAGADA: con Recepción
   // encendida y Router apagado, quien no escribía la keyword exacta no llegaba NUNCA a la
   // venta — se quedaba conversando con Recepción para siempre.
+  // 📋 ¿Preguntó algo que tu información NO cubre? Queda registrado, igual que en la venta,
+  // para que aparezca en el panel con su frase textual. Antes esto solo existía dentro de la
+  // venta, así que una pregunta hecha EN LA PUERTA —la más común: "¿dan factura con RUC?"
+  // antes de mirar un producto— no la veía nadie: el bot la esquivaba y ahí moría. Y esa es
+  // justo la pregunta que conviene contestar: cada hueco que llenas deja de ser una evasiva.
+  try {
+    const preguntaR = String(event.text ?? "").toLowerCase();
+    const cubiertoR = ((info.negocio ?? "") + " " + cands.map((c) => c.intent).join(" ")).toLowerCase();
+    const huecosR = TEMAS_FICHA.filter(([, enPregunta, enTexto]) => enPregunta.test(preguntaR) && !enTexto.test(cubiertoR));
+    if (huecosR.length) {
+      const vistoR = String(ctx._temas_faltan ?? "");
+      const nuevosR = huecosR.map(([n]) => n).filter((n) => !vistoR.includes(n));
+      if (nuevosR.length) {
+        await setField(db, channelId, contactId, "_temas_faltan",
+          (vistoR ? vistoR + "|" : "") + nuevosR.join("|")).catch(() => {});
+        await logEvent(db, channelId, contactId, "ficha_hueco",
+          `❓ Preguntó por ${nuevosR.join(", ")} y no está en la ficha`,
+          String(event.text ?? "").slice(0, 180)).catch(() => {});
+      }
+    }
+  } catch (_) { /* el registro nunca debe tumbar la respuesta */ }
   let flowId: string | undefined;
   const mIr = /\[\[\s*ir\s*:\s*(\d+)\s*\]\]/i.exec(result || "");
   if (mIr) {
@@ -9120,33 +9174,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const hist = previos.join(" \n ");
         if (hist.trim()) preg = (preg + " \n " + hist).toLowerCase();
       } catch (_) { /* sin historial → queda el último mensaje */ }
-      const TEMAS: Array<[string, RegExp, RegExp]> = [
-        ["certificado", /certificad/, /certificad/],
-        ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/],
-        ["garantía", /garant[ií]a/, /garant[ií]a/],
-        ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/],
-        ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/],
-        ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/],
-        // Atributos del producto que la gente pregunta ANTES de comprar y que casi nunca
-        // están escritos. Medidos los cuatro en chats reales, y en las dos direcciones:
-        // "no son impermeables" y "no tenemos tienda física" (negó sin saber), "son 100%
-        // originales, vienen de un proceso controlado" (afirmó y encima relleno), y el peor,
-        // "están diseñadas más para pavimento, para trail quizás necesites otro calzado"
-        // — desaconsejó la compra con un dato que nadie escribió.
-        ["si resiste el agua", /\b(impermeable|resisten? el agua|se moja|con lluvia|a prueba de agua|waterproof)/, /\b(impermeable|waterproof|resistente al agua|sumergible)/],
-        ["el material", /\b(material|de qu[eé] est[aá]n? hech|cuero|sint[eé]tic|tela)\b/, /\b(material|malla|cuero|sint[eé]tic|eva|tela|algod[oó]n|poli[eé]ster)/],
-        ["la marca o el origen", /\b(originales?|de qu[eé] pa[ií]s|de d[oó]nde vienen|importad|marca|chin|r[eé]plica)/, /\b(original|importad|marca|fabricad|hecho en|procedencia)/],
-        ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/],
-        ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/],
-        ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/],
-        // Cuánto peso aguanta. OJO: NO es lo mismo que cuánto PESA el producto (eso suele
-        // estar en la ficha, "240 g"), por eso la regex pide "si peso X", "aguantan",
-        // "soportan" — no la palabra "peso" suelta. Medido: a "¿aguantan si peso 95 kilos?"
-        // contestó "y claro, aguantan sin problema hasta 95 kilos, la suela está diseñada
-        // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
-        ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/],
-      ];
-      const huecos = TEMAS.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt));
+      const huecos = TEMAS_FICHA.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt));
       const faltan = huecos.map(([nombre]) => nombre);
       // La frase donde de verdad lo preguntó — para citarla en el registro del hueco.
       const citaDe = (re: RegExp) => lineas.find((l) => re.test(l.toLowerCase())) ?? "";
