@@ -1809,31 +1809,31 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
 // atienden preguntas: la venta (contra la ficha del producto) y la recepción (contra el
 // conocimiento del negocio) — antes solo la venta, así que una pregunta hecha en la puerta no
 // quedaba registrada en ningún lado.
-const TEMAS_FICHA: Array<[string, RegExp, RegExp]> = [
-  ["certificado", /certificad/, /certificad/],
-  ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/],
-  ["garantía", /garant[ií]a/, /garant[ií]a/],
-  ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/],
-  ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/],
-  ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/],
+const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
+  ["certificado", /certificad/, /certificad/, "producto"],
+  ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/, "negocio"],
+  ["garantía", /garant[ií]a/, /garant[ií]a/, "producto"],
+  ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/, "negocio"],
+  ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
+  ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
   // Atributos del producto que la gente pregunta ANTES de comprar y que casi nunca
   // están escritos. Medidos los cuatro en chats reales, y en las dos direcciones:
   // "no son impermeables" y "no tenemos tienda física" (negó sin saber), "son 100%
   // originales, vienen de un proceso controlado" (afirmó y encima relleno), y el peor,
   // "están diseñadas más para pavimento, para trail quizás necesites otro calzado"
   // — desaconsejó la compra con un dato que nadie escribió.
-  ["si resiste el agua", /\b(impermeable|resisten? el agua|se moja|con lluvia|a prueba de agua|waterproof)/, /\b(impermeable|waterproof|resistente al agua|sumergible)/],
-  ["el material", /\b(material|de qu[eé] est[aá]n? hech|cuero|sint[eé]tic|tela)\b/, /\b(material|malla|cuero|sint[eé]tic|eva|tela|algod[oó]n|poli[eé]ster)/],
-  ["la marca o el origen", /\b(originales?|de qu[eé] pa[ií]s|de d[oó]nde vienen|importad|marca|chin|r[eé]plica)/, /\b(original|importad|marca|fabricad|hecho en|procedencia)/],
-  ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/],
-  ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/],
-  ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/],
+  ["si resiste el agua", /\b(impermeable|resisten? el agua|se moja|con lluvia|a prueba de agua|waterproof)/, /\b(impermeable|waterproof|resistente al agua|sumergible)/, "producto"],
+  ["el material", /\b(material|de qu[eé] est[aá]n? hech|cuero|sint[eé]tic|tela)\b/, /\b(material|malla|cuero|sint[eé]tic|eva|tela|algod[oó]n|poli[eé]ster)/, "producto"],
+  ["la marca o el origen", /\b(originales?|de qu[eé] pa[ií]s|de d[oó]nde vienen|importad|marca|chin|r[eé]plica)/, /\b(original|importad|marca|fabricad|hecho en|procedencia)/, "producto"],
+  ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/, "negocio"],
+  ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/, "producto"],
+  ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/, "producto"],
   // Cuánto peso aguanta. OJO: NO es lo mismo que cuánto PESA el producto (eso suele
   // estar en la ficha, "240 g"), por eso la regex pide "si peso X", "aguantan",
   // "soportan" — no la palabra "peso" suelta. Medido: a "¿aguantan si peso 95 kilos?"
   // contestó "y claro, aguantan sin problema hasta 95 kilos, la suela está diseñada
   // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
-  ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/],
+  ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/, "producto"],
 ];
 
 // RECEPCIÓN con IA: cuando el ruteo NO encontró producto (un "hola", un anuncio
@@ -1941,7 +1941,10 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       if (nuevosR.length) {
         await setField(db, channelId, contactId, "_temas_faltan",
           (vistoR ? vistoR + "|" : "") + nuevosR.join("|")).catch(() => {});
-        await logEvent(db, channelId, contactId, "ficha_hueco",
+        // Acá SIEMPRE es hueco del negocio: en la puerta todavía no hay producto elegido, así
+        // que aunque pregunte por el material o la garantía, lo que falta es información
+        // general — y es en Negocio → Conocimiento donde se arregla.
+        await logEvent(db, channelId, contactId, "negocio_hueco",
           `❓ Preguntó por ${nuevosR.join(", ")} y no está en la ficha`,
           String(event.text ?? "").slice(0, 180)).catch(() => {});
       }
@@ -9184,19 +9187,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // adivine qué escribir, el bot le va marcando los huecos REALES: lo que la gente
         // pregunta de verdad, con su frase. Cada uno que complete convierte un "te
         // confirmo" en una respuesta que cierra — y de paso apaga esta red para ese tema.
-        // Lo lee la ficha del producto (Productos → el producto) para mostrárselo ahí,
-        // que es donde lo arregla. Una sola vez por tema y contacto: no llena la bitácora.
+        // Y se registra DONDE SE ARREGLA, que no siempre es el producto: la factura con RUC,
+        // las cuotas, las devoluciones o si hay tienda física son condiciones del NEGOCIO
+        // (Negocio → Conocimiento), no de una zapatilla. Mandarlas a la ficha del producto
+        // hacía que el dueño las buscara en el sitio equivocado — y si vende diez productos,
+        // el mismo aviso le salía diez veces sin ser de ninguno.
+        // Una sola vez por tema y contacto: no llena la bitácora.
         try {
           const yaVisto = String(ctx._temas_faltan ?? "");
           const nuevos = faltan.filter((t) => !yaVisto.includes(t));
           if (nuevos.length) {
             await setField(db, run.channel_id, run.contact_id, "_temas_faltan",
               (yaVisto ? yaVisto + "|" : "") + nuevos.join("|")).catch(() => {});
-            const cita = huecos.filter(([n]) => nuevos.includes(n))
-              .map(([, re]) => citaDe(re)).find(Boolean) ?? String(ctx.last_input ?? "");
-            await logEvent(db, run.channel_id, run.contact_id, "ficha_hueco",
-              `❓ Preguntó por ${nuevos.join(", ")} y no está en la ficha`,
-              String(cita).slice(0, 180)).catch(() => {});
+            for (const ambito of ["producto", "negocio"] as const) {
+              const delAmbito = huecos.filter(([n, , , a]) => nuevos.includes(n) && a === ambito);
+              if (!delAmbito.length) continue;
+              const cita = delAmbito.map(([, re]) => citaDe(re)).find(Boolean) ?? String(ctx.last_input ?? "");
+              await logEvent(db, run.channel_id, run.contact_id,
+                ambito === "negocio" ? "negocio_hueco" : "ficha_hueco",
+                `❓ Preguntó por ${delAmbito.map(([n]) => n).join(", ")} y no está en la ficha`,
+                String(cita).slice(0, 180)).catch(() => {});
+            }
           }
         } catch (_) { /* el registro nunca debe tumbar la respuesta */ }
         // Esta pregunta suele DECIDIR la compra, así que la respuesta tiene que vender.

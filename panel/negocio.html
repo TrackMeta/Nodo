@@ -219,6 +219,7 @@ function renderConocimiento(b){
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
     <p class="sub">Completa este formulario: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en <b>IA → Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
+    <div id="negHuecos"></div>
     ${vacioNeg?`<div class="armhero">
       <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">¿Empezamos rápido? Deja que la IA lo arme</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Describe tu negocio en una frase y la IA rellena el formulario (tú revisas y guardas).</div></div>
@@ -259,6 +260,40 @@ function renderConocimiento(b){
   $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado ✓"); };
   const hbN=$("armHeroBtn"); if(hbN) hbN.onclick=armOpen;
+  pintaHuecosNegocio();
+}
+
+// Lo que TE PREGUNTAN y este formulario no contesta. El motor registra un `negocio_hueco`
+// cada vez que un cliente toca un tema del negocio —factura con RUC, cuotas, devoluciones,
+// tienda física, envíos al extranjero— que no está escrito en ningún lado, con su frase
+// textual. Va acá y no en la ficha del producto porque acá es donde se arregla: son
+// condiciones del negocio, no de una zapatilla (y si vendes diez productos, ponerlo en la
+// ficha te mostraría el mismo aviso diez veces sin ser de ninguno).
+async function pintaHuecosNegocio(){
+  const host=$("negHuecos"); if(!host||!st.channelId) return;
+  try{
+    const { data:ev }=await supa.from("contact_events")
+      .select("titulo,detalle,created_at").eq("channel_id",st.channelId).eq("tipo","negocio_hueco")
+      .order("created_at",{ascending:false}).limit(200);
+    if(!ev||!ev.length) return;
+    const m=new Map();
+    for(const e of ev){
+      const tema=String(e.titulo||"").replace(/^❓ Preguntó por\s*/,"").replace(/\s*y no está en la ficha$/,"").trim();
+      for(const t of tema.split(",").map(s=>s.trim()).filter(Boolean)){
+        const r=m.get(t)||{n:0,ej:""};
+        r.n++; if(!r.ej && e.detalle) r.ej=String(e.detalle);
+        m.set(t,r);
+      }
+    }
+    if(!m.size) return;
+    const filas=[...m.entries()].sort((a,b)=>b[1].n-a[1].n).slice(0,6)
+      .map(([t,r])=>`<li style="margin-bottom:5px"><b>${esc(t)}</b> · ${r.n} ${r.n===1?"vez":"veces"}`
+        +(r.ej?`<div style="color:var(--faint,#888);font-size:11px;margin-top:1px">“${esc(r.ej.slice(0,90))}”</div>`:"")+`</li>`).join("");
+    host.innerHTML=`<div style="border:1px solid var(--amber,#f59e0b);background:rgba(245,158,11,.08);border-radius:11px;padding:11px 12px;margin:0 0 14px">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">❓ Te preguntaron esto y tu negocio no lo contesta</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">Cuando el dato no está acá, el bot no lo inventa: lo esquiva con calidez y sigue vendiendo. Si lo completas abajo (Políticas, Cómo se paga, Envíos), lo responde al toque.</div>
+      <ul style="margin:0;padding-left:17px;font-size:12px">${filas}</ul></div>`;
+  }catch(_){ /* sin datos todavía → no se muestra nada */ }
 }
 
 // ════════ ENTREGA Y LOGÍSTICA (movido de Ajustes → Entregas Lima) ════════
