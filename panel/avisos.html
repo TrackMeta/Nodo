@@ -314,7 +314,7 @@ async function guardar(e){
       items:st.cfg.items, hora:st.cfg.hora });
     await callFn("channel-config",{ action:"resumen_guardar", channel_id:st.channelId,
       resumenes:st.resumen });
-    toast("Avisos guardados ✓");
+    toast("Avisos guardados");
   }catch(err){ toast(err.message||"No se pudo guardar",true); }
   b.disabled=false; b.textContent=old;
 }

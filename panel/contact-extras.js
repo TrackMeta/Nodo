@@ -30,7 +30,7 @@ export const EMBUDO_STAGES = [
   { k: "nuevo",      label: "Nuevo",      color: "#378ADD", desc: "Llegó, aún genérico" },
   { k: "curioso",    label: "Curioso",    color: "#29B6D8", desc: "Solo tiró la palabra clave" },
   { k: "interesado", label: "Interesado", color: "#EF9F27", desc: "Interactuó, quiere más" },
-  { k: "caliente",   label: "Caliente",   color: "#F0612B", desc: "Escribió 4+ mensajes sin comprar — súper enganchado 🔥" },
+  { k: "caliente",   label: "Caliente",   color: "#F0612B", desc: "Escribió 4+ mensajes sin comprar — súper enganchado" },
   { k: "confirmado", label: "Confirmado", color: "#8b5cf6", desc: "Confirmó recibir / adelanto validado" },
   { k: "comprado",   label: "Comprado",   color: "#1D9E75", desc: "Venta cerrada, plata dentro" },
   { k: "perdido",    label: "Perdido",    color: "#888780", desc: "Se cayó / no compró" },
@@ -43,7 +43,7 @@ export function stagePickerHtml(current) {
   const cur = String(current || "nuevo");
   return `<div class="cx-stagepick">${EMBUDO_STAGES.map((s) => {
     const on = s.k === cur;
-    return `<button type="button" class="cx-stagechip${on ? " on" : ""}" data-stagepick="${s.k}"${on ? ` style="background:${s.color}1c;border-color:${s.color};color:${s.color}"` : ""}><span class="cx-sd" style="background:${s.color}"></span><span class="cx-sl">${esc(s.label)}</span>${on ? '<span class="cx-sck">✓</span>' : ""}</button>`;
+    return `<button type="button" class="cx-stagechip${on ? " on" : ""}" data-stagepick="${s.k}"${on ? ` style="background:${s.color}1c;border-color:${s.color};color:${s.color}"` : ""}><span class="cx-sd" style="background:${s.color}"></span><span class="cx-sl">${esc(s.label)}</span>${on ? '<span class="cx-sck">${icon("check")}</span>' : ""}</button>`;
   }).join("")}</div>`;
 }
 
@@ -136,7 +136,7 @@ export function wireMemoriaChips(p, contact, { supa, toast, reRender }) {
     contact.memoria_ia = payload; // que el re-render lo vea
     const { error } = await supa.from("contacts").update({ memoria_ia: payload }).eq("id", contact.id);
     if (error) toast("No se pudo guardar la memoria: " + error.message, true);
-    else toast("Memoria actualizada ✓");
+    else toast("Memoria actualizada");
     reRender();
   };
   // input inline reutilizable (editar o agregar)
@@ -235,7 +235,7 @@ function pedidoProgresoHtml(o) {
   const estado = o.estado;
   const NEG = { cancelado: "Cancelado", no_recogido: "No se recogió", rechazado: "Rechazado" };
   if (NEG[estado]) {
-    return `<div style="margin:10px 2px 4px;font-size:12px;font-weight:700;color:var(--red,#dc2626)">⛔ ${esc(NEG[estado])}</div>`;
+    return `<div style="margin:10px 2px 4px;font-size:12px;font-weight:700;color:var(--red,#dc2626)">${esc(NEG[estado])}</div>`;
   }
   // "Saldo" (Pagaron saldo) se cumple apenas el cliente MANDA el comprobante
   // (aunque esté por validar); "Clave" (Clave enviada) recién al aprobarlo
@@ -268,7 +268,7 @@ function pedidoProgresoHtml(o) {
       parts.push(`<div style="flex:0 0 3px;height:2px;margin-top:6px;background:${on ? "var(--green,#16a34a)" : "var(--border)"}"></div>`);
     }
     parts.push(`<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1 1 0;min-width:0">
-      <span style="width:14px;height:14px;flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;${dot}">${isDone ? "✓" : ""}</span>
+      <span style="width:14px;height:14px;flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;${dot}">${isDone ? icon("check") : ""}</span>
       <span style="font-size:7px;line-height:1;text-align:center;font-weight:${isNext ? "700" : "500"};color:${lbl};white-space:nowrap">${esc(p[0])}</span></div>`);
   });
   return `<div style="display:flex;align-items:flex-start;margin:12px 0 4px">${parts.join("")}</div>`;
@@ -285,7 +285,7 @@ export function pedidoResumenHtml(o) {
   const moneyLine = adel || saldo
     ? `${adel ? `Adelanto <b>${money(adel, o.currency)}</b>` : ""}${adel && saldo ? " · " : ""}${saldo ? `Saldo <b>${money(saldo, o.currency)}</b>` : ""}`
     : `Total <b>${money(O.total(o), o.currency)}</b>`;
-  const air = s.aereo ? ` <span class="pd-chip air">✈️ Aéreo</span>` : "";
+  const air = s.aereo ? ` <span class="pd-chip air">${icon("plane")} Aéreo</span>` : "";
   const linesHtml = (arr) => arr.length ? `<div class="pd-info">${arr.join("")}</div>` : "";
   const mkLine = (k, valHtml) => valHtml ? `<div class="pd-line"><span class="pd-k">${esc(k)}</span><span class="pd-v">${valHtml}</span></div>` : "";
 
@@ -313,8 +313,8 @@ export function pedidoResumenHtml(o) {
       : "";
     const precioTxt = esRegalo ? "Gratis" : money(Number(b.precio || 0), o.currency);
     const flags = (b.stock_pendiente ? ` <span class="pd-chip warn">falta talla</span>` : "")
-      + (b.digital ? ` <span class="pd-chip">${b.entregado ? "entregado ✓" : "digital"}</span>` : "");
-    return `<div class="pd-bump"><span class="pd-bi">${esRegalo ? "🎁" : "➕"}</span>` +
+      + (b.digital ? ` <span class="pd-chip">${b.entregado ? "entregado" : "digital"}</span>` : "");
+    return `<div class="pd-bump"><span class="pd-bi">${esRegalo ? icon("gift") : icon("plus")}</span>` +
       `<span class="pd-bn">${esc(nom)}${varTxt ? ` <span class="pd-bvar">${esc(varTxt)}</span>` : ""}${flags}</span>` +
       `<span class="pd-bp">${esc(precioTxt)}</span></div>`;
   }).join("");
@@ -395,7 +395,7 @@ export function printRotulo(o, remitente) {
   // que es el papel que viaja, no.) Acá la fila SIEMPRE sale, y si falta el dato lo grita.
   const rowReq = (k, val, big) => val
     ? `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}">${esc(val)}</td></tr>`
-    : `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}" style="color:#c00;font-weight:800">⚠ FALTA</td></tr>`;
+    : `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}" style="color:#c00;font-weight:800">FALTA</td></tr>`;
   const atrLine = Object.entries(s.atributos || {}).map(([k, val]) => `${k}: ${val}`).join("   ·   ");
   let filas = "";
   if (zona === "provincia") {
@@ -404,7 +404,7 @@ export function printRotulo(o, remitente) {
       rowReq("DNI", s.dni || "", true) +
       row("Teléfono", tel) +
       rowReq("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
-      row("Envío", s.aereo ? "✈️ AÉREO — despachar por avión" : "", true) +
+      row("Envío", s.aereo ? "AÉREO — despachar por avión" : "", true) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("N° pedido", nro);
@@ -440,12 +440,12 @@ export function printRotulo(o, remitente) {
     <div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(rem)}</b></div>
-        <div class="zn">${zona === "provincia" ? (s.aereo ? "AGENCIA · ✈️ AÉREO" : "AGENCIA") : "CONTRAENTREGA"}</div>
+        <div class="zn">${zona === "provincia" ? (s.aereo ? "AGENCIA · AÉREO" : "AGENCIA") : "CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>
     </div>
-    <div class="noprint"><button onclick="window.print()">🖨️ Imprimir</button></div>
+    <div class="noprint"><button onclick="window.print()">Imprimir</button></div>
     <script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
     </body></html>`;
   const w = window.open("", "_blank", "width=640,height=800");
@@ -946,9 +946,9 @@ export async function openDespachoModal(o, deps) {
     const ov = document.createElement("div");
     ov.className = "overlay";
     ov.innerHTML = `<div class="modal">
-      <h3>📦 Registrar despacho</h3>
+      <h3>Registrar despacho</h3>
       <div class="m-sub">${esc((o.contact || {}).nombre || "")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
-      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">⚠️ La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
+      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert")} La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
       <div class="row2">
         <div><label>Agencia</label>
           <select data-d="agencia"><option value="shalom" ${s.agencia === "shalom" ? "selected" : ""}>Shalom</option><option value="olva" ${s.agencia === "olva" ? "selected" : ""}>Olva Courier</option><option value="otra" ${s.agencia && !["shalom", "olva"].includes(s.agencia) ? "selected" : ""}>Otra</option></select></div>
@@ -983,9 +983,9 @@ export async function openDespachoModal(o, deps) {
     const pintaFoto = () => {
       const box = q("fotobox");
       box.innerHTML = foto
-        ? `${fotoKind === "image" ? `<img src="${esc(foto)}" data-ver/>` : `<div class="dsp-doc">📄</div>`}
+        ? `${fotoKind === "image" ? `<img src="${esc(foto)}" data-ver/>` : `<div class="dsp-doc">${icon("file")}</div>`}
            <button type="button" data-f="cambiar">Cambiar</button><button type="button" data-f="quitar">Quitar</button>`
-        : `<button type="button" data-f="subir">📷 Subir foto o PDF de la guía</button>`;
+        : `<button type="button" data-f="subir">${icon("camera")} Subir foto o PDF de la guía</button>`;
       const sub = box.querySelector('[data-f="subir"]') || box.querySelector('[data-f="cambiar"]');
       if (sub) sub.onclick = elegirFoto;
       const qui = box.querySelector('[data-f="quitar"]');
@@ -1007,7 +1007,7 @@ export async function openDespachoModal(o, deps) {
           });
           if (error || !data?.url) { toast("No se pudo subir el archivo", true); return; }
           foto = data.url; fotoKind = data.kind || (file.type.startsWith("image/") ? "image" : "document");
-          pintaFoto(); toast("Foto lista ✓");
+          pintaFoto(); toast("Foto lista");
         } catch (_) { toast("Error al subir", true); }
       };
       inp.click();
@@ -1081,7 +1081,7 @@ export function openMetaDetalle(order, capiEvent, contact, deps) {
   for (const b of bumps) val += Number(b && b.precio) || 0;
   const est = capiEvent && capiEvent.estado;
   const cerrado = VM_CLOSED.has(String((order && order.estado) || ""));
-  const head = est === "enviado" ? { lbl: "Enviado a Meta ✓", dot: "#14b8a6" }
+  const head = est === "enviado" ? { lbl: "Enviado a Meta", dot: "#14b8a6" }
     : est === "fallido" ? { lbl: "Error al enviar", dot: "#ef4444" }
     : !cerrado ? { lbl: "Aún no se envía — se enviará al cerrar la venta", dot: "#f59e0b" }
     : { lbl: "Pendiente · falta cargar Pixel + token CAPI", dot: "#ef4444" };
@@ -1096,13 +1096,13 @@ export function openMetaDetalle(order, capiEvent, contact, deps) {
   const dt = (capiEvent && (capiEvent.updated_at || capiEvent.created_at)) || null;
   const fecha = dt ? (() => { try { return new Intl.DateTimeFormat("es-PE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(dt)); } catch (_) { return String(dt); } })() : "—";
 
-  const row = (k, v, ok) => `<div class="mdt-row"><span class="mdt-k">${esc(k)}</span><span class="mdt-v">${v ? esc(String(v)) : `<span style="color:var(--faint,#9ca3af)">—</span>`}${(ok && v) ? ` <span style="color:#14b8a6">✓</span>` : ""}</span></div>`;
+  const row = (k, v, ok) => `<div class="mdt-row"><span class="mdt-k">${esc(k)}</span><span class="mdt-v">${v ? esc(String(v)) : `<span style="color:var(--faint,#9ca3af)">—</span>`}${(ok && v) ? ` <span style="color:#14b8a6">${icon("check")}</span>` : ""}</span></div>`;
 
   return new Promise((resolve) => {
     const ov = document.createElement("div"); ov.className = "overlay vm-ov";
     ov.innerHTML = `<div class="vm-card" role="dialog" aria-label="Detalle de envío a Meta" style="max-width:480px">
       <div class="vm-head">
-        <div class="vm-ico" style="background:color-mix(in srgb,#1877F2 16%,transparent);color:#1877F2">${icon("megaphone") || "📢"}</div>
+        <div class="vm-ico" style="background:color-mix(in srgb,#1877F2 16%,transparent);color:#1877F2">${icon("megaphone")}</div>
         <div class="vm-htx"><div class="vm-title">Envío a Meta</div><div class="vm-sub">Purchase · pedido de anuncio</div></div>
         <button class="vm-x" id="mdX" title="Cerrar">×</button>
       </div>
@@ -1133,7 +1133,7 @@ export function openMetaDetalle(order, capiEvent, contact, deps) {
         </div>
 
         ${resp ? `<div class="mdt-sec"><div class="mdt-t">Respuesta de Meta</div><pre class="mdt-pre">${esc(resp)}</pre></div>` : ""}
-        <div class="vm-note"><span class="vm-note-ic">🔒</span><span>Los datos personales (teléfono, nombre, ciudad) se <b>cifran</b> antes de salir; Meta solo los usa para emparejar la conversión. El <b>ctwa_clid</b> es el id del clic en tu anuncio.</span></div>
+        <div class="vm-note"><span class="vm-note-ic">${icon("lock")}</span><span>Los datos personales (teléfono, nombre, ciudad) se <b>cifran</b> antes de salir; Meta solo los usa para emparejar la conversión. El <b>ctwa_clid</b> es el id del clic en tu anuncio.</span></div>
       </div>
       <div class="vm-foot">
         <div class="vm-total"><span>Valor</span><b>${money(val)}</b></div>
@@ -1154,7 +1154,7 @@ export function openMetaDetalle(order, capiEvent, contact, deps) {
       try {
         const { data, error } = await supa.functions.invoke("capi-retry", { body: { channel_id: channelId, order_id: order.id } });
         if (error || !data?.ok) { toast && toast("No se envió: " + (data?.error || error?.message || "error"), true); rb.disabled = false; rb.textContent = old; return; }
-        toast && toast("Enviado a Meta ✓"); close(true);
+        toast && toast("Enviado a Meta"); close(true);
       } catch (e) { toast && toast("No se envió: " + (e?.message || e), true); rb.disabled = false; rb.textContent = old; }
     };
   });
@@ -1257,8 +1257,8 @@ export function openVentaManual(contact, deps) {
         <div class="vm-block vm-ship" id="vmShip" style="display:none">
           <div class="vm-lbl">Datos de entrega</div>
           <div class="vm-seg" id="vmZona">
-            <button type="button" class="vm-segb" data-z="lima">🛵 Lima · contraentrega</button>
-            <button type="button" class="vm-segb" data-z="provincia">🏢 Provincia · agencia</button>
+            <button type="button" class="vm-segb" data-z="lima">${icon("truck")} Lima · contraentrega</button>
+            <button type="button" class="vm-segb" data-z="provincia">${icon("building")} Provincia · agencia</button>
           </div>
           <div class="vm-row" style="margin-top:8px">
             <input class="vm-inp" id="vmNom" placeholder="Nombre de quien recibe"/>
@@ -1404,12 +1404,12 @@ export function openVentaManual(contact, deps) {
       const regalos = Array.isArray(p?.config?.regalos) ? p.config.regalos : [];
       if (regalos.length) {
         g("#vmGift").style.display = "flex";
-        g("#vmGift").innerHTML = `<span class="vm-gift-ic">🎁</span><span>Incluye de regalo: <b>${regalos.map((r) => esc(r.nombre || "regalo")).join(", ")}</b> — se adjunta y entrega solo.</span>`;
+        g("#vmGift").innerHTML = `<span class="vm-gift-ic">${icon("gift")}</span><span>Incluye de regalo: <b>${regalos.map((r) => esc(r.nombre || "regalo")).join(", ")}</b> — se adjunta y entrega solo.</span>`;
       } else g("#vmGift").style.display = "none";
       g("#vmEntWrap").style.display = tipo === "digital" ? "flex" : "none";
       g("#vmNote").className = "vm-note " + (tieneAd ? "ad" : "");
       g("#vmNote").innerHTML = tieneAd
-        ? `<span class="vm-note-ic">🎯</span><span>Este cliente vino de un <b>anuncio de Meta</b>: la venta se atribuye al anuncio (se envía el Purchase si tienes el Pixel + token CAPI cargados).</span>`
+        ? `<span class="vm-note-ic">${icon("compass")}</span><span>Este cliente vino de un <b>anuncio de Meta</b>: la venta se atribuye al anuncio (se envía el Purchase si tienes el Pixel + token CAPI cargados).</span>`
         : `<span class="vm-note-ic">ℹ️</span><span>Este cliente <b>no tiene atribución de anuncio</b>: la venta cuenta en tus números, pero no se envía a Meta.</span>`;
     }
 
@@ -1480,7 +1480,7 @@ export function openVentaManual(contact, deps) {
       let data, error;
       try { ({ data, error } = await supa.functions.invoke("venta-manual", { body })); } catch (e) { error = e; }
       if (error || !data?.ok) { toast("No se pudo: " + (data?.error || error?.message || "error"), true); btn.disabled = false; btn.textContent = old; return; }
-      toast("Venta registrada ✓"); close(true);
+      toast("Venta registrada"); close(true);
     };
   });
 }
@@ -1667,10 +1667,10 @@ export async function openEditarPedido(o, deps) {
     // desde su stock_key) para poder corregir la talla/color y reajustar el stock.
     const varSel = (b.product_id && !b.stock_pendiente) ? varSelectsHtml(b.product_id, parseKey(b.stock_key), "ebx-var") : "";
     return `<div class="eb-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap">
-      <span>${esRegalo ? "🎁" : "➕"}</span>
+      <span>${esRegalo ? icon("gift") : icon("plus")}</span>
       <span style="flex:1;min-width:0;font-size:13px">${esc(nom)}${esRegalo ? ` <span style="color:var(--green)">Gratis</span>` : ""}</span>
       ${esRegalo ? "" : `<span style="font-size:12px;color:var(--muted)">S/</span><input class="eb-precio" type="number" step="0.1" value="${esc(b.precio ?? "")}" style="width:72px"/>`}
-      <button type="button" class="eb-del" title="Quitar del pedido" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
+      <button type="button" class="eb-del" title="Quitar del pedido" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;line-height:1">${icon("x")}</button>
       ${varSel ? `<div class="ebx-vars" style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;padding-left:24px">${varSel}</div>` : ""}
     </div>`;
   };
@@ -1685,16 +1685,16 @@ export async function openEditarPedido(o, deps) {
       <input class="ebn-nom" placeholder="Nombre" style="flex:1;min-width:100px"/>
       <span style="font-size:12px;color:var(--muted)">S/</span><input class="ebn-precio" type="number" step="0.1" placeholder="0" style="width:60px"/>
       <label style="display:flex;align-items:center;gap:3px;font-size:12px;white-space:nowrap"><input type="checkbox" class="ebn-regalo"/> Regalo</label>
-      <button type="button" class="ebn-del" title="Quitar" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:16px;line-height:1">✕</button>
+      <button type="button" class="ebn-del" title="Quitar" style="border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;line-height:1">${icon("x")}</button>
       <div class="ebn-vars" style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;padding-left:2px"></div>
     </div>`;
   const bumpHtml = `
         <div class="pm-sec">
-          <div class="pm-sec-h">➕ Ventas extra y regalos</div>
+          <div class="pm-sec-h">${icon("plus")} Ventas extra y regalos</div>
           <div id="eBumps">${bumps0.map((b, i) => bumpRow(b, i)).join("")}</div>
           <div id="eBumpsNew"></div>
           <button type="button" id="eAddBump" style="margin-top:2px;border:1px dashed var(--line,#d0d0d0);background:transparent;color:var(--accent,#2563eb);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px">＋ Agregar extra o regalo</button>
-          <div class="hint">Agrega un extra/regalo a mano, quita (✕) uno puesto por error o corrige su precio. El <b>saldo se recalcula solo</b>; si el extra es un producto del catálogo con talla/color, elige la variante y el <b>stock se ajusta</b>.</div>
+          <div class="hint">Agrega un extra/regalo a mano, quita (×) uno puesto por error o corrige su precio. El <b>saldo se recalcula solo</b>; si el extra es un producto del catálogo con talla/color, elige la variante y el <b>stock se ajusta</b>.</div>
         </div>`;
 
   return new Promise((resolve) => {
@@ -1721,8 +1721,8 @@ export async function openEditarPedido(o, deps) {
           <input id="eAmountD" type="number" step="0.1" value="${esc(o.amount ?? "")}"/>
           <label style="margin-top:10px">Estado de la venta</label>
           <select id="eEstadoD">
-            <option value="confirmada"${(o.estado || "confirmada") !== "anulada" ? " selected" : ""}>✅ Pagado / entregado (cuenta en tus números)</option>
-            <option value="anulada"${o.estado === "anulada" ? " selected" : ""}>🚫 Anular la venta (deja de contar)</option>
+            <option value="confirmada"${(o.estado || "confirmada") !== "anulada" ? " selected" : ""}>Pagado / entregado (cuenta en tus números)</option>
+            <option value="anulada"${o.estado === "anulada" ? " selected" : ""}>Anular la venta (deja de contar)</option>
           </select>
           <div class="hint">Corrige el monto y el Dashboard/KPIs se ajustan al instante. Si ya se envió a Meta con el monto viejo, después toca <b>“reintentar”</b> en el chip de Meta del chat.</div>
         </div>
@@ -1754,7 +1754,7 @@ export async function openEditarPedido(o, deps) {
           <label>Agencia de destino (Shalom)</label>
           <input id="eDestino" list="dlDestino" value="${esc(destVal)}" placeholder="Escribe y elige la agencia de destino"/>
           <datalist id="dlDestino">${dl(SH.destino)}</datalist>
-          <div class="hint">${sug && !s.destino ? `💡 <b>Sugerida por el bot</b> — la agencia oficial más parecida a lo que dijo el cliente. Confírmala o cámbiala.<br>` : ""}${s.sede ? `🗣 <b>El cliente escribió:</b> “${esc(s.sede)}”` : "La oficina Shalom donde recoge tu cliente. Va en el Excel y en el rótulo."}</div>
+          <div class="hint">${sug && !s.destino ? `${icon("bulb")} <b>Sugerida por el bot</b> — la agencia oficial más parecida a lo que dijo el cliente. Confírmala o cámbiala.<br>` : ""}${s.sede ? `<b>El cliente escribió:</b> “${esc(s.sede)}”` : "La oficina Shalom donde recoge tu cliente. Va en el Excel y en el rótulo."}</div>
           <label>Medida del paquete</label>
           <select id="eMerc">${optMerc(SH.mercaderia, s.mercaderia)}</select>
           <label>Medidas y peso <span style="color:var(--faint,var(--muted));font-weight:400">(vacío = default del negocio)</span></label>
@@ -1951,8 +1951,8 @@ export async function openEditarPedido(o, deps) {
         const al = (data && Array.isArray(data.stock_alerts)) ? data.stock_alerts : [];
         if (al.length) {
           const txt = al.map((x) => `${x.nombre}${x.key !== "_" ? " (" + String(x.key).replace(/=/g, " ").replace(/\|/g, " · ") + ")" : ""}: ${x.agotado ? "AGOTADO" : "quedan " + x.restante}`).join("; ");
-          toast("📦 Stock bajo — " + txt, true);
-        } else { toast("Pedido actualizado ✓"); }
+          toast("Stock bajo — " + txt, true);
+        } else { toast("Pedido actualizado"); }
         cerrar(true);
       }
       else { toast((error && error.message) || (data && data.error) || "No se pudo actualizar", true); btn.disabled = false; btn.textContent = "Guardar cambios"; }
@@ -1979,14 +1979,14 @@ export function elegirPedidosDespacho(orders, deps) {
         : "";
       const q = norm(`${c.nombre || s.cliente || ""} ${dest} ${s.ciudad || ""} ${s.dni || ""}`);
       return `<div class="sel-row on" data-id="${esc(o.id)}" data-q="${esc(q)}">
-        <span class="sel-check">✓</span>
-        <span class="sel-em">${p.emoji ? esc(p.emoji) : "📦"}</span>
+        <span class="sel-check">${icon("check")}</span>
+        <span class="sel-em">${p.emoji ? esc(p.emoji) : icon("box")}</span>
         <div class="sel-tx"><div class="sel-nm">${esc(c.nombre || s.cliente || "Sin nombre")}</div><div class="sel-dest">${esc(dest)}</div></div>
         <div class="sel-mon">${mon}</div>
       </div>`;
     };
     ov.innerHTML = `<div class="modal sel-modal">
-      <div class="sel-head"><div class="sel-ic">📦</div>
+      <div class="sel-head"><div class="sel-ic">${icon("box")}</div>
         <div><div class="sel-ttl">¿Cuáles vas a despachar?</div><div class="sel-sub">Marca los pedidos que llevas a la agencia ahora. Después registras sus guías.</div></div></div>
       <div class="sel-search-wrap"><input class="sel-search" data-search placeholder="Buscar cliente, ciudad o destino…"/></div>
       <div class="sel-allbar"><label><input type="checkbox" data-all checked/> Seleccionar todos</label><span class="sel-cnt" data-cnt></span></div>
@@ -2049,15 +2049,15 @@ export async function openDespachoLoteModal(orders, deps) {
         <td><input data-k="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Código"/></td>
         <td><input data-k="clave" value="${esc(s.clave_recojo || "")}" placeholder="Clave"/></td>
         <td><input data-k="flete" type="number" min="0" step="0.5" value="${s.flete ?? ""}" placeholder="0" style="width:64px"/></td>
-        <td><button type="button" class="dl-foto${s.guia_foto ? " has" : ""}" data-fid="${esc(o.id)}" title="Adjuntar foto del envío / guía">${s.guia_foto ? "✓" : "📷"}</button></td>
+        <td><button type="button" class="dl-foto${s.guia_foto ? " has" : ""}" data-fid="${esc(o.id)}" title="Adjuntar foto del envío / guía">${s.guia_foto ? icon("check") : icon("camera")}</button></td>
       </tr>`;
     };
     ov.innerHTML = `<div class="modal dl-modal">
-      <h3>📦 Registrar despacho en lote</h3>
+      <h3>Registrar despacho en lote</h3>
       <div class="m-sub">${orders.length} pedido${orders.length > 1 ? "s" : ""} por despachar. Pon el <b>N° de guía</b> y el <b>código de envío</b> de cada uno (Shalom pide los dos) y la clave. Al guardar pasan a Despachado y el bot avisa.</div>
       <div class="dl-tools">
-        <button type="button" data-ocr>📷 Leer guías de fotos</button>
-        <button type="button" data-pegar>📋 Pegar (texto)</button>
+        <button type="button" data-ocr>${icon("camera")} Leer guías de fotos</button>
+        <button type="button" data-pegar>${icon("clipboard")} Pegar (texto)</button>
         <div class="dl-lote-ocr" style="margin-left:auto"><input data-clavetodos placeholder="Clave para todos"/><button type="button" data-clavebtn>Poner a todos</button></div>
       </div>
       <div class="dl-paste" data-pastebox>
@@ -2081,7 +2081,7 @@ export async function openDespachoLoteModal(orders, deps) {
           const f = inp.files && inp.files[0]; if (!f) return;
           if (f.size > 16 * 1024 * 1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
           toast("Subiendo…"); const up = await subirFoto(f); if (!up) { toast("No se pudo subir la foto", true); return; }
-          fotos[btn.dataset.fid] = up; btn.classList.add("has"); btn.textContent = "✓"; toast("Foto lista ✓");
+          fotos[btn.dataset.fid] = up; btn.classList.add("has"); btn.innerHTML = icon("check"); toast("Foto lista");
         };
         inp.click();
       };
@@ -2152,10 +2152,10 @@ export async function openDespachoLoteModal(orders, deps) {
           yaLeido[id] = true;
           if (g.guia) tr.querySelector('[data-k="guia"]').value = g.guia;
           if (g.codigo) tr.querySelector('[data-k="codigo"]').value = g.codigo;
-          fotos[id] = up; const fb = tr.querySelector(".dl-foto"); if (fb) { fb.classList.add("has"); fb.textContent = "✓"; }
+          fotos[id] = up; const fb = tr.querySelector(".dl-foto"); if (fb) { fb.classList.add("has"); fb.innerHTML = icon("check"); }
           tr.classList.remove("bad"); asign++;
         }
-        btn.disabled = false; btn.textContent = "📷 Leer guías de fotos";
+        btn.disabled = false; btn.innerHTML = icon("camera") + " Leer guías de fotos";
         toast(`${asign} guía(s) leída(s) y asignada(s)${sin ? ` · ${sin} sin emparejar` : ""}${ambig ? ` · ${ambig} ambigua(s): ponlas a mano` : ""}`, (sin > 0 && asign === 0) || ambig > 0);
       };
       inp.click();
@@ -2198,7 +2198,7 @@ export function avisoMsg(r, aviso, base) {
   // "el aviso", no "la plantilla": este mismo error llega también cuando el aviso iba como
   // MENSAJE (p. ej. fuera de la ventana de 24h), y ahí se leía "la plantilla no salió: …usa
   // una plantilla", que se contradice solo.
-  if (r.aviso_error) return `${base} · ⚠️ el aviso no salió: ${r.aviso_error}`;
+  if (r.aviso_error) return `${base} · el aviso no salió: ${r.aviso_error}`;
   if (r.aviso_enviado) return `${base} · plantilla enviada`;
   if (aviso.modo === "ninguno") return `${base} · sin avisar al cliente`;
   return r.flow_started ? `${base} · el bot está avisando al cliente` : `${base} · no hay aviso armado para este estado`;
@@ -2259,11 +2259,11 @@ function ocrVerdictHtml(o, et, sym) {
 
 function copilotoBtns(et) {
   const B = (a, txt, cls) => `<button class="cx-cop2-btn ${cls || "main"}" data-a="${a}">${txt}</button>`;
-  if (et.id === "digital") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
-  if (et.id === "extra") return B("ok", "✓ Aprobar y entregar") + B("no", "Rechazar", "danger");
-  if (et.id === "adelanto") return B("ok", "✓ Aprobar y avisar") + B("no", "Rechazar", "danger");
-  if (et.id === "saldo") return B("ok", "✓ Aprobar y dar clave", "main blue") + B("no", "Rechazar", "danger");
-  if (et.id === "despachar") return B("desp", "📦 Ya lo envié", "main amber");
+  if (et.id === "digital") return B("ok", `${icon("check")} Aprobar y entregar`) + B("no", "Rechazar", "danger");
+  if (et.id === "extra") return B("ok", `${icon("check")} Aprobar y entregar`) + B("no", "Rechazar", "danger");
+  if (et.id === "adelanto") return B("ok", `${icon("check")} Aprobar y avisar`) + B("no", "Rechazar", "danger");
+  if (et.id === "saldo") return B("ok", `${icon("check")} Aprobar y dar clave`, "main blue") + B("no", "Rechazar", "danger");
+  if (et.id === "despachar") return B("desp", `${icon("box")} Ya lo envié`, "main amber");
   return B("lleg", "Avisar que llegó a agencia");
 }
 
@@ -2285,12 +2285,12 @@ export function copilotoCardHtml(o, et, fallbackImg) {
   const needClave = et.id === "saldo" && !s.clave_recojo;
   return `<div class="cx-copiloto" data-order="${esc(o.id)}">
     <div class="cx-cop2-hd">${ROBOT}<span class="cx-cop2-pill ${et.pill}">${esc(et.titulo)}</span></div>
-    ${img ? `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">⚠️ No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`
+    ${img ? `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">${icon("alert")} No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`
       : (et.id === "adelanto" || et.id === "saldo" || et.id === "digital") ? `<div class="cx-cop2-noimg">Sin comprobante todavía</div>` : ""}
     <div class="cx-cop2-amt"><span class="cx-cop2-lbl">${esc(montoLbl)}</span><span class="cx-cop2-val">${monto != null && monto !== "" ? sym + " " + esc(monto) : "—"}</span></div>
     ${s.clave_recojo ? `<div class="cx-cop2-amt"><span class="cx-cop2-lbl">Clave de recojo</span><span class="cx-cop2-val" style="font-size:15px;color:var(--green)">${esc(s.clave_recojo)}</span></div>` : ""}
     ${ocrVerdictHtml(o, et, sym)}
-    ${needClave ? `<div style="margin-top:8px"><label style="display:block;font-size:11.5px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">🔑 Clave de recojo — escríbela y aprueba</label><input class="cx-clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface,transparent);color:var(--text);box-sizing:border-box"/></div>` : ""}
+    ${needClave ? `<div style="margin-top:8px"><label style="display:block;font-size:11.5px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">${icon("key")} Clave de recojo — escríbela y aprueba</label><input class="cx-clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface,transparent);color:var(--text);box-sizing:border-box"/></div>` : ""}
     <div class="cx-cop2-acts">${copilotoBtns(et)}</div>
   </div>`;
 }
@@ -2312,12 +2312,12 @@ export function wireCopiloto(root, o, et, deps) {
   const aprobar = async (nuevo, titulo, detalle, extraShip) => {
     if (!await confirmDialog({ title: titulo, message: `${c.nombre || "Cliente"} — ${detalle}`, confirmText: "Confirmar" })) return;
     const r = await update({ order_id: o.id, estado: nuevo, ...(extraShip ? { shipping: extraShip } : {}) });
-    if (r) { toast(r.flow_started ? "Listo ✓ · el bot le está escribiendo" : "Listo ✓"); reload && reload(); }
+    if (r) { toast(r.flow_started ? "Listo — el bot le está escribiendo" : "Listo"); reload && reload(); }
   };
   const aprobarExtra = async () => {
     if (!await confirmDialog({ title: "Aprobar la venta extra", message: `${c.nombre || "Cliente"} — el bot le entrega el extra y continúa.`, confirmText: "Confirmar" })) return;
     const r = await update({ order_id: o.id, resume: true, shipping: { extra_pendiente: false, extra_aprobado_at: new Date().toISOString() } });
-    if (r) { toast(r.resumed ? "Extra entregado ✓" : "Aprobado ✓"); reload && reload(); }
+    if (r) { toast(r.resumed ? "Extra entregado" : "Aprobado"); reload && reload(); }
   };
   const rechazar = async (tipo) => {
     const parqueado = tipo === "digital" || tipo === "extra";
@@ -2354,7 +2354,7 @@ export function wireCopiloto(root, o, et, deps) {
       `${c.nombre || "Cliente"} — el pedido pasa a "en agencia" y se le pide el saldo para darle la clave.`);
     if (!aviso) return;
     const r = await update({ order_id: o.id, estado: "en_agencia", aviso });
-    if (r) { toast(avisoMsg(r, aviso, "Listo ✓")); reload && reload(); }
+    if (r) { toast(avisoMsg(r, aviso, "Listo")); reload && reload(); }
   };
   const b = (a) => el.querySelector(`[data-a="${a}"]`);
   if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }

@@ -266,11 +266,11 @@ function renderWA(){
     if(error){ toast(error.message,true); return; }
     sw.classList.toggle("on",on); sw.setAttribute("aria-checked",on?"true":"false");
     st.channel.ia_router=ir;
-    toast(on?"El bot ahora solo responde a clientes de anuncios ✓":"El bot vuelve a responder a todos ✓");
+    toast(on?"El bot ahora solo responde a clientes de anuncios":"El bot vuelve a responder a todos");
   };
 }
 async function copiar(txt){
-  try{ await navigator.clipboard.writeText(txt); toast("Copiado ✓"); }
+  try{ await navigator.clipboard.writeText(txt); toast("Copiado"); }
   catch{ toast("No se pudo copiar — selecciónalo a mano",true); }
 }
 // Desconectar el número (para poner otro tras un baneo). NO borra datos del
@@ -286,7 +286,7 @@ async function desconectarWA(btn){
   if(btn){ btn.disabled=true; btn.textContent="Desconectando…"; }
   try{
     await callFn("channel-config",{ action:"whatsapp_disconnect", channel_id:st.channelId });
-    toast("Número desconectado ✓ — ya puedes conectar otro");
+    toast("Número desconectado — ya puedes conectar otro");
     await load();  // refresca: el canal queda "Sin conectar" y desaparece la tarjeta del número
   }catch(err){
     toast(err.message||"No se pudo desconectar",true);
@@ -306,7 +306,7 @@ async function desconectarTG(btn){
   if(btn){ btn.disabled=true; btn.textContent="Desconectando…"; }
   try{
     await callFn("channel-config",{ action:"telegram_disconnect", channel_id:st.channelId });
-    toast("Telegram desconectado ✓");
+    toast("Telegram desconectado");
     await load();  // el canal Telegram queda "Sin conectar"
   }catch(err){
     toast(err.message||"No se pudo desconectar",true);
@@ -331,7 +331,7 @@ function numeroHeroHtml(n){
   const tieneNombre=!!n.nombre;
   const nombre=tieneNombre?esc(n.nombre):"Número de WhatsApp";
   const nameLine=tieneNombre
-    ? `<b>${nombre}</b> <span class="wanum-vf" title="Nombre verificado por Meta">✓</span> · WhatsApp`
+    ? `<b>${nombre}</b> <span class="wanum-vf" title="Nombre verificado por Meta">${icon("check")}</span> · WhatsApp`
     : `<b>${nombre}</b>`;
   const tel=n.telefono?esc(n.telefono):"—";
   return `<div class="wanum">
@@ -482,7 +482,7 @@ function renderTG(){
   if(hk) hk.onclick=async(e)=>{
     const b=e.target; b.disabled=true; const old=b.textContent; b.textContent="Conectando…";
     try{ await callFn("channel-config",{ action:"telegram_connect", channel_id:st.channelId });
-      toast("Botones de aprobar activos ✓"); await load(); }
+      toast("Botones de aprobar activos"); await load(); }
     catch(err){ toast(err.message||"No se pudo conectar",true); b.disabled=false; b.textContent=old; }
   };
   const pr=$("tgPair");
@@ -558,7 +558,7 @@ async function vincularTelegram(){
     let r=null; try{ r=await callFn("channel-config",{ action:"telegram_pair_status", channel_id:st.channelId }); }catch(_){}
     if(r && !r.pendiente){ // el webhook lo consumió → quedó vinculado
       clearInterval(st.pairTimer);
-      toast("Telegram vinculado ✓");
+      toast("Telegram vinculado");
       await load();
     }
   },2000);
@@ -567,7 +567,7 @@ async function vincularTelegram(){
 }
 async function save(btn, fields){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...fields }); toast("Guardado ✓"); await load(); }
+  try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...fields }); toast("Guardado"); await load(); }
   catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }

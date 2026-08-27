@@ -238,7 +238,7 @@ async function create(){
   const { error }=await supa.from("tags").insert({ channel_id:st.channelId, nombre, color:st.newColor });
   if(error){ toast(error.message.includes("duplicate")?"Ya existe una etiqueta con ese nombre":error.message,true); return; }
   $("nName").value=""; $("nHex").value=""; st.newColor=PALETTE[0]; renderNewPalette();
-  toast("Etiqueta creada ✓"); await load();
+  toast("Etiqueta creada"); await load();
 }
 async function update(t, patch){
   if(patch.nombre!==undefined && !patch.nombre){ toast("El nombre no puede estar vacío",true); return false; }
@@ -256,7 +256,7 @@ async function remove(t){
   if(!await confirmDialog({title:"Eliminar etiqueta",message:`¿Eliminar la etiqueta "${t.nombre}"?`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("tags").delete().eq("id",t.id);
   if(error){ toast(error.message,true); return; }
-  toast("Eliminada ✓"); await load();
+  toast("Eliminada"); await load();
 }
 boot();
 </script>

@@ -295,7 +295,7 @@ function resumenAprobar(o){
       • Cuenta <b>${sy} ${esc(val)}</b> en tus números${pagos?` (producto + ${pagos} extra${pagos>1?"s":""})`:""}<br>
       • Meta: ${ctwa?`<b>Purchase ${sy} ${esc(val)}</b> · venta de anuncio`:`<span style="color:var(--faint)">no aplica (venta orgánica)</span>`}
     </div>
-    ${dif?`<div style="margin-top:8px;font-size:12px;color:#b45309;background:color-mix(in srgb,#f59e0b 13%,transparent);border-radius:7px;padding:6px 9px;line-height:1.5">⚠️ El bot leyó <b>${sy} ${esc(leido)}</b>, pero el precio es <b>${sy} ${esc(o.amount)}</b>. El valor se <b>topa en el precio</b> — revisa el comprobante.</div>`:""}
+    ${dif?`<div style="margin-top:8px;font-size:12px;color:#b45309;background:color-mix(in srgb,#f59e0b 13%,transparent);border-radius:7px;padding:6px 9px;line-height:1.5">${icon("alert")} El bot leyó <b>${sy} ${esc(leido)}</b>, pero el precio es <b>${sy} ${esc(o.amount)}</b>. El valor se <b>topa en el precio</b> — revisa el comprobante.</div>`:""}
   </div>`;
 }
 
@@ -362,7 +362,7 @@ function card(o,et){
   const acts=botones(o,et);
 
   el.innerHTML=`
-    ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="thumb none" style="display:none">⚠️ No cargó el comprobante</div>`
+    ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="thumb none" style="display:none">${icon("alert")} No cargó el comprobante</div>`
         :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
@@ -380,7 +380,7 @@ function card(o,et){
       ${iaBox}
       ${(et.id==="digital")?resumenAprobar(o):""}
       ${dudas.map(d=>`<div class="flag">${icon("alert")} ${esc(d)}</div>`).join("")}
-      ${(et.id==="saldo"&&!s.clave_recojo)?`<div style="margin-top:10px"><label style="display:block;font-size:12px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">🔑 Clave de recojo — escríbela y aprueba</label><input class="clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;max-width:220px;background:var(--surface,transparent);color:var(--text)"/></div>`:""}
+      ${(et.id==="saldo"&&!s.clave_recojo)?`<div style="margin-top:10px"><label style="display:block;font-size:12px;font-weight:600;color:var(--amber,#b45309);margin-bottom:4px">${icon("key")} Clave de recojo — escríbela y aprueba</label><input class="clave-in" type="text" placeholder="Ej. R-4821" autocomplete="off" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;max-width:220px;background:var(--surface,transparent);color:var(--text)"/></div>`:""}
       ${datos.length?`<div class="copybox"><div>${datos.map(([k,v])=>`${k}: <b>${esc(v)}</b>`).join("<br>")}</div>
         <button class="btn" data-copy style="flex:none;height:32px">${icon("file")} Copiar</button></div>`:""}
       <div class="mrow">${acts.html}</div>
@@ -389,7 +389,7 @@ function card(o,et){
   const t=el.querySelector(".thumb[data-full]");
   if(t) t.onclick=()=>{ $("lightImg").src=t.dataset.full; $("lightbox").classList.add("show"); };
   const cp=el.querySelector("[data-copy]");
-  if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(copiable); toast("Datos copiados ✓"); }catch(_){ toast("No se pudo copiar",true); } };
+  if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(copiable); toast("Datos copiados"); }catch(_){ toast("No se pudo copiar",true); } };
   acts.wire(el,o);
   return el;
 }
@@ -452,7 +452,7 @@ async function aprobar(o,nuevo,titulo,detalle,extraShip){
   const c=o.contact||{};
   if(!await confirmDialog({ title:titulo, message:`${c.nombre||"Cliente"} — ${detalle}`, confirmText:"Confirmar" })) return;
   const r=await updateOrder({ order_id:o.id, estado:nuevo, ...(extraShip?{shipping:extraShip}:{}) });
-  if(r){ toast(r.flow_started?"Listo ✓ · el bot le está escribiendo":"Listo ✓"); await load(); }
+  if(r){ toast(r.flow_started?"Listo — el bot le está escribiendo":"Listo"); await load(); }
 }
 
 // Aprobar la venta extra: el pedido ya está confirmado, no cambia de estado.
@@ -524,7 +524,7 @@ async function ofrecerGuardarFraude(o,tipo){
     nuevos=[...nuevos, { url:img, tipo:"fraude" }];
     const { error } = await supa.from("channels").update({ ocr_config:{ ...ocr, ejemplos:nuevos } }).eq("id",st.channelId);
     if(error){ toast("No se pudo guardar el ejemplo",true); return; }
-    toast("Guardado como ejemplo de fraude ✓ — el validador aprenderá de esto");
+    toast("Guardado como ejemplo de fraude — el validador aprenderá de esto");
   }catch(_){}
 }
 

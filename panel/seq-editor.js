@@ -157,7 +157,7 @@ export function mountStepsEditor(el, opts){
   const jDash=`<div style="flex:none;width:20px;height:0;align-self:flex-start;margin-top:20px;border-top:1.5px dashed var(--border)"></div>`;
 
   function paintJourney(){
-    const anchors = jNode("📣","llegó por<br>un anuncio",{min:70}) + jDash + jNode("💤","no compró",{min:58}) + jDash;
+    const anchors = jNode(icon("megaphone"),"llegó por<br>un anuncio",{min:70}) + jDash + jNode(icon("clock"),"no compró",{min:58}) + jDash;
     const steps = seq.pasos.map((p,i)=>{
       const on=i===sel;
       const stl=on?"background:var(--brand,#2b7fff);color:#fff;font-weight:700":"background:var(--surface-2);color:var(--brand,#2b7fff);border:1.5px solid var(--brand,#2b7fff);font-weight:700";
@@ -333,8 +333,8 @@ export function mountStepsEditor(el, opts){
           ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
             <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
             <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
-              <option value="">🌐 Respaldo general</option>
-              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>🎯 ${esc(a.nombre||a.slug)}</option>`).join("")}
+              <option value="">Respaldo general</option>
+              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
             </select></div>`:``}
           <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
@@ -379,7 +379,7 @@ export function mountStepsEditor(el, opts){
       const pesoG=activeInGroup.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
       if(hasAng){
         const ang=angulos.find(a=>a.slug===g.slug);
-        const titulo = g.slug==="" ? "🌐 Respaldo general" : ("🎯 "+esc(ang?.nombre||g.slug));
+        const titulo = g.slug==="" ? "Respaldo general" : (esc(ang?.nombre||g.slug));
         const hintBase = g.slug==="" ? "Para clientes que no vinieron de un ángulo con versión propia." : "Para clientes que llegaron por este ángulo.";
         const hintMas = compite ? " Rota entre estas versiones — ajusta cuánto sale cada una." : " Sale siempre a estos clientes.";
         const gh=document.createElement("div");
@@ -443,7 +443,7 @@ export function mountStepsEditor(el, opts){
         const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:channelId, filename:file.name, content_type:file.type, data:dataURL } });
         if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
         v.bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
-        toast("Archivo agregado ✓"); composer(box,paso);
+        toast("Archivo agregado"); composer(box,paso);
       }catch(e){ toast("Error al subir",true); }
     };
     inp.click();
@@ -452,12 +452,12 @@ export function mountStepsEditor(el, opts){
   function ofWarn(paso){
     if(!paso.oferta) return "";
     // Precio vacío o ≤0 = producto GRATIS a todo el segmento. Se avisa en vivo y el guardado lo bloquea.
-    if(paso.oferta.version_id && !(Number(paso.oferta.precio)>0)) return "⚠️ Escribe el precio con descuento (mayor a 0). Si lo dejas vacío o en 0, se enviaría el producto GRATIS.";
+    if(paso.oferta.version_id && !(Number(paso.oferta.precio)>0)) return "Escribe el precio con descuento (mayor a 0). Si lo dejas vacío o en 0, se enviaría el producto GRATIS.";
     const myP=Number(paso.oferta.precio); if(!Number.isFinite(myP)) return "";
     const idx=seq.pasos.indexOf(paso);
     for(let j=0;j<idx;j++){ const pj=seq.pasos[j];
       if(pj.oferta && pj.oferta.version_id===paso.oferta.version_id && Number.isFinite(Number(pj.oferta.precio)) && Number(pj.oferta.precio)<myP){
-        return `⚠️ El toque ${j+1} ya ofrece esta opción a S/ ${Number(pj.oferta.precio)} (más barato). Este subiría el precio — la escalera debería ir de mayor a menor.`;
+        return `El toque ${j+1} ya ofrece esta opción a S/ ${Number(pj.oferta.precio)} (más barato). Este subiría el precio — la escalera debería ir de mayor a menor.`;
       }
     }
     return "";

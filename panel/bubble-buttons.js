@@ -56,7 +56,7 @@ export function botonesHtml(bub) {
     <div style="display:flex;align-items:center;gap:6px">
       <input class="in bb-t" data-i="${i}" maxlength="${MAX_TITULO}" value="${esc(b.title || "")}"
         placeholder="Ej. Quiero comprar" style="height:32px;font-size:12.5px;max-width:230px"/>
-      <button class="iconbtn bb-x" data-i="${i}" title="Quitar botón" type="button">✕</button>
+      <button class="iconbtn bb-x" data-i="${i}" title="Quitar botón" type="button"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>`).join("");
   return `
     <div class="bb-wrap" style="margin-top:9px;padding-top:9px;border-top:1px dashed var(--border)">
@@ -68,7 +68,7 @@ export function botonesHtml(bub) {
         ? `<button class="btn bb-add" type="button" style="height:29px;font-size:11.5px;margin-top:${bs.length ? "7px" : "0"}">+ Botón</button>`
         : `<div style="font-size:11px;color:var(--faint);margin-top:7px">Máximo ${MAX_BOTONES} — es el límite de WhatsApp.</div>`}
       ${bs.length && String(bub.text ?? "").length > MAX_CUERPO_BOTONES
-        ? `<div style="font-size:11.5px;color:var(--amber);font-weight:600;margin-top:8px;line-height:1.45">⚠ El texto tiene ${String(bub.text).length} caracteres y, con botones, WhatsApp solo deja ${MAX_CUERPO_BOTONES}: al cliente le va a llegar cortado. Acórtalo, o quita los botones (sin ellos el tope sube a 4096).</div>`
+        ? `<div style="font-size:11.5px;color:var(--amber);font-weight:600;margin-top:8px;line-height:1.45">El texto tiene ${String(bub.text).length} caracteres y, con botones, WhatsApp solo deja ${MAX_CUERPO_BOTONES}: al cliente le va a llegar cortado. Acórtalo, o quita los botones (sin ellos el tope sube a 4096).</div>`
         : ""}
     </div>`;
 }

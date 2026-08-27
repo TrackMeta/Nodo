@@ -157,7 +157,7 @@ async function renameAccount(accId){
   if(nuevo==null) return;
   const { error } = await supa.from("accounts").update({ nombre:nuevo.trim() }).eq("id",accId);
   if(error){ toast(error.message,true); return; }
-  toast("Cuenta renombrada ✓"); load();
+  toast("Cuenta renombrada"); load();
 }
 async function removeMember(accId, userId){
   // Guard "último admin": no dejar la cuenta sin ningún admin (quedaría ingobernable —
@@ -172,7 +172,7 @@ async function removeMember(accId, userId){
   if(!ok) return;
   const { error } = await supa.from("account_members").delete().eq("account_id",accId).eq("user_id",userId);
   if(error){ toast(error.message,true); return; }
-  toast("Miembro quitado ✓"); load();
+  toast("Miembro quitado"); load();
 }
 
 async function loadInvites(){
@@ -203,7 +203,7 @@ function codeBox(label, value, hint){
 }
 function wireCopy(scope, text){
   const b = scope.querySelector("[data-copy]");
-  if(b) b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(text); toast("Copiado ✓"); }catch{ toast("No se pudo copiar",true); } };
+  if(b) b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(text); toast("Copiado"); }catch{ toast("No se pudo copiar",true); } };
 }
 async function callFn(body, silent){
   const { data, error } = await supa.functions.invoke("invites", { body });

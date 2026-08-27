@@ -334,7 +334,7 @@ function abrirExport(courier){
     <div class="em-head">
       ${courier.logo?`<div class="em-logo has-img"><img src="${courier.logo}" alt="${esc(courier.nombre)}"></div>`:`<div class="em-logo" style="background:${courier.color}">${esc(courier.inicial)}</div>`}
       <div><div class="em-ttl">Exportar a ${esc(courier.nombre)}</div><div class="em-sub">Selecciona los pedidos ${zona==="lima"?"de Lima":"de provincia"} que quieres exportar</div></div>
-      <button class="em-x" title="Cerrar">✕</button>
+      <button class="em-x" title="Cerrar">${icon("x")}</button>
     </div>
     <div class="em-filters">
       <div class="em-f"><label>Período</label><select id="emPer">
@@ -358,7 +358,7 @@ function abrirExport(courier){
   // muestran pero no se pueden seleccionar, y se avisa.
   const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
   const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
-    return (esAer(o)?`<span class="aermark">✈️ AÉREO</span>`:"")+esc(d); };
+    return (esAer(o)?`<span class="aermark">${icon("plane")} AÉREO</span>`:"")+esc(d); };
   function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
     $q("#emHint").textContent = n?`${n} pedido${n>1?"s":""} seleccionado${n>1?"s":""}`:"Selecciona pedidos de la tabla";
     $q("#emDl").disabled=!n; }
@@ -366,7 +366,7 @@ function abrirExport(courier){
     const arr=filtrar();
     const body=$q("#emBody");
     const aereos=arr.filter(esAer), seleccionables=arr.filter(o=>!esAer(o));
-    const nota=aereos.length?`<div class="em-aer">✈️ ${aereos.length} pedido${aereos.length>1?"s":""} aéreo${aereos.length>1?"s":""}: se registra${aereos.length>1?"n":""} a mano en Shalom, no entra${aereos.length>1?"n":""} en el Excel masivo.</div>`:"";
+    const nota=aereos.length?`<div class="em-aer">${icon("plane")} ${aereos.length} pedido${aereos.length>1?"s":""} aéreo${aereos.length>1?"s":""}: se registra${aereos.length>1?"n":""} a mano en Shalom, no entra${aereos.length>1?"n":""} en el Excel masivo.</div>`:"";
     if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} con esos filtros</div>`; foot(arr); return; }
     body.innerHTML=`${nota}<table class="em-tbl"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
@@ -544,7 +544,7 @@ function render(){
     // hay pedidos terrestres ahí. (Antes buscaba "Por despachar", que NO es una
     // columna real de KB_PROV, así que el botón nunca aparecía.)
     const esLote = st.kbZona==="provincia" && label==="Confirmado" && items.some(o=>!(o.shipping&&o.shipping.aereo));
-    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?'<button class="kh-lote" title="Registrar guías de varios pedidos a la vez (despacho en lote)">⚡ Lote</button>':""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
+    col.innerHTML=`<div class="kh"><span class="khic">${icon(ic)}</span> <span class="khtx">${esc(label)}</span>${esLote?'<button class="kh-lote" title="Registrar guías de varios pedidos a la vez (despacho en lote)">${icon("disparadores")} Lote</button>':""} <span class="cnt">${items.length}</span></div><div class="kbody">${items.length?"":'<div class="kb-empty">Nada por ahora</div>'}</div>`;
     const lb=col.querySelector(".kh-lote"); if(lb) lb.onclick=(ev)=>{ ev.stopPropagation(); despachoLote(); };
     const body=col.querySelector(".kbody");
     items.forEach(o=>body.appendChild(kcard(o)));
@@ -587,7 +587,7 @@ function kcard(o){
   const initial=esc(String(nm).trim().charAt(0).toUpperCase()||"?");
   el.style.boxShadow=`inset 3px 0 0 0 ${TONE_COLOR[O.tono(o.estado)]||"var(--border)"}`;
   const shipBits=[];
-  if(s.aereo) shipBits.push(`✈️ <b>Aéreo</b>`);
+  if(s.aereo) shipBits.push(`${icon("plane")} <b>Aéreo</b>`);
   const agTxt=[s.agencia&&cap(s.agencia), s.destino||s.sede].filter(Boolean).join(" · ");
   if(agTxt) shipBits.push(esc(agTxt));
   if(s.guia) shipBits.push(`Guía <b>${esc(s.guia)}</b>`);
@@ -597,7 +597,7 @@ function kcard(o){
   // Badge de extra/regalo: en la tarjeta de provincia (con adelanto/saldo) antes NO se veía
   // que había un order_bump agregado → el operador no sabía que debía empacar el extra.
   const _bumps=(o.order_bumps||[]); const _nX=_bumps.filter(b=>!b.regalo).length, _nR=_bumps.filter(b=>b.regalo).length;
-  const _extras = (_nX||_nR) ? ` · ${_nX?`+${_nX} extra`:""}${_nX&&_nR?" ":""}${_nR?`🎁${_nR}`:""}` : "";
+  const _extras = (_nX||_nR) ? ` · ${_nX?`+${_nX} extra`:""}${_nX&&_nR?" ":""}${_nR?`${icon("gift")}${_nR}`:""}` : "";
   const moneyLine = (adel||saldo
     ? `${adel?`Adelanto <b>${money(adel,o.currency)}</b>`:""}${adel&&saldo?" · ":""}${saldo?`Saldo <b>${money(saldo,o.currency)}</b>`:""}`
     : `Total <b>${money(total(o),o.currency)}</b>`) + _extras;
@@ -638,7 +638,7 @@ function kcard(o){
     <div class="kc-money">${moneyLine}</div>
     ${diasEsp>=0?`<div style="font-size:11.5px;margin-top:3px;font-weight:${diasEsp>=2?"700":"500"};color:${diasEsp>=2?"var(--red)":"var(--faint)"}">⏳ ${diasEsp<1?"esperando el adelanto (hoy)":`sin adelanto hace ${diasEsp} día${diasEsp>1?"s":""}`}</div>`:""}
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
-    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>⚠️ Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
+    ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>${icon("alert")} Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
       <button class="rot edit" title="Editar datos del pedido">${icon("edit")}</button>
@@ -725,7 +725,7 @@ function rotuloInner(o){
     let nom=String(b.nombre||"").replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i,"").trim();
     if(va) nom=nom.replace(/\s*·\s*[Uu]nica\s*$/,"").trim();   // "· Unica" + "Talla M" se contradicen
     const esRegalo=b.regalo===true||Number(b.precio||0)===0;
-    return `${esRegalo?"🎁 ":"+ "}${nom||"Extra"}${va?` (${va})`:""}`;
+    return `${esRegalo?"regalo · ":"+ "}${nom||"Extra"}${va?` (${va})`:""}`;
   }).join("   ·   ");
   let filas="";
   if(zona==="provincia"){
@@ -734,7 +734,7 @@ function rotuloInner(o){
       row("DNI", s.dni||"", true)+
       row("Teléfono", tel)+
       row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.destino||s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
-      row("Envío", s.aereo?"✈️ AÉREO — despachar por avión":"", true)+
+      row("Envío", s.aereo?"AÉREO — despachar por avión":"", true)+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       row("Incluye", bumpsTxt, true)+
@@ -760,7 +760,7 @@ function rotuloInner(o){
   return `<div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(remitente)}</b></div>
-        <div class="zn">${zona==="provincia"?(s.aereo?"AGENCIA · ✈️ AÉREO":"AGENCIA"):"CONTRAENTREGA"}</div>
+        <div class="zn">${zona==="provincia"?(s.aereo?"AGENCIA · AÉREO":"AGENCIA"):"CONTRAENTREGA"}</div>
       </div>
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>
@@ -773,7 +773,7 @@ function printRotulos(orders){
   const cuerpo=orders.map(rotuloInner).join("");
   const nro1=(orders[0].order_id||orders[0].id||"").toString().slice(0,8).toUpperCase();
   const titulo=orders.length===1?`Rótulo ${esc(nro1)}`:`${orders.length} rótulos`;
-  const btnTxt=orders.length>1?`🖨️ Imprimir los ${orders.length} rótulos`:"🖨️ Imprimir";
+  const btnTxt=orders.length>1?`${icon("printer")} Imprimir los ${orders.length} rótulos`:`${icon("printer")} Imprimir`;
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"/>
     <title>${titulo}</title>
     <style>${ROTULO_CSS}</style></head><body>
@@ -812,13 +812,13 @@ function abrirImprimirRotulos(){
   }
   const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
   const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
-    return (esAer(o)?`<span class="aermark">✈️ AÉREO</span>`:"")+esc(d); };
+    return (esAer(o)?`<span class="aermark">${icon("plane")} AÉREO</span>`:"")+esc(d); };
   const ov=document.createElement("div"); ov.className="overlay";
   ov.innerHTML=`<div class="modal"><div class="expmodal">
     <div class="em-head">
       <div class="em-logo" style="background:var(--brand)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div>
       <div><div class="em-ttl">Imprimir rótulos</div><div class="em-sub">Marca los pedidos ${zona==="lima"?"de Lima":"de provincia"} por despachar; se imprime una etiqueta por hoja</div></div>
-      <button class="em-x" title="Cerrar">✕</button>
+      <button class="em-x" title="Cerrar">${icon("x")}</button>
     </div>
     <div class="em-filters">
       <div class="em-f"><label>Período</label><select id="emPer">
@@ -831,7 +831,7 @@ function abrirImprimirRotulos(){
     <div class="em-foot">
       <div class="em-hint" id="emHint">Selecciona pedidos de la tabla</div>
       <button class="cancel" type="button">Cancelar</button>
-      <button class="dl" id="emPrint" type="button" disabled>🖨️ Imprimir rótulos</button>
+      <button class="dl" id="emPrint" type="button" disabled>Imprimir rótulos</button>
     </div>
   </div></div>`;
   ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
@@ -839,7 +839,7 @@ function abrirImprimirRotulos(){
   const $q=(s)=>ov.querySelector(s);
   function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
     $q("#emHint").textContent = n?`${n} rótulo${n>1?"s":""} para imprimir`:"Selecciona pedidos de la tabla";
-    $q("#emPrint").disabled=!n; $q("#emPrint").textContent=`🖨️ Imprimir ${n||""} rótulo${n===1?"":"s"}`.replace("  "," "); }
+    $q("#emPrint").disabled=!n; $q("#emPrint").textContent=`Imprimir ${n||""} rótulo${n===1?"":"s"}`.replace("  "," "); }
   function render(){
     const arr=filtrar();
     const body=$q("#emBody");
@@ -966,7 +966,7 @@ async function anularVenta(o){
   const estado=(o.product&&o.product.tipo==="digital") ? "anulada" : "cancelado";
   const r=await updateOrder({ order_id:o.id, estado,
     shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } });
-  if(r){ toast("Venta anulada ✓"); await load(); }
+  if(r){ toast("Venta anulada"); await load(); }
 }
 
 // ── Modales ────────────────────────────────────────────────────────
@@ -987,7 +987,7 @@ function modal(html,onSave){
 function openConfirmSede(o){
   const s=o.shipping||{};
   modal(`
-    <h3>⚠️ Confirmar sede Shalom</h3>
+    <h3>Confirmar sede Shalom</h3>
     <div class="m-sub">${esc((o.contact||{}).nombre||"")}${s.ciudad?" · "+esc(cap(s.ciudad)):""}. El cliente dijo: <b>"${esc(s.sede||"—")}"</b>${s.sede_por_confirmar?` (${esc(s.sede_por_confirmar)})`:""}. Ponla como la oficina Shalom exacta donde va a recoger.</div>
     <label>Sede / oficina Shalom</label>
     <input id="cSede" value="${esc(s.sede||"")}" placeholder="Ej. Shalom Huancayo · Av. Real 500"/>`,
@@ -1018,7 +1018,7 @@ async function avisarLlegada(o){
     `${esc((o.contact||{}).nombre||"cliente")} — el pedido pasa a "en agencia" y se le pide el saldo para darle la clave.`);
   if(!aviso) return;
   const r=await updateOrder({ order_id:o.id, estado:"en_agencia", aviso });
-  if(r){ toast(avisoMsg(r,aviso,"Listo ✓")); await load(); }
+  if(r){ toast(avisoMsg(r,aviso,"Listo")); await load(); }
 }
 
 // ── Costo del envío ────────────────────────────────────────────────

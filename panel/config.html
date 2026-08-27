@@ -193,7 +193,7 @@ async function boot(){
   if(gsRet){
     st.tab="gsheets"; st.gsMethod="oauth";
     document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="gsheets"));
-    if(gsRet==="ok") toast("Google conectado ✓ — ahora elige tu hoja");
+    if(gsRet==="ok") toast("Google conectado — ahora elige tu hoja");
     else if(gsRet==="sin_refresh") toast("Google no devolvió permiso permanente. Reintenta y acepta todos los permisos.",true);
     else if(gsRet==="expirado") toast("El enlace expiró, vuelve a conectar.",true);
     else toast("No se pudo conectar con Google. Reintenta.",true);
@@ -288,7 +288,7 @@ function renderGeneral(b){
     if(error && /moneda|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ timezone:patch.timezone }).eq("id",st.channelId)); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; toast("Guardado ✓");
+    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; toast("Guardado");
   };
   renderUso();
 }
@@ -418,7 +418,7 @@ function renderGsOauth(box, g){
       const r=await callFn("gsheets-test",{ preparar:true, channel_id:st.channelId, spreadsheet_id:id });
       if(!r||!r.ok){ out.innerHTML=`<span style="color:var(--red)">${esc((r&&r.detalle)||"No se pudo preparar la hoja")}</span>`; return; }
       const nuevas=(r.creadas||[]);
-      out.innerHTML=`<span style="color:var(--green)">✓ Tu hoja está lista.</span>
+      out.innerHTML=`<span style="color:var(--green)">Tu hoja está lista.</span>
         ${nuevas.length?`Se crearon las pestañas <b>${nuevas.map(esc).join("</b>, <b>")}</b>.`
                        :`Las pestañas <b>Digital</b>, <b>Lima</b> y <b>Provincia</b> ya estaban.`}
         Los encabezados quedaron puestos y la primera fila fija.`;
@@ -439,7 +439,7 @@ function renderGsOauth(box, g){
     // en vez de sobrescribir con {connected:false} (que los borraba y forzaba re-pegar la hoja).
     try{ const { data }=await supa.from("channels").select("gsheets").eq("id",st.channelId).maybeSingle(); st.channel.gsheets=(data&&data.gsheets)||{connected:false}; }
     catch(_){ st.channel.gsheets={ ...(st.channel.gsheets||{}), connected:false, mode:null }; }
-    toast("Desconectado ✓"); render();
+    toast("Desconectado"); render();
   };
 }
 
@@ -482,7 +482,7 @@ function renderGsScript(box, g){
       <div class="desc" id="gsTestOut" style="margin-top:12px"></div>
     </div>`;
   $("gs_code").value=GS_SCRIPT;
-  $("copyScript").onclick=()=>{ navigator.clipboard?.writeText(GS_SCRIPT); toast("Código copiado ✓"); };
+  $("copyScript").onclick=()=>{ navigator.clipboard?.writeText(GS_SCRIPT); toast("Código copiado"); };
   $("saveGs").onclick=async(e)=>{
     const url=$("gs_url").value.trim();
     if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)){ toast("La URL debe terminar en /exec (app web de Apps Script)",true); return; }
@@ -500,7 +500,7 @@ async function testGsheets(e){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Probando…"; out.innerHTML="";
   try{
     const r=await callFn("gsheets-test",{ webhook_url:url, tab:$("gs_tab").value.trim()||null });
-    if(r&&r.ok){ out.innerHTML=`<span style="color:var(--green)">✓ Funcionó.</span> Se escribió una fila de prueba en tu hoja. Ya puedes borrarla.`; toast("Google Sheets conectado ✓"); }
+    if(r&&r.ok){ out.innerHTML=`<span style="color:var(--green)"> Funcionó.</span> Se escribió una fila de prueba en tu hoja. Ya puedes borrarla.`; toast("Google Sheets conectado"); }
     else { out.innerHTML=`<span style="color:var(--red)">La app web respondió pero con error:</span> ${esc((r&&r.detalle)||JSON.stringify(r))}`; }
   }catch(err){
     const msg=(err&&err.message)||"error";
@@ -516,7 +516,7 @@ async function saveGsheets(btn, gs){
   const { error }=await supa.from("channels").update({ gsheets:gs }).eq("id",st.channelId);
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(/gsheets|column/.test(error.message)?"Falta aplicar la migración 0014 (gsheets)":error.message,true); return; }
-  st.channel.gsheets=gs; toast("Guardado ✓"); render();
+  st.channel.gsheets=gs; toast("Guardado"); render();
 }
 
 // ── Marca del Bot ───────────────────────────────────────────────────
@@ -563,7 +563,7 @@ async function saveBrand(btn){
   const { error }=await supa.from("channels").update({ nombre, logo_url }).eq("id",st.channelId);
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message,true); return; }
-  toast("Marca guardada ✓");
+  toast("Marca guardada");
   const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-128.png";
   const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
   const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
@@ -598,7 +598,7 @@ function renderPixel(box){
       <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Conexión de anuncios (Rendimiento)</span></div>
       <div class="desc">Conecta tus cuentas publicitarias para ver el <b>gasto</b> de cada anuncio junto a tus ventas reales en la sección <b>Rendimiento</b> (CPA de confirmación, CPA real, ganancia neta y ROAS). Puedes seguir <b>varias cuentas</b>; las ventas, el margen y la atribución por anuncio ya los tiene Nodo.</div>
 
-      ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">⚠️</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo (ads_read) y pégalo abajo para reconectar.</div></div>`:""}
+      ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">${icon("alert")}</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo (ads_read) y pégalo abajo para reconectar.</div></div>`:""}
 
       <label>Cuentas publicitarias</label>
       <div id="adAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
@@ -641,7 +641,7 @@ async function loadAdsFreq(){
 }
 async function setAdsFreq(freq){
   const box=$("adsFreqWrap"); if(box) box.style.opacity=".5";
-  try{ const r=await callFn("ads-schedule",{ action:"set", freq }); renderAdsFreq(r?.freq); toast(freq==="off"?"Sincronización apagada":"Frecuencia actualizada ✓"); }
+  try{ const r=await callFn("ads-schedule",{ action:"set", freq }); renderAdsFreq(r?.freq); toast(freq==="off"?"Sincronización apagada":"Frecuencia actualizada"); }
   catch(e){ toast(e.message||"error",true); }
   finally{ if(box) box.style.opacity="1"; }
 }
@@ -670,7 +670,7 @@ async function addAdAccount(){
   const nombre=$("m_ad_acc_name").value.trim()||null;
   const { error }=await supa.from("ad_accounts").upsert({ channel_id:st.channelId, account_id:v, nombre },{ onConflict:"channel_id,account_id" });
   if(error){ toast(error.message,true); return; }
-  $("m_ad_acc_new").value=""; $("m_ad_acc_name").value=""; toast("Cuenta agregada ✓"); loadAdAccounts();
+  $("m_ad_acc_new").value=""; $("m_ad_acc_name").value=""; toast("Cuenta agregada"); loadAdAccounts();
 }
 
 async function testPixel(btn){
@@ -679,7 +679,7 @@ async function testPixel(btn){
   try{
     const r=await callFn("capi-test",{ channel_id:st.channelId, test_event_code:$("m_test_code").value||undefined });
     if(r&&r.ok){
-      out.innerHTML=`<span style="color:var(--green)">✓ Meta recibió el evento${r.received?` (${r.received})`:""}.</span> Míralo en <b>Events Manager → Probar eventos</b>. Si no pusiste código, aparece en el reporte general en unos minutos.`;
+      out.innerHTML=`<span style="color:var(--green)">Meta recibió el evento${r.received?` (${r.received})`:""}.</span> Míralo en <b>Events Manager → Probar eventos</b>. Si no pusiste código, aparece en el reporte general en unos minutos.`;
     } else {
       out.innerHTML=`<span style="color:var(--red)">No se pudo: ${esc((r&&r.error)||"error")}</span>`;
     }
@@ -689,7 +689,7 @@ async function testPixel(btn){
 
 async function saveChannel(btn, fields){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...fields }); toast("Guardado ✓"); await loadCfg(); }
+  try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...fields }); toast("Guardado"); await loadCfg(); }
   catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }

@@ -188,7 +188,7 @@ async function syncTemplates(){
     else if(r?.falta){ toast(r.falta.token ? "Conecta WhatsApp primero — falta el token de Meta (Canales → WhatsApp)" : "Falta el WABA ID del canal (Canales → WhatsApp)", true); }
     else if(r?.sincronizado){
       const partes=[]; if(r.creadas) partes.push(`${r.creadas} nueva(s)`); if(r.actualizadas) partes.push(`${r.actualizadas} actualizada(s)`);
-      toast(`Sincronizado con Meta ✓ · ${r.total} plantilla(s)${partes.length?" ("+partes.join(", ")+")":""}`);
+      toast(`Sincronizado con Meta — ${r.total} plantilla(s)${partes.length?" ("+partes.join(", ")+")":""}`);
       await loadList();
     } else { toast("No se pudo sincronizar", true); }
   }catch(e){ toast(e.message||"Error al sincronizar", true); }
@@ -216,7 +216,7 @@ function renderReco(){
   const box=$("recoBox"); if(!box) return;
   if(!Fbar || Fbar.current!=="__reco"){ box.innerHTML=""; return; }
   const pend=recoPend();
-  if(!pend.length){ box.innerHTML=`<div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Ya agregaste todas las recomendadas ✓ — las encuentras en tus carpetas “Recomendadas · …”.</p></div>`; return; }
+  if(!pend.length){ box.innerHTML=`<div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Ya agregaste todas las recomendadas — las encuentras en tus carpetas “Recomendadas · …”.</p></div>`; return; }
   box.innerHTML=`
     <div class="reco-hd"><h3>Plantillas recomendadas</h3><p>Listas para tu negocio. Toca <b>Revisar</b> para ver el mensaje completo antes de enviarlo a aprobar a Meta. Ideales para arrancar rápido.</p></div>
     <div class="nodo-cards">${pend.map((c,i)=>`
@@ -243,7 +243,7 @@ function abrirRecoReview(c){
     <div class="rv-hd">
       <div class="rv-t"><h3>${esc(c.titulo)}</h3><div class="rv-sub">${CATLABEL[c.categoria]||esc(c.categoria)} · ${esc(c.language)} · <b>${esc(c.name)}</b></div></div>
       <span class="chip reco-badge">Recomendada</span>
-      <button class="rv-x" title="Cerrar">✕</button>
+      <button class="rv-x" title="Cerrar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="rv-body">
       <div class="rv-lbl">Así le llega al cliente</div>
@@ -280,7 +280,7 @@ async function agregarReco(c, { enviar }){
     template:{ name:c.name, language:c.language, category:c.categoria, body:c.body, examples:c.ejemplos } }); }
   catch(e){ r={ error:e.message }; }
   await loadList();
-  if(r?.enviado) toast(`"${c.titulo}" enviada a Meta ✓ — en revisión (24-48h)`);
+  if(r?.enviado) toast(`"${c.titulo}" enviada a Meta — en revisión (24-48h)`);
   else if(r?.falta) toast(`"${c.titulo}" agregada. Conecta WhatsApp para enviarla a aprobar.`, true);
   else toast(r?.error ? `Agregada, pero Meta la rechazó: ${r.error}` : `"${c.titulo}" agregada`, r?.error?true:false);
   return true;
@@ -307,7 +307,7 @@ function renderCards(){
       <div class="wa-chat tprev"><div class="wa-out">${waHighlight(t.body_preview||"(sin cuerpo)")}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
       <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}${t.soporta_envio===false?'<span style="color:var(--amber)" title="Usa variables en el encabezado o botón; Nodo solo llena el cuerpo, así que no se puede enviar desde acá.">• no enviable</span>':''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:t.folder||null, onPick:async(v)=>{ const { error }=await supa.from("wa_templates").update({ folder:v }).eq("id",t.id); if(error){ toast(error.message,true); return; } t.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards(); renderReco(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:t.folder||null, onPick:async(v)=>{ const { error }=await supa.from("wa_templates").update({ folder:v }).eq("id",t.id); if(error){ toast(error.message,true); return; } t.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); renderReco(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
   });
 }
@@ -350,7 +350,7 @@ function renderDetail(){
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(t.name)}</h1><span class="chip ${estado}">${estado.replace(/^./,c=>c.toUpperCase())}</span>${t.soporta_envio===false?'<span class="chip" style="background:var(--amber-soft,#3a2e12);color:var(--amber)">No enviable desde Nodo</span>':''}
     </div>
-    ${t.soporta_envio===false?'<div class="dcard" style="border-color:var(--amber);color:var(--amber);font-size:13px">⚠ Esta plantilla usa variables en el <b>encabezado</b> o en un <b>botón</b> (o un encabezado con imagen/documento). Nodo hoy solo llena variables del <b>cuerpo</b>, así que no se puede enviar desde Campañas/Secuencias/Pagos: Meta rechazaría el envío. Usa una plantilla con variables solo en el cuerpo.</div>':''}
+    ${t.soporta_envio===false?'<div class="dcard" style="border-color:var(--amber);color:var(--amber);font-size:13px">Esta plantilla usa variables en el <b>encabezado</b> o en un <b>botón</b> (o un encabezado con imagen/documento). Nodo hoy solo llena variables del <b>cuerpo</b>, así que no se puede enviar desde Campañas/Secuencias/Pagos: Meta rechazaría el envío. Usa una plantilla con variables solo en el cuerpo.</div>':''}
     <div class="dcard">
       <!-- 1 · Identidad -->
       <div class="dsec">
@@ -430,7 +430,7 @@ async function enviarMeta(){
     template:{ name, language, category, body, examples } }); }
   catch(e){ r={ error:e.message }; }
   btn.disabled=false; btn.textContent=old;
-  if(r?.enviado){ toast("Enviada a Meta ✓ — en revisión (24-48h)"); await loadList(); openTpl(st.tpl.id); }
+  if(r?.enviado){ toast("Enviada a Meta — en revisión (24-48h)"); await loadList(); openTpl(st.tpl.id); }
   else if(r?.falta) toast("Conecta WhatsApp primero (Canales → WhatsApp) para enviarla a aprobar.", true);
   else toast(r?.error||"No se pudo enviar a Meta", true);
 }
@@ -497,11 +497,11 @@ async function saveTpl(){
   let { error }=await supa.from("wa_templates").update({ ...patch, estado_meta:estado, folder }).eq("id",st.tpl.id);
   if(error && /estado_meta|folder|column/.test(error.message)){ ({ error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id)); if(!error) toast("Guardado (aplica 0015/0018 para estado y carpetas)"); }
   if(error){ toast(error.message,true); return; }
-  toast("Guardado ✓"); await openTpl(st.tpl.id);
+  toast("Guardado"); await openTpl(st.tpl.id);
 }
 async function deleteTpl(){
   if(!await confirmDialog({title:"Eliminar plantilla",message:"¿Eliminar esta plantilla?",confirmText:"Eliminar",danger:true})) return;
-  { const { error:eDel }=await supa.from("wa_templates").delete().eq("id",st.tpl.id); if(eDel){ toast(eDel.message,true); return; } } st.tpl=null; await loadList(); showGrid(); toast("Eliminada ✓");
+  { const { error:eDel }=await supa.from("wa_templates").delete().eq("id",st.tpl.id); if(eDel){ toast(eDel.message,true); return; } } st.tpl=null; await loadList(); showGrid(); toast("Eliminada");
 }
 boot();
 </script>

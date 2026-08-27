@@ -474,7 +474,7 @@
     <!-- El Web Chat de prueba se movió a la sección "Probar Flujos" -->
     <div class="top hidden" style="gap:8px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px">
       <select class="sel" id="flowTestSel" style="flex:1;max-width:none"></select>
-      <button class="testbtn" id="testBtn">🗑️ Borrar chat</button>
+      <button class="testbtn" id="testBtn">Borrar chat</button>
     </div>
     <div class="fchips" id="filterChips"></div>
     <div id="convList" style="overflow-y:auto;flex:1"></div>
@@ -780,13 +780,13 @@ function renderFilterChips(){
   const box=$("filterChips"); if(!box) return;
   const f=state.filters, chips=[];
   const add=(label,color,onDel)=>chips.push({label,color,onDel});
-  if(f.range)        add("📅 "+rangeLabel(f.range),"#2b7fff",()=>f.range=null);
+  if(f.range)        add(rangeLabel(f.range),"#2b7fff",()=>f.range=null);
   if(f.sinResponder) add("Sin responder",null,()=>f.sinResponder=false);
   if(f.seguimiento)  add("Seguimiento",null,()=>f.seguimiento=false);
   if(f.anuncio)      add("Llegó por anuncio",null,()=>f.anuncio=false);
-  if(f.organico)     add("🌱 Orgánico","#1D9E75",()=>f.organico=false);
-  if(f.sinprod)      add("🤖 Sin producto aún","#f59e0b",()=>f.sinprod=false);
-  if(f.conimg)       add("📷 Envió imagen","#0ea5e9",()=>f.conimg=false);
+  if(f.organico)     add("Orgánico","#1D9E75",()=>f.organico=false);
+  if(f.sinprod)      add("Sin producto aún","#f59e0b",()=>f.sinprod=false);
+  if(f.conimg)       add("Envió imagen","#0ea5e9",()=>f.conimg=false);
   if(f.recomprando)  add("Recomprando",null,()=>f.recomprando=false);
   if(f.metapend)     add("Falta enviar a Meta","#ef4444",()=>f.metapend=false);
   if(f.archivado)    add("Archivados",null,()=>f.archivado=false);
@@ -815,14 +815,14 @@ function renderFilters(){
     <button class="ftog ${f.sinResponder?"on":""}" id="fSin" type="button"><span class="ftg-nm">Sin responder</span><span class="fcount" id="cSin"></span></button>
     <button class="ftog ${f.seguimiento?"on":""}" id="fSeg" type="button"><span class="ftg-nm">${icon("clock")} Seguimiento</span><span class="fcount" id="cSeg"></span></button>
     <button class="ftog ${f.anuncio?"on":""}" id="fAds" type="button"><span class="ftg-nm">${icon("megaphone")} Llegó por anuncio</span><span class="fcount" id="cAds"></span></button>
-    <button class="ftog ${f.organico?"on":""}" id="fOrg" type="button"><span class="ftg-nm">🌱 Orgánico</span><span class="fcount" id="cOrg"></span></button>
-    <button class="ftog ${f.sinprod?"on":""}" id="fSinP" type="button"><span class="ftg-nm">🤖 Sin producto aún</span><span class="fcount" id="cSinP"></span></button>
-    <button class="ftog ${f.conimg?"on":""}" id="fImg" type="button"><span class="ftg-nm">📷 Envió imagen</span><span class="fcount" id="cImg"></span></button>
+    <button class="ftog ${f.organico?"on":""}" id="fOrg" type="button"><span class="ftg-nm">Orgánico</span><span class="fcount" id="cOrg"></span></button>
+    <button class="ftog ${f.sinprod?"on":""}" id="fSinP" type="button"><span class="ftg-nm">Sin producto aún</span><span class="fcount" id="cSinP"></span></button>
+    <button class="ftog ${f.conimg?"on":""}" id="fImg" type="button"><span class="ftg-nm">Envió imagen</span><span class="fcount" id="cImg"></span></button>
     <button class="ftog ${f.recomprando?"on":""}" id="fRec" type="button"><span class="ftg-nm">${icon("refresh")} Recomprando</span><span class="fcount" id="cRec"></span></button>
     <button class="ftog ${f.archivado?"on":""}" id="fArch" type="button"><span class="ftg-nm">${icon("archive")} Archivados</span><span class="fcount" id="cArch"></span></button>
     <h4>Atribución a Meta</h4>
     <div id="metaHealthHost">${saludMetaHtml()}</div>
-    <button class="ftog ${f.metapend?"on":""}" id="fMeta" type="button" title="Ventas de anuncio ya cerradas que aún no llegaron a Meta (falló el envío o falta configurar el Pixel/token)"><span class="ftg-nm">⚠️ Falta enviar a Meta</span><span class="fcount" id="cMeta"></span></button>
+    <button class="ftog ${f.metapend?"on":""}" id="fMeta" type="button" title="Ventas de anuncio ya cerradas que aún no llegaron a Meta (falló el envío o falta configurar el Pixel/token)"><span class="ftg-nm">Falta enviar a Meta</span><span class="fcount" id="cMeta"></span></button>
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
     <h4>Entrega · Provincia</h4>
@@ -870,7 +870,7 @@ async function saveCurrentFilter(){
   if(!name) return;
   state.savedFilters=state.savedFilters||[];
   state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, organico:f.organico, sinprod:f.sinprod, conimg:f.conimg, archivado:f.archivado, recomprando:f.recomprando, metapend:f.metapend, producto:f.producto, tags:[...f.tags], stages:[...f.stages], entrega:[...f.entrega] } });
-  persistSavedFilters(); renderFilters(); toast("Filtro guardado ✓");
+  persistSavedFilters(); renderFilters(); toast("Filtro guardado");
 }
 function applySavedFilter(i){
   const s=(state.savedFilters||[])[i]; if(!s) return; const g=s.f||{};
@@ -949,7 +949,7 @@ function renderQrList(q){
     folders[f].forEach(r=>{
       const col=r.color&&/^#/.test(r.color)?r.color:null;
       const nM=(Array.isArray(r.media)?r.media:[]).filter(m=>m&&m.media_url).length;
-      body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">📎 ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
+      body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">${icon("file")} ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
     });
   });
   box.innerHTML=body;
@@ -979,7 +979,7 @@ function qrRowsHtml(bubs){
       if(b.media_kind==="image") prev=`<img src="${esc(b.media_url)}" style="max-width:100%;max-height:170px;border-radius:8px;display:block;margin-bottom:6px"/>`;
       else if(b.media_kind==="video") prev=`<video src="${esc(b.media_url)}" style="max-width:100%;max-height:170px;border-radius:8px;display:block;margin-bottom:6px" controls></video>`;
       else if(b.media_kind==="audio") prev=`<audio src="${esc(b.media_url)}" style="width:100%;margin-bottom:6px" controls></audio>`;
-      else prev=`<div style="font-size:13px;margin-bottom:6px">📎 ${esc(b.filename||"archivo")}</div>`;
+      else prev=`<div style="font-size:13px;margin-bottom:6px">${icon("file")} ${esc(b.filename||"archivo")}</div>`;
       return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px">${prev}${b.media_kind!=="audio"?`<input class="qrs-cap" data-i="${i}" placeholder="Texto sobre la imagen (opcional)" value="${esc(b.caption||"")}" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none"/>`:""}</div>`;
     }
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px"><textarea class="qrs-txt" data-i="${i}" style="width:100%;min-height:64px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;resize:vertical;font-family:inherit">${esc(b.text||"")}</textarea></div>`;
@@ -994,7 +994,7 @@ function openQrSend(r){
   card.innerHTML=`
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
       <div style="flex:1;font-weight:700;font-size:15px">Enviar respuesta rápida</div>
-      <button class="qrs-x" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">✕</button>
+      <button class="qrs-x" style="background:none;border:none;color:var(--muted);cursor:pointer;line-height:1"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div style="display:flex;flex:1;min-height:0;overflow:hidden;flex-wrap:wrap">
       <div style="flex:1;min-width:240px;padding:14px 16px;overflow-y:auto">
@@ -1250,8 +1250,8 @@ function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat(
 function mediaThumb(m){ const u=esc(safeUrl(m.content.media_url));
   if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" loading="lazy" style="cursor:zoom-in"/>`;
   if(m.type==="video") return `<video data-light="${u}" data-lk="video" src="${u}" style="cursor:zoom-in"></video>`;
-  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">🎵</a>`;
-  return `<a href="${u}" target="_blank" title="Archivo">📎</a>`; }
+  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">${icon("mic")}</a>`;
+  return `<a href="${u}" target="_blank" title="Archivo">${icon("file")}</a>`; }
 
 async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
@@ -1383,7 +1383,7 @@ function renderContactPanel(){
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
-  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada ✓"); renderContactPanel(); loadConversations(); });
+  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada"); renderContactPanel(); loadConversations(); });
   // Mismo motivo que el toggle del bot: sin mirar el error, la etiqueta se veía puesta (o
   // quitada) aunque la escritura hubiera fallado, y al recargar volvía como estaba. Peor
   // todavía si con esa etiqueta filtras o segmentas una campaña: creías tenerlos marcados.
@@ -1422,7 +1422,7 @@ function renderContactPanel(){
         { contact_id:contact.id, field_id:fid, value:val, updated_at:new Date().toISOString() },
         { onConflict:"contact_id,field_id" });
       if(error){ toast("No se pudo guardar: "+error.message,true); }
-      else { vals[fid]=val; logEvent(contact.id,"campo",val?("Dato actualizado: "+name):("Dato borrado: "+name)); toast(val?"Guardado ✓":"Dato borrado ✓"); }
+      else { vals[fid]=val; logEvent(contact.id,"campo",val?("Dato actualizado: "+name):("Dato borrado: "+name)); toast(val?"Guardado":"Dato borrado"); }
       renderContactPanel();
     };
     inp.addEventListener("blur", save);
@@ -1440,7 +1440,7 @@ function renderContactPanel(){
     try{
       const { data, error }=await supa.functions.invoke("capi-retry", { body:{ channel_id:state.channelId, order_id:oid } });
       if(error||!data?.ok){ toast("No se envió a Meta: "+(data?.error||error?.message||"error"), true); b.disabled=false; b.textContent=prev; return; }
-      toast("Enviado a Meta ✓"); loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id });
+      toast("Enviado a Meta"); loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id });
     }catch(e){ toast("No se envió a Meta: "+(e?.message||e), true); b.disabled=false; b.textContent=prev; }
   });
   // Chip de Meta clickeable → detalle de lo que se envía/envió a Meta.
@@ -1497,27 +1497,27 @@ async function actionHandler(a){
   const conv=()=>supa.from("conversations");
   if(a==="tag"){ const btn=$("pAddBtn"); if(btn){ const d=btn.closest("details"); if(d) d.open=true; btn.scrollIntoView({block:"center"}); setTimeout(()=>btn.click(),160); } else toast("Crea etiquetas en la sección Etiquetas para poder asignarlas",true); return; }
   if(a==="follow"){ const cvc=(state.convs||[]).find(c=>c.contact_id===cid); const now=!cvc?.requiere_humano;
-    await conv().update({ requiere_humano:now }).eq("contact_id",cid); logEvent(cid,"nota",now?"Marcado para seguimiento":"Seguimiento quitado"); toast(now?"Marcado para seguimiento ✓":"Seguimiento quitado ✓"); loadConversations(); return; }
-  if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído ✓"); backToList(); loadConversations(); return; }
-  if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado ✓"); backToList(); loadConversations(); return; }
-  if(a==="unarchive"){ await conv().update({ archivada:false }).eq("contact_id",cid); logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado ✓"); await loadConversations(); renderActionsMenu(); return; }
+    await conv().update({ requiere_humano:now }).eq("contact_id",cid); logEvent(cid,"nota",now?"Marcado para seguimiento":"Seguimiento quitado"); toast(now?"Marcado para seguimiento":"Seguimiento quitado"); loadConversations(); return; }
+  if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído"); backToList(); loadConversations(); return; }
+  if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado"); backToList(); loadConversations(); return; }
+  if(a==="unarchive"){ await conv().update({ archivada:false }).eq("contact_id",cid); logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="export"){ return exportMessages(); }
   if(a==="block"){ if(!await confirmDialog({title:"Bloquear contacto",message:"El bot dejará de responderle y saldrá de la bandeja.",confirmText:"Bloquear",danger:true})) return;
     let { error }=await supa.from("contacts").update({ bloqueado:true }).eq("id",cid);
     if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
-    logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado ✓"); backToList(); loadConversations(); return; }
+    logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado"); backToList(); loadConversations(); return; }
   if(a==="unblock"){ let { error }=await supa.from("contacts").update({ bloqueado:false }).eq("id",cid);
     if(error){ toast("No se pudo desbloquear",true); return; }
     if(panelData.contact && panelData.contact.id===cid) panelData.contact.bloqueado=false;
-    logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado ✓"); await loadConversations(); renderActionsMenu(); return; }
+    logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="clearinfo"){ if(!await confirmDialog({title:"Borrar información",message:"¿Borrar todos los campos personalizados de este contacto?",confirmText:"Borrar",danger:true})) return;
     const { error }=await supa.from("contact_field_values").delete().eq("contact_id",cid); if(error){ toast("No se pudo borrar: "+error.message,true); return; }
-    logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada ✓");
+    logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada");
     loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }
   if(a==="delchat"){ if(!await confirmDialog({title:"Eliminar chat",message:"¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
     const { error:e1 }=await supa.from("messages").delete().eq("contact_id",cid); const { error:e2 }=await conv().delete().eq("contact_id",cid);
     if(e1||e2){ toast("No se pudo eliminar el chat: "+((e1||e2).message),true); return; }
-    toast("Chat eliminado ✓"); backToList(); loadConversations(); return; }
+    toast("Chat eliminado"); backToList(); loadConversations(); return; }
 }
 async function exportMessages(){
   // Paginado: un chat largo se cortaba en 1000 mensajes y el archivo salía incompleto sin
@@ -1528,7 +1528,7 @@ async function exportMessages(){
   const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Nodo"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
   const blob=new Blob([`Conversación con ${state.contactName||""}\n\n`+lines.join("\n")],{type:"text/plain;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`chat_${(state.contactName||state.contactId).toString().replace(/\W+/g,"_")}.txt`; a.click(); URL.revokeObjectURL(a.href);
-  toast("Mensajes exportados ✓");
+  toast("Mensajes exportados");
 }
 $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.contactId) return; const m=$("actionsMenu"); if(m.classList.contains("hidden")) renderActionsMenu(); m.classList.toggle("hidden"); });
 function onDocClickActions(e){ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); }
@@ -1551,7 +1551,7 @@ async function toggleBot(){
   // si cambiaste a otro chat durante el await, no pintar el estado del toggle de A sobre B.
   if(state.contactId===cid){ if(panelData.contact) panelData.contact.bot_activo=!on; setBotPill(!on); }
   logEvent(cid, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
-  toast(on?"Bot pausado — atiendes tú ✓":"Bot reactivado ✓");
+  toast(on?"Bot pausado — atiendes tú":"Bot reactivado");
   loadConversations();
 }
 function updateComposerMode(){
@@ -1707,7 +1707,7 @@ function renderMsg(m) {
   const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
   // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
   const tr = m.content?.transcription
-    ? `<div class="transcript" title="Transcripción automática del audio">🎙️ ${esc(m.content.transcription)}</div>` : "";
+    ? `<div class="transcript" title="Transcripción automática del audio">${icon("mic")} ${esc(m.content.transcription)}</div>` : "";
   el.innerHTML = `${mh || esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
   t.appendChild(el);
   // Los botones se MUESTRAN siempre: si no, en una conversación real verías el
@@ -1736,7 +1736,7 @@ function statusTick(s, animate){
   if(s==="read")      return `<span class="tick read${a}" title="Leído — el cliente vio el mensaje">${_TK_DOUBLE}</span>`;
   if(s==="delivered") return `<span class="tick deliv" title="Entregado al teléfono">${_TK_DOUBLE}</span>`;
   if(s==="sent")      return `<span class="tick sent" title="Enviado">${_TK_SINGLE}</span>`;
-  if(s==="failed")    return `<span class="tick fail" title="No se pudo entregar">⚠️</span>`;
+  if(s==="failed")    return `<span class="tick fail" title="No se pudo entregar">${icon("alert")}</span>`;
   return `<span class="tick pend" title="Enviando…">${_TK_CLOCK}</span>`;
 }
 // Solo dejamos pasar http(s) y data: al href/src. Un media_url con esquema
@@ -1750,7 +1750,7 @@ function mediaHtml(m){
   if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" style="cursor:zoom-in"/>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
-  return `<a class="file" href="${u}" target="_blank">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`;
+  return `<a class="file" href="${u}" target="_blank">${icon("file")} ${esc(m.content?.filename||"archivo")}</a>${cap}`;
 }
 
 // Visor de multimedia (lightbox): las imágenes/videos abren en una ventana dentro
@@ -1913,7 +1913,7 @@ async function clearTestChat() {
   await loadConversations();
   if (out.contact_id) {
     openChat({ id: out.contact_id, nombre: "Prueba (webchat)", wa_id: "webchat-test", bot_activo: true });
-    toast(flowId ? "Flujo iniciado ✓ — responde como el cliente" : "Chat reiniciado ✓ — escribe como el cliente");
+    toast(flowId ? "Flujo iniciado — responde como el cliente" : "Chat reiniciado — escribe como el cliente");
   } else { toast(out.detalle || out.error || "No se pudo reiniciar", true); }
 }
 async function sendButton(id, title) {
@@ -1965,7 +1965,7 @@ async function openTplPicker() {
     toast(FRIEND[o.error] || o.detalle?.message || o.detalle || o.error || "No se pudo enviar la plantilla", true);
     return;
   }
-  toast("Plantilla enviada ✓"); setBotPill(false);
+  toast("Plantilla enviada"); setBotPill(false);
 }
 // Salvaguarda del footgun: escribirle A MANO a un contacto cuyo pedido físico
 // tiene una acción pendiente del Kanban (adelanto/saldo/despacho/llegada) PAUSA

@@ -386,7 +386,7 @@ function pickMediaInto(arr, kind, after){
       const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
       if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
       arr.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
-      toast("Archivo agregado ✓"); after&&after();
+      toast("Archivo agregado"); after&&after();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -605,7 +605,7 @@ function renderFlowCards(){
       <div class="c-sub">${isSk?"esqueleto":esc(f.role||"flujo")}</div>
       <div class="c-foot"><span class="nodo-pill ${on?'on':'neutral'}">${on?'Activo':esc((f.estado||"").replace(/^./,c=>c.toUpperCase()))}</span><span style="font-size:11.5px;color:var(--faint)">${prod}</span><span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:f.folder||null, onPick:async(v)=>{ const { error }=await supa.from("flows").update({ folder:v }).eq("id",f.id); if(error){ toast(error.message,true); return; } f.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderFlowCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:f.folder||null, onPick:async(v)=>{ const { error }=await supa.from("flows").update({ folder:v }).eq("id",f.id); if(error){ toast(error.message,true); return; } f.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderFlowCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openFlow(f.id); box.appendChild(el);
   });
   const add=document.createElement("div"); add.className="nodo-card new";
@@ -1241,7 +1241,7 @@ function buildSheetsForm(m){
   box.innerHTML=`
     <label style="margin-top:12px">¿Qué hace?</label>
     <select class="sel" id="gsAccion" style="width:100%">
-      <option value="append" ${!isUpd?"selected":""}>➕ Agregar una fila nueva (registrar venta)</option>
+      <option value="append" ${!isUpd?"selected":""}>Agregar una fila nueva (registrar venta)</option>
       <option value="update" ${isUpd?"selected":""}>Actualizar una fila (ej. venta extra en la misma fila)</option>
     </select>
     <label style="margin-top:12px">Pestaña de la hoja (opcional)</label>
@@ -1262,7 +1262,7 @@ function buildSheetsForm(m){
       el.innerHTML=`<input class="in gcol" placeholder="Columna en tu hoja" value="${esc(row.col||'')}" style="flex:1;min-width:0"/>
         <span style="color:var(--faint)">→</span>
         <input class="in gval" placeholder="Valor / {{variable}}" list="gsVars" value="${esc(row.valor||'')}" style="flex:1.2;min-width:0"/>
-        <button class="btn gdel" style="flex:0 0 auto;padding:0 10px;color:var(--red)">✕</button>`;
+        <button class="btn gdel" style="flex:0 0 auto;padding:0 10px;color:var(--red)">${icon("x")}</button>`;
       el.querySelector(".gcol").oninput=(e)=>{ row.col=e.target.value; sync(); };
       el.querySelector(".gval").oninput=(e)=>{ row.valor=e.target.value; sync(); };
       el.querySelector(".gdel").onclick=()=>{ c[listKey].splice(i,1); renderRows(listKey,containerId); sync(); };
@@ -1280,7 +1280,7 @@ function renderHandles(m){
   const box=$("handles"); if(!box) return; box.innerHTML="";
   m.handles.forEach((h,i)=>{
     const row=document.createElement("div"); row.className="handle-row";
-    row.innerHTML=`<input class="in" value="${esc(h)}"/><button class="hbtn">✕</button>`;
+    row.innerHTML=`<input class="in" value="${esc(h)}"/><button class="hbtn">${icon("x")}</button>`;
     row.querySelector("input").onchange=(e)=>{ m.handles[i]=e.target.value; decorateNode(editor, m); };
     row.querySelector("button").onclick=()=>{ const nuevos=m.handles.slice(); nuevos.splice(i,1); resyncOutputs(m, nuevos); renderHandles(m); decorateNode(editor, m); canvas.schedule(); };
     box.appendChild(row);
@@ -1326,11 +1326,11 @@ async function openTriggers(){
     <div class="tg-new">
       <label>Añadir disparador</label>
       <select id="tgTipo">
-        <option value="keyword">🔑 Palabra clave</option>
-        <option value="pedido_estado">📦 Estado de pedido (Kanban)</option>
+        <option value="keyword">Palabra clave</option>
+        <option value="pedido_estado">Estado de pedido (Kanban)</option>
         <option value="pedido_recordatorio">⏰ Recordatorio de pedido (horas en un estado)</option>
-        <option value="referral">📣 Anuncio CTWA (Ad ID)</option>
-        <option value="entrada">⭐ Flujo de entrada (fallback del canal)</option>
+        <option value="referral">Anuncio CTWA (Ad ID)</option>
+        <option value="entrada">Flujo de entrada (fallback del canal)</option>
       </select>
       <div id="tgCfg"></div>
       <button class="btn primary" id="tgAdd" style="width:100%;margin-top:14px;height:38px">Añadir</button>
@@ -1356,7 +1356,7 @@ async function loadTriggers(ov){
     const row=document.createElement("div"); row.className="tg-row";
     row.innerHTML=`<div class="tt"><div class="k">${TRIG_LABEL[t.tipo]||t.tipo}</div><div class="d">${esc(trigDesc(t))}</div></div>
       <button class="${t.activo?'on':''}">${t.activo?"Activo":"Apagado"}</button>
-      <button class="del">✕</button>`;
+      <button class="del">${icon("x")}</button>`;
     const [tog,del]=row.querySelectorAll("button");
     tog.onclick=async()=>{ const { error }=await supa.from("flow_triggers").update({ activo:!t.activo }).eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
     del.onclick=async()=>{ if(!await confirmDialog({title:"Eliminar disparador",message:"¿Eliminar este disparador?",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("flow_triggers").delete().eq("id",t.id); if(error){ toast(error.message,true); return; } loadTriggers(ov); };
@@ -1421,7 +1421,7 @@ async function addTrigger(ov){
   }
   const { error }=await supa.from("flow_triggers").insert({ flow_id:st.flowId, channel_id:st.channelId, tipo, config, interrumpe, activo:true });
   if(error){ toast(error.message,true); return; }
-  toast("Disparador añadido ✓");
+  toast("Disparador añadido");
   renderTgCfg(ov); loadTriggers(ov);
 }
 
@@ -1447,7 +1447,7 @@ async function deleteFlow(){
   // `dirty` también: si el flujo se borra CON cambios sin guardar, la bandera quedaba
   // encendida y el navegador seguía avisando "tienes cambios sin guardar" al salir…
   // de un flujo que ya no existe. El botón "atrás" (backBtn) sí la limpiaba; acá no.
-  st.dirty=false; st.flowId=null; st.flow=null; toast("Flujo eliminado ✓"); showOverview(); await loadFlows();
+  st.dirty=false; st.flowId=null; st.flow=null; toast("Flujo eliminado"); showOverview(); await loadFlows();
 }
 
 // ── Guardar ──
@@ -1479,7 +1479,7 @@ async function save(){
   const nodos=Object.values(st.model);
   if(nodos.length){
     const iniciales=nodos.filter(m=>m.es_inicial);
-    if(iniciales.length===0){ toast("Falta el nodo inicial: marca uno como inicio (☑ «Nodo inicial») antes de guardar.",true); return false; }
+    if(iniciales.length===0){ toast("Falta el nodo inicial: marca uno como inicio («Nodo inicial») antes de guardar.",true); return false; }
     if(iniciales.length>1){ toast("Hay "+iniciales.length+" nodos marcados como inicio; deja solo uno.",true); return false; }
     // Nombres de salida repetidos en un mismo nodo → dos aristas con el mismo
     // handle = ruteo ambiguo. Se listan para que el operador los renombre.
@@ -1556,7 +1556,7 @@ async function save(){
   // (su updated_at cargado ya no coincidirá) y no pise estos nodos al guardar.
   { const nowIso=new Date().toISOString(); await supa.from("flows").update({ updated_at:nowIso }).eq("id",st.flowId).then(()=>{},()=>{}); if(st.flow) st.flow.updated_at=nowIso; }
   st.dirty=false; // guardado OK → sin cambios pendientes
-  toast("Guardado ✓");
+  toast("Guardado");
   return true;
   } finally { st.saving=false; }
 }
@@ -1581,7 +1581,7 @@ async function publish(){
   const { error } = await supa.from("flows").update({ estado:nuevo }).eq("id",st.flowId);
   if(error){ toast(error.message,true); return; }
   st.flow.estado=nuevo; setStateBadge(nuevo); loadFlows();
-  toast(nuevo==="activo"?"Publicado ✓":"Vuelto a borrador");
+  toast(nuevo==="activo"?"Publicado":"Vuelto a borrador");
 }
 
 boot();

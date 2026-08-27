@@ -392,7 +392,7 @@ function renderAtencion(b){
     const { error }=await supa.from("channels").update({ pedidos_config:full }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=full; markClean(); toast("Atención guardada ✓");
+    st.channel.pedidos_config=full; markClean(); toast("Atención guardada");
   };
 }
 
@@ -457,7 +457,7 @@ async function saveCampos(e){
   const rows=st.campos.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo||"text", modo:"fijo", valor:f.valor||null, descripcion:f.descripcion||null }; if(f.id) r.id=f.id; return r; });
   if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows);
     if(error){ btn.disabled=false; btn.textContent=old; toast(/valor|descripcion|column/.test(error.message)?"Falta aplicar la migración 0013 (valor/descripcion)":error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
-  btn.disabled=false; btn.textContent=old; st.campos.loaded=false; markClean(); toast("Campos guardados ✓"); renderCampos($("body"));
+  btn.disabled=false; btn.textContent=old; st.campos.loaded=false; markClean(); toast("Campos guardados"); renderCampos($("body"));
 }
 
 // ── Conocimiento del negocio — FORMULARIO estructurado ──────────────
@@ -571,7 +571,7 @@ function renderVendedor(b){
     st.retraso=Math.max(0,parseInt($("pf_retraso").value||"0",10));
   };
   $("previewVend").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
-  $("saveVend").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Vendedor guardado ✓"); };
+  $("saveVend").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Vendedor guardado"); };
 }
 
 // El Conocimiento del negocio se movió a la sección Negocio (negocio.html).
@@ -628,7 +628,7 @@ function renderPerfiles(b){
     const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
-    st.channel.ia_perfiles=ia_perfiles; markClean(); toast("Perfiles guardados ✓");
+    st.channel.ia_perfiles=ia_perfiles; markClean(); toast("Perfiles guardados");
   };
 }
 
@@ -642,7 +642,7 @@ function pickImg(arr, after){
       const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
       const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
       if(error||!data?.url){ toast("No se pudo subir la imagen",true); return; }
-      arr.push({ url:data.url, mime:file.type, filename:file.name }); toast("Imagen agregada ✓"); after&&after();
+      arr.push({ url:data.url, mime:file.type, filename:file.name }); toast("Imagen agregada"); after&&after();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -811,7 +811,7 @@ function renderValidador(b){
       idxs.forEach(i=> box.appendChild(metRow(o.metodos[i],i)));
     });
   };
-  function addMet(app,pais){ o.metodos.push({ app, pais, titular:"", numero:"", notas:"" }); paintMet(); paintDp(); paintPayPick(); toast(app+" agregado ✓"); }
+  function addMet(app,pais){ o.metodos.push({ app, pais, titular:"", numero:"", notas:"" }); paintMet(); paintDp(); paintPayPick(); toast(app+" agregado"); }
   const paintPayPick=()=>{
     const box=$("payPick"); if(!box) return;
     const q=payNorm(st.paySearch);
@@ -851,7 +851,7 @@ function renderValidador(b){
       const el=document.createElement("div"); el.style.cssText="position:relative;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface-2)";
       el.innerHTML=`<img src="${esc(ej.url)}" style="width:104px;height:150px;object-fit:cover;border-radius:6px;display:block"/>
         <button class="btn danger ejdel" style="position:absolute;top:5px;right:5px;width:26px;height:26px;padding:0;border:1px solid var(--border);background:var(--surface)">${icon("trash")}</button>
-        <button class="ejtipo" title="Marca si este es un ejemplo de pago VÁLIDO o de un FRAUDE/montaje" style="width:104px;margin-top:6px;height:26px;border-radius:6px;border:1px solid var(--border);cursor:pointer;font-size:11.5px;font-weight:700;${esFraude?"background:rgba(239,68,68,.14);color:#ef4444":"background:rgba(34,197,120,.14);color:#22c078"}">${esFraude?"⚠ Fraude":"✓ Válido"}</button>`;
+        <button class="ejtipo" title="Marca si este es un ejemplo de pago VÁLIDO o de un FRAUDE/montaje" style="width:104px;margin-top:6px;height:26px;border-radius:6px;border:1px solid var(--border);cursor:pointer;font-size:11.5px;font-weight:700;${esFraude?"background:rgba(239,68,68,.14);color:#ef4444":"background:rgba(34,197,120,.14);color:#22c078"}">${esFraude?icon("alert")+" Fraude":icon("check")+" Válido"}</button>`;
       el.querySelector("button.ejdel").onclick=()=>{ o.ejemplos.splice(i,1); paintEj(); };
       el.querySelector(".ejtipo").onclick=()=>{ ej.tipo = esFraude?"valido":"fraude"; paintEj(); };
       box.appendChild(el);
@@ -904,7 +904,7 @@ function renderValidador(b){
       if(eDp) extra=" (no se pudo actualizar {{datos_pago}})";
       else { st.campos.loaded=false; extra=datos?" · {{datos_pago}} actualizado":" · {{datos_pago}} limpiado"; }
     }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
-    btn.disabled=false; btn.textContent=old; markClean(); toast("Validador guardado ✓"+extra);
+    btn.disabled=false; btn.textContent=old; markClean(); toast("Validador guardado"+extra);
   };
 }
 
@@ -963,13 +963,13 @@ async function onAction(action, provider, btn){
     if(action==="save"){
       if(!key && !st.cfg[provider]){ toast("Pega la API key primero",true); return; }
       await call({ action:"save", channel_id:st.channelId, provider, api_key:key, model, make_default:!st.iaProvider });
-      toast("Guardado ✓");
+      toast("Guardado");
     } else if(action==="test"){
       btn.textContent="Probando…";
       const r=await call({ action:"test", channel_id:st.channelId, provider });
-      if(r?.ok) toast("IA responde ✓"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
-    } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto ✓"); }
-    else if(action==="delete"){ if(!await confirmDialog({title:"Eliminar configuración",message:"¿Eliminar la configuración de "+provider+"?",confirmText:"Eliminar",danger:true})) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado ✓"); }
+      if(r?.ok) toast("IA responde"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
+    } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto"); }
+    else if(action==="delete"){ if(!await confirmDialog({title:"Eliminar configuración",message:"¿Eliminar la configuración de "+provider+"?",confirmText:"Eliminar",danger:true})) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado"); }
     await loadCfg(); markClean();
   }catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.textContent=old; }

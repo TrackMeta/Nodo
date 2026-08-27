@@ -146,7 +146,7 @@ function render(){
 }
 function setArchivo(f){
   st.archivo=f;
-  $("dropName").textContent="✓ "+f.name;
+  $("dropName").textContent=f.name;
   $("go").disabled=false;
 }
 
@@ -320,7 +320,7 @@ function renderResultado(){
     <div class="card" style="padding:14px 16px;margin-bottom:14px">
       <div class="muted"><b>${esc(st.archivo.name)}</b> · formato ${esc(st.rep.formato)} · <b>${esc(rangeLabel(st.rango))}</b> · ${st.movsEnRango} ${plu(st.movsEnRango,"movimiento","movimientos")} en el rango
       ${st.rep.salientes?` · ${st.rep.salientes} ${plu(st.rep.salientes,"salida ignorada","salidas ignoradas")}`:""}
-      ${st.rep.ilegibles?`<div style="margin-top:6px;color:var(--amber);font-weight:600">⚠ ${st.rep.ilegibles} ${plu(st.rep.ilegibles,"fila del archivo no se pudo leer","filas del archivo no se pudieron leer")} (fecha o monto en un formato que no reconozco) — ${plu(st.rep.ilegibles,"ese movimiento no entra","esos movimientos no entran")} en el cuadre, así que revísa${plu(st.rep.ilegibles,"lo","los")} a mano en el archivo.</div>`:""}
+      ${st.rep.ilegibles?`<div style="margin-top:6px;color:var(--amber);font-weight:600">${st.rep.ilegibles} ${plu(st.rep.ilegibles,"fila del archivo no se pudo leer","filas del archivo no se pudieron leer")} (fecha o monto en un formato que no reconozco) — ${plu(st.rep.ilegibles,"ese movimiento no entra","esos movimientos no entran")} en el cuadre, así que revísa${plu(st.rep.ilegibles,"lo","los")} a mano en el archivo.</div>`:""}
       ${r.yaConciliadas.length?` · ${r.yaConciliadas.length} ${plu(r.yaConciliadas.length,"venta ya conciliada antes (no se toca)","ventas ya conciliadas antes (no se tocan)")}`:""}
       <button class="btn sm" id="otro" style="margin-left:10px">Otro archivo</button></div>
     </div>
@@ -500,7 +500,7 @@ async function anular(v,el){
   const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:v._orderId, estado,
     shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } } });
   if(error||data?.error){ toast(error?.message||data.error,true); return; }
-  toast("Venta anulada ✓"); el.style.opacity=.4; el.querySelectorAll("button").forEach(b=>b.disabled=true);
+  toast("Venta anulada"); el.style.opacity=.4; el.querySelectorAll("button").forEach(b=>b.disabled=true);
 }
 function actualizarCuenta(){
   const n=st.decisiones.size;
@@ -549,7 +549,7 @@ async function aplicar(){
     if(error||data?.error) fail++; else ok++;
   }
   b.textContent="Guardar lo decidido"; b.disabled=false;
-  toast(fail? `${ok} guardados · ${fail} fallaron` : `${ok} ${plu(ok,"pedido conciliado","pedidos conciliados")} ✓`, !!fail);
+  toast(fail? `${ok} guardados · ${fail} fallaron` : `${ok} ${plu(ok,"pedido conciliado","pedidos conciliados")}`, !!fail);
   if(ok) { st.res=null; st.rep=null; render(); }
 }
 

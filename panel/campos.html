@@ -133,7 +133,7 @@ function render(){
   // en Capturados y en la vista "Todos", donde el usuario los notaría).
   const ocultos=(st.tab==="dinamico"&&(!Fbar||Fbar.current==="__all"))
     ? st.fields.filter(f=>(f.modo||"dinamico")==="dinamico"&&esInterno(f)).length : 0;
-  const notaTec=ocultos?`<div class="empty" style="margin-top:12px;text-align:left;font-size:12px">🔧 ${ocultos} campo(s) técnico(s) del motor ocultos (candados como <code>_once_*</code> y las tallas internas de cada extra, <code>xt…_talla</code>). No son datos del cliente y no se editan aquí.</div>`:"";
+  const notaTec=ocultos?`<div class="empty" style="margin-top:12px;text-align:left;font-size:12px">${ocultos} campo(s) técnico(s) del motor ocultos (candados como <code>_once_*</code> y las tallas internas de cada extra, <code>xt…_talla</code>). No son datos del cliente y no se editan aquí.</div>`:"";
   if(!rows.length){ box.innerHTML=`<div class="empty">${st.tab==="fijo"?"Aún no hay campos fijos":"El bot todavía no capturó campos"}${(Fbar&&Fbar.current!=="__all")?" en esta carpeta":""}. ${st.tab==="fijo"?"Crea uno con “Nuevo campo”.":"Aparecerán solos cuando el bot recoja datos, o crea uno con “Nuevo campo”."}</div>`+notaTec; return; }
   box.innerHTML="";
   rows.forEach(f=>{
@@ -146,7 +146,7 @@ function render(){
           <div class="f grow"><label>Nombre</label><input class="in" value="${esc(f.nombre)}" disabled/></div>
           <div class="f grow"><label>Clave</label><input class="in" value="${esc(f.key)}" disabled/><div class="varhint">se usa como <b>{{${esc(f.key)}}}</b></div></div>
         </div>
-        <div class="warn" style="margin:12px 0 0;background:var(--surface-2);border-color:var(--border);color:var(--muted)">🔒 Este campo lo <b>genera y edita el Validador</b> (${esc(gen)}). No lo toques aquí — se sobreescribe al guardar el Validador. <a href="ia.html" style="color:var(--brand)">Ir al Validador →</a></div>`;
+        <div class="warn" style="margin:12px 0 0;background:var(--surface-2);border-color:var(--border);color:var(--muted)">${icon("lock")} Este campo lo <b>genera y edita el Validador</b> (${esc(gen)}). No lo toques aquí — se sobreescribe al guardar el Validador. <a href="ia.html" style="color:var(--brand)">Ir al Validador →</a></div>`;
       box.appendChild(el); return;
     }
     el.innerHTML=`
@@ -203,7 +203,7 @@ async function save(){
       return;
     }
   }
-  $("warn").innerHTML=""; toast("Guardado ✓"); await load();
+  $("warn").innerHTML=""; toast("Guardado"); await load();
 }
 boot();
 </script>

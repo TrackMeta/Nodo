@@ -114,7 +114,7 @@ function pickQrMedia(kind, onDone){
       const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
       if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
       const m={ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" };
-      toast("Archivo agregado ✓"); if(onDone) onDone(m);
+      toast("Archivo agregado"); if(onDone) onDone(m);
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -167,7 +167,7 @@ function renderCards(){
     const thumbs=media.length?`<div class="c-media">${media.slice(0,4).map(m=>
         m.media_kind==="image" ? `<img class="c-th" src="${esc(m.media_url)}" alt=""/>`
         : m.media_kind==="video" ? `<div class="c-th">▶</div>`
-        : m.media_kind==="audio" ? `<div class="c-th">🎤</div>`
+        : m.media_kind==="audio" ? `<div class="c-th">${icon("mic")}</div>`
         : `<div class="c-th">${icon("file")}</div>`
       ).join("")}${media.length>4?`<span class="c-more">+${media.length-4}</span>`:""}</div>`:"";
     const cuerpo=(q.cuerpo||"").trim();
@@ -177,7 +177,7 @@ function renderCards(){
       ${thumbs}
       <div class="c-foot"><span data-cardfolder></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:q.folder||null, onPick:async(v)=>{ const { error }=await supa.from("quick_replies").update({ folder:v }).eq("id",q.id); if(error){ toast(error.message,true); return; } q.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:q.folder||null, onPick:async(v)=>{ const { error }=await supa.from("quick_replies").update({ folder:v }).eq("id",q.id); if(error){ toast(error.message,true); return; } q.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openQR(q.id); box.appendChild(el);
   });
 }
@@ -310,12 +310,12 @@ async function saveQR(){
   let { error }=await supa.from("quick_replies").update(patch).eq("id",st.qr.id);
   if(error && /color|media|column/.test(error.message)){ const { color, media, ...base }=patch; ({ error }=await supa.from("quick_replies").update(base).eq("id",st.qr.id)); if(!error) toast("Guardado (aplica la migración 0028 para color/multimedia)"); }
   if(error){ toast(error.message,true); return; }
-  toast("Guardado ✓"); await load(); await openQR(st.qr.id);
+  toast("Guardado"); await load(); await openQR(st.qr.id);
 }
 async function deleteQR(){
   if(!st.qr) return;
   if(!await confirmDialog({title:"Eliminar respuesta",message:`¿Eliminar "${st.qr.titulo}"?`,confirmText:"Eliminar",danger:true})) return;
-  { const { error:eDel }=await supa.from("quick_replies").delete().eq("id",st.qr.id); if(eDel){ toast(eDel.message,true); return; } } st.qr=null; toast("Eliminada ✓"); showGrid(); await load();
+  { const { error:eDel }=await supa.from("quick_replies").delete().eq("id",st.qr.id); if(eDel){ toast(eDel.message,true); return; } } st.qr=null; toast("Eliminada"); showGrid(); await load();
 }
 boot();
 </script>

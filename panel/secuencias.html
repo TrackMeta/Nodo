@@ -127,19 +127,19 @@ const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 // ¿A quién va dirigida la secuencia? El motor mete a cada cliente en la del
 // segmento que le corresponde según qué tan lejos llegó (ver "Cómo trabajan").
 const SEGMENTOS=[
-  ["general","🌐 Todos los interesados (general)","Cualquiera que mostró interés en un producto. Es la red de seguridad para quien no calce en un segmento específico."],
-  ["solo_inicio","🌱 Solo curiosos","Escribieron la palabra clave y no volvieron a interactuar (no dejaron ningún dato). Un reenganche suave para reavivarlos."],
-  ["interactuo","💬 Interesados activos","Conversaron o dejaron algún dato (talla, ciudad…) pero no llegaron a dejar un pedido. Ya sabes qué les interesó, ve al grano."],
-  ["caliente","🔥 Caliente (4+ mensajes)","El más enganchado: escribió 4+ mensajes y no compró. Va después de 'Interesados activos' — reenganche más directo y con urgencia."],
-  ["provincia_sin_adelanto","📦 Provincia · dejó sus datos, sin adelanto","Pedidos de provincia esperando el adelanto: dieron nombre, DNI, dirección y agencia, pero no pagaron. Súper caliente."],
+  ["general","Todos los interesados (general)","Cualquiera que mostró interés en un producto. Es la red de seguridad para quien no calce en un segmento específico."],
+  ["solo_inicio","Solo curiosos","Escribieron la palabra clave y no volvieron a interactuar (no dejaron ningún dato). Un reenganche suave para reavivarlos."],
+  ["interactuo","Interesados activos","Conversaron o dejaron algún dato (talla, ciudad…) pero no llegaron a dejar un pedido. Ya sabes qué les interesó, ve al grano."],
+  ["caliente","Caliente (4+ mensajes)","El más enganchado: escribió 4+ mensajes y no compró. Va después de 'Interesados activos' — reenganche más directo y con urgencia."],
+  ["provincia_sin_adelanto","Provincia · dejó sus datos, sin adelanto","Pedidos de provincia esperando el adelanto: dieron nombre, DNI, dirección y agencia, pero no pagaron. Súper caliente."],
 ];
 const segLabel=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[1];
 const segDesc=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[2];
 // ¿Cómo se dispara? Reenganche (espera el silencio, se reinicia si responde) vs
 // Goteo (calendario fijo desde el primer contacto, ignora el silencio).
 const MODOS=[
-  ["reenganche","🎣 Reenganche (espera el silencio)","Recupera al que se enfrió: cada paso espera a que el cliente lleve un rato callado, y si RESPONDE el reloj se reinicia y la secuencia se pausa mientras haya conversación."],
-  ["goteo","💧 Goteo (calendario fijo)","Una serie programada desde el primer contacto: Día 1, 3, 7… corren pase lo que pase. IGNORA el silencio y NO se reinicia si el cliente responde. Ideal para bienvenida / educación / recordatorios de valor."],
+  ["reenganche","Reenganche (espera el silencio)","Recupera al que se enfrió: cada paso espera a que el cliente lleve un rato callado, y si RESPONDE el reloj se reinicia y la secuencia se pausa mientras haya conversación."],
+  ["goteo","Goteo (calendario fijo)","Una serie programada desde el primer contacto: Día 1, 3, 7… corren pase lo que pase. IGNORA el silencio y NO se reinicia si el cliente responde. Ideal para bienvenida / educación / recordatorios de valor."],
 ];
 const modoDesc=(v)=>(MODOS.find(m=>m[0]===v)||MODOS[0])[2];
 const bannerModo=(v)=> v==="goteo"
@@ -201,7 +201,7 @@ async function deleteSeq(){
   if(!await confirmDialog({title:"Eliminar secuencia",message:`¿Eliminar "${st.seq.nombre}"? Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("sequences").delete().eq("id",st.seq.id);
   if(error){ toast(error.message,true); return; }
-  st.seq=null; toast("Secuencia eliminada ✓"); showGrid(); await load();
+  st.seq=null; toast("Secuencia eliminada"); showGrid(); await load();
 }
 function miniTimeline(pasos){
   const p=pasos||[]; if(!p.length) return `<div class="mtl"><span class="more" style="margin:0">Sin pasos aún</span></div>`;
@@ -228,11 +228,11 @@ function renderCards(){
     const el=document.createElement("div"); el.className="nodo-card qcard"+(on?"":" paused");
     el.innerHTML=`
       <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="nodo-pill ${on?'on':'off'}">${on?'Activa':'Pausada'}</span></div>
-      <div class="c-sub">${n} paso${n===1?'':'s'} · ${s.modo==="goteo"?"💧 goteo (calendario fijo)":"🎣 reenganche por silencio"}</div>
+      <div class="c-sub">${n} paso${n===1?'':'s'} · ${s.modo==="goteo"?"goteo (calendario fijo)":"reenganche por silencio"}</div>
       ${miniTimeline(s.pasos)}
       <div class="c-foot">${s.segmento&&s.segmento!=="general"?`<span style="color:var(--amber)">${esc(segLabel(s.segmento).replace(/·.*/,"").trim())}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
   box.appendChild(add);
@@ -364,7 +364,7 @@ async function saveSeq(){
   let linkErr=null;
   try{ await syncSeqLink(st.seq.id); }catch(e){ linkErr=e; console.warn("[seqlink]",e); }
   st.dirty=false; st._loadedPasos=JSON.stringify(st.seq.pasos||[]); // guardado OK → nuevo baseline
-  toast(linkErr?"Guardada, pero falló el enlace al producto":"Guardado ✓", !!linkErr);
+  toast(linkErr?"Guardada, pero falló el enlace al producto":"Guardado", !!linkErr);
   await load();
 }
 boot();

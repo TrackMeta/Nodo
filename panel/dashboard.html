@@ -305,7 +305,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import { ymdTZ } from "./date-range.js";
@@ -357,7 +357,7 @@ function renderAsesor(){
         <span class="g">${AI_SPARK}</span>
         <div style="flex:1;min-width:0"><div class="aiadv-tt">Asesor IA</div><div style="font-size:12.5px;color:var(--muted);margin-top:1px">${teaser}</div></div>
         <button class="aibtn" id="aiGo">Pedir consejo</button>
-        <button class="aiclose" id="aiClose" title="Minimizar">✕</button>
+        <button class="aiclose" id="aiClose" title="Minimizar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
       <div id="aiRecs"></div>
       <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
@@ -392,8 +392,8 @@ async function operaComando(){
   try{
     const undo=await operaExec(act);
     if($("opCmd")) $("opCmd").value="";
-    msg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;font-size:12.5px"><span style="color:var(--green,#22c079);font-weight:700">✓ Hecho.</span><a href="#" id="opUndo" style="color:var(--brand)">Deshacer</a></div>`;
-    const un=$("opUndo"); if(un) un.onclick=async(e)=>{ e.preventDefault(); un.textContent="Deshaciendo…"; try{ await undo(); toast("Deshecho ✓"); msg.innerHTML=""; load(); }catch(_){ toast("No se pudo deshacer",true); } };
+    msg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;font-size:12.5px"><span style="color:var(--green,#22c079);font-weight:700">${icon("check")} Hecho.</span><a href="#" id="opUndo" style="color:var(--brand)">Deshacer</a></div>`;
+    const un=$("opUndo"); if(un) un.onclick=async(e)=>{ e.preventDefault(); un.textContent="Deshaciendo…"; try{ await undo(); toast("Deshecho"); msg.innerHTML=""; load(); }catch(_){ toast("No se pudo deshacer",true); } };
     load();
   }catch(e){ msg.innerHTML=`<span style="color:#e2564a;font-size:12.5px">No se pudo ejecutar: ${esc(String((e&&e.message)||e))}</span>`; }
 }
@@ -688,14 +688,14 @@ async function renderOnboarding(cid){
   const pct=Math.round(hechos/pasos.length*100);
   box.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 18px 14px;margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px">
-      <div style="font-weight:800;font-size:15px">🚀 Primeros pasos <span style="color:var(--faint);font-weight:600;font-size:13px">· ${hechos} de ${pasos.length}</span></div>
+      <div style="font-weight:800;font-size:15px">Primeros pasos <span style="color:var(--faint);font-weight:600;font-size:13px">· ${hechos} de ${pasos.length}</span></div>
       <button id="onbSkip" style="background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer">Ocultar</button>
     </div>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Deja tu bot listo para vender. Puedes hacerlos en cualquier orden.</div>
     <div style="height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-bottom:14px"><span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#a855f7,#ec4899);transition:width .4s"></span></div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${pasos.map(p=>`<a href="${p.h}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;text-decoration:none;background:${p.ok?"transparent":"var(--surface-2)"};border:1px solid ${p.ok?"transparent":"var(--border)"}">
-        <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;${p.ok?"background:#22c07922;color:#22c079":"background:var(--surface);border:1.5px solid var(--border);color:var(--faint)"}">${p.ok?"✓":""}</span>
+        <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;${p.ok?"background:#22c07922;color:#22c079":"background:var(--surface);border:1.5px solid var(--border);color:var(--faint)"}">${p.ok?icon("check"):""}</span>
         <span style="flex:1;min-width:0">
           <span style="display:block;font-weight:700;font-size:13.5px;color:${p.ok?"var(--faint)":"var(--text)"};${p.ok?"text-decoration:line-through":""}">${esc(p.t)}</span>
           <span style="display:block;font-size:11.5px;color:var(--faint)">${esc(p.d)}</span>
@@ -953,7 +953,7 @@ async function load(){
     brutaDesconocida?"—":money(bruta),
     brutaDesconocida?`no se puede calcular todavía · ${faltaTxt}`:brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
-    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · ⚠ moneda sin convertir":"")));
+    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · moneda sin convertir":"")));
   // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
   // anuncios"). Es el número por el que se decide subir o bajar la inversión, así que
   // merece verse solo. Sin gasto cargado NO se inventa un número: se dice qué falta.
@@ -961,7 +961,7 @@ async function load(){
   K.push(kpi("target", roas>=2?"#22c079":roas>0?"#f0a92b":"#6d8ea0", "ROAS",
     (hasAds && roas>0) ? roas.toFixed(1)+"×" : "—",
     !hasAds ? "conecta Meta para verlo"
-      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · ⚠ moneda sin convertir":""}`
+      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · moneda sin convertir":""}`
       : "aún sin cobrar nada en este período"));
   // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
   // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
@@ -969,14 +969,14 @@ async function load(){
   K.push(kpi("trending", roiPct==null?"#6d8ea0":roiPct>=0?"#22c079":"#e2564a", "ROI",
     roiPct==null ? "—" : (roiPct>0?"+":"")+roiPct+"%",
     roiPct==null ? "registra costos, anuncios o gastos para verlo"
-      : sinCostoF ? `⚠ ${faltaTxt} — cifra incompleta`
+      : sinCostoF ? `${faltaTxt} — cifra incompleta`
       : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
   // La neta sale de la bruta: si la bruta no se puede calcular, la neta tampoco.
   K.push(kpi("wallet", brutaDesconocida?"#6d8ea0":neta<0?"#e2564a":"#22c079", "Ganancia neta",
     brutaDesconocida?"—":money(neta),
     brutaDesconocida ? `no se puede calcular todavía · ${faltaTxt}`
-      : monedaAdsRara?"⚠ el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
+      : monedaAdsRara?"el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
   // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
   if(vueltoTotal>0){
     K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
@@ -1083,7 +1083,7 @@ function renderExpenses(list, tipo){
     return;
   }
   const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short"});
-  let rows=list.map(e=>`<tr><td style="white-space:nowrap">${fmt.format(new Date(e.fecha+"T00:00:00"))}</td><td class="pname">${esc(e.descripcion)}${e.categoria?` <span style="color:var(--faint);font-size:11px">· ${esc(e.categoria)}</span>`:""}</td><td class="r money">${money(e.monto)}</td><td class="r"><button class="expdel" data-id="${e.id}" title="Eliminar">✕</button></td></tr>`).join("");
+  let rows=list.map(e=>`<tr><td style="white-space:nowrap">${fmt.format(new Date(e.fecha+"T00:00:00"))}</td><td class="pname">${esc(e.descripcion)}${e.categoria?` <span style="color:var(--faint);font-size:11px">· ${esc(e.categoria)}</span>`:""}</td><td class="r money">${money(e.monto)}</td><td class="r"><button class="expdel" data-id="${e.id}" title="Eliminar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></td></tr>`).join("");
   rows+=`<tr class="total"><td colspan="2">Total</td><td class="r money">${money(total)}</td><td></td></tr>`;
   box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Fecha</th><th>Descripción</th><th class="r">Monto</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   box.querySelectorAll(".expdel").forEach(b=> b.onclick=()=>delExpense(b.dataset.id));
@@ -1120,13 +1120,13 @@ async function saveExpense(){
   const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto, descripcion:desc, categoria:$("ef_cat").value||null, fecha:$("ef_fecha").value||fechaLocal });
   _savingExp=false;
   if(error){ if(btn){ btn.disabled=false; btn.textContent="Guardar gasto"; } toast(error.message,true); return; }
-  toast("Gasto registrado ✓"); toggleExpForm(); load();
+  toast("Gasto registrado"); toggleExpForm(); load();
 }
 async function delExpense(id){
   if(!await confirmDialog({ title:"Eliminar gasto", message:"¿Quitar este gasto? Volverá a sumar a tu ganancia.", confirmText:"Eliminar", danger:true })) return;
   const { error }=await supa.from("manual_expenses").delete().eq("id",id);
   if(error){ toast(error.message,true); return; }
-  toast("Gasto eliminado ✓"); load();
+  toast("Gasto eliminado"); load();
 }
 
 function renderBand(b){
@@ -1328,7 +1328,7 @@ async function renderBitacora(){
         +`<div class="mt"><span class="up">▲${Math.round(d.rev)}</span><span class="dn2">▼${Math.round(d.spend)}</span></div>`
         +`<div class="roas">${roas>0?roas.toFixed(2)+"x · ":""}${d.sales}v</div>`;
     }
-    const flag=isToday?`<span class="flag" title="Provisional — el día no terminó">⏳</span>`:(p!=null&&p<0?`<span class="flag">⚠️</span>`:"");
+    const flag=isToday?`<span class="flag" title="Provisional — el día no terminó">${icon("clock")}</span>`:(p!=null&&p<0?`<span class="flag">${icon("alert")}</span>`:"");
     html+=`<div class="bita-cell ${cls}" data-day="${s.k}" title="${s.k}"><span class="dn">${s.dd}</span>${flag}${body}</div>`;
   });
   cal.innerHTML=html;

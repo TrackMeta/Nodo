@@ -52,6 +52,22 @@ const P = {
   plus:'<path d="M12 5v14M5 12h14"/>',
   check:'<path d="M20 6 9 17l-5-5"/>',
   // ── Extra (iconos de interfaz, para reemplazar emojis) ──
+  gift:'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  plane:'<path d="M17.8 19.2 16 11l3.5-3.5a2.1 2.1 0 0 0-3-3L13 8 4.8 6.2a.5.5 0 0 0-.5.8l3.3 4-2.1 2.1-1.9-.5a.5.5 0 0 0-.5.8l2 2 2 2a.5.5 0 0 0 .8-.5l-.5-1.9 2.1-2.1 4 3.3a.5.5 0 0 0 .8-.5Z"/>',
+  camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/>',
+  wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  bulb:'<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.1 14c.6-1 .9-1.6 1.6-2.4a6 6 0 1 0-9.4 0c.7.8 1 1.4 1.6 2.4"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20Z"/>',
+  clipboard:'<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  calendar:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4M16 2v4"/>',
+  flame:'<path d="M12 22c4 0 7-2.5 7-6.5 0-4.5-4.5-6-4.5-10.5 0 0-3 1.5-3 5 0 2-1.5 2.5-1.5 1 0-1 .5-2 .5-2S5 11 5 15.5C5 19.5 8 22 12 22Z"/>',
+  drop:'<path d="M12 2.7 6.9 8.1a7.2 7.2 0 1 0 10.2 0Z"/>',
+  hook:'<path d="M12 2v11a4 4 0 0 1-8 0v-1"/><circle cx="12" cy="20" r="2"/><path d="M12 15v3"/>',
+  party:'<path d="m3.5 20.5 5.4-13a1 1 0 0 1 1.7-.2l6.1 6.1a1 1 0 0 1-.2 1.7l-13 5.4Z"/><path d="M15 3v2M19 7h2M17.5 4.5l1.5-1.5M18 12l1.5 1.5"/>',
+  help:'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 17h.01"/>',
+  banknote:'<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  handshake:'<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.9-3.9a2 2 0 0 1 0-2.8l.4-.4a2.8 2.8 0 0 0-4 0l-1.6 1.6a2 2 0 0 1-2.8 0l-.4-.4a2 2 0 0 0-2.8 0L2 8.5"/><path d="m2 15 3 3"/>',
+  bell:'<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/>',
   refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
   activity:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
@@ -294,7 +310,7 @@ function openCreateBot() {
     S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });
     S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
     close();
-    toast("Bot creado ✓ — conéctalo en Canales");
+    toast("Bot creado — conéctalo en Canales");
     // Guard de cambios sin guardar ANTES de cambiar de bot (setChannel recarga la página y
     // descartaría ediciones en silencio): el selector de bot existente ya lo respeta, esta
     // ruta no. Si hay cambios y el operador cancela, el bot queda creado y sigue en su página.

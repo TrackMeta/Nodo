@@ -196,7 +196,7 @@ export async function mountFolders(opts){
         const idx = rows.indexOf(r);
         const el = document.createElement("div"); el.className="fb-row"; el.draggable=true;
         el.innerHTML = `<span class="fb-grip" aria-hidden="true">⋮⋮</span>
-          <button class="fb-emoji" data-emoji>${r.emoji?esc(r.emoji):`<span style="color:var(--muted);font-size:13px">🙂</span>`}</button>
+          <button class="fb-emoji" data-emoji>${r.emoji?esc(r.emoji):`<span style="color:var(--muted);font-size:13px">${icon("folder")}</span>`}</button>
           <input class="fb-name" value="${esc(r.nombre)}" placeholder="Nombre" />
           <div class="fb-sw">${PALETTE.map(c=>`<span data-c="${c}" style="background:${c};color:${c}" class="${(r.color||'').toLowerCase()===c.toLowerCase()?'on':''}"></span>`).join("")}<span class="fb-cw"><span class="fb-csw${isCustomColor(r.color)?' on':''}" style="${isCustomColor(r.color)?`background:${esc(r.color)};color:${esc(r.color)}`:''}" title="Color personalizado">${isCustomColor(r.color)?'':PIPETTE}</span><input type="color" value="${esc(isCustomColor(r.color)?r.color:PALETTE[0])}" data-custom/></span></div>
           <button class="fb-del" title="Eliminar">${icon("trash")}</button>`;
@@ -246,7 +246,7 @@ export async function mountFolders(opts){
         for (const r of rows){ if (r._del && r._orig){ await supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig); } }
         for (const r of renom){ await supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig); }
         for (const r of renom){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._tmp); }
-        close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas ✓"); return;
+        close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas"); return;
       }
       try{
         // Borrados: quita la fila + manda sus items a Sin carpeta.
@@ -277,7 +277,7 @@ export async function mountFolders(opts){
             if (from && r.nombre!==from){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from); }
           }
         }
-        close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas ✓");
+        close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas");
       } catch(e){ toast(e.message||"No se pudo guardar", true); }
     };
   }
@@ -286,7 +286,7 @@ export async function mountFolders(opts){
     document.querySelectorAll(".fb-epop").forEach(x=>x.remove());
     const pop = document.createElement("div"); pop.className="fb-epop";
     pop.innerHTML = EMOJIS.map(e=>`<button data-e="${e}">${e}</button>`).join("")
-      + `<button data-e="" title="Sin emoji" style="color:var(--muted)">✕</button>`
+      + `<button data-e="" title="Sin emoji" style="color:var(--muted)">${icon("x")}</button>`
       + `<div class="fb-erow"><input placeholder="pega otro emoji" maxlength="4"/></div>`;
     document.body.appendChild(pop);
     const r = anchor.getBoundingClientRect();

@@ -265,8 +265,8 @@ function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit"
 function mediaThumb(m){ const u=esc(m.content.media_url);
   if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}" loading="lazy"/></a>`;
   if(m.type==="video") return `<a href="${u}" target="_blank"><video src="${u}"></video></a>`;
-  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">🎵</a>`;
-  return `<a href="${u}" target="_blank" title="Archivo">📎</a>`; }
+  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">${icon("mic")}</a>`;
+  return `<a href="${u}" target="_blank" title="Archivo">${icon("file")}</a>`; }
 
 const FN=(n)=>`${SUPABASE_URL}/functions/v1/${n}`;
 async function callFn(name, body){
@@ -340,7 +340,7 @@ async function startTest(){
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
   await loadThread();
   await loadContactPanel({ id:st.contactId, wa_id:"webchat-test", nombre:st.contactName });
-  toast(flowId?"Flujo iniciado ✓ — responde como el cliente":"Prueba reiniciada ✓");
+  toast(flowId?"Flujo iniciado — responde como el cliente":"Prueba reiniciada");
 }
 
 // ── Hilo ──
@@ -378,7 +378,7 @@ function renderMsg(m){
   el.className="msg "+(m.direction==="in"?"in-m":"out-m"); el.dataset.id=m.id;
   const mh=mediaHtml(m);
   const txt=m.content?.text||m.content?.caption||m.content?.title||`[${m.type}]`;
-  const tr=m.content?.transcription?`<div class="transcript" title="Transcripción automática">🎙️ ${esc(m.content.transcription)}</div>`:"";
+  const tr=m.content?.transcription?`<div class="transcript" title="Transcripción automática">${icon("mic")} ${esc(m.content.transcription)}</div>`:"";
   el.innerHTML=`${mh||esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
   t.appendChild(el);
   if(m.direction==="out" && m.content?.buttons?.length){
@@ -388,13 +388,13 @@ function renderMsg(m){
   }
   t.scrollTop=t.scrollHeight;
 }
-function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"⚠️ falló",pending:"…"}[s]||s; }
+function statusLabel(s){ return {sent:"✓",delivered:"✓✓",read:"✓✓ leído",failed:"falló",pending:"…"}[s]||s; }
 function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; const u=esc(url);
   const cap=m.content?.caption?`<div style="margin-top:5px">${esc(m.content.caption)}</div>`:"";
   if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}"/></a>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
-  return `<a class="file" href="${u}" target="_blank">📎 ${esc(m.content?.filename||"archivo")}</a>${cap}`; }
+  return `<a class="file" href="${u}" target="_blank">${icon("file")} ${esc(m.content?.filename||"archivo")}</a>${cap}`; }
 
 // ── Enviar ──
 async function sendMsg(){
@@ -443,7 +443,7 @@ function renderQrList(q){
     folders[f].forEach(r=>{
       const col=r.color&&/^#/.test(r.color)?r.color:null;
       const nM=(Array.isArray(r.media)?r.media:[]).filter(m=>m&&m.media_url).length;
-      body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">📎 ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
+      body+=`<div class="qritem" data-id="${r.id}" style="${col?`border-left:3px solid ${col};padding-left:9px`:""}"><div class="qt">${col?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin-right:6px;vertical-align:1px"></span>`:""}${esc(r.titulo)}${r.atajo?`<span class="atajo">${esc(r.atajo)}</span>`:""}${nM?`<span class="atajo" style="background:transparent;border:1px solid var(--border);color:var(--muted)">${icon("file")} ${nM}</span>`:""}</div><div class="qp">${esc(r.cuerpo||"")}</div></div>`;
     });
   });
   box.innerHTML=body;
@@ -466,7 +466,7 @@ function qrRowsHtml(bubs){
       if(b.media_kind==="image") prev=`<img src="${esc(b.media_url)}" style="max-width:100%;max-height:170px;border-radius:8px;display:block;margin-bottom:6px"/>`;
       else if(b.media_kind==="video") prev=`<video src="${esc(b.media_url)}" style="max-width:100%;max-height:170px;border-radius:8px;display:block;margin-bottom:6px" controls></video>`;
       else if(b.media_kind==="audio") prev=`<audio src="${esc(b.media_url)}" style="width:100%;margin-bottom:6px" controls></audio>`;
-      else prev=`<div style="font-size:13px;margin-bottom:6px">📎 ${esc(b.filename||"archivo")}</div>`;
+      else prev=`<div style="font-size:13px;margin-bottom:6px">${icon("file")} ${esc(b.filename||"archivo")}</div>`;
       return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px">${prev}${b.media_kind!=="audio"?`<input class="qrs-cap" data-i="${i}" placeholder="Texto sobre la imagen (opcional)" value="${esc(b.caption||"")}" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none"/>`:""}</div>`;
     }
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px"><textarea class="qrs-txt" data-i="${i}" style="width:100%;min-height:64px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;resize:vertical;font-family:inherit">${esc(b.text||"")}</textarea></div>`;
@@ -481,7 +481,7 @@ function openQrSend(r){
   card.innerHTML=`
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
       <div style="flex:1;font-weight:700;font-size:15px">Enviar respuesta rápida</div>
-      <button class="qrs-x" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">✕</button>
+      <button class="qrs-x" style="background:none;border:none;color:var(--muted);cursor:pointer;line-height:1"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div style="display:flex;flex:1;min-height:0;overflow:hidden;flex-wrap:wrap">
       <div style="flex:1;min-width:240px;padding:14px 16px;overflow-y:auto">
@@ -657,7 +657,7 @@ function renderContactPanel(){
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios enviados", mediaBody, {count:media.length})}
     ${sec("Avanzado", advBody, {open:false})}`;
-  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada ✓"); renderContactPanel(); });
+  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada"); renderContactPanel(); });
   p.querySelectorAll("#pTags button[data-tag]").forEach(b=> b.onclick=async()=>{ await supa.from("contact_tags").delete().eq("contact_id",contact.id).eq("tag_id",b.dataset.tag); const t=allTags.find(x=>x.id===b.dataset.tag); logEvent(contact.id,"etiqueta_del","Etiqueta quitada",t?.nombre); assigned.delete(b.dataset.tag); renderContactPanel(); });
   const addBtn=$("pAddBtn"), pop=$("pTagPop");
   if(addBtn && pop){
@@ -681,7 +681,7 @@ function renderContactPanel(){
         { contact_id:contact.id, field_id:fid, value:val, updated_at:new Date().toISOString() },
         { onConflict:"contact_id,field_id" });
       if(error){ toast("No se pudo guardar: "+error.message,true); }
-      else { vals[fid]=val; toast(val?"Guardado ✓":"Dato borrado ✓"); }
+      else { vals[fid]=val; toast(val?"Guardado":"Dato borrado"); }
       renderContactPanel();
     };
     inp.addEventListener("blur", save);
@@ -701,14 +701,14 @@ async function toggleBot(){
   await supa.from("contacts").update({ bot_activo:!on }).eq("id",st.contactId);
   if(panelData.contact) panelData.contact.bot_activo=!on;
   setBotPill(!on); logEvent(st.contactId, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
-  toast(on?"Bot pausado ✓":"Bot reactivado ✓");
+  toast(on?"Bot pausado":"Bot reactivado");
 }
 async function exportMessages(){
   const { data }=await supa.from("messages").select("direction,type,content,ts").eq("contact_id",st.contactId).order("ts");
   const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Bot"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
   const blob=new Blob([`Prueba de flujo\n\n`+lines.join("\n")],{type:"text/plain;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="prueba_flujo.txt"; a.click(); URL.revokeObjectURL(a.href);
-  toast("Mensajes exportados ✓");
+  toast("Mensajes exportados");
 }
 
 // ── Realtime ──

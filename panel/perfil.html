@@ -152,7 +152,7 @@ async function saveProfile(e){
   if(error){ toast(/avatar_url|column/.test(error.message)?"Falta aplicar la migración 0014 (avatar_url)":error.message,true); return; }
   st.me.nombre=patch.nombre; if(patch.avatar_url) st.me.avatar_url=patch.avatar_url; st.pendingAvatar=null;
   refreshUserChip({ name:patch.nombre||(st.email||"").split("@")[0]||"Perfil", avatar:st.me.avatar_url||null }); // actualiza el chip del sidebar
-  toast("Perfil guardado ✓");
+  toast("Perfil guardado");
 }
 async function changePassword(e){
   const cur=$("pwCur").value, nw=$("pwNew").value, nw2=$("pwNew2").value;
@@ -167,7 +167,7 @@ async function changePassword(e){
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(error.message,true); return; }
   $("pwCur").value=""; $("pwNew").value=""; $("pwNew2").value="";
-  toast("Contraseña actualizada ✓");
+  toast("Contraseña actualizada");
 }
 boot();
 </script>

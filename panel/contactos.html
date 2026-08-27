@@ -170,9 +170,9 @@
         <span class="fglabel">Rápidos</span>
         <button class="ftog" data-quick="compro" type="button"><span class="dot" style="background:var(--green)"></span>Compró <span class="fc" data-qc="compro"></span></button>
         <button class="ftog" data-quick="anuncio" type="button"><span class="dot" style="background:var(--purple)"></span>Llegó por anuncio <span class="fc" data-qc="anuncio"></span></button>
-        <button class="ftog" data-quick="organico" type="button"><span class="dot" style="background:var(--green)"></span>🌱 Orgánico <span class="fc" data-qc="organico"></span></button>
-        <button class="ftog" data-quick="sinprod" type="button"><span class="dot" style="background:var(--amber)"></span>🤖 Sin producto aún <span class="fc" data-qc="sinprod"></span></button>
-        <button class="ftog" data-quick="conimg" type="button"><span class="dot" style="background:#0ea5e9"></span>📷 Envió imagen <span class="fc" data-qc="conimg"></span></button>
+        <button class="ftog" data-quick="organico" type="button"><span class="dot" style="background:var(--green)"></span>Orgánico <span class="fc" data-qc="organico"></span></button>
+        <button class="ftog" data-quick="sinprod" type="button"><span class="dot" style="background:var(--amber)"></span>Sin producto aún <span class="fc" data-qc="sinprod"></span></button>
+        <button class="ftog" data-quick="conimg" type="button"><span class="dot" style="background:#0ea5e9"></span>Envió imagen <span class="fc" data-qc="conimg"></span></button>
         <button class="ftog" data-quick="bloqueado" type="button"><span class="dot" style="background:var(--red)"></span>Bloqueados <span class="fc" data-qc="bloqueado"></span></button>
         <button class="ftog" data-quick="noremk" type="button"><span class="dot" style="background:var(--muted)"></span>No remarketing <span class="fc" data-qc="noremk"></span></button>
         <button class="ftog" data-quick="archivado" type="button"><span class="dot" style="background:var(--faint)"></span>Archivados <span class="fc" data-qc="archivado"></span></button>
@@ -512,7 +512,7 @@ async function setArchived(ids, val, ch){
   const rows=ids.map(id=>({ channel_id:channelId, contact_id:id, archivada:val }));
   const { error }=await supa.from("conversations").upsert(rows,{ onConflict:"contact_id" });
   if(error){ toast(error.message,true); return; }
-  toast(val?`${ids.length>1?ids.length+" archivados":"Archivado"} ✓`:`${ids.length>1?ids.length+" desarchivados":"Desarchivado"} ✓`);
+  toast(val?`${ids.length>1?ids.length+" archivados":"Archivado"}`:`${ids.length>1?ids.length+" desarchivados":"Desarchivado"}`);
   if(val) ids.forEach(id=>st.sel.delete(id));
   await load();
 }
@@ -520,7 +520,7 @@ async function toggleBot(c){
   const nv=!c.bot_activo;
   const { error }=await supa.from("contacts").update({ bot_activo:nv }).eq("id",c.id);
   if(error){ toast(error.message,true); return; }
-  c.bot_activo=nv; toast(nv?"Bot activado ✓":"Bot en pausa"); render();
+  c.bot_activo=nv; toast(nv?"Bot activado":"Bot en pausa"); render();
 }
 // Excluir / volver a incluir en el remarketing (secuencias y reenganche). Se
 // prende solo cuando el cliente pide baja; acá se puede quitar o poner a mano.
@@ -534,8 +534,8 @@ async function setNoRemarketing(ids, val){
   let error=null; const chNR=st.channelId;
   for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ no_remarketing:val }).eq("channel_id",chNR).in("id",trozo); if(r.error){ error=r.error; break; } }
   if(error){ toast(error.message,true); return; }
-  toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing ✓`
-           :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing ✓`);
+  toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing`
+           :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing`);
   if(val) ids.forEach(id=>st.sel.delete(id));
   await load();
 }
@@ -554,7 +554,7 @@ async function saveContact(){
   if(st.editing){
     const { error }=await supa.from("contacts").update({ nombre:nombre||null }).eq("id",st.editing.id);
     if(error){ toast(error.message,true); return; }
-    $("modal").classList.remove("show"); toast("Contacto actualizado ✓"); await load(); return;
+    $("modal").classList.remove("show"); toast("Contacto actualizado"); await load(); return;
   }
   const wa=$("cPhone").value.replace(/[^0-9]/g,"");
   if(!wa){ toast("Escribe un teléfono",true); return; }
@@ -567,13 +567,13 @@ async function saveContact(){
   if(wa.length<10 && !await confirmDialog({title:"¿Falta el código de país?",messageHtml:`«${esc(wa)}» parece no incluir el código de país. El número de WhatsApp lo incluye siempre (ej. <b>51${esc(wa)}</b>). ¿Guardar igual?`,confirmText:"Guardar igual"})) return;
   const { error }=await supa.from("contacts").upsert({ channel_id:st.channelId, wa_id:wa, nombre:nombre||null },{ onConflict:"channel_id,wa_id" });
   if(error){ toast(error.message,true); return; }
-  $("modal").classList.remove("show"); toast("Contacto guardado ✓"); await load();
+  $("modal").classList.remove("show"); toast("Contacto guardado"); await load();
 }
 async function removeContact(c){
   if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación e historial.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("contacts").delete().eq("id",c.id);
   if(error){ toast(error.message,true); return; }
-  st.sel.delete(c.id); toast("Contacto eliminado ✓"); await load();
+  st.sel.delete(c.id); toast("Contacto eliminado"); await load();
 }
 
 // ── Acciones en lote ──
@@ -592,7 +592,7 @@ async function bulk(act){
     const rows=ids.map(id=>({ contact_id:id, tag_id:tid }));
     const { error }=await supa.from("contact_tags").upsert(rows,{ onConflict:"contact_id,tag_id", ignoreDuplicates:true });
     if(error){ toast(error.message,true); return; }
-    toast(`Etiqueta aplicada a ${ids.length} ✓`); await load(); return;
+    toast(`Etiqueta aplicada a ${ids.length}`); await load(); return;
   }
   if(act==="stage"){
     const k=await askChoice({ title:`Mover ${ids.length} a la etapa…`, options:EMBUDO_STAGES.map(s=>({label:s.label,value:s.k,desc:s.desc})) });
@@ -600,7 +600,7 @@ async function bulk(act){
     let error=null;
     for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ stage:k }).eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
-    toast(`${ids.length} movido(s) a ${STAGE[k].label} ✓`); await load(); return;
+    toast(`${ids.length} movido(s) a ${STAGE[k].label}`); await load(); return;
   }
   if(act==="block"||act==="unblock"){
     const on=act==="block";
@@ -608,7 +608,7 @@ async function bulk(act){
     let error=null;
     for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ bloqueado:on }).eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
-    toast(on?`${ids.length} bloqueado(s) ✓`:`${ids.length} desbloqueado(s) ✓`); await load(); return;
+    toast(on?`${ids.length} bloqueado(s)`:`${ids.length} desbloqueado(s)`); await load(); return;
   }
   if(act==="nomk"){
     const mode=await askChoice({ title:`Remarketing · ${ids.length} contacto(s)`, options:[
@@ -633,7 +633,7 @@ async function bulk(act){
     const rows=elegibles.map(id=>({ channel_id:ch, contact_id:id, sequence_id:sid, paso_actual:0, estado:"activa", updated_at:now }));
     const { error }=await supa.from("sequence_subscriptions").upsert(rows,{ onConflict:"contact_id,sequence_id", ignoreDuplicates:true });
     if(error){ toast(error.message,true); return; }
-    toast(`${elegibles.length} agregado(s) a la secuencia ✓`); st.sel.clear(); render(); return;
+    toast(`${elegibles.length} agregado(s) a la secuencia`); st.sel.clear(); render(); return;
   }
   if(act==="arch"){
     const mode=await askChoice({ title:`${ids.length} contacto(s)`, options:[{label:"Archivar",value:"arch",desc:"Salen de la lista (y de la Bandeja)"},{label:"Desarchivar",value:"unarch",desc:"Vuelven a la lista"}] });
@@ -648,7 +648,7 @@ async function bulk(act){
     let error=null;
     for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
-    st.sel.clear(); toast(`${ids.length} eliminado(s) ✓`); await load(); return;
+    st.sel.clear(); toast(`${ids.length} eliminado(s)`); await load(); return;
   }
 }
 
@@ -729,7 +729,7 @@ async function importCsv(file){
   const partes=[`${nuevos} ${p(nuevos,"contacto nuevo","contactos nuevos")}`];
   if(repes) partes.push(`${repes} ya ${p(repes,"estaba","estaban")} (sin tocar)`);
   if(sinTel) partes.push(`${sinTel} ${p(sinTel,"fila sin teléfono, no entró","filas sin teléfono, no entraron")}`);
-  toast(`Importado ✓ — ${partes.join(" · ")}`, sinTel>nuevos); await load();
+  toast(`Importado — ${partes.join(" · ")}`, sinTel>nuevos); await load();
 }
 boot();
 </script>

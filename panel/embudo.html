@@ -332,7 +332,7 @@ function renderMetricas(F){
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
       <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"} <span class="mtag">base: ${zonaSub?`contactos de ${zonaNom}`:"todos los contactos"}</span></div>
       <div class="mdesc">${zonaSub
-        ? `De los contactos que <b>ya dijeron ser de ${zonaNom}</b>, cuántos compran. ⚠️ Los que aún no dicen su ciudad NO entran en esta base, así que esta cifra <b>no es comparable</b> con la de "Total".`
+        ? `De los contactos que <b>ya dijeron ser de ${zonaNom}</b>, cuántos compran. Los que aún no dicen su ciudad NO entran en esta base, así que esta cifra <b>no es comparable</b> con la de "Total".`
         : `De <b>todos los que te escriben</b> (curiosos incluidos), cuántos llegan a comprar. Es todo el embudo junto: <b>enganchar + cerrar</b>.`}</div>
       <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos${zonaSub?` de ${zonaNom}`:""}</div>
     </div></div>`;
@@ -391,7 +391,7 @@ function renderNeck(F){
     el.innerHTML=`<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`+enCursoTxt;
     return;
   }
-  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠️"}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`+enCursoTxt;
+  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`+enCursoTxt;
 }
 
 function renderFunnel(F){
@@ -402,7 +402,7 @@ function renderFunnel(F){
     { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
     { lbl:"Curiosos", n:N.curiosos, c:col("curioso") },
     { lbl:"Interés", n:N.interes, c:col("interesado") },
-    { lbl:"Caliente 🔥", n:N.calientes, c:col("caliente") },
+    { lbl:"Caliente", n:N.calientes, c:col("caliente") },
     { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado") },
     { lbl:"Compraron", n:N.compraron, c:col("comprado") },
   ];
@@ -429,7 +429,7 @@ function renderPlata(cs){
   let porCobrar=0, conPed=0;
   confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
   if(porCobrar<=0){ el.innerHTML=""; return; }
-  el.innerHTML=`<div class="plata"><span style="font-size:17px">💰</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
+  el.innerHTML=`<div class="plata"><span style="font-size:17px">${icon("dollar")}</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
 }
 
 // ── Embudo de ENTREGA (solo provincia) ────────────────────────────────
@@ -503,7 +503,7 @@ function renderEntrega(cs){
 
   // Aviso de la fuga principal (el no-recojo, si lo hay).
   if(noRecogido>0){
-    fugaEl.innerHTML=`<div class="neck"><span class="ni">${icon("alert")||"⚠️"}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
+    fugaEl.innerHTML=`<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
   } else if(enRiesgo>0){
     fugaEl.innerHTML=`<div class="neck ok">${icon("check")}<div><b>${nf.format(enRiesgo)}</b> esperando en la agencia y ninguno caído aún. Avísales que paguen el saldo para cerrar el recojo.</div></div>`;
   } else fugaEl.innerHTML="";
@@ -536,7 +536,7 @@ function renderProvinciaAhora(cs){
     { label:"En agencia",    desc:"Llegaron; esperando que paguen el saldo",             color:"#0ea5e9", n:enAg },
     { label:"Pagaron saldo", desc:"Mandaron el comprobante del saldo — por validar",     color:"#f59e0b", n:pagoSaldo },
     { label:"Clave enviada", desc:"Saldo aprobado; ya tienen su clave de recojo",        color:"#10b981", n:clave },
-    { label:"Recojo",        desc:"Recogieron su pedido — cerrado ✓",                    color:"#16a34a", n:recojo },
+    { label:"Recojo",        desc:"Recogieron su pedido — cerrado",                    color:"#16a34a", n:recojo },
   ];
   const total=rows.reduce((s,r)=>s+r.n,0);
   if(total===0){ panel.style.display="none"; return; }
@@ -587,7 +587,7 @@ function renderProductos(){
     const N=F.niveles;
     const seg=(n,c)=> N.llegaron>0?`<span style="width:${Math.round(n/N.llegaron*100)}%;background:${c}"></span>`:"";
     return `<div class="pcard">
-      <div class="pc-hd"><span class="pc-emoji">${prod.emoji?esc(prod.emoji):"📦"}</span><span class="pc-name">${esc(prod.nombre||"Producto")}</span><span class="pc-tag">${prod.tipo==="fisico"?"Físico":"Digital"}</span></div>
+      <div class="pc-hd"><span class="pc-emoji">${prod.emoji?esc(prod.emoji):icon("box")}</span><span class="pc-name">${esc(prod.nombre||"Producto")}</span><span class="pc-tag">${prod.tipo==="fisico"?"Físico":"Digital"}</span></div>
       <div class="pc-kpis">
         <div class="pc-kpi"><div class="pc-kv ${efC}">${F.efectividad==null?"—":F.efectividad+"%"}</div><div class="pc-kl">Efectividad</div></div>
         <div class="pc-kpi"><div class="pc-kv ${cvC}">${F.conversion==null?"—":F.conversion+"%"}</div><div class="pc-kl">Conversión</div></div>

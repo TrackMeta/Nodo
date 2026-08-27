@@ -62,7 +62,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast } from "./shell.js";
+import { supa, mountShell, toast, icon } from "./shell.js";
 import { attachVarPicker } from "./var-picker.js";
 const $=(id)=>document.getElementById(id);
 const IC={
@@ -171,8 +171,8 @@ function render(b){
       <div class="desc">El digital es rápido: el cliente paga y recibe su producto al instante. Esto decide si esa entrega es automática o espera tu visto bueno. Es el <b>default del canal</b>; cada producto digital puede cambiarlo en su ficha.</div>
       <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el pago de un producto digital?</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="digOpts">
-        ${[["auto","⚡","Automático: si el monto cuadra, entrega el producto sin consultarme","La IA lee el comprobante y, si el monto coincide, envía el link/archivo al toque. Ante cualquier duda te lo deriva a Pagos por validar."],
-           ["manual","👁️","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA lo analiza y te deja su lectura hecha, pero no entrega nada: la tarjeta con la foto te espera en Pagos por validar. Al aprobar, el bot entrega y sigue vendiendo."]]
+        ${[["auto",icon("disparadores"),"Automático: si el monto cuadra, entrega el producto sin consultarme","La IA lee el comprobante y, si el monto coincide, envía el link/archivo al toque. Ante cualquier duda te lo deriva a Pagos por validar."],
+           ["manual",icon("eye"),"Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA lo analiza y te deja su lectura hecha, pero no entrega nada: la tarjeta con la foto te espera en Pagos por validar. Al aprobar, el bot entrega y sigue vendiendo."]]
           .map(([v,ic,t,d])=>{ const on=(v==="manual")?(p.digital.validacion==="manual"):(p.digital.validacion!=="manual"); return `
         <div class="digopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
           <span class="digdot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
@@ -186,7 +186,7 @@ function render(b){
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta si pagó al menos el precio menos esta diferencia. Pagar de más siempre se acepta.</span>
       </div>
       <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="margin:0;font-size:12.5px;font-weight:700">🛡️ Revisar a mano si el pago supera el precio en más de</label>
+        <label style="margin:0;font-size:12.5px;font-weight:700">${icon("shield")} Revisar a mano si el pago supera el precio en más de</label>
         <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
           <span style="font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px 0 10px">S/</span>
           <input class="in" id="pDigRev" type="number" min="0" step="5" value="${Number(p.digital.revisar_sobre_sol ?? 50)}" style="width:80px;border:none"/>
@@ -200,9 +200,9 @@ function render(b){
       <div class="chd"><span class="ico iaic">${IC.coins}</span><span class="nm">Pago de más (vuelto)</span></div>
       <div class="desc">Qué hace el bot cuando el cliente <b>reclama</b> que pagó de más.</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px" id="vlOpts">
-        ${[["tranquilizar","🙌","Tranquilizar y seguir vendiendo","El bot le dice que estás gestionando su vuelto, te avisa por Telegram, y sigue atendiéndolo. Nunca queda en el aire."],
-           ["humano","🙋","Pasar a un humano","El bot pausa esa conversación y te la traspasa. Ojo: si no estás disponible, el cliente queda esperando tu respuesta."],
-           ["off","🚫","No hacer nada especial","El bot no responde nada específico ni te avisa; lo maneja la IA como cualquier mensaje."]]
+        ${[["tranquilizar",icon("handshake"),"Tranquilizar y seguir vendiendo","El bot le dice que estás gestionando su vuelto, te avisa por Telegram, y sigue atendiéndolo. Nunca queda en el aire."],
+           ["humano",icon("user"),"Pasar a un humano","El bot pausa esa conversación y te la traspasa. Ojo: si no estás disponible, el cliente queda esperando tu respuesta."],
+           ["off",icon("ban"),"No hacer nada especial","El bot no responde nada específico ni te avisa; lo maneja la IA como cualquier mensaje."]]
           .map(([v,ic,t,d])=>{ const on=p.vuelto.modo===v; return `
         <div class="vlopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
           <span class="vldot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
@@ -223,8 +223,8 @@ function render(b){
 
       <label style="margin-top:14px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el adelanto?</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="adelOpts">
-        ${[["manual","👁️","Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta con los datos y la foto te espera en Pagos por validar."],
-           ["auto","⚡","Automático: si el monto cuadra, valida el adelanto sin consultarme","Ante cualquier duda (monto, fraude o comprobante repetido) te lo deriva igual a Pagos por validar."]]
+        ${[["manual",icon("eye"),"Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta con los datos y la foto te espera en Pagos por validar."],
+           ["auto",icon("disparadores"),"Automático: si el monto cuadra, valida el adelanto sin consultarme","Ante cualquier duda (monto, fraude o comprobante repetido) te lo deriva igual a Pagos por validar."]]
           .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.adelanto.validacion==="auto"):(p.adelanto.validacion!=="auto"); return `
         <div class="adelopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
           <span class="adeldot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
@@ -280,8 +280,8 @@ function render(b){
       <div class="desc">Cómo el agente IA verifica los pagos de saldos remanentes para entregar la clave de recojo.</div>
       <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Cómo quieres que tu IA verifique los pagos para entregar la clave de recojo?</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="logOpts">
-        ${[["manual","👁️","Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave","La IA te avisará cuando reciba un comprobante (WhatsApp o Telegram). Una vez lo apruebes, dará la clave de recojo."],
-           ["auto","⚡","Automático: si el cliente paga el saldo, no me notifiques y dale su clave automáticamente","La IA analiza el comprobante. Si el monto coincide, entrega la clave secreta sola."]]
+        ${[["manual",icon("eye"),"Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave","La IA te avisará cuando reciba un comprobante (WhatsApp o Telegram). Una vez lo apruebes, dará la clave de recojo."],
+           ["auto",icon("disparadores"),"Automático: si el cliente paga el saldo, no me notifiques y dale su clave automáticamente","La IA analiza el comprobante. Si el monto coincide, entrega la clave secreta sola."]]
           .map(([v,ic,t,d])=>{ const on=(v==="auto")?(p.log.modo==="auto"):(p.log.modo!=="auto"); return `
         <div class="logopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
           <span class="logdot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
@@ -427,7 +427,7 @@ function render(b){
     const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=p; toast("Pagos y avisos guardado ✓");
+    st.channel.pedidos_config=p; toast("Pagos y avisos guardado");
   };
 }
 

@@ -240,7 +240,7 @@
     <div class="armhd">
       <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">Armar con IA</div><div style="font-size:12px;color:var(--muted)" id="armSub">Describe tu producto y la IA lo arma</div></div>
-      <button class="iconbtn" id="armClose" title="Cerrar" style="flex:none">✕</button>
+      <button class="iconbtn" id="armClose" title="Cerrar" style="flex:none"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="armbody" id="armBody"></div>
     <div class="armft" id="armFt"></div>
@@ -297,7 +297,7 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function renderGvToggle(){
   const el=$("gvToggle"); if(!el) return;
   const seg=(v,ic,l)=>`<button data-gv="${v}" style="display:inline-flex;align-items:center;gap:6px;border:none;background:${st.gv===v?'var(--brand)':'transparent'};color:${st.gv===v?'#fff':'var(--muted)'};font:inherit;font-size:12.5px;font-weight:600;padding:7px 15px;border-radius:8px;cursor:pointer">${ic} ${l}</button>`;
-  el.innerHTML=seg("catalogo",icon("box"),"Catálogo")+seg("angulos","🎯","Ángulos");
+  el.innerHTML=seg("catalogo",icon("box"),"Catálogo")+seg("angulos",icon("compass"),"Ángulos");
   el.querySelectorAll("[data-gv]").forEach(b=> b.onclick=()=>{ if(st.gv===b.dataset.gv) return; st.gv=b.dataset.gv; renderGvToggle(); applyGvMode(); });
 }
 // Muestra el panel del modo activo (catálogo o hub de ángulos).
@@ -365,7 +365,7 @@ function renderAngHub(){
   const { prods, byProd, bank, adsMeta, angOk }=st.hub;
   const adName=(id)=>{ const m=adsMeta.find(x=>x.ad_id===String(id)); return m?(m.ad_name||m.ad_id):id; };
   let html=`<div class="card" style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">
-    <span style="font-size:26px;line-height:1">🎯</span>
+    <span style="font-size:26px;line-height:1">${icon("compass")}</span>
     <div><div style="font-weight:750;font-size:15px;letter-spacing:-.2px">Ángulos y banco de anuncios</div>
     <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px">El <b>banco de anuncios</b> de cada producto es su lista de anuncios: cualquiera que esté ahí <b>rutea a ese producto</b> (aunque el cliente no escriba la palabra clave). A cada anuncio le eliges un <b>ángulo</b> para su saludo — o lo dejas sin ángulo y usa el saludo general.</div></div>
   </div>`;
@@ -375,20 +375,20 @@ function renderAngHub(){
     const angs=byProd[p.id]||[];
     const bk=bank[p.id]||[];
     const sinAng=bk.filter(id=> hubAnguloDeAd(p.id,id)<0);
-    const em = p.emoji ? esc(p.emoji) : "📦";
+    const em = p.emoji ? esc(p.emoji) : icon("box");
     html+=`<div class="hub-prod" data-prod="${p.id}">
       <div class="hub-prod-hd">
         <div class="hub-prod-em">${em}</div>
         <div style="flex:1;min-width:0"><div class="hub-prod-nm">${esc(p.nombre)}</div><div class="hub-prod-sub">${bk.length} anuncio${bk.length!==1?"s":""} · ${angs.length} ángulo${angs.length!==1?"s":""}${sinAng.length?` · <span style="color:var(--amber)">${sinAng.length} sin ángulo</span>`:""}</div></div>
       </div>`;
     // ── ÁNGULOS (los cajones: la idea + el saludo) ──
-    html+=`<div style="font-size:12px;font-weight:800;margin:14px 0 4px">🎯 Ángulos <span style="font-weight:500;color:var(--faint)">— la idea y su saludo</span></div>`;
+    html+=`<div style="font-size:12px;font-weight:800;margin:14px 0 4px">${icon("compass")} Ángulos <span style="font-weight:500;color:var(--faint)">— la idea y su saludo</span></div>`;
     if(!angs.length){ html+=`<div style="font-size:11.5px;color:var(--faint);padding:0 0 4px">Aún no hay ángulos. Sin ellos, los anuncios del banco rutean igual, pero con el saludo general.</div>`; }
     angs.forEach((a,ai)=>{
       html+=`<div class="hub-ang" data-pid="${p.id}" data-ai="${ai}">
         <div style="display:flex;gap:8px;align-items:center">
           <input class="in hub-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
-          <span class="hub-count" title="anuncios en este ángulo">${(a.ad_ids||[]).length} 📣</span>
+          <span class="hub-count" title="anuncios en este ángulo">${(a.ad_ids||[]).length} ${icon("megaphone")}</span>
           <button class="iconbtn hub-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
         ${ganchoIAHtml(a.gancho_ia, "hub-gancho")}
@@ -396,8 +396,8 @@ function renderAngHub(){
     });
     html+=`<button class="btn hub-add" style="height:30px;padding:0 12px;font-size:12px;margin-top:8px;background:transparent;border:1px dashed var(--border);color:var(--text)">＋ Ángulo</button>`;
     // ── BANCO DE ANUNCIOS (fuente de ruteo del producto) ──
-    const angOpts=(cur)=>`<option value="-1"${cur<0?" selected":""}>— Sin ángulo (saludo general) —</option>`+angs.map((a,ai)=>`<option value="${ai}"${cur===ai?" selected":""}>🎯 ${esc(a.nombre||a.slug||"(sin nombre)")}</option>`).join("");
-    html+=`<div style="font-size:12px;font-weight:800;margin:18px 0 4px">📣 Banco de anuncios <span style="font-weight:500;color:var(--faint)">— rutean a este producto</span></div>`;
+    const angOpts=(cur)=>`<option value="-1"${cur<0?" selected":""}>— Sin ángulo (saludo general) —</option>`+angs.map((a,ai)=>`<option value="${ai}"${cur===ai?" selected":""}>${esc(a.nombre||a.slug||"(sin nombre)")}</option>`).join("");
+    html+=`<div style="font-size:12px;font-weight:800;margin:18px 0 4px">${icon("megaphone")} Banco de anuncios <span style="font-weight:500;color:var(--faint)">— rutean a este producto</span></div>`;
     if(!bk.length){ html+=`<div style="font-size:12px;color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:12px;text-align:center">Aún no hay anuncios. Agrega el ID de un anuncio abajo${adsMeta.length?" o elígelo de Meta":""}.</div>`; }
     bk.forEach(id=>{
       const ai=hubAnguloDeAd(p.id,id);
@@ -412,7 +412,7 @@ function renderAngHub(){
     const otros=metaLibres.filter(m=>!sugeridos.includes(m));
     if(sugeridos.length){
       html+=`<div style="border:1px solid var(--ia-brd,rgba(168,85,247,.4));border-radius:11px;padding:11px 12px;margin-top:10px;background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.10),transparent 58%),var(--surface)">
-        <div style="font-size:11.5px;font-weight:800"><span style="background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">✨ Sugeridos de Meta</span> <span style="font-weight:500;color:var(--faint)">— mencionan «${esc(p.nombre)}»</span></div>
+        <div style="font-size:11.5px;font-weight:800"><span style="background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Sugeridos de Meta</span> <span style="font-weight:500;color:var(--faint)">— mencionan «${esc(p.nombre)}»</span></div>
         <div style="font-size:11px;color:var(--muted);margin:2px 0 8px">Anuncios de Meta cuyo nombre o campaña menciona este producto. Desmarca los que no quieras.</div>
         <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto">
           ${sugeridos.map(m=>`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="hub-sug" value="${esc(m.ad_id)}" checked/> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:""}</span></label>`).join("")}
@@ -489,7 +489,7 @@ async function hubSaveProduct(pid){
     if(eCfg) throw eCfg;
     if(prod) prod.config=cfg;
     st.hub.byProd[pid]=angs; st.hub.orig[pid]=angs.map(a=>a.id);
-    toast("Guardado ✓"); renderAngHub();
+    toast("Guardado"); renderAngHub();
   }catch(e){ toast(e.message||"No se pudo guardar",true); }
 }
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); /* el FAB lo controla renderDetail según si estás en el hub */ }
@@ -558,13 +558,13 @@ function renderCards(){
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":"Producto digital")}</div>
-      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">🎁 Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">🟩 Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
+      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
         const { error }=await supa.from("products").update({ folder:v }).eq("id",p.id);
         if(error){ toast(error.message,true); return; }
-        p.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderCards();
+        p.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards();
       }});
       pk.addEventListener("click",e=>e.stopPropagation());
       fslot.appendChild(pk);
@@ -591,19 +591,19 @@ function nuevoProductoModal(){
       <div style="font-size:13px;color:var(--muted);margin:4px 0 14px">Primero, ¿es un producto que vendes de frente o un complemento?</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
         <button class="npc" data-c="principal" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--brand);background:var(--brand-bg,rgba(43,127,255,.12));border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
-          <span style="font-weight:800;font-size:14px;color:var(--text)">🟦 Principal</span>
+          <span style="font-weight:800;font-size:14px;color:var(--text)">${icon("box")} Principal</span>
           <span style="font-size:11.5px;color:var(--muted);line-height:1.45">Se vende solo: tiene su gancho (palabra clave / anuncio) y su conversación de venta con IA.</span></button>
         <button class="npc" data-c="extra" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
-          <span style="font-weight:800;font-size:14px;color:var(--text)">🟩 Extra (complemento)</span>
+          <span style="font-weight:800;font-size:14px;color:var(--text)">${icon("plus")} Extra (complemento)</span>
           <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende solo — se engancha como <b>venta extra</b> a un principal. Solo lo esencial: precio, entrega y cómo lo vende la IA.</span></button>
         <button class="npc" data-c="regalo" style="flex:1;min-width:180px;text-align:left;border:1.5px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:5px">
-          <span style="font-weight:800;font-size:14px;color:var(--text)">🎁 Regalo</span>
+          <span style="font-weight:800;font-size:14px;color:var(--text)">${icon("gift")} Regalo</span>
           <span style="font-size:11.5px;color:var(--muted);line-height:1.45">No se vende: se <b>regala gratis</b> al comprar un principal. Digital o físico. Solo configuras qué es y su entrega.</span></button>
       </div>
       <div style="font-size:13px;color:var(--muted);margin:0 0 18px">¿Cómo se entrega? Esto adapta la ficha.</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        ${card("fisico","📦","Producto físico","Se envía: Lima contraentrega o provincia por agencia con adelanto. La logística la hereda de Negocio.")}
-        ${card("digital","💻","Producto digital","Se entrega al instante por un link o archivo al confirmar el pago.")}
+        ${card("fisico",icon("box"),"Producto físico","Se envía: Lima contraentrega o provincia por agencia con adelanto. La logística la hereda de Negocio.")}
+        ${card("digital",icon("file"),"Producto digital","Se entrega al instante por un link o archivo al confirmar el pago.")}
       </div>
       <label style="display:block;font-size:11.5px;color:var(--muted);margin:18px 0 6px;font-weight:700">Nombre del producto</label>
       <input id="nptName" placeholder="Ej. Zapatillas Runner" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)"/>
@@ -715,14 +715,14 @@ async function deleteProduct(){
   // a mano. Se cuenta antes para poder decirlo.
   let flIds=[]; try{ const {data:fs}=await supa.from("flows").select("id").eq("product_id",st.prod.id); flIds=(fs||[]).map(f=>f.id); }catch(_){}
   const vivasP = await charlasVivas(null, flIds);
-  if(!await confirmDialog({title:"Eliminar producto",messageHtml:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones y sus flujos. Esta acción no se puede deshacer.`+(vivasP?`<br><br>⚠️ Hay <b>${vivasP} conversación${vivasP===1?"":"es"}</b> a mitad de sus flujos ahora mismo: ${vivasP===1?"se queda":"se quedan"} sin flujo y ${vivasP===1?"pasa":"pasan"} a un humano. Los pedidos ya hechos no se borran.`:""),confirmText:"Eliminar",danger:true})) return;
+  if(!await confirmDialog({title:"Eliminar producto",messageHtml:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones y sus flujos. Esta acción no se puede deshacer.`+(vivasP?`<br><br>${icon("alert")} Hay <b>${vivasP} conversación${vivasP===1?"":"es"}</b> a mitad de sus flujos ahora mismo: ${vivasP===1?"se queda":"se quedan"} sin flujo y ${vivasP===1?"pasa":"pasan"} a un humano. Los pedidos ya hechos no se borran.`:""),confirmText:"Eliminar",danger:true})) return;
   // Igual que al borrar un flujo: product_versions cuelga del producto con `on delete
   // cascade` (migración 0005). Borrarlas a mano ANTES y sin mirar el error significaba que,
   // si el delete del producto fallaba, el producto quedaba vivo pero SIN presentaciones ni
   // precios — el usuario leía "no se pudo eliminar" con el producto ya destrozado.
   const { error }=await supa.from("products").delete().eq("id",st.prod.id);
   if(error){ toast(error.message,true); return; }
-  st.prod=null; toast("Producto eliminado ✓"); showGrid(); await loadProducts();
+  st.prod=null; toast("Producto eliminado"); showGrid(); await loadProducts();
 }
 
 function renderDetail(){
@@ -1193,8 +1193,8 @@ function renderEntrega(host){
         <div style="font-size:12.5px;color:var(--muted);margin:6px 0 12px;line-height:1.55">Cuándo se entrega tras cobrar. Por defecto sigue lo del canal en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>; acá lo cambias <b>solo para este producto</b>.</div>
         <select class="in" id="pValPago" style="max-width:320px">
           <option value="" ${!c.validacion_pago?"selected":""}>Usar el default del canal</option>
-          <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>⚡ Automático — entrega al toque si el monto cuadra</option>
-          <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>👁️ Manual — me avisa para aprobarlo yo</option>
+          <option value="auto" ${c.validacion_pago==="auto"?"selected":""}>Automático — entrega al toque si el monto cuadra</option>
+          <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>Manual — me avisa para aprobarlo yo</option>
         </select>
       </div>`;
     const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);
@@ -1486,7 +1486,7 @@ async function pintaHuecosFicha(){
     // Agrupa por TEMA y guarda un ejemplo real de cómo lo preguntaron.
     const m=new Map();
     for(const e of ev){
-      const tema=String(e.titulo||"").replace(/^❓ Preguntó por\s*/,"").replace(/\s*y no está en la ficha$/,"").trim();
+      const tema=String(e.titulo||"").replace(/^(?:❓ )?Preguntó por\s*/,"").replace(/\s*y no está en la ficha$/,"").trim();
       for(const t of tema.split(",").map(s=>s.trim()).filter(Boolean)){
         const r=m.get(t)||{n:0,ej:""};
         r.n++; if(!r.ej && e.detalle) r.ej=String(e.detalle);
@@ -1498,7 +1498,7 @@ async function pintaHuecosFicha(){
       .map(([t,r])=>`<li style="margin-bottom:5px"><b>${esc(t)}</b> · ${r.n} ${r.n===1?"vez":"veces"}`
         +(r.ej?`<div style="color:var(--faint);font-size:11px;margin-top:1px">“${esc(r.ej.slice(0,90))}”</div>`:"")+`</li>`).join("");
     host.innerHTML=`<div style="border:1px solid var(--amber,#f59e0b);background:rgba(245,158,11,.08);border-radius:11px;padding:11px 12px;margin:8px 0 10px">
-      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">❓ Te preguntaron esto y tu ficha no lo contesta</div>
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">Te preguntaron esto y tu ficha no lo contesta</div>
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">Cuando el dato no está acá, el bot no lo inventa: dice que te lo confirma y sigue vendiendo. Si lo completas, lo responde al toque y cierra.</div>
       <ul style="margin:0;padding-left:17px;font-size:12px">${filas}</ul></div>`;
   }catch(_){ /* sin datos todavía → no se muestra nada */ }
@@ -1620,7 +1620,7 @@ async function renderRemarketing(host){
     const { error }=await supa.from("channels").update({ remarketing:rm }).eq("id",st.channelId);
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/remarketing|column/.test(error.message)?"Falta aplicar la migración 0031":error.message,true); return; }
-    toast("Horario guardado ✓");
+    toast("Horario guardado");
   };
 
   // ── Secuencias por audiencia (mapa por producto) ──
@@ -1628,11 +1628,11 @@ async function renderRemarketing(host){
   // adelanto). En digital no existe (se entrega al instante) → no se muestra.
   const fisicoRem=(st.prod.tipo||"digital")==="fisico";
   const REM_SEG=[
-    ["general","🌐 General (comodín)","La red de seguridad: le llega a cualquier lead (curioso, interactuó, etc.) cuyo segmento de abajo esté vacío. Los que sí configures usan su propia secuencia; el resto cae aquí."],
-    ["solo_inicio","🌱 Curioso","Solo tiró la palabra clave y no volvió."],
-    ["interactuo","💬 Interactuó","Conversó o dejó un dato, pero no compró."],
-    ["caliente","🔥 Caliente","Escribió 4+ mensajes y no compró — el más enganchado. Ve al grano, con más urgencia."],
-    ...(fisicoRem ? [["provincia_sin_adelanto","📦 Provincia sin adelanto","Se activa apenas el cliente da su DNI (aunque todavía no complete el pedido): así también persigues al que se va antes de dar la sede. No le escribe mientras siga conversando, y sale solo apenas paga el adelanto."]] : []),
+    ["general","General (comodín)","La red de seguridad: le llega a cualquier lead (curioso, interactuó, etc.) cuyo segmento de abajo esté vacío. Los que sí configures usan su propia secuencia; el resto cae aquí."],
+    ["solo_inicio","Curioso","Solo tiró la palabra clave y no volvió."],
+    ["interactuo","Interactuó","Conversó o dejó un dato, pero no compró."],
+    ["caliente","Caliente","Escribió 4+ mensajes y no compró — el más enganchado. Ve al grano, con más urgencia."],
+    ...(fisicoRem ? [["provincia_sin_adelanto","Provincia sin adelanto","Se activa apenas el cliente da su DNI (aunque todavía no complete el pedido): así también persigues al que se va antes de dar la sede. No le escribe mientras siga conversando, y sale solo apenas paga el adelanto."]] : []),
   ];
   const remMap=()=>{ c.remarketing_seqs=(c.remarketing_seqs&&typeof c.remarketing_seqs==="object")?c.remarketing_seqs:{}; return c.remarketing_seqs; };
   // Compat: la general vieja vivía en remarketing_seq_id.
@@ -1643,7 +1643,7 @@ async function renderRemarketing(host){
     if(k==="general"){ if(seqId) c.remarketing_seq_id=seqId; else delete c.remarketing_seq_id; }
     prodSync();
     if(seqId){ try{ await supa.from("sequences").update({ segmento:k }).eq("id",seqId); }catch(_){} } // etiqueta para la insignia en Secuencias
-    toast(seqId?"Vinculada ✓ — recuerda Guardar el producto":"Quitada — recuerda Guardar el producto");
+    toast(seqId?"Vinculada — recuerda Guardar el producto":"Quitada — recuerda Guardar el producto");
     renderSlots();
   };
   const crearPara=async(k,label)=>{
@@ -1653,7 +1653,7 @@ async function renderRemarketing(host){
     if(error||!data){ toast("No se pudo crear la secuencia",true); return; }
     list.unshift({ id:data.id, nombre, activo:true, pasos:[] });
     await setSlot(k,data.id);
-    toast("Secuencia creada ✓ — edítala en Secuencias");
+    toast("Secuencia creada — edítala en Secuencias");
   };
   let abierto=null; // qué casilla tiene el editor de pasos abierto (una a la vez)
   const renderSlots=()=>{
@@ -1693,8 +1693,8 @@ async function renderRemarketing(host){
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px">¿Cómo se envía?</label>
         <select class="remModo" style="min-width:240px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-size:12.5px">
-          <option value="reenganche" ${modo0==="reenganche"?"selected":""}>🎣 Reenganche (espera el silencio)</option>
-          <option value="goteo" ${modo0==="goteo"?"selected":""}>💧 Goteo (calendario fijo)</option>
+          <option value="reenganche" ${modo0==="reenganche"?"selected":""}>Reenganche (espera el silencio)</option>
+          <option value="goteo" ${modo0==="goteo"?"selected":""}>Goteo (calendario fijo)</option>
         </select>
         <div class="remModoDesc" style="font-size:11px;color:var(--faint);margin-top:5px;line-height:1.45;max-width:420px">${remModoDesc(modo0)}</div>
       </div>
@@ -1710,7 +1710,7 @@ async function renderRemarketing(host){
       const { error }=await supa.from("sequences").update({ modo:seq.modo }).eq("id",seq.id);
       if(error && /modo|column/.test(error.message)){ toast("Aplica la migración 0064 para el modo goteo",true); return; }
       if(error){ toast(error.message,true); return; }
-      toast(seq.modo==="goteo"?"Modo goteo ✓":"Modo reenganche ✓");
+      toast(seq.modo==="goteo"?"Modo goteo":"Modo reenganche");
     };
     const ed=mountStepsEditor(wrap.querySelector(".se-mount"), {
       seq, channelId:st.channelId, angulos:st.remAngulos, presets:[],
@@ -1729,7 +1729,7 @@ async function renderRemarketing(host){
       const { error }=await supa.from("sequences").update({ pasos:seq.pasos }).eq("id",seq.id);
       btn.disabled=false; btn.textContent=old;
       if(error){ toast(error.message,true); return; }
-      toast("Pasos guardados ✓");
+      toast("Pasos guardados");
     };
   };
   renderSlots();
@@ -1755,7 +1755,7 @@ function pickMediaTo(kind, arr, onDone, syncCfg, tagBase){
       let tag=base, n=2; while(arr.some(x=>x.tag===tag)) tag=base+"_"+n++;
       arr.push({ tag, media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, descripcion:"" });
       if(syncCfg) syncCfg();
-      toast("Archivo agregado ✓"); if(onDone) onDone();
+      toast("Archivo agregado"); if(onDone) onDone();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -2125,11 +2125,11 @@ async function renderRegaloVenta(host){
   const esFisico=(st.prod.tipo==="fisico");
   b.innerHTML=`
     <div class="card" style="border-color:rgba(168,85,247,.4);margin-bottom:0">
-      <h4 style="margin-top:0">🎁 Regalo con la compra</h4>
+      <h4 style="margin-top:0">${icon("gift")} Regalo con la compra</h4>
       <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Un obsequio <b>gratis</b> que se entrega solo al <b>cerrar la venta</b> de este producto — no se cobra ni se pregunta. El <b>digital</b> le llega al chat; el <b>físico</b> viaja en el mismo paquete. ${esFisico?"":"<b>Ojo:</b> como este producto es digital, elige regalos digitales (un regalo físico necesitaría su propio envío)."}</div>
       <div id="regList" style="margin-top:12px"></div>
       <button class="btn" id="regAdd" ${regCat.length?"":"disabled"} style="margin-top:8px">+ Agregar regalo</button>
-      ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>🎁 Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
+      ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
       <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="regMenc" ${cfg.regalo_mencionar?"checked":""}/> Mencionar el regalo durante la venta (la IA lo usa de gancho para cerrar)</label>
     </div>`;
   const ra=$("regAdd"); if(ra) ra.onclick=()=>{ const c=regCat[0]; if(!c) return; cfg.regalos.push({ version_id:c.version_id, product_id:c.product_id, nombre:c.nombre, tipo:c.tipo }); paintRegalos(); };
@@ -2181,7 +2181,7 @@ function paintExtras(){
           <select class="sel exv" style="width:100%">
             ${(()=>{ const opt=c=>`<option value="${c.id}" ${x.version_id===c.id?"selected":""}>${esc(c.label)}</option>`;
               const ex=cat.filter(c=>c.esExtra), pr=cat.filter(c=>!c.esExtra);
-              return (ex.length?`<optgroup label="🟩 Complementos (extras)">${ex.map(opt).join("")}</optgroup>`:"")
+              return (ex.length?`<optgroup label="Complementos (extras)">${ex.map(opt).join("")}</optgroup>`:"")
                    + (pr.length?`<optgroup label="Productos principales">${pr.map(opt).join("")}</optgroup>`:""); })()}
           </select></div>
         <button class="iconbtn exu" style="flex:0 0 auto;margin-bottom:6px" title="Subir">▲</button>
@@ -2315,11 +2315,11 @@ async function renderInicio(){
     : fisico ? "Producto físico" : "Producto digital · entrega al instante";
   // Emoji editable (botón) + popup del selector (reusa wireEmojiPicker).
   const emojiBox = `<div style="position:relative;flex:none">
-      <button id="emojiBtn" class="emoji-head" title="Cambiar emoji" style="width:52px;height:52px;border-radius:14px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${st.prod.emoji?esc(st.prod.emoji):"📦"}</button>
+      <button id="emojiBtn" class="emoji-head" title="Cambiar emoji" style="width:52px;height:52px;border-radius:14px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("box")}</button>
       <div id="emojiPop" style="display:none;position:absolute;z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:300px;margin-top:6px"></div>
     </div>`;
   const PENCIL='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-  const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">🎁 Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
+  const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">${icon("gift")} Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
   const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${esRegalo?"0":"14px"}">
       ${emojiBox}
       <div style="flex:1;min-width:0">
@@ -2417,7 +2417,7 @@ async function renderInicio(){
         rowHtml("producto",{label:"El regalo",sub:fisico?`${emo}${esc(st.prod.nombre||"regalo")} · físico`:(est("producto").ok?"Entrega lista":"Falta el link o archivo"),ico:IC.producto,warn:!fisico&&!est("producto").ok,ok:fisico||est("producto").ok})
       ])}
       <div class="card" style="border-color:rgba(168,85,247,.4);margin-top:14px">
-        <h4 style="margin-top:0">🎁 Esto es un regalo</h4>
+        <h4 style="margin-top:0">${icon("gift")} Esto es un regalo</h4>
         <div style="font-size:13px;color:var(--muted);line-height:1.6">No se vende ni tiene flujo propio: se <b>regala gratis al comprar un producto principal</b>. Ve a ese principal → pestaña <b>Ventas extra</b> → <b>Regalo con la compra</b> y elígelo ahí. ${fisico?"Como es físico, viaja en el mismo paquete del pedido.":"Como es digital, configura arriba el link o archivo que se entrega."}</div>
       </div>`;
   } else if(esExtra){
@@ -2511,7 +2511,7 @@ async function renderInicio(){
       e.target.disabled=true;
       const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
-      toast("Puesto a vender ✓ · el producto ya vende"); st.tab="inicio"; renderDetail();
+      toast("Puesto a vender — el producto ya vende"); st.tab="inicio"; renderDetail();
     };
     const pv=$("pausarVenta");
     if(pv) pv.onclick=async(e)=>{
@@ -2519,7 +2519,7 @@ async function renderInicio(){
       e.target.disabled=true;
       const { error }=await supa.from("flows").update({ estado:"borrador" }).eq("id",st.receta.fVenta.id);
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
-      toast("Producto pausado ✓ · ya no vende"); st.tab="inicio"; renderDetail();
+      toast("Producto pausado — ya no vende"); st.tab="inicio"; renderDetail();
     };
   }
 }
@@ -2884,7 +2884,7 @@ async function generarFlujoVenta(skipConfirm){
   // El aviso lleva <b>, así que va por messageHtml (message se escapa) y el nombre del
   // flujo —texto del usuario— se escapa a mano con esc().
   const msgRegen = `Esto REESCRIBE por completo "${esc(ya?.nombre||"")}". Si lo editaste a mano en el editor visual, esos cambios se pierden.`
-    + (vivas?`<br><br>⚠️ Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo ahora mismo. Al regenerarlo ${vivas===1?"pasa":"pasan"} a un humano y vas a tener que retomar${vivas===1?"la":"las"} tú.`:"");
+    + (vivas?`<br><br>${icon("alert")} Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo ahora mismo. Al regenerarlo ${vivas===1?"pasa":"pasan"} a un humano y vas a tener que retomar${vivas===1?"la":"las"} tú.`:"");
   if(skipConfirm!==true && !await confirmDialog({
     title: ya?"Regenerar flujo de venta":"Generar flujo de venta",
     ...(ya ? { messageHtml: msgRegen }
@@ -2941,7 +2941,7 @@ async function generarFlujoVenta(skipConfirm){
     if((st.prod.tipo||"digital")==="fisico"){
       await generarFlujoFisico(flowId, N, E);
       await enlazarInicialesConVenta(flowId);
-      toast("Flujo de venta generado ✓");
+      toast("Flujo de venta generado");
       st.tab="inicio"; renderDetail();
       return;
     }
@@ -3200,7 +3200,7 @@ async function generarFlujoVenta(skipConfirm){
     }
 
     await enlazarInicialesConVenta(flowId);
-    toast("Flujo de venta generado ✓");
+    toast("Flujo de venta generado");
     st.tab="inicio"; renderDetail();
   }catch(e){ toast("Error al generar: "+(e.message||e),true); }
 }
@@ -3311,7 +3311,7 @@ function renderOpciones(host){
       <div class="row" style="align-items:flex-end;gap:14px">
         <div style="flex:0 0 180px"><label style="margin-top:0"><span style="color:var(--green);vertical-align:-2px">${icon("dollar")}</span> Tu costo <span style="font-weight:400;color:var(--faint);text-transform:none">(por unidad)</span></label>
           <input class="in" id="opCosto" type="number" min="0" step="0.5" value="${esc(cfg.costo??"")}" placeholder="Ej. 60"/></div>
-        <div style="flex:0 0 180px"><label style="margin-top:0">📦 Empaque <span style="font-weight:400;color:var(--faint);text-transform:none">(por pedido)</span></label>
+        <div style="flex:0 0 180px"><label style="margin-top:0">Empaque <span style="font-weight:400;color:var(--faint);text-transform:none">(por pedido)</span></label>
           <input class="in" id="opEmpaque" type="number" min="0" step="0.5" value="${esc(cfg.empaque??"")}" placeholder="Ej. 2"/></div>
         <div id="opMargen" style="flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--green,var(--green));display:none;align-items:center;gap:7px"></div>
       </div>
@@ -3473,7 +3473,7 @@ function pickEntregaFile(v,onDone){
       if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
       v.entrega=Array.isArray(v.entrega)?v.entrega:[];
       v.entrega.push({ tipo:"archivo", url:data.url, nombre:(file.name||"").replace(/\.[^.]+$/,""), filename:file.name, media_kind:data.kind||"document" });
-      toast("Archivo agregado ✓"); if(onDone) onDone();
+      toast("Archivo agregado"); if(onDone) onDone();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -3656,7 +3656,7 @@ async function renderFlujos(){
     const nombre=(sks.find(x=>x.id===source)?.nombre||"Flujo")+" · "+st.prod.nombre;
     const { data,error } = await supa.rpc("clone_flow",{ p_source:source, p_product:st.prod.id, p_role:role, p_nombre:nombre });
     if(error){ toast(error.message,true); return; }
-    toast("Flujo clonado ✓"); renderFlujos();
+    toast("Flujo clonado"); renderFlujos();
   };
 }
 
@@ -3721,7 +3721,7 @@ async function renderActivacion(host){
 const IA_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>';
 function ganchoIAHtml(value, cls){
   return `<div class="ia-gancho">
-    <div class="ia-gancho-hd"><span class="ia-gancho-gl">🤖</span><span class="ia-gancho-tt">Gancho para la IA</span><span class="ia-gancho-ds">desde qué idea le vende a este cliente</span></div>
+    <div class="ia-gancho-hd"><span class="ia-gancho-gl">${icon("robot")}</span><span class="ia-gancho-tt">Gancho para la IA</span><span class="ia-gancho-ds">desde qué idea le vende a este cliente</span></div>
     <input class="in ia-in ${cls}" placeholder="Ej. vino por un anuncio sobre calambres nocturnos" value="${esc(value||'')}"/>
   </div>`;
 }
@@ -3738,7 +3738,7 @@ function renderAngList(){
       ? `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="ang-ad" value="${esc(m.ad_id)}"${(a.ad_ids||[]).map(String).includes(String(m.ad_id))?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}</span></label>`).join("")}</div>`
       : `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y presiona Enter. (Conecta Meta Ads en Ajustes para elegirlos por su nombre.)</div>
          <div class="ang-chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:40px">
-           ${(a.ad_ids||[]).map(id=>`<span class="ad-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)"><span class="mono">${esc(id)}</span><button class="ad-chip-x" data-id="${esc(id)}" title="Quitar" style="border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button></span>`).join("")}
+           ${(a.ad_ids||[]).map(id=>`<span class="ad-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)"><span class="mono">${esc(id)}</span><button class="ad-chip-x" data-id="${esc(id)}" title="Quitar" style="border:0;background:transparent;color:var(--muted);cursor:pointer;line-height:1;padding:0">${icon("x")}</button></span>`).join("")}
            <input class="ad-chip-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:160px;color:var(--text);height:24px" placeholder="Pega un ID de anuncio y Enter"/>
          </div>`;
     return `<div class="ang-row" data-ai="${i}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
@@ -3801,7 +3801,7 @@ async function saveAngulos(){
     const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
     for(const id of (st.act.angulosOrig||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
     st.act.angulos=angs; st.act.angulosOrig=angs.map(a=>a.id);
-    toast("Ángulos guardados ✓"); renderComposer();
+    toast("Ángulos guardados"); renderComposer();
   }catch(e){ toast(e.message||"No se pudo guardar los ángulos",true); }
 }
 async function createWelcome(){
@@ -3811,7 +3811,7 @@ async function createWelcome(){
   }).select("id").single();
   if(error){ toast(error.message,true); return; }
   await supa.from("flow_nodes").insert({ flow_id:flow.id, tipo:"rotador", nombre:"Mensajes iniciales", es_inicial:true, config:{activo:true,variantes:[newVariant(0)],despues:{modo:"nada"}}, pos_x:80, pos_y:80 });
-  toast("Mensajes iniciales creados ✓"); accRerender("activacion"); refreshActivacionRow();
+  toast("Mensajes iniciales creados"); accRerender("activacion"); refreshActivacionRow();
 }
 
 // Lee los valores editables del DOM a memoria (antes de re-render o guardar).
@@ -3882,7 +3882,7 @@ function renderComposer(){
     </div>
 
     <div class="card">
-      <h4>🎯 Tu saludo según el anuncio</h4>
+      <h4>${icon("compass")} Tu saludo según el anuncio</h4>
       <div style="font-size:12px;color:var(--faint);margin:4px 0 12px;line-height:1.55">Cada ángulo agrupa unos anuncios y tiene su propio saludo — el cliente recibe el que retoma el anuncio del que vino. El <b>General</b> es el respaldo.</div>
       ${!st.act.angulosOk?`<div style="font-size:12.5px;color:var(--amber);line-height:1.5">Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`:`
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
@@ -3926,7 +3926,7 @@ function renderComposer(){
           <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
         ${ganchoIAHtml(angActivo.gancho_ia, "ang-gancho")}
-        <div style="font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5">📣 ${nAds?`<b style="color:var(--muted)">${nAds}</b> anuncio${nAds>1?"s":""} asignado${nAds>1?"s":""} a este ángulo.`:"Sin anuncios asignados."} Los anuncios se manejan en el <b style="color:var(--muted)">Banco de anuncios</b> (pestaña <b style="color:var(--muted)">Ángulos</b> del catálogo).</div>`;
+        <div style="font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5">${icon("megaphone")} ${nAds?`<b style="color:var(--muted)">${nAds}</b> anuncio${nAds>1?"s":""} asignado${nAds>1?"s":""} a este ángulo.`:"Sin anuncios asignados."} Los anuncios se manejan en el <b style="color:var(--muted)">Banco de anuncios</b> (pestaña <b style="color:var(--muted)">Ángulos</b> del catálogo).</div>`;
       body.appendChild(ang);
       ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1); (cfg.variantes||[]).forEach(v=>{ if(v.angulo===slug) v.angulo=""; }); st.act.tab=""; renderComposer(); };
     }
@@ -4007,7 +4007,7 @@ async function saveActivacion(opts){
   // El ruteo por ID de anuncio se maneja ahora en el Banco de anuncios del
   // producto (products.config.ad_bank). Ya no se toca el disparador "referral"
   // desde aquí: lo que exista se queda intacto y no se crea uno nuevo.
-  if(!silent) toast("Guardado ✓");
+  if(!silent) toast("Guardado");
   accRerender("activacion"); refreshActivacionRow();
 }
 function _renderComposerOld(){
@@ -4037,7 +4037,7 @@ function _renderComposerOld(){
     </div>
 
     <div class="card">
-      <h4>🎯 Ángulos del creativo</h4>
+      <h4>${icon("compass")} Ángulos del creativo</h4>
       <div style="font-size:12px;color:var(--faint);margin:4px 0 12px;line-height:1.55">Agrupa tus anuncios por gancho (Dolor, Energía, Oferta…). Abajo, en cada versión del mensaje inicial, eliges a qué ángulo responde: el bot muestra el saludo que <b>retoma el anuncio del que vino</b> el cliente. El gancho también lo usa la IA durante la venta.</div>
       ${st.act.angulosOk?`<div id="angList"></div>
       <button class="btn" id="addAngulo" style="margin-top:2px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar ángulo</button>
@@ -4098,7 +4098,7 @@ function _renderComposerOld(){
         <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
       </div>
       ${(st.act.angulos&&st.act.angulos.length)?`<div style="display:flex;align-items:center;gap:7px;margin:-2px 0 10px">
-        <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">🎯 Responde al ángulo</span>
+        <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">${icon("compass")} Responde al ángulo</span>
         <select class="in vangulo" style="height:36px;padding:0 10px;flex:1;max-width:260px">
           <option value="">General · cualquier cliente</option>
           ${st.act.angulos.filter(a=>a.slug).map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
@@ -4173,7 +4173,7 @@ function pickMedia(vi,kind){
       const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
       if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
       st.act.node.config.variantes[vi].bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
-      toast("Archivo agregado ✓"); renderComposer();
+      toast("Archivo agregado"); renderComposer();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -4227,7 +4227,7 @@ async function saveWelcome(){
   const adArr=($("actAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
   const eAd=await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
   if(eAd){ toast("No se pudieron guardar los anuncios: "+eAd.message,true); return; }
-  toast("Guardado ✓"); accRerender("activacion"); refreshActivacionRow();
+  toast("Guardado"); accRerender("activacion"); refreshActivacionRow();
 }
 // Devuelve el error (o null). El disparador es lo que hace que el producto se
 // VENDA: sin él, quien escribe la palabra clave no entra a ningún flujo. Se tragaba
@@ -4401,7 +4401,7 @@ async function saveProduct(){
     const actBody=document.querySelector('.acc[data-t="activacion"] .acc-body');
     if(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node){ await saveActivacion({silent:true}); }
   }catch(_){ /* si algo falló, saveActivacion ya avisó con su propio toast */ }
-  markClean(); toast("Guardado ✓"); loadProducts();
+  markClean(); toast("Guardado"); loadProducts();
 }
 // ════════════════════════════════════════════════════════════════════
 // ASISTENTE "Armar con IA" (capa Crea): brief → borrador del producto.
@@ -4434,14 +4434,14 @@ function armRenderBrief(){
       <button class="armchip" data-ins="Tengo variantes con distinto precio (básico y premium).">+ variantes</button>
       <button class="armchip" data-ins="Ofrezco un descuento si compran 2 o más.">+ oferta</button>
     </div>`;
-  $("armFt").innerHTML=`<button id="armGo" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-size:14px;font-weight:700">Armar borrador ✨</button>`;
+  $("armFt").innerHTML=`<button id="armGo" style="width:100%;height:44px;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;font-size:14px;font-weight:700">${icon("sparkles")} Armar borrador</button>`;
   $("armGo").onclick=armGenerar;
   $("armBody").querySelectorAll("[data-ins]").forEach(bt=> bt.onclick=()=>{ const t=$("armBrief"); t.value=(t.value.trim()?t.value.trim()+" ":"")+bt.dataset.ins; t.focus(); });
 }
 async function armGenerar(){
   const brief=($("armBrief")?.value||"").trim();
   if(brief.length<10){ toast("Escribe un poco más sobre tu producto",true); return; }
-  $("armFt").innerHTML=`<button disabled style="width:100%;height:44px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--muted);font-weight:600">Armando… ✨</button>`;
+  $("armFt").innerHTML=`<button disabled style="width:100%;height:44px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--muted);font-weight:600">Armando…</button>`;
   let data,error;
   try{ ({ data, error } = await supa.functions.invoke("armar-producto",{ body:{ channel_id:st.channelId, brief, tipo:st.prod?.tipo } })); }
   catch(e){ error=e; }
@@ -4463,7 +4463,7 @@ function armRenderDraft(){
   const chk=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="color:var(--green,var(--green));flex:none;display:inline-flex">${ARM_CHK}</span>${t}</div>`;
   const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:var(--amber);flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
   $("armBody").innerHTML=`
-    <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">Borrador listo 🎉</div>
+    <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">Borrador listo</div>
     <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:12px">${esc(String(d.resumen_cambios||"Revisa lo que llené y ajústalo. Nada se guarda hasta que toques Guardar cambios."))}</div>
     <div style="border:1px solid var(--border);border-radius:11px;padding:12px">${done.map(chk).join("")||"<div style='font-size:12px;color:var(--faint)'>Sin campos</div>"}</div>
     ${faltan.length?`<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:var(--amber)">Te toca completar (no lo invento):</div><div style="border:1px solid rgba(240,169,43,.4);background:rgba(240,169,43,.06);border-radius:11px;padding:12px">${faltan.map(amb).join("")}</div>`:""}`;
@@ -4517,7 +4517,7 @@ async function armAplicar(d){
     st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:"", cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
   }
   prodSync(); st.tab="inicio"; renderDetail(); armClose();
-  toast("Borrador aplicado ✓ — revisa y Guarda cambios");
+  toast("Borrador aplicado — revisa y Guarda cambios");
 }
 // Wiring del asistente (los elementos son HTML estático, ya existen).
 if($("armFab")) $("armFab").onclick=armOpen;

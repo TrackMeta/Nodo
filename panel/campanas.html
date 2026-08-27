@@ -219,13 +219,13 @@ function renderGrid(){
       </div>`;
     el.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>action(b.dataset.a,c));
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:c.folder||null, onPick:async(v)=>{ const { error }=await supa.from("campaigns").update({ folder:v }).eq("id",c.id); if(error){ toast(error.message,true); return; } c.folder=v; toast(v?`Movido a "${v}" ✓`:"Quitado de la carpeta ✓"); await Fbar.reload(); renderGrid(); } }); fslot.appendChild(pk); }
+    if(fslot && Fbar){ const pk=Fbar.picker({ current:c.folder||null, onPick:async(v)=>{ const { error }=await supa.from("campaigns").update({ folder:v }).eq("id",c.id); if(error){ toast(error.message,true); return; } c.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderGrid(); } }); fslot.appendChild(pk); }
     box.appendChild(el);
   });
 }
 async function action(a, c){
   if(a==="edit") return openModal(c);
-  if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("campaigns").delete().eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Eliminada ✓"); return load(); }
+  if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("campaigns").delete().eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Eliminada"); return load(); }
   if(a==="cancel"){ const { error }=await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Cancelada"); return load(); }
   if(a==="activate"){
     if(!c.template_id){ toast("La campaña necesita una plantilla",true); return openModal(c); }
@@ -299,7 +299,7 @@ function pintaEstimacion(total){
     const fm=fin.getHours()*60+fin.getMinutes(), d=min(rm.desde), h=min(rm.hasta);
     const dentro = d<=h ? (fm>=d && fm<=h) : (fm>=d || fm<=h);
     // En su propio bloque (antes era un <br> suelto): ahora va detrás de la línea del ritmo.
-    if(!dentro || otroDia) aviso=`<div style="margin-top:6px"><span style="color:var(--amber)">⚠️ Termina fuera de tu horario de envío (${esc(rm.desde)}–${esc(rm.hasta)}).</span> Puedes moverla a otra hora o partirla en dos.</div>`;
+    if(!dentro || otroDia) aviso=`<div style="margin-top:6px"><span style="color:var(--amber)">Termina fuera de tu horario de envío (${esc(rm.desde)}–${esc(rm.hasta)}).</span> Puedes moverla a otra hora o partirla en dos.</div>`;
   }
   // Se dice el RITMO y POR QUÉ es así. Sin eso, "3 h 26 min" es un número mágico y el ritmo
   // parece lentitud del sistema — cuando en realidad es deliberado: los envíos van espaciados
@@ -338,7 +338,7 @@ async function saveCampaign(){
   else { ({ error }=await supa.from("campaigns").insert(row)); }
   if(error && /folder|column/.test(error.message)){ delete row.folder; if(st.editing){({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id));} else {({ error }=await supa.from("campaigns").insert(row));} if(!error) toast("Guardado (aplica 0015 para carpetas)"); }
   if(error){ toast(error.message,true); return; }
-  $("modal").classList.remove("show"); toast("Campaña guardada ✓"); await load();
+  $("modal").classList.remove("show"); toast("Campaña guardada"); await load();
 }
 boot();
 </script>

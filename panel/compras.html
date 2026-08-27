@@ -202,7 +202,7 @@ async function marcarVerificada(o){
   const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:o.id, shipping:{ conciliacion:conc } } });
   if(error||data?.error){ toast(error?.message||data?.error||"No se pudo marcar",true); return; }
   o.shipping=o.shipping||{}; o.shipping.conciliacion=conc;   // refleja sin recargar todo
-  toast("Marcada como verificada ✓"); render();
+  toast("Marcada como verificada"); render();
 }
 async function quitarVerificada(o){
   if(!await confirmDialog({ title:"Quitar verificación",
@@ -485,7 +485,7 @@ async function anular(o){
   const { data, error } = await supa.functions.invoke("order-update", { body });
   if(error){ toast(error.message||"No se pudo anular la venta", true); return; }
   if(data && data.error){ toast(data.error, true); return; }
-  toast("Venta anulada ✓");
+  toast("Venta anulada");
   await load();
 }
 
