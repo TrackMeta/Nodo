@@ -517,7 +517,7 @@ function veredictoHtml(gIn){
   // Solo deciden las que siguen vivas: recomendar sobre una versión borrada o apagada da
   // un consejo que no se puede ejecutar.
   const hist=g.filter(f=>!f.vigente).length;
-  const pie=hist?` <span style="color:var(--faint)">(${hist} versión${hist>1?"es":""} de la tabla ya no está${hist>1?"n":""} en uso; sale${hist>1?"n":""} solo como historial)</span>`:"";
+  const pie=hist?` <span style="color:var(--faint)">(${hist} ${hist>1?"versiones":"versión"} de la tabla ya no ${hist>1?"están":"está"} en uso; ${hist>1?"salen":"sale"} solo como historial)</span>`:"";
   g=g.filter(f=>f.vigente);
   if(!g.length) return S(`Ninguna de las versiones medidas sigue activa hoy. Lo de abajo es historial de copys que ya cambiaste o apagaste.`,"148,163,184");
   if(g.length<2) return S(`Solo hay una versión activa, así que no hay con qué compararla. Agrega una segunda para empezar a medir cuál rinde mejor.${pie}`,"148,163,184");
