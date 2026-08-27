@@ -2204,6 +2204,7 @@ async function execute(db: SupabaseClient, run: Run) {
             await registrarVariante(db, run.channel_id, run.contact_id, {
               ambito: "inicial", ref_id: run.flow_id,
               variante: chosen, indice: active.indexOf(chosen), angulo: slug,
+              waId: String(ctx.wa_id ?? ""),
             });
           }
         }
@@ -2783,6 +2784,7 @@ export async function deliverStep(
     await registrarVariante(db, channelId, contactId, {
       ambito: "secuencia", ref_id: meta.sequence_id, paso: meta.paso ?? null,
       variante: elegida.v, indice: elegida.i, angulo: elegida.angulo,
+      waId: String(ctx.wa_id ?? ""),
     });
   }
   return allOk;
@@ -10730,15 +10732,22 @@ function idVariante(v: any, i: number): string {
 async function registrarVariante(
   db: SupabaseClient, channelId: string, contactId: string,
   d: { ambito: "inicial" | "secuencia"; ref_id?: string | null; paso?: number | null;
-       variante: any; indice: number; angulo?: string | null },
+       variante: any; indice: number; angulo?: string | null; waId?: string },
 ): Promise<void> {
   try {
     // ⛔ El contacto de "Probar flujos" NO se mide. Es el dueño probando: manda el saludo y
     // nunca contesta, así que cada prueba metía un envío sin respuesta y hundía la tasa de
     // esa variante. Probar el flujo veinte veces habría bastado para hacerle apagar el copy
     // bueno — con datos que no vinieron de ningún cliente.
-    const { data: ct } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
-    if ((ct as any)?.wa_id === "webchat-test") return;
+    // El wa_id lo pasan los dos llamadores desde el contexto (ya lo tienen cargado): así
+    // esto no agrega una consulta por cada envío. El scheduler manda cientos de pasos por
+    // tick, y ahí un SELECT extra por paso sí se nota.
+    let wa = d.waId;
+    if (wa === undefined) {
+      const { data: ct } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
+      wa = (ct as any)?.wa_id ?? "";
+    }
+    if (wa === "webchat-test") return;
     await db.from("variante_envios").insert({
       channel_id: channelId, contact_id: contactId,
       ambito: d.ambito, ref_id: d.ref_id ?? null, paso: d.paso ?? null,

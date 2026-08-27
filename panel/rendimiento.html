@@ -410,7 +410,14 @@ function testProporciones(a,b){
 }
 // Cuántos clientes por versión harían falta para confirmar la diferencia que HOY se ve.
 // Es lo honesto para reemplazar el "faltan N" inventado: el N sale de la diferencia real.
-function nNecesario(p1,p2){
+//
+// ⚠️ Las tasas crudas se usan SUAVIZADAS (Agresti-Coull: +2 éxitos y +4 casos). Con las
+// crudas, la fórmula se rompe justo donde uno cae al principio: "1 contestó de 1" contra
+// "0 de 1" da 100% vs 0%, y como p(1-p) vale cero en los extremos el resultado era
+// "harían falta unos 0 clientes por versión" — que además contradice el propio cartel de
+// "todavía no se puede decidir". Suavizado, ese mismo caso pide ~95, que es lo real.
+function nNecesario(x1,n1,x2,n2){
+  const p1=(x1+2)/(n1+4), p2=(x2+2)/(n2+4);
   const d=Math.abs(p1-p2); if(d<0.005) return null;             // prácticamente iguales
   return Math.ceil(7.85*(p1*(1-p1)+p2*(1-p2))/(d*d));           // 95% conf · 80% poder
 }
@@ -495,7 +502,14 @@ function veredictoHtml(g){
   if(t.valido && t.difiere){
     return S(`✓ <b>“${esc(a.nombre)}” rinde mejor.</b> Contesta el ${Math.round(a.resp/a.env*100)}% contra el ${Math.round(b.resp/b.env*100)}%, sobre ${a.env} y ${b.env} clientes. Puedes subirle el peso o apagar la otra.`,"34,197,94");
   }
-  const n=nNecesario(a.resp/a.env, b.resp/b.env);
+  // Hay DOS motivos distintos por los que no se puede decidir, y confundirlos deja mensajes
+  // absurdos. Con 9 de 10 contra 1 de 10 la fórmula del total pide "9 clientes" cuando ya
+  // llevas 10: ahí lo que falta no es volumen, son casos en el lado flaco (solo 1 silencio
+  // en una y 1 respuesta en la otra). Se dice el motivo real.
+  if(!t.valido){
+    return S(`🌱 <b>Todavía no se puede decidir.</b> Para que la comparación sea fiable hacen falta al menos <b>5 respuestas y 5 silencios en cada versión</b>; por ahora tienes ${a.resp} de ${a.env} y ${b.resp} de ${b.env}. Los números de abajo son reales, pero con tan pocos casos la diferencia puede darse vuelta con un solo cliente.`,"148,163,184");
+  }
+  const n=nNecesario(a.resp,a.env,b.resp,b.env);
   const cuanto=n ? `Para confirmar una diferencia de este tamaño harían falta unos <b>${n} clientes por versión</b> (llevas ${a.env} y ${b.env}).`
                  : `Van casi empatadas: por ahora da igual cuál dejes.`;
   return S(`🌱 <b>Todavía no se puede decidir.</b> ${cuanto} Los números de abajo son reales, pero la diferencia aún puede ser casualidad.`,"148,163,184");
