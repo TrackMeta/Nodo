@@ -2621,11 +2621,13 @@ async function generarFlujoFisico(flowId, N, E){
     //  · Provincia: Shalom NO entrega si el nombre no coincide con el DNI que presentan,
     //    así que ahí sí se piden los apellidos, y se dice POR QUÉ (el cliente colabora
     //    mucho más cuando entiende que es la agencia la que se lo va a exigir).
-    { clave:"nombre_completo", label:"¿A nombre de quién se lo dejamos?",
-      detalle:"cómo se llama quien recibe, para que el motorizado pregunte por él al llegar; " +
-              "con su nombre basta, NO le exijas apellidos", requerido:true, solo_si_zona:"lima" },
-    { clave:"nombre_completo", label:"Nombre y apellidos del que recoge",
-      detalle:"tal como figuran en su DNI — la agencia no entrega el paquete si no coinciden",
+    { clave:"nombre_completo", label:"¿A nombre de quién?",
+      detalle:"con su nombre basta, NO le exijas apellidos. Pregúntalo CORTO (una línea) y sin " +
+              "explicarle para qué lo necesitas",
+      requerido:true, solo_si_zona:"lima" },
+    { clave:"nombre_completo", label:"Nombre y apellidos, como en su DNI",
+      detalle:"la agencia no entrega si no coinciden. Pregúntalo CORTO (una línea): el «como en tu DNI» " +
+              "ya explica el porqué, no le agregues más",
       requerido:true, solo_si_zona:"provincia" },
     { clave:"direccion", label:"Dirección exacta", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },

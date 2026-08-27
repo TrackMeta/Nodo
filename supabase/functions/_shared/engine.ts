@@ -8872,6 +8872,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "Todavía te faltan estos datos para cerrar el pedido:",
         ...faltan.map((c) => `- **${c.label}**${c.detalle ? ` (${c.detalle})` : ""}`),
         "Pídelos de forma natural dentro de la conversación, **de a uno**, sin sonar a formulario, y sin volver a pedir lo que ya te dio.",
+        // La pregunta se hinchaba explicando para qué sirve el dato ("¿a nombre de quién lo
+        // dejamos para que el motorizado pregunte por esa persona al entregar?"). Pedir un
+        // dato es el momento de MENOS fricción posible: cuanto más larga la pregunta, más
+        // parece trámite y más gente se cae justo antes de cerrar.
+        "La pregunta va CORTA: una línea, directa. No expliques para qué necesitas el dato ni " +
+        "adornes con beneficios — eso va antes o después, no dentro de la pregunta.",
       ];
       if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
       // ⛔ Mentir el cierre es peor que no cerrar: mientras falte UN dato el pedido no existe
