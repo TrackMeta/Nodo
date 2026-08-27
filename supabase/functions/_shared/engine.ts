@@ -8367,11 +8367,42 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }).join("\n");
       parts.push(
         "## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS, ya incluido en el pedido:\n" + lista +
-        '\nMENCIÓNALO como gancho para cerrar ("y de regalo te incluye…") y, al confirmar el pedido, nómbralo entre lo que va a recibir. ' +
+        '\nMENCIÓNALO UNA VEZ como gancho para cerrar ("y de regalo te incluye…") y, al confirmar el pedido, nómbralo entre lo que va a recibir. ' +
         "Va GRATIS y ya está incluido: NO lo cobres, NO lo ofrezcas como si tuviera que aceptarlo o pagarlo, NO prometas más de uno " +
         "y NO exageres. Si pregunta qué es, explícaselo con su descripción.",
       );
     }
+    // 🧹 Lo que YA le dijiste. La economía del mensaje sale mejor con un DATO que con una
+    // regla: "no repitas" es abstracto, "ya le dijiste lo del regalo" es concreto. Sin esto,
+    // el regalo, la contraentrega y el "no arriesgas nada" volvían a salir en CADA burbuja
+    // —cada uno tiene su instrucción y ninguna sabía de las otras— y una pregunta de seis
+    // palabras terminaba envuelta en cuatro líneas de folleto justo antes de cerrar.
+    try {
+      const { data: outsY } = await db.from("messages").select("content")
+        .eq("contact_id", run.contact_id).eq("direction", "out")
+        .order("ts", { ascending: false }).limit(10);
+      const dichoY = (outsY ?? []).map((m: any) => String(m?.content?.text ?? "")).join(" ")
+        .toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      if (dichoY) {
+        const yaY: string[] = [];
+        const nomsY = regalosCtx.map((g: any) => String(g?.nombre ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim()).filter(Boolean);
+        // El regalo se calla salvo en el turno del CIERRE: ahí toca enumerarle lo que va a
+        // recibir, y que el regalo aparezca en esa lista es justo lo que evita la sorpresa
+        // al abrir el paquete (y remata la venta). En los turnos de en medio, callado.
+        if ((/\bde regalo\b|\bgratis\b|\bincluye\b/.test(dichoY) || nomsY.some((n) => n.length > 3 && dichoY.includes(n)))
+          && ctx.datos_completos !== "si") {
+          yaY.push("el regalo que va incluido");
+        }
+        if (/pagas? (recien )?(al|cuando) recib|contra ?entrega|al recibirl/.test(dichoY)) yaY.push("que paga al recibir");
+        if (/no arriesgas|sin adelantar|no adelantas/.test(dichoY)) yaY.push("que no arriesga nada");
+        if (/de regreso|cambio gratis|te la cambio/.test(dichoY)) yaY.push("el cambio de talla");
+        if (yaY.length) {
+          parts.push("## Ya se lo dijiste (no lo repitas)\nEn esta conversación ya le mencionaste: " +
+            yaY.join(", ") + ". Dalo por sabido: no vuelvas a explicárselo ni lo agregues al final de este " +
+            "mensaje. Si te lo pregunta él, claro que se lo contestas.");
+        }
+      }
+    } catch (_) { /* si no se puede leer, se comporta como antes */ }
     // Ángulo del creativo: el cliente llegó por un anuncio con cierto gancho —
     // la IA debe MANTENER ese enfoque en toda la conversación (continuidad de mensaje).
     if (String(ctx.angulo_gancho ?? "").trim()) {
@@ -8523,6 +8554,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     //    con los datos del adelanto") → llega el anuncio y enseguida la plantilla.
     //  · Dar por ocurridos pasos que no pasaron ("un asesor validará tu pago del
     //    saldo" cuando el cliente todavía no lo pagó).
+    // Largo del mensaje. Cada bloque de arriba pide lo suyo (el regalo, la contraentrega, el
+    // beneficio aéreo, el ángulo del anuncio…) y ninguno sabe de los demás, así que sumados
+    // producían párrafos: una pregunta de seis palabras envuelta en cuatro líneas de folleto.
+    // En WhatsApp eso se lee como publicidad, no como alguien atendiendo.
+    parts.push(
+      "## Largo del mensaje\n" +
+      "Esto es WhatsApp, no un folleto: **2 o 3 frases y punto**. Solo te extiendes si el cliente " +
+      "pidió una explicación.\n" +
+      "UN argumento por mensaje: el que hace falta AHORA. No cierres cada burbuja recordándole el " +
+      "regalo, la contraentrega, el envío y las bondades del producto todos juntos — cada cosa se " +
+      "dice una vez, cuando suma, y no se repite.\n" +
+      "Y cuando le pides un dato, la pregunta va sola y al final: sin párrafo de venta detrás.");
     parts.push(
       "## Cómo cerrar (evita pisarte con el sistema)\n" +
       "1. Si ya tienes todos los datos, CIERRA afirmando (\"listo, queda confirmado\"). NO preguntes " +
