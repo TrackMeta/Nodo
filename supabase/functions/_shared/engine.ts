@@ -239,6 +239,15 @@ async function runEngineInner(
   // probarlo decía "Cancelado el pedido" y el pedido seguía CONFIRMADO con su stock
   // descontado → se despachaba y el cliente lo rechazaba en la puerta. Ahora escala a una
   // persona y te avisa, en vez de mentirle al cliente.
+  // 🇵🇪 "Cancelar" en sentido de PAGAR ("quiero cancelar el adelanto", "puedo cancelar
+  // en efectivo"): no se toca el pedido y se le responde CÓMO pagar. Sin esto la IA
+  // improvisaba un "déjame revisarlo y te confirmo" que no cierra la venta.
+  if (event.type === "message" && pideCancelar(event.text) && cancelarSignificaPagar(event.text)) {
+    const ordP = await tienePedidoVivo(db, contactId);
+    if (ordP && await responderComoPagar(db, channelId, contactId, ordP)) return;
+    // Sin pedido o sin métodos configurados: sigue la conversación normal.
+  }
+
   if (event.type === "message" && pideCancelar(event.text) && !cancelarSignificaPagar(event.text)) {
     const ord = await tienePedidoVivo(db, contactId);
     if (ord) {
@@ -1470,6 +1479,49 @@ async function tienePedidoVivo(db: SupabaseClient, contactId: string): Promise<a
     .not("estado", "in", `(${["cancelado", "anulada", "rechazado", "no_recogido", "recogido", "entregado_cobrado"].map((e) => `"${e}"`).join(",")})`)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   return (data as any) ?? null;
+}
+
+// 🇵🇪 "Quiero cancelar el adelanto" = quiero PAGARLO. Descartada la baja del pedido
+// (cancelarSignificaPagar), el cliente está pidiendo cómo pagar — y dejarlo en manos
+// de la IA daba un "déjame revisarlo y te confirmo" que no cierra nada. Acá se le
+// responde lo único que necesita: cuánto y a dónde. Los datos de pago salen del
+// Validador (ocr_config.metodos), los mismos que usa el flujo.
+// Devuelve true si respondió (y entonces el turno termina acá).
+async function responderComoPagar(
+  db: SupabaseClient, channelId: string, contactId: string, ord: any,
+): Promise<boolean> {
+  try {
+    const { data: ch } = await db.from("channels").select("ocr_config, moneda").eq("id", channelId).maybeSingle();
+    const metodos = ((ch as any)?.ocr_config?.metodos ?? [])
+      .filter((m: any) => m && (m.app || m.numero || m.titular))
+      .map((m: any) => [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(": ").replace(": (", " ("));
+    // Sin métodos configurados no se puede responder nada útil: que siga el flujo normal.
+    if (!metodos.length) return false;
+    const sym = simboloMoneda((ord as any)?.currency ?? (ch as any)?.moneda);
+    const sh = (ord.shipping ?? {}) as any;
+    const estado = String(ord.estado ?? "");
+    const adel = Number(sh.adelanto ?? 0);
+    const saldo = Number(sh.saldo ?? 0);
+    // Qué le toca pagar AHORA, en el mismo orden que el flujo: el adelanto abre el
+    // despacho; después queda el saldo; un digital paga su total.
+    const linea =
+      estado === "esperando_adelanto" && adel > 0
+        ? `el adelanto de *${sym} ${adel}*`
+        : saldo > 0
+        ? `el saldo de *${sym} ${saldo}*`
+        : Number(ord.amount) > 0
+        ? `tu compra de *${sym} ${ord.amount}*`
+        : "tu pedido";
+    await deliverMessage(db, channelId, contactId,
+      `¡Claro! Para cancelar ${linea}:\n\n${metodos.join("\n")}\n\n` +
+      `Cuando lo hagas mándame la captura y lo verifico al toque 🙌`).catch(() => {});
+    await logEvent(db, channelId, contactId, "nota", "💵 Preguntó cómo pagar",
+      `“cancelar” en sentido de pago — se le pasaron los datos (${linea.replace(/\*/g, "")})`).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error("[responderComoPagar]", (e as any)?.message ?? e);
+    return false;
+  }
 }
 
 // Cancela DE VERDAD el pedido que el cliente pidió dar de baja: estado `cancelado`,
