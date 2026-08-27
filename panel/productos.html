@@ -3696,7 +3696,9 @@ async function renderActivacion(host){
   if(!node.config.variantes.length) node.config.variantes.push(newVariant(0));
   if(node.config.activo===undefined) node.config.activo=true;
   node.config.despues=node.config.despues||{modo:"nada"};
-  st.act={ flow, node, kw:(trigs||[]).find(t=>t.tipo==="keyword")||null, ad:(trigs||[]).find(t=>t.tipo==="referral")||null, others:others||[] };
+  st.act={ flow, node, kw:(trigs||[]).find(t=>t.tipo==="keyword")||null, ad:(trigs||[]).find(t=>t.tipo==="referral")||null, others:others||[],
+    // Foto del texto al abrir: al guardar se compara para saber qué copys se reescribieron.
+    fotoVars: fotoVariantes([{ variantes:node.config.variantes }]) };
   // Ángulos del producto + anuncios reales de Meta (para elegirlos por nombre).
   // Defensivo: si la migración 0063 aún no está, quedan vacíos (la card lo avisa).
   st.act.angulos=[]; st.act.angulosOrig=[]; st.act.adsMeta=[]; st.act.angulosOk=true;
@@ -3990,6 +3992,12 @@ async function saveActivacion(opts){
   cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
   cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
   if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
+  // Copy reescrito → su medición arranca de cero (rev+1). Los mensajes iniciales se editan
+  // MÁS desde acá que desde el editor de flujos, así que sin esto la ruta principal seguía
+  // sumando los resultados del texto viejo con los del nuevo. Se usa la misma función que
+  // las secuencias para no tener dos criterios de "esto cambió".
+  subeRevSiCambio([{ variantes:cfg.variantes }], st.act.fotoVars);
+  st.act.fotoVars = fotoVariantes([{ variantes:cfg.variantes }]);   // nuevo baseline
   const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
   if(eN){ toast(eN.message,true); return; }
   const kwArr=(($("actKw")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);

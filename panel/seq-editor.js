@@ -20,13 +20,19 @@ export function newVariant(idx){ return { id:uid(), rev:1, nombre:"Versión "+St
 export function textoVariante(v){ return (v?.bubbles||[]).map(b=>String(b?.text||"")).join("\n"); }
 // Recorre los pasos y le sube el rev a las versiones cuyo texto cambió desde que se
 // abrió el editor. Se llama al guardar, con la foto que se tomó al abrir.
+// La foto se indexa SOLO por el id de la versión, nunca por su posición. Con el índice del
+// paso en la clave, borrar o reordenar un toque —lo más normal al editar una secuencia—
+// movía a las demás de sitio: la versión se buscaba en `2|vX` cuando la foto la guardó en
+// `1|vX`, no se encontraba, y un copy reescrito NO reiniciaba su medición. Volvía a pasar
+// justo lo que el `rev` viene a evitar: resultados de un texto viejo sumados con los del
+// nuevo, en silencio. El id es único, así que la posición no aporta nada.
 export function subeRevSiCambio(pasos, foto){
-  (pasos||[]).forEach((p,pi)=>{
+  (pasos||[]).forEach((p)=>{
     (p?.variantes||[]).forEach(v=>{
       if(!v) return;
       if(!v.id) v.id=uid();
       if(!v.rev) v.rev=1;
-      const antes=foto?.[`${pi}|${v.id}`];
+      const antes=foto?.[v.id];
       if(antes!==undefined && antes!==textoVariante(v)){ v.rev=Number(v.rev)+1; v.medido_desde=new Date().toISOString(); }
     });
   });
@@ -34,7 +40,7 @@ export function subeRevSiCambio(pasos, foto){
 // Foto del texto de cada versión al abrir el editor.
 export function fotoVariantes(pasos){
   const f={};
-  (pasos||[]).forEach((p,pi)=>(p?.variantes||[]).forEach(v=>{ if(v?.id) f[`${pi}|${v.id}`]=textoVariante(v); }));
+  (pasos||[]).forEach((p)=>(p?.variantes||[]).forEach(v=>{ if(v?.id) f[v.id]=textoVariante(v); }));
   return f;
 }
 // Frecuencia de una versión = su % editable a mano. Por debajo es `peso` (el
