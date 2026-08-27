@@ -118,7 +118,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor } from "./seq-editor.js?v=8";
+import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=9";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -337,10 +337,15 @@ function renderDetail(){
     seq:s, channelId:st.channelId, angulos:st.angulos,
     ofertaProducts:st.products, actions:{ enabled:true, flows:st.flows, templates:st.templates },
   });
+  // Foto del texto de cada versión al abrir: al guardar se compara para saber cuáles se
+  // reescribieron y reiniciar su medición (ver subeRevSiCambio).
+  st._fotoVars = fotoVariantes(s.pasos||[]);
 }
 async function saveSeq(){
   if(!st.seq){ toast("No hay secuencia abierta",true); return; }
   if(st.stepsEd) st.stepsEd.normalize();
+  // Versiones reescritas → su medición arranca de cero (rev+1). Va antes de armar la fila.
+  subeRevSiCambio(st.seq.pasos||[], st._fotoVars);
   // Bloqueo de oferta a S/0: una oferta ENCENDIDA con precio vacío o ≤0 haría que el motor mande
   // "{{precio}}" en S/0 (producto GRATIS) a TODO el segmento y que el OCR valide un pago de S/0.
   const malOferta=(st.seq.pasos||[]).findIndex(p=> p && p.oferta && p.oferta.version_id && !(Number(p.oferta.precio)>0));

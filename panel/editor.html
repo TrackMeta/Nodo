@@ -63,6 +63,16 @@
   /* Tarjeta de sección dentro del panel de config */
   .fcard{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-bottom:10px}
   .fcard>label:first-child{margin-top:0}
+  /* Cómo rinde cada variante de copy: los números pegados al texto que se edita. */
+  .vstats{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:9px}
+  .vstat{font-size:11px;font-variant-numeric:tabular-nums;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:2px 8px;color:var(--muted)}
+  .vstat b{color:var(--text)}
+  .vstat.plain{background:none;border:none;padding:0;color:var(--faint)}
+  .vstat.plain:empty{display:none}
+  .vverdict{display:flex;gap:8px;align-items:flex-start;font-size:11.5px;line-height:1.5;color:var(--muted);
+    background:rgba(245,158,11,.09);border:1px solid rgba(245,158,11,.32);border-radius:10px;padding:9px 11px;margin-bottom:10px}
+  .vverdict b{color:var(--text)}
+  .vverdict.ok{background:rgba(34,197,94,.09);border-color:rgba(34,197,94,.32)}
   .fhint{font-size:11px;color:var(--faint);margin:5px 0 0;line-height:1.45}
   .frow{display:flex;gap:6px;align-items:center}
   .frow .in{min-width:0}
@@ -770,8 +780,8 @@ function defaultConfig(tipo){
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_flow_id:"", target_role:"" };
     case "rotador": return { activo:true, variantes:[
-      { nombre:"Variante A", peso:1, activo:true, bubbles:[{ text:"¡Hola! 👋 Gracias por escribirnos." }] },
-      { nombre:"Variante B", peso:1, activo:true, bubbles:[{ text:"¡Hola! 😃 Qué bueno tenerte por aquí." }] },
+      { id:nuevoVarId(), rev:1, nombre:"Variante A", peso:1, activo:true, bubbles:[{ text:"¡Hola! 👋 Gracias por escribirnos." }] },
+      { id:nuevoVarId(), rev:1, nombre:"Variante B", peso:1, activo:true, bubbles:[{ text:"¡Hola! 😃 Qué bueno tenerte por aquí." }] },
     ] };
     case "nota": return { text:"" };
     default: return {};
@@ -1059,8 +1069,106 @@ function buildNotaCfg(m, body){
 }
 
 // ── Dado / reparto por peso (rotador de variantes) ──
+// IDENTIDAD DE LA VARIANTE. Antes se distinguían por su nombre (editable) y su posición
+// en la lista, así que renombrar o reordenar mezclaba los resultados medidos. El `id`
+// nace con la variante y no cambia nunca; el `rev` sube cuando cambia el TEXTO, porque
+// los resultados de un copy reescrito son de otro copy y no deben sumarse con los nuevos.
+function nuevoVarId(){
+  return "v" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+// Le sella id a las variantes viejas (las creadas antes de que esto existiera) la primera
+// vez que se abre el flujo. Devuelve true si tocó algo, para avisar que hay que guardar.
+function sellaVarIds(lista){
+  let toco=false;
+  (lista||[]).forEach(v=>{
+    if(!v) return;
+    if(!v.id){ v.id=nuevoVarId(); toco=true; }
+    if(!v.rev){ v.rev=1; toco=true; }
+  });
+  return toco;
+}
+// Texto plano de una variante: con esto se decide si el copy CAMBIÓ (y toca subir rev).
+function textoVar(v){ return (v?.bubbles||[]).map(b=>String(b?.text||"")).join("\n"); }
+
+// ══════ Cómo rinde cada variante ══════════════════════════════════════
+// Los números van PEGADOS al copy, no en un reporte aparte: un tablero al que hay que
+// acordarse de entrar es un tablero al que no se entra, y la decisión (qué texto dejo)
+// se toma acá mismo.
+const VAR_MIN = 30;   // por debajo de esto no se opina: con 5 y 4 casos la diferencia es azar
+
+// Trae los envíos del canal y los agrupa por (id, rev). Se piden solo las columnas
+// necesarias y de los últimos 90 días: es una lectura para pintar, no un data warehouse.
+async function statsVariantes(channelId){
+  const desde=new Date(Date.now()-90*24*3600*1000).toISOString();
+  const { data, error }=await supa.from("variante_envios")
+    .select("variante_id,variante_rev,angulo,enviado_at,respondio_at,compro_at,monto")
+    .eq("channel_id",channelId).gte("enviado_at",desde).limit(5000);
+  if(error) return null;                       // tabla aún sin migrar → no se pinta nada
+  const m=new Map();
+  for(const r of data||[]){
+    const k=`${r.variante_id}|${r.variante_rev}`;
+    const s=m.get(k)||{env:0,resp:0,compras:0,monto:0,desde:r.enviado_at,angulos:new Set()};
+    s.env++; if(r.respondio_at) s.resp++; if(r.compro_at){ s.compras++; s.monto+=Number(r.monto)||0; }
+    if(r.enviado_at<s.desde) s.desde=r.enviado_at;
+    if(r.angulo) s.angulos.add(r.angulo);
+    m.set(k,s);
+  }
+  return m;
+}
+
+// ¿La diferencia entre dos tasas es de verdad o es ruido? Test de dos proporciones (z).
+// El cálculo va por dentro; a la vista solo sale "alcanza" o "todavía no", en castellano.
+function difieren(a,b){
+  const n1=a.env,n2=b.env,x1=a.resp,x2=b.resp;
+  if(n1<VAR_MIN||n2<VAR_MIN) return false;
+  const p=(x1+x2)/(n1+n2), se=Math.sqrt(p*(1-p)*(1/n1+1/n2));
+  if(!se) return false;
+  return Math.abs(x1/n1-x2/n2)/se >= 1.645;    // ~90% de confianza
+}
+
+// Pinta el cintillo de veredicto + una línea de números bajo cada variante.
+// Solo compara variantes que se disputaron los MISMOS clientes: si tienen ángulos
+// distintos nunca compitieron, y la diferencia sería del anuncio, no del copy.
+function pintaStatsVariantes(lista, cont, stats){
+  if(!stats||!Array.isArray(lista)) return;
+  const filas=lista.map(v=>({ v, s:stats.get(`${v.id}|${Number(v.rev)||1}`) })).filter(x=>x.s);
+  if(!filas.length) return;
+  const activas=filas.filter(x=>x.v.activo!==false);
+  const tasa=x=>x.s.env?x.s.resp/x.s.env:0;
+  let cint="";
+  if(activas.length>=2){
+    const ord=[...activas].sort((a,b)=>tasa(b)-tasa(a));
+    const [g,se]=ord;
+    const mismoAngulo=(()=>{ const t=new Set(); activas.forEach(x=>x.s.angulos.forEach(a=>t.add(a))); return t.size<=1; })();
+    if(!mismoAngulo){
+      cint=`<div class="vverdict">⚖️ <div><b>No se pueden comparar entre sí:</b> están repartidas por ángulos distintos, así que nunca compitieron por el mismo cliente. Lo que verías sería el efecto del anuncio, no del copy.</div></div>`;
+    }else if(difieren(g.s,se.s)){
+      cint=`<div class="vverdict ok">✓ <div><b>“${escHtml(g.v.nombre||"—")}” rinde mejor.</b> Contesta el ${pc(tasa(g))} contra el ${pc(tasa(se))}, sobre ${g.s.env} y ${se.s.env} clientes. Puedes subirle el peso o apagar la otra.</div></div>`;
+    }else{
+      const falta=Math.max(0,VAR_MIN-Math.min(...activas.map(x=>x.s.env)));
+      cint=`<div class="vverdict">🌱 <div><b>Todavía no alcanza para decidir.</b> ${falta?`Faltan ${falta} clientes en la que menos tiene.`:"La diferencia entre ellas todavía puede ser casualidad."} Los números de abajo son reales, pero aún se mueven solos.</div></div>`;
+    }
+  }
+  if(cint) cont.insertAdjacentHTML("afterbegin",cint);
+  filas.forEach(({v,s})=>{
+    const card=cont.querySelector(`[data-vid="${v.id}"]`); if(!card) return;
+    const editada=v.medido_desde?` · <span title="Cambiaste el texto: la medición arrancó de cero">✎ desde ${new Date(v.medido_desde).toLocaleDateString("es-PE",{day:"numeric",month:"short"})}</span>`:"";
+    card.insertAdjacentHTML("beforeend",
+      `<div class="vstats"><span class="vstat"><b>${s.env}</b> recibieron</span>`
+      +`<span class="vstat"><b>${s.resp}</b> contestaron · ${pc(s.env?s.resp/s.env:0)}</span>`
+      +`<span class="vstat"><b>${s.compras}</b> ${s.compras===1?"compró":"compraron"}${s.monto?` · S/ ${s.monto.toFixed(0)}`:""}</span>`
+      +`<span class="vstat plain">${editada}</span></div>`);
+  });
+}
+const pc=x=>Math.round(x*100)+"%";
+const escHtml=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
 function buildRotadorCfg(m, body){
   const c=m.config; c.variantes=c.variantes||[];
+  sellaVarIds(c.variantes);
+  // Copia del texto al abrir: al cerrar/guardar se compara contra esto para saber
+  // cuáles se reescribieron. Se guarda en el nodo para sobrevivir re-render.
+  c.variantes.forEach(v=>{ if(v._txt0===undefined) v._txt0=textoVar(v); });
   const onoff=document.createElement("label"); onoff.className="chk"; onoff.style.margin="0 0 10px";
   const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=c.activo!==false; cb.onchange=()=>{ c.activo=cb.checked; updateNodeDom(m); };
   onoff.append(cb, document.createTextNode(" Reparto activo (si se apaga, usa siempre la 1ª)"));
@@ -1072,7 +1180,7 @@ function buildRotadorCfg(m, body){
     list.innerHTML=""; const tot=totalPeso();
     c.variantes.forEach((v,i)=>{
       v.bubbles=v.bubbles||[{text:""}];
-      const card=document.createElement("div"); card.className="fcard";
+      const card=document.createElement("div"); card.className="fcard"; card.dataset.vid=v.id||"";
       const head=document.createElement("div"); head.className="frow"; head.style.marginBottom="8px";
       const on=document.createElement("input"); on.type="checkbox"; on.checked=v.activo!==false; on.title="Activa"; on.onchange=()=>{ v.activo=on.checked; paint(); updateNodeDom(m); };
       const nm=document.createElement("input"); nm.className="in"; nm.value=v.nombre||("Variante "+(i+1)); nm.oninput=()=>{ v.nombre=nm.value; };
@@ -1088,8 +1196,11 @@ function buildRotadorCfg(m, body){
     });
   };
   paint(); body.appendChild(list);
+  // Cómo viene rindiendo cada una. Va después de pintar (es una consulta) y en silencio:
+  // si la tabla todavía no existe o no hay envíos, el panel se ve igual que antes.
+  statsVariantes(st.channelId).then(s=>{ if(s) pintaStatsVariantes(c.variantes, list, s); }).catch(()=>{});
   const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" variante";
-  add.onclick=()=>{ c.variantes.push({nombre:"Variante "+(c.variantes.length+1),peso:1,activo:true,bubbles:[{text:""}]}); paint(); updateNodeDom(m); };
+  add.onclick=()=>{ c.variantes.push({id:nuevoVarId(),rev:1,_txt0:"",nombre:"Variante "+(c.variantes.length+1),peso:1,activo:true,bubbles:[{text:""}]}); paint(); updateNodeDom(m); };
   body.appendChild(add);
 }
 
@@ -1434,6 +1545,20 @@ async function save(){
   if(st.saving) return false;
   st.saving=true;
   try{
+  // ── Variantes reescritas: se les sube el `rev` para que su medición arranque de cero.
+  //    Los resultados viejos son de un copy que ya no existe; sumarlos con los nuevos bajo
+  //    el mismo nombre corrompe el dato en silencio (y es justo lo que uno mira para decidir
+  //    qué texto deja). También se le sella id a las variantes creadas antes de que esto
+  //    existiera. `_txt0` es solo del editor: se limpia antes de escribir en la base.
+  for(const m of Object.values(st.model)){
+    const vs=m?.config?.variantes; if(!Array.isArray(vs)) continue;
+    sellaVarIds(vs);
+    for(const v of vs){
+      const ahora=textoVar(v);
+      if(v._txt0!==undefined && v._txt0!==ahora){ v.rev=(Number(v.rev)||1)+1; v.medido_desde=new Date().toISOString(); }
+      v._txt0=ahora;
+    }
+  }
   // ── Validación estructural: no dejar guardar un flujo que no puede arrancar
   //    o con rutas ambiguas (antes se guardaba sin nodo inicial → nunca corría).
   const nodos=Object.values(st.model);
@@ -1472,7 +1597,11 @@ async function save(){
     const defH=def.handles||["continuar"];
     const estandar = derivado || (Array.isArray(m.handles) && m.handles.length===defH.length && m.handles.every((h,i)=>h===defH[i]));
     if(estandar) delete m.config._handles; else m.config._handles=[...(m.handles||[])];
-    rows.push({ id:uuid, flow_id:st.flowId, tipo:m.tipo, nombre:m.nombre, config:m.config,
+    // `_txt0` es del editor (para detectar el copy reescrito), no del motor: se saca antes
+    // de escribir para no engordar el config guardado con una copia de cada texto.
+    const cfgLimpio=JSON.parse(JSON.stringify(m.config));
+    if(Array.isArray(cfgLimpio.variantes)) cfgLimpio.variantes.forEach(v=>{ delete v._txt0; });
+    rows.push({ id:uuid, flow_id:st.flowId, tipo:m.tipo, nombre:m.nombre, config:cfgLimpio,
       es_inicial:!!m.es_inicial, pos_x:dfNode?dfNode.pos_x:0, pos_y:dfNode?dfNode.pos_y:0 });
   }
   // Borrar nodos que ya no están + reemplazar aristas.

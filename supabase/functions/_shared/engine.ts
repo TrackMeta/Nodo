@@ -128,6 +128,11 @@ async function runEngineInner(
   // El contacto de Probar flujos queda exento para no romper las pruebas.
   if (await soloAnunciosBloquea(db, channelId, contactId)) return;
 
+  // 📊 Contestó: se marca la variante de copy que le habíamos mandado (la del saludo
+  // inicial o la del último paso de remarketing). Es la métrica que de verdad mide el
+  // copy — que conteste es efecto suyo; que compre depende de toda la conversación.
+  if (event.type === "message") await marcarVarianteRespuesta(db, contactId);
+
   // Congela el ángulo del creativo (por su ad_id) para mensajes iniciales / IA /
   // reportes / remarketing. Idempotente y defensivo.
   await resolverAnguloContacto(db, channelId, contactId);
@@ -2194,6 +2199,12 @@ async function execute(db: SupabaseClient, run: Run) {
             for (const b of (chosen.bubbles ?? [])) await emit(db, run, b, ctx);
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial",
               (chosen.nombre ?? "") + (delAngulo.length ? ` · ángulo ${slug}` : ""));
+            // Queda medible: la nota de arriba es para leer un chat suelto, esta fila es
+            // la que se puede sumar (cuántos la recibieron, contestaron y compraron).
+            await registrarVariante(db, run.channel_id, run.contact_id, {
+              ambito: "inicial", ref_id: run.flow_id,
+              variante: chosen, indice: active.indexOf(chosen), angulo: slug,
+            });
           }
         }
         // "Y después": tras el saludo, el bot CONTINÚA SOLO a vender. Ya no se le
@@ -2709,7 +2720,13 @@ export async function deliverMessage(db: SupabaseClient, channelId: string, cont
 //   { mensaje }                         → una burbuja de texto (compat viejo)
 //   { bubbles:[...] }                   → una o varias burbujas
 //   { rotacion, variantes:[{peso,activo,bubbles}] } → rota una variante
-export async function deliverStep(db: SupabaseClient, channelId: string, contactId: string, paso: any, orderId?: string | null): Promise<boolean> {
+export async function deliverStep(
+  db: SupabaseClient, channelId: string, contactId: string, paso: any, orderId?: string | null,
+  // De qué secuencia y qué paso viene, para poder medir qué variante rindió. Solo lo
+  // manda el scheduler al enviar un paso de remarketing; el resto de usos de
+  // deliverStep (avisos, mensajes sueltos) no rotan copy y no miden nada.
+  meta?: { sequence_id?: string | null; paso?: number | null },
+): Promise<boolean> {
   // orderId: fija el pedido CONCRETO para resolver {{pedido_*}} (ej. al mover un pedido en
   // el kanban se avisa sobre ESE pedido, no el más reciente del contacto).
   const run: any = { channel_id: channelId, contact_id: contactId, vars: orderId ? { _order_id: orderId } : {} };
@@ -2734,6 +2751,14 @@ export async function deliverStep(db: SupabaseClient, channelId: string, contact
       const rotOn = paso.rotacion !== false && active.length > 1;
       const chosen = rotOn ? pickWeighted(active) : active[0];
       bubbles = chosen.bubbles ?? [];
+      // Antes de esto, del remarketing NO quedaba nada: el motor elegía una variante y
+      // nadie sabía cuál había mandado, así que era imposible saber qué copy reengancha.
+      if (meta?.sequence_id) {
+        await registrarVariante(db, channelId, contactId, {
+          ambito: "secuencia", ref_id: meta.sequence_id, paso: meta.paso ?? null,
+          variante: chosen, indice: active.indexOf(chosen), angulo: slug,
+        });
+      }
     }
   } else if (Array.isArray(paso?.bubbles) && paso.bubbles.length) {
     bubbles = paso.bubbles;
@@ -3784,6 +3809,9 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars.pedido_creado = "si";
     await setField(db, run.channel_id, run.contact_id, "pedido_creado", "si").catch(() => {});
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    // 📊 La venta se le acredita al ÚLTIMO copy con variante que recibió (7 días). Es la
+    // métrica de respaldo: confirma si el copy que engancha además vende.
+    await marcarVarianteCompra(db, run.contact_id, Number(amount) || 0);
     // Pedido cerrado sobre una variante SIN stock (ver `variante_agotada` arriba): el chat le
     // prometió otra cosa. No se bloquea, pero el operador tiene que verlo ANTES de despachar
     // o manda el color/talla equivocado y come la devolución.
@@ -10672,6 +10700,69 @@ function normalize(s: string): string {
 
 // Elige una variante al azar PONDERADA por su peso (default 1). Si todos los
 // pesos son 0, cae a una selección uniforme.
+// ── Medición de variantes de copy (migración 0079) ────────────────
+// El rotador y los pasos de secuencia ya reparten copys AL AZAR por peso: el
+// experimento corría solo, pero sin registro no había forma de saber cuál rinde.
+// Acá queda una fila por envío; el resto (¿contestó?, ¿compró?) se completa
+// después sobre esa misma fila.
+//
+// 🔒 Nada de esto puede tumbar un envío: si la tabla todavía no existe o la
+// escritura falla, se pierde el dato de medición y la conversación sigue igual.
+//
+// El id de la variante viene del editor. Para las variantes creadas ANTES de que
+// existiera ese campo se cae a la posición — sirve mientras no las reordenen, y
+// en cuanto el dueño abre el flujo el editor les sella un id de verdad.
+function idVariante(v: any, i: number): string {
+  return String(v?.id ?? "").trim() || `pos${i + 1}`;
+}
+async function registrarVariante(
+  db: SupabaseClient, channelId: string, contactId: string,
+  d: { ambito: "inicial" | "secuencia"; ref_id?: string | null; paso?: number | null;
+       variante: any; indice: number; angulo?: string | null },
+): Promise<void> {
+  try {
+    await db.from("variante_envios").insert({
+      channel_id: channelId, contact_id: contactId,
+      ambito: d.ambito, ref_id: d.ref_id ?? null, paso: d.paso ?? null,
+      variante_id: idVariante(d.variante, d.indice),
+      variante_rev: Number(d.variante?.rev) || 1,
+      variante_nom: String(d.variante?.nombre ?? "").slice(0, 80) || null,
+      angulo: String(d.angulo ?? "").trim() || null,
+    });
+  } catch (e) { console.error("[variante/registrar]", (e as any)?.message ?? e); }
+}
+// El cliente contestó: se marca el último envío suyo que seguía sin respuesta. Es
+// LA métrica del copy — la compra llega después de toda la conversación con la IA,
+// así que el mensaje influye poco ahí; en cambio que conteste es efecto directo suyo.
+async function marcarVarianteRespuesta(db: SupabaseClient, contactId: string): Promise<void> {
+  try {
+    const { data } = await db.from("variante_envios").select("id")
+      .eq("contact_id", contactId).is("respondio_at", null)
+      .order("enviado_at", { ascending: false }).limit(1).maybeSingle();
+    if ((data as any)?.id) {
+      await db.from("variante_envios").update({ respondio_at: new Date().toISOString() })
+        .eq("id", (data as any).id);
+    }
+  } catch (_) { /* la medición nunca frena la conversación */ }
+}
+// Compró: se le acredita al ÚLTIMO envío con variante dentro de 7 días (last-touch).
+// Si se le contara a todos los toques que recibió, cada variante parecería el triple
+// de buena de lo que es.
+async function marcarVarianteCompra(db: SupabaseClient, contactId: string, monto: number): Promise<void> {
+  try {
+    const desde = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const { data } = await db.from("variante_envios").select("id")
+      .eq("contact_id", contactId).is("compro_at", null).gte("enviado_at", desde)
+      .order("enviado_at", { ascending: false }).limit(1).maybeSingle();
+    if ((data as any)?.id) {
+      await db.from("variante_envios").update({
+        compro_at: new Date().toISOString(),
+        monto: Number.isFinite(monto) ? Number(monto) : null,
+      }).eq("id", (data as any).id);
+    }
+  } catch (_) { /* la medición nunca frena la venta */ }
+}
+
 function pickWeighted<T extends { peso?: number }>(items: T[]): T {
   const weights = items.map((v) => Math.max(0, Number(v.peso ?? 1)));
   const total = weights.reduce((a, b) => a + b, 0);

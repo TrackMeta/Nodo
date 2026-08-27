@@ -896,7 +896,10 @@ async function processSub(s: any, now: number): Promise<boolean> {
       // Solo cuenta como "toque de marketing" si REALMENTE salió: deliverStep devuelve false
       // cuando Meta lo rechaza (no lanza). Marcarlo igual le quema al contacto el cooldown de
       // remarketing sin haber recibido nada.
-      if (await deliverStep(db, s.channel_id, s.contact_id, paso)) toco = true;
+      // Se le pasa de qué secuencia y paso viene: es lo que permite medir después qué
+      // variante de copy reenganchó (ver variante_envios).
+      if (await deliverStep(db, s.channel_id, s.contact_id, paso, null,
+        { sequence_id: s.sequence_id, paso: s.paso_actual })) toco = true;
       else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
     } else {
       console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);

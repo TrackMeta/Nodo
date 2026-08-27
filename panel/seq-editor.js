@@ -12,7 +12,31 @@ import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 
 const esc = (s)=> (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const uid = ()=> "v"+Math.random().toString(36).slice(2,9);
-export function newVariant(idx){ return { id:uid(), nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
+// `rev` sube cuando se reescribe el texto: los resultados medidos de un copy que ya
+// cambió son de otro copy, y sumarlos con los nuevos corrompe justo el número que uno
+// mira para decidir qué versión deja. Ver `subeRevSiCambio`.
+export function newVariant(idx){ return { id:uid(), rev:1, nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
+// Texto plano de una versión (para detectar el cambio).
+export function textoVariante(v){ return (v?.bubbles||[]).map(b=>String(b?.text||"")).join("\n"); }
+// Recorre los pasos y le sube el rev a las versiones cuyo texto cambió desde que se
+// abrió el editor. Se llama al guardar, con la foto que se tomó al abrir.
+export function subeRevSiCambio(pasos, foto){
+  (pasos||[]).forEach((p,pi)=>{
+    (p?.variantes||[]).forEach(v=>{
+      if(!v) return;
+      if(!v.id) v.id=uid();
+      if(!v.rev) v.rev=1;
+      const antes=foto?.[`${pi}|${v.id}`];
+      if(antes!==undefined && antes!==textoVariante(v)){ v.rev=Number(v.rev)+1; v.medido_desde=new Date().toISOString(); }
+    });
+  });
+}
+// Foto del texto de cada versión al abrir el editor.
+export function fotoVariantes(pasos){
+  const f={};
+  (pasos||[]).forEach((p,pi)=>(p?.variantes||[]).forEach(v=>{ if(v?.id) f[`${pi}|${v.id}`]=textoVariante(v); }));
+  return f;
+}
 // Frecuencia de una versión = su % editable a mano. Por debajo es `peso` (el
 // motor normaliza por la suma). Solo se muestra cuando 2+ versiones compiten en
 // el mismo grupo (mismo ángulo). El usuario escribió un % para ESTA versión: se
@@ -113,6 +137,40 @@ export function mountStepsEditor(el, opts){
   const actions = opts.actions || { enabled:false };
   if(!Array.isArray(seq.pasos)) seq.pasos = [];
   let sel = 0;
+  // Cómo viene rindiendo cada versión de copy (variante_envios, migración 0079). Se pide
+  // una vez al montar y se guarda acá; cada tarjeta lee de este mapa al pintarse. Si la
+  // tabla todavía no existe o no hay envíos, queda null y el editor se ve igual que antes.
+  let statsVar = null;
+  (async()=>{
+    try{
+      const desde=new Date(Date.now()-90*24*3600*1000).toISOString();
+      const { data,error }=await supa.from("variante_envios")
+        .select("variante_id,variante_rev,respondio_at,compro_at,monto")
+        .eq("channel_id",channelId).eq("ambito","secuencia").gte("enviado_at",desde).limit(5000);
+      if(error||!data?.length) return;
+      const m=new Map();
+      for(const r of data){
+        const k=`${r.variante_id}|${r.variante_rev}`;
+        const s=m.get(k)||{env:0,resp:0,compras:0,monto:0};
+        s.env++; if(r.respondio_at) s.resp++; if(r.compro_at){ s.compras++; s.monto+=Number(r.monto)||0; }
+        m.set(k,s);
+      }
+      statsVar=m; paintOne();
+    }catch(_){ /* la medición nunca rompe el editor */ }
+  })();
+  // Línea de números bajo una versión. En remarketing "contestó" = reenganchó, que es
+  // justo lo que el paso intenta lograr.
+  function statsHtml(v){
+    const s=statsVar?.get(`${v?.id}|${Number(v?.rev)||1}`);
+    if(!s) return "";
+    const pct=s.env?Math.round(s.resp/s.env*100):0;
+    const flojo=s.env<30?` <span style="color:var(--faint)">· aún pocos datos</span>`:"";
+    return `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted)">
+      <span style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:2px 8px"><b style="color:var(--text)">${s.env}</b> recibieron</span>
+      <span style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:2px 8px"><b style="color:var(--text)">${s.resp}</b> reengancharon · ${pct}%</span>
+      ${s.compras?`<span style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:2px 8px"><b style="color:var(--text)">${s.compras}</b> ${s.compras===1?"compró":"compraron"}${s.monto?` · S/ ${s.monto.toFixed(0)}`:""}</span>`:""}
+      ${flojo}</div>`;
+  }
 
   el.innerHTML = `<div class="se-journey" style="overflow-x:auto;padding:2px 2px 10px"></div><div class="se-body"></div>`;
   const jBox = el.querySelector(".se-journey");
@@ -307,14 +365,15 @@ export function mountStepsEditor(el, opts){
               ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>🎯 ${esc(a.nombre||a.slug)}</option>`).join("")}
             </select></div>`:``}
           <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>
+          ${statsHtml(v)}`;
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
         { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
         card.querySelector(".se-vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
         { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
       } else {
-        card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
+        card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>${statsHtml(v)}`;
       }
       const bb=card.querySelector(".se-bubbles");
       v.bubbles.forEach((bub,bi)=> bb.appendChild(bubbleEl(box,paso,v,bub,bi)));
