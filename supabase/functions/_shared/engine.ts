@@ -9956,6 +9956,11 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         `${insOrd.error.message} — el evento salió a Meta, pero esta venta no va a aparecer en el Dashboard ni en Compras`).catch(() => {});
     }
     await logEvent(db, run.channel_id, run.contact_id, "compra", "Compra registrada", value ? `${currency} ${value}` : "");
+    // 📊 La venta DIGITAL nace acá (al confirmarse el pago), no en crearPedido. Sin esto la
+    // columna "compraron" de los copys digitales se quedaba en cero para siempre — un número
+    // mudo que haría parecer que ningún copy vende, justo en el tipo de producto donde el
+    // mensaje inicial es TODA la venta.
+    await marcarVarianteCompra(db, run.contact_id, Number(value) || 0);
     await moverEtapa(db, run.channel_id, run.contact_id, "comprado");
   }
 
@@ -10721,6 +10726,12 @@ async function registrarVariante(
        variante: any; indice: number; angulo?: string | null },
 ): Promise<void> {
   try {
+    // ⛔ El contacto de "Probar flujos" NO se mide. Es el dueño probando: manda el saludo y
+    // nunca contesta, así que cada prueba metía un envío sin respuesta y hundía la tasa de
+    // esa variante. Probar el flujo veinte veces habría bastado para hacerle apagar el copy
+    // bueno — con datos que no vinieron de ningún cliente.
+    const { data: ct } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
+    if ((ct as any)?.wa_id === "webchat-test") return;
     await db.from("variante_envios").insert({
       channel_id: channelId, contact_id: contactId,
       ambito: d.ambito, ref_id: d.ref_id ?? null, paso: d.paso ?? null,
@@ -10734,15 +10745,26 @@ async function registrarVariante(
 // El cliente contestó: se marca el último envío suyo que seguía sin respuesta. Es
 // LA métrica del copy — la compra llega después de toda la conversación con la IA,
 // así que el mensaje influye poco ahí; en cambio que conteste es efecto directo suyo.
+// Ventana para considerar que un mensaje del cliente es RESPUESTA al copy que recibió.
+// Al saludo inicial se contesta en minutos; a un paso de remarketing, a veces al día
+// siguiente. Más allá de esto el cliente escribe por su cuenta, no por ese mensaje.
+const VARIANTE_VENTANA_MS = 72 * 3600 * 1000;
 async function marcarVarianteRespuesta(db: SupabaseClient, contactId: string): Promise<void> {
   try {
-    const { data } = await db.from("variante_envios").select("id")
-      .eq("contact_id", contactId).is("respondio_at", null)
+    // Se mira el ÚLTIMO envío, respondido o no — NO "el último sin responder". Esa versión
+    // inflaba las tasas hacia arriba sin que se notara: con el saludo de enero sin contestar
+    // y un remarketing de marzo, el 1er mensaje del cliente marcaba el de marzo (bien) y el
+    // 2º —diez segundos después, misma charla— se iba a buscar el siguiente sin responder y
+    // marcaba el saludo de ENERO como contestado. Una conversación de seis mensajes marcaba
+    // seis envíos viejos, y cada variante terminaba pareciendo mucho mejor de lo que era.
+    const { data } = await db.from("variante_envios").select("id, enviado_at, respondio_at")
+      .eq("contact_id", contactId)
       .order("enviado_at", { ascending: false }).limit(1).maybeSingle();
-    if ((data as any)?.id) {
-      await db.from("variante_envios").update({ respondio_at: new Date().toISOString() })
-        .eq("id", (data as any).id);
-    }
+    const env = data as any;
+    if (!env?.id || env.respondio_at) return;                       // sin envíos, o ya contado
+    if (Date.now() - new Date(env.enviado_at).getTime() > VARIANTE_VENTANA_MS) return;
+    await db.from("variante_envios").update({ respondio_at: new Date().toISOString() })
+      .eq("id", env.id);
   } catch (_) { /* la medición nunca frena la conversación */ }
 }
 // Compró: se le acredita al ÚLTIMO envío con variante dentro de 7 días (last-touch).
@@ -10750,16 +10772,21 @@ async function marcarVarianteRespuesta(db: SupabaseClient, contactId: string): P
 // de buena de lo que es.
 async function marcarVarianteCompra(db: SupabaseClient, contactId: string, monto: number): Promise<void> {
   try {
-    const desde = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-    const { data } = await db.from("variante_envios").select("id")
-      .eq("contact_id", contactId).is("compro_at", null).gte("enviado_at", desde)
+    // Igual que con la respuesta: se mira el ÚLTIMO envío, comprado o no. Buscar "el último
+    // SIN compra" hacía doble conteo — el cliente compra el principal (se marca el
+    // remarketing, que fue el último) y minutos después acepta el extra: esa segunda compra
+    // se iba a buscar otro envío libre y marcaba el saludo inicial. Dos compras contadas por
+    // una sola venta, repartidas entre dos copys que no las hicieron.
+    const { data } = await db.from("variante_envios").select("id, enviado_at, compro_at")
+      .eq("contact_id", contactId)
       .order("enviado_at", { ascending: false }).limit(1).maybeSingle();
-    if ((data as any)?.id) {
-      await db.from("variante_envios").update({
-        compro_at: new Date().toISOString(),
-        monto: Number.isFinite(monto) ? Number(monto) : null,
-      }).eq("id", (data as any).id);
-    }
+    const env = data as any;
+    if (!env?.id || env.compro_at) return;
+    if (Date.now() - new Date(env.enviado_at).getTime() > 7 * 24 * 3600 * 1000) return;
+    await db.from("variante_envios").update({
+      compro_at: new Date().toISOString(),
+      monto: Number.isFinite(monto) ? Number(monto) : null,
+    }).eq("id", env.id);
   } catch (_) { /* la medición nunca frena la venta */ }
 }
 

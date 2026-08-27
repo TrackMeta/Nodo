@@ -252,7 +252,7 @@ import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, ma
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare } from "./seq-editor.js?v=8";
+import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=9";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -1717,8 +1717,14 @@ async function renderRemarketing(host){
       ofertaProducts:[{ id:st.prod.id, nombre:st.prod.nombre, opciones }],
       actions:{ enabled:false },
     });
+    // Foto del texto de cada versión al abrir. El reenganche se configura MÁS desde acá que
+    // desde la página Secuencias, así que sin esto la ruta más usada guardaba copys
+    // reescritos sin reiniciar su medición: los resultados del texto viejo se seguían
+    // sumando con los del nuevo, que es justo lo que el `rev` viene a evitar.
+    const fotoVars = fotoVariantes(seq.pasos||[]);
     wrap.querySelector("[data-remsave]").onclick=async(e)=>{
       ed.normalize();
+      subeRevSiCambio(seq.pasos||[], fotoVars);
       const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
       const { error }=await supa.from("sequences").update({ pasos:seq.pasos }).eq("id",seq.id);
       btn.disabled=false; btn.textContent=old;

@@ -421,10 +421,17 @@ async function cargaCopys(){
   // la vista salía vacía teniendo 320 filas. Se toma el fin del día en la zona del negocio.
   const desde=startOfDayLima(new Date(r.from)).toISOString();
   const hasta=endOfDayLima(new Date(r.to)).toISOString();
-  const { data, error }=await supa.from("variante_envios")
+  // ⚠️ PostgREST corta en 1000 filas y `.limit()` NO lo sube: con `.limit(10000)` devolvía
+  // exactamente 1000 de 1500 (medido). Y el recorte no es inocente — se queda con las
+  // primeras según un orden no garantizado, así que una versión podía salir con 900 envíos
+  // y la otra con 100 solo por dónde cayó el corte, mostrando un "ganador" inventado.
+  // pageAll pagina de verdad; el `order` estable es lo que hace que las páginas no se pisen.
+  const { data, error, truncado }=await pageAll((a,b)=>supa.from("variante_envios")
     .select("ambito,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
-    .eq("channel_id", st.channelId).gte("enviado_at",desde).lte("enviado_at",hasta).limit(10000);
+    .eq("channel_id", st.channelId).gte("enviado_at",desde).lte("enviado_at",hasta)
+    .order("enviado_at",{ascending:true}).order("id",{ascending:true}).range(a,b));
   if(error) return { error };
+  if(truncado) console.warn("[copys] periodo con demasiados envíos: los números pueden estar incompletos");
   const m=new Map();
   for(const x of data||[]){
     const k=`${x.ambito}|${x.variante_id}|${x.variante_rev}`;
