@@ -485,11 +485,26 @@ async function cargaCopys(){
   // y la otra con 100 solo por dónde cayó el corte, mostrando un "ganador" inventado.
   // pageAll pagina de verdad; el `order` estable es lo que hace que las páginas no se pisen.
   const { data, error, truncado }=await pageAll((a,b)=>supa.from("variante_envios")
-    .select("ambito,ref_id,paso,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
+    .select("contact_id,ambito,ref_id,paso,variante_id,variante_rev,variante_nom,angulo,respondio_at,compro_at,monto")
     .eq("channel_id", st.channelId).gte("enviado_at",desde).lte("enviado_at",hasta)
     .order("enviado_at",{ascending:true}).order("id",{ascending:true}).range(a,b));
   if(error) return { error };
   const refProd=await productoPorRef();
+  // 🧮 La compra se acredita cuando NACE el pedido, y un pedido recién nacido todavía
+  // puede no ser una venta (provincia arranca en "esperando_adelanto": dio sus datos y
+  // no pagó) o dejar de serlo después (lo canceló). Contarlas igual inflaba la columna
+  // "compraron" y sus ingresos — medido: 20 compras / S/ 2.791 cuando eran 17 / S/ 2.404,
+  // con dos leads sin pagar y un pedido cancelado dentro. Y era el peor sitio para
+  // inflar: un copy que atrae gente que da datos y no paga se veía igual de bueno que
+  // uno que cierra. Se cruza con el estado ACTUAL del pedido, así que el número se
+  // corrige solo cuando el de provincia paga su adelanto o cuando alguien cancela.
+  const conVentaViva=new Set();
+  try{
+    const { data:_os }=await pageAll((a,b)=>supa.from("orders").select("contact_id,estado")
+      .eq("channel_id", st.channelId).order("id",{ascending:true}).range(a,b));
+    for(const o of _os||[]){ const e=O.EST[o.estado]||{}; if(e.venta && !e.perdido) conVentaViva.add(o.contact_id); }
+  }catch(_){ /* sin pedidos legibles → se cuenta como antes */ }
+
   if(truncado) console.warn("[copys] periodo con demasiados envíos: los números pueden estar incompletos");
   const m=new Map();
   for(const x of data||[]){
@@ -506,7 +521,8 @@ async function cargaCopys(){
     // último deja el nombre ACTUAL — si no, la tabla te mostraría un nombre que ya no existe
     // en el editor y no sabrías cuál de tus versiones es.
     if (x.variante_nom) s.nombre = x.variante_nom;
-    s.env++; if(x.respondio_at) s.resp++; if(x.compro_at){ s.compras++; s.monto+=Number(x.monto)||0; }
+    s.env++; if(x.respondio_at) s.resp++;
+    if(x.compro_at && conVentaViva.has(x.contact_id)){ s.compras++; s.monto+=Number(x.monto)||0; }
     if(x.angulo) s.angulos.add(x.angulo);
     m.set(k,s);
   }
