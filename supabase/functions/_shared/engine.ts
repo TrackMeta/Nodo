@@ -2885,7 +2885,11 @@ const PREGUNTAS_DESCUBRIR = [
   "¿Hay algo puntual que te esté haciendo dudar?",
   "¿Qué te gustaría saber antes de decidirte?",
 ];
-function sinOfertaRepetida(texto: string, veces: number): string {
+// `usadas` = las preguntas que ya salieron en el chat: sin eso, el índice se calculaba
+// sobre un contador que no avanzaba entre mensajes y la MISMA pregunta sustituta salía dos
+// veces seguidas — cambiar un bucle por otro más corto no es arreglarlo. Si ya se usaron
+// todas, se prefiere quedarse sin pregunta antes que repetir una.
+function sinOfertaRepetida(texto: string, usadas: string[]): string {
   const t = String(texto ?? "");
   RE_OFERTA_CIERRE.lastIndex = 0;
   if (!RE_OFERTA_CIERRE.test(t)) return t;
@@ -2893,7 +2897,9 @@ function sinOfertaRepetida(texto: string, veces: number): string {
   const limpio = t.replace(RE_OFERTA_CIERRE, " ").replace(/\s{2,}/g, " ").trim();
   // Si al quitarla no queda mensaje, se deja como estaba: mejor insistir que quedarse mudo.
   if (limpio.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
-  return `${limpio} ${PREGUNTAS_DESCUBRIR[veces % PREGUNTAS_DESCUBRIR.length]}`;
+  const dicho = usadas.join(" ").toLowerCase();
+  const libre = PREGUNTAS_DESCUBRIR.find((q) => !dicho.includes(q.toLowerCase().slice(1, 20)));
+  return libre ? `${limpio} ${libre}` : limpio;
 }
 
 function sinFalsoCierre(texto: string, cierre: string): string {
@@ -9846,6 +9852,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // cliente sin siguiente paso, responder en una línea suelta no da razones para comprar,
     // y arrancar siempre igual ("Además…", "Claro que sí…") delata al robot.
     parts.push(
+      "## Cuando te cuenta algo suyo\n" +
+      "A veces no te pregunta: se abre. «Soy gordito», «nunca he entrenado», «lo necesito para mi mamá», " +
+      "«no tengo tiempo». Eso te lo dice porque quiere saber si ESTO le sirve A ÉL, y muchas veces le cuesta " +
+      "decirlo. ⛔ No lo esquives saltando al catálogo con un beneficio general («está pensado para todo tipo " +
+      "de cuerpo»): eso se lee como que no lo escuchaste. Contéstale primero a ÉL, en una línea, con lo que " +
+      "acaba de contarte —sin repetirle la etiqueta que usó ni ponerte a diagnosticarlo— y recién ahí conecta " +
+      "con lo del producto que le resuelve justo eso. Es el momento donde más se gana o se pierde una venta.\n" +
       "## Cómo vendes (no solo respondes)\n" +
       "1. CIERRA SIEMPRE. Cada mensaje tuyo termina moviendo la venta un paso: una pregunta corta que lo acerque " +
       "a comprar («¿te lo dejo listo?», «¿te paso los datos?», «¿en qué te lo mando?»). Responder la duda y " +
@@ -10484,7 +10497,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             RE_OFERTA_CIERRE.lastIndex = 0;
             return RE_OFERTA_CIERRE.test(String(mm?.content?.text ?? ""));
           }).length;
-          if (veces >= 2) salida = sinOfertaRepetida(salida, veces);
+          if (veces >= 2) {
+            salida = sinOfertaRepetida(salida, (outsOf ?? []).map((mm: any) => String(mm?.content?.text ?? "")));
+          }
         } catch (_) { /* sin historial → se envía tal cual */ }
       }
       // En digital no hay dato que pedir: si se lo inventó, se le quita antes de enviarlo.
