@@ -2977,7 +2977,11 @@ async function generarFlujoVenta(skipConfirm){
     // podrían decir CON QUÉ pagó.
     const nOcr=await N("ia","Validar el pago",{
       operacion:"analizar_imagen", perfil:"ocr", usar_validador:true, enviar:false, guardar_en:"pago_resultado",
-      prompt:"Analiza la imagen adjunta con las reglas del validador. Si el pago es VÁLIDO y por el monto correcto, "+
+      // OJO: acá NO se le pide juzgar el MONTO. El validador del pago principal no recibe el
+      // precio (la suficiencia la calcula el motor, que sabe de adelantos y pagos en cuotas):
+      // pedirle "por el monto correcto" sin darle contra qué comparar hacía que rechazara pagos
+      // exactos —medido con un producto de S/10 pagado con S/10—.
+      prompt:"Analiza la imagen adjunta con las reglas del validador. Si el comprobante es VÁLIDO (real, al destinatario correcto y vigente), "+
              "responde exactamente PAGO_OK. Si no, responde PAGO_NO y en una frase el motivo.\n"+
              "En la línea siguiente agrega SIEMPRE un JSON con lo que leíste del comprobante: "+
              '{"banco":"Yape o el banco","operacion":"nº de operación","monto":0,"titular":"a quién le pagó"}',

@@ -8583,7 +8583,10 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
         `Si pagó MENOS, es INVÁLIDO: informa cuánto falta, no lo apruebes.`,
       );
     } else {
-      reglas.push("Extrae el monto pagado y verifica que cubra el monto acordado con el cliente" + (tol ? ` (tolerancia ±${tol}).` : "."));
+      // Sin monto esperado NO se puede pedir que "verifique que cubra lo acordado": el
+      // modelo no tiene contra qué comparar, se inventa un faltante y rechaza un pago
+      // bueno. Solo extrae; la suficiencia la decide el código, que sí sabe el precio.
+      reglas.push("Extrae el monto pagado tal como figura en el comprobante. NO juzgues si alcanza o no —no tienes el precio acordado— y NUNCA rechaces un comprobante por su monto: de eso me encargo yo por separado.");
     }
   }
   if (r.verificar_fecha) reglas.push(`Respecto a la fecha de HOY indicada arriba, la fecha/hora del comprobante no debe superar las ${Number(r.fecha_max_horas ?? 48)} horas de antigüedad. Solo márcalo sospechoso si es realmente ANTERIOR a esa ventana; un comprobante fechado hoy o en las últimas horas es VÁLIDO aunque el año sea ${anioActual}.`);
@@ -9779,7 +9782,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // código, para acumular pagos en cuotas — la "bolsa"); solo juzga fraude/
     // legibilidad. La venta extra sí lleva su monto al modelo (pago aparte, sin cuotas).
     const esExtraNode = String(cfg.guardar_en ?? "").startsWith("pago_extra");
-    const vt = buildOcrSystem(info.ocr, (esExtraNode && Number.isFinite(esperado)) ? esperado : null, ctx.moneda ?? null, false, await tzDe(db, run));
+    // Si NO le pasamos monto esperado, hay que decirle que NO juzgue el monto. El
+    // comentario de arriba ya decía que de eso se encarga el código, pero el flag iba
+    // en `false`: el validador caía en "verifica que cubra el monto acordado" SIN saber
+    // cuál era, y rechazaba pagos correctos. Medido con un producto de S/10: el cliente
+    // pagó S/10 exactos y el bot le contestó «el monto pagado es S/ 10 que es menor al
+    // monto esperado (sin monto acordado indicado aquí), por favor pagar el monto
+    // correcto». Pago hecho, venta perdida y el cliente sin entender qué le faltaba.
+    const montoIA = (esExtraNode && Number.isFinite(esperado)) ? esperado : null;
+    const vt = buildOcrSystem(info.ocr, montoIA, ctx.moneda ?? null, montoIA == null, await tzDe(db, run));
     if (vt) system = system ? (vt + "\n\n" + system) : vt;
   }
 
