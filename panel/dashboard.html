@@ -938,12 +938,16 @@ async function load(){
   // Costos de la mercadería y de los envíos (informativos; ya están restados
   // dentro de la ganancia bruta). Se muestran para ver a dónde se va la plata.
   let costoProdTotal=0, fleteTotal=0;
-  ventasOk.forEach(o=>{   // informativos, ya restados en la bruta → mismo universo (sin perdidos)
+  // OJO al universo: este costo cubre TODAS las ventas vivas (cobradas o no), mientras
+  // que la ganancia bruta solo suma los pedidos con margen calculable (un físico sin
+  // flete registrado no entra). Por eso "Cobrado − Costo de productos" NO da la bruta,
+  // y el subtítulo dice sobre cuántas ventas es, para no invitar a esa resta.
+  ventasOk.forEach(o=>{
     const cp=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(cp!=null) costoProdTotal+=cp;
     if(O.esFisico(o)){ const f=O.flete(o); if(f!=null) fleteTotal+=f; }
   });
-  K.push(kpi("box","#f0a92b","Costo de productos", money(costoProdTotal), "mercadería de lo vendido"));
+  K.push(kpi("box","#f0a92b","Costo de productos", money(costoProdTotal), `mercadería de ${ventasOk.length} ${ventasOk.length===1?"venta":"ventas"} · cobradas o no`));
   if(tipo!=="digital") K.push(kpi("truck","#f0a92b","Gasto de envíos", money(fleteTotal), "fletes que registraste"));
   // Ganancia como tarjetas KPI (además de la banda de arriba). Mismos números:
   // bruta − anuncios − gastos extra = neta. Pedido de Rodrigo para tenerlas a la vista.
