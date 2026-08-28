@@ -1708,7 +1708,7 @@ function renderMsg(m) {
   // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
   const tr = m.content?.transcription
     ? `<div class="transcript" title="Transcripción automática del audio">${icon("mic")} ${esc(m.content.transcription)}</div>` : "";
-  el.innerHTML = `${mh || esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
+  el.innerHTML = `${mh || waFmt(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
   t.appendChild(el);
   // Los botones se MUESTRAN siempre: si no, en una conversación real verías el
   // texto pero no los botones que le llegaron al cliente, y no entenderías por
@@ -1745,7 +1745,7 @@ function statusTick(s, animate){
 function safeUrl(u){ return /^\s*(https?:|data:)/i.test(String(u||"")) ? String(u) : "#"; }
 function mediaHtml(m){
   const url = m.content?.media_url; if(!url) return null;
-  const cap = m.content?.caption ? `<div style="margin-top:5px">${esc(m.content.caption)}</div>` : "";
+  const cap = m.content?.caption ? `<div style="margin-top:5px">${waFmt(m.content.caption)}</div>` : "";
   const u = esc(safeUrl(url));
   if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" style="cursor:zoom-in"/>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
@@ -2151,6 +2151,24 @@ function resyncRealtime() {
 
 // ── util ──
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// Formato de WhatsApp (*negrita*, _cursiva_, ~tachado~, ```mono```) como lo ve el
+// cliente en su celular. Sin esto la Bandeja mostraba los asteriscos crudos —"confírmalo
+// con un adelanto de *S/ 20*"— y al releer un chat no se distinguía lo que va resaltado
+// de lo que no. 🔒 SIEMPRE escapa primero: el HTML se arma sobre el texto ya escapado,
+// así un mensaje del cliente con <script> no puede inyectar nada (los marcadores solo
+// pueden envolver texto que ya es inofensivo).
+function waFmt(s){
+  let t = esc(s);
+  // Cada delimitador exige BORDE: pegado a la palabra por dentro, y espacio o signo por
+  // fuera. Así una URL con guiones bajos (un_link_asi) o un "2 * 3" suelto no se vuelven
+  // estilo. Van como literales y no armadas con new RegExp: dentro de un string, "\s" se
+  // queda en "s" y la regex deja de hacer lo que dice (ya me pasó en este mismo archivo).
+  t = t.replace(/```([\s\S]+?)```/g, "<code>$1</code>");
+  t = t.replace(/(^|[\s(¡¿«"])\*(?!\s)([^*\n]+?)(?<!\s)\*(?=$|[\s.,!?)»:;"])/g, "$1<b>$2</b>");
+  t = t.replace(/(^|[\s(¡¿«"])_(?!\s)([^_\n]+?)(?<!\s)_(?=$|[\s.,!?)»:;"])/g, "$1<i>$2</i>");
+  t = t.replace(/(^|[\s(¡¿«"])~(?!\s)([^~\n]+?)(?<!\s)~(?=$|[\s.,!?)»:;"])/g, "$1<s>$2</s>");
+  return t;
+}
 function rel(ts){ const d=(Date.now()-new Date(ts))/1000; if(d<60)return"ahora"; if(d<3600)return Math.floor(d/60)+"m"; if(d<86400)return Math.floor(d/3600)+"h"; return Math.floor(d/86400)+"d"; }
 
 const winTimer = setInterval(() => { if (state.contactId) updateWindow(); }, 60000);
