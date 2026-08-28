@@ -2812,6 +2812,26 @@ function conPeticionFinal(texto: string, peticion: string): string {
 // permiso no aporta nada. Por código: como regla de prompt ya falló.
 const RE_PERMISO_PAGO =
   /[^.!?…]*¿?\s*te\s+(paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|comparta|doy|d[eé])\s+(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…]*[.!?…]?/gi;
+// "Te lo mando HOY mismo" cuando el sistema ya calculó que en esa zona hoy no alcanza.
+// El prompt lo prohíbe con todas las letras ("no prometas que llega hoy bajo ninguna
+// circunstancia") y el modelo lo dijo igual: medido en la simulación, ofreció "¿confirmo
+// y te lo mando hoy mismo?" y en el mensaje SIGUIENTE el propio bot escribió "con entrega
+// mañana". El cliente acepta pensando en hoy y reclama al día siguiente. Cuarta regla de
+// prompt de esta serie que falla, así que se corrige por código: la promesa se cambia por
+// el plazo REAL que el motor ya tiene (entrega_cuando).
+// Solo toca el "hoy" que va pegado a un verbo de ENTREGA: "hoy es martes", "hasta hoy
+// tienes el descuento" o "la promo termina hoy" se quedan como están.
+const _V_ENTREGA = "lleg|mand|env[ií]|despach|sal[ei]|entreg|recib";
+function sinPromesaDeHoy(texto: string, cuando: string): string {
+  let t = String(texto ?? "");
+  if (!t || !/\bhoy\b|mismo d[ií]a/i.test(t)) return t;
+  const rep = String(cuando ?? "").trim() || "pronto";
+  t = t.replace(/\b(hoy\s+mismo|el\s+mismo\s+d[ií]a)\b/gi, rep);
+  t = t.replace(new RegExp(`\\bhoy\\b(?=[^.!?]{0,28}\\b(?:${_V_ENTREGA})\\w*)`, "gi"), rep);
+  t = t.replace(new RegExp(`\\b((?:${_V_ENTREGA})\\w*(?:\\s+\\S+){0,3}?\\s+)hoy\\b`, "gi"), `$1${rep}`);
+  return t;
+}
+
 function sinPedirPermisoPago(texto: string): string {
   const t = String(texto ?? "");
   RE_PERMISO_PAGO.lastIndex = 0;
@@ -9016,6 +9036,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "Si el cliente pide algo AGOTADO: díselo de frente y ofrécele lo disponible. NO se lo confirmes " +
           "ni le prometas entrega. Si insiste en lo agotado, pásalo a un humano con [[humano]].",
         );
+      } else if (hay.length) {
+        // No hay NADA agotado. Antes este caso no le decía a la IA qué existe —solo se
+        // hablaba de stock cuando faltaba algo—, y sin la lista el modelo improvisa el
+        // catálogo: medido, a un "¿tienen talla 38?" respondió «sí, la 38, que es la que
+        // manejamos» teniendo también 39 y 40. Negar una talla que sí hay cuesta la venta
+        // igual que prometer una que no. Con todo disponible basta una línea.
+        parts.push(
+          "## Existencias (dato del sistema — NO lo contradigas ni lo negocies)\n" +
+          `DISPONIBLE ahora: ${hay.slice(0, 20).join(", ")}.\n` +
+          "Está TODO disponible: no digas ni insinúes que solo manejas una talla/color, ni que el resto " +
+          "se agotó. Si el cliente pregunta por una de estas combinaciones, confírmasela.\n" +
+          "Cada línea es una combinación EXACTA y sus valores van juntos: no mezcles la talla de una con " +
+          "el color de otra al responder.",
+        );
       }
     }
 
@@ -10063,6 +10097,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ? sinPreguntaFinal(String(result))
         : String(result);
       if (op === "generar_texto") salida = sinPedirPermisoPago(salida);
+      // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
+      if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
+        salida = sinPromesaDeHoy(salida, String(ctx.entrega_cuando ?? ""));
+      }
       // Anunciar el cierre cuando el motor NO va a cerrar nada: mientras los datos no estén
       // completos este turno NO crea pedido, así que un "queda confirmado" acá es falso.
       // Se recorta esa frase (ver sinFalsoCierre); el resto del mensaje sale igual.
