@@ -9648,7 +9648,40 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // confirmación la da él y la IA solo cierra la conversación.
         "Ese mensaje del sistema YA le dice que su pedido quedó confirmado y cómo paga, así que NO lo repitas: no escribas «tu pedido está confirmado» ni le vuelvas a listar la dirección, el monto ni la forma de pago. Cierra corto y cálido, y déjale a él esa parte.");
     }
-    if (ctx.emojis) parts.push("## Emojis de este producto\nPuedes usar estos emojis (con moderación) cuando hables de este producto: " + ctx.emojis);
+    // Cómo se ESCRIBE un mensaje de WhatsApp. Faltaba por completo: los mensajes fijos
+    // del dueño van con negritas y emojis, y en cuanto tomaba la IA el chat se volvía
+    // gris —mismo negocio, dos voces, y el cliente lo nota justo cuando se habla de plata.
+    // La negrita además tiene función: el monto y la clave de recojo son lo que el cliente
+    // busca al releer el chat, y hasta ahora salían dentro del párrafo.
+    parts.push(
+      "## Cómo se ve tu mensaje en WhatsApp\n" +
+      "WhatsApp entiende *negrita*, _cursiva_ y ~tachado~ con esos símbolos pegados a la palabra. " +
+      "Resalta con *asteriscos* SOLO el dato que el cliente va a buscar cuando relea el chat: el monto, " +
+      "una fecha, la clave de recojo, la talla que quedó. Uno o dos por mensaje, no más — si resaltas " +
+      "todo, no resaltas nada. Nunca uses asteriscos para adornar ni para gritar.",
+    );
+    if (ctx.emojis) {
+      // "Puedes usar (con moderación)" no alcanzaba: medido, con la lista cargada el modelo
+      // igual escribía sin un solo emoji, y el chat saltaba de los mensajes del dueño
+      // —llenos de color— a un bot gris. Si el dueño se tomó el trabajo de listarlos, los
+      // quiere ver: la instrucción pasa de permiso a encargo, con el tope y las excepciones
+      // dichas para que no se vuelva una lluvia de emojis.
+      parts.push(
+        "## Emojis de este producto\nEstos son los emojis de este producto: " + ctx.emojis + "\n" +
+        "Úsalos: pon UNO en la mayoría de tus mensajes, al inicio o al final (nunca en medio de una frase, " +
+        "nunca dos seguidos, nunca uno distinto a esa lista). ⛔ Sin emoji cuando el cliente reclama, se queja " +
+        "o algo salió mal, y sin emoji en el mensaje donde le pides sus datos o el pago: ahí el emoji resta seriedad.",
+      );
+    } else {
+      // Sin emojis configurados el prompt no decía NADA y el modelo escribía plano. En vez
+      // de imponerlos, que acompañe el tono que el negocio ya eligió en SUS mensajes.
+      parts.push(
+        "## Emojis\nNo hay una lista definida para este producto. Fíjate en cómo están escritos los mensajes " +
+        "del negocio: si usan emojis, acompaña ese tono con UNO por mensaje como mucho (al inicio o al final, " +
+        "nunca en medio de una frase ni varios seguidos); si el negocio escribe sin emojis, tú tampoco los uses. " +
+        "Nunca pongas un emoji en un mensaje donde el cliente reclama o se queja.",
+      );
+    }
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
     // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
     // ofrécele confirmarlo") no basta: medido, a "¿el curso tiene certificado?" —palabra
