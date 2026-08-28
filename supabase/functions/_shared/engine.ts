@@ -3842,6 +3842,13 @@ function sedeImprecisa(sede: string, ciudad: string): string | null {
 
 async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
   try {
+    // Pedido NUEVO = la marca de "el adicional llegó tarde" ya no aplica: hablaba del
+    // pedido anterior, el que ya había salido. Se limpia acá porque su borrado natural
+    // (en `emit`, al cambiar la burbuja de "te lo sumo") solo ocurre si esa burbuja
+    // llega: con un extra que pregunta la talla y un cliente que no contesta, la marca
+    // se quedaba pegada al run y en su PRÓXIMA compra el bot le hablaba de un despacho
+    // viejo.
+    delete (run.vars as any)._extra_tarde;
     const ship: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
 
@@ -8562,7 +8569,22 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
       metodos.map((m: any) => "- " + [m.app && `App/Banco: ${m.app}`, m.titular && `Titular esperado: ${m.titular}`, m.numero && `Número/cuenta: ${m.numero}`, m.notas && `(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
   }
   const reglas: string[] = [];
-  if (metodos.length && r.verificar_titular !== false) reglas.push("El destinatario/titular del comprobante DEBE coincidir con uno de los métodos válidos. Si no coincide, es INVÁLIDO.");
+  if (metodos.length && r.verificar_titular !== false) {
+    // "DEBE coincidir… si no, INVÁLIDO" se leía como que tenía que calzar con TODOS y de
+    // forma EXACTA. Medido con un negocio que tiene dos titulares para el mismo número:
+    // el comprobante decía "Percy Flo*" —un titular que está cargado— y el validador lo
+    // rechazó igual, «no coincide exactamente con los titulares esperados». Pago hecho y
+    // cliente rebotado. Basta UNO de la lista, y los nombres llegan enmascarados casi
+    // siempre: la regla lo dice ahora con todas las letras, porque es la regla la que
+    // manda sobre las consideraciones de más abajo.
+    reglas.push(
+      "El destinatario/titular del comprobante debe corresponder a ALGUNO de los métodos de arriba " +
+      "—UNO CUALQUIERA basta, no tiene que calzar con todos—. No exijas coincidencia EXACTA: estos " +
+      "nombres casi siempre llegan recortados o enmascarados («PER FLO», «P*** F****», «Percy Flo*», " +
+      "solo apellidos o iniciales). Si el patrón calza razonablemente con alguno, es VÁLIDO. " +
+      "Solo es INVÁLIDO cuando el dinero fue a un tercero que no está en esa lista.",
+    );
+  }
   if (r.verificar_monto) {
     // El monto esperado es el precio VIVO de este cliente (opción de compra +
     // oferta activa). Con él la IA puede decidir si el pago corresponde a lo
