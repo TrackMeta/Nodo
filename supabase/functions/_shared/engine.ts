@@ -2854,6 +2854,48 @@ function sinPedirPermisoPago(texto: string): string {
   return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
 }
 
+// 🧾 El trámite inventado. En una venta digital no hay nada que pedirle —ni dirección, ni
+// DNI, ni talla—, pero el modelo, entrenado para cerrar pidiendo algo, se inventa el dato
+// que falta: «Con ese último dato te lo dejo cerrado 🙂» (el cliente contestó "¿cómo?") y
+// «solo dime el monto exacto», pidiéndole el precio que él mismo acababa de decir. Se
+// prohibió por prompt y volvió a salir, así que se corta por código: fuera la frase, y si
+// era el mensaje entero, se reemplaza por el cierre honesto que toca.
+const RE_DATO_INVENTADO =
+  /[^.!?…]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato)\b[^.!?…]*[.!?…]?/gi;
+function sinDatoInventado(texto: string, cierre: string): string {
+  const t = String(texto ?? "");
+  RE_DATO_INVENTADO.lastIndex = 0;
+  if (!RE_DATO_INVENTADO.test(t)) return t;
+  RE_DATO_INVENTADO.lastIndex = 0;
+  const limpio = t.replace(RE_DATO_INVENTADO, " ").replace(/\s{2,}/g, " ").trim();
+  if (limpio.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length >= 25) return limpio;
+  return cierre;
+}
+
+// 🔁 La misma oferta una y otra vez. Al pedirle que cierre siempre, el modelo encontró su
+// pregunta favorita y la repitió en cinco mensajes seguidos («¿te paso los datos para que
+// empieces ya?»), cambiándole el adorno pero no la jugada. Para el cliente es la misma
+// pregunta, y si sigue preguntando es porque le falta otra cosa, no la forma de pagar.
+// Prohibirlo por prompt funcionó una vez de dos, así que la oferta repetida se recorta y
+// se cambia por una pregunta que lo haga hablar a ÉL. Rotan para no volverse otra muletilla.
+const RE_OFERTA_CIERRE =
+  /[^.!?…]*\b(te (paso|pase|env[ií]o|env[ií]e|mando) los datos|pasarte los datos|quieres que te (pase|env[ií]e|mande)|te lo (dejo|preparo|mando) listo|lo dejo listo)\b[^.!?…]*[?.!…]?/gi;
+const PREGUNTAS_DESCUBRIR = [
+  "¿Qué es lo que más te frena para empezar?",
+  "¿Hay algo puntual que te esté haciendo dudar?",
+  "¿Qué te gustaría saber antes de decidirte?",
+];
+function sinOfertaRepetida(texto: string, veces: number): string {
+  const t = String(texto ?? "");
+  RE_OFERTA_CIERRE.lastIndex = 0;
+  if (!RE_OFERTA_CIERRE.test(t)) return t;
+  RE_OFERTA_CIERRE.lastIndex = 0;
+  const limpio = t.replace(RE_OFERTA_CIERRE, " ").replace(/\s{2,}/g, " ").trim();
+  // Si al quitarla no queda mensaje, se deja como estaba: mejor insistir que quedarse mudo.
+  if (limpio.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
+  return `${limpio} ${PREGUNTAS_DESCUBRIR[veces % PREGUNTAS_DESCUBRIR.length]}`;
+}
+
 function sinFalsoCierre(texto: string, cierre: string): string {
   const t = String(texto ?? "");
   if (!RE_FALSO_CIERRE.test(t)) return texto;
@@ -9060,6 +9102,56 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             yaY.join(", ") + ". Dalo por sabido: no vuelvas a explicárselo ni lo agregues al final de este " +
             "mensaje. Si te lo pregunta él, claro que se lo contestas.");
         }
+        // Con qué EMPEZARON tus últimos mensajes. Igual que arriba: un dato concreto pesa
+        // más que la regla abstracta de "varía". Medido en un chat: dos mensajes seguidos
+        // abriendo con "Además…" y otro con "Claro que sí…" — leídos de corrido delatan al
+        // robot justo mientras se intenta cerrar la venta.
+        const aperturas = (outsY ?? []).slice(0, 3)
+          .map((m: any) => String(m?.content?.text ?? "").trim().split(/[\s,.:;!?]+/)[0])
+          .filter((w: string) => w && w.length > 2 && !/^[\p{Extended_Pictographic}\p{P}]+$/u.test(w));
+        if (aperturas.length) {
+          parts.push("## Con qué empezaste tus últimos mensajes\n" + [...new Set(aperturas)].join(", ") +
+            ". Este empieza con otra palabra: repetir la apertura es lo que hace que una conversación " +
+            "suene automática.");
+        }
+        // …y con qué CERRASTE. Al pedirle que cierre siempre, el modelo encontró una
+        // pregunta que le gusta y la repitió palabra por palabra en tres mensajes seguidos
+        // («¿Te paso los datos para que empieces?»). Cerrar siempre igual cansa tanto como
+        // no cerrar: se le devuelven sus propias preguntas para que busque otra.
+        const cierres = (outsY ?? []).slice(0, 3)
+          .map((m: any) => {
+            const t = String(m?.content?.text ?? "");
+            const q = t.match(/[^.!?¿]*\?/g);
+            return q ? q[q.length - 1].trim() : "";
+          })
+          .filter(Boolean);
+        if (cierres.length) {
+          parts.push("## Con qué cerraste tus últimos mensajes\n" + [...new Set(cierres)].map((c) => `«${c}»`).join(" · ") +
+            ". Cierra con OTRA pregunta distinta a esas: la misma frase repetida delata que hay un robot del " +
+            "otro lado.");
+        }
+        // 🔁 El bucle del ofrecimiento. Pedirle "varía el cierre" no alcanza: cambia el
+        // adorno y repite la jugada — medido, cinco mensajes seguidos terminando en «¿te
+        // paso los datos para que empieces ya?». Un vendedor que pregunta cinco veces lo
+        // mismo cansa, y encima desperdicia el turno: el cliente ya oyó la oferta y sigue
+        // preguntando porque le falta OTRA cosa. Se cuenta por código y, a la segunda, se
+        // le prohíbe repetirla y se le dice qué hacer en su lugar.
+        // Cuenta TODA oferta de cierre, no solo la literal "te paso los datos": el modelo
+        // rota entre «¿te lo dejo listo?», «¿te lo preparo?» y «¿te paso los datos?», que
+        // para el cliente son la misma pregunta con otro traje. Contando solo una variante,
+        // el guard no disparaba y el bucle seguía.
+        const vecesOferta = (outsY ?? []).filter((m: any) =>
+          /te (paso|pase|mando|env[ií]o) los datos|pasarte los datos|quieres que te pase|te lo (dejo|dejar[ií]a|preparo|preparar[ií]a|mando) listo|lo dejo listo|te lo dejo listo/i
+            .test(String(m?.content?.text ?? ""))).length;
+        if (vecesOferta >= 2) {
+          parts.push("## ⛔ Ya intentaste cerrarle la compra " + vecesOferta + " veces\n" +
+            "(«¿te paso los datos?», «¿te lo dejo listo?» — para él es la misma pregunta) y no te ha dicho que " +
+            "sí. Insistir no lo va a mover: si sigue preguntando es porque le falta OTRA cosa, no la forma de " +
+            "pagar. En ESTE mensaje NO le ofrezcas los datos, NO le preguntes si se lo dejas listo y NO le pidas " +
+            "que compre. Cierra distinto y que hable ÉL: pregúntale algo de SU situación (cuántos días a la " +
+            "semana puede entrenar, dónde entrena, qué lo tiene dudando) o resuélvele la duda que se nota que lo " +
+            "frena. Cuando él conteste eso, ahí recién vuelves a cerrar.");
+        }
       }
     } catch (_) { /* si no se puede leer, se comporta como antes */ }
     // Ángulo del creativo: el cliente llegó por un anuncio con cierto gancho —
@@ -9733,16 +9825,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "nunca dos seguidos, nunca uno distinto a esa lista). ⛔ Sin emoji cuando el cliente reclama, se queja " +
         "o algo salió mal, y sin emoji en el mensaje donde le pides sus datos o el pago: ahí el emoji resta seriedad.",
       );
-    } else {
-      // Sin emojis configurados el prompt no decía NADA y el modelo escribía plano. En vez
-      // de imponerlos, que acompañe el tono que el negocio ya eligió en SUS mensajes.
+    } else if (String((ctx as any)._negocio_emojis ?? "")) {
+      // El dueño escribe con emojis (medido sobre SU copy, arriba). Decirle "fíjate en el
+      // tono y acompáñalo" no alcanzó: el modelo lo lee como permiso y no los usa. Se le
+      // ordena, con el mismo tope y las mismas excepciones que cuando hay lista cargada.
       parts.push(
-        "## Emojis\nNo hay una lista definida para este producto. Fíjate en cómo están escritos los mensajes " +
-        "del negocio: si usan emojis, acompaña ese tono con UNO por mensaje como mucho (al inicio o al final, " +
-        "nunca en medio de una frase ni varios seguidos); si el negocio escribe sin emojis, tú tampoco los uses. " +
-        "Nunca pongas un emoji en un mensaje donde el cliente reclama o se queja.",
+        "## Emojis\nEste negocio escribe con emojis (los suyos: " + String((ctx as any)._negocio_emojis) + "). " +
+        "Tus mensajes tienen que sonar de la misma boca, así que pon UNO por mensaje, al inicio o al final — " +
+        "nunca en medio de una frase, nunca dos seguidos. Usa los suyos o alguno afín al tema. " +
+        "⛔ Sin emoji cuando el cliente reclama, se queja o algo salió mal, y sin emoji en el mensaje donde le " +
+        "pides el pago: ahí resta seriedad.",
+      );
+    } else {
+      parts.push(
+        "## Emojis\nEste negocio escribe sin emojis en sus propios mensajes: tú tampoco los uses.",
       );
     }
+    // Cómo VENDE, no solo cómo responde. Los tres vicios de abajo salieron de leer un chat
+    // real de punta a punta, y los tres se pagan en ventas: contestar sin cerrar deja al
+    // cliente sin siguiente paso, responder en una línea suelta no da razones para comprar,
+    // y arrancar siempre igual ("Además…", "Claro que sí…") delata al robot.
+    parts.push(
+      "## Cómo vendes (no solo respondes)\n" +
+      "1. CIERRA SIEMPRE. Cada mensaje tuyo termina moviendo la venta un paso: una pregunta corta que lo acerque " +
+      "a comprar («¿te lo dejo listo?», «¿te paso los datos?», «¿en qué te lo mando?»). Responder la duda y " +
+      "quedarte ahí deja al cliente sin saber qué sigue, y ahí se enfría la venta.\n" +
+      "2. RESPONDE CON ARGUMENTO. Dos o tres frases: contesta lo que preguntó y súmale UNA razón concreta para " +
+      "comprarlo (algo del producto, no un adjetivo). Una línea suelta suena a contestador automático. " +
+      "Excepción: cuando solo estás pidiendo un dato o el pago, ahí sí va corto y directo.\n" +
+      "3. NO ARRANQUES SIEMPRE IGUAL. Varía la primera palabra de cada mensaje. Si el anterior empezó con " +
+      "«Además», «Claro» o «Perfecto», este empieza distinto.",
+    );
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
     // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
     // ofrécele confirmarlo") no basta: medido, a "¿el curso tiene certificado?" —palabra
@@ -10361,6 +10474,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
         salida = sinPedirPermisoPago(salida);
       }
+      // ¿Ya le ofreció cerrar dos veces y sigue sin decir que sí? Se corta la tercera.
+      if (op === "generar_texto") {
+        try {
+          const { data: outsOf } = await db.from("messages").select("content")
+            .eq("contact_id", run.contact_id).eq("direction", "out")
+            .order("ts", { ascending: false }).limit(8);
+          const veces = (outsOf ?? []).filter((mm: any) => {
+            RE_OFERTA_CIERRE.lastIndex = 0;
+            return RE_OFERTA_CIERRE.test(String(mm?.content?.text ?? ""));
+          }).length;
+          if (veces >= 2) salida = sinOfertaRepetida(salida, veces);
+        } catch (_) { /* sin historial → se envía tal cual */ }
+      }
+      // En digital no hay dato que pedir: si se lo inventó, se le quita antes de enviarlo.
+      if (op === "generar_texto" && String(ctx._tipo ?? "") === "digital") {
+        const _precioTxt = ctx.precio != null && String(ctx.precio) !== ""
+          ? `${simboloMoneda(ctx.moneda as string)} ${ctx.precio}` : "";
+        salida = sinDatoInventado(salida, _precioTxt
+          ? `Son ${_precioTxt}. ¿Te paso los datos para que lo tengas ya?`
+          : "¿Te paso los datos para que lo tengas ya?");
+      }
       // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
       if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
         salida = sinPromesaDeHoy(salida, String(ctx.entrega_cuando ?? ""));
@@ -10769,6 +10903,22 @@ async function buildContext(db: SupabaseClient, run: Run) {
             }
             if (nomsEx.length) pc._extras_nombres = nomsEx;
           }
+          // ¿El DUEÑO escribe con emojis? Se mira su propio copy: las burbujas del flujo de
+          // mensajes iniciales, que son las que él redactó. Preguntárselo al modelo ("fíjate
+          // en el tono del negocio") no funcionó — con la lista de emojis cargada y todo,
+          // seguía escribiendo plano—, así que el tono se DEDUCE por código y abajo se le
+          // ordena en consecuencia. Sin esto el chat salta de un gancho con 🛑🔬✅🚨 a una IA
+          // gris: mismo negocio, dos voces, y el corte cae justo donde se habla de plata.
+          try {
+            const { data: fIni } = await db.from("flows").select("id")
+              .eq("product_id", prodId).eq("role", "mensajes_iniciales").limit(1).maybeSingle();
+            if ((fIni as any)?.id) {
+              const { data: nIni } = await db.from("flow_nodes").select("config").eq("flow_id", (fIni as any).id);
+              const copy = JSON.stringify(nIni ?? []);
+              const emojisCopy = copy.match(/\p{Extended_Pictographic}/gu) ?? [];
+              pc._negocio_emojis = emojisCopy.length >= 2 ? [...new Set(emojisCopy)].slice(0, 12).join("") : "";
+            }
+          } catch (_) { /* sin flujo inicial → se comporta como antes */ }
           // Regalos FÍSICOS con tallas propias: el bot también las pregunta (campos
           // OPCIONALES, clave prefijada rg<idx>_<clave> para no chocar con el
           // principal). extraerDatos los captura y adjuntarRegalos descuenta la
