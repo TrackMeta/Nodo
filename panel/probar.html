@@ -229,7 +229,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, waFmt, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import * as O from "./orders.js";
 import { getTZ } from "./date-range.js";
@@ -379,7 +379,7 @@ function renderMsg(m){
   const mh=mediaHtml(m);
   const txt=m.content?.text||m.content?.caption||m.content?.title||`[${m.type}]`;
   const tr=m.content?.transcription?`<div class="transcript" title="Transcripción automática">${icon("mic")} ${esc(m.content.transcription)}</div>`:"";
-  el.innerHTML=`${mh||esc(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
+  el.innerHTML=`${mh||waFmt(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?" · "+statusLabel(m.status):""}</div>`;
   t.appendChild(el);
   if(m.direction==="out" && m.content?.buttons?.length){
     const bd=document.createElement("div"); bd.className="btns";
@@ -390,7 +390,7 @@ function renderMsg(m){
 }
 function statusLabel(s){ return {sent:"enviado",delivered:"entregado",read:"leído",failed:"falló",pending:"…"}[s]||s; }
 function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; const u=esc(url);
-  const cap=m.content?.caption?`<div style="margin-top:5px">${esc(m.content.caption)}</div>`:"";
+  const cap=m.content?.caption?`<div style="margin-top:5px">${waFmt(m.content.caption)}</div>`:"";
   if(m.type==="image") return `<a href="${u}" target="_blank"><img src="${u}"/></a>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;

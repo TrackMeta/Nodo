@@ -1209,3 +1209,27 @@ export async function patchProductConfig(id, mutar) {
   const { error } = await supa.from("products").update({ config: cfg }).eq("id", id);
   return error ? { ok: false, error } : { ok: true, config: cfg };
 }
+
+// ── Formato de WhatsApp en las burbujas del panel ──────────────────────────
+// *negrita*, _cursiva_, ~tachado~ y ```mono```, como lo ve el cliente en su
+// celular. Sin esto los chats mostraban los asteriscos crudos ("Ten listo
+// *S/ 129* para pagar") y al releer una conversación no se distinguía lo
+// resaltado de lo que no — justo el dato que uno va a buscar.
+// 🔒 Escapa SIEMPRE primero: el HTML se arma sobre texto ya escapado, así un
+// mensaje del cliente con etiquetas no puede inyectar nada (los marcadores solo
+// envuelven texto que ya es inofensivo).
+// Vive acá y no en cada página para que la Bandeja y Probar flujos no se
+// separen: ya pasó que una mostraba el formato y la otra no.
+const _escFmt = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+export function waFmt(s) {
+  let t = _escFmt(s);
+  // Cada delimitador exige BORDE: pegado a la palabra por dentro, espacio o signo
+  // por fuera. Así un_link_con_guiones o un "2 * 3" no se vuelven estilo. Van como
+  // literales y no con new RegExp: dentro de un string "\s" se queda en "s" y la
+  // regex deja de hacer lo que dice.
+  t = t.replace(/```([\s\S]+?)```/g, "<code>$1</code>");
+  t = t.replace(/(^|[\s(¡¿«"])\*(?!\s)([^*\n]+?)(?<!\s)\*(?=$|[\s.,!?)»:;"])/g, "$1<b>$2</b>");
+  t = t.replace(/(^|[\s(¡¿«"])_(?!\s)([^_\n]+?)(?<!\s)_(?=$|[\s.,!?)»:;"])/g, "$1<i>$2</i>");
+  t = t.replace(/(^|[\s(¡¿«"])~(?!\s)([^~\n]+?)(?<!\s)~(?=$|[\s.,!?)»:;"])/g, "$1<s>$2</s>");
+  return t;
+}

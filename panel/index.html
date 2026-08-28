@@ -550,7 +550,7 @@
 
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, waFmt, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import { mountDateRange, computePreset, rangeLabel, ymd, ymdTZ as ymdLima, getTZ } from "./date-range.js";
 import * as O from "./orders.js";
@@ -2151,24 +2151,8 @@ function resyncRealtime() {
 
 // ── util ──
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-// Formato de WhatsApp (*negrita*, _cursiva_, ~tachado~, ```mono```) como lo ve el
-// cliente en su celular. Sin esto la Bandeja mostraba los asteriscos crudos —"confírmalo
-// con un adelanto de *S/ 20*"— y al releer un chat no se distinguía lo que va resaltado
-// de lo que no. 🔒 SIEMPRE escapa primero: el HTML se arma sobre el texto ya escapado,
-// así un mensaje del cliente con <script> no puede inyectar nada (los marcadores solo
-// pueden envolver texto que ya es inofensivo).
-function waFmt(s){
-  let t = esc(s);
-  // Cada delimitador exige BORDE: pegado a la palabra por dentro, y espacio o signo por
-  // fuera. Así una URL con guiones bajos (un_link_asi) o un "2 * 3" suelto no se vuelven
-  // estilo. Van como literales y no armadas con new RegExp: dentro de un string, "\s" se
-  // queda en "s" y la regex deja de hacer lo que dice (ya me pasó en este mismo archivo).
-  t = t.replace(/```([\s\S]+?)```/g, "<code>$1</code>");
-  t = t.replace(/(^|[\s(¡¿«"])\*(?!\s)([^*\n]+?)(?<!\s)\*(?=$|[\s.,!?)»:;"])/g, "$1<b>$2</b>");
-  t = t.replace(/(^|[\s(¡¿«"])_(?!\s)([^_\n]+?)(?<!\s)_(?=$|[\s.,!?)»:;"])/g, "$1<i>$2</i>");
-  t = t.replace(/(^|[\s(¡¿«"])~(?!\s)([^~\n]+?)(?<!\s)~(?=$|[\s.,!?)»:;"])/g, "$1<s>$2</s>");
-  return t;
-}
+// waFmt (el formato de WhatsApp en las burbujas) vive en shell.js: lo usan la Bandeja
+// y Probar flujos, y teniéndolo dos veces una se quedaba atrás de la otra.
 function rel(ts){ const d=(Date.now()-new Date(ts))/1000; if(d<60)return"ahora"; if(d<3600)return Math.floor(d/60)+"m"; if(d<86400)return Math.floor(d/3600)+"h"; return Math.floor(d/86400)+"d"; }
 
 const winTimer = setInterval(() => { if (state.contactId) updateWindow(); }, 60000);
