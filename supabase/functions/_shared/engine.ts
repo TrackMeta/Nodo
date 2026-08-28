@@ -8082,12 +8082,32 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     const pregN = _sinTilde(pregunta), textN = _sinTilde(texto);
     const preguntoSede = /(sede|oficina|agencia|sucursal|shalom|recog|recoj)/.test(pregN);
     const noLaSabe = /\bno se\b|no conozco|no estoy segur|cualquiera|la que sea|no importa|no me acuerdo|ni idea|no la se\b|no sabria/.test(textN);
-    if (preguntoSede || noLaSabe) {
-      const ciu = String(ctx.ciudad).trim();
+    // Y cuando es el CLIENTE el que ya está hablando de su recojo ("lo recojo en el
+    // Shalom de Huancayo Real"): dio una oficina, solo que no calza con la lista oficial
+    // del courier. Medido: el bot le contestaba "¿me confirmas la dirección exacta de esa
+    // oficina?" —le pide al comprador la dirección de una agencia Shalom, un dato que no
+    // tiene por qué saber— y la conversación se quedaba ahí, sin pedido y sin adelanto.
+    // Misma regla del negocio: con la ciudad basta para seguir; el humano afina la oficina
+    // en Pedidos gracias a la bandera `sede_por_confirmar`.
+    const hablaDeSede = /\b(shalom|olva|agencia|oficina|sucursal|recoj|recog)/.test(textN);
+    if (preguntoSede || noLaSabe || hablaDeSede) {
+      // Si en lo que dijo aparece UNA sola agencia oficial ("lo recojo en Chilca
+      // Huancayo"), esa es la sede de verdad y vale más que la ciudad. Se compara por
+      // palabras completas y solo con nombres largos: si no, agencias de nombre corto
+      // ("SUPE") se colaban dentro de otra palabra ("no supe cuál").
+      const _pal = (t: string) => " " + String(t ?? "").toUpperCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim() + " ";
+      const tPal = _pal(texto);
+      const exactas = [...new Set(candidatasAgencia(texto)
+        .filter((a) => (a.trim().split(/\s+/).length >= 2 || a.replace(/[^A-Za-z]/g, "").length >= 6) &&
+          tPal.includes(_pal(a))))];
+      const ciu = exactas.length === 1 ? exactas[0] : String(ctx.ciudad).trim();
+      const exacta = exactas.length === 1;
       run.vars[pendSede.clave] = ciu; ctx[pendSede.clave] = ciu;
       await setField(db, run.channel_id, run.contact_id, pendSede.clave, ciu);
-      await logEvent(db, run.channel_id, run.contact_id, "campo", "Sede por confirmar",
-        `${pendSede.clave}: ${ciu} (solo la ciudad — falta la oficina exacta, se confirma en Pedidos)`);
+      await logEvent(db, run.channel_id, run.contact_id, "campo", exacta ? "Sede reconocida" : "Sede por confirmar",
+        exacta ? `${pendSede.clave}: ${ciu} (agencia oficial de Shalom, dicha por el cliente)`
+               : `${pendSede.clave}: ${ciu} (solo la ciudad — falta la oficina exacta, se confirma en Pedidos)`);
       const i = pendientes.indexOf(pendSede); if (i >= 0) pendientes.splice(i, 1);
     }
   }
@@ -9471,6 +9491,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "la venta se enfría. Acuse corto + la pregunta, en el mismo mensaje.",
       ];
       if (errores.length) L.push("Corrígele esto con amabilidad: " + errores.join("; ") + ".");
+      // Si lo que falta es la SEDE y ya sabemos su ciudad, dale las oficinas REALES de
+      // Shalom ahí para que se las ofrezca. Sin la lista el modelo improvisa la pregunta
+      // y pide "la dirección exacta de esa oficina": la dirección de una agencia del
+      // courier la sabemos nosotros, no el comprador, así que la venta se traba pidiendo
+      // un dato imposible. Con dos o tres nombres concretos el cliente solo elige.
+      const pendSede2 = (faltan as any[]).find((c: any) => String(c?.validar ?? "") === "sede");
+      if (pendSede2 && String(ctx.ciudad ?? "").trim()) {
+        const ciudadTxt = String(ctx.ciudad).trim();
+        const ags = [...new Set(candidatasAgencia(ciudadTxt))].slice(0, 8);
+        if (ags.length) {
+          L.push(`Oficinas Shalom en ${ciudadTxt} (lista real del courier): ${ags.join(" · ")}. ` +
+            "Ofrécele ESAS para que elija una; nunca le pidas la dirección de la oficina —esa la sabemos " +
+            "nosotros, no él— ni le pidas que averigüe cuál le queda cerca.");
+        }
+      }
       // Lo que YA está capturado, con su valor. Decir "no repitas lo que ya te dio" no basta:
       // medido, con la dirección guardada ("Av Grau 300") el bot igual preguntó "¿a qué
       // dirección exacta te lo envío en Barranco?" — la clienta ya la había escrito, y que se
