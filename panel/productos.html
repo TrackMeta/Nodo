@@ -3025,7 +3025,7 @@ async function generarFlujoVenta(skipConfirm){
       // ("envíame uno nuevo") le pedía justo reenviar el mismo. El cliente quedaba sin
       // saber si su pago entró ni qué hacer, y eso es plata. Así funciona en los tres
       // casos: motivo escueto del OCR, abono parcial y comprobante ya usado.
-      bubbles:[{ text:"Mmm, revisé tu comprobante 🤔\n\n{{pago_resultado_motivo}}\n\nCualquier duda, dime nomás. 🙂" }],
+      bubbles:[{ text:"{{pago_resultado_intro}}\n\n{{pago_resultado_motivo}}\n\nCualquier duda, dime nomás. 🙂" }],
     },false,960,340);
 
     await E(nVender,"exito",nEsperar);

@@ -8969,6 +8969,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "y NO exageres. Si pregunta qué es, explícaselo con su descripción.",
       );
     }
+    // 🛒 Los adicionales que este producto vende. NO son para ofrecer: la cadena de
+    // ventas extra los ofrece sola al cerrar, con su mensaje y su precio. Están acá solo
+    // para que el bot no NIEGUE algo que sí vendes cuando el cliente lo nombra primero.
+    const extrasCtx = Array.isArray((ctx as any)._extras_nombres) ? (ctx as any)._extras_nombres : [];
+    if (extrasCtx.length) {
+      parts.push(
+        "## También vendes esto (adicionales)\n" +
+        extrasCtx.map((e: string) => `- ${e}`).join("\n") + "\n" +
+        "⛔ NO se los ofrezcas tú ni los metas en la conversación: se le ofrecen solos al cerrar el pedido, " +
+        "con su mensaje y su precio. Están acá para UNA sola cosa: que si el cliente los nombra o pregunta " +
+        "por ellos, NUNCA le digas que no los tienes ni que «solo vendes» el producto principal. Confírmale " +
+        "que sí los manejas, en una línea, y sigue con lo que estaban viendo — que se los sumas al cerrar.",
+      );
+    }
     // 🧹 Lo que YA le dijiste. La economía del mensaje sale mejor con un DATO que con una
     // regla: "no repitas" es abstracto, "ya le dijiste lo del regalo" es concreto. Sin esto,
     // el regalo, la contraentrega y el "no arriesgas nada" volvían a salir en CADA burbuja
@@ -9030,7 +9044,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
             `Solo cuando decida, confirma cuál y su precio.`;
         parts.push("## Opciones de compra disponibles\n" + lista + estado +
-          "\n\n🔢 CANTIDAD: se vende SOLO por estas presentaciones (cada una ya trae su número de unidades). " +
+          // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
+          // el modelo les pone delante: con una presentación llamada "Básica" salía "La
+          // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
+          "\n\n✍️ Nómbralas TAL CUAL están escritas arriba. Si al anteponerles una palabra tuya " +
+          "(«el plan», «el pack», «la opción») el artículo deja de concordar —«la plan Básica»—, " +
+          "usa el nombre solo: «la Básica cuesta S/…».\n" +
+          "\n🔢 CANTIDAD: se vende SOLO por estas presentaciones (cada una ya trae su número de unidades). " +
           "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
           "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
           "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.");
@@ -10183,7 +10203,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   ? [[{ text: "✅ Aprobar y entregar", data: `digital_ok:${run.vars._order_id}` }]] : undefined,
               });
             }
-            await deliverMessage(db, run.channel_id, run.contact_id, "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
+            // Pagó MÁS de lo que vale y el mensaje era el genérico "estoy verificando":
+            // el cliente no se entera de que mandó de más, así que no puede decir si se
+            // equivocó o si quería el plan de arriba, y queda esperando sin saber qué
+            // pasa con su plata. Se le dice el número, sin prometerle nada todavía.
+            {
+              const _sym = simboloMoneda(ctx.moneda as string);
+              // OJO: `amount` es de un bloque más adentro y acá NO existe (lo probé y el
+              // nodo IA reventó con "amount is not defined" → el cliente terminó escalado
+              // a un humano). Lo pagado sale del OCR y el precio, del contexto.
+              const _pagado = parseMonto(run.vars.pago_monto, ctx) ?? 0;
+              const _vale = (parseMonto(ctx.precio_esperado, ctx) ?? 0) || (parseMonto(ctx.precio, ctx) ?? 0);
+              const _sobra = _pagado && _vale ? +(_pagado - _vale).toFixed(2) : 0;
+              await deliverMessage(db, run.channel_id, run.contact_id,
+                _sobra > 0.5
+                  ? `¡Gracias! 🙌 Me llegó tu pago de *${_sym} ${_pagado}* y el precio es ${_sym} ${_vale}, así que lo estoy revisando para no cobrarte de más. En un momentito te confirmo. 😊`
+                  : "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
+            }
             await logEvent(db, run.channel_id, run.contact_id, "nota", esExtra ? "🎁 Pago de extra en revisión (validación manual)" : "💳 Pago digital en revisión (validación manual)").catch(() => {});
             run.vars._await = { type: "aprobacion_digital", node_id: node.id };
             run.estado = "esperando";
@@ -10591,6 +10627,29 @@ async function buildContext(db: SupabaseClient, run: Run) {
             pc._regalos = regsP.filter((g: any) => g && g.nombre);
             pc._regalo_mencionar = (p as any).config?.regalo_mencionar !== false;
           }
+          // Los EXTRAS (ventas adicionales) del producto. La IA no los conocía: se
+          // ofrecen solos al final, por burbuja fija, así que nunca entraban al prompt.
+          // Medido: el cliente pidió el adicional ANTES de que se lo ofrecieran
+          // ("agrégame las medias") y el bot contestó «no manejo medias» — negándole un
+          // producto del propio catálogo, que cuesta la venta igual que prometer lo que
+          // no hay. Se le dan solo para que los RECONOZCA; abajo se le prohíbe ofrecerlos
+          // por su cuenta, para no adelantar el upsell ni romper la cadena de bumps.
+          const exsP = Array.isArray((p as any).config?.extras) ? (p as any).config.extras : [];
+          if (exsP.length) {
+            const nomsEx: string[] = [];
+            for (const ex of exsP.slice(0, 6)) {
+              if (!ex?.version_id) continue;
+              const { data: pv } = await db.from("product_versions")
+                .select("nombre, precio, product_id").eq("id", ex.version_id).maybeSingle();
+              if (!pv) continue;
+              const { data: exPr } = (pv as any).product_id
+                ? await db.from("products").select("nombre").eq("id", (pv as any).product_id).maybeSingle()
+                : { data: null };
+              const nom = `${(exPr as any)?.nombre ?? ""} ${(pv as any)?.nombre ?? ""}`.replace(/\s+/g, " ").trim();
+              if (nom) nomsEx.push(nom + ((pv as any)?.precio != null ? ` — S/ ${(pv as any).precio}` : ""));
+            }
+            if (nomsEx.length) pc._extras_nombres = nomsEx;
+          }
           // Regalos FÍSICOS con tallas propias: el bot también las pregunta (campos
           // OPCIONALES, clave prefijada rg<idx>_<clave> para no chocar con el
           // principal). extraerDatos los captura y adjuntarRegalos descuenta la
@@ -10792,6 +10851,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
       .replace(/\{[\s\S]*\}/g, "")        // el JSON que agrega el OCR
       .replace(/\bPAGO_(OK|NO)\b\s*[:.-]?\s*/gi, "")
       .trim();
+    // …y el saludo que va DELANTE del motivo. El mensaje del flujo abría siempre con
+    // "Mmm, revisé tu comprobante 🤔" —cara de sospecha— y eso choca de frente cuando
+    // el motivo es una buena noticia: "Mmm… 🤔 / ¡Recibí tu abono de S/50! 🙌" en el
+    // mismo mensaje. El pago parcial NO es un comprobante dudoso: es plata que entró y
+    // falta el resto. Se elige el saludo según lo que diga el motivo.
+    const _mot = String(ctx[k + "_motivo"] ?? "");
+    ctx[k + "_intro"] = /recib[ií]|abono|van s\/|faltan/i.test(_mot)
+      ? "¡Gracias! 🙌"
+      : "Mmm, revisé tu comprobante 🤔";
   }
 
   // 5) Opción de compra elegida (unifica versión/pack/cantidad). Su precio PISA
