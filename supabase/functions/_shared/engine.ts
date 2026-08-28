@@ -10765,8 +10765,17 @@ async function buildContext(db: SupabaseClient, run: Run) {
       ctx.pedido_estado = (o as any).estado;
       ctx.pedido_monto = (o as any).amount;
       for (const [k, v] of Object.entries((o as any).shipping ?? {})) ctx["pedido_" + k] = v;
+      // {{pago_titulo}} — cómo se saluda el pago del adelanto. A quien paga el TOTAL de
+      // una (pasa seguido) llamarle "adelanto" es decirle algo falso: cree que todavía
+      // debe el saldo en la agencia, y el que cree que le falta plata no va a recoger.
+      // El texto del nodo lo usa como variable, así que la misma burbuja sirve para los
+      // dos casos sin duplicar el flujo.
+      ctx.pago_titulo = (o as any).shipping?.pagado_total ? "¡Pago completo recibido!" : "¡Adelanto recibido!";
     }
   } catch (_) { /* columna/tabla pendiente */ }
+  // Sin pedido legible la variable quedaría vacía y el mensaje empezaría con un espacio
+  // suelto (" 🎉 Ya empiezo a preparar tu despacho"). El default es el caso normal.
+  if (!ctx.pago_titulo) ctx.pago_titulo = "¡Adelanto recibido!";
 
   // {{logistica_modo}} — "auto" | "manual", lo que eligió el negocio en
   // Pagos y atención → Agente de logística. Lo usan los flujos de cobro de

@@ -2850,7 +2850,7 @@ async function generarFlujoFisico(flowId, N, E){
     await E(nYaPago,"continuar",nEsperarAdel);   // ya pagó → parqueado esperando tu validación
     await E(nEsperarAdel,"continuar",nRespAdel); // escribe (aún no paga)
     await E(nRespAdel,"exito",nEsperarAdel);     // vuelve a esperar → parqueado ahí
-    const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"¡Adelanto recibido! 🎉 Ya empiezo a preparar tu despacho." }] },false,1520,640);
+    const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"{{pago_titulo}} 🎉 Ya empiezo a preparar tu despacho." }] },false,1520,640);
     await E(nEsperarAdel,"post_adelanto",nRecibido); // el motor reanuda por acá al validar
     await buildRideAlongExtras(N,E,nRecibido,nFin,extras,catX,esperaSeg,1040,cfg.extras_seguir);
   }
