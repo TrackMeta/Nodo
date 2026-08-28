@@ -693,7 +693,7 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
         // URL de texto pelada; solo los tipo link van como texto. Antes se mandaba
         // `it.url` como texto SIEMPRE → el cliente que pagó el extra/regalo digital
         // recibía un link crudo de storage en vez del archivo. Espeja entregarOpcion.
-        const bubbles: any[] = [{ text: `🎁 Acá va tu ${nombre}:` }];
+        const bubbles: any[] = [{ text: `🎁 Y de regalo, tu ${nombre}:` }];
         for (const it of items) {
           if (it.tipo === "archivo") bubbles.push({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
           else bubbles.push({ text: `${it.mensaje || it.nombre ? (it.mensaje || it.nombre) + ": " : ""}${it.url}` });
@@ -5769,10 +5769,13 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // Si el producto ofrece la venta extra DESPUÉS del adelanto, se reanuda la
     // conversación hacia el ofrecimiento (que saluda "¡recibido!"). Si no aplica
     // (sin extras post, o el run ya no está esperando), cae al aviso normal.
+    // Pagó el total de una → decírselo ANTES de ofrecerle nada. Iba después del
+    // ofrecimiento del extra y el cliente leía "¡Adelanto recibido!" → "¿le sumas las
+    // medias?" → y recién entonces "tu pedido queda cubierto por completo": la noticia
+    // que más le importa (ya no debe nada) llegaba detrás de un intento de venta.
+    if (pagadoTotal) await avisarPagadoTotal(db, channelId, contactId);
     const ofrecio = await resumeIntoExtras(db, channelId, contactId).catch(() => false);
     if (!ofrecio) await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
-    // Pagó el total de una → decírselo (ver avisarPagadoTotal).
-    if (pagadoTotal) await avisarPagadoTotal(db, channelId, contactId);
     await avisar(db, channelId, contactId, "adelanto_auto",
       { monto, operacion: oper ?? "" }, { foto: url });
     return true;
@@ -9246,7 +9249,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _diLo = _cuando
           ? `Dile que le llega **${_cuando}**, así de simple y en positivo. ` +
             `PROHIBIDO decirlo como demora: nada de «al día siguiente», «demora un día», «tarda 24 horas», «en 1 día hábil» ni plazos en días. ` +
-            `Se dice CUÁNDO llega ("${_cuando}"), no cuánto tarda. `
+            `Se dice CUÁNDO llega ("${_cuando}"), no cuánto tarda. ` +
+            `Y ahí TERMINA la frase de la fecha: nada de coletillas de instrucción («así que planifica para ese día», «toma nota», «tenlo en cuenta», «agéndalo»). `
           : `NO le des fecha ni plazo de entrega: no lo tienes calculado y no se inventa. `;
         const _noHoy = _nuncaHoy
           ? `SÍ entregamos en su distrito. ${_diLo}` +
