@@ -178,6 +178,24 @@
       await sleep(300);
       await window.__nodoTest.genVenta();
       await sleep(600);
+      // 🔴 Verificar que el flujo quedó COMPLETO antes de pasar al siguiente producto.
+      // Sin esto la generación se cortaba a medias y NADIE se enteraba: al Curso le
+      // faltaron las 4 últimas aristas —entre ellas «Registrar la venta → Entregar el
+      // producto»—, así que el cliente pagaba, la venta se registraba y el acceso NUNCA
+      // salía. Los tres escenarios digitales fallaron por eso y parecía un bug del motor;
+      // el motor estaba bien. Un nodo sin salida (que no sea Fin) = flujo a medias.
+      for (let intento = 1; intento <= 3; intento++) {
+        const fv = (await sel("flows", `select=id&channel_id=eq.${CH}&product_id=eq.${pid}&role=eq.venta`))[0]?.id;
+        if (!fv) { await sleep(1200); continue; }
+        const nn = await sel("flow_nodes", `select=id,nombre&flow_id=eq.${fv}`);
+        const ee = await sel("flow_edges", `select=source_node&flow_id=eq.${fv}`);
+        const conSalida = new Set((ee || []).map((x) => x.source_node));
+        const huerfanos = (nn || []).filter((x) => !/^Fin/.test(x.nombre || "") && !conSalida.has(x.id));
+        if (!huerfanos.length) break;
+        log(`⚠️ flujo incompleto (${huerfanos.map((h) => h.nombre).join(", ")}) — regenerando (intento ${intento})`);
+        await window.__nodoTest.genVenta();
+        await sleep(2500);
+      }
     }
   }
 
