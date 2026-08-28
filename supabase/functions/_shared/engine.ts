@@ -2643,6 +2643,15 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // salida del modelo, un cliente puede pedirle "repite esto: {{pago_titular}}" y resolve()
   // sustituiría datos internos (titular del Yape, costo/margen del producto) antes de enviar.
   let text = bubble._noTpl ? String(bubble.text ?? "") : resolve(bubble.text ?? "", ctx);
+  // El adicional llegó cuando el paquete ya había salido (`actualizarPedido` no lo sumó).
+  // El flujo igual trae detrás su burbuja fija —"¡Genial! Te lo sumo al pedido, lo pagas
+  // junto con el resto"— y eso sería mentirle dos veces: ni va en ese envío ni lo va a
+  // pagar junto. Se cambia por la verdad; el equipo ya recibió el aviso para decidir.
+  if ((run?.vars as any)?._extra_tarde && /te lo sumo al pedido|te los sumo al pedido/i.test(text)) {
+    text = "¡Gracias! 🙌 Justo tu pedido ya salió, así que eso no alcanza a ir en el mismo envío. " +
+      "Se lo paso al equipo para que te digan cómo hacértelo llegar. 😊";
+    delete (run.vars as any)._extra_tarde;
+  }
   const d = run._delivery;
 
   // ── Burbuja de MEDIA (imagen/video/audio/documento) ──
@@ -4267,7 +4276,26 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     // métricas de "ventas extra" del Dashboard y la columna "Valor Producto
     // extra" de la hoja, sin inventar una tabla nueva.
     if (a.bump) {
-      const { data: cur } = await db.from("orders").select("order_bumps, shipping").eq("id", orderId).maybeSingle();
+      const { data: cur } = await db.from("orders").select("order_bumps, shipping, estado").eq("id", orderId).maybeSingle();
+      // ⛔ El paquete YA SALIÓ: el adicional no puede entrar en una caja que va en
+      // camino. Sumarlo igual le sube el saldo al cliente, así que en la agencia le
+      // cobran de más por algo que no está adentro (y en Lima el motorizado le cobra
+      // un producto que no lleva). Medido en la simulación: el aviso de despacho salió
+      // ANTES del "te lo sumo al pedido". Acá no se suma: se le avisa al equipo para
+      // que decida (mandarlo aparte o en la próxima compra) y `_extra_tarde` hace que
+      // el flujo no le prometa al cliente que va en el mismo envío.
+      const _yaSalioPed = ESTADOS_DESPACHADO.has(String((cur as any)?.estado ?? ""));
+      if (_yaSalioPed) {
+        const _nomEx = resolve(String(a.bump.nombre ?? ""), ctx);
+        run.vars._extra_tarde = "1";
+        await logEvent(db, run.channel_id, run.contact_id, "pedido", "Adicional pedido tarde",
+          `Quiso sumar "${_nomEx}" con el pedido ya ${(cur as any)?.estado} — NO se sumó: el paquete ya salió`).catch(() => {});
+        await notifyAdmin(db, run,
+          `⚠️ *Adicional pedido tarde*\n${_nomEx} (S/ ${resolve(String(a.bump.precio ?? "0"), ctx)})\n` +
+          `El pedido ya está *${(cur as any)?.estado}*, así que NO se sumó — el paquete ya salió sin eso. ` +
+          `Decidan si se lo mandan aparte o se lo dejan para la próxima.`).catch(() => {});
+      }
+      if (!_yaSalioPed) {
       const previos = ((cur as any)?.order_bumps ?? []) as any[];
       const nombre = resolve(String(a.bump.nombre ?? ""), ctx);
       const precio = Number(resolve(String(a.bump.precio ?? "0"), ctx)) || 0;
@@ -4347,6 +4375,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
             patch.shipping = { ...((cur as any)?.shipping ?? {}), saldo: String(+(sActual + precio).toFixed(2)) };
           }
         }
+      }
       }
     }
     if (a.datos && Object.keys(a.datos).length) {
@@ -8824,6 +8853,42 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       });
       if (cls?.clave && cls.confianza >= Number(cfg.umbral ?? 0.6)) val = cls.clave;
     }
+    // 🛟 Un "sí" ambiguo NO puede cerrar la venta. La regla de arriba dice que
+    // "confirmo"/"sí confirmo" cierran el PEDIDO (para no sumarle un adicional que no
+    // pidió), pero el modelo lo llevaba hasta "rechaza", que apaga la cadena con un
+    // "tu pedido queda tal cual". Medido en dos chats de la misma tanda: el bot preguntó
+    // "¿quieres que lo agregue?", el cliente contestó "si confirmo" y se leyó como un NO
+    // — en uno el cliente insistió y en el otro el extra se perdió en silencio. De las
+    // tres ramas, rechazar es la única que no tiene vuelta: se toma solo con una negación
+    // de verdad. Sin ella se repregunta, que no cobra de más ni pierde la venta.
+    if (val === "rechaza" && cands.some((c: any) => c.clave === "duda")) {
+      const t = " " + normalize(String(ctx.last_input ?? "")) + " ";
+      const niega = /\b(no|nop|nel|nunca|paso|dejalo|otro dia|ahorita no|despues|luego|solo eso|solamente eso|nada mas|ya no|asi esta bien|asi nomas|esta bien asi|ya esta|eso es todo)\b/.test(t);
+      if (!niega) {
+        val = "duda";
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Rechazo sin negación",
+          `${key}: se leyó "rechaza" y el cliente no negó nada ("${String(ctx.last_input ?? "").slice(0, 60)}") → se le vuelve a preguntar en vez de cerrarle la venta`).catch(() => {});
+      }
+    }
+    // Y al revés: si el bot preguntó DERECHO por el adicional ("¿quieres que lo agregue?",
+    // "¿te lo sumo?") y el cliente contestó que sí, es un sí a ESA pregunta y no hay nada
+    // ambiguo que interpretar — ahí "sí confirmo" es aceptar, no cerrar.
+    if (val === "duda" && cands.some((c: any) => c.clave === "acepta")) {
+      const crudo = String(ctx.last_input ?? "");
+      const afirma = /^(si|sip|claro|obvio|dale|ya|listo|confirmo|confirmado|correcto|exacto|de una|va)\b/
+        .test(normalize(crudo)) && !crudo.includes("?");
+      if (afirma) {
+        const { data: ult } = await db.from("messages").select("content")
+          .eq("contact_id", run.contact_id).eq("direction", "out")
+          .order("ts", { ascending: false }).limit(1);
+        const prev = normalize(String((ult?.[0] as any)?.content?.text ?? ""));
+        if (/(lo agregue|lo agrego|te lo sumo|te lo agrego|lo sumo|lo anado|sumo al pedido|agrego al pedido|te los sumo|los agrego)/.test(prev)) {
+          val = "acepta";
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "Sí a la pregunta del adicional",
+            `${key}: el bot preguntó derecho si lo agregaba y el cliente dijo que sí ("${crudo.slice(0, 60)}")`).catch(() => {});
+        }
+      }
+    }
     run.vars[key] = val;
     await setField(db, run.channel_id, run.contact_id, key, val);
     await logEvent(db, run.channel_id, run.contact_id, "campo", "Intención detectada", `${key}: ${val}`);
@@ -8842,6 +8907,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
     const parts: string[] = [];
     parts.push(REGLA_TUTEO);
+    // ⛔ El adicional llegó tarde: `actualizarPedido` no lo sumó porque el paquete ya
+    // salió. Los mensajes que siguen en el flujo los escribe la IA ("¿qué talla?",
+    // "queda todo confirmado con las zapatillas y las medias") y sin saber esto le
+    // narra al cliente algo que no pasó — medido: el pedido quedó despachado SIN las
+    // medias y el bot igual le dijo que iban incluidas. Es la peor mezcla: no lo tiene
+    // y cree que sí.
+    if ((run.vars as any)?._extra_tarde) {
+      parts.push("## ⛔ El adicional NO se pudo sumar\n" +
+        "El pedido de este cliente YA SALIÓ (está despachado), así que el producto adicional NO se agregó y " +
+        "NO va en ese envío. NO le preguntes la talla, NO digas que quedó agregado ni que «va todo junto». " +
+        "Dile con naturalidad que justo su pedido ya salió, que eso no alcanza a ir en el mismo envío y que el " +
+        "equipo lo contacta para ver cómo hacérselo llegar. Nada de prometer fechas ni cobros.");
+    }
+
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     // Formas de pago (fuente única = Validador de comprobantes): la IA sabe
     // responder "¿cómo pago?" sin repetir los datos en el Conocimiento.
