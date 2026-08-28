@@ -6177,6 +6177,22 @@ const RE_ANUNCIA_PAGO =
 // La IA ANUNCIA que va a pasar los datos de pago… y no los pasa. Medido: "Te paso los
 // datos para que puedas hacer el pago." y ahí terminaba el mensaje. Prometer y no cumplir
 // deja al cliente esperando igual que no decir nada.
+// El cliente dijo que lo quiere (no que le expliquen más). Es la señal que separa
+// "mándale el Yape de una" de "todavía está preguntando".
+const RE_QUIERE_COMPRAR =
+  /\b(lo quiero|la quiero|me lo llevo|quiero comprar|quiero el |quiero la |quiero uno|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
+// ¿Ya mostró intención de COMPRAR (no solo de preguntar)? Mira su último mensaje y los
+// anteriores: la señal puede haber quedado un par de turnos atrás.
+async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
+  const señal = (t: string) => RE_ANUNCIA_PAGO.test(t) || RE_QUIERE_COMPRAR.test(t);
+  if (señal(String(lastInput ?? ""))) return true;
+  try {
+    const { data: ins } = await db.from("messages").select("content")
+      .eq("contact_id", contactId).eq("direction", "in")
+      .order("ts", { ascending: false }).limit(6);
+    return (ins ?? []).some((m: any) => señal(String(m.content?.text ?? m.content?.caption ?? "")));
+  } catch (_) { return false; }
+}
 const RE_PROMETE_PAGO =
   /\b(te (paso|comparto|env[ií]o|mando|dejo) (los |el )?(datos|n[uú]mero|yape|m[eé]todos?)|los datos (de pago|para (el|tu) pago)|te (los|lo) (paso|comparto|env[ií]o))\b/i;
 async function maybeDatosPago(
@@ -6194,7 +6210,14 @@ async function maybeDatosPago(
     // datos solo salían si el cliente los pedía o si la IA los prometía — medido: "quiero la
     // básica" → "Perfecto, el plan Básica cuesta S/ 99 y te da acceso a los módulos 1 al 5." y
     // se acabó el chat. Eligió, quiso comprar, y nadie le dijo a quién pagarle.
-    let pidio = yaEligio || RE_ANUNCIA_PAGO.test(texto) || (!!respuestaIa && RE_PROMETE_PAGO.test(respuestaIa));
+    // La PROMESA de la IA por sí sola no alcanza: se adelanta. Medido — el cliente escribió
+    // "me gusta, ¿qué más?", la IA cerró con un "¿te paso el Yape?" que el recorte borra, y
+    // al cliente le llegaron los datos de pago de la nada; su siguiente mensaje fue "¿por
+    // qué me mandas el yape?". Si él ya mostró intención, cumplir la promesa es lo correcto
+    // (prometer y no cumplir lo deja esperando); si no, que la IA siga vendiendo.
+    const promesaIa = !!respuestaIa && RE_PROMETE_PAGO.test(respuestaIa);
+    let pidio = yaEligio || RE_ANUNCIA_PAGO.test(texto)
+      || (promesaIa && await intencionDeCompra(db, contactId, texto));
     if (!pidio) {
       const { data: ins } = await db.from("messages").select("content")
         .eq("contact_id", contactId).eq("direction", "in")
@@ -8634,7 +8657,7 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   ];
   p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
-  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"explica en una frase por qué es válido o no, y si NO lo es agrega qué tiene que hacer el cliente (mandarte la captura completa, reenviarla más nítida, pagar el monto exacto…): este texto se le manda TAL CUAL, así que tiene que poder leerse solo"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
+  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"UNA frase corta, escrita PARA EL CLIENTE: se le manda tal cual, así que nada de jerga ni de listar todo lo que revisaste. Si NO es válido, dile SOLO el motivo principal y qué tiene que hacer (mandar la captura completa, reenviarla más nítida, mandar la del pago correcto). ⛔ Nunca encadenes varios motivos con «y», «además», «falta confirmar»: un cliente que lee cuatro problemas técnicos no sabe qué hacer y se va"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
   return p.join("\n\n");
 }
 // El hilo del chat, como lo vería una persona. Es lo que convierte al nodo IA
@@ -9543,6 +9566,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       }
     } catch (_) { /* sin datos de pago → la IA sigue como antes */ }
+    // Venta DIGITAL: no hay datos que pedirle (ni dirección, ni DNI, ni talla). El modelo,
+    // entrenado para cerrar pidiendo algo, se inventaba el trámite que falta. Medido en un
+    // mismo chat: «Con ese último dato te lo dejo cerrado 🙂» —sin que el cliente hubiera
+    // dado ningún dato, y contestó "¿cómo?"— y peor, «solo dime el monto exacto para
+    // coordinar el pago, que es S/ 10»: le pide al comprador que le diga un monto que
+    // acababa de decirle él mismo, y el cliente repreguntó "¿el monto exacto?". Cada
+    // pregunta inventada es un turno más entre el cliente y el pago.
+    if (String(ctx._tipo ?? "") === "digital" && !((ctx as any)._datos_faltan ?? []).length) {
+      parts.push(
+        "## No hay ningún dato pendiente\n" +
+        "Esta venta es digital: la entrega es por link, así que NO necesitas dirección, DNI, talla ni nada suyo. " +
+        "Lo único que falta es su pago. ⛔ No hables de «el último dato», «un dato más» ni «con eso te lo dejo " +
+        "cerrado», y NUNCA le pidas que te diga el monto o el precio: el monto lo sabes tú y se lo dices tú. " +
+        "Si ya sabe cuánto es y a dónde pagar, tu mensaje cierra invitándolo a mandar la captura, nada más.",
+      );
+    }
     // Mandó su UBICACIÓN de WhatsApp. Si compartió un lugar con nombre/dirección, eso
     // ya viaja como texto y el extractor lo pesca solo. Si mandó un pin suelto, lo que
     // llega son coordenadas: el courier no reparte con eso. Sin decírselo, la IA leía
@@ -10316,7 +10355,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
         ? sinPreguntaFinal(String(result))
         : String(result);
-      if (op === "generar_texto") salida = sinPedirPermisoPago(salida);
+      // El recorte de "¿te paso el Yape?" SOLO cuando los datos van a salir de verdad
+      // (el cliente ya mostró intención). Sin intención, borrar la pregunta y no mandar
+      // nada deja el mensaje colgado: mejor que la pregunta se quede y él conteste.
+      if (op === "generar_texto" && await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
+        salida = sinPedirPermisoPago(salida);
+      }
       // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
       if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
         salida = sinPromesaDeHoy(salida, String(ctx.entrega_cuando ?? ""));
@@ -10368,7 +10412,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // "quiero la premium", se recortó la pregunta… y no llegó ningún dato de pago —
         // se quedó sin saber a quién pagarle. El recorte es cosmético; la decisión de
         // mandar los datos se toma sobre lo que la IA REALMENTE quiso decir.
+        // OJO: "eligió" solo cuenta si de verdad hubo dónde elegir. Con UNA sola
+        // presentación, `opcion_id` se resuelve solo desde el primer turno, así que esto
+        // daba true siempre y el Yape salía disparado apenas la IA abría la boca. Medido
+        // en un producto de una sola opción: el cliente escribió "me gusta, ¿qué más?" y
+        // le llegaron los datos de pago; su siguiente mensaje fue "¿por qué me mandas el
+        // yape?". Ahí no se cerró una venta, se apuró a alguien que estaba preguntando.
+        // Con varias presentaciones la señal sigue valiendo: elegir una ES decidir comprar.
+        const _opsProd = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
         const _digitalElegido = String((ctx as any)._tipo ?? "") === "digital"
+          && _opsProd.length > 1
           && !!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
         await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
           String(result), _digitalElegido);
