@@ -35,11 +35,16 @@
   .chips{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px}
   .chip{border:none;background:none;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:8px;cursor:pointer}
   .chip.on{background:var(--brand);color:#fff;font-weight:700}
-  .seg{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin-left:auto}
+  /* Sin margin-left:auto A PROPÓSITO: con él, el grupo de vistas quedaba pegado a la
+     derecha y su posición dependía de lo que hubiera después (Tipo, Cuenta, Columnas).
+     Como esos grupos no se pintan en "Por copy", al cambiar de vista los botones se
+     corrían ~80px y el que ibas a tocar ya no estaba ahí. Ahora fluye desde la izquierda
+     junto al periodo: quieto en las cuatro vistas. */
+  .seg{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px}
   .seg button{border:none;background:none;color:var(--muted);font:inherit;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
   .seg button.on{background:var(--brand);color:#fff}
   .seg svg{width:14px;height:14px}
-  .colbtn{position:relative}
+  .colbtn{position:relative;margin-left:auto}
   .colbtn>button{height:34px;padding:0 13px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
   .colbtn>button:hover{border-color:var(--brand)}
   .colbtn svg{width:14px;height:14px}
@@ -111,7 +116,7 @@
   .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);font-weight:600;margin-top:8px}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   svg.chart{width:100%;height:150px;display:block;overflow:visible}
-  @media (max-width:760px){ .kpis{grid-template-columns:repeat(2,1fr)} .dgrid{grid-template-columns:1fr} .seg{margin-left:0} }
+  @media (max-width:760px){ .kpis{grid-template-columns:repeat(2,1fr)} .dgrid{grid-template-columns:1fr} .colbtn{margin-left:0} }
 </style>
 </head>
 <body>
