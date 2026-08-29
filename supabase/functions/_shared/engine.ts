@@ -3006,7 +3006,7 @@ function conCierre(texto: string, cierre: string): string {
 // Prohibirlo por prompt funcionó una vez de dos, así que la oferta repetida se recorta y
 // se cambia por una pregunta que lo haga hablar a ÉL. Rotan para no volverse otra muletilla.
 const RE_OFERTA_CIERRE =
-  /[^.!?…]*\b(te (paso|pase|env[ií]o|env[ií]e|mando) los datos|pasarte los datos|quieres que te (pase|env[ií]e|mande)|te lo (dejo|preparo|mando) listo|lo dejo listo)\b[^.!?…]*[?.!…]?/gi;
+  /[^.!?…]*\b(te (paso|pase|env[ií]o|env[ií]e|mando) los datos|pasarte los datos|quieres que te (pase|env[ií]e|mande)|te lo (dejo|preparo|mando) listo|lo dejo listo|lo confirmo y te lo mando|te lo confirmo y lo mando|lo confirmo entonces)\b[^.!?…]*[?.!…]?/gi;
 const PREGUNTAS_DESCUBRIR = [
   "¿Qué es lo que más te frena para empezar?",
   "¿Hay algo puntual que te esté haciendo dudar?",
@@ -9399,6 +9399,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
             `Solo cuando decida, confirma cuál y su precio.`;
         parts.push("## Opciones de compra disponibles\n" + lista + estado +
+          // Nombrar SIEMPRE las dos: si solo dice el precio de una, el cliente ni se entera
+          // de que existe el pack y se pierde la venta más grande. Medido con un kit de
+          // S/ 89 que también viene en pack de 2 a S/ 159: el bot dijo "cuesta S/ 89" y el
+          // pack no apareció en toda la conversación.
+          "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS con el suyo y el ahorro si lo hay " +
+          "(«uno sale S/ X, y llevando dos te queda en S/ Y, ahorras S/ Z»). Aunque el cliente pregunte " +
+          "por una sola, la otra se menciona: es la diferencia entre vender uno y vender dos. Y después " +
+          "de nombrarlas, pregúntale cuál quiere — no des por elegida la más barata." +
           // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
           // el modelo les pone delante: con una presentación llamada "Básica" salía "La
           // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
@@ -9953,13 +9961,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const L: string[] = [
         "Todavía te faltan estos datos para cerrar el pedido:",
         ...faltan.map((c) => `- **${c.label}**${c.detalle ? ` (${c.detalle})` : ""}`),
-        "Pídelos de forma natural dentro de la conversación, **de a uno**, sin sonar a formulario, y sin volver a pedir lo que ya te dio.",
+        // 📋 JUNTOS y en LISTA, no de a uno. Pedirlos uno por uno son cuatro turnos, y cada
+        // turno es una oportunidad de que el cliente se distraiga: medido en un chat real,
+        // entre que le pidió el nombre y ella contestó pasaron TRECE minutos. En lista los
+        // copia y los manda de una sola vez, que es como se hace por WhatsApp en Perú. Si
+        // manda incompleto no se pierde nada: se le vuelve a pedir solo lo que falte.
+        "Pídeselos TODOS JUNTOS en un solo mensaje, en lista, cada dato en su línea y en negrita, " +
+        "para que los copie y te los mande de una:\n" +
+        "  Para dejarlo listo, pásame estos datos 👇\n" +
+        "  *Nombre completo*\n  *DNI*\n  *Ciudad*\n" +
+        "(esos son un EJEMPLO del formato: pon exactamente los datos que faltan de la lista de arriba, " +
+        "con el nombre que tienen ahí, sin agregar ninguno). Nada de pedirlos de a uno ni de repetir los " +
+        "que ya te dio. Si te manda solo algunos, agradéceles y pide en lista los que falten.",
         // La pregunta se hinchaba explicando para qué sirve el dato ("¿a nombre de quién lo
         // dejamos para que el motorizado pregunte por esa persona al entregar?"). Pedir un
         // dato es el momento de MENOS fricción posible: cuanto más larga la pregunta, más
         // parece trámite y más gente se cae justo antes de cerrar.
-        "La pregunta va CORTA: una línea, directa. No expliques para qué necesitas el dato ni " +
-        "adornes con beneficios — eso va antes o después, no dentro de la pregunta.",
+        "Fuera de esa lista, tu mensaje va CORTO: no expliques para qué necesitas cada dato ni " +
+        "adornes con beneficios — eso va antes o después, no pegado a lo que le pides.",
         // Corto NO es mudo. Al bajarle el relleno empezó a contestar solo con un acuse —
         // "Perfecto, un par talla 38 negras." y nada más—: cuatro chats seguidos donde el
         // cliente queda sin saber qué hacer y la venta se enfría con todo a favor. Un
@@ -10113,6 +10132,35 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "nunca entrenó le importa que el plan suba de a poco; a quien dijo que tiene poco tiempo, cuánto le toma " +
       "al día. Un guiño por mensaje, natural, sin recitarle su ficha ni repetirle lo que ya te contó.",
     );
+    // 💸 Cómo se paga en PROVINCIA. El cliente que va a dar un adelanto necesita saber tres
+    // cosas antes de soltar la plata: cuánto ahora, cuánto después, y a quién. Sin eso el
+    // adelanto se siente como un riesgo. Medido: el bot pidió S/ 20 sin explicar nunca que
+    // el resto se paga al recibir.
+    // 🔴 Y lo más importante: el saldo se paga AL NEGOCIO, no en la agencia. Shalom no cobra
+    // el producto; si el bot da a entender que paga allá, el cliente llega al mostrador con
+    // la plata, no puede pagar y se lleva un mal rato con tu nombre encima.
+    if (String(ctx.zona_entrega ?? "") === "provincia" && Number(ctx.adelanto) > 0) {
+      const _sym = simboloMoneda(ctx.moneda as string);
+      const _total = Number(ctx.precio) || 0;
+      const _adel = Number(ctx.adelanto) || 0;
+      const _saldo = _total > _adel ? +(_total - _adel).toFixed(2) : 0;
+      parts.push(
+        "## Cómo se paga este pedido (explícaselo así)\n" +
+        `Va por agencia, así que se parte en dos: *${_sym} ${_adel}* ahora para despachar` +
+        (_saldo ? ` y *${_sym} ${_saldo}* cuando llegue` : " y el resto cuando llegue") + ".\n" +
+        // Aunque todavía no haya elegido presentación (y no tengamos la cifra del saldo), el
+        // esquema se explica igual: lo que el cliente necesita saber antes de mandar plata es
+        // que no paga todo hoy y a QUIÉN le paga el resto, no el número exacto.
+        (true
+          ? "⛔ El saldo se paga A NOSOTROS, nunca en la agencia: cuando el paquete llegue le avisas, " +
+            "él te manda la captura de ese pago y recién ahí recibe su clave de recojo. La agencia solo " +
+            "le entrega el paquete con esa clave — allá no cobra nada del producto. Si le haces creer que " +
+            "paga en el mostrador, va a llegar con la plata y no va a poder recogerlo.\n"
+          : "") +
+        "Dilo completo la PRIMERA vez que le pidas el adelanto, en una línea, sin que te lo pregunte: " +
+        "quien va a mandar plata por adelantado necesita saber cuánto es hoy, cuánto después y a quién.",
+      );
+    }
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
     // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
     // ofrécele confirmarlo") no basta: medido, a "¿el curso tiene certificado?" —palabra
