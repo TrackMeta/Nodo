@@ -1,11 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════
-// Nodo · shalom-agencias.ts — lista OFICIAL de agencias de destino de Shalom
-// (columna DESTINO de su Excel de carga masiva). ESPEJO de
-// panel/courier/listas.json → shalom.destino. Si Shalom cambia su plantilla,
-// REGENERAR AMBOS (mismo origen). Sirve para que el bot decida si la oficina
-// que dijo el cliente basta para despachar: si calza con una agencia real, no
-// se pide confirmar; si no calza o es ambigua, se marca para que un humano la
-// confirme en Pedidos.
+// Nodo · shalom-agencias.ts — destinos de Shalom tomados de la columna DESTINO
+// de su Excel de carga masiva. ESPEJO de panel/courier/listas.json →
+// shalom.destino. Si Shalom cambia su plantilla, REGENERAR AMBOS (mismo origen).
+//
+// ⚠️ NO es el directorio completo de Shalom ni se actualiza solo: mientras no
+// exista su API, esta lista es lo único que hay, y es PARCIAL. Se usa en una
+// sola dirección — sirve para CONFIRMAR (si el cliente nombra una oficina que
+// está acá, el destino es seguro), nunca para DESCARTAR ni para deducir cuántas
+// oficinas tiene una ciudad. Todo lo que no calce se marca para que un humano lo
+// coordine con el cliente en Pedidos; la venta nunca se bloquea por esto.
 // ═══════════════════════════════════════════════════════════════════
 
 export const AGENCIAS_SHALOM: string[] = [
@@ -511,33 +514,27 @@ export function candidatasAgencia(texto: string): string[] {
 
 export function sedeReconocida(sede: string, ciudad: string): string | null {
   const s = String(sede ?? "").trim();
+  // ⚠️ Esta lista es la columna DESTINO del Excel de carga de Shalom: es real, pero
+  // PARCIAL y puede quedar desactualizada — mientras no exista la API, no hay forma de
+  // saber cuántas oficinas tiene de verdad una ciudad. Que Chiclayo aparezca acá con una
+  // sola NO prueba que Shalom tenga una sola: prueba que la lista conoce una. Por eso
+  // "la ciudad resuelve a una única agencia" dejó de contar como certeza. Lo único que
+  // confirma el destino es que el CLIENTE haya nombrado una oficina que sí está en la
+  // lista; todo lo demás se marca para que un humano lo coordine con él.
   if (!s) {
-    // Sede VACÍA es el caso MÁS impreciso y antes era el único SIN bandera (return null) →
-    // un pedido de provincia salía con destino vacío en el Excel del courier, sin aviso al
-    // humano (contra el diseño "prefiere marcar de más"). Se intenta resolver por ciudad; si
-    // ni la ciudad calza con UNA sola agencia, se pide confirmar.
-    const c = String(ciudad ?? "").trim();
-    if (!c) return "falta la sede/agencia de destino — confírmala";
-    const set = new Set(candidatasAgencia(c).map((a) => _n(a)));
-    if (set.size === 1) return null;
-    if (set.size > 1) return "hay varias oficinas Shalom que calzan — confirma la exacta";
-    return "no la reconozco en la lista de Shalom — confírmala con la oficina exacta";
+    return String(ciudad ?? "").trim()
+      ? "no dijo la oficina — confírmala con él antes de despachar"
+      : "falta la sede/agencia de destino — confírmala";
   }
   const cs = candidatasAgencia(s);
-  if (cs.some((a) => _n(a) === _n(s))) return null;
-  const set = new Set<string>([...cs, ...candidatasAgencia(ciudad)]);
-  if (set.size === 1) {
-    // La ciudad resuelve a UNA sola oficina, así que el paquete sí tiene destino… pero lo
-    // que dijo el cliente no calza con ninguna agencia: nombró OTRA COSA ("la que está en
-    // la plaza"). El envío sale bien y él va a esperarlo donde no es. Medido con Chiclayo,
-    // que tiene una sola oficina en la lista: el pedido salía sin ninguna bandera y nadie
-    // se enteraba de que la clienta creía otra cosa. Si lo que dijo ES la ciudad ("Chiclayo",
-    // "Shalom Chiclayo"), no hay conflicto y se deja pasar como antes.
-    const cn = _n(ciudad);
-    const esLaCiudad = !!cn && _n(s).includes(cn);
-    if (!cs.length && !esLaCiudad) return "dijo una oficina que no está en la lista — confírmasela antes de despachar";
-    return null;
-  }
-  if (set.size > 1) return "hay varias oficinas Shalom que calzan — confirma la exacta";
-  return "no la reconozco en la lista de Shalom — confírmala con la oficina exacta";
+  if (cs.some((a) => _n(a) === _n(s))) return null;      // nombró una agencia tal cual
+  const cn = _n(ciudad);
+  const esLaCiudad = !!cn && _n(s).includes(cn);
+  // Su texto apunta a UNA agencia concreta de la lista ("miraflores" → MIRAFLORES
+  // CHICLAYO): eso sí identifica una oficina. Decir la ciudad no identifica ninguna,
+  // porque puede haber otras que la lista no trae.
+  if (cs.length === 1 && !esLaCiudad) return null;
+  if (cs.length > 1) return "hay varias oficinas Shalom que calzan — confirma la exacta";
+  if (esLaCiudad) return "solo dijo la ciudad — confirma con él a qué oficina va";
+  return "dijo una oficina que no está en la lista — confírmasela antes de despachar";
 }
