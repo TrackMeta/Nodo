@@ -2978,6 +2978,19 @@ function sinSedeConfirmada(texto: string, ciudad: string): string {
   return t;
 }
 
+// Pedirle el DNI y la sede a alguien a quien nadie le explicó cómo le va a llegar el
+// paquete: para el cliente de provincia, ese formulario aparece de la nada. La modalidad
+// (va por agencia, la recoge él, con una clave) es justo lo que le da confianza para
+// soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
+const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
+
+function conEnvioExplicado(texto: string, courier: string): string {
+  const t = String(texto ?? "").trimStart();
+  if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return texto;
+  const quien = String(courier ?? "").trim() || "la agencia";
+  return `Te cuento cómo te llega 👇 Lo despacho por *agencia ${quien}* a tu ciudad y lo recoges ahí ` +
+    `con una clave que te paso yo apenas llegue.\n\n` + t;
+}
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
 // gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
 // tiene que preguntar otra vez o irse a buscar el precio más arriba en el chat. Es el
@@ -10928,6 +10941,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (_sede && sedeImprecisa(_sede, String(ctx.ciudad ?? ""))) {
           salida = sinSedeConfirmada(salida, String(ctx.ciudad ?? ""));
         }
+      }
+      // Provincia: explicarle la modalidad de envío ANTES de pedirle sus datos.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(salida)) {
+        try {
+          const _ent = await loadEntregas(db, run);
+          const _cour = Object.keys((((_ent as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
+          const _nom = _cour ? _cour.charAt(0).toUpperCase() + _cour.slice(1) : "";
+          const _antes = salida;
+          salida = conEnvioExplicado(salida, _nom);
+          if (salida !== _antes) run.vars._envio_explicado = 1;
+        } catch (_) { /* sin config de courier → se envía tal cual */ }
       }
       // Prometió decir los precios y no dijo ninguno: se los pega el motor, con las cifras
       // reales de la ficha (ver conPrecios).

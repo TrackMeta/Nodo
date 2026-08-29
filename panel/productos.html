@@ -2766,7 +2766,7 @@ async function generarFlujoFisico(flowId, N, E){
     // de soltarla: cuánto hoy, cuánto después y a QUIÉN. Lo último es lo que más importa —
     // el saldo se paga a nosotros, NO en la agencia: Shalom solo entrega contra la clave.
     // Sin decirlo, el cliente llega al mostrador con la plata y no puede recoger su paquete.
-    bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque.\n\nEl resto (*"+curSym(st.prod&&st.prod.config)+" {{saldo}}*) me lo mandas por acá cuando llegue y te paso tu clave para recogerlo." }],
+    bubbles:[{ text:"¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque.\n\nLos *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* que faltan los pagas recién cuando tu pedido ya esté en la agencia — ahí te paso tu clave para recogerlo." }],
   },false,1520,640);
   // ¿El cliente YA pagó el adelanto ANTES de dar sus datos? El motor lo enganchó
   // al crear el pedido (engancharPrepagoAdelanto) y marcó `adelanto_prepagado`. Si
