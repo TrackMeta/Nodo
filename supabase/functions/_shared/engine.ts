@@ -2943,6 +2943,41 @@ const RE_DATO_INVENTADO =
 const RE_PIDE_SUS_DATOS =
   /(nombre completo|tu nombre|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|n[uú]mero de celular|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos)/i;
 
+// La sede que el cliente dio "de memoria" ("la que está en la plaza", "la del
+// mercado") NO está validada contra nada: sin el directorio de Shalom, el motor
+// solo sabe que no reconoce esa oficina. Que la IA la repita —"tu pedido va a la
+// agencia Shalom de la plaza"— le da a esa referencia el estatus de sede real: el
+// cliente se queda tranquilo creyendo que ya está resuelto, y quien tiene que
+// resolverlo (el dueño, a mano) todavía no habló con él. Se le quita el nombre
+// inventado y se le dice la verdad: la ciudad sí está, la oficina exacta se
+// coordina antes de despachar.
+const RE_YA_COORDINA_SEDE = /(oficina exacta|agencia exacta|sede exacta|cu[aá]l (oficina|agencia|sede)|coordino .{0,20}(oficina|agencia|sede))/i;
+
+function sinSedeConfirmada(texto: string, ciudad: string): string {
+  let t = String(texto ?? "");
+  if (!t) return t;
+  const dest = String(ciudad ?? "").trim();
+  // No se busca el VALOR que dio el cliente: casi nunca dice el nombre de una oficina,
+  // dice una frase («la sede que está en la plaza»). Lo que se corta es el SINTAGMA con
+  // el que la IA la da por buena — «en la sede de Shalom de la plaza» — y se deja solo
+  // el destino que sí está verificado: su ciudad.
+  // Exige un complemento («de …», «en …») después de sede/oficina/agencia, para no tocar
+  // las frases donde la agencia se menciona sin nombrarla («cuando llegue a la agencia te
+  // aviso»), que son correctas y hay que dejar como están.
+  // El nombre son 1 a 3 palabras, no "hasta el proximo punto": con un rango abierto se
+  // comia media frase ("en la sede de la plaza  El adelanto es S/ 20 y el resto") y al
+  // reemplazarlo se llevaba puesto el monto del adelanto.
+  const RE = /\b(en|a|para)\s+(?:la\s+)?(?:sede|oficina|agencia)\s+(?:de\s+)?(?:shalom\s+)?(?:de\s+|en\s+)(?:la\s+|el\s+)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+){0,2}/gi;
+  if (!RE.test(t)) return t;
+  RE.lastIndex = 0;
+  t = t.replace(RE, (_m, prep) => `${prep} la agencia${dest ? " de " + dest : ""}`);
+  if (!RE_YA_COORDINA_SEDE.test(t)) {
+    t = t.trimEnd() + (/[.!?…]$/.test(t.trimEnd()) ? " " : ". ") +
+      "La oficina exacta te la confirmo antes de despacharlo 🙌";
+  }
+  return t;
+}
+
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
 // gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
 // tiene que preguntar otra vez o irse a buscar el precio más arriba en el chat. Es el
@@ -9467,6 +9502,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (String(ctx.angulo_gancho ?? "").trim()) {
       parts.push(`## Ángulo del anuncio que trajo al cliente\nEste cliente llegó por un anuncio de ángulo **${ctx.angulo || "(sin nombre)"}**: ${ctx.angulo_gancho}. Retoma y sostén ese enfoque/gancho durante toda la conversación; no lo contradigas ni cambies de tema de venta.`);
     }
+    // La oficina de Shalom que dijo el cliente no está verificada contra nada: repetírsela
+    // como un hecho ("va a la agencia Shalom de la plaza") lo deja creyendo que el destino
+    // ya está resuelto, cuando el dueño todavía tiene que coordinarlo con él a mano.
+    try {
+      const _sedeCtx = String(ctx.sede ?? ctx.agencia ?? "").trim();
+      if (String(ctx.zona_entrega ?? "") === "provincia" && _sedeCtx && sedeImprecisa(_sedeCtx, String(ctx.ciudad ?? ""))) {
+        parts.push("## ⚠️ La oficina de Shalom que te dio NO está confirmada\n" +
+          `Te dijo «${_sedeCtx}», pero eso no calza con ninguna oficina de la lista de Shalom. Puede ser el nombre ` +
+          "de su barrio, una referencia suya o una oficina que ya no existe.\n" +
+          "NO se la repitas como si fuera el destino («va a la agencia Shalom de …»): darle por buena lo deja creyendo " +
+          "que ya está resuelto. Tampoco lo interrogues ni lo bloquees: la venta sigue igual, el adelanto también.\n" +
+          `Nombra solo su CIUDAD (${ctx.ciudad || "la que dio"}) y dile en una línea que la oficina exacta se la ` +
+          "confirmas antes de despacharlo. De coordinarla se encarga una persona después, no tú.");
+      }
+    } catch (_) { /* sin sede legible → nada que advertir */ }
     // Opciones de compra: la IA tiene que conocerlas para venderlas y para que
     // el cliente pueda elegir ESCRIBIENDO. Le decimos explícitamente que no dé
     // por elegida ninguna hasta que el cliente decida (preguntar ≠ elegir).
@@ -10871,6 +10921,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // nada deja el mensaje colgado: mejor que la pregunta se quede y él conteste.
       if (op === "generar_texto" && await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
         salida = sinPedirPermisoPago(salida);
+      }
+      // Sede de provincia sin validar: que la IA no la dé por buena (ver sinSedeConfirmada).
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia") {
+        const _sede = String(ctx.sede ?? ctx.agencia ?? "").trim();
+        if (_sede && sedeImprecisa(_sede, String(ctx.ciudad ?? ""))) {
+          salida = sinSedeConfirmada(salida, String(ctx.ciudad ?? ""));
+        }
       }
       // Prometió decir los precios y no dijo ninguno: se los pega el motor, con las cifras
       // reales de la ficha (ver conPrecios).

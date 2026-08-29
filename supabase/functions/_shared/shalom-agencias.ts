@@ -526,7 +526,18 @@ export function sedeReconocida(sede: string, ciudad: string): string | null {
   const cs = candidatasAgencia(s);
   if (cs.some((a) => _n(a) === _n(s))) return null;
   const set = new Set<string>([...cs, ...candidatasAgencia(ciudad)]);
-  if (set.size === 1) return null;
+  if (set.size === 1) {
+    // La ciudad resuelve a UNA sola oficina, así que el paquete sí tiene destino… pero lo
+    // que dijo el cliente no calza con ninguna agencia: nombró OTRA COSA ("la que está en
+    // la plaza"). El envío sale bien y él va a esperarlo donde no es. Medido con Chiclayo,
+    // que tiene una sola oficina en la lista: el pedido salía sin ninguna bandera y nadie
+    // se enteraba de que la clienta creía otra cosa. Si lo que dijo ES la ciudad ("Chiclayo",
+    // "Shalom Chiclayo"), no hay conflicto y se deja pasar como antes.
+    const cn = _n(ciudad);
+    const esLaCiudad = !!cn && _n(s).includes(cn);
+    if (!cs.length && !esLaCiudad) return "dijo una oficina que no está en la lista — confírmasela antes de despachar";
+    return null;
+  }
   if (set.size > 1) return "hay varias oficinas Shalom que calzan — confirma la exacta";
   return "no la reconozco en la lista de Shalom — confírmala con la oficina exacta";
 }
