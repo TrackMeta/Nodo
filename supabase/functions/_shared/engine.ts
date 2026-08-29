@@ -10152,13 +10152,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // esquema se explica igual: lo que el cliente necesita saber antes de mandar plata es
         // que no paga todo hoy y a QUIÉN le paga el resto, no el número exacto.
         (true
-          ? "⛔ El saldo se paga A NOSOTROS, nunca en la agencia: cuando el paquete llegue le avisas, " +
-            "él te manda la captura de ese pago y recién ahí recibe su clave de recojo. La agencia solo " +
-            "le entrega el paquete con esa clave — allá no cobra nada del producto. Si le haces creer que " +
-            "paga en el mostrador, va a llegar con la plata y no va a poder recogerlo.\n"
+          ? "El saldo se paga A NOSOTROS, nunca en la agencia (allá solo le entregan el paquete contra su clave " +
+            "de recojo). Si le haces creer que paga en el mostrador, llega con la plata y no puede recoger.\n"
           : "") +
-        "Dilo completo la PRIMERA vez que le pidas el adelanto, en una línea, sin que te lo pregunte: " +
-        "quien va a mandar plata por adelantado necesita saber cuánto es hoy, cuánto después y a quién.",
+        // Corto A PROPÓSITO: es un dato, no una clase. Tres frases explicando el circuito
+        // suenan a letra chica justo cuando le estás pidiendo plata por adelantado.
+        "Dilo en UNA línea la primera vez que le pidas el adelanto, sin que te lo pregunte y sin explayarte: " +
+        "cuánto hoy, cuánto después y que el resto va por acá. Nada de párrafos.",
       );
     }
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
