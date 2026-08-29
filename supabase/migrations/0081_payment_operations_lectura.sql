@@ -1,0 +1,23 @@
+-- Nodo · 0081 — payment_operations: LECTURA para el dueño del canal (nada más)
+--
+-- Esta tabla es el cuaderno anti-reúso: cada nº de operación que el bot aprobó.
+-- 0037 la cerró entera y a propósito, con un motivo que sigue vigente: si se
+-- pudiera ESCRIBIR desde el panel, alguien podría quemar por adelantado el número
+-- de un cliente legítimo (su pago saldría rechazado), y si se pudiera BORRAR, una
+-- captura vieja volvería a servir infinitas veces. Ese candado NO se toca.
+--
+-- Lo que se abre es solo SELECT, con la misma frontera de cuenta que el resto del
+-- panel. El motivo: cuando el bot rechaza un comprobante por repetido, el operador
+-- tiene al cliente esperando ("pagué y me dice que ya se usó") y hasta ahora la
+-- única forma de saber cuándo se usó ese número era entrar a la base. Compras ya
+-- responde esa pregunta si el pago está en una venta; le faltaba el caso en que
+-- está solo en este cuaderno.
+--
+-- No expone nada nuevo: el nº de operación YA se guarda en cada pedido
+-- (shipping.digital_operacion, adelanto_operacion, saldo_operacion,
+-- extra_operacion) y el buscador de Compras lo lee desde ahí hoy mismo.
+--
+-- INSERT/UPDATE/DELETE siguen sin política: solo la service role del motor.
+drop policy if exists payop_sel on payment_operations;
+--##--
+create policy payop_sel on payment_operations for select using (owns_channel(channel_id));
