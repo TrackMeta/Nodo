@@ -194,11 +194,17 @@ export function sugerirAgencia(texto, agencias) {
 }
 
 // Listas de los desplegables de los couriers (agencias, distritos, medidas),
-// extraídas de sus plantillas. Se cargan una vez y se cachean.
+// extraídas de sus plantillas. Se cachean por sesión, pero el fetch REVALIDA
+// contra el servidor: sin `no-cache`, el navegador servía su copia guardada y el
+// panel seguía trabajando con la lista vieja durante horas. Se notó al ampliar
+// las agencias de Shalom de 486 a 552 — el archivo publicado ya tenía las nuevas
+// y el exportador seguía avisando "HUARAZ CO no es una agencia de la lista".
+// `no-cache` no es `no-store`: si el archivo no cambió, el servidor contesta 304
+// y no se descarga nada.
 let _listas = null;
 export async function cargarListas() {
   if (_listas) return _listas;
-  try { const r = await fetch("courier/listas.json"); _listas = r.ok ? await r.json() : {}; }
+  try { const r = await fetch("courier/listas.json", { cache: "no-cache" }); _listas = r.ok ? await r.json() : {}; }
   catch { _listas = {}; }
   return _listas;
 }
