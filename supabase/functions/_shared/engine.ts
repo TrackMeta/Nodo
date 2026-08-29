@@ -9942,7 +9942,31 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "comprarlo (algo del producto, no un adjetivo). Una línea suelta suena a contestador automático. " +
       "Excepción: cuando solo estás pidiendo un dato o el pago, ahí sí va corto y directo.\n" +
       "3. NO ARRANQUES SIEMPRE IGUAL. Varía la primera palabra de cada mensaje. Si el anterior empezó con " +
-      "«Además», «Claro» o «Perfecto», este empieza distinto.",
+      "«Además», «Claro» o «Perfecto», este empieza distinto.\n" +
+      "4. HABLA DE ÉL, NO DEL PRODUCTO. Nadie compra «21 días de rutinas con video»: eso describe lo que el " +
+      "producto ES. Di lo que le PASA a él con eso. No enumeres lo que incluye — traduce cada cosa a lo que " +
+      "cambia en su vida:\n" +
+      "   · «plan de 21 días con videos» → «en tres semanas notas que el cuerpo te responde distinto»\n" +
+      "   · «sin equipo» → «lo haces en tu sala, sin pisar un gimnasio ni comprar nada»\n" +
+      "   · «acceso de por vida» → «lo pagas una vez y lo repites cuando quieras»\n" +
+      "⛔ Con un freno: NO inventes resultados que la ficha no respalde (nada de kilos, plazos ni promesas " +
+      "médicas que no estén escritos ahí). Prometer de más cuesta más caro que sonar seco. Si la ficha solo " +
+      "trae características, di la que MÁS le sirva a ESTE cliente y para qué le va a servir a él.\n" +
+      "5. EL PRECIO NUNCA VA SOLO. Un número suelto invita a compararlo y a dudar. Va siempre con su encuadre " +
+      "en la misma frase: qué tipo de pago es (único, no mensualidad), qué se lleva por eso, o con qué se " +
+      "compara. Y escribe la moneda UNA vez: «S/ 10», nunca «S/ 10 soles».",
+    );
+    // 🧠 Lo que ya sabes de ESTE cliente, puesto a trabajar en la venta. La memoria se lee
+    // más abajo para el TRATO ("trátalo con cercanía"), pero nadie le decía que la usara
+    // para ARGUMENTAR. Medido: el cliente contó que tiene 55 años y que nunca entrenó, y la
+    // respuesta siguió siendo el folleto de siempre — el mismo párrafo que le tocaría a un
+    // chico de 20 que entrena hace años. Con el dato delante, el argumento se vuelve suyo.
+    parts.push(
+      "## Usa lo que ya sabes de él\n" +
+      "Si más arriba tienes datos suyos (su edad, que empieza de cero, dónde entrena, cuánto tiempo tiene, " +
+      "para quién lo compra), ARMA EL ARGUMENTO CON ESO en vez de repetir el folleto. A alguien que dijo que " +
+      "nunca entrenó le importa que el plan suba de a poco; a quien dijo que tiene poco tiempo, cuánto le toma " +
+      "al día. Un guiño por mensaje, natural, sin recitarle su ficha ni repetirle lo que ya te contó.",
     );
     if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
     // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
