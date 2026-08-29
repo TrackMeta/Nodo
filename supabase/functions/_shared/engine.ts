@@ -2380,7 +2380,10 @@ async function execute(db: SupabaseClient, run: Run) {
       case "mensaje": {
         const bubbles = node.config?.bubbles ?? [{ text: node.config?.text ?? "" }];
         let hasButtons = false;
+        const _t0 = Date.now(); const _gast = { ms: 0 }; let _primera = true;
         for (const b of bubbles) {
+          if (!_primera && await ritmo(db, run.contact_id, b, _gast, _t0)) break;  // escribió → no le hablamos encima
+          _primera = false;
           await emit(db, run, b, ctx);
           // Solo se queda esperando si de verdad salieron botones: con títulos
           // vacíos no se envía ninguno y el flujo esperaría un toque imposible.
@@ -2427,7 +2430,10 @@ async function execute(db: SupabaseClient, run: Run) {
             // pasos de secuencia, un envío fantasma nunca puede recibir respuesta y le
             // hunde la tasa a esa variante con casos que no existieron.
             let salioOk = true;
+            const _t0r = Date.now(); const _gastR = { ms: 0 }; let _primeraR = true;
             for (const b of (chosen.bubbles ?? [])) {
+              if (!_primeraR && await ritmo(db, run.contact_id, b, _gastR, _t0r)) break;
+              _primeraR = false;
               if ((await emit(db, run, b, ctx)) === false) salioOk = false;
             }
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial",
@@ -2636,7 +2642,48 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
 // ── Emisión de mensajes salientes ──────────────────────────────────
 // En WhatsApp real envía por Graph API; en webchat basta con insertar
 // (el panel lo ve por Realtime). Siempre queda registro en messages.
+// ⏱️ El ritmo de una ráfaga de burbujas. Sin esto salían TODAS en el mismo segundo: al
+// cliente le entraban cinco notificaciones de golpe y el chat se llenaba de una — eso se
+// lee como bot, no como alguien escribiendo. La pausa va ANTES de cada burbuja menos la
+// primera (la primera responde al toque, que es lo que uno espera) y es proporcional a lo
+// que se va a leer, como tardaría una persona en escribirlo.
+// El webhook ya le respondió 200 a Meta y el motor sigue en segundo plano (waitUntil), así
+// que esperar acá NO provoca reintentos ni duplicados de Meta. El TOPE por turno existe
+// igual: pasados unos segundos, "natural" se vuelve un cliente mirando la pantalla.
+const RITMO_MIN_MS = 550;
+const RITMO_MAX_MS = 2400;
+const RITMO_TOPE_TURNO_MS = 7000;
+function pausaDe(bubble: any): number {
+  const txt = String(bubble?.text ?? bubble?.caption ?? "");
+  // La media (una imagen, un audio) no se "escribe": va con la pausa mínima.
+  if (!txt && bubble?.media_url) return RITMO_MIN_MS;
+  const ms = 260 + txt.length * 22;   // ~ escribir a buen ritmo
+  return Math.max(RITMO_MIN_MS, Math.min(RITMO_MAX_MS, ms));
+}
+// ¿El cliente escribió mientras el bot soltaba la ráfaga? Entonces el resto de burbujas
+// ya no va: hablar encima de quien acaba de escribir es lo más parecido a no escuchar.
+// Con las pausas esa ventana es más ancha que antes, así que se comprueba burbuja a
+// burbuja — una consulta mínima por el último entrante.
+async function clienteEscribio(db: SupabaseClient, contactId: string, desde: number): Promise<boolean> {
+  try {
+    const { data } = await db.from("messages").select("ts")
+      .eq("contact_id", contactId).eq("direction", "in")
+      .order("ts", { ascending: false }).limit(1).maybeSingle();
+    const t = (data as any)?.ts ? new Date((data as any).ts).getTime() : 0;
+    return t > desde;
+  } catch (_) { return false; }
+}
+// Espera lo que toque y avisa si el turno se debe cortar (el cliente escribió).
+async function ritmo(db: SupabaseClient, contactId: string, bubble: any, gastado: { ms: number }, t0: number): Promise<boolean> {
+  if (gastado.ms >= RITMO_TOPE_TURNO_MS) return false;
+  const p = Math.min(pausaDe(bubble), RITMO_TOPE_TURNO_MS - gastado.ms);
+  gastado.ms += p;
+  await new Promise((r) => setTimeout(r, p));
+  return await clienteEscribio(db, contactId, t0);
+}
+
 async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promise<boolean> {
+
   await ensureDelivery(db, run);
   // `_noTpl`: el texto GENERADO POR LA IA NO se pasa por el templater {{…}}. Las burbujas
   // FIJAS del flujo sí lo necesitan (expanden {{precio}}, etc.), pero si se templatiza la
@@ -3086,11 +3133,14 @@ export async function deliverStep(
   // que haya contenido antes de llamar, así que esto solo cambia el caso vacío.
   let enviadas = 0;
   let allOk = true;
+  const _t0 = Date.now(); const _gast = { ms: 0 }; let _primera = true;
   for (const b of bubbles) {
     // También deja pasar una burbuja con BOTONES aunque su texto esté vacío/sin resolver:
     // emit le pone un cuerpo mínimo para no perderlos. El texto se filtra en CRUDO acá
     // (una var sin resolver es truthy) pero emit ya maneja el cuerpo vacío al resolver.
     if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) {
+      if (!_primera && await ritmo(db, contactId, b, _gast, _t0)) break;
+      _primera = false;
       enviadas++;
       if ((await emit(db, run, b, ctx)) === false) allOk = false;
     }
