@@ -333,16 +333,23 @@ function render(){
     <div class="toolbar">
       <span class="tlabel">Periodo</span>
       <div id="dr"></div>
-      ${st.vista==="copy"?"":`<span class="tlabel">Tipo</span>
-      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["fisico","Físico"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>`}
-      ${st.vista!=="copy"&&st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
-      <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
+      <!-- ⚠️ ORDEN IMPORTANTE: el selector de VISTA va acá, pegado al periodo, porque es lo
+           único presente en las cuatro vistas. Antes iba DESPUÉS de Tipo y Cuenta, que en
+           "Por copy" no se pintaban: al cambiar de vista esos grupos desaparecían y
+           arrastraban los botones cientos de píxeles a la izquierda. Medido: hacías clic en
+           "Por copy" y se activaba "Por ángulo", porque el botón que querías ya no estaba
+           ahí cuando el clic aterrizaba. Todo lo que aparece y desaparece va a la DERECHA
+           de este grupo, para que nunca empuje a lo que sí está siempre. -->
       <div class="seg" id="vista">
         <button class="${st.vista==='anuncio'?'on':''}" data-v="anuncio">${icon("megaphone")} Por anuncio</button>
         <button class="${st.vista==='producto'?'on':''}" data-v="producto">${icon("box")} Por producto</button>
         <button class="${st.vista==='angulo'?'on':''}" data-v="angulo">${icon("compass")} Por ángulo</button>
         <button class="${st.vista==='copy'?'on':''}" data-v="copy">${icon("message")} Por copy</button>
       </div>
+      <span class="tlabel">Tipo</span>
+      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["fisico","Físico"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
+      ${st.vista!=="copy"&&st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
+      <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
       ${st.vista==="copy"?"":`<div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>`}
     </div>
     ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${monedaMismatch==="desconocida"?`No pude confirmar en qué <b>moneda</b> factura tu cuenta de Meta (la sincronización no la trajo).`:`Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>.`} El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) puede NO estar convertido — no compares estos números hasta confirmar la moneda.</div>`:""}
@@ -460,10 +467,14 @@ async function productoPorRef(){
     for(const f of fls||[]) if(f.product_id) map[f.id]=f.product_id;
   }catch(_){ }
   try{
-    const { data:ps }=await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId);
-    window.__prodNombre={};
+    const { data:ps }=await supa.from("products").select("id,nombre,tipo,config").eq("channel_id",st.channelId);
+    window.__prodNombre={}; window.__prodTipo={};
     for(const p of ps||[]){
       window.__prodNombre[p.id]=p.nombre;
+      // Digital o físico, para que el filtro Tipo también valga en "Por copy": cada copy
+      // pertenece a un producto, así que no había motivo para dejar esta vista sin ese
+      // filtro — y era justo lo que hacía desaparecer los botones y saltar la barra.
+      window.__prodTipo[p.id]=String(p.tipo||"")==="digital"?"digital":"fisico";
       const cfg=p.config||{};
       const m=(cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
       for(const v of Object.values(m)) if(v) map[v]=p.id;
@@ -527,7 +538,14 @@ async function cargaCopys(){
     m.set(k,s);
   }
   const vivas=await variantesVigentes();
-  return { filas:[...m.values()].map(f=>({ ...f, vigente: vivas.has(f.id) })) };
+  // El filtro Tipo (Todos / Digital / Físico) también manda acá: cada copy pertenece a un
+  // producto y el mapa de arriba ya sabe si ese producto es digital o físico. Los copys sin
+  // producto resuelto (una secuencia suelta, un flujo sin producto) se quedan solo en
+  // "Todos": esconderlos en Digital o en Físico sería inventarles un tipo.
+  const tipoDe=(pid)=>(window.__prodTipo||{})[pid]||"";
+  return { filas:[...m.values()]
+    .filter(f=>st.tipo==="all"||tipoDe(f.prod)===st.tipo)
+    .map(f=>({ ...f, vigente: vivas.has(f.id) })) };
 }
 function renderCopys(){
   const box=$("content");
@@ -536,6 +554,14 @@ function renderCopys(){
     if(error){
       box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><h3>Falta aplicar la migración 0079</h3>
         <p>Esta vista lee la tabla <code>variante_envios</code>, que todavía no existe en tu base.</p></div>`;
+      return;
+    }
+    if(!filas.length && st.tipo!=="all"){
+      // Vacío por el FILTRO, no por falta de datos: decir "todavía no hay copys medidos"
+      // mandaría a buscar un problema que no existe (y a agregar versiones que ya tiene).
+      box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px">
+        <h3>No hay copys de productos ${st.tipo==="digital"?"digitales":"físicos"} en este periodo</h3>
+        <p style="max-width:52ch;margin:8px auto 0;line-height:1.6">Sí puede haber copys medidos de otro tipo de producto. Cambia el filtro a <b>Todos</b> para verlos.</p></div>`;
       return;
     }
     if(!filas.length){
