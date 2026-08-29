@@ -2932,6 +2932,33 @@ function sinPedirPermisoPago(texto: string): string {
 // era el mensaje entero, se reemplaza por el cierre honesto que toca.
 const RE_DATO_INVENTADO =
   /[^.!?…]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato)\b[^.!?…]*[.!?…]?/gi;
+// Pedir el nombre/DNI/dirección ES pasar a cerrar: si a esa altura el cliente
+// todavía no dijo cuántas unidades lleva, la venta se cierra por la más barata
+// sin que él se entere de que había un pack.
+const RE_PIDE_SUS_DATOS =
+  /(nombre completo|tu nombre|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|n[uú]mero de celular|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos)/i;
+
+// La pregunta se arma con los precios REALES de sus presentaciones, no la
+// improvisa el modelo: cuando la cantidad es lo que cambia, se dice el ahorro.
+function preguntaCuantos(ops: Opcion[], ctx: any): string {
+  const sym = simboloMoneda(ctx.moneda as string);
+  const conPrecio = ops.filter((o) => o.precio != null && Number(o.precio) > 0);
+  const lista = conPrecio.length > 1 ? conPrecio : ops;
+  const cants = lista.map((o) => Number(o.cantidad ?? 0));
+  const porCantidad = cants.every((c) => c > 0) && new Set(cants).size === lista.length;
+  const a = lista[0], b = lista[1];
+  if (porCantidad && lista.length === 2 && a?.precio != null && b?.precio != null) {
+    const unitario = Number(a.precio) / Math.max(1, Number(a.cantidad));
+    const ahorro = Math.round((unitario * Number(b.cantidad) - Number(b.precio)) * 100) / 100;
+    // Una sola pregunta: "¿cuántos llevas?" y "¿cuál te preparo?" juntas se leen
+    // como si le preguntaran dos cosas distintas.
+    return `Antes de anotarte, ¿cuántos llevas? ${a.nombre} sale ${sym} ${a.precio} y ${b.nombre} ` +
+      `te queda en ${sym} ${b.precio}` + (ahorro > 0 ? ` — ahorras ${sym} ${ahorro}` : "") + " 🙌";
+  }
+  return "Antes de anotarte, ¿cuál te preparo?\n" +
+    lista.map((o) => `• ${o.nombre}${o.precio != null ? ` — ${sym} ${o.precio}` : ""}`).join("\n");
+}
+
 function sinDatoInventado(texto: string, cierre: string): string {
   const t = String(texto ?? "");
   RE_DATO_INVENTADO.lastIndex = 0;
@@ -8685,6 +8712,48 @@ async function classify(
   }
 }
 
+// ¿El cliente NOMBRÓ de verdad esta presentación? "Quiero comprarlo" es querer el
+// PRODUCTO, no elegir el pack: el clasificador lo leía como "eligiendo" y sellaba
+// la primera opción de la lista —la más barata, 1 unidad— sin preguntar nada. El
+// cliente nunca se enteraba de que existía el pack de 2, y el dueño vendía uno
+// donde podía vender dos. Medido con el Kit de Bandas (1 kit S/89 / Pack 2 S/159):
+// "me interesa, quiero comprarlo" → quedó sellado "1 kit" en el primer turno.
+const NUM_PALABRA: Record<string, number> = {
+  un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+  seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, docena: 12,
+};
+const ORDINALES: string[][] = [
+  ["primer", "primero", "primera"], ["segundo", "segunda"], ["tercer", "tercero", "tercera"],
+  ["cuarto", "cuarta"], ["quinto", "quinta"],
+];
+const sinTildes = (s: string) =>
+  String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
+  const t = sinTildes(texto);
+  if (!t.trim()) return false;
+  // 1) Una palabra PROPIA del nombre: la que no comparten las demás. En
+  //    "1 kit" vs "Pack 2 kits", "kit" no distingue nada; "pack" sí.
+  const tokens = (n: string) => sinTildes(n).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  const ajenas = new Set(todas.filter((o) => o.id !== op.id).flatMap((o) => tokens(o.nombre)));
+  if (tokens(op.nombre).some((w) => !ajenas.has(w) && t.includes(w))) return true;
+  // 2) Las unidades que trae, en número o en palabra ("llevo 2", "quiero dos").
+  const cant = Number(op.cantidad ?? 0);
+  if (cant > 0) {
+    if (new RegExp("(^|[^0-9])" + cant + "([^0-9]|$)").test(t)) return true;
+    for (const [w, n] of Object.entries(NUM_PALABRA)) {
+      if (n === cant && new RegExp("(^|[^a-z])" + w + "([^a-z]|$)").test(t)) return true;
+    }
+  }
+  // 3) Su precio: "el de 159".
+  const p = Number(op.precio ?? 0);
+  if (p > 0 && new RegExp("(^|[^0-9])" + Math.round(p) + "([^0-9]|$)").test(t)) return true;
+  // 4) Su posición en la lista que le acabamos de decir: "el segundo".
+  const i = todas.findIndex((o) => o.id === op.id);
+  if (i >= 0 && ORDINALES[i] && ORDINALES[i].some((w) => t.includes(w))) return true;
+  return false;
+}
+
 // Detecta qué opción de compra quiere el cliente y la fija SI hay confianza.
 // Devuelve la clasificación para que quien llama decida si confirmar.
 async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: string): Promise<Clasificacion | null> {
@@ -8728,6 +8797,9 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // con una pregunta: nunca adivinamos cuando hay dinero de por medio.
   if (cls.clave && cls.confianza >= 0.7) {
     const op = list.find((o) => o.id === cls.clave);
+    // Y que la haya NOMBRADO. Sin esto, un "quiero comprarlo" sellaba la más
+    // barata: el cliente no elegía nada y el bot ya no le ofrecía el pack.
+    if (op && !mencionaLaOpcion(texto2, op, list)) return { ...cls, intencion: "preguntando", clave: null };
     run.vars.opcion_id = cls.clave;
     ctx.opcion_id = cls.clave;
     await setField(db, run.channel_id, run.contact_id, "opcion_id", cls.clave);
@@ -10778,6 +10850,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // nada deja el mensaje colgado: mejor que la pregunta se quede y él conteste.
       if (op === "generar_texto" && await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
         salida = sinPedirPermisoPago(salida);
+      }
+      // Pedir datos SIN saber cuántas unidades lleva. El bot pasaba a "pásame tu nombre
+      // y tu celular" con dos presentaciones sobre la mesa y el cliente sin elegir
+      // ninguna: la venta se cerraba por la más barata. Decírselo en el prompt falló dos
+      // veces, así que lo decide el motor. Se pregunta UNA vez; si aun así no elige, se
+      // sella la primera para no dejar la venta trabada dando vueltas.
+      if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()
+          && RE_PIDE_SUS_DATOS.test(salida)) {
+        try {
+          const opsPend = await loadOpciones(db, run, ctx._product_id);
+          if (opsPend.length > 1) {
+            if (!run.vars._preg_pres) {
+              run.vars._preg_pres = 1;
+              salida = preguntaCuantos(opsPend, ctx);
+            } else {
+              const op0 = opsPend[0];
+              await setField(db, run.channel_id, run.contact_id, "opcion_id", op0.id);
+              await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op0.nombre);
+              run.vars.opcion_id = op0.id;
+              ctx.opcion_id = op0.id; ctx.opcion = op0.nombre;
+              ctx.cantidad = op0.cantidad ?? 1; (ctx as any)._opcion = op0;
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación por defecto",
+                `${op0.nombre} (no eligió tras preguntarle)`).catch(() => {});
+            }
+          }
+        } catch (_) { /* si no se pueden leer las opciones, se envía tal cual */ }
       }
       // ¿Ya le ofreció cerrar dos veces y sigue sin decir que sí? Se corta la tercera.
       if (op === "generar_texto") {
