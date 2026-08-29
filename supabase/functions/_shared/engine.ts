@@ -2380,10 +2380,8 @@ async function execute(db: SupabaseClient, run: Run) {
       case "mensaje": {
         const bubbles = node.config?.bubbles ?? [{ text: node.config?.text ?? "" }];
         let hasButtons = false;
-        const _t0 = Date.now(); const _gast = { ms: 0 }; let _primera = true;
         for (const b of bubbles) {
-          if (!_primera && await ritmo(db, run.contact_id, b, _gast, _t0)) break;  // escribió → no le hablamos encima
-          _primera = false;
+          if (await ritmo(db, run, b)) break;   // escribió mientras tanto → no le hablamos encima
           await emit(db, run, b, ctx);
           // Solo se queda esperando si de verdad salieron botones: con títulos
           // vacíos no se envía ninguno y el flujo esperaría un toque imposible.
@@ -2430,10 +2428,8 @@ async function execute(db: SupabaseClient, run: Run) {
             // pasos de secuencia, un envío fantasma nunca puede recibir respuesta y le
             // hunde la tasa a esa variante con casos que no existieron.
             let salioOk = true;
-            const _t0r = Date.now(); const _gastR = { ms: 0 }; let _primeraR = true;
             for (const b of (chosen.bubbles ?? [])) {
-              if (!_primeraR && await ritmo(db, run.contact_id, b, _gastR, _t0r)) break;
-              _primeraR = false;
+              if (await ritmo(db, run, b)) break;
               if ((await emit(db, run, b, ctx)) === false) salioOk = false;
             }
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial",
@@ -2674,12 +2670,21 @@ async function clienteEscribio(db: SupabaseClient, contactId: string, desde: num
   } catch (_) { return false; }
 }
 // Espera lo que toque y avisa si el turno se debe cortar (el cliente escribió).
-async function ritmo(db: SupabaseClient, contactId: string, bubble: any, gastado: { ms: number }, t0: number): Promise<boolean> {
-  if (gastado.ms >= RITMO_TOPE_TURNO_MS) return false;
-  const p = Math.min(pausaDe(bubble), RITMO_TOPE_TURNO_MS - gastado.ms);
-  gastado.ms += p;
-  await new Promise((r) => setTimeout(r, p));
-  return await clienteEscribio(db, contactId, t0);
+// ⚠️ El estado vive en el RUN, no en el bucle: un turno suele pasar por varios nodos
+// seguidos (el rotador de los iniciales y, pegado, el primer mensaje del flujo de venta),
+// y con un contador por bucle la primera burbuja de cada nodo salía sin pausa. Medido en
+// un chat real: «🚨 Llévate el acceso…» y «¿Con qué método de pago…?» llegaron con 0,1 s
+// de diferencia, y el link de entrega a 0,0 s del «acá tienes tu acceso».
+// Y pasado el tope no se deja de esperar: se baja al mínimo. El tope existe para que la
+// ráfaga no se eternice, no para que dos mensajes caigan en el mismo instante.
+async function ritmo(db: SupabaseClient, run: any, bubble: any): Promise<boolean> {
+  const r = (run._ritmo ??= { ms: 0, t0: Date.now(), primera: true });
+  if (r.primera) { r.primera = false; return false; }   // la primera del turno sale al toque
+  const libre = Math.max(0, RITMO_TOPE_TURNO_MS - r.ms);
+  const p = libre > 0 ? Math.min(pausaDe(bubble), libre) : RITMO_MIN_MS;
+  r.ms += p;
+  await new Promise((res) => setTimeout(res, p));
+  return await clienteEscribio(db, run.contact_id, r.t0);
 }
 
 async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promise<boolean> {
@@ -3133,14 +3138,12 @@ export async function deliverStep(
   // que haya contenido antes de llamar, así que esto solo cambia el caso vacío.
   let enviadas = 0;
   let allOk = true;
-  const _t0 = Date.now(); const _gast = { ms: 0 }; let _primera = true;
   for (const b of bubbles) {
     // También deja pasar una burbuja con BOTONES aunque su texto esté vacío/sin resolver:
     // emit le pone un cuerpo mínimo para no perderlos. El texto se filtra en CRUDO acá
     // (una var sin resolver es truthy) pero emit ya maneja el cuerpo vacío al resolver.
     if (b && (b.media_url || (b.text && String(b.text).trim()) || (Array.isArray(b.buttons) && b.buttons.length))) {
-      if (!_primera && await ritmo(db, contactId, b, _gast, _t0)) break;
-      _primera = false;
+      if (await ritmo(db, run, b)) break;
       enviadas++;
       if ((await emit(db, run, b, ctx)) === false) allOk = false;
     }
@@ -3832,7 +3835,10 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
   // Se acumula el bool de CADA emit (false = Meta rechazó): así el buffer diferido solo se
   // vacía si TODO salió, y el timeline no miente "entregado" cuando el envío falló.
   let allOk = true;
-  const ok = async (b: any) => { if ((await emit(db, run, b, ctx)) === false) allOk = false; };
+  // Mismo ritmo que el resto: sin él, el encabezado ("¡Todo listo! Acá está lo que
+  // compraste") y el link salían en el mismo instante. Acá NO se corta si el cliente
+  // escribe: esto es lo que YA pagó, y dejarlo a medias sería peor que interrumpirlo.
+  const ok = async (b: any) => { await ritmo(db, run, b); if ((await emit(db, run, b, ctx)) === false) allOk = false; };
   if (a?.una_burbuja) {
     // Un solo mensaje: encabezado + cada link en su línea (con su etiqueta/mensaje).
     let text = header;
