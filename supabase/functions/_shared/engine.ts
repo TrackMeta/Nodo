@@ -2978,18 +2978,35 @@ function sinSedeConfirmada(texto: string, ciudad: string): string {
   return t;
 }
 
+// Cómo se cobra el envío, resuelto igual que en el panel: el modo explícito manda y, si
+// no hay ninguno, se deduce de la perilla vieja de envío gratis. Importa para lo que se
+// le DICE al cliente: con el modo "agencia" paga el flete al recoger, y enterarse recién
+// en el mostrador es de las razones más comunes por las que un paquete se queda sin
+// recoger. Hasta ahora el modo solo servía para calcular; nadie se lo contaba.
+function modoEnvio(ctx: any): "incluido" | "suma" | "agencia" {
+  const m = String(ctx._envio_modo ?? "").trim();
+  if (m === "incluido" || m === "suma" || m === "agencia") return m;
+  return ctx.envio_gratis === false ? "suma" : "incluido";
+}
 // Pedirle el DNI y la sede a alguien a quien nadie le explicó cómo le va a llegar el
 // paquete: para el cliente de provincia, ese formulario aparece de la nada. La modalidad
 // (va por agencia, la recoge él, con una clave) es justo lo que le da confianza para
 // soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
 const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
 
-function conEnvioExplicado(texto: string, courier: string): string {
+function conEnvioExplicado(texto: string, courier: string, modo: string): string {
   const t = String(texto ?? "").trimStart();
   if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return texto;
   const quien = String(courier ?? "").trim() || "la agencia";
+  // Quién paga el flete va acá, ANTES de que dé sus datos y de que mande el adelanto.
+  // Es el momento honesto para decirlo: después ya es una sorpresa en el mostrador.
+  const costo = modo === "agencia"
+    ? ", y el envío lo pagas ahí mismo al recogerlo"
+    : modo === "suma"
+    ? " — el envío ya va incluido en tu total"
+    : " — el envío corre por nuestra cuenta";
   return `Te cuento cómo te llega 👇 Lo despacho por *agencia ${quien}* a tu ciudad y lo recoges ahí ` +
-    `con una clave que te paso yo apenas llegue.\n\n` + t;
+    `con una clave que te paso yo apenas llegue${costo}.\n\n` + t;
 }
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
 // gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
@@ -9903,6 +9920,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       } else {
         L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);
         L.push("Mencionamos **Shalom** como nuestra agencia; solo ofrece otra si el cliente la pide.");
+        const _modoEnv = modoEnvio(ctx);
+        L.push(_modoEnv === "agencia"
+          ? "💸 El ENVÍO lo paga ÉL en la agencia al recoger, aparte del producto. Díselo con naturalidad ANTES de pedirle sus datos y de cobrarle el adelanto: enterarse recién en el mostrador es de las razones más comunes por las que un paquete se queda sin recoger."
+          : _modoEnv === "suma"
+          ? "El envío ya va sumado en el total que le dijiste: en la agencia NO paga nada extra."
+          : "🎁 El envío corre por NUESTRA cuenta: en la agencia no paga nada, solo muestra su clave y recoge. Es un argumento de venta, úsalo.");
         // Beneficio aéreo: si su ciudad está en la lista del negocio, el envío va
         // por Shalom AÉREO (llega más rápido). Se presenta como un BENEFICIO, mismo
         // precio, sin recargo y sin hacerlo sentir culpable.
@@ -10307,10 +10330,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Aunque todavía no haya elegido presentación (y no tengamos la cifra del saldo), el
         // esquema se explica igual: lo que el cliente necesita saber antes de mandar plata es
         // que no paga todo hoy y a QUIÉN le paga el resto, no el número exacto.
-        (true
-          ? "El saldo se paga A NOSOTROS, nunca en la agencia (allá solo le entregan el paquete contra su clave " +
-            "de recojo). Si le haces creer que paga en el mostrador, llega con la plata y no puede recoger.\n"
-          : "") +
+        // Con el modo "lo paga en la agencia" NO es cierto que allá no pague nada: el
+        // producto se paga acá, pero el FLETE lo paga en el mostrador. Decirle "nunca
+        // pagas en la agencia" lo deja sin la plata del envío el día que va a recoger.
+        (modoEnvio(ctx) === "agencia"
+          ? "El PRODUCTO se paga siempre A NOSOTROS, nunca en la agencia; lo único que paga allá es el ENVÍO. " +
+            "No le hagas creer que el producto se paga en el mostrador: llega con la plata y no puede recoger.\n"
+          : "El saldo se paga A NOSOTROS, nunca en la agencia (allá solo le entregan el paquete contra su clave " +
+            "de recojo). Si le haces creer que paga en el mostrador, llega con la plata y no puede recoger.\n") +
         // Corto A PROPÓSITO: es un dato, no una clase. Tres frases explicando el circuito
         // suenan a letra chica justo cuando le estás pidiendo plata por adelantado.
         "Dilo en UNA línea la primera vez que le pidas el adelanto, sin que te lo pregunte y sin explayarte: " +
@@ -10950,7 +10977,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _cour = Object.keys((((_ent as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
           const _nom = _cour ? _cour.charAt(0).toUpperCase() + _cour.slice(1) : "";
           const _antes = salida;
-          salida = conEnvioExplicado(salida, _nom);
+          salida = conEnvioExplicado(salida, _nom, modoEnvio(ctx));
           if (salida !== _antes) run.vars._envio_explicado = 1;
         } catch (_) { /* sin config de courier → se envía tal cual */ }
       }
