@@ -2877,11 +2877,16 @@ const RE_YA_PIDE = /\b(dime|dime\s|av[ií]same|cu[eé]ntame|p[aá]same|m[aá]nda
 // "Lo voy a pensar" / se despide: no es un no, pero tampoco es momento de empujar.
 const RE_LO_PIENSA =
   /\b(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|déjame pensarlo|dejame pensarlo|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo)|despu[eé]s te (escribo|aviso|digo)|te (escribo|aviso) (luego|despu[eé]s|m[aá]s tarde)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)\b/i;
-function conPeticionFinal(texto: string, peticion: string): string {
+function conPeticionFinal(texto: string, peticion: string, dato?: string): string {
   const t = String(texto ?? "").trimEnd();
   if (!t || !peticion) return texto;
   if (t.includes("?")) return texto;                    // ya pregunta algo
   if (RE_YA_PIDE.test(t)) return texto;                 // ya pide algo, en imperativo
+  // Y si ya NOMBRA el dato que falta ("solo me falta tu DNI de 8 dígitos"), pegarle
+  // "Me falta un dato: DNI. ¿Me lo pasas?" es decir lo mismo dos veces seguidas.
+  const sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const d = sinT(String(dato ?? "").trim());
+  if (d.length >= 3 && sinT(t).includes(d)) return texto;
   return t + (/[.!…]$/.test(t) ? " " : ". ") + peticion;
 }
 
@@ -2937,6 +2942,22 @@ const RE_DATO_INVENTADO =
 // sin que él se entere de que había un pack.
 const RE_PIDE_SUS_DATOS =
   /(nombre completo|tu nombre|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|n[uú]mero de celular|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos)/i;
+
+// Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
+// gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
+// tiene que preguntar otra vez o irse a buscar el precio más arriba en el chat. Es el
+// mismo patrón que ya se tapó con los datos de pago: prometer y no cumplir deja al
+// cliente esperando igual que no decir nada.
+const RE_PROMETE_PRECIOS =
+  /\b(te (cuento|paso|digo|comparto|mando)( ya)? (los|las) (precios|opciones|promociones|presentaciones)|te (cuento|digo) cuánto (cuesta|sale|te sale))\b/i;
+
+function conPrecios(texto: string, lista: string): string {
+  const t = String(texto ?? "");
+  if (!lista || !RE_PROMETE_PRECIOS.test(t)) return t;
+  // Si YA hay un precio escrito en el mensaje, la promesa está cumplida.
+  if (/\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
+  return t.trimEnd() + "\n\n" + lista;
+}
 
 // La pregunta se arma con los precios REALES de sus presentaciones, no la
 // improvisa el modelo: cuando la cantidad es lo que cambia, se dice el ahorro.
@@ -10851,6 +10872,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
         salida = sinPedirPermisoPago(salida);
       }
+      // Prometió decir los precios y no dijo ninguno: se los pega el motor, con las cifras
+      // reales de la ficha (ver conPrecios).
+      if (op === "generar_texto" && ctx._product_id && RE_PROMETE_PRECIOS.test(salida)) {
+        try {
+          const opsP = await loadOpciones(db, run, ctx._product_id);
+          const conPre = opsP.filter((o) => o.precio != null && Number(o.precio) > 0);
+          if (conPre.length) {
+            const sym = simboloMoneda(ctx.moneda as string);
+            salida = conPrecios(salida, conPre.map((o) => `• ${o.nombre} — ${sym} ${o.precio}`).join("\n"));
+          }
+        } catch (_) { /* sin opciones legibles → se envía tal cual */ }
+      }
       // Pedir datos SIN saber cuántas unidades lleva. El bot pasaba a "pásame tu nombre
       // y tu celular" con dos presentaciones sobre la mesa y el cliente sin elegir
       // ninguna: la venta se cerraba por la más barata. Decírselo en el prompt falló dos
@@ -10917,7 +10950,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // toca. Va DESPUÉS de los recortes de arriba: si a este cliente ya se le ofreció dos
       // veces (`sinOfertaRepetida`), el cierre que se le pone es de descubrimiento, no otra
       // oferta — insistir con lo mismo es lo que se acaba de quitar.
-      if (op === "generar_texto") {   // OJO: `handoff` aún no existe acá (se declara al emitir)
+      // ⛔ Al cliente que YA está dando sus datos no le toca ni un cierre ni una pregunta
+      // de descubrimiento: no está dudando, está comprando. Medido en un chat real —
+      // mientras la clienta pasaba su DNI, el bot le preguntó "¿qué es lo que más te frena
+      // para empezar?", y al confirmarle el pedido, "¿hay algo puntual que te esté haciendo
+      // dudar?". Sembrarle la duda justo al cerrar es lo contrario de vender. Y
+      // "¿lo confirmo y te lo mando?" pegado a un pedido de datos es incoherente: todavía
+      // no hay nada que confirmar. De ese turno se encarga el cierre honesto de más abajo,
+      // que sí sabe QUÉ dato falta y lo pide por su nombre.
+      const _faltaAlgoConcreto = ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si" &&
+        !!((Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan[0] : null) ||
+           (ctx as any)._falta_opcion || (ctx as any)._falta_variante || (ctx as any)._pack_mixto);
+      // Con los datos ya completos tampoco: el motor crea el pedido y manda el adelanto
+      // en esta misma tanda, así que "¿lo confirmo y te lo mando?" llega tarde y encima
+      // choca con lo que la IA acaba de decir ("queda confirmado tu pedido").
+      const _saltarCierre = _faltaAlgoConcreto || ctx.datos_completos === "si" ||
+        String(ctx.pedido_creado ?? "") === "si";
+      if (op === "generar_texto" && !_saltarCierre) {   // OJO: `handoff` aún no existe acá (se declara al emitir)
+
         try {
           const { data: outsC } = await db.from("messages").select("content")
             .eq("contact_id", run.contact_id).eq("direction", "out")
@@ -10950,7 +11000,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // dejo cerrado. 🙂" — una frase suelta que no pide nada, después de que ella diera
         // todo. Se nombra el dato pendiente, que el motor ya sabe cuál es.
         const _falta1: any = Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan[0] : null;
-        const _lbl = String(_falta1?.label ?? "").replace(/[¿?¡!]/g, "").trim().toLowerCase();
+        const _lblTal = String(_falta1?.label ?? "").replace(/[¿?¡!]/g, "").trim();
+        const _lbl = _lblTal.toLowerCase();
         const cierreHonesto = (ctx as any)._pack_mixto
           ? "Dime cuál de las dos formas prefieres y te lo dejo cerrado. 🙂"
           : (ctx as any)._falta_variante
@@ -10960,7 +11011,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           : _falta1?.clave === "confirmo"
           ? "¿Lo confirmo y te lo mando? 🙂"
           : _lbl
-          ? `Me falta un dato: ${_lbl}. ¿Me lo pasas? 🙂`
+          ? `Me falta un dato: ${_lblTal}. ¿Me lo pasas? 🙂`
           : "Con ese último dato te lo dejo cerrado. 🙂";
         salida = sinFalsoCierre(salida, cierreHonesto);
         // Y si encima no pide nada (ni una pregunta en todo el mensaje), se le pega la
@@ -10975,7 +11026,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _hayQuePedir = !!((ctx as any)._pack_mixto || (ctx as any)._falta_variante ||
           (ctx as any)._falta_opcion || _falta1);
         if (_hayQuePedir && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
-          salida = conPeticionFinal(salida, cierreHonesto);
+          salida = conPeticionFinal(salida, cierreHonesto, _lblTal);
         }
       }
       const handoff = await emitIaText(db, run, salida, ctx);
