@@ -7557,6 +7557,9 @@ async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
   return out;
 }
 
+// Palabras que la gente usa para decir "no soy de Lima" y que NO nombran ninguna
+// ciudad: guardarlas como localidad deja el pedido con destino "provincia".
+const ES_CATEGORIA_NO_LUGAR = /^\s*(provincia|provincias|el\s+interior|interior\s+del\s+pa[ií]s|fuera\s+de\s+lima|otra\s+ciudad|otro\s+departamento|regi[oó]n)\s*$/i;
 const limpiaZona = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 
 // ── Envío aéreo (beneficio por zona) ────────────────────────────────
@@ -7739,7 +7742,14 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // salía con la agencia mal. EXCEPCIÓN: si el cliente dijo solo "Lima" sin
   // distrito (`zona_distrito_incierto`), seguimos afinando hasta que lo nombre.
   // Si de verdad se equivocó de zona ya confirmada, lo corrige un humano.
-  if (!a?.forzar && String(ctx.zona_entrega ?? "").trim() && ctx.zona_distrito_incierto !== "si") return;
+  // Zona ya resuelta → no se vuelve a mirar… CON UNA EXCEPCIÓN: provincia sin ciudad.
+  // Eso pasa cuando el cliente dice "soy de provincia" (sabemos que no es Lima, no a dónde
+  // enviar). Sin la excepción, el "en puno" del mensaje siguiente ya no se escuchaba y el
+  // pedido se quedaba sin destino — medido, el bot contestaba "en Puno lo recoges" y la
+  // guía salía vacía. Mientras falte la ciudad de un envío por agencia, hay que seguir
+  // escuchando: sin ella no hay a dónde despachar.
+  const _faltaCiudadProv = String(ctx.zona_entrega ?? "") === "provincia" && !String(ctx.ciudad ?? "").trim();
+  if (!a?.forzar && String(ctx.zona_entrega ?? "").trim() && ctx.zona_distrito_incierto !== "si" && !_faltaCiudadProv) return;
 
   const cfg = await loadEntregas(db, run);
   const zonas: Zona[] = cfg?.entregas?.zonas ?? [];
@@ -7785,6 +7795,9 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // (recordar: van del más nuevo al más viejo, así que gana lo más reciente).
   let z: Zona | null = null;
   let lugar: string | null = null;
+  // Dijo "soy de provincia" (o "del interior") sin nombrar su ciudad: sirve para saber que
+  // NO es Lima, no para poner un destino. Se guarda la zona y la ciudad queda pendiente.
+  let soloCategoria = false;
   let texto = textos[0];
   for (const t of textos) {
     // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
@@ -7804,12 +7817,34 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
       const ext = await extraerLugar(db, run.channel_id, t);
       if (ext) { lugar = ext; z = matchZona(zonas, ext); if (z) lugar = z.nombre; }
     }
+    // ⛔ "Provincia" NO es un lugar: es la categoría contraria a Lima. El extractor la
+    // devolvía como si fuera una ciudad —su instrucción dice "distrito, ciudad o
+    // provincia"— y el pedido quedaba con ciudad="provincia" y sede="provincia". Medido:
+    // el cliente escribió "soy de provincia" y después "en puno"; el bot le contestó bien
+    // ("en Puno lo recoges") pero la GUÍA salía con destino "provincia" y el paquete no
+    // llega a ninguna parte. Se descarta como lugar: la zona se resolverá igual cuando
+    // diga su ciudad, y mientras tanto el flujo se la sigue pidiendo.
+    if (lugar && ES_CATEGORIA_NO_LUGAR.test(String(lugar))) { soloCategoria = true; lugar = null; z = null; continue; }
     if (lugar) { texto = t; break; }
   }
   // Si no mencionó NINGÚN lugar, no se toca nada. Antes cualquier mensaje sin
   // lugar ("hola") lo marcaba como provincia, y la IA le hablaba de agencias a
   // alguien que todavía no había dicho de dónde era.
-  if (!lugar) return;
+  if (!lugar) {
+    // Sabemos que es provincia pero NO su ciudad: se marca la zona (para que el flujo vaya
+    // por agencia y no le prometa contraentrega) y la ciudad se queda vacía a propósito,
+    // para que se la sigan pidiendo. Guardar "provincia" como ciudad es lo que hacía que
+    // la guía saliera con ese destino.
+    if (soloCategoria && String(ctx.zona_entrega ?? "") !== "provincia") {
+      await set("zona_entrega", "provincia");
+      await set("zona_nombre", "");
+      await set("entrega_hoy", "no");
+      await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
+        "provincia (dijo que no es de Lima; falta su ciudad)");
+    }
+    return;
+  }
 
   // 3a) Calzó un DISTRITO de la lista → veredicto determinista y CONFIRMADO.
   // La lista manda: un distrito destildado (cubro=false) es provincia.
