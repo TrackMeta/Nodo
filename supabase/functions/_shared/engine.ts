@@ -9933,11 +9933,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           if (_ags.length) {
             const _muestra = _ags.slice(0, 8);
-            const _lista = _muestra.map((x) => `- ${x.l}` + (x.dir ? ` — ${x.dir}` : "")).join("\n");
+            // La REFERENCIA va primero: el cliente no ubica «Av. Panamericana 975», pero sí
+            // «a media cuadra del óvalo Señor de Sipán». La dirección queda de respaldo.
+            const _lista = _muestra.map((x) =>
+              `- ${x.l}` + (x.ref ? ` — ${x.ref}` : "") + (x.dir ? ` (${x.dir})` : "")).join("\n");
             L.push(`📍 Oficinas de Shalom en ${ctx.ciudad} (son ${_ags.length}` +
               (_ags.length > _muestra.length ? `, acá van ${_muestra.length}` : "") + `):\n${_lista}\n` +
               "Son las ÚNICAS que existen ahí. Si te pregunta qué oficinas hay, o si no sabe cuál elegir, " +
-              "dile estas CON SU DIRECCIÓN —la calle es lo que le hace reconocer la suya— y que te diga cuál le queda cerca. " +
+              "dile estas con su REFERENCIA —«a espaldas del Makro» le dice mucho más que la dirección— y que te diga " +
+              "cuál le queda cerca. " +
               "⛔ NUNCA inventes una oficina, NUNCA digas \"tenemos varias\" sin nombrarlas, y si la que él menciona no está " +
               "en esta lista, NO se la confirmes.");
             // Y los distritos vecinos de su misma provincia donde también hay oficina:

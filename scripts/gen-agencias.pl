@@ -33,7 +33,7 @@ sub esc {
     return $t;
 }
 
-my (@filas, $conAereo);
+my (@filas, $conAereo, $conRef);
 for my $a (sort {
         ($a->{location}{department} // "") cmp ($b->{location}{department} // "")
      || ($a->{location}{province}   // "") cmp ($b->{location}{province}   // "")
@@ -50,8 +50,23 @@ for my $a (sort {
     my $dist = $p[2] // "";
     $dist =~ s/^\s+|\s+$//g;
 
+    my $addr = $a->{location}{address} // "";
+
+    # REFERENCIA ("frente al parque Jerusalén", "a media cuadra de la UGEL"): la trae
+    # el 88% y es lo que de verdad le sirve al cliente para reconocer su oficina —
+    # más que la dirección formal, que casi nadie se sabe. Va al final del address,
+    # detrás de "REF." o "REFERENCIA:".
+    my $ref = "";
+    if ($addr =~ /\bREF(?:ERENCIA)?[\s.:]+(.+)$/is) {
+        $ref = $1;
+        $ref =~ s/\s+/ /g;
+        $ref =~ s/^[\s,.:-]+|[\s,.:-]+$//g;
+        $ref = substr($ref, 0, 72);
+        $ref =~ s/\s+\S*$// if length($ref) == 72;   # no cortar a mitad de palabra
+    }
+
     # Dirección: solo el primer tramo (lo de después repite distrito/provincia).
-    my $dir = $a->{location}{address} // "";
+    my $dir = $addr;
     $dir =~ s/,.*$//s;
     $dir =~ s/\s+/ /g;
     $dir =~ s/^\s+|\s+$//g;
@@ -60,10 +75,12 @@ for my $a (sort {
 
     my $aereo = ($a->{services} && $a->{services}{air}) ? ",a:1" : "";
     $conAereo++ if $aereo;
+    $conRef++   if $ref;
 
     my $dtxt = $dir ? ',dir:"' . esc($dir) . '"' : "";
-    push @filas, sprintf('  {l:"%s",d:"%s",p:"%s",t:"%s"%s%s},',
-        esc($l), esc($dep), esc($prov), esc($dist), $dtxt, $aereo);
+    my $rtxt = $ref ? ',ref:"' . esc($ref) . '"' : "";
+    push @filas, sprintf('  {l:"%s",d:"%s",p:"%s",t:"%s"%s%s%s},',
+        esc($l), esc($dep), esc($prov), esc($dist), $dtxt, $rtxt, $aereo);
 }
 
 open(my $o, ">:encoding(UTF-8)", "/tmp/agencias-datos.txt") or die $!;
