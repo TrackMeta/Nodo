@@ -82,6 +82,9 @@
   .iconbtn:hover{color:var(--red);border-color:var(--red)}
   .iconbtn svg{width:15px;height:15px}
   .warnmsg{margin-top:9px;font-size:11.5px;color:var(--amber);display:flex;align-items:center;gap:6px}
+  /* ⚠️ El tamaño del icono NO es cosmético: un <svg> con viewBox y SIN width/height se
+     estira a TODO el ancho disponible. Este aviso se pintaba con estilos en línea, sin la
+     clase, y el triángulo salía del porte de media pantalla. */
   .warnmsg svg{width:14px;height:14px;flex:none}
   .empty{text-align:center;color:var(--faint);padding:38px;border:1px dashed var(--border);border-radius:12px}
   .hint{font-size:11px;color:var(--faint);margin-top:6px}
@@ -418,7 +421,7 @@ function renderKeywords(){
           <div class="sw${t.activo?" on":""}" data-act title="Activar/desactivar"></div>
           <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>
         </div>
-        ${warned?`<div style="margin-top:9px;display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg,#2c2311);color:var(--amber);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — se enruta a uno solo (no ambos); mejor usa palabras distintas</span></div>`:""}`;
+        ${warned?`<div class="warnmsg" style="display:inline-flex;background:var(--amber-bg,#2c2311);border-radius:8px;padding:5px 9px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — se enruta a uno solo (no ambos); mejor usa palabras distintas</span></div>`:""}`;
       card.querySelector("[data-ci]").addEventListener("keydown",e=>{
         if(e.key==="Enter"){ e.preventDefault(); const v=e.target.value.trim(); if(v && !kwsArr.some(k=>norm(k)===norm(v))){ kwsArr.push(v); updateTrigger(t,{keywords:kwsArr}); } }
         else if(e.key==="Backspace" && !e.target.value && kwsArr.length){
