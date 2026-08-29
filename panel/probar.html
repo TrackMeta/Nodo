@@ -51,6 +51,16 @@
 
   .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
   .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
+  /* Entrada de las burbujas NUEVAS (las que llegan en vivo). El historial se pinta de
+     golpe al abrir el chat y NO se anima: cincuenta burbujas entrando a la vez marean y
+     retrasan la lectura. Cada lado entra desde su lado, como en WhatsApp, y el gesto es
+     corto a propósito — lo que se busca es notar que llegó algo, no ver una animación. */
+  @keyframes msgInIzq{from{opacity:0;transform:translate3d(-8px,4px,0) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes msgInDer{from{opacity:0;transform:translate3d(8px,4px,0) scale(.98)}to{opacity:1;transform:none}}
+  .msg.nueva.in-m{animation:msgInIzq .24s cubic-bezier(.22,.68,.3,1) both}
+  .msg.nueva.out-m{animation:msgInDer .24s cubic-bezier(.22,.68,.3,1) both}
+  /* Quien pidió menos movimiento en su sistema no ve ninguno: la burbuja aparece y ya. */
+  @media (prefers-reduced-motion:reduce){ .msg.nueva.in-m,.msg.nueva.out-m{animation:none} }
   .msg .meta{font-size:10px;color:var(--faint);margin-top:3px}
   .in-m{align-self:flex-start;background:var(--bubble-in,var(--surface-2));border-top-left-radius:4px}
   /* En Probar flujos el "out" siempre es el BOT (la IA responde) → color IA. */
@@ -373,9 +383,11 @@ function toggleActivity(){
   $("actToggle").classList.toggle("active", st.showActivity);
   loadThread();
 }
-function renderMsg(m){
+// `enVivo`: la burbuja llega en el momento (realtime) → entra con animación. El
+// historial se pinta sin ella; animar todo el hilo al abrirlo marea.
+function renderMsg(m, enVivo){
   const t=$("thread"); const el=document.createElement("div");
-  el.className="msg "+(m.direction==="in"?"in-m":"out-m"); el.dataset.id=m.id;
+  el.className="msg "+(enVivo?"nueva ":"")+(m.direction==="in"?"in-m":"out-m"); el.dataset.id=m.id;
   const mh=mediaHtml(m);
   const txt=m.content?.text||m.content?.caption||m.content?.title||`[${m.type}]`;
   const tr=m.content?.transcription?`<div class="transcript" title="Transcripción automática">${icon("mic")} ${esc(m.content.transcription)}</div>`:"";
@@ -724,7 +736,7 @@ function subscribe(){
     if(st.showActivity){ clearTimeout(threadTimer); threadTimer=setTimeout(loadThread,350); }
     // Pinta solo si no existe ya: evita la doble burbuja por la carrera loadThread ↔ realtime
     // (el mismo mensaje pudo venir en el fetch inicial), igual que la Bandeja.
-    else if(!document.querySelector('.msg[data-id="'+((window.CSS&&CSS.escape)?CSS.escape(p.new.id):p.new.id)+'"]')) renderMsg(p.new);
+    else if(!document.querySelector('.msg[data-id="'+((window.CSS&&CSS.escape)?CSS.escape(p.new.id):p.new.id)+'"]')) renderMsg(p.new, true);
     clearTimeout(panelTimer); panelTimer=setTimeout(refreshPanel,600);
   }).subscribe();
 }

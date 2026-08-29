@@ -250,6 +250,16 @@
   @media (max-width:760px){ .tplbar{flex-wrap:wrap} .tplbar .tplbtn{margin-left:52px} }
   .thread{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
   .msg{max-width:70%;padding:8px 12px;border-radius:14px;font-size:13.5px;word-wrap:break-word;white-space:pre-wrap}
+  /* Entrada de las burbujas NUEVAS (las que llegan en vivo). El historial se pinta de
+     golpe al abrir el chat y NO se anima: cincuenta burbujas entrando a la vez marean y
+     retrasan la lectura. Cada lado entra desde su lado, como en WhatsApp, y el gesto es
+     corto a propósito — lo que se busca es notar que llegó algo, no ver una animación. */
+  @keyframes msgInIzq{from{opacity:0;transform:translate3d(-8px,4px,0) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes msgInDer{from{opacity:0;transform:translate3d(8px,4px,0) scale(.98)}to{opacity:1;transform:none}}
+  .msg.nueva.in-m{animation:msgInIzq .24s cubic-bezier(.22,.68,.3,1) both}
+  .msg.nueva.out-m{animation:msgInDer .24s cubic-bezier(.22,.68,.3,1) both}
+  /* Quien pidió menos movimiento en su sistema no ve ninguno: la burbuja aparece y ya. */
+  @media (prefers-reduced-motion:reduce){ .msg.nueva.in-m,.msg.nueva.out-m{animation:none} }
   .msg .meta{font-size:10px;color:var(--faint);margin-top:3px;display:flex;align-items:center;gap:5px;line-height:1}
   .in-m{align-self:flex-start;background:var(--bubble-in,var(--surface-2));border-top-left-radius:4px}
   .out-m{align-self:flex-end;background:var(--bubble-out,var(--brand-bg));border-top-right-radius:4px}
@@ -1684,7 +1694,10 @@ function renderEvent(e){
   el.innerHTML=`<span class="ai">${icon(ACT_ICON[e.tipo]||"node")}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
   t.appendChild(el);
 }
-function renderMsg(m) {
+// `enVivo` = la burbuja acaba de llegar por realtime, así que entra con animación.
+// El historial (renderThread) llama SIN ese flag: pintar cincuenta burbujas animadas al
+// abrir un chat marea y retrasa la lectura.
+function renderMsg(m, enVivo) {
   const t = $("thread");
   // ¿El operador ya estaba al fondo? Si había subido a leer mensajes viejos,
   // un mensaje nuevo por realtime NO debe arrancarlo hacia abajo.
@@ -1701,7 +1714,7 @@ function renderMsg(m) {
   }
   lastOutSender = key;
   const el = document.createElement("div");
-  el.className = "msg " + (m.direction === "in" ? "in-m" : "out-m" + (si ? " " + si.kind : ""));
+  el.className = "msg " + (enVivo ? "nueva " : "") + (m.direction === "in" ? "in-m" : "out-m" + (si ? " " + si.kind : ""));
   el.dataset.id = m.id;
   const mh = mediaHtml(m);
   const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
@@ -2091,7 +2104,7 @@ function subscribeRealtime() {
         if (state.chatView === "timeline") { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 350); }
         // Pinta la burbuja SOLO si no existe ya (evita doble burbuja por la carrera
         // abrir-chat ↔ realtime: loadThread pudo traer el mismo mensaje).
-        else if (!document.querySelector('.msg[data-id="' + ((window.CSS && CSS.escape) ? CSS.escape(m.id) : m.id) + '"]')) renderMsg(m);
+        else if (!document.querySelector('.msg[data-id="' + ((window.CSS && CSS.escape) ? CSS.escape(m.id) : m.id) + '"]')) renderMsg(m, true);
       }
       loadConversationsSoon();
     })
