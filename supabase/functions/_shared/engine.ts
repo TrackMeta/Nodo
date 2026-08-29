@@ -2988,6 +2988,10 @@ function modoEnvio(ctx: any): "incluido" | "suma" | "agencia" {
   if (m === "incluido" || m === "suma" || m === "agencia") return m;
   return ctx.envio_gratis === false ? "suma" : "incluido";
 }
+// El label del campo lo escribe el dueño y a veces es una pregunta («¿Cuál es tu DNI?»).
+// Cuando ese texto se usa como ÍTEM de la lista de datos, los signos sobran.
+const limpiaLabel = (s: string) =>
+  String(s ?? "").replace(/[¿?¡!]/g, "").replace(/\s+/g, " ").trim();
 // Pedirle el DNI y la sede a alguien a quien nadie le explicó cómo le va a llegar el
 // paquete: para el cliente de provincia, ese formulario aparece de la nada. La modalidad
 // (va por agencia, la recoge él, con una clave) es justo lo que le da confianza para
@@ -10171,13 +10175,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // entre que le pidió el nombre y ella contestó pasaron TRECE minutos. En lista los
         // copia y los manda de una sola vez, que es como se hace por WhatsApp en Perú. Si
         // manda incompleto no se pierde nada: se le vuelve a pedir solo lo que falte.
-        "Pídeselos TODOS JUNTOS en un solo mensaje, en lista, cada dato en su línea y en negrita, " +
-        "para que los copie y te los mande de una:\n" +
-        "  Para dejarlo listo, pásame estos datos 👇\n" +
-        "  *Nombre completo*\n  *DNI*\n  *Ciudad*\n" +
-        "(esos son un EJEMPLO del formato: pon exactamente los datos que faltan de la lista de arriba, " +
-        "con el nombre que tienen ahí, sin agregar ninguno). Nada de pedirlos de a uno ni de repetir los " +
-        "que ya te dio. Si te manda solo algunos, agradéceles y pide en lista los que falten.",
+        (faltan.length === 1
+          // Un solo dato pendiente no se pide con encabezado y lista de un ítem: eso
+          // se lee a formulario. Va en una línea.
+          ? `Falta UN solo dato: **${limpiaLabel(faltan[0].label)}**. Pídeselo en una línea, sin encabezado ni lista, ` +
+            "y sin volver a nombrar los que ya te dio."
+          : "Pídeselos TODOS JUNTOS en un solo mensaje, en lista, cada dato en su línea y en negrita, " +
+            "para que los copie y te los mande de una:\n" +
+            "  Para dejarlo listo, pásame estos datos 👇\n" +
+            faltan.map((c) => `  *${limpiaLabel(c.label)}*`).join("\n") + "\n" +
+            "Esos son EXACTAMENTE los que faltan: no agregues ninguno más ni repitas los que ya te dio. " +
+            "Si te manda solo algunos, agradéceselos y pide en lista los que sigan faltando."),
         // La pregunta se hinchaba explicando para qué sirve el dato ("¿a nombre de quién lo
         // dejamos para que el motorizado pregunte por esa persona al entregar?"). Pedir un
         // dato es el momento de MENOS fricción posible: cuanto más larga la pregunta, más
