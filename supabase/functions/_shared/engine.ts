@@ -13,7 +13,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
-import { sedeReconocida, candidatasAgencia } from "./shalom-agencias.ts";
+import { sedeReconocida, candidatasAgencia, agenciasDeCiudad } from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
 
@@ -9921,6 +9921,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);
         L.push("Mencionamos **Shalom** como nuestra agencia; solo ofrece otra si el cliente la pide.");
         const _modoEnv = modoEnvio(ctx);
+        // Las oficinas REALES de su ciudad, con dirección. Sin esto la IA inventaba:
+        // medido, a "¿qué sedes de Shalom hay en Chiclayo?" contestó "tenemos varias"
+        // sin saber cuántas ni cuáles. Y el cliente que no sabe el nombre de su oficina
+        // sí reconoce la calle, así que la dirección es lo que le permite elegir.
+        try {
+          const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          if (_ags.length) {
+            const _muestra = _ags.slice(0, 8);
+            const _lista = _muestra.map((x) => `- ${x.l}` + (x.dir ? ` — ${x.dir}` : "")).join("\n");
+            L.push(`📍 Oficinas de Shalom en ${ctx.ciudad} (son ${_ags.length}` +
+              (_ags.length > _muestra.length ? `, acá van ${_muestra.length}` : "") + `):\n${_lista}\n` +
+              "Son las ÚNICAS que existen ahí. Si te pregunta qué oficinas hay, o si no sabe cuál elegir, " +
+              "dile estas CON SU DIRECCIÓN —la calle es lo que le hace reconocer la suya— y que te diga cuál le queda cerca. " +
+              "⛔ NUNCA inventes una oficina, NUNCA digas \"tenemos varias\" sin nombrarlas, y si la que él menciona no está " +
+              "en esta lista, NO se la confirmes.");
+          }
+        } catch (_) { /* sin ciudad legible → sin lista */ }
         L.push(_modoEnv === "agencia"
           ? "💸 El ENVÍO lo paga ÉL en la agencia al recoger, aparte del producto. Díselo con naturalidad ANTES de pedirle sus datos y de cobrarle el adelanto: enterarse recién en el mostrador es de las razones más comunes por las que un paquete se queda sin recoger."
           : _modoEnv === "suma"
