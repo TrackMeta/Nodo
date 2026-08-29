@@ -33,7 +33,7 @@ sub esc {
     return $t;
 }
 
-my (@filas, $conAereo, $enExcel);
+my (@filas, $conAereo);
 for my $a (sort {
         ($a->{location}{department} // "") cmp ($b->{location}{department} // "")
      || ($a->{location}{province}   // "") cmp ($b->{location}{province}   // "")
@@ -59,18 +59,15 @@ for my $a (sort {
     $dir =~ s/\s+$//;
 
     my $aereo = ($a->{services} && $a->{services}{air}) ? ",a:1" : "";
-    my $enx   = $excel{ uc $l } ? ",x:1" : "";
     $conAereo++ if $aereo;
-    $enExcel++  if $enx;
 
     my $dtxt = $dir ? ',dir:"' . esc($dir) . '"' : "";
-    push @filas, sprintf('  {l:"%s",d:"%s",p:"%s",t:"%s"%s%s%s},',
-        esc($l), esc($dep), esc($prov), esc($dist), $dtxt, $aereo, $enx);
+    push @filas, sprintf('  {l:"%s",d:"%s",p:"%s",t:"%s"%s%s},',
+        esc($l), esc($dep), esc($prov), esc($dist), $dtxt, $aereo);
 }
 
 open(my $o, ">:encoding(UTF-8)", "/tmp/agencias-datos.txt") or die $!;
 print $o join("\n", @filas), "\n";
 close $o;
 
-printf("filas: %d · con aéreo: %d · en el Excel: %d\n",
-       scalar @filas, $conAereo, $enExcel);
+printf("filas: %d · con aéreo: %d\n", scalar @filas, $conAereo);
