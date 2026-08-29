@@ -649,11 +649,22 @@ function pickImg(arr, after){
 }
 function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titular:true, verificar_monto:true, tolerancia_monto:0, verificar_fecha:true, fecha_max_horas:48, operacion_unica:true, rechazar_editados:true, exigencia:"media" }, instrucciones:"", gen_datos:true, datos_pago:"" }; }
 // Arma el {{datos_pago}} (mensaje de cobro) a partir de los métodos válidos.
+// El cliente tiene que hacer UNA cosa con este mensaje: copiar el número. Por eso el
+// número va SOLO en su línea — en el celular, mantener pulsado selecciona la línea entera
+// y se copia limpio; pegado a "Yape:" y al titular, como estaba, termina copiando de más
+// y el pago se traba justo al final.
+// 🔒 El número va en DÍGITOS NORMALES, nunca en las letras "bonitas" de Unicode (𝟵𝟳𝟳…):
+// se ven en negrita pero NO son dígitos, así que al pegarlas en Yape no funcionan y la
+// venta se cae en el último paso sin que nadie se entere. Para resaltar se usa la negrita
+// nativa de WhatsApp (*así*), que se copia bien y la leen los lectores de pantalla.
 function genDatosPago(mets){
   return (mets||[]).filter(m=>m&&(m.app||m.numero||m.titular)).map(m=>{
-    const head=m.app?m.app+": ":""; const tail=[m.numero, m.titular?`(${m.titular})`:""].filter(Boolean).join(" ");
-    return (head+tail).trim();
-  }).filter(Boolean).join("\n");
+    const lineas=[ m.app ? "✅ *"+m.app+"*" : "✅ *Pago*" ];
+    if(m.numero) lineas.push(String(m.numero).trim());            // solo, para copiarlo de un toque
+    if(m.titular) lineas.push("*"+String(m.titular).trim()+"*"); // a nombre de quién: le confirma que no es una estafa
+    if(m.notas) lineas.push(String(m.notas).trim());
+    return lineas.join("\n");
+  }).filter(Boolean).join("\n\n");   // un bloque por método, separados
 }
 const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
 // Catálogo de billeteras y bancos por país (para agregar métodos de pago).
