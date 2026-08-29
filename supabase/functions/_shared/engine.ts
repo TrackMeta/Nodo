@@ -2924,7 +2924,26 @@ function sinDatoInventado(texto: string, cierre: string): string {
   return cierre;
 }
 
-// 🔁 La misma oferta una y otra vez. Al pedirle que cierre siempre, el modelo encontró su
+// 🎯 Un mensaje de venta que no pregunta nada deja al cliente sin siguiente paso. Se le
+// pidió por prompt («cierra siempre») y se cumple casi siempre, pero falla justo donde
+// más cuesta: medido, a un «cuánto está» contestó «El protocolo cuesta *S/ 10* soles por
+// acceso completo. 🦾» y punto — el cliente tuvo que preguntar «cómo se paga». Cada vez
+// que pasa, la venta depende de que el cliente tenga ganas de seguir preguntando.
+// Se cierra por código, con dos cuidados: solo si el mensaje NO trae ya una pregunta, y
+// solo cuando el bot está vendiendo (no al pedir un dato, no tras un reclamo, no cuando
+// acaba de entregar). Si no aplica, no se toca el mensaje.
+const RE_YA_PREGUNTA = /[?¿]/;
+function conCierre(texto: string, cierre: string): string {
+  const t = String(texto ?? "").trim();
+  if (!t || RE_YA_PREGUNTA.test(t)) return texto;
+  // Un mensaje muy corto suele ser un acuse ("Anotado 👍") al que una pregunta le queda
+  // pegada y forzada; ahí el turno lo cierra el nodo siguiente.
+  if (t.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 40) return texto;
+  return `${t} ${cierre}`;
+}
+
+// 🔁 La misma oferta una y otra vez.
+ Al pedirle que cierre siempre, el modelo encontró su
 // pregunta favorita y la repitió en cinco mensajes seguidos («¿te paso los datos para que
 // empieces ya?»), cambiándole el adorno pero no la jugada. Para el cliente es la misma
 // pregunta, y si sigue preguntando es porque le falta otra cosa, no la forma de pagar.
@@ -10565,6 +10584,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = sinDatoInventado(salida, _precioTxt
           ? `Son ${_precioTxt}. ¿Te paso los datos para que lo tengas ya?`
           : "¿Te paso los datos para que lo tengas ya?");
+      }
+      // Y si el mensaje de venta quedó sin ninguna pregunta, se le agrega el cierre que
+      // toca. Va DESPUÉS de los recortes de arriba: si a este cliente ya se le ofreció dos
+      // veces (`sinOfertaRepetida`), el cierre que se le pone es de descubrimiento, no otra
+      // oferta — insistir con lo mismo es lo que se acaba de quitar.
+      if (op === "generar_texto" && !handoff) {
+        try {
+          const { data: outsC } = await db.from("messages").select("content")
+            .eq("contact_id", run.contact_id).eq("direction", "out")
+            .order("ts", { ascending: false }).limit(8);
+          const ofertas = (outsC ?? []).filter((mm: any) => {
+            RE_OFERTA_CIERRE.lastIndex = 0;
+            return RE_OFERTA_CIERRE.test(String(mm?.content?.text ?? ""));
+          }).length;
+          const dicho = (outsC ?? []).map((mm: any) => String(mm?.content?.text ?? "")).join(" ").toLowerCase();
+          // El cierre depende de lo que le toca hacer al cliente: en digital paga y recibe
+          // el link; en un físico de Lima no hay "datos que pasar" —paga al recibir—, así
+          // que ofrecerle el Yape sería confundirlo.
+          const _esDigital = String(ctx._tipo ?? "") === "digital";
+          const cierre = ofertas >= 2
+            ? (PREGUNTAS_DESCUBRIR.find((q) => !dicho.includes(q.toLowerCase().slice(1, 20))) ?? "")
+            : (_esDigital ? "¿Te paso los datos para que lo tengas ya?" : "¿Lo confirmo y te lo mando?");
+          if (cierre) salida = conCierre(salida, cierre);
+        } catch (_) { /* sin historial → se envía tal cual */ }
       }
       // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
       if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
