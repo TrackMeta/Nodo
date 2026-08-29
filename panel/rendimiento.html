@@ -301,7 +301,17 @@ function renderStatus(){
   if(_lead) _lead.innerHTML = st.vista==="copy"
     ? `Qué versión de los mensajes que manda tu bot funciona mejor. Mide el <b>texto</b>, no los anuncios: no necesita Meta conectado.`
     : `El gasto de tus anuncios de Meta cruzado con la venta <b>real</b> de Nodo — tu CPA de confirmación, tu CPA real y tu ganancia neta, por anuncio y por producto. Toca un anuncio para ver su detalle día por día.`;
-  if(st.vista==="copy"){ $("statusSlot").innerHTML=""; $("noticeSlot").innerHTML=""; return; }
+  // En "Por copy" la pastilla no se VACÍA: se cambia por lo que esa vista sí puede decir.
+  // Vaciarla hacía desaparecer un elemento del encabezado al cambiar de vista —el mismo
+  // salto que ya molestaba en la barra— y dejaba la duda de si el dato faltaba. Y dejar
+  // "SIN CONECTAR" era peor: con la tabla vacía parecía que era por falta de Meta cuando
+  // en realidad es que todavía no hay copys medidos. El aviso de token roto tampoco viene
+  // a cuento acá: esta vista no lee nada de Meta.
+  if(st.vista==="copy"){
+    $("statusSlot").innerHTML=`<span class="demopill" title="Esta vista mide los mensajes de tu bot, no tus anuncios: funciona con o sin Meta conectado" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>NO NECESITA META</span>`;
+    $("noticeSlot").innerHTML="";
+    return;
+  }
   $("statusSlot").innerHTML = n
     ? `<span class="okpill">${icon("megaphone")} ${n} cuenta${n>1?'s':''} conectada${n>1?'s':''}</span>`
     : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
