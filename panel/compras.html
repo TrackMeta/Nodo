@@ -328,6 +328,38 @@ function filtered(){
   });
 }
 
+// 🔎 Buscaste un nº de operación y no aparece en ninguna compra. Puede ser que no exista…
+// o que el bot lo haya RECHAZADO por repetido, que es justo cuando tienes al cliente
+// esperando ("pagué y me dice que ya se usó"). Ese registro vive en `payment_operations`
+// —la lista anti-reúso, sin pantalla propia—, así que hasta ahora había que entrar a la
+// base para saberlo. Acá se consulta solo cuando la búsqueda no dio resultados y parece
+// un número de operación: una consulta puntual, no un listado que nadie mira.
+async function buscarOperacionUsada(q){
+  const box=$("opAviso"); if(!box) return;
+  const num=String(q||"").replace(/[^0-9a-z]/gi,"");
+  if(num.length<4) return;                       // no parece un nº de operación
+  const { data, error } = await supa.from("payment_operations")
+    .select("operacion, contexto, created_at, order_id").ilike("operacion", `%${num}%`).limit(3);
+  if(error || !data || !data.length) return;
+  const filas = await Promise.all(data.map(async(op)=>{
+    let de = "";
+    if(op.order_id){
+      // De qué venta fue: el nombre le dice al operador si es ESTE cliente reintentando
+      // el mismo comprobante o si alguien está reenviando la constancia de otra persona.
+      const { data: o } = await supa.from("orders").select("estado, contact:contacts(nombre)").eq("id", op.order_id).maybeSingle();
+      const nom = o?.contact?.nombre; if(nom) de = ` · en la venta de <b>${esc(nom)}</b>`;
+    }
+    const cuando = op.created_at ? new Date(op.created_at).toLocaleDateString("es-PE",{day:"numeric",month:"long",year:"numeric"}) : "";
+    const tipo = op.contexto==="extra" ? "una venta extra" : op.contexto==="digital" ? "una venta digital" : "un pago";
+    return `<li style="margin:4px 0">Operación <b>${esc(op.operacion)}</b> — ya se usó${cuando?` el <b>${cuando}</b>`:""} en ${tipo}${de}.</li>`;
+  }));
+  box.innerHTML = `<div style="margin-top:16px;text-align:left;max-width:520px;margin-inline:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+    <div style="font-weight:700;font-size:13px;margin-bottom:6px">Pero ese comprobante ya está registrado</div>
+    <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--muted)">${filas.join("")}</ul>
+    <div style="font-size:12px;color:var(--faint);margin-top:8px">Por eso el bot lo rechaza si se lo mandan de nuevo. Si el cliente insiste en que es un pago distinto, pídele la constancia con su propio número de operación.</div>
+  </div>`;
+}
+
 function render(){
   renderStats();
   $("vistaSeg").querySelectorAll("[data-v]").forEach(b=>b.classList.toggle("on",b.dataset.v===st.vista));
@@ -340,7 +372,7 @@ function render(){
       <h3>Aún no hay compras cerradas</h3><p>Cuando una venta se complete al 100% —un digital pagado, un pedido de Lima entregado y cobrado, o un saldo de provincia pagado— aparece acá con su comprobante.</p></div>`;
     return;
   }
-  if(!list.length){ box.classList.remove("lista"); box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div><h3>Nada coincide</h3><p>Ninguna compra coincide con el filtro o la búsqueda. Prueba otro tipo o ampliar el rango de fechas.</p></div>`; return; }
+  if(!list.length){ box.classList.remove("lista"); box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div><h3>Nada coincide</h3><p>Ninguna compra coincide con el filtro o la búsqueda. Prueba otro tipo o ampliar el rango de fechas.</p><div id="opAviso"></div></div>`; buscarOperacionUsada(st.q); return; }
   box.classList.toggle("lista", lista);
   box.innerHTML="";
   list.forEach(o=>box.appendChild(lista?row(o):card(o)));
