@@ -658,13 +658,28 @@ function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titu
 // venta se cae en el último paso sin que nadie se entere. Para resaltar se usa la negrita
 // nativa de WhatsApp (*así*), que se copia bien y la leen los lectores de pantalla.
 function genDatosPago(mets){
-  return (mets||[]).filter(m=>m&&(m.app||m.numero||m.titular)).map(m=>{
-    const lineas=[ m.app ? "✅ *"+m.app+"*" : "✅ *Pago*" ];
-    if(m.numero) lineas.push(String(m.numero).trim());            // solo, para copiarlo de un toque
-    if(m.titular) lineas.push("*"+String(m.titular).trim()+"*"); // a nombre de quién: le confirma que no es una estafa
-    if(m.notas) lineas.push(String(m.notas).trim());
+  const val=(mets||[]).filter(m=>m&&(m.app||m.numero||m.titular));
+  // En Perú el MISMO número recibe por Yape y por Plin, así que el dueño suele cargar los
+  // dos con el mismo dato. Sin agrupar, al cliente le llegaban dos bloques idénticos salvo
+  // el nombre de la app — se lee como si el mensaje estuviera mal copiado. Se juntan por
+  // (número + titular) y las apps van separadas por "o".
+  const grupos=new Map();
+  for(const m of val){
+    const clave=String(m.numero||"").trim()+"|"+String(m.titular||"").trim();
+    if(!grupos.has(clave)) grupos.set(clave,{apps:[],numero:m.numero,titular:m.titular,notas:m.notas});
+    const g=grupos.get(clave);
+    const app=String(m.app||"").trim();
+    if(app && !g.apps.includes(app)) g.apps.push(app);
+    if(!g.notas && m.notas) g.notas=m.notas;
+  }
+  return [...grupos.values()].map(g=>{
+    const apps=g.apps.length?g.apps.map(a=>"*"+a+"*").join(" o "):"*Pago*";
+    const lineas=["✅ "+apps];
+    if(g.numero) lineas.push(String(g.numero).trim());            // solo, para copiarlo de un toque
+    if(g.titular) lineas.push("*"+String(g.titular).trim()+"*"); // a nombre de quién: le confirma que no es una estafa
+    if(g.notas) lineas.push(String(g.notas).trim());
     return lineas.join("\n");
-  }).filter(Boolean).join("\n\n");   // un bloque por método, separados
+  }).filter(Boolean).join("\n\n");   // un bloque por destino, separados
 }
 const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
 // Catálogo de billeteras y bancos por país (para agregar métodos de pago).

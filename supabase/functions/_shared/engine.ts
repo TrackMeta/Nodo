@@ -1496,13 +1496,23 @@ async function responderComoPagar(
     // línea para que se copie de un toque, el titular en negrita para que vea a quién le
     // paga, y el número en dígitos normales — nunca en letras Unicode "bonitas", que se ven
     // en negrita pero al pegarlas en Yape no son dígitos y el pago no sale.
-    const metodos = ((ch as any)?.ocr_config?.metodos ?? [])
-      .filter((m: any) => m && (m.app || m.numero || m.titular))
-      .map((m: any) => [
-        m.app ? `✅ *${m.app}*` : "✅ *Pago*",
-        m.numero ? String(m.numero).trim() : "",
-        m.titular ? `*${String(m.titular).trim()}*` : "",
-      ].filter(Boolean).join("\n"));
+    // Agrupados por número+titular, igual que el {{datos_pago}} del panel: en Perú el mismo
+    // número recibe por Yape y por Plin, y sin agrupar salían dos bloques idénticos salvo el
+    // nombre de la app — se lee como un mensaje mal copiado.
+    const _g = new Map<string, { apps: string[]; numero: string; titular: string }>();
+    for (const m of ((ch as any)?.ocr_config?.metodos ?? [])) {
+      if (!m || !(m.app || m.numero || m.titular)) continue;
+      const num = String(m.numero ?? "").trim(), tit = String(m.titular ?? "").trim();
+      const k = num + "|" + tit;
+      if (!_g.has(k)) _g.set(k, { apps: [], numero: num, titular: tit });
+      const app = String(m.app ?? "").trim();
+      if (app && !_g.get(k)!.apps.includes(app)) _g.get(k)!.apps.push(app);
+    }
+    const metodos = [..._g.values()].map((g) => [
+      g.apps.length ? "✅ " + g.apps.map((a) => `*${a}*`).join(" o ") : "✅ *Pago*",
+      g.numero,
+      g.titular ? `*${g.titular}*` : "",
+    ].filter(Boolean).join("\n"));
     // Sin métodos configurados no se puede responder nada útil: que siga el flujo normal.
     if (!metodos.length) return false;
     const sym = simboloMoneda((ord as any)?.currency ?? (ch as any)?.moneda);
