@@ -2932,6 +2932,39 @@ function sinDatoInventado(texto: string, cierre: string): string {
   return cierre;
 }
 
+// 💳 Los datos de pago, siempre con el mismo formato. Se le pidió por prompt TRES veces
+// que no escribiera el número —quitándoselo incluso del contexto— y lo siguió sacando del
+// historial y metiéndolo dentro de una frase: «El número para pagar es 977533352 a nombre
+// de Percy…». Ahí el cliente ya no puede copiarlo de un toque, que es lo único que tiene
+// que hacer con ese mensaje. Así que se corrige por código: se quitan las oraciones (o las
+// líneas) donde metió el número o el titular, y en su lugar se pega el bloque bien armado.
+// Lo que escribió alrededor se respeta: solo se reemplaza el dato mal puesto.
+function conDatosDePago(texto: string, dp: string, nums: string[], titulares: string[]): string {
+  const t = String(texto ?? "");
+  if (!dp || !nums.length || !nums.some((n) => t.includes(n))) return t;
+  const esDato = (x: string) => nums.some((n) => x.includes(n));
+  const soloTitular = (x: string) => {
+    const l = x.trim();
+    if (!l || l.length > 60) return false;
+    return titulares.some((tit) => tit && l.replace(/[*_~]/g, "").toLowerCase().includes(tit.toLowerCase()));
+  };
+  const out: string[] = [];
+  let puesto = false;
+  for (const linea of t.split("\n")) {
+    if (esDato(linea)) {
+      // Se salvan las frases de esa línea que NO llevan el dato ("Perfecto, el costo es S/ 10.")
+      const resto = linea.split(/(?<=[.!?…])\s+/).filter((o) => !esDato(o)).join(" ").trim();
+      if (resto) out.push(resto);
+      if (!puesto) { out.push(""); out.push(dp); puesto = true; }
+      continue;
+    }
+    // El titular suelto, huérfano del número que acabamos de quitar
+    if (puesto && soloTitular(linea)) continue;
+    out.push(linea);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 // 🎯 Un mensaje de venta que no pregunta nada deja al cliente sin siguiente paso. Se le
 // pidió por prompt («cierra siempre») y se cumple casi siempre, pero falla justo donde
 // más cuesta: medido, a un «cuánto está» contestó «El protocolo cuesta *S/ 10* soles por
@@ -2947,11 +2980,16 @@ function conCierre(texto: string, cierre: string): string {
   // Un mensaje muy corto suele ser un acuse ("Anotado 👍") al que una pregunta le queda
   // pegada y forzada; ahí el turno lo cierra el nodo siguiente.
   if (t.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 40) return texto;
+  // Si ya está ofreciendo lo mismo sin signo de pregunta ("Te paso los datos para que
+  // puedas hacerlo al toque"), sumarle "¿Te paso los datos para que lo tengas ya?" lo deja
+  // diciendo dos veces lo mismo en un renglón. Medido tal cual.
+  RE_OFERTA_CIERRE.lastIndex = 0;
+  if (RE_OFERTA_CIERRE.test(t)) return texto;
   return `${t} ${cierre}`;
 }
 
 // 🔁 La misma oferta una y otra vez.
- Al pedirle que cierre siempre, el modelo encontró su
+// Al pedirle que cierre siempre, el modelo encontró su
 // pregunta favorita y la repitió en cinco mensajes seguidos («¿te paso los datos para que
 // empieces ya?»), cambiándole el adorno pero no la jugada. Para el cliente es la misma
 // pregunta, y si sigue preguntando es porque le falta otra cosa, no la forma de pagar.
@@ -6303,8 +6341,15 @@ async function maybeReclamoSinPedido(
 // "¿ya se los dijimos?" incluye la respuesta que la IA acaba de mandar: si ella lo dijo,
 // el motor se calla; si no, lo completa. Sin duplicado posible y sin depender de que la
 // IA obedezca. Idempotente igual entre turnos: el número queda en los salientes.
+// El cliente PIDE los datos otra vez ("cuál es el yape", "pásame el número"). Distinto de
+// anunciar que va a pagar: acá quiere el dato EN PANTALLA, aunque ya se lo hayan mandado.
+const RE_PIDE_DATOS =
+  /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|p[aá]same (el|tu) (yape|n[uú]mero|plin)|me pasas (el|tu) (yape|n[uú]mero)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero))\b/i;
+// Todas las formas de pedir "¿a dónde te pago?". Se amplió tras ver un chat real: a
+// "cual es el yape" no disparaba, así que el motor no mandaba el bloque con los datos y
+// el número quedaba en manos de la IA, que lo escribe en medio de una frase.
 const RE_ANUNCIA_PAGO =
-  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i;
+  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero|plin)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero))\b/i;
 // La IA ANUNCIA que va a pasar los datos de pago… y no los pasa. Medido: "Te paso los
 // datos para que puedas hacer el pago." y ahí terminaba el mensaje. Prometer y no cumplir
 // deja al cliente esperando igual que no decir nada.
@@ -6347,7 +6392,14 @@ async function maybeDatosPago(
     // qué me mandas el yape?". Si él ya mostró intención, cumplir la promesa es lo correcto
     // (prometer y no cumplir lo deja esperando); si no, que la IA siga vendiendo.
     const promesaIa = !!respuestaIa && RE_PROMETE_PAGO.test(respuestaIa);
-    let pidio = yaEligio || RE_ANUNCIA_PAGO.test(texto)
+    // Responder solo con el nombre del método ("yape", "plin", "transferencia") es elegir
+    // cómo pagar: lo que espera después es el número, no un "perfecto". Va ACÁ, en la
+    // condición que decide si se mandan: calculado más abajo no servía de nada, porque la
+    // función ya había salido — medido, a "yape" no le llegaba ningún dato.
+    const soloMetodo = /^\s*(yape|plin|transferencia|dep[oó]sito|efectivo|bcp|bbva|interbank|scotiabank)\s*[.!]?\s*$/i
+      .test(String(texto ?? "").trim());
+    const loPide = RE_PIDE_DATOS.test(texto) || soloMetodo;
+    let pidio = yaEligio || loPide || RE_ANUNCIA_PAGO.test(texto)
       || (promesaIa && await intencionDeCompra(db, contactId, texto));
     if (!pidio) {
       const { data: ins } = await db.from("messages").select("content")
@@ -6369,8 +6421,25 @@ async function maybeDatosPago(
     const { data: outs } = await db.from("messages").select("content")
       .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
     const dicho = (outs ?? []).map((m: any) => String(m.content?.text ?? "")).join(" ");
-    if (nums.length ? nums.some((n) => dicho.includes(n)) : /yape|plin|cuenta|cci/i.test(dicho)) return;
-    await deliverMessage(db, channelId, contactId, dp);
+    // Ya se los mandamos antes → normalmente no se repiten… salvo que los esté PIDIENDO:
+    // ahí quiere el dato a la vista, no que le digan que ya se lo pasaron. Sin esto la IA
+    // improvisaba el número en medio de una frase —copiándolo del historial— y se perdía la
+    // línea suelta que hace que se copie de un toque. Medido: a "cual es el yape" contestó
+    // "el Yape es la app para hacer pagos por celular" y pegó el número dentro del párrafo.
+
+    if (!loPide && (nums.length ? nums.some((n) => dicho.includes(n)) : /yape|plin|cuenta|cci/i.test(dicho))) return;
+    // Si nombró un método ("yape"), se le manda SOLO ese bloque: mandarle los tres
+    // cuando ya eligió es ruido, y encima le da a elegir de nuevo cuando ya decidió.
+    const bloques = dp.split(/\n\s*\n/).filter((b) => b.trim());
+    const elegido = bloques.length > 1
+      ? bloques.find((b) => {
+        const nom = (b.match(/^[^\n]*/) ?? [""])[0].replace(/[^\p{L}\p{N}]/gu, "");
+        // OJO: \\b — dentro de una cadena, "\b" es el carácter backspace, no el límite de
+        // palabra, y el método nunca calzaba (mandaba los tres bloques igual).
+        return nom.length > 2 && new RegExp("\\b" + nom + "\\b", "iu").test(texto);
+      })
+      : null;
+    await deliverMessage(db, channelId, contactId, elegido ?? dp);
     await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago enviados",
       "Dijo que iba a pagar y todavía no los tenía").catch(() => {});
   } catch (e) { console.error("[maybeDatosPago]", (e as any)?.message ?? e); }
@@ -9107,9 +9176,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // adelantado. Si le damos el Yape a la IA, lo termina soltando ("haz tu pago con
     // Yape") aunque el prompt lo prohíba. En Lima NO se inyectan los datos de pago.
     // (Digital no tiene zona_entrega → conserva sus datos de pago; provincia también.)
+    // A la IA se le dicen los MÉTODOS (Yape, Plin, BCP), nunca los NÚMEROS. Con el número
+    // delante lo escribe con sus palabras y en medio de una frase —"pásame la captura del
+    // Yape a 977533352 (Percy Rodrigo…)"— y ahí se pierde lo único que el cliente necesita
+    // hacer con ese mensaje: copiar el número de un toque. El bloque con formato lo manda
+    // el motor (maybeDatosPago) justo después de su respuesta, siempre igual y bien armado.
     const pm = ctx.zona_entrega === "lima" ? [] : (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
-      .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
-    if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
+      .map((m: any) => "- " + String(m.app ?? "pago").trim());
+    if (pm.length) {
+      parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") +
+        "\n⛔ NO escribas tú el número ni el titular, ni siquiera si te los piden y ni aunque los veas " +
+        "más arriba en esta misma conversación: copiarlos dentro de una frase le quita al cliente lo " +
+        "único que necesita hacer, que es copiar el número de un toque. Di que se los pasas (o que van " +
+        "enseguida) y sigue: el sistema se los manda completos justo después de tu mensaje. Y no le " +
+        "expliques qué es Yape o Plin: los conoce mejor que tú.");
+    }
     // 🔒 El dinero lo confirma el CÓDIGO, no la IA. "Ya te yapeo" es una intención, no
     // un pago: la IA respondía "Gracias por el pago, ya lo recibí, te envío el acceso"
     // ANTES de que llegara la captura (y podía no llegar nunca). Encima contradecía al
@@ -9740,9 +9821,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const dicho = (outs ?? []).map((m: any) => String(m.content?.text ?? "")).join(" ");
           const yaSeLosDio = nums.length ? nums.some((n) => dicho.includes(n)) : /yape|plin|cuenta|cci/i.test(dicho);
           if (!yaSeLosDio) {
-            parts.push("## ⚠️ Le falta saber DÓNDE pagar\nAcaba de decir que va a pagar y TODAVÍA no le pasaste los datos de pago " +
-              "(los revisé: no salen en ningún mensaje tuyo de esta conversación). Dáselos AHORA, al inicio de tu mensaje, tal cual:\n" + dp + "\n" +
-              "Recién después pídele la captura. NO le pidas el comprobante de un pago que todavía no sabe a dónde hacer.");
+            // ⚠️ Acá NO va el texto con el número. Antes se le pasaba entero con un "dáselos
+            // tal cual" y la IA igual lo reescribía a su manera —"✅ Yape: 977533352 a nombre
+            // de…"—, pegando el número dentro de la frase; y como ya lo había escrito, el
+            // motor daba por hecho que estaban dados y no mandaba el bloque bien formado.
+            // Resultado: el cliente no podía copiar el número de un toque, que es lo único
+            // que tiene que hacer ahí. Ahora la IA solo anuncia y el bloque lo manda el motor.
+            parts.push("## ⚠️ Le falta saber DÓNDE pagar\nAcaba de decir que va a pagar y todavía no tiene los datos " +
+              "(los revisé: no salen en ningún mensaje tuyo de esta conversación). Dile en UNA línea que se los pasas " +
+              "ahora —sin escribir el número ni el titular, que no los tienes— y ahí termina tu mensaje: el sistema se " +
+              "los manda enseguida, con el número en su propia línea para que lo copie de un toque. " +
+              "NO le pidas la captura todavía: no puede mandarte el comprobante de un pago que aún no sabe a dónde hacer.");
           }
         }
       }
@@ -9949,6 +10038,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "2. RESPONDE CON ARGUMENTO. Dos o tres frases: contesta lo que preguntó y súmale UNA razón concreta para " +
       "comprarlo (algo del producto, no un adjetivo). Una línea suelta suena a contestador automático. " +
       "Excepción: cuando solo estás pidiendo un dato o el pago, ahí sí va corto y directo.\n" +
+      "⛔ La pregunta con la que cierras tiene que MOVER la venta. Nunca ofrezcas repetir lo que acabas de " +
+      "decir («¿quieres que te lo repita para que lo copies?») ni preguntes si entendió: eso no avanza nada y " +
+      "delata que estás rellenando.\n" +
       "3. NO ARRANQUES SIEMPRE IGUAL. Varía la primera palabra de cada mensaje. Si el anterior empezó con " +
       "«Además», «Claro» o «Perfecto», este empieza distinto.\n" +
       "4. HABLA DE ÉL, NO DEL PRODUCTO. Nadie compra «21 días de rutinas con video»: eso describe lo que el " +
@@ -10617,11 +10709,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ? `Son ${_precioTxt}. ¿Te paso los datos para que lo tengas ya?`
           : "¿Te paso los datos para que lo tengas ya?");
       }
+      // Los datos de pago que la IA haya escrito a su manera, con el formato bueno.
+      if (op === "generar_texto") {
+        try {
+          const { data: fdp } = await db.from("custom_fields").select("valor")
+            .eq("channel_id", run.channel_id).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
+          const dpTxt = String((fdp as any)?.valor ?? "").trim();
+          if (dpTxt) {
+            const nums = dpTxt.match(/\d{6,}/g) ?? [];
+            const tits = ((info.ocr?.metodos ?? []) as any[]).map((mm) => String(mm?.titular ?? "").trim()).filter(Boolean);
+            salida = conDatosDePago(salida, dpTxt, nums, tits);
+          }
+        } catch (_) { /* sin datos de pago → se envía tal cual */ }
+      }
       // Y si el mensaje de venta quedó sin ninguna pregunta, se le agrega el cierre que
       // toca. Va DESPUÉS de los recortes de arriba: si a este cliente ya se le ofreció dos
       // veces (`sinOfertaRepetida`), el cierre que se le pone es de descubrimiento, no otra
       // oferta — insistir con lo mismo es lo que se acaba de quitar.
-      if (op === "generar_texto" && !handoff) {
+      if (op === "generar_texto") {   // OJO: `handoff` aún no existe acá (se declara al emitir)
         try {
           const { data: outsC } = await db.from("messages").select("content")
             .eq("contact_id", run.contact_id).eq("direction", "out")
