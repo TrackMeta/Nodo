@@ -13,7 +13,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
-import { sedeReconocida, candidatasAgencia, agenciasDeCiudad } from "./shalom-agencias.ts";
+import { sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia } from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
 
@@ -9936,6 +9936,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "dile estas CON SU DIRECCIÓN —la calle es lo que le hace reconocer la suya— y que te diga cuál le queda cerca. " +
               "⛔ NUNCA inventes una oficina, NUNCA digas \"tenemos varias\" sin nombrarlas, y si la que él menciona no está " +
               "en esta lista, NO se la confirmes.");
+            // Y los distritos vecinos de su misma provincia donde también hay oficina:
+            // el que vive en Pimentel escribe «soy de Chiclayo» y le estábamos ofreciendo
+            // cuatro oficinas del centro teniendo una en su propio distrito.
+            const _otros = otrosDistritosConAgencia(String(ctx.ciudad ?? ""));
+            if (_otros.length) {
+              L.push(`En esa misma zona también hay oficina en: ${_otros.slice(0, 10).join(", ")}. ` +
+                "Si te dice que vive en uno de esos distritos, ofrécele el de ÉL en vez de los del centro: le queda " +
+                "mucho más cerca. Si no lo menciona, no lo abrumes con la lista entera.");
+            }
           }
         } catch (_) { /* sin ciudad legible → sin lista */ }
         L.push(_modoEnv === "agencia"

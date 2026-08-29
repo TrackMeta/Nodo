@@ -667,3 +667,19 @@ export function sedeReconocida(sede: string, ciudad: string): string | null {
   }
   return "dijo una oficina que no está en la lista — confírmasela antes de despachar";
 }
+
+// Los OTROS distritos de su misma provincia donde también hay oficina. Cuando el
+// cliente dice "soy de Chiclayo" se le muestran las 4 del distrito, que son las
+// que le sirven… salvo que viva en Pimentel o Pomalca, que son provincia de
+// Chiclayo y tienen la suya propia a la vuelta de la esquina. Con esto el bot
+// puede ofrecérselas en vez de mandarlo al centro.
+export function otrosDistritosConAgencia(ciudad: string): string[] {
+  const c = _sinRuido(ciudad) || _n(ciudad);
+  if (!c) return [];
+  const enDist = AGENCIAS.filter((a) => _n(a.t) === c);
+  if (!enDist.length) return [];   // no nombró un distrito → no hay "otros" que ofrecer
+  const prov = _n(enDist[0].p);
+  return [...new Set(
+    AGENCIAS.filter((a) => _n(a.p) === prov && _n(a.t) !== c).map((a) => a.t),
+  )];
+}
