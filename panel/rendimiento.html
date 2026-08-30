@@ -136,7 +136,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, icon, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, icon, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -289,7 +289,7 @@ async function loadAccount(){
   st.adAccounts=[]; st.syncError=null;
   try{ const { data }=await supa.from("ad_accounts").select("account_id,nombre").eq("channel_id",st.channelId).eq("activo",true); st.adAccounts=data||[]; }catch(_){}
   if(st.account!=="all" && !st.adAccounts.some(a=>a.account_id===st.account)) st.account="all";
-  try{ const { data }=await supa.from("channels").select("ads_sync_error,moneda").eq("id",st.channelId).maybeSingle(); st.syncError=data?.ads_sync_error||null; CUR=(data&&data.moneda)||"PEN"; }catch(_){}
+  try{ const data=await getChannel(st.channelId); st.syncError=data?.ads_sync_error||null; CUR=(data&&data.moneda)||"PEN"; }catch(_){}
   renderStatus(); await reload();
 }
 function renderStatus(){

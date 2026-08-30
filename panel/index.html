@@ -585,7 +585,7 @@
 
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, waFmt, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, askText, waFmt, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 import { mountDateRange, computePreset, rangeLabel, ymd, ymdTZ as ymdLima, getTZ } from "./date-range.js";
 import * as O from "./orders.js";
@@ -1977,7 +1977,7 @@ async function openTplPicker() {
   if (!state.contactId) return;
   // Antes de nada: ¿el número de WhatsApp está conectado? Si no, no tiene
   // sentido elegir una plantilla (el envío fallaría con "canal_invalido").
-  const { data: ch } = await supa.from("channels").select("phone_number_id,activo").eq("id", state.channelId).maybeSingle();
+  const ch = await getChannel(state.channelId);
   if (!ch || !ch.activo || !ch.phone_number_id) {
     toast("Aún no conectaste tu número de WhatsApp. Conéctalo en Canales → WhatsApp para poder enviar plantillas.", true);
     return;

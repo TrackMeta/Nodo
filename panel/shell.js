@@ -128,6 +128,11 @@ async function fetchVigilado(input, init) {
     marcaFalloRed(area, "El servidor no responde. Lo que ves puede estar incompleto o vacío.");
   } else if (r.ok) {
     marcaExitoRed(area);
+    // Alguien acaba de tocar la fila del bot (Ajustes, Negocio, IA, Canales, Pagos…):
+    // la copia en memoria ya no vale. Va acá y no en cada pantalla que guarda, para que
+    // ninguna se olvide — incluidas las que todavía no existen.
+    const metodo = (init && init.method) || (input && input.method) || "GET";
+    if (area === "rest" && metodo !== "GET" && /\/channels\b/.test(url)) olvidaChannel();
   }
   return r;
 }
@@ -136,6 +141,44 @@ async function fetchVigilado(input, init) {
 export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { fetch: (i, o) => fetchVigilado(i, o) },
 });
+// ── Ficha del bot, una sola vez por sesión ───────────────────────────
+// Casi todas las secciones piden UNA rebanada de la MISMA fila de `channels`
+// (moneda, entregas, remarketing, account_id, ocr_config…) y varias lo hacen
+// ANTES de poder pedir sus datos de verdad: medido en Dashboard, sus once
+// consultas no arrancaban hasta que volvía un `select("moneda")`, o sea ~170ms
+// de espera para leer cuatro letras. Con la fila en memoria ese viaje desaparece
+// y el abanico sale de una.
+//
+// `logo_url` queda FUERA a propósito: es un data URI de ~27 KB, el 85% del peso
+// de la fila. El branding ya viene de su propia caché (readBrandCache).
+// OJO: si agregas una columna a `channels` que alguna sección necesite, súmala
+// acá o `getChannel` se la devolvera como undefined en silencio.
+const CH_COLS = "id,nombre,channel_type,phone_number_id,waba_id,pixel_id,page_id,vertical," +
+  "telegram_chat_ids,buffer_default_seg,activo,ia_provider,timezone,gsheets,negocio,ia_perfiles," +
+  "ia_router,negocio_form,ocr_config,pedidos_config,remarketing,entregas,telegram_avisos," +
+  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,resumenes,resumen_estado";
+
+let _ch = { id: null, fila: null, vuelo: null };
+
+export async function getChannel(channelId) {
+  const id = channelId || S.channelId;
+  if (!id) return null;
+  if (_ch.id === id && _ch.fila) return _ch.fila;
+  // Dos secciones (o dos partes de una) pueden pedirla a la vez: comparten el
+  // mismo viaje en vez de hacer dos.
+  if (_ch.id === id && _ch.vuelo) return _ch.vuelo;
+  _ch.id = id; _ch.fila = null;
+  _ch.vuelo = supa.from("channels").select(CH_COLS).eq("id", id).maybeSingle()
+    .then(({ data }) => { if (_ch.id === id) { _ch.fila = data || null; _ch.vuelo = null; } return data || null; })
+    .catch(() => { if (_ch.id === id) _ch.vuelo = null; return null; });
+  return _ch.vuelo;
+}
+
+// Se olvida al cambiar de bot y en cuanto ALGUIEN escribe en `channels` — la
+// invalidación vive en el fetch vigilado, no en cada pantalla que guarda: asi
+// tambien la heredan las que se escriban despues.
+export function olvidaChannel() { _ch = { id: null, fila: null, vuelo: null }; }
+
 export const FALLBACK_LOGO = "../assets/logo-128.png";
 
 // ── Iconos (Lucide, stroke=currentColor) ───────────────────────────
@@ -1055,6 +1098,7 @@ export async function mountShell({ active } = {}) {
     setChannel(id, { silent } = {}) {
       if (!S.channels.find((c) => c.id === id)) return;
       S.channelId = id;
+      olvidaChannel();   // la ficha en memoria es del bot anterior
       localStorage.setItem("nodo.channelId", id);
       // Cada bot puede tener SU zona horaria: al cambiar de bot hay que cambiarla también, o
       // los reportes del nuevo se cortarían con la zona del anterior. Va ANTES de avisar a las

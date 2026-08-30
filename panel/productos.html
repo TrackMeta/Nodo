@@ -248,7 +248,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
@@ -1263,8 +1263,8 @@ function renderEntrega(host){
   const em2=$("pEnvModo"); if(em2) em2.onchange=(e)=>{ c.envio_modo=e.target.value||undefined; prodSetC("envio_modo", c.envio_modo); pintarEnvMontos(); };
   pintarEnvMontos();
   // Mostrar el default de Negocio como referencia (carga perezosa).
-  supa.from("channels").select("entregas").eq("id",st.channelId).maybeSingle()
-    .then(({data})=>{
+  getChannel(st.channelId)
+    .then((data)=>{
       const E=data?.entregas||{};
       const def=E.adelanto_default; const h=$("adelHint");
       if(h && def!=null && def!==""){ h.innerHTML=`Por defecto de Negocio: <b>S/ ${esc(def)}</b>. Disponible en los flujos como <b style="color:var(--brand)">{{adelanto}}</b>.`; }
@@ -1559,9 +1559,9 @@ function renderExtraIA(b,c,ia){
 async function renderRemarketing(host){
   const b=host||$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
-  const [{ data:seqs, error }, { data:ch }, { data:angs }]=await Promise.all([
+  const [{ data:seqs, error }, ch, { data:angs }]=await Promise.all([
     supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
-    supa.from("channels").select("remarketing").eq("id",st.channelId).maybeSingle(),
+    getChannel(st.channelId),
     supa.from("angulos").select("nombre,slug").eq("product_id",st.prod.id).order("orden"),
   ]);
   if(error){ b.innerHTML=`<div class="card"><p class="hint">No se pudieron cargar las secuencias.</p></div>`; return; }

@@ -285,7 +285,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, askChoice, norm, icon, pageAll, recargaConFreno } from "./shell.js";
+import { supa, getChannel, mountShell, toast, askChoice, norm, icon, pageAll, recargaConFreno } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money, openVentaManual, esValorPresentable, esCampoInterno } from "./contact-extras.js";
 import { mountDateRange, computePreset, ymd, ymdLima } from "./date-range.js";
 import * as O from "./orders.js";
@@ -352,7 +352,7 @@ async function boot(){
 
 async function loadTeam(){
   try{
-    const { data:ch }=await supa.from("channels").select("account_id").eq("id",st.channelId).maybeSingle();
+    const ch=await getChannel(st.channelId);
     st.accountId=ch?.account_id||null;
     if(st.accountId){
       const { data:ms }=await supa.from("account_members").select("user_id,role,app_users(nombre)").eq("account_id",st.accountId).eq("activo",true);

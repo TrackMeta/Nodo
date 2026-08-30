@@ -182,7 +182,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, pageAll, recargaConFreno } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, pageAll, recargaConFreno } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima } from "./date-range.js";
@@ -227,13 +227,13 @@ async function load(){
   const [cR, oR, chR] = await Promise.all([
     pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     pageAll((f,t)=>supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
-    supa.from("channels").select("moneda").eq("id",st.channelId).maybeSingle(),
+    getChannel(st.channelId),
   ]);
   if(gen!==st.loadGen) return;
   st.contacts=cR.data||[];
   st.ordersBy={};
   (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
-  CUR=(chR.data&&chR.data.moneda)||"PEN";
+  CUR=(chR&&chR.moneda)||"PEN";
   // Zona (Lima/Provincia) por contacto: el bot setea el campo zona_entrega TEMPRANO
   // (apenas dice de dónde es, antes del pedido). Así el split de Físico es limpio.
   st.zonaMap={};

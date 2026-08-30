@@ -80,7 +80,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, enTrozos, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, enTrozos, pageAll } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -514,7 +514,7 @@ async function ofrecerGuardarFraude(o,tipo){
               : tipo==="extra"    ? (s.extra_comprobante||st.imgs[o.contact_id]) : null;
     if(!img || !/^https?:/.test(img)) return; // sin URL utilizable (o wa-media crudo) → no se puede guardar como ejemplo
     if(!await confirmDialog({ title:"¿Era un comprobante falso?", message:"Si este comprobante era FALSO o editado (un montaje), guárdalo como ejemplo para que el validador reconozca fraudes parecidos. Si solo era un monto equivocado o el destinatario, no hace falta.", confirmText:"Sí, guardar como fraude", cancelText:"No" })) return;
-    const { data:ch } = await supa.from("channels").select("ocr_config").eq("id",st.channelId).maybeSingle();
+    const ch = await getChannel(st.channelId);
     const ocr = (ch&&ch.ocr_config&&typeof ch.ocr_config==="object") ? ch.ocr_config : {};
     const ej = Array.isArray(ocr.ejemplos) ? ocr.ejemplos : [];
     if(ej.some(e=>e&&e.url===img)){ toast("Ese comprobante ya estaba guardado"); return; }

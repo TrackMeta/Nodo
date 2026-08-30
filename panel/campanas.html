@@ -124,7 +124,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=8";
 let Fbar = null;
@@ -156,12 +156,12 @@ async function boot(){
   await load();
 }
 async function load(){
-  const [{ data:c },{ data:tpl },{ data:tg },{ data:ch }]=await Promise.all([
+  const [{ data:c },{ data:tpl },{ data:tg }, ch]=await Promise.all([
     supa.from("campaigns").select("*").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
     supa.from("wa_templates").select("id,name,language,activa,estado_meta,soporta_envio,body_preview,ejemplos").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("tags").select("id,nombre,color").eq("channel_id",st.channelId).order("nombre"),
     // El horario de envío del negocio, para poder avisar si una campaña larga termina fuera de él.
-    supa.from("channels").select("remarketing").eq("id",st.channelId).maybeSingle(),
+    getChannel(st.channelId),
   ]);
   st.remarketing=(ch&&ch.remarketing)||{};
   // Solo plantillas APROBADAS por Meta (el copy lo promete). Una activa pero

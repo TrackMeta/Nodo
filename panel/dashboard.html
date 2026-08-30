@@ -305,7 +305,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import { ymdTZ } from "./date-range.js";
@@ -314,7 +314,7 @@ const $=(id)=>document.getElementById(id);
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
 let CUR="PEN";
 const curSym=()=>CUR_SYM[CUR]||CUR;
-async function loadCurrency(){ try{ const { data }=await supa.from("channels").select("moneda").eq("id",channelId).maybeSingle(); CUR=(data&&data.moneda)||"PEN"; }catch(_){ CUR="PEN"; } }
+async function loadCurrency(){ const ch=await getChannel(channelId); CUR=(ch&&ch.moneda)||"PEN"; }
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Versión corta (sin decimales) para el calendario de la Bitácora.
 const moneyShort=(n)=>curSym()+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
