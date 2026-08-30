@@ -106,14 +106,44 @@ function pintaAvisoConexion(msg) {
 //  · el fetch lanza → sin red.
 // Las llamadas a /auth/v1/ quedan fuera: un 400 al iniciar sesión es una contraseña
 // mal puesta, no una caída.
+// ── Las lecturas de la sección que dejas se cancelan al salir ────────
+// Al cambiar de sección, las consultas de la anterior seguían en vuelo y al volver
+// pintaban en un DOM que ya no era el suyo. Se veía como `Cannot set properties of
+// null` (renderCards, renderFlowSelects…) — y ese es el caso BENIGNO: los ids del
+// panel son genéricos (#list, #body, #tabs), así que si la sección nueva tiene uno
+// igual, la vieja le pinta ENCIMA sus datos. Reproducido navegando rápido: 14 veces
+// en dos vueltas al menú.
+//
+// Cancelarlas al salir mata la clase entera de un solo sitio, sin tocar las 25
+// pantallas, y de paso la navegación va más suelta: no se compite por la red ni por
+// el hilo con trabajo que ya no le importa a nadie.
+//
+// SOLO se cancelan los GET: una escritura a medio camino (guardar un producto, mover
+// un pedido) hay que dejarla terminar SIEMPRE, aunque quien la lanzó ya se haya ido.
+let _corte = new AbortController();
+export function cancelaLecturas() { _corte.abort(); _corte = new AbortController(); }
+
 async function fetchVigilado(input, init) {
   const url = String((input && input.url) || input || "");
   const esAuth = url.includes("/auth/v1/");
   const area = areaDe(url);
+  const metodo = (init && init.method) || (input && input.method) || "GET";
+  if (area === "rest" && metodo === "GET") {
+    const propia = init && init.signal;
+    // AbortSignal.any es reciente; si no está, manda la señal propia de quien llamó
+    // (perder la cancelación es molesto, romper el panel entero no es una opción).
+    const señal = !propia ? _corte.signal
+      : (typeof AbortSignal.any === "function" ? AbortSignal.any([propia, _corte.signal]) : propia);
+    init = { ...(init || {}), signal: señal };
+  }
   let r;
   try {
     r = await fetch(input, init);
   } catch (e) {
+    // Una lectura cancelada por cambiar de sección NO es una caída: pintar el cartel
+    // rojo cada vez que alguien navega rápido sería exactamente la alarma falsa que
+    // este aviso existe para no dar.
+    if (e && e.name === "AbortError") throw e;
     if (!esAuth) marcaFalloRed(area, "Sin conexión con el servidor. Lo que ves puede estar incompleto.");
     throw e;
   }
@@ -131,7 +161,6 @@ async function fetchVigilado(input, init) {
     // Alguien acaba de tocar la fila del bot (Ajustes, Negocio, IA, Canales, Pagos…):
     // la copia en memoria ya no vale. Va acá y no en cada pantalla que guarda, para que
     // ninguna se olvide — incluidas las que todavía no existen.
-    const metodo = (init && init.method) || (input && input.method) || "GET";
     if (area === "rest" && metodo !== "GET" && /\/channels\b/.test(url)) olvidaChannel();
   }
   return r;
@@ -1251,6 +1280,7 @@ async function runScripts(scripts) {
 
 // Ejecuta cleanups registrados por la página saliente y limpia subs.
 function teardown() {
+  cancelaLecturas();   // las consultas de la seccion que sale ya no le sirven a nadie
   S.leaves.forEach((cb) => { try { cb(); } catch (e) { console.error(e); } });
   S.leaves = [];
   S.subs = [];
