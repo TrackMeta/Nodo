@@ -783,8 +783,8 @@ export async function mountShell({ active } = {}) {
   // Ítems: el grupo primario (Bandeja/Dashboard/Pedidos) va FIJO fuera del
   // scroll; los demás grupos van dentro del área scrolleable.
   const itemHTML = (it) => it.cta
-    ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="lbl">${it.label}</span><span class="cta-dot"></span></a>`
-    : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="lbl">${it.label}</span></a>`;
+    ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="nodo-lbl">${it.label}</span><span class="cta-dot"></span></a>`
+    : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="nodo-lbl">${it.label}</span></a>`;
   const topGroup = NAV_GROUPS.find((g) => !g.sec);
   const primaryHTML = (topGroup ? topGroup.items : []).map(itemHTML).join("");
   const groupsHTML = NAV_GROUPS.filter((g) => g.sec).map((g) => {

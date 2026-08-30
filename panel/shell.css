@@ -374,7 +374,7 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 /* ── Sección IA: resalte distintivo (violeta/fucsia robot) ─────────── */
 .nodo-link.nodo-link-ia{position:relative}
 .nodo-link.nodo-link-ia svg{color:#a855f7}
-.nodo-link.nodo-link-ia .lbl{background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;
+.nodo-link.nodo-link-ia .nodo-lbl{background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;
   background-clip:text;-webkit-text-fill-color:transparent;font-weight:650}
 .nodo-link.nodo-link-ia:hover{background:linear-gradient(90deg,rgba(168,85,247,.14),rgba(236,72,153,.10))}
 .nodo-link.nodo-link-ia.active{background:linear-gradient(90deg,rgba(168,85,247,.20),rgba(236,72,153,.12))}
@@ -451,9 +451,9 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
   width:2px;height:16px;border-radius:2px;background:var(--brand);
 }
 .nodo-link svg{width:18px;height:18px;flex:none;stroke-width:2}
-.nodo-link .lbl{overflow:hidden;text-overflow:ellipsis}
+.nodo-link .nodo-lbl{overflow:hidden;text-overflow:ellipsis}
 .nodo-nav.collapsed .nodo-link{justify-content:center;padding:0}
-.nodo-nav.collapsed .nodo-link .lbl{display:none}
+.nodo-nav.collapsed .nodo-link .nodo-lbl{display:none}
 
 /* CTA Bandeja — botón destacado: relleno indigo→violeta con flujo suave
    + destello periódico que lo recorre. Limpio y centrado; el movimiento
@@ -473,7 +473,7 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 /* La Bandeja (CTA) ya se ve seleccionada por su relleno azul; el bracito
    azul del ::before de .active sobra encima de ella → se quita SOLO en la CTA. */
 .nodo-link.nodo-cta.active::before{display:none}
-.nodo-link.nodo-cta > svg,.nodo-link.nodo-cta > .lbl,.nodo-link.nodo-cta > .cta-dot{position:relative;z-index:1}
+.nodo-link.nodo-cta > svg,.nodo-link.nodo-cta > .nodo-lbl,.nodo-link.nodo-cta > .cta-dot{position:relative;z-index:1}
 .nodo-link.nodo-cta svg{width:21px;height:21px;stroke-width:2.3}
 .nodo-link.nodo-cta:hover{filter:brightness(1.06)}
 .nodo-link.nodo-cta .cta-dot{
