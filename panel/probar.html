@@ -101,6 +101,20 @@
   .segbtn.active{background:var(--brand);color:#fff}
 
   /* Compositor */
+  /* Tira del archivo adjunto: el archivo espera acá hasta que le pongas el pie de
+     foto, en vez de irse solo al elegirlo (mismo diseño que la Bandeja). */
+  .adjbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--border);background:var(--surface-2)}
+  .adjbar.hidden{display:none}
+  .adjbar .adj-th{width:44px;height:44px;border-radius:10px;flex:none;overflow:hidden;background:var(--surface);
+    border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .adjbar .adj-th img{width:100%;height:100%;object-fit:cover}
+  .adjbar .adj-th svg{width:20px;height:20px}
+  .adjbar .adj-tx{font-size:12px;color:var(--muted);line-height:1.45;min-width:0;flex:1}
+  .adjbar .adj-tx>b{display:block;color:var(--text);font-size:13px;font-weight:600;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .adjbar .adj-x{width:32px;height:32px;flex:none;border-radius:9px;border:1px solid var(--border);background:var(--surface);
+    color:var(--muted);display:flex;align-items:center;justify-content:center;transition:color var(--t-fast),border-color var(--t-fast)}
+  .adjbar .adj-x:hover{color:var(--danger,#e5484d);border-color:var(--danger,#e5484d)}
+  .adjbar .adj-x svg{width:15px;height:15px}
   .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;position:relative}
   .composer input#msgInput{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
   .composer input#msgInput:focus{border-color:var(--brand)}
@@ -225,6 +239,13 @@
           </div>
           <span class="lb" id="testHint">— dispara el flujo automáticamente</span>
         </div>
+        <div class="adjbar hidden" id="adjBar">
+          <div class="adj-th" id="adjTh"></div>
+          <div class="adj-tx"><b id="adjName">archivo</b><span id="adjHint">Escribe un pie de foto y envíalo junto con el archivo</span></div>
+          <button class="adj-x" id="adjX" type="button" title="Quitar el archivo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
         <div class="composer">
           <button class="ctool" id="qrBtn" title="Respuestas rápidas">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
@@ -319,7 +340,8 @@ async function boot(){
   $("sendBtn").onclick=sendMsg;
   $("msgInput").addEventListener("keydown",e=>{ if(e.key==="Enter") sendMsg(); });
   $("attachBtn").onclick=()=>{ if(st.contactId) $("fileInput").click(); };
-  $("fileInput").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) sendAttachment(f); };
+  $("fileInput").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) prepararAdjunto(f); };
+  $("adjX").onclick=quitarAdjunto;
   document.querySelectorAll(".segbtn").forEach(b=> b.onclick=()=>{ st.testAs=b.dataset.as; updateComposerMode(); });
   $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleQrPop(); });
   $("emojiBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(st.contactId) toggleEmojiPop(); });
@@ -425,7 +447,28 @@ function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; con
 
 // ── Enviar ──
 async function sendMsg(){
-  const inp=$("msgInput"); const text=inp.value.trim(); if(!text||!st.contactId) return;
+  const inp=$("msgInput"); const text=inp.value.trim();
+  // Con un archivo esperando, el texto es su PIE DE FOTO y puede ir vacío: los dos
+  // salen en una sola burbuja en vez de dos mensajes sueltos (ver prepararAdjunto).
+  if(adjunto){
+    if(adjunto.error){ toast(adjunto.error,true); return; }
+    if(adjunto.subiendo){ toast("El archivo todavía se está subiendo…"); return; }
+    $("sendBtn").disabled=true;
+    try{
+      const media={ kind:adjunto.kind, url:adjunto.url, mime:adjunto.mime, filename:adjunto.filename };
+      if(st.testAs==="bot"){
+        const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out",
+          type:media.kind, content:{ media_url:media.url, caption:text, mime:media.mime, filename:media.filename }, status:"sent" });
+        if(error){ toast(error.message,true); } else { inp.value=""; quitarAdjunto(); }
+      } else {
+        await callFn("webchat",{ channel_id:st.channelId, media:{ ...media, caption:text } });
+        inp.value=""; quitarAdjunto();
+      }
+    }catch{ toast("Error de red",true); }
+    $("sendBtn").disabled=false;
+    return;
+  }
+  if(!text||!st.contactId) return;
   $("sendBtn").disabled=true;
   try{
     if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error) toast(error.message,true); else inp.value=""; }
@@ -435,7 +478,52 @@ async function sendMsg(){
 }
 async function sendButton(id,title){ await callFn("webchat",{ channel_id:st.channelId, buttonId:id, text:title }); }
 function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+// ── Adjunto con pie de foto ─────────────────────────────────────────
+// El archivo espera acá hasta que le pongas el texto, y salen juntos en una sola
+// burbuja. Antes se enviaba solo al elegirlo, con la caption vacía: para decir algo
+// sobre la imagen había que mandar un segundo mensaje suelto.
+// La SUBIDA arranca al elegirlo, en segundo plano, para no perder la rapidez.
+// El AUDIO va directo: WhatsApp no admite pie de foto en audio.
+const ICO_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+const ICO_VID = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>';
+let adjunto = null;
+function pintarAdjunto(){
+  const bar = $("adjBar"), inp = $("msgInput");
+  if (!adjunto) { bar.classList.add("hidden"); inp.placeholder = "Escribe como el cliente…"; return; }
+  bar.classList.remove("hidden");
+  $("adjName").textContent = adjunto.filename;
+  $("adjHint").textContent = adjunto.error || (adjunto.subiendo ? "Subiendo el archivo…" : "Escribe un pie de foto (opcional) y envíalo con el archivo");
+  $("adjTh").innerHTML = adjunto.kind === "image"
+    ? `<img src="${adjunto.previewUrl || adjunto.url || ""}" alt=""/>`
+    : (adjunto.kind === "video" ? ICO_VID : ICO_DOC);
+  inp.placeholder = "Escribe un pie de foto (opcional)…";
+}
+function quitarAdjunto(){
+  if (adjunto && adjunto.previewUrl) URL.revokeObjectURL(adjunto.previewUrl);
+  adjunto = null; pintarAdjunto();
+}
+async function prepararAdjunto(file){
+  if (!st.contactId) return;
+  if (file.size > 16*1024*1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+  if ((file.type||"").startsWith("audio/")) { sendAttachment(file); return; }
+  quitarAdjunto();
+  adjunto = { file, filename:file.name, mime:file.type, subiendo:true, url:null, error:null,
+    kind:(file.type||"").startsWith("image/") ? "image" : ((file.type||"").startsWith("video/") ? "video" : "document"),
+    previewUrl:(file.type||"").startsWith("image/") ? URL.createObjectURL(file) : null };
+  pintarAdjunto();
+  try {
+    const dataUrl = await fileToDataURL(file);
+    const up = await (await callFn("media-upload", { channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataUrl })).json();
+    if (!adjunto || adjunto.file !== file) return;   // lo quitaron mientras subía
+    if (!up.url) { adjunto.subiendo = false; adjunto.error = up.detalle || up.error || "No se pudo subir"; pintarAdjunto(); return; }
+    adjunto.url = up.url; adjunto.kind = up.kind || adjunto.kind; adjunto.subiendo = false;
+  } catch {
+    if (adjunto && adjunto.file === file) { adjunto.subiendo = false; adjunto.error = "No se pudo subir"; }
+  }
+  pintarAdjunto();
+}
 async function sendAttachment(file){
+
   if(!st.contactId) return; if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
   $("attachBtn").disabled=true; toast("Subiendo…");
   try{

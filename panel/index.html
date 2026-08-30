@@ -234,6 +234,24 @@
   .idot.ad{background:var(--brand-bg);color:var(--brand)}
   /* Barra "ventana cerrada": reemplaza al compositor. Tarjeta con candado,
      texto en dos líneas y botón de acción verde. */
+  /* Tira del archivo adjunto, encima del compositor. Antes el archivo se enviaba
+     solo al elegirlo, con el pie de foto vacío: para decir algo sobre la imagen había
+     que mandar un segundo mensaje y al cliente le llegaban dos burbujas sueltas. */
+  .adjbar{display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--border);
+    background:var(--surface-2)}
+  .adjbar.hidden{display:none}
+  .adjbar .adj-th{width:44px;height:44px;border-radius:10px;flex:none;overflow:hidden;background:var(--surface);
+    border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .adjbar .adj-th img{width:100%;height:100%;object-fit:cover}
+  .adjbar .adj-th svg{width:20px;height:20px}
+  .adjbar .adj-tx{font-size:12px;color:var(--muted);line-height:1.45;min-width:0;flex:1}
+  .adjbar .adj-tx>b{display:block;color:var(--text);font-size:13px;font-weight:600;margin-bottom:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .adjbar .adj-x{width:32px;height:32px;flex:none;border-radius:9px;border:1px solid var(--border);
+    background:var(--surface);color:var(--muted);display:flex;align-items:center;justify-content:center;
+    transition:color var(--t-fast),border-color var(--t-fast)}
+  .adjbar .adj-x:hover{color:var(--danger,#e5484d);border-color:var(--danger,#e5484d)}
+  .adjbar .adj-x svg{width:15px;height:15px}
   .tplbar{/*--line no existe → sin fallback la línea no se dibujaba; usa --border*/display:flex;align-items:center;gap:14px;padding:14px 18px;border-top:1px solid var(--border);
     background:linear-gradient(180deg,var(--amber-bg),transparent)}
   .tplbar .tb-ic{width:38px;height:38px;border-radius:12px;background:var(--amber-bg);color:var(--amber);
@@ -529,6 +547,13 @@
         <span class="tb-tx"><b>La ventana para escribir se cerró</b>
           WhatsApp solo permite retomar con una plantilla aprobada. Cuando el cliente responda, la ventana se abre de nuevo.</span>
         <button class="tplbtn" id="tplSendBtn" type="button"><span id="tbBtnIc"></span>Enviar plantilla…</button>
+      </div>
+      <div class="adjbar hidden" id="adjBar">
+        <div class="adj-th" id="adjTh"></div>
+        <div class="adj-tx"><b id="adjName">archivo</b><span id="adjHint">Escribe un pie de foto y envíalo junto con la imagen</span></div>
+        <button class="adj-x" id="adjX" type="button" title="Quitar el archivo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
       </div>
       <div class="composer">
         <button class="ctool" id="qrBtn" title="Respuestas rápidas">
@@ -1215,6 +1240,13 @@ async function openChat(c) {
       if (v.trim()) state.drafts[state.contactId] = v; else delete state.drafts[state.contactId];
     }
     if (inp0 && state.contactId !== c.id) inp0.value = state.drafts[c.id] || "";
+    // El archivo adjunto NO se guarda por chat como el borrador: se descarta. Dejarlo
+    // visible en otro chat invita a enviarlo ahí, y arrastrarlo entre conversaciones es
+    // justo el error que costó caro con las imágenes (ver el `cid` fijo de sendAttachment).
+    if (typeof adjunto !== "undefined" && adjunto && state.contactId !== c.id) {
+      quitarAdjunto();
+      toast("Se quitó el archivo que ibas a enviar en el otro chat");
+    }
   }
   state.contactId = c.id;
   state.contactName = c.nombre || c.wa_id;
@@ -2005,6 +2037,23 @@ async function sendMsg() {
   // Guarda de re-entrada: el handler de Enter (msgInput keydown) NO mira el
   // botón deshabilitado, y el input recién se limpia DESPUÉS del await de red;
   // sin esto, doble-Enter rápido enviaba el MISMO mensaje dos veces al cliente.
+  // Con un archivo esperando, el texto es su PIE DE FOTO y puede ir vacío: se
+  // envían juntos en una sola burbuja (ver prepararAdjunto).
+  if (adjunto) {
+    if (sending) return;
+    if (adjunto.error) { toast(adjunto.error, true); return; }
+    if (adjunto.subiendo) { toast("El archivo todavía se está subiendo…"); return; }
+    sending = true; $("sendBtn").disabled = true;
+    try {
+      if (!await okManualEnvio()) return;
+      if (await enviarAdjuntoConTexto(text)) {
+        input.value = ""; delete state.drafts[state.contactId];
+        quitarAdjunto();
+      }
+    } catch { toast("Error de red", true); }
+    finally { sending = false; $("sendBtn").disabled = false; }
+    return;
+  }
   if (!text || !state.contactId || sending) return;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
   sending = true; $("sendBtn").disabled = true;
@@ -2032,9 +2081,109 @@ async function sendMsg() {
   finally { sending = false; $("sendBtn").disabled = false; }
 }
 
+// ── Adjunto con pie de foto ──────────────────────────────────────────
+// Antes, elegir un archivo lo enviaba en el acto con la caption vacía: para decir
+// algo sobre la imagen había que mandar un segundo mensaje, y al cliente le
+// llegaban dos burbujas sueltas (a veces en desorden si la red iba lenta).
+// Ahora el archivo espera en una tira sobre el compositor y se va junto con el
+// texto, en una sola burbuja. La SUBIDA arranca al elegirlo, en segundo plano,
+// para no perder la rapidez de antes: cuando el operador termina de escribir, el
+// archivo ya está arriba y el envío es inmediato.
+// El AUDIO no lleva pie de foto (WhatsApp no lo admite) → se envía directo, como
+// siempre. Es la misma distinción que ya hacen las respuestas rápidas.
+const ICO_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+const ICO_VID = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>';
+
+// { file, kind, url, mime, filename, subiendo, error, contactId }
+let adjunto = null;
+
+function pintarAdjunto() {
+  const bar = $("adjBar"), inp = $("msgInput");
+  if (!adjunto) {
+    bar.classList.add("hidden");
+    inp.placeholder = "Escribe un mensaje…";
+    return;
+  }
+  bar.classList.remove("hidden");
+  $("adjName").textContent = adjunto.filename;
+  $("adjHint").textContent = adjunto.error
+    ? adjunto.error
+    : adjunto.subiendo
+    ? "Subiendo el archivo…"
+    : "Escribe un pie de foto (opcional) y envíalo con el archivo";
+  $("adjTh").innerHTML = adjunto.kind === "image"
+    ? `<img src="${adjunto.previewUrl || adjunto.url || ""}" alt=""/>`
+    : adjunto.kind === "video" ? ICO_VID : ICO_DOC;
+  inp.placeholder = "Escribe un pie de foto (opcional)…";
+}
+
+function quitarAdjunto() {
+  if (adjunto?.previewUrl) URL.revokeObjectURL(adjunto.previewUrl);
+  adjunto = null;
+  pintarAdjunto();
+}
+
+// Deja el archivo listo (y subiendo) para que el próximo "Enviar" lo mande con el texto.
+async function prepararAdjunto(file) {
+  if (!state.contactId) return;
+  if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
+  if (file.size > 16 * 1024 * 1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+  // El audio no admite pie de foto: se comporta como antes, directo.
+  if ((file.type || "").startsWith("audio/")) { sendAttachment(file); return; }
+
+  quitarAdjunto();
+  adjunto = {
+    file, filename: file.name, mime: file.type, contactId: state.contactId,
+    kind: (file.type || "").startsWith("image/") ? "image" : (file.type || "").startsWith("video/") ? "video" : "document",
+    subiendo: true, url: null, error: null,
+    previewUrl: (file.type || "").startsWith("image/") ? URL.createObjectURL(file) : null,
+  };
+  pintarAdjunto();
+  try {
+    const dataUrl = await fileToDataURL(file);
+    const up = await (await callFn("media-upload", {
+      channel_id: state.channelId, filename: file.name, content_type: file.type, data: dataUrl,
+    })).json();
+    // Se pudo quitar (o cambiar de chat) mientras subía: no se pisa lo que haya ahora.
+    if (!adjunto || adjunto.file !== file) return;
+    if (!up.url) { adjunto.subiendo = false; adjunto.error = up.detalle || up.error || "No se pudo subir"; pintarAdjunto(); return; }
+    adjunto.url = up.url; adjunto.kind = up.kind || adjunto.kind; adjunto.subiendo = false;
+  } catch {
+    if (adjunto && adjunto.file === file) { adjunto.subiendo = false; adjunto.error = "No se pudo subir"; }
+  }
+  pintarAdjunto();
+}
+
+// Envía el adjunto con el texto como pie de foto. Devuelve true si salió.
+async function enviarAdjuntoConTexto(caption) {
+  // Fijar el destino AHORA, igual que en sendAttachment: si el operador cambió de
+  // chat mientras subía, el archivo debe irse a quien lo eligió.
+  const cid = adjunto.contactId;
+  const media = { kind: adjunto.kind, url: adjunto.url, mime: adjunto.mime, filename: adjunto.filename };
+  if (state.isTest) {
+    if (state.testAs === "bot") {
+      const { error } = await supa.from("messages").insert({
+        channel_id: state.channelId, contact_id: cid, direction: "out",
+        type: media.kind, content: { media_url: media.url, caption, mime: media.mime, filename: media.filename },
+        status: "sent", sent_by: "bot",
+      });
+      if (error) { toast(error.message, true); return false; }
+    } else {
+      await callFn("webchat", { channel_id: state.channelId, media: { ...media, caption } });
+    }
+  } else {
+    // whatsapp-send lee la caption del campo `text`, no de media.caption.
+    const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: cid, media, text: caption });
+    const o = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "Error al enviar", true); return false; }
+    setBotPill(false);
+  }
+  return true;
+}
 // ── Adjuntar media (imagen / audio / video / archivo) ──
 $("attachBtn").addEventListener("click", () => { if (state.contactId) $("fileInput").click(); });
-$("fileInput").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) sendAttachment(f); });
+$("fileInput").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) prepararAdjunto(f); });
+$("adjX").addEventListener("click", quitarAdjunto);
 function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
 async function sendAttachment(file){
   if (!state.contactId) return;
