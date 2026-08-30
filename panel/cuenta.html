@@ -177,8 +177,12 @@ async function removeMember(accId, userId){
 
 async function loadInvites(){
   const r = await callFn({ action:"list" }, true);
+  // Si ya cambiaste de seccion mientras la funcion respondia, este id ya no existe
+  // (o peor: es de OTRA pantalla). Las lecturas por `supa` las corta shell.js al salir,
+  // pero las llamadas a Edge Functions no se pueden cancelar a ciegas: muchas escriben.
+  const card = $("invCard"); if (!card) return;
   const invs = (r?.invites||[]).filter(i=>!i.used_at);
-  $("invCard").innerHTML = invs.length ? `
+  card.innerHTML = invs.length ? `
     <div class="card">
       <h2>${icon("mail")} Invitaciones activas</h2>
       <p class="desc">Links y códigos que generaste y aún no se usan.</p>
