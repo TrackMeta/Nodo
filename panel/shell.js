@@ -1302,7 +1302,8 @@ async function runScripts(scripts) {
 //    retrasar el contenido en esa franja estrecha, y como mucho 150ms.
 const SK_RETARDO_MS = 400;
 const SK_MINIMO_MS = 150;
-const SK_TOPE_MS = 8000;     // red de seguridad: nunca se queda para siempre
+const SK_TOPE_MS = 4000;     // red de seguridad. Corta, porque un esqueleto colgado se ve peor
+                             // cuanto mas dura: la carga real mas lenta medida fue ~1,4s.
 let _skT = null, _skObs = null, _skTope = null, _skDesde = 0;
 
 function _skQuita() {
@@ -1342,17 +1343,23 @@ function esqueletoDeCarga() {
   // Se mira SOLO lo que se añade, y con textContent (que no fuerza layout). Leer
   // wrap.innerText en cada mutación sí lo fuerza, y en una lista larga eso frena
   // justo lo que este esqueleto viene a hacer sentir rápido.
-  // El umbral de 25 deja pasar los rellenos de cromo (unas pestañas son ~16
-  // caracteres) y dispara con contenido de verdad, incluido "Aún no hay productos":
-  // una sección vacía también terminó de cargar.
+  //
+  // El texto se ACUMULA entre mutaciones, no se exige que un nodo suelto llegue al
+  // umbral: Etiquetas pinta un chip corto por etiqueta y ninguno pasaba de 25 por sí
+  // solo, así que el esqueleto se le quedaba pegado para siempre debajo del contenido
+  // ya cargado — que es justo el rectángulo de más que se veía.
+  //
+  // El umbral deja pasar los rellenos de cromo (unas pestañas son ~16 caracteres) y
+  // dispara con contenido de verdad, incluido "Aún no hay productos": una sección
+  // vacía también terminó de cargar.
+  let _pintado = 0;
   _skObs = new MutationObserver((muts) => {
     if (!document.body.contains(wrap)) { _skCorta(); return; }
     for (const m of muts) {
       if (m.target && m.target.closest && m.target.closest("#nodo-sk")) continue;
-      for (const n of m.addedNodes) {
-        if ((n.textContent || "").trim().length >= 25) { _skCorta(); return; }
-      }
+      for (const n of m.addedNodes) _pintado += (n.textContent || "").trim().length;
     }
+    if (_pintado >= 25) _skCorta();
   });
   _skObs.observe(wrap, { childList: true, subtree: true });
   _skTope = setTimeout(_skCorta, SK_TOPE_MS);
