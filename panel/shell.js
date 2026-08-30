@@ -168,7 +168,13 @@ export async function getChannel(channelId) {
   // mismo viaje en vez de hacer dos.
   if (_ch.id === id && _ch.vuelo) return _ch.vuelo;
   _ch.id = id; _ch.fila = null;
-  _ch.vuelo = supa.from("channels").select(CH_COLS).eq("id", id).maybeSingle()
+  // Red de seguridad: como TODAS las secciones cuelgan de esta consulta, una sola
+  // columna que falte (una migración a medio aplicar) las dejaría a todas sin ficha.
+  // Si el select largo falla, se reintenta con lo mínimo imprescindible: el panel
+  // pierde detalle, no se queda en blanco.
+  const pedir = (cols) => supa.from("channels").select(cols).eq("id", id).maybeSingle();
+  _ch.vuelo = pedir(CH_COLS)
+    .then((r) => (r.error ? pedir("id,nombre,moneda,activo,account_id") : r))
     .then(({ data }) => { if (_ch.id === id) { _ch.fila = data || null; _ch.vuelo = null; } return data || null; })
     .catch(() => { if (_ch.id === id) _ch.vuelo = null; return null; });
   return _ch.vuelo;

@@ -189,7 +189,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll } from "./shell.js";
 import * as O from "./orders.js";
 import { inicioDeHoyTZ } from "./date-range.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
@@ -432,15 +432,11 @@ async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   // Remitente del rótulo = nombre del NEGOCIO (Negocio → Conocimiento), no el
-  // del canal/bot; si no está, cae al nombre del canal. Resiliente: sin la
-  // columna negocio_form, reintenta solo con nombre+entregas.
-  supa.from("channels").select("nombre,entregas,negocio_form").eq("id",st.channelId).maybeSingle()
-    .then(({data,error})=>{
-      if(error){ return supa.from("channels").select("nombre,entregas").eq("id",st.channelId).maybeSingle()
-        .then(({data:d2})=>{ st.entregas=d2?.entregas||null; st.channelName=d2?.nombre||""; st.remitente=(d2?.nombre||"").trim(); }); }
-      st.entregas=data?.entregas||null; st.channelName=data?.nombre||"";
-      st.remitente=(data?.negocio_form?.nombre || data?.nombre || "").trim();
-    }).catch(()=>{});
+  // del canal/bot; si no está, cae al nombre del canal.
+  getChannel(st.channelId).then((data)=>{
+    st.entregas=data?.entregas||null; st.channelName=data?.nombre||"";
+    st.remitente=(data?.negocio_form?.nombre || data?.nombre || "").trim();
+  }).catch(()=>{});
   const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   let { data, error }=await supa.from("orders").select(full).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
   if(error){

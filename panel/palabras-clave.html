@@ -268,7 +268,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, patchProductConfig } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, patchProductConfig } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{}, prodList:[], newKws:[] };
 
@@ -322,7 +322,7 @@ async function loadAll(){
     .eq("channel_id",st.channelId).eq("tipo","keyword").order("id");
   st.triggers=trg||[];
   // Config del router + intenciones por producto
-  const { data:ch }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
+  const ch=await getChannel(st.channelId);
   st.router=ch?.ia_router||{};
   let { data:prods, error:pe }=await supa.from("products").select("id,nombre,emoji,config,clase").eq("channel_id",st.channelId).order("nombre");
   if(pe){ ({ data:prods }=await supa.from("products").select("id,nombre,emoji,config").eq("channel_id",st.channelId).order("nombre")); }
