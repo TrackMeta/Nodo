@@ -657,7 +657,22 @@ export function sedeReconocida(sede: string, ciudad: string): string | null {
       ? "no dijo la oficina — confírmala con él antes de despachar"
       : "falta la sede/agencia de destino — confírmala";
   }
-  const cs = candidatasAgencia(s);
+  // ⚠️ La coincidencia por nombre NO alcanza: hay agencias que se llaman igual o
+  // parecido en departamentos distintos. Medido — una clienta de AREQUIPA pidió
+  // "Shalom Arequipa Av Ejercito" y calzó con AV EJERCITO… que está en TACNA. El
+  // pedido salió sin bandera y el paquete iba a cruzar medio país. Si sabemos su
+  // ciudad, la candidata tiene que estar EN esa zona.
+  const enSuZona = (a: Agencia) => {
+    const c = _sinRuido(ciudad) || _n(ciudad);
+    if (!c) return true;                       // sin ciudad no hay con qué filtrar
+    return _n(a.t) === c || _n(a.p) === c || _n(a.d) === c || _n(a.l).includes(c);
+  };
+  const todas = candidatasAgencia(s);
+  const deLaZona = AGENCIAS.filter((a) => todas.includes(a.l) && enSuZona(a));
+  const cs = deLaZona.length ? deLaZona.map((a) => a.l) : [];
+  if (todas.length && !deLaZona.length) {
+    return `la oficina que dijo ("${s}") no es de su zona — confírmasela antes de despachar`;
+  }
   if (cs.some((a) => _n(a) === _n(s))) return null;   // nombró una agencia tal cual
   if (cs.length === 1) return null;                   // su texto apunta a una sola
   if (cs.length > 1) {

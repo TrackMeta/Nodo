@@ -3035,6 +3035,12 @@ function bonito(txt: string, frase = false): string {
 // Cuando ese texto se usa como ÍTEM de la lista de datos, los signos sobran.
 const limpiaLabel = (s: string) =>
   String(s ?? "").replace(/[¿?¡!]/g, "").replace(/\s+/g, " ").trim();
+// El cliente dice que NO SABE a qué oficina mandarlo. Es el que más ayuda necesita —ya
+// quiere comprar, solo no sabe dónde recogerlo— y el bot le contestaba "dime cuál te
+// queda cerca o si quieres te las nombro": le ofrecía la ayuda en vez de dársela,
+// teniendo la lista de su ciudad delante. Medido con un cliente de Piura.
+const RE_NO_SABE_SEDE =
+  /\b(no s[eé]|no sabr[ií]a|ni idea|cu[aá]l(es)? hay|qu[eé] (sedes|oficinas|agencias)|no conozco|desconozco)\b/i;
 // Pedirle el DNI y la sede a alguien a quien nadie le explicó cómo le va a llegar el
 // paquete: para el cliente de provincia, ese formulario aparece de la nada. La modalidad
 // (va por agencia, la recoge él, con una clave) es justo lo que le da confianza para
@@ -3155,6 +3161,12 @@ function conCierre(texto: string, cierre: string): string {
   // diciendo dos veces lo mismo en un renglón. Medido tal cual.
   RE_OFERTA_CIERRE.lastIndex = 0;
   if (RE_OFERTA_CIERRE.test(t)) return texto;
+  // Y si el mensaje YA TRAE los datos de pago —el Yape con su número—, preguntarle
+  // "¿te paso los datos?" es preguntarle por algo que está leyendo. Medido: el bloque
+  // completo con Yape, Plin y BCP terminaba en "¿Te paso los datos para que lo tengas
+  // ya?". El guard de RE_OFERTA_CIERRE no lo pescaba porque el bloque no ANUNCIA los
+  // datos: los trae.
+  if (/\d{6,}/.test(t) && /\b(yape|plin|bcp|interbank|bbva|scotiabank|cuenta|cci)\b/i.test(t)) return texto;
   return `${t} ${cierre}`;
 }
 
@@ -5124,7 +5136,16 @@ export function mensajeEstadoDefault(
   // CON el nombre del courier ("Shalom Trujillo Parque Industrial") → salía
   // "la agencia Shalom de Shalom Trujillo…" en los 3 avisos (despacho, llegada y
   // clave). Se le quita el prefijo del courier a la sede antes de interpolarla.
-  const sede = String(s.destino || s.sede || s.ciudad || "").trim()
+  // Y si la oficina está MARCADA para confirmar, el aviso no la nombra: dice solo su
+  // ciudad. Medido — una clienta de Arequipa pidió "Shalom Arequipa Av Ejercito", el bot
+  // le contestó que esa no estaba en la lista… y dos mensajes después el aviso automático
+  // de despacho le dijo "tu pedido va en camino a la agencia Shalom de Arequipa Av
+  // Ejercito". El aviso la daba por buena justo después de haberla desmentido.
+  // `destino` sí se usa aunque haya bandera: ese lo escribe el operador al confirmarla.
+  const _sedeCruda = s.destino
+    ? String(s.destino)
+    : (String(s.sede_por_confirmar ?? "").trim() ? String(s.ciudad || "") : String(s.sede || s.ciudad || ""));
+  const sede = _sedeCruda.trim()
     .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim();
   // Lo que falta cobrar cuando `shipping.saldo` no está escrito (pedido creado a mano,
   // venta manual, adelanto validado por un camino que no lo selló). El respaldo era el
@@ -8930,6 +8951,12 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // con una pregunta: nunca adivinamos cuando hay dinero de por medio.
   if (cls.clave && cls.confianza >= 0.7) {
     const op = list.find((o) => o.id === cls.clave);
+    // Y que haya nombrado UNA sola. Medido: "¿cuál es la diferencia entre básica y
+    // premium?" sellaba la Básica —el texto la menciona, así que el guard de abajo la
+    // daba por buena— y con el plan sellado el motor le mandó los datos de pago a alguien
+    // que solo estaba comparando. Nombrar dos es comparar, no elegir.
+    const _mencionadas = list.filter((o) => mencionaLaOpcion(texto2, o, list));
+    if (_mencionadas.length > 1) return { ...cls, intencion: "comparando", clave: null };
     // Y que la haya NOMBRADO. Sin esto, un "quiero comprarlo" sellaba la más
     // barata: el cliente no elegía nada y el bot ya no le ofrecía el pack.
     if (op && !mencionaLaOpcion(texto2, op, list)) return { ...cls, intencion: "preguntando", clave: null };
@@ -9359,6 +9386,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // — en uno el cliente insistió y en el otro el extra se perdió en silencio. De las
     // tres ramas, rechazar es la única que no tiene vuelta: se toma solo con una negación
     // de verdad. Sin ella se repregunta, que no cobra de más ni pierde la venta.
+    // 🛟 Y el espejo: un CIERRE del pedido tampoco puede sumar un adicional. La regla
+    // está en el prompt con todas las letras y falló igual — segunda vez, así que se
+    // decide por código. Medido: el bot ofreció las medias, la clienta contestó "si
+    // confirmo" —cerrando su pedido— y le respondió "te sumo las Medias Deportivas Pro".
+    // Se salvó porque ella dijo "no gracias" después; sin eso pagaba S/19 que no pidió.
+    // Se manda a "duda" (repreguntar), no a "rechaza": ni le cobra de más ni le apaga
+    // la venta, que son los dos errores que ya costaron un arreglo cada uno.
+    if (val === "acepta") {
+      const tc = normalize(String(ctx.last_input ?? "")).trim();
+      const cierra = /^(si |s[ií] )?(lo |la |las |los )?(confirmo|confirmado|confirmar)$|^(asi esta bien|esta bien asi|eso es todo|solo eso|nada mas|ya esta|listo|ok listo)$/.test(tc);
+      // …salvo que EN EL MISMO mensaje pida el adicional ("confirmo y súmame las medias").
+      const agrega = /\b(suma|sumame|agrega|agregame|anade|incluye|incluyeme|tambien|con las|con el)\b/.test(tc);
+      if (cierra && !agrega) {
+        const rama = cands.some((c: any) => c.clave === "duda") ? "duda" : "rechaza";
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Cierre leído como aceptar",
+          key + ": cierra el pedido, no acepta el adicional (" + String(ctx.last_input ?? "").slice(0, 50) + ") → " + rama).catch(() => {});
+        val = rama;
+      }
+    }
     if (val === "rechaza" && cands.some((c: any) => c.clave === "duda")) {
       const t = " " + normalize(String(ctx.last_input ?? "")) + " ";
       const niega = /\b(no|nop|nel|nunca|paso|dejalo|otro dia|ahorita no|despues|luego|solo eso|solamente eso|nada mas|ya no|asi esta bien|asi nomas|esta bien asi|ya esta|eso es todo)\b/.test(t);
@@ -11062,7 +11108,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = sinSedeConfirmada(salida, String(ctx.ciudad ?? ""));
         }
       }
-      // Provincia: explicarle la modalidad de envío ANTES de pedirle sus datos.
+      // No sabe a qué oficina: se le manda la lista, no la oferta de mandársela.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && RE_NO_SABE_SEDE.test(String(ctx.last_input ?? "")) && !/📍|👇/.test(salida)) {
+        try {
+          const _agsN = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          if (_agsN.length > 1) {
+            const _rz = (z: { l: string }) => /AEROPUERTO|TERMINAL/i.test(z.l) ? 1 : 0;
+            const _lst = [..._agsN].sort((a, b) => _rz(a) - _rz(b)).slice(0, 8)
+              .map((z) => `*${bonito(z.l)}*` + (z.ref ? ` — ${bonito(z.ref, true)}` : z.dir ? ` — ${bonito(z.dir, true)}` : ""))
+              .join("\n");
+            salida = salida.trimEnd() +
+              `\n\nEn *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lst}\n\n¿Cuál te queda más cerca?`;
+          }
+        } catch (_) { /* sin lista → se envía tal cual */ }
+      }      // Provincia: explicarle la modalidad de envío ANTES de pedirle sus datos.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
           && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(salida)) {
         try {
@@ -11096,7 +11156,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           const opsPend = await loadOpciones(db, run, ctx._product_id);
           if (opsPend.length > 1) {
-            if (!run.vars._preg_pres) {
+            // ⛔ Antes de preguntarle: ¿no la nombró ya? Medido — escribió "un par talla 38
+            // negras" y el bot le contestó "antes de anotarte, ¿cuántos llevas?". Preguntar
+            // algo que el cliente acaba de decir es de lo que más molesta. Si su mensaje
+            // señala UNA sola presentación, se sella y se sigue: la misma seña que exige
+            // mencionaLaOpcion para no adivinar, usada acá para no repreguntar.
+            const _dijo = opsPend.filter((o) => mencionaLaOpcion(String(ctx.last_input ?? ""), o, opsPend));
+            if (_dijo.length === 1) {
+              const oq = _dijo[0];
+              await setField(db, run.channel_id, run.contact_id, "opcion_id", oq.id);
+              await setField(db, run.channel_id, run.contact_id, "opcion_elegida", oq.nombre);
+              run.vars.opcion_id = oq.id;
+              ctx.opcion_id = oq.id; ctx.opcion = oq.nombre;
+              ctx.cantidad = oq.cantidad ?? 1; (ctx as any)._opcion = oq;
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación sellada por su mensaje",
+                oq.nombre + " (ya la había dicho: \"" + String(ctx.last_input ?? "").slice(0, 40) + "\")").catch(() => {});
+            } else if (!run.vars._preg_pres) {
               run.vars._preg_pres = 1;
               salida = preguntaCuantos(opsPend, ctx);
             } else {
@@ -11166,8 +11241,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Con los datos ya completos tampoco: el motor crea el pedido y manda el adelanto
       // en esta misma tanda, así que "¿lo confirmo y te lo mando?" llega tarde y encima
       // choca con lo que la IA acaba de decir ("queda confirmado tu pedido").
+      // Y tampoco al que acaba de decir que se lo va a pensar: ahí la pregunta de cierre
+      // es justo la insistencia que apaga el chat. Medido — "lo voy a pensar, gracias" y
+      // el bot respondió "¿quieres que te mande las opciones de tallas y colores?". La
+      // regla ya existía para la petición de datos; faltaba aplicarla al cierre.
       const _saltarCierre = _faltaAlgoConcreto || ctx.datos_completos === "si" ||
-        String(ctx.pedido_creado ?? "") === "si";
+        String(ctx.pedido_creado ?? "") === "si" || RE_LO_PIENSA.test(String(ctx.last_input ?? ""));
       if (op === "generar_texto" && !_saltarCierre) {   // OJO: `handoff` aún no existe acá (se declara al emitir)
 
         try {
