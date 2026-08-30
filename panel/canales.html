@@ -137,6 +137,11 @@ async function load(){
   st.channel=ch||{};
   st.secrets={};
   try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
+  // Una sola guarda para todo lo que pinta esta seccion, en vez de una por render:
+  // entre el await de arriba y esta linea puedes haberte ido a otra pantalla. Las
+  // lecturas por `supa` las cancela shell.js al salir, pero la de arriba va por Edge
+  // Function y esas no se pueden cancelar a ciegas (muchas escriben).
+  if(!$("waCard")) return;
   renderWA(); renderTG();
 }
 function badge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
@@ -154,8 +159,6 @@ const NOFILL='autocomplete="off" data-lpignore="true" data-form-type="other"';
 const NOFILL_PWD='autocomplete="new-password" data-lpignore="true" data-form-type="other"';
 
 function renderWA(){
-  // Puede llegar tarde: la carga va por Edge Function y esas no se cancelan al salir
-  // de la seccion (muchas escriben). Si el hueco ya no esta, no hay nada que pintar.
   const card=$("waCard"); if(!card) return;
   const c=st.channel||{}, s=st.secrets||{};
   const conn = !!(c.phone_number_id && s.access_token);

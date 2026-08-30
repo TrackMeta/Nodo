@@ -293,6 +293,9 @@ async function loadAccount(){
   renderStatus(); await reload();
 }
 function renderStatus(){
+  // Se llama después de varios await: si ya cambiaste de sección, estos huecos no
+  // existen (y peor, un id igual en la sección nueva se llevaría este texto).
+  if(!$("statusSlot")) return;
   const n=st.adAccounts.length;
   // En "Por copy" no se mide gasto de Meta: ni la pastilla de conexión ni el texto de CPA/
   // ganancia vienen a cuento — con la pastilla en "SIN CONECTAR" encima parecía que la vista
