@@ -278,7 +278,10 @@
   .msg.nueva.out-m{animation:msgInDer .24s cubic-bezier(.22,.68,.3,1) both}
   /* Quien pidió menos movimiento en su sistema no ve ninguno: la burbuja aparece y ya. */
   @media (prefers-reduced-motion:reduce){ .msg.nueva.in-m,.msg.nueva.out-m{animation:none} }
-  .msg .meta{font-size:10px;color:var(--faint);margin-top:3px;display:flex;align-items:center;gap:5px;line-height:1}
+  /* La hora va sobre la BURBUJA, que es mas clara que el fondo normal: con --faint
+     daba 3,8:1 en oscuro (el unico texto del panel que no llegaba tras subir el token).
+     Con --muted, 5,8. */
+  .msg .meta{font-size:10px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:5px;line-height:1}
   .in-m{align-self:flex-start;background:var(--bubble-in,var(--surface-2));border-top-left-radius:4px}
   .out-m{align-self:flex-end;background:var(--bubble-out,var(--brand-bg));border-top-right-radius:4px}
   .out-m .meta{text-align:right;color:var(--bubble-out-meta,#6f92c8);justify-content:flex-end}
