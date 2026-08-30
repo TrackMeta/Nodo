@@ -85,6 +85,16 @@ function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/
 // tallas ("xt" + los 10 primeros del version_id, engine.ts:856). Se acumulan una por
 // variante y con nombre ilegible — llenaban la lista de "Capturados" con plumbing.
 const esInterno=(f)=>{ const k=String((f&&f.key)||""); return k.startsWith("_") || /^xt[0-9a-f]{10}_/.test(k); };
+// Claves que el MOTOR escribe y lee para poder vender. Borrar una no "rompe" Nodo —el
+// motor la vuelve a crear vacía en la venta siguiente— pero se lleva por delante el dato
+// de TODOS los contactos (contact_field_values cae en cascada), y eso no se recupera.
+// Antes el botón de borrar no preguntaba nada: un clic y te quedabas sin los DNI.
+const CLAVES_MOTOR = new Set(["nombre_completo","dni","telefono","direccion","referencia","ciudad",
+  "zona_entrega","zona_nombre","zona_distrito_incierto","sede","entrega_hoy","entrega_cuando","entrega_motivo",
+  "opcion","opcion_id","opcion_elegida","datos_completos","confirmo","pedido_creado","oferta_activa",
+  "datos_pago","pago_resultado","pago_metodo","pago_operacion","pago_monto","pago_titular","pago_extra_1",
+  "ultima_imagen","extra_1_resp","extraf_1_resp"]);
+const esDelMotor=(f)=>CLAVES_MOTOR.has(String((f&&f.key)||"").trim().toLowerCase());
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
 const IC_VAR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>';
@@ -167,7 +177,25 @@ function render(){
     el.querySelector(".tipo").onchange=(e)=>f.tipo=e.target.value;
     el.querySelector(".folder").onchange=(e)=>f.folder=e.target.value||null;
     if(bot){ el.querySelector(".valor").oninput=(e)=>f.valor=e.target.value; el.querySelector(".descripcion").oninput=(e)=>f.descripcion=e.target.value; }
-    el.querySelector(".del").onclick=()=>{ if(f.id) st.deleted.push(f.id); st.fields=st.fields.filter(x=>x!==f); render(); };
+    el.querySelector(".del").onclick=async()=>{
+      if(f.id){
+        if(esDelMotor(f)){
+          toast(`"${f.nombre||f.key}" lo usa el bot para armar el pedido — no se puede borrar`, true);
+          return;
+        }
+        // Cuántos contactos tienen algo guardado ahí: el número es lo que hace pensar.
+        let usados=0;
+        try{ const { count }=await supa.from("contact_field_values").select("contact_id",{count:"exact",head:true}).eq("field_id",f.id); usados=count||0; }catch(_){}
+        const ok=await confirmDialog({ title:"¿Borrar este campo?",
+          messageHtml:`Se borra <b>${esc(f.nombre||f.key)}</b>`+
+            (usados?` y el dato que hay guardado en <b>${usados} contacto${usados===1?"":"s"}</b>`:"")+
+            `.<br><br>Esto no se puede deshacer.`,
+          confirmText:"Sí, borrar", danger:true });
+        if(!ok) return;
+        st.deleted.push(f.id);
+      }
+      st.fields=st.fields.filter(x=>x!==f); render();
+    };
     box.appendChild(el);
   });
   if(notaTec) box.insertAdjacentHTML("beforeend", notaTec);
