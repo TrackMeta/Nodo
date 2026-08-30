@@ -1284,23 +1284,39 @@ async function runScripts(scripts) {
 // blanco ~300ms. Esto no acelera nada: hace que la sección se VEA trabajando,
 // que es lo que se percibe.
 //
-// Dos decisiones que importan más que el dibujo:
-//  · Se pinta con RETARDO. Si la sección resuelve antes, no llega a aparecer:
-//    un destello de 50ms se lee como un parpadeo, peor que no poner nada.
+// Tres decisiones que importan más que el dibujo:
 //  · Se quita con un observador del contenido REAL, no contando consultas. Las
 //    secciones encadenan consultas (una espera a la anterior), así que "ya no
 //    quedan pendientes" se cumple ENTRE dos y el esqueleto se iría antes de tiempo.
 //    Lo que de verdad marca el final es que algo se haya pintado — incluido el
 //    "Aún no hay productos", que también es una respuesta.
-const SK_RETARDO_MS = 140;   // por debajo de esto, la sección ya está lista
-const SK_TOPE_MS = 6000;     // red de seguridad: nunca se queda para siempre
-let _skT = null, _skObs = null, _skTope = null;
+// Los otros dos son umbrales, y los dos salen de lo MEDIDO, no de un gusto:
+//  · RETARDO 400ms. Tras los arreglos de hoy las secciones cargan entre 160 y
+//    400ms, asi que por debajo de esto el esqueleto NO llega a aparecer. Con un
+//    retardo corto habria parpadeado en las rapidas — un destello de 150ms se lee
+//    como un fallo de pintado, peor que el hueco en blanco que viene a tapar.
+//    Aparece cuando de verdad tarda: red lenta, cache fria, o cuando Pedidos y
+//    Contactos crezcan a miles de filas. Es un seguro, no un adorno.
+//  · MINIMO 150ms una vez visible. Si los datos llegan justo despues de pintarlo,
+//    quitarlo al instante es el mismo destello por el otro lado. Solo puede
+//    retrasar el contenido en esa franja estrecha, y como mucho 150ms.
+const SK_RETARDO_MS = 400;
+const SK_MINIMO_MS = 150;
+const SK_TOPE_MS = 8000;     // red de seguridad: nunca se queda para siempre
+let _skT = null, _skObs = null, _skTope = null, _skDesde = 0;
+
+function _skQuita() {
+  const e = document.getElementById("nodo-sk");
+  if (e) e.remove();
+  _skDesde = 0;
+}
 
 function _skCorta() {
   clearTimeout(_skT); clearTimeout(_skTope);
   if (_skObs) { _skObs.disconnect(); _skObs = null; }
-  const e = document.getElementById("nodo-sk");
-  if (e) e.remove();
+  const visto = _skDesde ? Date.now() - _skDesde : 0;
+  if (_skDesde && visto < SK_MINIMO_MS) setTimeout(_skQuita, SK_MINIMO_MS - visto);
+  else _skQuita();
 }
 
 function _skPinta(wrap) {
@@ -1314,6 +1330,7 @@ function _skPinta(wrap) {
     .join("");
   sk.setAttribute("aria-hidden", "true");   // es decoración: no se lee en voz alta
   wrap.appendChild(sk);
+  _skDesde = Date.now();
 }
 
 // Arranca el ciclo para la sección que acaba de entrar.
