@@ -468,10 +468,18 @@ export const EXTRAS_CSS = `
   .cpanel .mia-ico svg{width:17px;height:17px}
   .cpanel .mia-htx{display:flex;flex-direction:column;min-width:0}
   .cpanel .mia-title{font-size:15.5px;font-weight:800;letter-spacing:-.2px;line-height:1.1;background:linear-gradient(90deg,var(--ia),var(--ia-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .cpanel .mia-cap{font-size:10.5px;color:var(--faint);margin-top:2px}
+  /* Estos cinco llevan --muted y no --faint a proposito. Medido en modo claro:
+     --faint (#8A94A8) sobre --surface-2 da 2,7 a 1 y el minimo legible es 4,5; con
+     --muted sube a 5,4. Es texto INFORMATIVO ("Aun sin datos", "Toca un chip para
+     editar"), no adorno, asi que tiene que leerse.
+     Se cambia aca y NO el token global: --faint son 404 usos en el panel, casi todos
+     decorativos (puntos, bordes, iconos), y oscurecerlo hasta 4,5 lo dejaria igual
+     que --muted — perdiendo el tercer escalon de la escala de texto en todas partes.
+     Regla que queda: si el texto DICE algo, --muted; --faint solo para lo prescindible. */
+  .cpanel .mia-cap{font-size:10.5px;color:var(--muted);margin-top:2px}
   .cpanel .mia-lyr{position:relative;display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#c9b6e8;font-weight:700;margin:0 0 6px}
   .cpanel .mia-lyr::before{content:"";width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,var(--ia),var(--ia-2));flex:none}
-  .cpanel .mia-lyr .mia-sub{color:var(--faint);text-transform:none;letter-spacing:0;font-weight:400}
+  .cpanel .mia-lyr .mia-sub{color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}
   .cpanel .mia-chips{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
   .cpanel .mia-chip{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid transparent;line-height:1;font-family:inherit}
   .cpanel .mia-chip.sell{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.5);color:#e9d5ff;cursor:pointer}
@@ -480,11 +488,11 @@ export const EXTRAS_CSS = `
   .cpanel .mia-chip.how{background:rgba(139,110,247,.15);border-color:rgba(139,110,247,.45);color:#c4b5fd}
   .cpanel .mia-chip.sell:hover,.cpanel .mia-chip.ghost:hover{filter:brightness(1.14)}
   .cpanel .mia-chip svg{width:11px;height:11px;vertical-align:-1px;opacity:.7}
-  .cpanel .mia-none{font-size:11.5px;color:var(--faint)}
+  .cpanel .mia-none{font-size:11.5px;color:var(--muted)}
   .cpanel .mia-edit{font-size:12px;height:28px;border-radius:999px;background:var(--surface);border:1px solid var(--ia);color:var(--text);padding:0 11px;outline:none;min-width:90px;font-family:inherit}
   .cpanel .mia-foot{position:relative;display:flex;align-items:center;justify-content:space-between;margin-top:2px;padding-top:10px;border-top:1px solid rgba(168,85,247,.18)}
-  .cpanel .mia-hint{font-size:10.5px;color:var(--faint)}
-  .cpanel .mia-mini{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;margin:10px 0 2px}
+  .cpanel .mia-hint{font-size:10.5px;color:var(--muted)}
+  .cpanel .mia-mini{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin:10px 0 2px}
   .cpanel .mia-mini:first-child{margin-top:0}
   /* Tema claro: los chips llevan texto oscuro (el claro se lee mal sobre el tinte pálido) */
   html[data-theme=light] .cpanel .mia-lyr{color:#7c3aed}

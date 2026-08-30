@@ -134,6 +134,25 @@ function render(){
   const b=$("body");
   if(st.tab==="conocimiento") renderConocimiento(b);
   else renderEntregas(b);
+  sincronizaFab();
+}
+
+// Con el formulario vacío salían DOS "Armar con IA" al mismo tiempo: la franja
+// explicada de arriba y el botón flotante, haciendo lo mismo. No se borra el
+// flotante — sirve cuando ya bajaste por el formulario, que es largo —: se esconde
+// mientras la franja está a la vista, y reaparece en cuanto se va hacia arriba.
+let _armObs=null;
+function sincronizaFab(){
+  const fab=$("armFab"); if(!fab) return;
+  if(_armObs){ _armObs.disconnect(); _armObs=null; }
+  const hero=document.querySelector(".armhero");
+  if(!hero){ fab.style.display=""; return; }   // sin franja (form ya lleno) → flotante solo
+  // El que scrollea es .nodo-page, no la ventana: con root nulo el observador
+  // creería que la franja siempre está fuera de vista.
+  _armObs=new IntersectionObserver(
+    ([e])=>{ fab.style.display = e.isIntersecting ? "none" : ""; },
+    { root: document.querySelector(".nodo-page"), threshold: 0 });
+  _armObs.observe(hero);
 }
 
 // ════════ CONOCIMIENTO DEL NEGOCIO (movido de IA) ════════
