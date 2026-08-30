@@ -60,7 +60,7 @@ html:not([data-theme="light"]){
   --surface-2:#1C2740;           /* inputs, hover, chips (n. 3)  */
   --border:rgba(148,163,184,.13);
   --border-strong:rgba(148,163,184,.24);
-  --text:#F1F5F9; --muted:#94A3B8; --faint:#64748B; --disabled:#475569;
+  --text:#F1F5F9; --muted:#94A3B8; --faint:#828FA5; --disabled:#475569;
 
   --brand:#007dfd; --brand-2:#3a9bff; --brand-3:#0068d6;
   --brand-bg:rgba(0,125,253,.15); --brand-border:rgba(0,125,253,.42);
@@ -85,7 +85,17 @@ html[data-theme="light"]{
   --surface-2:#EEF1F7;
   --border:rgba(15,23,42,.08);
   --border-strong:rgba(15,23,42,.16);
-  --text:#0F172A; --muted:#55627A; --faint:#8A94A8; --disabled:#B3BAC7;
+  /* --faint subio de #8A94A8 a #656D7E (claro) y de #64748B a #828FA5 (oscuro).
+     Motivo, medido recorriendo las 25 secciones: de los 82 textos que se pintan con
+     --faint, los 67 medibles estaban TODOS por debajo de 4,5:1 — el minimo legible.
+     Y no eran adorno: los subtitulos de cada KPI del Dashboard ("plata que ya entro,
+     de S/0.00 vendidos"), los estados vacios, las cabeceras de tabla, "+ Carpeta",
+     el rol bajo tu nombre en el sidebar. Ahora dan 4,6 sobre --surface-2, 4,9 sobre
+     --bg y 5,2 sobre blanco (4,5 / 5,1 en oscuro).
+     El precio: --faint y --muted se parecen mas que antes. Se acepta — se leen las dos.
+     Los usos NO-texto (bordes de hover, iconos, barra de scroll, puntos) solo ganan
+     presencia, ninguno se rompe. */
+  --text:#0F172A; --muted:#55627A; --faint:#656D7E; --disabled:#B3BAC7;
 
   --brand:#0071e6; --brand-2:#2b8bff; --brand-3:#005bc4;
   --brand-bg:rgba(0,125,253,.10); --brand-border:rgba(0,125,253,.35);
