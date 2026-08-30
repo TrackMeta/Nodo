@@ -21,7 +21,98 @@ import { setTZ } from "./date-range.js";
 export const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
 export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
 
-export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ── Vigilante de conexión ───────────────────────────────────────────
+// El 2026-08-30 el reloj de PostgREST se atrasó media hora. Como valida el `iat`
+// del pase contra SU reloj y sin margen, empezó a rechazar todo token recién
+// emitido con 401 PGRST303 "JWT issued at future". El panel no leía NADA… y no lo
+// decía: cada pantalla pintaba su estado vacío y todo se veía como una cuenta sin
+// datos ("Aún no hay productos", el Dashboard en cero, secciones en blanco). Una
+// caída total indistinguible de una base recién creada.
+//
+// Es el patrón "descartar en silencio" otra vez, pero en el peor sitio: acá no se
+// pierde un contador, se pierde la confianza en todo lo que muestra el panel.
+//
+// Por eso el aviso NO se pone pantalla por pantalla (se olvidaría en la siguiente
+// que escribamos) sino en el `fetch` del cliente: cada consulta de cada sección
+// pasa por acá, hoy y las que vengan.
+const CONEX = { fallos: 0, area: "" };
+
+// Qué servicio contestó. Importa porque en la caída del 2026-08-30 PostgREST daba 401
+// mientras Storage daba 200: sin separar por area, el primer 200 de Storage borraba el
+// aviso y el panel volvia a mentir. El aviso solo lo levanta el servicio que se recupera.
+const areaDe = (u) => u.includes("/rest/v1/") ? "rest" : u.includes("/storage/v1/") ? "storage" : u.includes("/functions/v1/") ? "funciones" : "otro";
+
+// Hacen falta DOS fallos seguidos para avisar: un 401 suelto puede ser el token
+// venciendo justo (el cliente lo renueva y sigue), y un 503 suelto, un hipo. Lo que
+// delata una caída de verdad es que NINGUNA consulta pasa. Un éxito borra la cuenta.
+function marcaFalloRed(area, msg) {
+  if (area !== CONEX.area) { CONEX.area = area; CONEX.fallos = 0; }
+  if (++CONEX.fallos >= 2) pintaAvisoConexion(msg);
+}
+function marcaExitoRed(area) {
+  if (area !== CONEX.area) return;   // se recuperó otro servicio, no el que falla
+  CONEX.fallos = 0; CONEX.area = "";
+  const b = document.getElementById("nodo-conex");
+  if (b) b.remove();
+}
+
+function pintaAvisoConexion(msg) {
+  let b = document.getElementById("nodo-conex");
+  if (!b) {
+    b = document.createElement("div");
+    b.id = "nodo-conex";
+    b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:100000;display:flex;align-items:center;gap:12px;" +
+      "padding:11px 18px;font-size:13.5px;font-weight:600;letter-spacing:-.1px;color:#fff;" +
+      "background:linear-gradient(90deg,#c0392b,#e2564a);box-shadow:0 6px 22px rgba(0,0,0,.28)";
+    b.innerHTML =
+      '<span style="flex:none;display:flex">' + icon("alert") + "</span>" +
+      '<span id="nodo-conex-msg" style="flex:1;line-height:1.35"></span>' +
+      '<button id="nodo-conex-btn" style="flex:none;cursor:pointer;border:1px solid rgba(255,255,255,.45);' +
+      'background:rgba(255,255,255,.14);color:#fff;font:inherit;padding:5px 13px;border-radius:9px">Reintentar</button>';
+    document.body.appendChild(b);
+    b.querySelector("#nodo-conex-btn").onclick = () => location.reload();
+  }
+  b.querySelector("#nodo-conex-msg").textContent = msg;
+}
+
+// Envuelve el fetch del cliente. Reglas de qué cuenta como caída:
+//  · 401 → PostgREST rechazó el pase (sesión/reloj). NO se mira el 403: ése es un
+//    permiso denegado legítimo (RLS), no una caída, y pintarlo de rojo asustaría de balde.
+//  · 5xx → el proyecto no responde (reiniciando, caído). Incluye el 521/522 que
+//    devuelve Supabase mientras levanta.
+//  · el fetch lanza → sin red.
+// Las llamadas a /auth/v1/ quedan fuera: un 400 al iniciar sesión es una contraseña
+// mal puesta, no una caída.
+async function fetchVigilado(input, init) {
+  const url = String((input && input.url) || input || "");
+  const esAuth = url.includes("/auth/v1/");
+  const area = areaDe(url);
+  let r;
+  try {
+    r = await fetch(input, init);
+  } catch (e) {
+    if (!esAuth) marcaFalloRed(area, "Sin conexión con el servidor. Lo que ves puede estar incompleto.");
+    throw e;
+  }
+  if (esAuth) return r;
+  if (r.status === 401) {
+    // El cuerpo se lee de un clon para no consumirlo: quien llamó todavía lo necesita.
+    let d = ""; try { d = (await r.clone().text()).slice(0, 300); } catch (_) { /* da igual */ }
+    marcaFalloRed(area, /issued at future|JWT/i.test(d)
+      ? "El servidor está rechazando la sesión (su reloj va desfasado). Lo que ves puede estar vacío o incompleto — no es que se hayan borrado tus datos."
+      : "Tu sesión no es válida para el servidor. Lo que ves puede estar incompleto.");
+  } else if (r.status >= 500) {
+    marcaFalloRed(area, "El servidor no responde. Lo que ves puede estar incompleto o vacío.");
+  } else if (r.ok) {
+    marcaExitoRed(area);
+  }
+  return r;
+}
+
+
+export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  global: { fetch: (i, o) => fetchVigilado(i, o) },
+});
 export const FALLBACK_LOGO = "../assets/logo-128.png";
 
 // ── Iconos (Lucide, stroke=currentColor) ───────────────────────────
@@ -1063,7 +1154,7 @@ function pageHeadAssets(docLike) {
 // Reemplaza el contenido (todo el <body> salvo el sidebar y el toast).
 function removeContentNodes() {
   Array.from(document.body.children).forEach((el) => {
-    if (el === S.nav || el.id === "nodo-toast" || el.id === "nodo-fx" || el.id === "nodoBotPop") return; // persisten
+    if (el === S.nav || el.id === "nodo-conex" || el.id === "nodo-toast" || el.id === "nodo-fx" || el.id === "nodoBotPop") return; // persisten
     el.remove();
   });
 }
