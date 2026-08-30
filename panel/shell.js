@@ -52,11 +52,24 @@ function marcaFalloRed(area, msg) {
 function marcaExitoRed(area) {
   if (area !== CONEX.area) return;   // se recuperó otro servicio, no el que falla
   CONEX.fallos = 0; CONEX.area = "";
+  document.documentElement.classList.remove("nodo-caido");
   const b = document.getElementById("nodo-conex");
   if (b) b.remove();
 }
 
 function pintaAvisoConexion(msg) {
+  // El aviso EMPUJA, no se monta encima: con position:fixed a secas tapaba el titulo
+  // de la seccion y la cabecera del sidebar (comprobado). Las dos columnas cuelgan de
+  // un flex en <body> con height:100vh, asi que hay que bajar el body y descontarles
+  // esa altura, o el panel se sale por abajo.
+  if (!document.getElementById("nodo-conex-css")) {
+    const s = document.createElement("style");
+    s.id = "nodo-conex-css";
+    s.textContent =
+      "html.nodo-caido body{padding-top:var(--nodo-conex-h,44px)}" +
+      "html.nodo-caido .nodo-nav,html.nodo-caido .nodo-page{height:calc(100vh - var(--nodo-conex-h,44px))}";
+    document.head.appendChild(s);
+  }
   let b = document.getElementById("nodo-conex");
   if (!b) {
     b = document.createElement("div");
@@ -73,6 +86,12 @@ function pintaAvisoConexion(msg) {
     b.querySelector("#nodo-conex-btn").onclick = () => location.reload();
   }
   b.querySelector("#nodo-conex-msg").textContent = msg;
+  document.documentElement.classList.add("nodo-caido");
+  // Se mide DESPUES de pintar el texto: con el mensaje largo son dos lineas en pantallas
+  // angostas, y un alto fijo dejaria el titulo medio tapado igual.
+  requestAnimationFrame(() => {
+    document.documentElement.style.setProperty("--nodo-conex-h", b.offsetHeight + "px");
+  });
 }
 
 // Envuelve el fetch del cliente. Reglas de qué cuenta como caída:
