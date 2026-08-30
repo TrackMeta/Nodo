@@ -3035,6 +3035,24 @@ function bonito(txt: string, frase = false): string {
 // Cuando ese texto se usa como ÍTEM de la lista de datos, los signos sobran.
 const limpiaLabel = (s: string) =>
   String(s ?? "").replace(/[¿?¡!]/g, "").replace(/\s+/g, " ").trim();
+// La rama "duda" de un extra existe para RE-PREGUNTAR, no para darlo por aceptado.
+// Medido: el cliente contestó "si confirmo" a "¿le sumas las medias?", el clasificador
+// lo mandó a duda —bien, es un cierre ambiguo— y en esa rama la IA respondió "perfecto,
+// te sumo las Medias Deportivas Pro por S/ 19". Nadie las sumó: el pedido salió en
+// S/ 129 y el cliente se quedó esperando unas medias que no existen en su pedido.
+const RE_AFIRMA_SUMA =
+  /\b(te (lo |la |las |los )?(sumo|agrego|anado|añado|incluyo)|queda (sumad|agregad|incluid)|lo sumo|las sumo|los sumo)\b/i;
+
+function repreguntaExtra(texto: string): string {
+  const t = String(texto ?? "");
+  if (!RE_AFIRMA_SUMA.test(t)) return t;
+  // Se le saca el nombre del propio mensaje para no repreguntar en abstracto.
+  const m = /te (?:lo |la |las |los )?(?:sumo|agrego|anado|añado|incluyo)\s+(?:el |la |los |las )?([^.,;!?\n]{3,40})/i.exec(t);
+  const que = m ? m[1].replace(/\s+por\s+S\/?\s*[\d.,]+.*$/i, "").replace(/\s+al mismo.*$/i, "").trim() : "";
+  return que
+    ? `¿Te sumo ${que} al pedido entonces, o lo dejamos así? 🙂`
+    : "¿Te lo sumo al pedido entonces, o lo dejamos así? 🙂";
+}
 // El cliente dice que NO SABE a qué oficina mandarlo. Es el que más ayuda necesita —ya
 // quiere comprar, solo no sabe dónde recogerlo— y el bot le contestaba "dime cuál te
 // queda cerca o si quieres te las nombro": le ofrecía la ayuda en vez de dársela,
@@ -11108,7 +11126,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = sinSedeConfirmada(salida, String(ctx.ciudad ?? ""));
         }
       }
-      // No sabe a qué oficina: se le manda la lista, no la oferta de mandársela.
+      // Rama "duda" de un extra: si el mensaje AFIRMA que lo suma, se convierte en la
+      // repregunta que esa rama debía hacer (ver repreguntaExtra).
+      if (op === "generar_texto") {
+        const _dudaExtra = Object.keys(ctx).some((k) =>
+          /^extraf_\d+_resp$/.test(k) && String(ctx[k] ?? "") === "duda");
+        if (_dudaExtra) {
+          const _antes = salida;
+          salida = repreguntaExtra(salida);
+          if (salida !== _antes) {
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "Afirmó sumar el extra sin sumarlo",
+              "la rama era para repreguntar; se cambió por la pregunta").catch(() => {});
+          }
+        }
+      }      // No sabe a qué oficina: se le manda la lista, no la oferta de mandársela.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
           && RE_NO_SABE_SEDE.test(String(ctx.last_input ?? "")) && !/📍|👇/.test(salida)) {
         try {
