@@ -87,11 +87,15 @@ function pintaAvisoConexion(msg) {
   }
   b.querySelector("#nodo-conex-msg").textContent = msg;
   document.documentElement.classList.add("nodo-caido");
-  // Se mide DESPUES de pintar el texto: con el mensaje largo son dos lineas en pantallas
-  // angostas, y un alto fijo dejaria el titulo medio tapado igual.
-  requestAnimationFrame(() => {
-    document.documentElement.style.setProperty("--nodo-conex-h", b.offsetHeight + "px");
-  });
+  // El alto se sigue con un observador y no se mide una sola vez: el mensaje reflowea
+  // a dos lineas segun el ancho de la ventana (y al plegar el sidebar), y con una
+  // medida fija quedaban 7px del rail tapados (visto en pantalla).
+  if (!b._ro) {
+    b._ro = new ResizeObserver(() =>
+      document.documentElement.style.setProperty("--nodo-conex-h", b.offsetHeight + "px"));
+    b._ro.observe(b);
+  }
+  document.documentElement.style.setProperty("--nodo-conex-h", b.offsetHeight + "px");
 }
 
 // Envuelve el fetch del cliente. Reglas de qué cuenta como caída:
