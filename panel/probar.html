@@ -36,11 +36,12 @@
      fuente del SISTEMA (Segoe UI en Windows) mientras todo lo de al lado iba en Inter,
      y se notaba justo al costado del botón. De paso se le quita la flecha nativa, que
      es lo otro que delata un <select> sin vestir. */
-  .selwrap{position:relative;display:inline-flex}
-  .selwrap::after{content:"";position:absolute;right:12px;top:50%;width:8px;height:8px;
-    border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);border-radius:1px;
-    transform:translateY(-70%) rotate(45deg);pointer-events:none;transition:border-color var(--t-fast)}
-  .selwrap:hover::after{border-color:var(--brand)}
+  /* El chevron va como SVG y no como bordes rotados: a 8px con borde de 2px, la
+     esquina rotada se parte en dos trazos al escalar y parece una flecha doble. */
+  .selwrap{position:relative;display:inline-flex;color:var(--muted)}
+  .selwrap:hover{color:var(--brand)}
+  .selwrap .cv{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;
+    pointer-events:none;transition:color var(--t-fast)}
   .sel{appearance:none;-webkit-appearance:none;background:var(--surface-2);border:1px solid var(--border);
     border-radius:10px;color:var(--text);height:38px;padding:0 34px 0 13px;font-family:var(--font);
     font-size:13px;font-weight:600;letter-spacing:-.1px;outline:none;min-width:200px;cursor:pointer;
@@ -194,7 +195,7 @@
     <div class="chat">
       <div class="topbar">
         <span class="ttl" id="pageTtl">Probar flujos</span>
-        <span class="selwrap"><select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select></span>
+        <span class="selwrap"><select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
         <button class="testbtn" id="startBtn">Iniciar / Reiniciar</button>
       </div>
 
