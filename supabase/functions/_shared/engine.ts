@@ -8908,7 +8908,13 @@ function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   //    "1 kit" vs "Pack 2 kits", "kit" no distingue nada; "pack" sí.
   const tokens = (n: string) => sinTildes(n).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
   const ajenas = new Set(todas.filter((o) => o.id !== op.id).flatMap((o) => tokens(o.nombre)));
-  if (tokens(op.nombre).some((w) => !ajenas.has(w) && t.includes(w))) return true;
+  // La palabra tiene que estar COMPLETA. Con `includes` a secas, "par" (de "1 par")
+  // hacía match dentro de "pares" (de "Pack 2 pares"): un cliente que pedía el pack
+  // parecía estar nombrando las DOS presentaciones, el motor lo leía como que estaba
+  // comparando y no sellaba ninguna — el pedido del pack no se creaba.
+  const suelta = (w: string) =>
+    new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)").test(t);
+  if (tokens(op.nombre).some((w) => !ajenas.has(w) && suelta(w))) return true;
   // 2) Las unidades que trae, en número o en palabra ("llevo 2", "quiero dos").
   const cant = Number(op.cantidad ?? 0);
   if (cant > 0) {
@@ -11126,7 +11132,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = sinSedeConfirmada(salida, String(ctx.ciudad ?? ""));
         }
       }
-      // Rama "duda" de un extra: si el mensaje AFIRMA que lo suma, se convierte en la
+      // Y al que dice que se lo va a pensar tampoco se le deja una pregunta al final:
+      // saltar el cierre del motor no alcanzaba porque la pregunta la escribe la IA.
+      // Medido: "ah ya, lo voy a pensar, gracias" → "¿Te cuento cómo se paga cuando
+      // decidas?". Se le deja cerrar tranquilo; de retomarlo se encarga el remarketing.
+      if (op === "generar_texto" && RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+        salida = sinPreguntaFinal(salida);
+      }      // Rama "duda" de un extra: si el mensaje AFIRMA que lo suma, se convierte en la
       // repregunta que esa rama debía hacer (ver repreguntaExtra).
       if (op === "generar_texto") {
         const _dudaExtra = Object.keys(ctx).some((k) =>
