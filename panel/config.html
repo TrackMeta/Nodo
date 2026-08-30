@@ -521,6 +521,7 @@ async function saveGsheets(btn, gs){
 
 // ── Marca del Bot ───────────────────────────────────────────────────
 function renderBranding(b){
+  if(!b) return;   // ya cambiaste de sección mientras esto cargaba: no hay dónde pintar
   const c=st.channel||{}; const logo=c.logo_url||"../assets/logo-128.png";
   b.innerHTML=`
     <h2>Marca del Bot</h2><p class="sub">Nombre y logo que se muestran en el panel para este bot. Si no defines un logo, se usa el de Nodo.</p>

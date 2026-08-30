@@ -154,9 +154,12 @@ const NOFILL='autocomplete="off" data-lpignore="true" data-form-type="other"';
 const NOFILL_PWD='autocomplete="new-password" data-lpignore="true" data-form-type="other"';
 
 function renderWA(){
+  // Puede llegar tarde: la carga va por Edge Function y esas no se cancelan al salir
+  // de la seccion (muchas escriben). Si el hueco ya no esta, no hay nada que pintar.
+  const card=$("waCard"); if(!card) return;
   const c=st.channel||{}, s=st.secrets||{};
   const conn = !!(c.phone_number_id && s.access_token);
-  $("waCard").innerHTML=`
+  card.innerHTML=`
     <div class="card">
       <div class="chd"><span class="ico"><img src="${LOGO.wa}" alt="WhatsApp"/></span>
         <div><div class="nm">WhatsApp Cloud API</div><div class="sub2">Número principal de ventas y atención</div></div>
