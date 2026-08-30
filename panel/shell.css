@@ -523,10 +523,25 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 /* ═══════════════════════════════════════════════════════════════════
    Capa de diseño compartida — primitivas nodo- (§9–§12)
    ═══════════════════════════════════════════════════════════════════ */
+/* Escala de anchos de contenido. Habia DIEZ valores sueltos repartidos por las
+   pantallas (720, 760, 820, 860, 900, 920, 960, 1080, 1280, 1320) y encima por dos
+   caminos distintos, asi que al saltar de seccion el texto se corria unos pixeles.
+   Ahora son TRES y cada pantalla declara para que sirve, no un numero magico:
+   pegar un px suelto es como vuelve el desorden. */
+:root{
+  --nodo-ancho:1280px;   /* tableros y listas largas: Pedidos, Productos, Contactos */
+  --nodo-medio:960px;    /* listas cortas y fichas: Campos, Etiquetas, Palabras clave */
+  --nodo-form:820px;     /* ajustes de una columna: Negocio, IA, Canales, Perfil */
+  /* El relleno viaja con el ancho: si solo se igualan los max-width pero una pantalla
+     rellena 24px y otra 32px, el texto SIGUE corriendose al cambiar de seccion. Va como
+     variable para que las pantallas que traen su propio .wrap usen exactamente esto,
+     media queries incluidas, en vez de repetir los numeros y volver a divergir. */
+  --nodo-pad:32px 32px 64px;
+}
+@media(min-width:1440px){:root{--nodo-pad:32px 40px 64px}}
+@media(max-width:720px){:root{--nodo-pad:24px 16px 48px}}
 .nodo-page{flex:1;min-width:0;height:100vh;overflow-y:auto;scrollbar-gutter:stable}
-.nodo-wrap{max-width:var(--nodo-max,1280px);margin:0 auto;width:100%;padding:32px 32px 64px}
-@media(min-width:1440px){.nodo-wrap{padding:32px 40px 64px}}
-@media(max-width:720px){.nodo-wrap{padding:24px 16px 48px}}
+.nodo-wrap{max-width:var(--nodo-max,var(--nodo-ancho));margin:0 auto;width:100%;padding:var(--nodo-pad)}
 
 /* Encabezado de página (§14) */
 .nodo-head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:8px}
