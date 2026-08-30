@@ -1278,6 +1278,69 @@ async function runScripts(scripts) {
   }
 }
 
+// ── Esqueleto de carga ───────────────────────────────────────────────
+// Al cambiar de sección, el encabezado (título, pestañas, botones) aparece al
+// instante porque es HTML estático, pero el hueco de los datos se quedaba en
+// blanco ~300ms. Esto no acelera nada: hace que la sección se VEA trabajando,
+// que es lo que se percibe.
+//
+// Dos decisiones que importan más que el dibujo:
+//  · Se pinta con RETARDO. Si la sección resuelve antes, no llega a aparecer:
+//    un destello de 50ms se lee como un parpadeo, peor que no poner nada.
+//  · Se quita con un observador del contenido REAL, no contando consultas. Las
+//    secciones encadenan consultas (una espera a la anterior), así que "ya no
+//    quedan pendientes" se cumple ENTRE dos y el esqueleto se iría antes de tiempo.
+//    Lo que de verdad marca el final es que algo se haya pintado — incluido el
+//    "Aún no hay productos", que también es una respuesta.
+const SK_RETARDO_MS = 140;   // por debajo de esto, la sección ya está lista
+const SK_TOPE_MS = 6000;     // red de seguridad: nunca se queda para siempre
+let _skT = null, _skObs = null, _skTope = null;
+
+function _skCorta() {
+  clearTimeout(_skT); clearTimeout(_skTope);
+  if (_skObs) { _skObs.disconnect(); _skObs = null; }
+  const e = document.getElementById("nodo-sk");
+  if (e) e.remove();
+}
+
+function _skPinta(wrap) {
+  if (!document.body.contains(wrap)) return;
+  const sk = document.createElement("div");
+  sk.id = "nodo-sk";
+  // Tres tarjetas con barras de anchos distintos: parejas iguales se leen como
+  // un patrón y delatan que es un dibujo, no contenido.
+  sk.innerHTML = ["70%,96%,44%", "58%,90%,38%", "64%,84%,50%"]
+    .map((f) => `<div class="skc">${f.split(",").map((w) => `<div class="skb" style="width:${w}"></div>`).join("")}</div>`)
+    .join("");
+  sk.setAttribute("aria-hidden", "true");   // es decoración: no se lee en voz alta
+  wrap.appendChild(sk);
+}
+
+// Arranca el ciclo para la sección que acaba de entrar.
+function esqueletoDeCarga() {
+  _skCorta();
+  const wrap = document.querySelector(".nodo-wrap") || document.querySelector(".wrap");
+  if (!wrap) return;   // Bandeja y Probar flujos: chat a pantalla completa, no aplica
+  _skT = setTimeout(() => _skPinta(wrap), SK_RETARDO_MS);
+  // Se mira SOLO lo que se añade, y con textContent (que no fuerza layout). Leer
+  // wrap.innerText en cada mutación sí lo fuerza, y en una lista larga eso frena
+  // justo lo que este esqueleto viene a hacer sentir rápido.
+  // El umbral de 25 deja pasar los rellenos de cromo (unas pestañas son ~16
+  // caracteres) y dispara con contenido de verdad, incluido "Aún no hay productos":
+  // una sección vacía también terminó de cargar.
+  _skObs = new MutationObserver((muts) => {
+    if (!document.body.contains(wrap)) { _skCorta(); return; }
+    for (const m of muts) {
+      if (m.target && m.target.closest && m.target.closest("#nodo-sk")) continue;
+      for (const n of m.addedNodes) {
+        if ((n.textContent || "").trim().length >= 25) { _skCorta(); return; }
+      }
+    }
+  });
+  _skObs.observe(wrap, { childList: true, subtree: true });
+  _skTope = setTimeout(_skCorta, SK_TOPE_MS);
+}
+
 // Ejecuta cleanups registrados por la página saliente y limpia subs.
 function teardown() {
   cancelaLecturas();   // las consultas de la seccion que sale ya no le sirven a nadie
@@ -1326,6 +1389,7 @@ async function navigate(href, { push = true } = {}) {
     _curHref = dest.href; // el swap ya ocurrió: esta es la página mostrada
     const page = document.querySelector(".nodo-page");
     if (page) page.scrollTop = 0; else window.scrollTo(0, 0);
+    esqueletoDeCarga();        // el hueco de los datos deja de estar en blanco
     await runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)
   } catch (e) {
     console.error("[SPA] fallback a navegación normal:", e);
