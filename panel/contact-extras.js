@@ -745,12 +745,12 @@ const DESPACHO_CSS = `
   .pedmodal .pm-foot .cancel{background:transparent;border:1px solid var(--border);color:var(--text)}
   .pedmodal .pm-foot .save{background:var(--brand);border:none;color:#fff}
 `;
-let despachoCssInjected = false;
 function injectDespachoCss() {
   // pedidos.html ya trae estas reglas en su <style>; volver a ponerlas sería
   // inofensivo (son idénticas) pero innecesario.
-  if (despachoCssInjected || document.querySelector("[data-despacho-css]")) return;
-  despachoCssInjected = true;
+  // Sin flag de módulo: shell.js borra los <style> de la página al navegar y el
+  // booleano decía "ya está" cuando ya no estaba (ver injectExtrasCss).
+  if (document.querySelector("[data-despacho-css]")) return;
   document.head.insertAdjacentHTML("beforeend", `<style data-despacho-css>${DESPACHO_CSS}</style>`);
 }
 
@@ -2382,9 +2382,15 @@ export function wireCopiloto(root, o, et, deps) {
   else { b("lleg").onclick = avisarLlegada; }
 }
 
-let cssInjected = false;
+// El guard mira si el <style> SIGUE en el documento, no si alguna vez se inyectó.
+// Con un booleano de módulo, el panel derecho salía sin estilos al volver a una
+// sección: shell.js borra los <style> de la página al navegar (S.pageStyles) para
+// que no se pisen entre secciones, pero este módulo queda cargado en memoria, así
+// que en la segunda visita el flag decía "ya está puesto" y no lo reponía. Se veía
+// el HTML crudo —avatar gigante, botones del sistema— hasta recargar la página.
+// El id lo hace idempotente aunque dos páginas lo llamen.
+const EXTRAS_CSS_ID = "nodo-extras-css";
 export function injectExtrasCss() {
-  if (cssInjected) return;
-  cssInjected = true;
-  document.head.insertAdjacentHTML("beforeend", `<style>${EXTRAS_CSS}</style>`);
+  if (document.getElementById(EXTRAS_CSS_ID)) return;
+  document.head.insertAdjacentHTML("beforeend", `<style id="${EXTRAS_CSS_ID}">${EXTRAS_CSS}</style>`);
 }

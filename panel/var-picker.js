@@ -75,10 +75,9 @@ const CSS = `
 .vpk-foot{padding:10px 17px;border-top:1px solid var(--border);font-size:11.5px;color:var(--faint)}
 .vpk-empty{padding:22px 17px;text-align:center;color:var(--faint);font-size:12.5px}
 `;
-let cssPuesto = false;
 function ponerCss() {
-  if (cssPuesto) return;
-  cssPuesto = true;
+  // Solo el DOM: el flag de módulo sobrevive a la navegación SPA y el <style> no.
+  if (document.querySelector("[data-vpk]")) return;
   document.head.insertAdjacentHTML("beforeend", `<style data-vpk>${CSS}</style>`);
 }
 

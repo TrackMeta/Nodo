@@ -166,10 +166,9 @@ const CSS = `
 @media(max-width:760px){ .drpop{flex-direction:column} .drpresets{width:auto;border-right:none;border-bottom:1px solid var(--border);max-height:150px}
   .drmonths{flex-direction:column;gap:14px} .drmonth{width:auto} }
 `;
-let cssPuesto = false;
 function ponerCss() {
-  if (cssPuesto || document.querySelector("[data-dr-css]")) { cssPuesto = true; return; }
-  cssPuesto = true;
+  // Solo el DOM: el flag de módulo sobrevive a la navegación SPA y el <style> no.
+  if (document.querySelector("[data-dr-css]")) return;
   document.head.insertAdjacentHTML("beforeend", `<style data-dr-css>${CSS}</style>`);
 }
 
