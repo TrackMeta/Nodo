@@ -2988,6 +2988,49 @@ function modoEnvio(ctx: any): "incluido" | "suma" | "agencia" {
   if (m === "incluido" || m === "suma" || m === "agencia") return m;
   return ctx.envio_gratis === false ? "suma" : "incluido";
 }
+// El directorio de Shalom viene TODO EN MAYÚSCULAS Y SIN TILDES. Mandárselo así al
+// cliente se lee como un grito y delata que es un pegote de una base de datos. Acá se
+// pasa a capitalización normal, se separan los nombres que vienen pegados
+// ("AEROPUERTOCHICLAYO") y se le devuelven las tildes a las palabras que se repiten en
+// las direcciones peruanas — al pasar de mayúsculas a minúsculas no hay forma de
+// deducirlas, así que van a mano.
+const SIGLAS_DIR = new Set(["AV", "JR", "MZ", "LT", "CDRA", "KM", "FAP", "PP", "JJ", "CO", "SN", "URB", "PJ"]);
+const CON_TILDE: Record<string, string> = {
+  jose: "josé", maria: "maría", americas: "américas", america: "américa",
+  sipan: "sipán", angeles: "ángeles", martin: "martín", cesar: "césar",
+  ovalo: "óvalo", interseccion: "intersección", avicola: "avícola",
+  comisaria: "comisaría", estacion: "estación", jerusalen: "jerusalén",
+  peru: "perú", junin: "junín", huanuco: "huánuco", ramon: "ramón",
+  galvez: "gálvez", simon: "simón", bolivar: "bolívar", tupac: "túpac",
+  nicolas: "nicolás", ada: "ada", panteon: "panteón", av: "av",
+  san: "san", jesus: "jesús", andres: "andrés", ancon: "ancón",
+  brena: "breña", rimac: "rímac", lurin: "lurín", huaycan: "huaycán",
+  policlinico: "policlínico", municipalidad: "municipalidad", parroquia: "parroquia",
+  farmacia: "farmacia", boticas: "boticas", gasolinera: "gasolinera",
+  telefonica: "telefónica", electrica: "eléctrica", basilica: "basílica",
+};
+function bonito(txt: string, frase = false): string {
+  let t = String(txt ?? "").trim();
+  if (!t) return "";
+  // Si ya viene en minúsculas o mezclado, alguien lo escribió a mano: no se toca.
+  if (t !== t.toUpperCase()) return t;
+  // "AEROPUERTOCHICLAYO" → "AEROPUERTO CHICLAYO".
+  t = t.replace(/^(AEROPUERTO|TERMINAL|OUTLET)(?=[A-ZÑ]{3})/, "$1 ");
+  const bajo = t.toLowerCase().split(/(\s+)/).map((w) => {
+    const solo = w.replace(/[^a-zà-ÿñ0-9]/gi, "");
+    return solo && CON_TILDE[solo] ? w.replace(solo, CON_TILDE[solo]) : w;
+  }).join("");
+  // Una FRASE («a espaldas del supermercado makro») lleva mayúscula solo al empezar.
+  if (frase) return bajo.charAt(0).toUpperCase() + bajo.slice(1);
+  // Un NOMBRE («Av Las Américas») lleva cada palabra capitalizada, salvo las
+  // abreviaturas de dirección, que se leen mejor cortas y en mayúscula.
+  return bajo.split(/(\s+)/).map((w) => {
+    const solo = w.replace(/[^a-zà-ÿñ0-9]/gi, "");
+    if (!solo) return w;
+    if (SIGLAS_DIR.has(solo.toUpperCase())) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join("");
+}
 // El label del campo lo escribe el dueño y a veces es una pregunta («¿Cuál es tu DNI?»).
 // Cuando ese texto se usa como ÍTEM de la lista de datos, los signos sobran.
 const limpiaLabel = (s: string) =>
@@ -9932,16 +9975,28 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           if (_ags.length) {
-            const _muestra = _ags.slice(0, 8);
+            // Los aeropuertos y terminales al final: son agencias de verdad, pero casi nadie
+            // recoge un paquete ahí, y de primeras en la lista solo estorban.
+            const _rezaga = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
+            const _muestra = [..._ags].sort((x, y) => _rezaga(x) - _rezaga(y)).slice(0, 8);
             // La REFERENCIA va primero: el cliente no ubica «Av. Panamericana 975», pero sí
             // «a media cuadra del óvalo Señor de Sipán». La dirección queda de respaldo.
             const _lista = _muestra.map((x) =>
-              `- ${x.l}` + (x.ref ? ` — ${x.ref}` : "") + (x.dir ? ` (${x.dir})` : "")).join("\n");
+              `*${bonito(x.l)}*` + (x.ref ? ` — ${bonito(x.ref, true)}` : x.dir ? ` — ${bonito(x.dir, true)}` : "")).join("\n");
             L.push(`📍 Oficinas de Shalom en ${ctx.ciudad} (son ${_ags.length}` +
-              (_ags.length > _muestra.length ? `, acá van ${_muestra.length}` : "") + `):\n${_lista}\n` +
-              "Son las ÚNICAS que existen ahí. Si te pregunta qué oficinas hay, o si no sabe cuál elegir, " +
-              "dile estas con su REFERENCIA —«a espaldas del Makro» le dice mucho más que la dirección— y que te diga " +
-              "cuál le queda cerca. " +
+              (_ags.length > _muestra.length ? `, acá van ${_muestra.length}` : "") +
+              // 📋 En LISTA, no en párrafo: cuatro oficinas con su referencia metidas en una
+              // sola frase no se leen, y este es el cliente que YA quiere comprar y solo
+              // necesita ubicar a dónde. Se le da el mensaje armado para que lo copie.
+              `). Si te pregunta cuáles hay o no sabe cuál elegir, mándaselas ASÍ, cada una en su línea:\n\n` +
+              // La ciudad la escribió el cliente, casi siempre en minúscula ("chiclayo").
+              // Se fuerza el camino de capitalizar para que no salga en medio del mensaje así.
+              `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}\n\n¿Cuál te queda más cerca?\n\n` +
+              // Negritas SOLO en lo que el ojo busca: la ciudad y el nombre de cada oficina.
+              // Si se marca también la referencia, deja de resaltar nada.
+              "Las negritas van tal cual: la ciudad y el NOMBRE de cada oficina en *asteriscos*, la referencia en texto normal. " +
+              "Son las ÚNICAS que existen ahí. La REFERENCIA es lo que le hace reconocerla —«a espaldas del Makro» " +
+              "le dice mucho más que la dirección—, así que nunca la omitas. " +
               "⛔ NUNCA inventes una oficina, NUNCA digas \"tenemos varias\" sin nombrarlas, y si la que él menciona no está " +
               "en esta lista, NO se la confirmes.");
             // Y los distritos vecinos de su misma provincia donde también hay oficina:

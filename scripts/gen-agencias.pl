@@ -61,8 +61,21 @@ for my $a (sort {
         $ref = $1;
         $ref =~ s/\s+/ /g;
         $ref =~ s/^[\s,.:-]+|[\s,.:-]+$//g;
-        $ref = substr($ref, 0, 72);
-        $ref =~ s/\s+\S*$// if length($ref) == 72;   # no cortar a mitad de palabra
+        # 90 caracteres entran las referencias enteras del 90% de las agencias
+        # (mediana 43, p90 80). Recortar a 72 partía justo las buenas: "Calle Tacna"
+        # perdía "a espaldas del supermercado Makro", que es la pista que de verdad
+        # ubica a un chiclayano.
+        # Para las que igual se pasan, Shalom suele dar DOS pistas separadas por "/"
+        # y con una basta: se corta ahí antes que a mitad de frase, que dejaba cosas
+        # como "…y a media cdra." colgando sin decir de qué.
+        if (length($ref) > 90 && $ref =~ m{^(.{20,90}?)\s*/\s*\S}) {
+            $ref = $1;
+        }
+        if (length($ref) > 90) {
+            $ref = substr($ref, 0, 90);
+            $ref =~ s/\s+\S*$//;                    # no cortar a mitad de palabra
+            $ref =~ s/[\s,.:;-]+$//;
+        }
     }
 
     # Dirección: solo el primer tramo (lo de después repite distrito/provincia).
