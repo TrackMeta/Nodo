@@ -626,23 +626,33 @@ const _sinRuido = (s: string) => _n(s).replace(RUIDO_UBIC, " ").replace(/\s+/g, 
 // ("Lambayeque"), así que se busca en los tres y se devuelve el corte MÁS FINO
 // que dé resultados: si dice Chiclayo interesan las 4 del distrito, no las 14 de
 // toda la provincia.
-export function agenciasDeCiudad(ciudad: string): Agencia[] {
+// Las oficinas de una ciudad, mirando SOLO los campos de lugar (distrito, provincia,
+// departamento). Separado del público de abajo a propósito: aquel, si no encuentra
+// nada, cae a "que la ciudad aparezca dentro del NOMBRE de la agencia", y ese último
+// intento sirve para listarle opciones al cliente pero NO para decidir si lo que dijo
+// era una ciudad o el nombre de una oficina.
+function _deCiudadEstricto(ciudad: string): Agencia[] {
   const c = _n(ciudad);
   if (!c) return [];
   const limpio = _sinRuido(ciudad);
   if (limpio && limpio !== c) {
-    const porLimpio = agenciasDeCiudad(limpio);
+    const porLimpio = _deCiudadEstricto(limpio);
     if (porLimpio.length) return porLimpio;
   }
   const porDist = AGENCIAS.filter((a) => _n(a.t) === c);
   if (porDist.length) return porDist;
   const porProv = AGENCIAS.filter((a) => _n(a.p) === c);
   if (porProv.length) return porProv;
-  const porDep = AGENCIAS.filter((a) => _n(a.d) === c);
-  if (porDep.length) return porDep;
+  return AGENCIAS.filter((a) => _n(a.d) === c);
+}
+
+export function agenciasDeCiudad(ciudad: string): Agencia[] {
+  const estricto = _deCiudadEstricto(ciudad);
+  if (estricto.length) return estricto;
   // Último intento: que la ciudad aparezca dentro del nombre de la agencia
   // ("HUANCAYO" → "HUANCAYO CO", "AEROPUERTO HUANCAYO").
-  return AGENCIAS.filter((a) => _n(a.l).includes(c));
+  const c = _n(ciudad);
+  return c ? AGENCIAS.filter((a) => _n(a.l).includes(c)) : [];
 }
 
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?

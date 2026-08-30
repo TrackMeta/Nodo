@@ -3133,8 +3133,21 @@ function sinDatoInventado(texto: string, cierre: string): string {
 // que hacer con ese mensaje. Así que se corrige por código: se quitan las oraciones (o las
 // líneas) donde metió el número o el titular, y en su lugar se pega el bloque bien armado.
 // Lo que escribió alrededor se respeta: solo se reemplaza el dato mal puesto.
-function conDatosDePago(texto: string, dp: string, nums: string[], titulares: string[]): string {
+//
+// ⚠️ Antes bastaba con que el número del negocio APARECIERA en la respuesta de la IA.
+// Eso confunde el número del NEGOCIO con un número que el CLIENTE acaba de escribir:
+// en una prueba real, el cliente dio como celular de entrega el mismo número que el
+// Yape del negocio, la IA se lo repitió para confirmárselo («anoté tu número …»), y el
+// motor le pegó encima el bloque de pago completo — en una venta de LIMA, que es
+// contraentrega y donde no se paga nada por adelantado. El cliente vio Yape, Plin y
+// BCP sin venir a cuento, justo lo que hace desconfiar o pagar de más.
+// Por eso ahora se descarta el número que el propio cliente acaba de mandar: si él lo
+// escribió, la IA lo está repitiendo, no dando datos de pago.
+function conDatosDePago(texto: string, dp: string, nums: string[], titulares: string[], dijoElCliente = ""): string {
   const t = String(texto ?? "");
+  const soloDigitos = (x: string) => String(x ?? "").replace(/\D+/g, "");
+  const delCliente = soloDigitos(dijoElCliente);
+  nums = nums.filter((n) => !(delCliente && delCliente.includes(soloDigitos(n))));
   if (!dp || !nums.length || !nums.some((n) => t.includes(n))) return t;
   const esDato = (x: string) => nums.some((n) => x.includes(n));
   const soloTitular = (x: string) => {
@@ -10293,6 +10306,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Qué datos faltan (y cuáles vinieron mal). La IA los pide DENTRO de la
     // conversación, no como formulario: uno a la vez, sin repetir lo que el
     // cliente ya dijo, y sin trabar la venta si algo sale impreciso.
+    // 📍 Sin zona no hay nada más que preguntar. Los datos de entrega están partidos por
+    // zona (dirección solo en Lima; DNI y sede solo en provincia), así que mientras no
+    // sepamos de dónde es, la lista de "faltan" trae únicamente los comunes — el nombre y,
+    // si no tiene número, el celular. Medido en una prueba real: el bot pidió celular y
+    // nombre, NUNCA preguntó el distrito, dio el pedido por "confirmado" sin dirección, y
+    // la venta solo se destrabó porque el propio cliente preguntó "¿y cómo sabes si soy de
+    // Lima o provincia?". El dato que abre todos los demás tiene que pedirse PRIMERO.
+    if (String(ctx._tipo ?? "") !== "digital" && !String(ctx.zona_entrega ?? "").trim()) {
+      parts.push(
+        "## Antes que nada: ¿de dónde es?\n" +
+        "Todavía no sabes si te compra desde **Lima** o desde **provincia**, y de eso depende TODO lo demás " +
+        "(en Lima va a su puerta y paga al recibir; en provincia va por agencia y con adelanto). " +
+        "Así que el dato que le pides ahora es **su distrito o ciudad** — junto con lo otro que falte, en la misma lista. " +
+        "⛔ Y hasta saberlo NO le confirmes el pedido ni le digas cómo le llega ni cómo se paga: todavía no lo sabes.",
+      );
+    }
     const faltan = (ctx as any)._datos_faltan as CampoDato[] | undefined;
     if (faltan?.length) {
       const errores = faltan.map((c) => ctx["_error_" + c.clave]).filter(Boolean);
@@ -11262,7 +11291,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (dpTxt) {
             const nums = dpTxt.match(/\d{6,}/g) ?? [];
             const tits = ((info.ocr?.metodos ?? []) as any[]).map((mm) => String(mm?.titular ?? "").trim()).filter(Boolean);
-            salida = conDatosDePago(salida, dpTxt, nums, tits);
+            // Se le pasa lo que el cliente acaba de escribir: si el numero salio de SU
+            // mensaje, la IA lo esta repitiendo y no hay que pegarle el bloque de pago.
+            salida = conDatosDePago(salida, dpTxt, nums, tits, String(ctx.last_input ?? ""));
           }
         } catch (_) { /* sin datos de pago → se envía tal cual */ }
       }
