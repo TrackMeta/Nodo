@@ -24,6 +24,11 @@
   .search input:focus{border-color:var(--brand)}
   .search svg{position:absolute;left:11px;top:11px;width:17px;height:17px;color:var(--faint)}
   /* Tablero */
+  /* Vacío: el tablero pasa a bloque. `grid-column:1/-1` NO sirve acá — las columnas
+     del kanban son IMPLÍCITAS (grid-auto-columns) y el -1 apunta al final de la rejilla
+     explícita, que no tiene ninguna, así que el mensaje caía dentro de una columna de
+     300px, pegado a la izquierda y con el texto estrujado. */
+  .kb.vacio{display:block}
   .kb{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(258px,300px);gap:14px;overflow-x:auto;padding-bottom:14px;align-items:start}
   /* Cada columna tope su altura al viewport y hace scroll POR DENTRO: así el
      tablero cabe en pantalla aunque haya cientos de pedidos (no estira la página). */
@@ -443,7 +448,7 @@ async function load(){
     const r1=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id),product:product_id(nombre,emoji),version:version_id(nombre)").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
     if(r1.error){
       const r2=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
-      if(r2.error){ st.list=[]; $("kb").innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><h3>No se pudo cargar</h3><p>Aplica la migración <b>0017_orders.sql</b> para habilitar Pedidos.</p></div>`; return; }
+      if(r2.error){ st.list=[]; $("kb").classList.add("vacio"); $("kb").innerHTML=`<div class="nodo-empty" style="border:none"><h3>No se pudo cargar</h3><p>Aplica la migración <b>0017_orders.sql</b> para habilitar Pedidos.</p></div>`; return; }
       data=r2.data;
     } else data=r1.data;
   }
@@ -521,9 +526,10 @@ function render(){
   zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; const em=$("exportMenu"); if(em) em.classList.remove("show"); render(); });
 
   box.innerHTML="";
+  box.classList.toggle("vacio", !zList.length);
   if(!zList.length){
     const d=document.createElement("div");
-    d.className="nodo-empty"; d.style.cssText="grid-column:1/-1;border:none";
+    d.className="nodo-empty"; d.style.cssText="border:none";
     d.innerHTML=`<div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V7a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 7v10a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 17"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
       <h3>Sin pedidos ${st.kbZona==="lima"?"de Lima":"de provincia"}</h3>
       <p>${st.kbZona==="lima"

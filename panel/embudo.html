@@ -159,7 +159,7 @@
       <div id="entregaFuga"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="distPanel">
       <h3>Dónde están ahora</h3>
       <p class="ps">Cuántos contactos hay en cada etapa en este momento. Pasa el mouse para reactivarlos.</p>
       <div class="dist" id="dist"></div>
@@ -553,8 +553,12 @@ function renderProvinciaAhora(cs){
 }
 
 function renderDist(F){
-  const el=$("dist");
-  if(F.total===0){ el.innerHTML=""; return; }
+  const panel=$("distPanel"), el=$("dist");
+  // Sin contactos se oculta el panel ENTERO, como ya hacen sus tres hermanos
+  // (entrega, provincia-ahora y por-producto). Vaciar solo el contenido dejaba un
+  // titulo y una descripcion prometiendo algo, con el hueco en blanco debajo.
+  if(F.total===0){ el.innerHTML=""; if(panel) panel.style.display="none"; return; }
+  if(panel) panel.style.display="";
   const c=F.c, max=Math.max(1,...STAGES.map(s=>c[s.k]||0));
   el.innerHTML=STAGES.map(s=>{
     const n=c[s.k]||0;
