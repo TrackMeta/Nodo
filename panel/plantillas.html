@@ -62,7 +62,14 @@
   .wa-out .wa-time{display:block;text-align:right;font-size:10px;color:rgba(17,27,33,.45);margin-top:2px}
   .wa-out .wa-time svg{width:15px;height:11px;vertical-align:-1px;margin-left:2px;color:#53bdeb}
   /* Preview en la tarjeta (truncado) */
-  .tprev{max-height:112px;overflow:hidden}
+  /* La vista previa se recorta a 112px para que todas las tarjetas midan igual. Antes
+     el corte era MUDO: el mensaje se partía a media palabra y nada decía que seguía.
+     Es la previsualización de lo que recibe el cliente — cortarla sin avisar es lo
+     mismo que mentir sobre lo que vas a enviar. `hay-mas` la pone el render solo
+     cuando de verdad sobra texto, para no desteñir las que caben enteras. */
+  .tprev{max-height:112px;overflow:hidden;position:relative}
+  .tprev.hay-mas::after{content:"";position:absolute;left:0;right:0;bottom:0;height:34px;
+    background:linear-gradient(to bottom,transparent,var(--surface));pointer-events:none}
   .tprev .wa-out{font-size:12px}
   .tcard .c-meta{margin-top:12px;font-size:11.5px;color:var(--faint);display:flex;gap:10px;align-items:center}
   /* Detalle */
@@ -228,6 +235,7 @@ function renderReco(){
       </div>`).join("")}</div>`;
   // Tanto el botón como la tarjeta abren la revisión (ver el mensaje completo antes de Meta).
   box.querySelectorAll(".tcard.reco").forEach(card=> card.onclick=()=> abrirRecoReview(pend[+card.dataset.i]));
+  marcaRecortes();
 }
 // Reemplaza {{N}} por su valor de ejemplo (así se ve el mensaje REAL que le llega al cliente).
 function fillBody(body, ejemplos){
@@ -309,6 +317,16 @@ function renderCards(){
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){ const pk=Fbar.picker({ current:t.folder||null, onPick:async(v)=>{ const { error }=await supa.from("wa_templates").update({ folder:v }).eq("id",t.id); if(error){ toast(error.message,true); return; } t.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); renderReco(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
+  });
+  marcaRecortes();
+}
+
+// Marca las vistas previas que NO caben, para que el degradado del final diga
+// "sigue". Se mide DESPUÉS de pintar: antes del layout, scrollHeight miente.
+function marcaRecortes(){
+  requestAnimationFrame(()=>{
+    document.querySelectorAll(".tprev").forEach(p=>
+      p.classList.toggle("hay-mas", p.scrollHeight > p.clientHeight + 2));
   });
 }
 // Meta solo admite minúsculas, números y guion bajo en el nombre de una plantilla. Un nombre
