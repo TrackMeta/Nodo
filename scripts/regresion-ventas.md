@@ -67,7 +67,7 @@ pruebas viva en el mismo sitio donde entran clientes reales.
 **Para volver a correr la regresión hay que reponerla.** Está en el historial de git:
 
 ```bash
-git checkout 9f9b06b -- supabase/functions/tmp-sim/index.ts
+git checkout dced10d -- supabase/functions/tmp-sim/index.ts
 supabase functions deploy tmp-sim --project-ref ahoxdyffbwjlshmdezwi --no-verify-jwt
 ```
 
