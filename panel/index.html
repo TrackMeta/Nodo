@@ -308,9 +308,14 @@
   .sender.bot .sav{background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff}
   .sender.bot .sav svg{width:11px;height:11px}
   .sender.human .sav{background:var(--brand-bg);color:var(--brand)}
-  .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;position:relative}
-  .composer input#msgInput{flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:0 16px;outline:none}
-  .composer input#msgInput:focus{border-color:var(--brand)}
+  /* align-items:flex-end para que los botones queden abajo cuando el texto crece. */
+  .composer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end;position:relative}
+  /* textarea, no input: WhatsApp manda mensajes de varias líneas —la lista de precios sin
+     ir más lejos— y con un <input> el operador NO podía escribir ni una. Shift+Enter no
+     "no funcionaba": el campo era incapaz de contener un salto de línea. Crece solo hasta
+     6 líneas y a partir de ahí hace scroll. */
+  .composer textarea#msgInput{flex:1;min-height:42px;max-height:148px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:11px 16px;outline:none;resize:none;overflow-y:auto;font:inherit;line-height:1.35}
+  .composer textarea#msgInput:focus{border-color:var(--brand)}
   .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;display:flex;align-items:center;justify-content:center}
   .send svg{width:19px;height:19px} .send:disabled{opacity:.4}
   .ctool{width:38px;height:42px;flex:none;border:none;background:transparent;color:var(--muted);font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:10px}
@@ -572,7 +577,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>
         </button>
         <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
-        <input id="msgInput" placeholder="Escribe un mensaje…" autocomplete="off" />
+        <textarea id="msgInput" placeholder="Escribe un mensaje…" rows="1" autocomplete="off"></textarea>
         <button class="send" id="sendBtn" title="Enviar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
         </button>
@@ -963,7 +968,7 @@ async function loadQuickReplies(){
 function insertAtCursor(text){
   const inp = $("msgInput");
   const s = inp.selectionStart ?? inp.value.length, e = inp.selectionEnd ?? inp.value.length;
-  inp.value = inp.value.slice(0,s) + text + inp.value.slice(e);
+  inp.value = inp.value.slice(0,s) + text + inp.value.slice(e); autoGrow();
   const pos = s + text.length; inp.focus(); try{ inp.setSelectionRange(pos,pos); }catch(_){}
 }
 function applyVars(text){ return (text||"").replace(/\{\{\s*nombre\s*\}\}/gi, state.contactName||""); }
@@ -1158,7 +1163,7 @@ async function openSuggest(){
     }
     pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span><span class="sg-sub">toca una para escribirla</span></div>`+
       sug.map(s=>`<button class="sg-item" type="button">${esc(s)}</button>`).join("");
-    pop.querySelectorAll(".sg-item").forEach((b,i)=> b.onclick=()=>{ const inp=$("msgInput"); inp.value=sug[i]; inp.focus(); pop.classList.add("hidden"); });
+    pop.querySelectorAll(".sg-item").forEach((b,i)=> b.onclick=()=>{ const inp=$("msgInput"); inp.value=sug[i]; autoGrow(); inp.focus(); pop.classList.add("hidden"); });
   }catch{ if(!pop.classList.contains("hidden")) pop.innerHTML=`<div class="sg-empty">Error de red. Intenta de nuevo.</div>`; }
 }
 $("qrBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(state.contactId) toggleQrPop(); });
@@ -1242,7 +1247,7 @@ async function openChat(c) {
       const v = inp0.value;
       if (v.trim()) state.drafts[state.contactId] = v; else delete state.drafts[state.contactId];
     }
-    if (inp0 && state.contactId !== c.id) inp0.value = state.drafts[c.id] || "";
+    if (inp0 && state.contactId !== c.id) { inp0.value = state.drafts[c.id] || ""; autoGrow(); }
     // El archivo adjunto NO se guarda por chat como el borrador: se descarta. Dejarlo
     // visible en otro chat invita a enviarlo ahí, y arrastrarlo entre conversaciones es
     // justo el error que costó caro con las imágenes (ver el `cid` fijo de sendAttachment).
@@ -1970,7 +1975,19 @@ async function sendButton(id, title) {
 
 // ── Envío ──
 $("sendBtn").addEventListener("click", sendMsg);
-$("msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
+// Enter manda, Shift+Enter (o Alt+Enter) hace un salto de línea — como WhatsApp. Antes
+// el campo era un <input>, que no puede contener saltos, así que Shift+Enter no hacía
+// nada y encima MANDABA el mensaje a medias. `isComposing` respeta a quien escribe con
+// teclado de acentos/IME: ahí el Enter cierra la palabra, no envía.
+$("msgInput").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+  if (e.shiftKey || e.altKey) return;   // salto de línea: lo escribe el navegador
+  e.preventDefault();
+  sendMsg();
+});
+// Crece con el texto y vuelve a su alto al vaciarse (el tope lo pone max-height en CSS).
+function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 148) + "px"; }
+$("msgInput").addEventListener("input", autoGrow);
 $("tplSendBtn").addEventListener("click", openTplPicker);
 $("tbIc").innerHTML = icon("lock");
 $("tbBtnIc").innerHTML = icon("message");
@@ -2050,7 +2067,7 @@ async function sendMsg() {
     try {
       if (!await okManualEnvio()) return;
       if (await enviarAdjuntoConTexto(text)) {
-        input.value = ""; delete state.drafts[state.contactId];
+        input.value = ""; autoGrow(); delete state.drafts[state.contactId];
         quitarAdjunto();
       }
     } catch { toast("Error de red", true); }
@@ -2069,16 +2086,16 @@ async function sendMsg() {
           channel_id: state.channelId, contact_id: state.contactId,
           direction: "out", type: "text", content: { text }, status: "sent", sent_by: "bot",
         });
-        if (error) { toast(error.message, true); } else { input.value = ""; delete state.drafts[state.contactId]; }
+        if (error) { toast(error.message, true); } else { input.value = ""; autoGrow(); delete state.drafts[state.contactId]; }
       } else {
         await callFn("webchat", { channel_id: state.channelId, text });
-        input.value = ""; delete state.drafts[state.contactId];
+        input.value = ""; autoGrow(); delete state.drafts[state.contactId];
       }
     } else {
       const res = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, text });
       const out = await res.json();
       if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); }
-      else { input.value = ""; delete state.drafts[state.contactId]; setBotPill(false); }
+      else { input.value = ""; autoGrow(); delete state.drafts[state.contactId]; setBotPill(false); }
     }
   } catch { toast("Error de red", true); }
   finally { sending = false; $("sendBtn").disabled = false; }

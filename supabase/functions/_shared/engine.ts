@@ -5367,7 +5367,9 @@ export function mensajeEstadoDefault(
   // camino feliz era el único mudo.
   if (estado === "adelanto_validado") {
     const saldo = (s.saldo != null && s.saldo !== "") ? Number(s.saldo) : null;
-    const donde = String(s.ciudad || s.sede || "").trim();
+    // enTitulo también acá: los pedidos creados ANTES de normalizarlo al guardar
+    // tienen la ciudad como la tecleó el cliente.
+    const donde = enTitulo(String(s.ciudad || s.sede || ""));
     return `✅ ¡Recibí tu adelanto! Ya estoy preparando tu pedido para despacharlo` +
       (donde ? ` a la agencia de *${donde}*` : "") + ".\n\n" +
       (saldo != null && saldo > 0
@@ -5616,6 +5618,41 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // Solo intervenimos si el OCR CONFIRMA que es un pago (es_pago true). Sin
   // confirmación (foto random, o sin IA configurada) NO interceptamos.
   if (!parsed || parsed.es_pago !== true) return false;
+  // 🔁 El MISMO comprobante otra vez. En Perú es de lo más común: el cliente reenvía la
+  // captura "por si acaso" o porque no vio la respuesta. Medido: con el adelanto ya
+  // validado, el reenvío caía acá y contestaba «¡Recibí tu pago! … en un momento te
+  // confirmo el despacho» — no acreditó nada (el candado anti-reúso hizo su trabajo) y el
+  // despacho ya estaba confirmado, así que el mensaje era falso por los dos lados.
+  // Si esa operación ya está reclamada por ÉL, se lo decimos y listo. Si está reclamada por
+  // OTRO, no es un reenvío: es el comprobante de un tercero, y eso lo mira una persona.
+  {
+    const _op = normOperacion(String(parsed?.operacion ?? ""));
+    if (_op.length >= 4) {
+      const { data: yaCl } = await db.from("payment_operations")
+        .select("contact_id, order_id").eq("channel_id", channelId).eq("operacion", _op).maybeSingle();
+      if (yaCl) {
+        let _dueno = (yaCl as any).contact_id as string | null;
+        // Reclamada antes de la 0085 (sin contacto): se deduce por el pedido.
+        if (!_dueno && (yaCl as any).order_id) {
+          const { data: o } = await db.from("orders").select("contact_id").eq("id", (yaCl as any).order_id).maybeSingle();
+          _dueno = (o as any)?.contact_id ?? null;
+        }
+        if (_dueno && _dueno === contactId) {
+          await deliverMessage(db, channelId, contactId,
+            "¡Ese pago ya lo tengo registrado! 🙌 No hace falta que lo mandes de nuevo — tu pedido ya está en marcha. 😊").catch(() => {});
+          return true;
+        }
+        await logEvent(db, channelId, contactId, "nota", "💸 Comprobante ya usado por otro contacto",
+          `Operación ${_op} — ya estaba reclamada en este canal.`).catch(() => {});
+        await deliverMessage(db, channelId, contactId,
+          "¡Gracias por la captura! 🙌 Déjame revisarla bien y en un momento te confirmo. 😊").catch(() => {});
+        await pasarAHumano(db, channelId, contactId,
+          `Mandó un comprobante cuya operación (${_op}) YA está registrada en otro pedido de este canal.`,
+          { aviso: true }).catch(() => {});
+        return true;
+      }
+    }
+  }
   // Es un pago, pero no hay ninguna venta suya a la que atarlo. No se promete despacho ni se
   // guarda como "prepago del adelanto" (no habría pedido que lo enganche y quedaría invisible
   // para siempre): se reconoce la captura sin afirmar nada y lo toma una persona.
@@ -8385,7 +8422,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // La lista del negocio es la fuente de verdad de la cobertura propia.
   await set("zona_entrega", "provincia");
   await set("zona_nombre", "");
-  await set("ciudad", lugar);
+  await set("ciudad", enTitulo(lugar));
   await set("zona_distrito_incierto", "");
   await set("entrega_hoy", "no");
   await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
@@ -9526,6 +9563,25 @@ const PERFIL_POR_OP: Record<string, string> = {
 // la IA (blanda) y pasa a ser un chequeo por código: cada nº de operación válido
 // se registra una vez por canal (tabla payment_operations, índice único). Cubre
 // pago principal digital y ventas extra; el índice único aguanta hasta carreras.
+// El nombre de una ciudad, escrito como se escribe. El cliente teclea "chiclayo" o
+// "TRUJILLO" y eso se guardaba TAL CUAL en el pedido: de ahí salía a su chat ("a la
+// agencia de *chiclayo*"), al rótulo que se pega en el paquete, al Excel del courier y
+// a la hoja de cálculo. Se normaliza al GUARDARLO, una sola vez, para que todos los que
+// leen el pedido lo vean bien. Los enlaces de "de/del/la/y" van en minúscula salvo al
+// inicio, como se escribe "Santa María del Mar".
+const _NEXOS = new Set(["de", "del", "la", "las", "los", "el", "y", "en"]);
+function enTitulo(txt: string): string {
+  const s = String(txt ?? "").trim().replace(/\s+/g, " ");
+  if (!s) return "";
+  return s.split(" ").map((p, i) => {
+    const b = p.toLocaleLowerCase("es");
+    if (i > 0 && _NEXOS.has(b)) return b;
+    // Siglas cortas ya en mayúscula (SJL, VMT) se respetan.
+    if (p.length <= 3 && p === p.toLocaleUpperCase("es") && /[A-ZÁÉÍÓÚÑ]/.test(p)) return p;
+    return b.charAt(0).toLocaleUpperCase("es") + b.slice(1);
+  }).join(" ");
+}
+
 function normOperacion(op: string): string {
   return String(op ?? "").toUpperCase().replace(/\s+/g, "").trim();
 }
