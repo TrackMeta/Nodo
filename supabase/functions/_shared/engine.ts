@@ -3336,12 +3336,33 @@ const RE_LINK_FANTASMA =
 // Quita las frases que prometen un enlace inventado. Si al sacarlas el mensaje se
 // queda en nada, se cae a pedir el detalle y pasar a una persona: mejor eso que
 // mandarle un trámite que no existe.
+//
+// ⚠️ Mi primera versión solo borraba la oración que TRAÍA el corchete, y la promesa
+// vivía en otra: quedaba «Te mando el enlace para que puedas hacer el cambio sin
+// costo.» — sin enlace. Peor que el corchete, porque ya no se ve que falta algo.
+// Así que al detectar un relleno se van TODAS las oraciones que hablan de un enlace…
+// salvo las que traen una URL de verdad (http), que esas sí se pueden mandar.
+const RE_PROMETE_LINK = /\b(enlace|link|url)\b/i;
 function sinLinkFantasma(texto: string): { texto: string; habia: boolean } {
   const t = String(texto ?? "");
   RE_LINK_FANTASMA.lastIndex = 0;
   if (!RE_LINK_FANTASMA.test(t)) return { texto: t, habia: false };
-  RE_LINK_FANTASMA.lastIndex = 0;
-  const limpio = t.replace(RE_LINK_FANTASMA, " ").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  // Se parte en oraciones conservando su puntuación, para no rehacer el texto entero.
+  const partes = t.split(/(?<=[.!?…])\s+/);
+  const limpio = partes
+    .filter((o) => {
+      if (!RE_PROMETE_LINK.test(o) && !/\[[^\]]*\]/.test(o)) return true;
+      if (/https?:\/\/\S+/i.test(o)) return true;   // trae una URL real → se respeta
+      RE_LINK_FANTASMA.lastIndex = 0;
+      return !RE_LINK_FANTASMA.test(o) && !RE_PROMETE_LINK.test(o);
+    })
+    .join(" ")
+    // Y de las oraciones que SÍ se quedan (porque traen una URL de verdad) se borra el
+    // relleno suelto: un mensaje puede mezclar el link bueno y el inventado en la MISMA
+    // frase («aquí tienes tu acceso: https://… y el otro: [insertar link]»), y sin esto
+    // el corchete se colaba igual.
+    .replace(/\[[^\]\n]{0,60}(?:enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]/gi, "")
+    .replace(/[ \t]{2,}/g, " ").replace(/\s+([.,;:!?…])/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
   return { texto: limpio, habia: true };
 }
 
@@ -9732,6 +9753,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       );
     }
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
+    // 🧾 Ya eligió: no se le vuelve a leer la carta. Medido — una clienta abrió con
+    // «quiero el dermachem, los 2 frascos» y el mensaje siguiente le listaba otra vez
+    // las tres presentaciones con sus precios. El pedido salió bien (la opción estaba
+    // sellada), pero se lee como que no la escuchó, y encima la invita a repensar una
+    // compra que ya decidió — que es justo cuando la gente se enfría.
+    if (String(ctx.opcion_elegida ?? "").trim()) {
+      parts.push("## Ya eligió: " + String(ctx.opcion_elegida).trim() + "\n" +
+        "⛔ NO le vuelvas a listar las presentaciones ni sus precios. Ya decidió. " +
+        "Del precio hablas solo si él pregunta, y entonces el de LO SUYO. " +
+        "Puedes ofrecerle subir de pack UNA vez si viene a cuento, pero como una frase, " +
+        "no como menú.");
+    }
     // ⏳ Cuánto rinde un pack. La ficha dice lo que rinde UNA unidad ("un frasco rinde
     // un mes"); el cliente pregunta por el pack, y el modelo se pone a calcular. Medido:
     // con la ficha diciendo un mes por frasco, del pack de 3 dijo "el mes y medio que
