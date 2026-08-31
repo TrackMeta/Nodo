@@ -56,3 +56,29 @@ Las aserciones se apoyan en el **estado de la BD** (pedido, monto, stock, zona, 
 - `window.__nodoTest` solo expone funciones ya existentes del editor; es inofensivo en producción.
 - La validación del adelanto físico es **manual** (`pedidos_config.adelanto.validacion`), así que esos pagos quedan en *Pagos por validar* (el caso de provincia no envía comprobante). Los pagos **digitales** sí se validan por OCR en el flujo.
 - Requiere que `tmp-sim` esté desplegada (driver de simulación multi-contacto).
+
+## ⚠️ `tmp-sim` ya NO está desplegada (2026-08-31)
+
+Este harness —y los dos simuladores— hablan con el bot a través de la Edge Function
+`tmp-sim`, un driver de pruebas que permite escribir como cualquier cliente. Se borró de
+producción y del repo antes de conectar Meta: no corresponde tener una herramienta de
+pruebas viva en el mismo sitio donde entran clientes reales.
+
+**Para volver a correr la regresión hay que reponerla.** Está en el historial de git:
+
+```bash
+git checkout 9f9b06b -- supabase/functions/tmp-sim/index.ts
+supabase functions deploy tmp-sim --project-ref ahoxdyffbwjlshmdezwi --no-verify-jwt
+```
+
+(el commit es el último que la contiene; `git log --oneline -- supabase/functions/tmp-sim`
+lo encuentra si ese hash queda viejo)
+
+Y **al terminar de probar, se vuelve a borrar**:
+
+```bash
+supabase functions delete tmp-sim --project-ref ahoxdyffbwjlshmdezwi
+```
+
+Las tres copias que vivían en esa carpeta (`engine.ts`, `memoria.ts`, `shalom-agencias.ts`)
+eran **código muerto**: `index.ts` importaba el motor real de `_shared`. No hay que reponerlas.
