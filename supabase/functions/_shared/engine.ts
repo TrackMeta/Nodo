@@ -2141,6 +2141,16 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   parts.push(REGLA_TUTEO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
+    // 🔢 Con UN solo producto no hay nada que elegir. Medido: con la lista trayendo un
+    // único ítem, el bot igual cerró con "¿Cuál de los dos te llama más?" — se inventó un
+    // catálogo. El cliente queda esperando dos opciones que nunca le van a llegar, y en un
+    // negocio que recién arranca (un producto) eso le pasa a TODO el que escriba.
+    if (cands.length === 1) {
+      parts.push("## Solo vendemos UN producto\n" +
+        `El catálogo entero es **${cands[0].label}**. NO le ofrezcas elegir ni des a entender que hay más de uno: ` +
+        "nada de «cuál de los dos», «cuál de estos» ni «los que tenemos». En cuanto se entienda que le interesa, " +
+        "pásalo con `[[ir:1]]`.");
+    }
     parts.push("## Productos que vendemos\n" + cands.map((c, i) => `[${i + 1}] ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
       "\n\n## 🎯 Cómo lo pasas a la venta (lo más importante de tu trabajo)\n" +
       "En cuanto sepas cuál de esos productos quiere —porque lo nombró, lo describió o te confirmó el que le " +
@@ -9615,6 +9625,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       );
     }
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
+    // ⏳ Cuánto rinde un pack. La ficha dice lo que rinde UNA unidad ("un frasco rinde
+    // un mes"); el cliente pregunta por el pack, y el modelo se pone a calcular. Medido:
+    // con la ficha diciendo un mes por frasco, del pack de 3 dijo "el mes y medio que
+    // dura". Eso vuelve como reclamo cuando al cliente se le acaba antes de lo prometido,
+    // y encima le quita al pack grande su mejor argumento.
+    parts.push("## ⏳ Cuánto dura, si lo dices, sale de la ficha\n" +
+      "Si hablas de cuánto le rinde o cuánto le dura, multiplica lo que dice la ficha por UNIDAD por las " +
+      "unidades del pack, y nada más. No lo estimes ni lo redondees por tu cuenta. Si la ficha no dice cuánto " +
+      "rinde una unidad, NO inventes una duración: habla del beneficio sin poner plazos.");
     // 🎁 Regalo con la compra. El panel compila este bloque en el Conocimiento, pero
     // los nodos generados usan `usar_conocimiento` → el prompt lo arma ACÁ en runtime,
     // y acá no existía: el toggle "Mencionar el regalo" no hacía NADA en producto
