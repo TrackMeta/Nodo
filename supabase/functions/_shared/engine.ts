@@ -2123,9 +2123,62 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
 // qué se vende y lo guía a un producto — en vez de dejarlo sin respuesta. En el
 // SIGUIENTE mensaje, si ya quedó claro, el IA Router lo rutea a la venta de ese
 // producto. Configurable en channels.ia_router.recepcion {activo, saludo[], prompt}.
+// ── Cómo se VE lo que escribe el bot ────────────────────────────────────────
+// Las perillas del dueño (IA → Vendedor IA: negritas, emojis mín/máx) viven en
+// `channels.negocio_form`. Hasta ahora solo llegaban al modelo si él volvía a
+// guardar esa sección —es cuando se recompila `channels.negocio`— y medido en el
+// canal de Rodrigo NO habían llegado: tenía negritas ON y 2-3 emojis puestos, y
+// el bot escribía plano. Ahora se leen del formulario y se arman acá, en un solo
+// lugar, porque las usan la venta, la Recepción y el post-venta: si cada camino
+// escribe distinto, el mismo negocio suena a dos personas dentro del mismo chat.
+//
+// La redacción es ORDEN, no permiso: "puedes usar, con moderación" es exactamente
+// con lo que el modelo no pone ni una negrita (ya estaba documentado para emojis).
+function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNegocio?: string }): string {
+  const e = est ?? {};
+  const negOn = e.negritas !== false;
+  const mxRaw = Number(e.emoji_max);
+  const mx = Number.isFinite(mxRaw) ? Math.max(0, Math.min(4, mxRaw)) : NaN;
+  const mn = Math.min(Math.max(0, Number(e.emoji_min) || 0), Number.isFinite(mx) ? mx : 4);
+  const emProd = String(opts?.emojisProducto ?? "");
+  const emNeg = String(opts?.emojisNegocio ?? "");
+  // Si el dueño tocó la perilla, manda ella (aunque el producto no tenga lista y su
+  // copy no traiga ninguno). En 0 es un NO explícito y le gana a todo lo demás.
+  const emOn = Number.isFinite(mx) ? mx > 0 : !!(emProd || emNeg);
+
+  const fmt = "## Cómo se ve tu mensaje en WhatsApp\n" + (negOn
+    ? "WhatsApp entiende *negrita*, _cursiva_ y ~tachado~ con esos símbolos pegados a la palabra. " +
+      "USA la negrita —no es opcional—: el cliente relee el chat buscando un dato concreto y tiene que " +
+      "saltarle a la vista. Van en *asteriscos* los precios y montos, la fecha o el plazo, la clave de " +
+      "recojo, la talla o presentación que quedó, el nombre de la agencia, y el nombre del producto la " +
+      "primera vez que lo nombras. Dos o tres por mensaje; si " +
+      "resaltas todo, no resaltas nada. Nunca para adornar ni para gritar."
+    : "No uses negritas ni ningún formato: el dueño las tiene desactivadas.");
+
+  if (!emOn) {
+    return fmt + "\n\n## Emojis\n" + (Number.isFinite(mx)
+      ? "El dueño los tiene desactivados: no uses ni uno."
+      : "Este negocio escribe sin emojis en sus propios mensajes: tú tampoco los uses.");
+  }
+  const cuantos = Number.isFinite(mx) && mx > 1
+    ? "pon entre " + Math.max(1, mn || 1) + " y " + mx + " por mensaje, repartidos (uno al inicio o pegado al dato que resalta, otro al cerrar)"
+    : "pon UNO en la mayoría de tus mensajes, al inicio o al final";
+  const cuales = emProd
+    ? "Usa los de este producto: " + emProd + " (ninguno fuera de esa lista). "
+    : (emNeg
+      ? "Este negocio usa estos: " + emNeg + ". Usa esos o alguno afín al tema. "
+      : "Elige los que peguen con lo que estás diciendo. ");
+  return fmt + "\n\n## Emojis\n" + cuales + cuantos + ". " +
+    "Tienen que APORTAR: marcan de qué habla la frase (✅ lo que queda listo, 📦 el envío, 💰 el precio, " +
+    "📍 la dirección, ⏱️ el plazo), no decoran. Nunca dos pegados, nunca en medio de una frase, nunca uno " +
+    "por oración (la lista de precios es la excepción: ahí va uno por línea). " +
+    "⛔ Sin ninguno cuando el cliente reclama, se queja o algo salió mal, y sin ninguno en el mensaje donde " +
+    "le pides sus datos o el pago: ahí resta seriedad.";
+}
+
 async function runReception(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<{ hecho: boolean; flowId?: string }> {
   if (event.type !== "message") return { hecho: false };
-  const { data: ch } = await db.from("channels").select("ia_router").eq("id", channelId).maybeSingle();
+  const { data: ch } = await db.from("channels").select("ia_router, negocio_form").eq("id", channelId).maybeSingle();
   const rec = (ch as any)?.ia_router?.recepcion ?? {};
   if (rec.activo === false) return { hecho: false }; // recepción apagada → a la Bandeja (humano)
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
@@ -2204,6 +2257,9 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     parts.push("## Ojo: el saludo de apertura YA salió\nAcabas de enviarle esto:\n\"" + saludoEmitido.slice(0, 400) +
       "\"\nNO vuelvas a saludar ni repitas esa misma pregunta. Continúa desde ahí, atendiendo lo que él escribió.");
   }
+  // El mismo bloque de formato/emojis que la venta: sin esto la Recepción escribía plano
+  // y el chat cambiaba de voz justo al pasar de la puerta a la venta.
+  parts.push(estiloDeEscritura((ch as any)?.negocio_form));
   const hist = await historial(db, run, 10);
   const content = `El cliente escribe:\n"${event.text ?? ""}"` +
     (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje, breve y cálido.` : "");
@@ -7040,6 +7096,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     parts.push(REGLA_TUTEO);
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
+    parts.push(estiloDeEscritura((info as any)?.estilo, { emojisProducto: String(ctx.emojis ?? "") }));
     parts.push(
       "## Estás VERIFICANDO su pago\n" +
       "El cliente ya envió su comprobante y su pago está siendo revisado por una persona del equipo. " +
@@ -7196,6 +7253,9 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     parts.push(REGLA_TUTEO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + resolve(String(ctx.contexto_producto), ctx));
+  // Mismo formato que la venta: el cliente no debería notar que lo atiende otro camino.
+  // El bloque ya trae la excepción de siempre — sin emojis si reclama o si se le cobra.
+  parts.push(estiloDeEscritura((info as any)?.estilo, { emojisProducto: String(ctx.emojis ?? "") }));
 
   if (esperandoSaldo) {
     // Provincia con el SALDO pendiente: el bot COBRA el saldo, no hace soporte
@@ -7788,17 +7848,23 @@ export async function operaParse(
 
 // ── Nodo IA (Claude/ChatGPT): generar texto, analizar imagen o extraer ─
 // Conocimiento del canal (negocio + perfiles de IA + validador OCR), cacheado por run.
-async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any }> {
+async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: string | null; perfiles: any; ocr: any; pedidos: any; estilo?: any }> {
   let info = (run as any)._chIa;
   if (!info) {
-    info = { negocio: null, perfiles: {}, ocr: null, pedidos: null };
+    info = { negocio: null, perfiles: {}, ocr: null, pedidos: null, estilo: null };
     try {
       const { data: ch } = await db.from("channels")
-        .select("negocio, ia_perfiles, ocr_config, pedidos_config").eq("id", run.channel_id).maybeSingle();
+        .select("negocio, ia_perfiles, ocr_config, pedidos_config, negocio_form").eq("id", run.channel_id).maybeSingle();
       info.negocio = (ch as any)?.negocio ?? null;
       info.perfiles = (ch as any)?.ia_perfiles ?? {};
       info.ocr = (ch as any)?.ocr_config ?? null;
       info.pedidos = (ch as any)?.pedidos_config ?? null;
+      // 🎨 Las perillas de estilo (Negritas / Emojis por mensaje) se leen DIRECTO del
+      // formulario. Antes solo llegaban si el dueño volvía a guardar la sección IA, que
+      // es cuando se recompila `channels.negocio`: medido en el canal de Rodrigo, tenía
+      // negritas activadas y 2-3 emojis puestos, y el texto compilado no los traía — las
+      // perillas estaban puestas y no hacían absolutamente nada.
+      info.estilo = (ch as any)?.negocio_form ?? null;
     } catch (_) {
       // Reintento sin columnas nuevas por si faltan migraciones (0026/0027).
       try {
@@ -9530,6 +9596,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const maxTokens = cfg.max_tokens ? Number(cfg.max_tokens) : undefined;
   const prompt = resolve(String(cfg.prompt ?? ""), ctx);
   const info = await channelIaInfo(db, run);
+  // Las perillas de estilo del dueño (IA → Vendedor IA). Acá arriba porque la lista de
+  // precios de más abajo se arma con ellas, no solo el bloque de formato.
+  const _est = (info as any)?.estilo ?? {};
+  const _negOn = _est.negritas !== false;
+  const _emxRaw = Number(_est.emoji_max);
+  const _emOn = Number.isFinite(_emxRaw)
+    ? Math.max(0, _emxRaw) > 0
+    : !!(ctx.emojis || String((ctx as any)._negocio_emojis ?? ""));
   const funnel = funnelOf(ctx.pedido_estado);
   // ctx.pedido_zona sale de orders.shipping.zona (buildContext expone shipping
   // como {{pedido_*}}): la zona real le gana a deducirla del estado.
@@ -9972,15 +10046,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
           : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
             `Solo cuando decida, confirma cuál y su precio.`;
+        // El molde de la lista de precios, armado con SUS presentaciones y SUS precios.
+        // A propósito NO lleva marcadores tipo "(emoji)" ni "(beneficio)": el modelo copia
+        // literal lo que ve. Medido con un ejemplo de precios inventados: copió los emojis
+        // 💧✨🏆 y hasta un «ahorras S/ 39» que era del ejemplo, no del producto. Acá solo
+        // van datos REALES; qué emoji y qué beneficio poner se lo pedimos en palabras.
+        const molde = ops.map((o) => {
+          const conOf = ofertaLista && ofertaLista.opcion_id === o.id && Number.isFinite(Number(ofertaLista.precio));
+          const pr = conOf ? Number(ofertaLista.precio) : o.precio;
+          return `${o.nombre}${pr != null ? " — " + (_negOn ? `*S/ ${pr}*` : `S/ ${pr}`) : ""}`;
+        }).join("\n");
         parts.push("## Opciones de compra disponibles\n" + lista + estado +
           // Nombrar SIEMPRE las dos: si solo dice el precio de una, el cliente ni se entera
           // de que existe el pack y se pierde la venta más grande. Medido con un kit de
           // S/ 89 que también viene en pack de 2 a S/ 159: el bot dijo "cuesta S/ 89" y el
           // pack no apareció en toda la conversación.
-          "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS con el suyo y el ahorro si lo hay " +
-          "(«uno sale S/ X, y llevando dos te queda en S/ Y, ahorras S/ Z»). Aunque el cliente pregunte " +
-          "por una sola, la otra se menciona: es la diferencia entre vender uno y vender dos. Y después " +
-          "de nombrarlas, pregúntale cuál quiere — no des por elegida la más barata." +
+          //
+          // 💰 Y se las dice EN LISTA, no de corrido. Medido: a "¿cuánto cuesta?" contestó
+          // «Hay tres opciones: 1 frasco a S/ 79, 2 frascos a S/ 119 o 3 frascos a S/ 149,
+          // siendo esta última el tratamiento completo» — todo en un renglón. El cliente
+          // tiene que releerlo para comparar, y comparar es justo lo que lo lleva al pack
+          // grande. El molde se arma acá con SUS presentaciones reales a propósito: cuando
+          // el ejemplo llevaba precios inventados, el modelo copiaba esos números.
+          "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
+          "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido. " +
+          "Estas son, con sus precios exactos:\n\n" +
+          molde +
+          "\n\nA cada línea súmale, después de un «·», en pocas palabras qué gana con esa opción" +
+          (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
+          ". El ahorro solo si sale de restar los precios de arriba — nunca inventes un descuento ni un precio tachado. " +
+          "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y tu pregunta para " +
+          "avanzar. No des por elegida la más barata." +
           // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
           // el modelo les pone delante: con una presentación llamada "Básica" salía "La
           // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
@@ -10406,6 +10502,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           L.push(`El adelanto de este pedido es de **${simboloMoneda(ctx.moneda as string)} ${ctx.adelanto}** — ese monto exacto, no otro. ` +
             `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.`);
         }
+        // ⛔ Y con eso puesto, la mentira que sale sola. Medido con un cliente de Chiclayo:
+        // «lo enviamos por agencia sin costo adicional, solo pagas todo cuando recojas» —
+        // pero provincia lleva adelanto para despachar. El cliente dice que sí creyendo que
+        // no adelanta nada, y dos mensajes después le cae un pedido de S/ 20 por Yape: ahí
+        // se cae la venta, y con razón. La rama de Lima sí tenía escrito su argumento de
+        // "no adelantas nada"; provincia no tenía el espejo que lo prohíbe.
+        if (Number(ctx.adelanto) > 0) {
+          L.push("⛔ NUNCA le digas que paga TODO al recoger, ni «pagas cuando lo tengas», ni «no adelantas nada»: " +
+            "eso es de Lima. Acá va un adelanto para que salga el despacho, y en la agencia paga solo el SALDO. " +
+            "Si te pregunta cómo paga, díselo así de claro y sin rodeos — enterarse tarde es lo que le tumba la venta.");
+        }
         L.push("El adelanto **no lo pides tú**: sale solo, en el mensaje siguiente, con los datos de pago. " +
           "Y TAMPOCO lo anuncies, de NINGUNA forma: ni \"en breve\", ni \"ahora\", ni \"enseguida\", ni \"te va a llegar\", " +
           "ni \"recibirás un mensaje con…\". Da igual cómo lo formules: no menciones que viene otro mensaje. Sale " +
@@ -10685,46 +10792,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // confirmación la da él y la IA solo cierra la conversación.
         "Ese mensaje del sistema YA le dice que su pedido quedó confirmado y cómo paga, así que NO lo repitas: no escribas «tu pedido está confirmado» ni le vuelvas a listar la dirección, el monto ni la forma de pago. Cierra corto y cálido, y déjale a él esa parte.");
     }
-    // Cómo se ESCRIBE un mensaje de WhatsApp. Faltaba por completo: los mensajes fijos
-    // del dueño van con negritas y emojis, y en cuanto tomaba la IA el chat se volvía
-    // gris —mismo negocio, dos voces, y el cliente lo nota justo cuando se habla de plata.
-    // La negrita además tiene función: el monto y la clave de recojo son lo que el cliente
-    // busca al releer el chat, y hasta ahora salían dentro del párrafo.
-    parts.push(
-      "## Cómo se ve tu mensaje en WhatsApp\n" +
-      "WhatsApp entiende *negrita*, _cursiva_ y ~tachado~ con esos símbolos pegados a la palabra. " +
-      "Resalta con *asteriscos* SOLO el dato que el cliente va a buscar cuando relea el chat: el monto, " +
-      "una fecha, la clave de recojo, la talla que quedó. Uno o dos por mensaje, no más — si resaltas " +
-      "todo, no resaltas nada. Nunca uses asteriscos para adornar ni para gritar.",
-    );
-    if (ctx.emojis) {
-      // "Puedes usar (con moderación)" no alcanzaba: medido, con la lista cargada el modelo
-      // igual escribía sin un solo emoji, y el chat saltaba de los mensajes del dueño
-      // —llenos de color— a un bot gris. Si el dueño se tomó el trabajo de listarlos, los
-      // quiere ver: la instrucción pasa de permiso a encargo, con el tope y las excepciones
-      // dichas para que no se vuelva una lluvia de emojis.
-      parts.push(
-        "## Emojis de este producto\nEstos son los emojis de este producto: " + ctx.emojis + "\n" +
-        "Úsalos: pon UNO en la mayoría de tus mensajes, al inicio o al final (nunca en medio de una frase, " +
-        "nunca dos seguidos, nunca uno distinto a esa lista). ⛔ Sin emoji cuando el cliente reclama, se queja " +
-        "o algo salió mal, y sin emoji en el mensaje donde le pides sus datos o el pago: ahí el emoji resta seriedad.",
-      );
-    } else if (String((ctx as any)._negocio_emojis ?? "")) {
-      // El dueño escribe con emojis (medido sobre SU copy, arriba). Decirle "fíjate en el
-      // tono y acompáñalo" no alcanzó: el modelo lo lee como permiso y no los usa. Se le
-      // ordena, con el mismo tope y las mismas excepciones que cuando hay lista cargada.
-      parts.push(
-        "## Emojis\nEste negocio escribe con emojis (los suyos: " + String((ctx as any)._negocio_emojis) + "). " +
-        "Tus mensajes tienen que sonar de la misma boca, así que pon UNO por mensaje, al inicio o al final — " +
-        "nunca en medio de una frase, nunca dos seguidos. Usa los suyos o alguno afín al tema. " +
-        "⛔ Sin emoji cuando el cliente reclama, se queja o algo salió mal, y sin emoji en el mensaje donde le " +
-        "pides el pago: ahí resta seriedad.",
-      );
-    } else {
-      parts.push(
-        "## Emojis\nEste negocio escribe sin emojis en sus propios mensajes: tú tampoco los uses.",
-      );
-    }
+    // Cómo se ESCRIBE un mensaje de WhatsApp. Faltaba por completo: los mensajes fijos del
+    // dueño van con negritas y emojis, y en cuanto tomaba la IA el chat se volvía gris.
+    // 🎨 Formato y emojis: los arma estiloDeEscritura con las perillas del dueño, el mismo
+    // bloque que usan la Recepción y el post-venta para que el bot no cambie de voz al
+    // pasar de una a otra dentro del mismo chat.
+    parts.push(estiloDeEscritura(_est, {
+      emojisProducto: String(ctx.emojis ?? ""),
+      emojisNegocio: String((ctx as any)._negocio_emojis ?? ""),
+    }));
     // Cómo VENDE, no solo cómo responde. Los tres vicios de abajo salieron de leer un chat
     // real de punta a punta, y los tres se pagan en ventas: contestar sin cerrar deja al
     // cliente sin siguiente paso, responder en una línea suelta no da razones para comprar,
