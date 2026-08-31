@@ -3410,6 +3410,23 @@ const RE_LINK_FANTASMA =
 // Así que al detectar un relleno se van TODAS las oraciones que hablan de un enlace…
 // salvo las que traen una URL de verdad (http), que esas sí se pueden mandar.
 const RE_PROMETE_LINK = /\b(enlace|link|url)\b/i;
+// WhatsApp NO entiende el formato de Markdown: la negrita es *un* asterisco, no dos.
+// Con `**Dermachem**` el cliente ve los asteriscos, literales, en medio de la frase.
+// Se coló apenas se le pidió a la IA que usara negritas de verdad — el modelo escribe
+// Markdown por costumbre. Medido en la Recepción: «nuestro sérum **Dermachem**».
+// Misma historia con `__texto__` (en WhatsApp la cursiva es _uno_ solo).
+//
+// Los lookarounds NO son adorno: sin ellos, «P*** F****» —así llegan los nombres
+// enmascarados de Yape, y el motor los escribe en mensajes al cliente— salía como
+// «P** F***», comiéndose un asterisco de cada lado. La regla solo toca un par EXACTO
+// de dos (o tres) asteriscos con contenido sin asteriscos en medio.
+function aFormatoWhatsApp(texto: string): string {
+  return String(texto ?? "")
+    .replace(/(?<!\*)\*\*\*(?!\*)(?=\S)([^*]*[^*\s])\*\*\*(?!\*)/g, "*_$1_*")   // ***fuerte+cursiva***
+    .replace(/(?<!\*)\*\*(?!\*)(?=\S)([^*]*[^*\s])\*\*(?!\*)/g, "*$1*")
+    .replace(/(?<!_)__(?!_)(?=\S)([^_]*[^_\s])__(?!_)/g, "_$1_");
+}
+
 function sinLinkFantasma(texto: string): { texto: string; habia: boolean } {
   const t = String(texto ?? "");
   RE_LINK_FANTASMA.lastIndex = 0;
@@ -3434,6 +3451,8 @@ function sinLinkFantasma(texto: string): { texto: string; habia: boolean } {
 }
 
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
+  // Lo primero: el Markdown del modelo pasado al formato que WhatsApp sí entiende.
+  result = aFormatoWhatsApp(result);
   let hizoHandoff = false; // true si se escaló a humano → el caller debe CORTAR el flujo
   // [[humano]] — la IA pide ayuda cuando juzga que no puede resolverlo sola.
   // Se saca del texto SIEMPRE (aunque el traspaso falle) para que el marcador
@@ -3525,7 +3544,11 @@ export async function startFlowRun(
 
 // Envía un mensaje suelto (paso de secuencia sin flujo).
 export async function deliverMessage(db: SupabaseClient, channelId: string, contactId: string, text: string): Promise<boolean> {
-  return await deliverStep(db, channelId, contactId, { mensaje: text });
+  // aFormatoWhatsApp acá también: por deliverMessage salen la Recepción, el post-venta y
+  // el "estoy verificando tu pago", que NO pasan por emitIaText. Los tres escriben con IA,
+  // y el modelo mete Markdown por costumbre — el cliente veía «**Dermachem**» con los
+  // asteriscos a la vista. Sobre un texto sin Markdown no cambia nada.
+  return await deliverStep(db, channelId, contactId, { mensaje: aFormatoWhatsApp(text) });
 }
 
 // Envía un PASO de secuencia con el mismo motor que los "mensajes iniciales":
