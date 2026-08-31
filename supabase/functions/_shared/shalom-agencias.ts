@@ -684,6 +684,19 @@ export function sedeReconocida(sede: string, ciudad: string): string | null {
     return `la oficina que dijo ("${s}") no es de su zona — confírmasela antes de despachar`;
   }
   if (cs.some((a) => _n(a) === _n(s))) return null;   // nombró una agencia tal cual
+  // 🏙️ ¿Lo que dijo es una CIUDAD? Va ANTES del parecido de nombre, y por eso se mira
+  // con `_deCiudadEstricto` (distrito/provincia/departamento, sin el "que la ciudad
+  // aparezca dentro del nombre de la agencia", que es un último recurso para LISTARLE
+  // opciones, no para decidir qué dijo).
+  // Medido: dijo "Chiclayo" y el chat le mostró bien las CUATRO oficinas del distrito,
+  // pero la bandera del pedido decía "hay 2 oficinas que calzan" — las dos que llevan
+  // "Chiclayo" dentro del nombre (Aeropuerto y Miraflores). El operador leía 2 y el
+  // cliente había visto 4: dos números distintos para la misma pregunta.
+  const _ciudadDicha = _deCiudadEstricto(s);
+  if (_ciudadDicha.length === 1) return null;
+  if (_ciudadDicha.length > 1) {
+    return `en ${_sinRuido(s) || s} hay ${_ciudadDicha.length} oficinas Shalom — confirma con él a cuál va`;
+  }
   if (cs.length === 1) return null;                   // su texto apunta a una sola
   if (cs.length > 1) {
     return `hay ${cs.length} oficinas Shalom que calzan con "${s}" — confirma la exacta`;

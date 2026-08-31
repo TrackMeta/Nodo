@@ -1607,6 +1607,15 @@ const PIDE_RECOMPRA = [
   "quiero pedir otro", "pedir otro", "quiero comprar de nuevo", "me vendes otro",
   "quiero comprar nuevamente", "necesito otro par", "quiero mas pares",
 ];
+// Y la forma más natural de recomprar en Perú: un verbo de compra + una cantidad +
+// "más" ("quiero 2 más", "mándame otros 3", "pedir dos más"). La lista de frases de
+// arriba es literal y no la cubría: medido DOS veces con «quiero pedir 2 más» — la
+// primera el reenganche del extra se la llevó, y arreglado eso la atendió la IA de
+// post-venta, que conversa pero NO crea pedidos. En los dos casos la clienta escuchó
+// "ya te preparo tus 2 frascos" y en el panel no había nada. Con el sustantivo suelto
+// ("2 más") no hace falta pedir "unidades": en post-venta, más = más de lo que compró.
+const RE_MAS_UNIDADES =
+  /\b(quiero|dame|damelo|mandame|env[ií]ame|enviame|pedir|pido|encargame|separame|llevo|me llevo|necesito|comprar|compro)\b[^.!?¿?]{0,24}\b(\d{1,2}|un|uno|una|dos|tres|cuatro|cinco|seis|otro|otra|otros|otras)\b[^.!?¿?]{0,18}\bmas\b/;
 // Pide una unidad ADICIONAL, no corregir la suya. Se exige un sustantivo de unidad
 // ("ahora el PAR talla 40", "el otro PEDIDO") para no confundirlo con un dato que llega
 // tarde: "ahora la dirección es Av X" NO puede leerse como una segunda compra.
@@ -1622,6 +1631,10 @@ function pideUnidadAdicional(text: string): boolean {
 function pideRecompra(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 200) return false;
+  // El guard de corrección manda: "mejor mándame 2 más" está arreglando su pedido, no
+  // abriendo otro.
+  if (RE_ES_CORRECCION.test(t)) return false;
+  if (RE_MAS_UNIDADES.test(t)) return true;
   return PIDE_RECOMPRA.some((f) => {
     const n = limpiaOpt(f);
     if (!n) return false;
