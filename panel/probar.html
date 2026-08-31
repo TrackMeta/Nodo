@@ -356,8 +356,6 @@ $("msgInput").addEventListener("keydown", (e) => {
   e.preventDefault();
   sendMsg();
 });
-// Crece con el texto y vuelve a su alto al vaciarse (el tope lo pone max-height en CSS).
-function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 148) + "px"; }
 $("msgInput").addEventListener("input", autoGrow);
   $("attachBtn").onclick=()=>{ if(st.contactId) $("fileInput").click(); };
   $("fileInput").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) prepararAdjunto(f); };
@@ -466,6 +464,10 @@ function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; con
   return `<a class="file" href="${u}" target="_blank">${icon("file")} ${esc(m.content?.filename||"archivo")}</a>${cap}`; }
 
 // ── Enviar ──
+// El compositor crece con el texto y vuelve a su alto al vaciarse (el tope lo pone
+// max-height en CSS). Va acá arriba, FUERA del init: declarada dentro, sendMsg no la
+// veía y el campo se quedaba alto después de enviar (el catch se comía el ReferenceError).
+function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 148) + "px"; }
 async function sendMsg(){
   const inp=$("msgInput"); const text=inp.value.trim();
   // Con un archivo esperando, el texto es su PIE DE FOTO y puede ir vacío: los dos
