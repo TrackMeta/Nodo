@@ -78,6 +78,26 @@ Deno.serve(async (req) => {
         }
       }
     } catch (_) { /* best-effort: no bloquear el reset */ }
+    // 🔓 Soltar las OPERACIONES de pago reclamadas por este contacto de prueba. El candado
+    // anti-reúso (payment_operations) es por canal y sobrevivía al reset: la captura de Yape
+    // con la que se probaba la validación automática quedaba quemada para siempre, y al
+    // reenviarla el motor la marcaba «operación ya usada» → el adelanto caía a validación
+    // manual. Se lee exactamente como un fallo del OCR (así se reportó) y no lo era.
+    // Solo las de ESTE contacto de prueba: las de clientes reales no se tocan, que es
+    // justo lo que el candado existe para proteger. Ver migración 0085.
+    try {
+      const { data: ops } = await db.from("payment_operations").select("id")
+        .eq("channel_id", channel_id).eq("contact_id", contactId);
+      if (ops?.length) await db.from("payment_operations").delete().in("id", ops.map((o: any) => o.id));
+      // Compat con las operaciones reclamadas ANTES de la 0085 (contact_id vacío): se
+      // sueltan por el pedido de prueba al que quedaron colgadas.
+      const { data: ords2 } = await db.from("orders").select("id").eq("contact_id", contactId);
+      const ids = (ords2 ?? []).map((o: any) => o.id);
+      if (ids.length) {
+        await db.from("payment_operations").delete()
+          .eq("channel_id", channel_id).is("contact_id", null).in("order_id", ids);
+      }
+    } catch (_) { /* best-effort: no bloquear el reset */ }
     await Promise.all([
       db.from("messages").delete().eq("contact_id", contactId),
       db.from("flow_runs").delete().eq("contact_id", contactId),

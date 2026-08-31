@@ -6406,7 +6406,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
-  if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "adelanto"))) reuse = true;
+  if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "adelanto", contactId))) reuse = true;
 
   if (puedeAuto && !reuse) {
     // Acreditar al saldo lo pagado de más (o el total si pagó completo de una).
@@ -6620,7 +6620,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
-  if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo"))) reuse = true;
+  if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo", contactId))) reuse = true;
 
   if (puedeAuto && !reuse) {
     // ✅ Todo cuadra → saldo_pagado (la operación ya la reclamó el claim de arriba) + entrega.
@@ -9558,15 +9558,22 @@ export async function registrarOperacion(db: SupabaseClient, channelId: string, 
 // concurrentes del MISMO Yape ya no pueden acreditar dos pedidos. Se llama JUSTO ANTES de
 // auto-aprobar. Una operación ilegible (<4 chars) no se puede reclamar → devuelve true (no
 // bloquea; esos pagos ya van a validación manual por otros guardas, ver sinOpVerificable).
-export async function reclamarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<boolean> {
+// 👤 Se guarda TAMBIÉN de quién fue (migración 0085). No es parte del candado —ese es el
+// índice único (channel_id, operacion)— sino lo único que permite que "Iniciar / Reiniciar"
+// de Probar flujos suelte las operaciones del contacto de prueba. Sin esto, la captura de
+// Yape con la que se probó la validación automática quedaba quemada para siempre: al
+// reenviarla salía «operación ya usada» y el adelanto caía a manual, que se lee como un
+// fallo del OCR. Reportado así, y era esta fila sobreviviendo al reset.
+export async function reclamarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string, contactId?: string | null): Promise<boolean> {
   const n = normOperacion(op);
   if (n.length < 4) return true;
   const { data, error } = await db.from("payment_operations")
-    .insert({ channel_id: channelId, operacion: n, order_id: orderId, contexto })
+    .insert({ channel_id: channelId, operacion: n, order_id: orderId, contexto, contact_id: contactId ?? null })
     .select("id").maybeSingle();
   if (error) return false;   // choca con el único → ya la reclamó otro → NO ganamos
   return !!data;
 }
+
 
 // Modo de validación del pago DIGITAL, resolviendo la precedencia acordada con
 // Rodrigo: override del producto (config.validacion_pago) > default del canal
@@ -11219,7 +11226,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // estaba, o una ruta concurrente la reclamó en la misma ventana), es reúso → rechazo.
       // Cierra el TOCTOU del check-then-register (dos comprobantes del mismo Yape en paralelo
       // no entregan dos productos). Si la gana, ya queda registrada (no se re-registra abajo).
-      if (opNum && !(await reclamarOperacion(db, run.channel_id, opNum, (run.vars._order_id as string) ?? null, esExtra ? "extra" : "digital"))) {
+      if (opNum && !(await reclamarOperacion(db, run.channel_id, opNum, (run.vars._order_id as string) ?? null, esExtra ? "extra" : "digital", run.contact_id))) {
         // Reúso → convertir el veredicto en rechazo: la Condición del flujo
         // manda a "reintentar pago". No se parquea.
         const aviso = `PAGO_NO Este comprobante ya se usó antes (operación ${opNum}). Envíame uno nuevo, por favor.`;
