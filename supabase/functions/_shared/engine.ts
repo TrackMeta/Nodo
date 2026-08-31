@@ -9019,6 +9019,32 @@ const ORDINALES: string[][] = [
 const sinTildes = (s: string) =>
   String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+// Unidades que NO pueden ser el producto: si el número viene pegado a una de estas,
+// el cliente está contando otra cosa de su vida (el tiempo que lleva con la mancha,
+// sus hijos, las cuadras hasta la agencia, los soles que le sobran), no presentaciones.
+const UNIDAD_AJENA =
+  /^(anos?|meses?|mes|dias?|semanas?|horas?|hrs?|minutos?|mins?|segundos?|veces|vez|hijos?|hijas?|personas?|kilos?|kgs?|gramos?|grs?|litros?|ml|cm|mm|metros?|mts?|cuadras?|cuadra|soles?|dolares?|puntos?|grados?)\b/;
+
+// ¿Ese número está hablando del producto? Se acepta si aparece suelto y lo que sigue
+// NO es una unidad ajena. Se recorren TODAS sus apariciones: basta con que una valga
+// ("dos años… y llevo dos frascos" tiene que sellar).
+function numeroDelProducto(t: string, cant: number): boolean {
+  const vale = (pat: string) => {
+    const g = new RegExp("(?:^|[^a-z0-9])" + pat + "(?![a-z0-9])", "g");
+    let m: RegExpExecArray | null;
+    while ((m = g.exec(t)) !== null) {
+      const resto = t.slice(m.index + m[0].length).replace(/^[\s.,;:!?¡¿()-]+/, "");
+      if (!UNIDAD_AJENA.test(resto)) return true;
+    }
+    return false;
+  };
+  if (vale(String(cant))) return true;
+  for (const [w, n] of Object.entries(NUM_PALABRA)) {
+    if (n === cant && vale(w)) return true;
+  }
+  return false;
+}
+
 function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   const t = sinTildes(texto);
   if (!t.trim()) return false;
@@ -9034,13 +9060,18 @@ function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
     new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)").test(t);
   if (tokens(op.nombre).some((w) => !ajenas.has(w) && suelta(w))) return true;
   // 2) Las unidades que trae, en número o en palabra ("llevo 2", "quiero dos").
+  //    ⚠️ Pero el número tiene que estar hablando del PRODUCTO. Medido: una clienta
+  //    escribió «tengo paño en las mejillas hace como DOS AÑOS» y ese "dos" contó como
+  //    que nombraba el pack de 2 frascos; junto con su «llevo los 3» de dos mensajes
+  //    después, el motor concluyó que estaba COMPARANDO dos presentaciones y no selló
+  //    ninguna. Sin opción no hay precio: se quedó sin pedido después de elegir y
+  //    confirmar, y el bot le repreguntaba «¿1, 2 o 3?» hasta el final.
+  //    Pasa porque acá se mira el historial junto (5 mensajes), así que cualquier
+  //    cantidad de su vida —años con la mancha, hijos, cuadras, soles— entraba a la
+  //    cuenta. Se descartan los números pegados a una unidad que NO puede ser el
+  //    producto.
   const cant = Number(op.cantidad ?? 0);
-  if (cant > 0) {
-    if (new RegExp("(^|[^0-9])" + cant + "([^0-9]|$)").test(t)) return true;
-    for (const [w, n] of Object.entries(NUM_PALABRA)) {
-      if (n === cant && new RegExp("(^|[^a-z])" + w + "([^a-z]|$)").test(t)) return true;
-    }
-  }
+  if (cant > 0 && numeroDelProducto(t, cant)) return true;
   // 3) Su precio: "el de 159".
   const p = Number(op.precio ?? 0);
   if (p > 0 && new RegExp("(^|[^0-9])" + Math.round(p) + "([^0-9]|$)").test(t)) return true;
