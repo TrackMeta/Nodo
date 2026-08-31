@@ -5499,15 +5499,30 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // corrida: el cliente escribía "Bruno Tapia, DNI 44556677, Piura" y el mensaje
   // siguiente le pedía otra vez su nombre, su DNI y la sede. Justo en el momento del
   // pago, que es donde menos hay que hacerlo dudar de que lo estás escuchando.
+  //
+  // ⚠️ Los datos de la venta viven en las VARS del flow_run (ahí los deja el extractor),
+  // no en contact_field_values — mi primer intento los buscó en los campos del contacto
+  // y no encontraba nada, así que seguía pidiéndolos todos. Se miran los dos: las vars
+  // del run vivo primero, y los campos del contacto como respaldo.
   const _faltantes: string[] = [];
   try {
+    let v: Record<string, unknown> = {};
+    const { data: runVivo } = await db.from("flow_runs").select("vars")
+      .eq("contact_id", contactId).in("estado", ["activo", "esperando"])
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if ((runVivo as any)?.vars) v = (runVivo as any).vars;
     const { data: cf } = await db.from("contact_field_values")
-      .select("valor, field:custom_fields(key)").eq("contact_id", contactId);
-    const tiene = (k: string) => (cf ?? []).some((r: any) =>
-      String(r?.field?.key ?? "") === k && String(r?.valor ?? "").trim());
-    if (!tiene("nombre_completo")) _faltantes.push("tu *nombre completo*");
+      .select("valor, custom_fields!inner(key)").eq("contact_id", contactId);
+    const enCampos = new Map<string, string>();
+    for (const r of (cf ?? []) as any[]) {
+      const k = String(r?.custom_fields?.key ?? "");
+      if (k) enCampos.set(k, String(r?.valor ?? "").trim());
+    }
+    const tiene = (...ks: string[]) => ks.some((k) =>
+      String(v[k] ?? "").trim() || String(enCampos.get(k) ?? "").trim());
+    if (!tiene("nombre_completo", "cliente")) _faltantes.push("tu *nombre completo*");
     if (!tiene("dni")) _faltantes.push("tu *DNI*");
-    if (!tiene("sede") && !tiene("ciudad")) _faltantes.push("la *sede/oficina Shalom* donde lo recoges");
+    if (!tiene("sede", "ciudad")) _faltantes.push("la *sede/oficina Shalom* donde lo recoges");
   } catch (_) {
     _faltantes.push("tu *nombre completo*", "tu *DNI*", "la *sede/oficina Shalom* donde lo recoges");
   }
@@ -5515,8 +5530,16 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   const _cabeza = _corto
     ? `¡Gracias por el pago! 🙌 Me llega *${_sym} ${_montoLeido}* y el adelanto para despachar es de *${_sym} ${_adel}*, así que faltarían *${_sym} ${(_adel! - _montoLeido!).toFixed(2).replace(/\.00$/, "")}*.`
     : "¡Recibí tu pago! 🙌";
-  const _cola = _faltantes.length
-    ? ` Para despachar tu pedido a la agencia solo me falta ${_faltantes.length === 1 ? "" : "confirmar tus datos: "}${_faltantes.join(", ").replace(/, ([^,]*)$/, " y $1")}. Pásamelo${_faltantes.length === 1 ? "" : "s"} y lo dejo en camino. 😊`
+  // Con el pago corto NO se promete despacho aunque estén todos los datos: decir
+  // "faltarían S/10" y a renglón seguido "en un momento te confirmo el despacho" es
+  // contradecirse en el mismo mensaje, y el cliente se queda con la parte buena.
+  const _lista = _faltantes.join(", ").replace(/, ([^,]*)$/, " y $1");
+  const _cola = _corto
+    ? (_faltantes.length
+      ? ` En cuanto completes esa diferencia y me pases ${_lista}, lo dejo en camino. 😊`
+      : " Apenas completes esa diferencia lo dejo en camino. 😊")
+    : _faltantes.length
+    ? ` Para despachar tu pedido a la agencia solo me falta ${_faltantes.length === 1 ? "" : "confirmar tus datos: "}${_lista}. Pásamelo${_faltantes.length === 1 ? "" : "s"} y lo dejo en camino. 😊`
     : " Ya tengo tus datos, así que en un momento te confirmo el despacho. 😊";
   await deliverMessage(db, channelId, contactId, _cabeza + _cola).catch(() => {});
   if (_corto) {
