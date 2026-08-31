@@ -1115,6 +1115,16 @@ const RECHAZA_EXTRA_TRAS_ACEPTAR = [
   "no", "no gracias", "no quiero", "no lo quiero", "mejor no", "ya no", "ya no lo quiero",
   "olvidalo", "dejalo asi", "dejalo", "asi esta bien", "asi nomas", "sacalo", "quitalo",
   "quitamelo", "sin eso", "no me lo pongas", "cancela eso", "mejor sin eso",
+  // 🩺 SALUD. Aparte de los demás porque acá inventar no cuesta una venta: cuesta un
+  // daño. Medido — a "¿se puede usar en el embarazo?" (un sérum, y la ficha no dice
+  // NADA del tema) el bot contestó "no está recomendado para usarse durante el
+  // embarazo, para cuidar tu piel y la salud del bebé". Se lo inventó entero: ni el
+  // dueño lo escribió nunca ni el bot tiene cómo saberlo. Y da igual el sentido —
+  // afirmar que SÍ se puede sería peor. Cae acá para que el bot no responda de memoria
+  // y le quede registrado al dueño como hueco de la ficha.
+  ["si se puede en el embarazo o la lactancia", /\b(embaraz|gestaci[oó]n|gestante|lactancia|dando de lactar|amamant|dar de lactar)/, /\b(embaraz|gestaci[oó]n|lactancia)/, "producto"],
+  ["contraindicaciones, alergias o efectos", /\b(al[eé]rgic|alergia|contraindicaci|efectos? (secundarios?|adversos?)|me hace da[nñ]o|es peligros|piel sensible|dermatitis|rosace|diab[eé]tic|hipertens|tomo (pastillas|medicament)|estoy medicad)/, /\b(contraindicaci|al[eé]rgic|efectos? secundarios?|piel sensible|no usar si)/, "producto"],
+  ["si lo pueden usar niños o menores", /\b(ni[nñ]os?|ni[nñ]a|menores?|mi hijo|mi hija|adolescente|de \d{1,2} a[nñ]os)/, /\b(ni[nñ]os?|menores|edad m[ií]nima|a partir de los \d)/, "producto"],
 ];
 async function descartarExtraSiSeArrepiente(db: SupabaseClient, run: Run, ctx: any) {
   const t = limpiaOpt(String(ctx?.last_input ?? ""));
@@ -2083,6 +2093,16 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // contestó "y claro, aguantan sin problema hasta 95 kilos, la suela está diseñada
   // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
   ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/, "producto"],
+  // 🩺 SALUD. Aparte de los demás porque acá inventar no cuesta una venta: cuesta un
+  // daño. Medido — a "¿se puede usar en el embarazo?" (un sérum, y la ficha no dice
+  // NADA del tema) el bot contestó "no está recomendado para usarse durante el
+  // embarazo, para cuidar tu piel y la salud del bebé". Se lo inventó entero: ni el
+  // dueño lo escribió nunca ni el bot tiene cómo saberlo. Y da igual el sentido —
+  // afirmar que SÍ se puede sería peor. Cae acá para que el bot no responda de memoria
+  // y le quede registrado al dueño como hueco de la ficha.
+  ["si se puede en el embarazo o la lactancia", /\b(embaraz|gestaci[oó]n|gestante|lactancia|dando de lactar|amamant|dar de lactar)/, /\b(embaraz|gestaci[oó]n|lactancia)/, "producto"],
+  ["contraindicaciones, alergias o efectos", /\b(al[eé]rgic|alergia|contraindicaci|efectos? (secundarios?|adversos?)|me hace da[nñ]o|es peligros|piel sensible|dermatitis|rosace|diab[eé]tic|hipertens|tomo (pastillas|medicament)|estoy medicad)/, /\b(contraindicaci|al[eé]rgic|efectos? secundarios?|piel sensible|no usar si)/, "producto"],
+  ["si lo pueden usar niños o menores", /\b(ni[nñ]os?|ni[nñ]a|menores?|mi hijo|mi hija|adolescente|de \d{1,2} a[nñ]os)/, /\b(ni[nñ]os?|menores|edad m[ií]nima|a partir de los \d)/, "producto"],
 ];
 
 // RECEPCIÓN con IA: cuando el ruteo NO encontró producto (un "hola", un anuncio
@@ -5445,12 +5465,54 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     return true;
   }
   await setField(db, channelId, contactId, "_prepago_adel_url", url);
-  await setField(db, channelId, contactId, "_prepago_adel_monto", String(parseMonto(parsed?.monto, {}) ?? ""));
+  const _montoLeido = parseMonto(parsed?.monto, {});
+  await setField(db, channelId, contactId, "_prepago_adel_monto", String(_montoLeido ?? ""));
   await setField(db, channelId, contactId, "_prepago_adel_oper", parsed?.operacion ? String(parsed.operacion).trim() : "");
   await setField(db, channelId, contactId, "_prepago_adel_ok", parsed?.valido ? "si" : "no");
   await logEvent(db, channelId, contactId, "nota", "Pago del adelanto recibido ANTES de sus datos", "Guardado — se engancha al crear el pedido");
-  await deliverMessage(db, channelId, contactId,
-    "¡Recibí tu pago! 🙌 Para despachar tu pedido a la agencia solo me falta confirmar tus datos: tu *nombre completo*, tu *DNI* y la *sede/oficina Shalom* donde lo recoges. Pásamelos y lo dejo en camino. 😊").catch(() => {});
+
+  // ⚠️ "¡Recibí tu pago!" a secas daba por bueno CUALQUIER monto. Medido: una clienta
+  // yapeó S/10 de un adelanto de S/20 y el bot le contestó "¡Recibí tu pago!" sin
+  // mencionar que faltaba — se queda tranquila esperando un despacho que no va a salir.
+  // Con el adelanto configurado a mano, se le dice de una lo que falta.
+  let _adel: number | null = null;
+  let _sym = "S/";
+  try {
+    const { data: chE } = await db.from("channels").select("entregas, moneda").eq("id", channelId).maybeSingle();
+    const d = (chE as any)?.entregas?.adelanto_default;
+    if (d != null && d !== "" && Number.isFinite(Number(d))) _adel = Number(d);
+    _sym = simboloMoneda((chE as any)?.moneda);
+  } catch (_) { /* sin config → se saluda el pago sin prometer nada */ }
+  const _corto = _adel != null && _montoLeido != null && _montoLeido > 0 && _montoLeido < _adel;
+
+  // Y no se le vuelven a pedir los datos que YA dio. Medido en dos chats de la misma
+  // corrida: el cliente escribía "Bruno Tapia, DNI 44556677, Piura" y el mensaje
+  // siguiente le pedía otra vez su nombre, su DNI y la sede. Justo en el momento del
+  // pago, que es donde menos hay que hacerlo dudar de que lo estás escuchando.
+  const _faltantes: string[] = [];
+  try {
+    const { data: cf } = await db.from("contact_field_values")
+      .select("valor, field:custom_fields(key)").eq("contact_id", contactId);
+    const tiene = (k: string) => (cf ?? []).some((r: any) =>
+      String(r?.field?.key ?? "") === k && String(r?.valor ?? "").trim());
+    if (!tiene("nombre_completo")) _faltantes.push("tu *nombre completo*");
+    if (!tiene("dni")) _faltantes.push("tu *DNI*");
+    if (!tiene("sede") && !tiene("ciudad")) _faltantes.push("la *sede/oficina Shalom* donde lo recoges");
+  } catch (_) {
+    _faltantes.push("tu *nombre completo*", "tu *DNI*", "la *sede/oficina Shalom* donde lo recoges");
+  }
+
+  const _cabeza = _corto
+    ? `¡Gracias por el pago! 🙌 Me llega *${_sym} ${_montoLeido}* y el adelanto para despachar es de *${_sym} ${_adel}*, así que faltarían *${_sym} ${(_adel! - _montoLeido!).toFixed(2).replace(/\.00$/, "")}*.`
+    : "¡Recibí tu pago! 🙌";
+  const _cola = _faltantes.length
+    ? ` Para despachar tu pedido a la agencia solo me falta ${_faltantes.length === 1 ? "" : "confirmar tus datos: "}${_faltantes.join(", ").replace(/, ([^,]*)$/, " y $1")}. Pásamelo${_faltantes.length === 1 ? "" : "s"} y lo dejo en camino. 😊`
+    : " Ya tengo tus datos, así que en un momento te confirmo el despacho. 😊";
+  await deliverMessage(db, channelId, contactId, _cabeza + _cola).catch(() => {});
+  if (_corto) {
+    await pasarAHumano(db, channelId, contactId,
+      `Pagó ${_montoLeido} de un adelanto de ${_adel} — le avisé que falta la diferencia.`, { aviso: true }).catch(() => {});
+  }
   return true;
 }
 
@@ -6885,7 +6947,17 @@ async function reengancharExtra(
       const v = (vers ?? []).find((x) => String((x as any).id) === String(vid));
       return v ? `${(v as any).product?.nombre ?? ""} ${(v as any).nombre ?? ""}`.trim() : "el extra";
     };
-    const cands = ofrecibles.map((e) => ({ clave: String(e.idx), label: nombreDe(e.version_id) }));
+    // ⚠️ Con SOLO los extras como opciones, el clasificador está obligado a elegir uno:
+    // no tiene cómo decir "ninguno". Medido — una clienta que ya había comprado volvió con
+    // "me funcionó bien, quiero pedir 2 más" (dos unidades MÁS del principal, una recompra
+    // de S/119) y el clasificador la leyó como que aceptaba el extra. El run que se abrió
+    // fue el del reenganche, atado a su pedido VIEJO, así que la venta nueva no se creó
+    // nunca — y el bot igual le dijo "queda todo junto para que lo recibas mañana".
+    // La salida explícita evita que una intención distinta caiga acá por descarte.
+    const cands = [
+      ...ofrecibles.map((e) => ({ clave: String(e.idx), label: nombreDe(e.version_id) })),
+      { clave: "0", label: "ninguno de esos — quiere otra cosa (por ejemplo MÁS UNIDADES del producto que ya compró, hacer un pedido nuevo, o preguntar algo)" },
+    ];
     // ¿El cliente quiere SUMAR uno? (idx 0 = ninguno → no reengancha). Umbral alto:
     // solo reenganchamos ante una aceptación clara, no ante una pregunta o un "quizás".
     const cls = await classify(db, channelId, {
@@ -10606,6 +10678,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // cliente se queda esperando y la conversación se muere. La salida no es mentir
         // ni evadir, es CONDUCIRLA: reconoces, confirmas ese dato, y puenteas a un
         // beneficio que SÍ está escrito y que juegue a favor de su preocupación.
+        // 🩺 Si lo que preguntó toca la SALUD, el «puentea a un beneficio» de abajo no
+        // aplica: acá inventar no cuesta una venta, cuesta un daño — y el bot lo hizo en
+        // las dos direcciones posibles (negar "no está recomendado en el embarazo" es tan
+        // inventado como afirmar que sí). Va ANTES para que mande sobre el resto.
+        const _esSalud = faltan.some((t) => /embarazo|lactancia|contraindicaciones|niños|menores/i.test(t));
+        if (_esSalud) {
+          parts.push("## 🩺 Te preguntó algo de SALUD y no está en la ficha\n" +
+            `Te preguntó por **${faltan.join(", ")}** y sobre eso no tienes NINGÚN dato. ` +
+            "⛔ PROHIBIDO responder de memoria, en cualquiera de los dos sentidos: ni «no está recomendado» " +
+            "ni «sí se puede, es suave». Las dos son afirmaciones sobre su salud que nadie escribió y tú no " +
+            "puedes saber.\n" +
+            "Lo que haces: le agradeces que pregunte —porque es lo correcto de su parte—, le dices con " +
+            "honestidad que eso lo tiene que confirmar con su médico o dermatólogo, que es quien conoce su " +
+            "caso, y le ofreces contarle lo que SÍ sabes del producto (qué lleva y cómo se usa) para que lo " +
+            "consulte con esa información. No cierres la venta a la fuerza ni le insistas con el pedido en " +
+            "ese mensaje: acaba de contarte algo personal.");
+        }
         parts.push("## ⚠️ Te preguntó algo que NO está en la ficha (y puede decidir su compra)\n" +
           `Sobre esto no tienes dato: **${faltan.join(", ")}**. Que la ficha no lo mencione NO significa que no exista: ` +
           `no lo afirmes ni lo niegues, y NUNCA le desaconsejes la compra por esto ("para eso quizás necesites otra cosa") — ` +
