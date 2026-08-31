@@ -5303,6 +5303,21 @@ export function mensajeEstadoDefault(
     const ad = Number(s.adelanto_abonado ?? s.pago_acreditado_adelanto ?? s.adelanto);
     return Math.max(0, tot - (Number.isFinite(ad) && ad > 0 ? ad : 0));
   };
+  // 💸 ADELANTO VALIDADO — el momento en que el cliente ya pagó y espera respuesta.
+  // Faltaba, y era el silencio peor del recorrido: medido en la prueba de Rodrigo, la
+  // clienta mandó su Yape de S/20, el motor lo validó solo a los 5 segundos… y no le
+  // dijo NADA. Quedó mirando el chat sin saber si su plata llegó. Y al revés de lo
+  // esperable, quien paga mal SÍ recibe respuesta ("estoy verificando tu pago"): el
+  // camino feliz era el único mudo.
+  if (estado === "adelanto_validado") {
+    const saldo = (s.saldo != null && s.saldo !== "") ? Number(s.saldo) : null;
+    const donde = String(s.ciudad || s.sede || "").trim();
+    return `✅ ¡Recibí tu adelanto! Ya estoy preparando tu pedido para despacharlo` +
+      (donde ? ` a la agencia de *${donde}*` : "") + ".\n\n" +
+      (saldo != null && saldo > 0
+        ? `Los *${sym} ${saldo}* que faltan los pagas recién cuando llegue — ahí te paso tu clave para recogerlo. 🙌`
+        : "Te aviso apenas esté en la agencia con tu clave para recogerlo. 🙌");
+  }
   if (estado === "en_reparto") {
     const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
     const dir = String(s.direccion || "").trim();
@@ -6382,7 +6397,21 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // que más le importa (ya no debe nada) llegaba detrás de un intento de venta.
     if (pagadoTotal) await avisarPagadoTotal(db, channelId, contactId);
     const ofrecio = await resumeIntoExtras(db, channelId, contactId).catch(() => false);
-    if (!ofrecio) await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
+    if (!ofrecio) {
+      const arranco = await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
+      // 🔇 Si NADIE le avisó —ni un flujo de "pedido cambió de estado" ni el ofrecimiento
+      // de un extra— el cliente se queda sin respuesta justo después de pagar. Acá va la
+      // red: el mensaje por defecto del estado. Sin esto, un canal recién configurado
+      // (que es lo normal: los avisos son opcionales) deja mudo el momento en que más
+      // ansioso está el cliente. Medido en la prueba de Rodrigo: pagó y no recibió nada.
+      if (!arranco) {
+        const { data: o2 } = await db.from("orders").select("shipping, amount, currency")
+          .eq("id", (order as any).id).maybeSingle();
+        const txt = mensajeEstadoDefault("adelanto_validado",
+          (o2 as any)?.shipping ?? null, (o2 as any)?.amount ?? null, (o2 as any)?.currency ?? null);
+        if (txt) await deliverMessage(db, channelId, contactId, txt).catch(() => {});
+      }
+    }
     await avisar(db, channelId, contactId, "adelanto_auto",
       { monto, operacion: oper ?? "" }, { foto: url });
     return true;
