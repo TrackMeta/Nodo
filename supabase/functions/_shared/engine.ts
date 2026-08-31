@@ -2927,9 +2927,20 @@ function conPeticionFinal(texto: string, peticion: string, dato?: string): strin
   if (RE_YA_PIDE.test(t)) return texto;                 // ya pide algo, en imperativo
   // Y si ya NOMBRA el dato que falta ("solo me falta tu DNI de 8 dígitos"), pegarle
   // "Me falta un dato: DNI. ¿Me lo pasas?" es decir lo mismo dos veces seguidas.
+  //
+  // ⚠️ Comparar la etiqueta ENTERA fallaba por una palabra. El label lo escribe el
+  // dueño en tercera persona («Nombre y apellidos, como en SU DNI») y la IA lo dice
+  // tuteando («como en TU DNI»): no calzaba, y el cliente recibía la misma petición
+  // dos veces seguidas en el mismo mensaje — la segunda copiada literal del campo, con
+  // el "su" rompiendo el tuteo. Medido en un chat. Se compara también el NÚCLEO de la
+  // etiqueta (lo de antes de la primera coma o paréntesis), que es lo que de verdad
+  // nombra el dato: «Nombre y apellidos».
   const sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const tt = sinT(t);
   const d = sinT(String(dato ?? "").trim());
-  if (d.length >= 3 && sinT(t).includes(d)) return texto;
+  if (d.length >= 3 && tt.includes(d)) return texto;
+  const nucleo = sinT(String(dato ?? "").split(/[,(]/)[0].trim());
+  if (nucleo.length >= 4 && tt.includes(nucleo)) return texto;
   return t + (/[.!…]$/.test(t) ? " " : ". ") + peticion;
 }
 
@@ -11603,7 +11614,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // dejo cerrado. 🙂" — una frase suelta que no pide nada, después de que ella diera
         // todo. Se nombra el dato pendiente, que el motor ya sabe cuál es.
         const _falta1: any = Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan[0] : null;
-        const _lblTal = String(_falta1?.label ?? "").replace(/[¿?¡!]/g, "").trim();
+        // El label lo escribe el dueño en tercera persona ("como en SU DNI") porque en la
+        // sección Campos se lee como una ficha. Pegado tal cual en el chat rompe el tuteo
+        // justo en la ultima frase del mensaje. Se pasa a segunda persona al usarlo.
+        // OJO con el \b: sin el, "su" se reemplaza DENTRO de otras palabras y una sede
+        // "al frente del supermercado" quedaria "tupermercado".
+        const _lblTal = String(_falta1?.label ?? "").replace(/[¿?¡!]/g, "")
+          .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").trim();
         const _lbl = _lblTal.toLowerCase();
         const cierreHonesto = (ctx as any)._pack_mixto
           ? "Dime cuál de las dos formas prefieres y te lo dejo cerrado. 🙂"
