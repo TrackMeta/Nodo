@@ -2054,9 +2054,16 @@ async function okManualEnvio() {
 let sending = false;
 async function sendMsg() {
   const input = $("msgInput"); const text = input.value.trim();
-  // Guarda de re-entrada: el handler de Enter (msgInput keydown) NO mira el
-  // botón deshabilitado, y el input recién se limpia DESPUÉS del await de red;
-  // sin esto, doble-Enter rápido enviaba el MISMO mensaje dos veces al cliente.
+  // 🧹 El campo se vacía AL TOQUE, apenas se dispara el envío, no cuando contesta el
+  // servidor. En el canal de PRUEBA `callFn("webchat")` espera a que el motor TERMINE
+  // de responder —con la IA de por medio, 20 s largos— y el mensaje seguía escrito
+  // como si no se hubiera enviado. Si el envío falla, el texto vuelve tal cual y el
+  // borrador se rearma: no se pierde lo escrito.
+  const limpiar = () => { input.value = ""; autoGrow(); delete state.drafts[state.contactId]; };
+  const devolver = () => { if (!input.value.trim()) { input.value = text; autoGrow(); if (text) state.drafts[state.contactId] = text; } };
+  // Guarda de re-entrada: el handler de Enter (msgInput keydown) NO mira el botón
+  // deshabilitado. Con el campo limpiándose de una, el segundo Enter ya no encuentra
+  // texto — pero `sending` se queda igual, que es el candado de verdad.
   // Con un archivo esperando, el texto es su PIE DE FOTO y puede ir vacío: se
   // envían juntos en una sola burbuja (ver prepararAdjunto).
   if (adjunto) {
@@ -2066,11 +2073,10 @@ async function sendMsg() {
     sending = true; $("sendBtn").disabled = true;
     try {
       if (!await okManualEnvio()) return;
-      if (await enviarAdjuntoConTexto(text)) {
-        input.value = ""; autoGrow(); delete state.drafts[state.contactId];
-        quitarAdjunto();
-      }
-    } catch { toast("Error de red", true); }
+      limpiar();
+      if (await enviarAdjuntoConTexto(text)) quitarAdjunto();
+      else devolver();
+    } catch { toast("Error de red", true); devolver(); }
     finally { sending = false; $("sendBtn").disabled = false; }
     return;
   }
@@ -2079,6 +2085,7 @@ async function sendMsg() {
   sending = true; $("sendBtn").disabled = true;
   try {
     if (!await okManualEnvio()) return;
+    limpiar();
     if (state.isTest) {
       if (state.testAs === "bot") {
         // Simular respuesta del bot: mensaje saliente directo (RLS admin).
@@ -2086,18 +2093,17 @@ async function sendMsg() {
           channel_id: state.channelId, contact_id: state.contactId,
           direction: "out", type: "text", content: { text }, status: "sent", sent_by: "bot",
         });
-        if (error) { toast(error.message, true); } else { input.value = ""; autoGrow(); delete state.drafts[state.contactId]; }
+        if (error) { toast(error.message, true); devolver(); }
       } else {
         await callFn("webchat", { channel_id: state.channelId, text });
-        input.value = ""; autoGrow(); delete state.drafts[state.contactId];
       }
     } else {
       const res = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, text });
       const out = await res.json();
-      if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); }
-      else { input.value = ""; autoGrow(); delete state.drafts[state.contactId]; setBotPill(false); }
+      if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); devolver(); }
+      else { setBotPill(false); }
     }
-  } catch { toast("Error de red", true); }
+  } catch { toast("Error de red", true); devolver(); }
   finally { sending = false; $("sendBtn").disabled = false; }
 }
 

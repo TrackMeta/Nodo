@@ -470,6 +470,14 @@ function mediaHtml(m){ const url=m.content?.media_url; if(!url) return null; con
 function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 148) + "px"; }
 async function sendMsg(){
   const inp=$("msgInput"); const text=inp.value.trim();
+  // 🧹 El campo se vacía AL TOQUE, no cuando contesta el servidor. `callFn("webchat")`
+  // espera a que el MOTOR TERMINE de responder —con la IA de por medio son 20 s largos—
+  // y hasta entonces el mensaje seguía escrito, como si no se hubiera enviado. Si el
+  // envío falla, el texto vuelve tal cual: no se pierde lo escrito.
+  // De paso tapa el doble-Enter: el segundo ya encuentra el campo vacío y sale por el
+  // guard de abajo, sin mandar el mismo mensaje dos veces.
+  const limpiar=()=>{ inp.value=""; autoGrow(); };
+  const devolver=()=>{ if(!inp.value.trim()){ inp.value=text; autoGrow(); } };
   // Con un archivo esperando, el texto es su PIE DE FOTO y puede ir vacío: los dos
   // salen en una sola burbuja en vez de dos mensajes sueltos (ver prepararAdjunto).
   if(adjunto){
@@ -478,24 +486,26 @@ async function sendMsg(){
     $("sendBtn").disabled=true;
     try{
       const media={ kind:adjunto.kind, url:adjunto.url, mime:adjunto.mime, filename:adjunto.filename };
+      limpiar();
       if(st.testAs==="bot"){
         const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out",
           type:media.kind, content:{ media_url:media.url, caption:text, mime:media.mime, filename:media.filename }, status:"sent" });
-        if(error){ toast(error.message,true); } else { inp.value=""; autoGrow(); quitarAdjunto(); }
+        if(error){ toast(error.message,true); devolver(); } else { quitarAdjunto(); }
       } else {
         await callFn("webchat",{ channel_id:st.channelId, media:{ ...media, caption:text } });
-        inp.value=""; autoGrow(); quitarAdjunto();
+        quitarAdjunto();
       }
-    }catch{ toast("Error de red",true); }
+    }catch{ toast("Error de red",true); devolver(); }
     $("sendBtn").disabled=false;
     return;
   }
   if(!text||!st.contactId) return;
   $("sendBtn").disabled=true;
+  limpiar();
   try{
-    if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error) toast(error.message,true); else { inp.value=""; autoGrow(); } }
-    else { await callFn("webchat",{ channel_id:st.channelId, text }); inp.value=""; autoGrow(); }
-  }catch{ toast("Error de red",true); }
+    if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error){ toast(error.message,true); devolver(); } }
+    else { await callFn("webchat",{ channel_id:st.channelId, text }); }
+  }catch{ toast("Error de red",true); devolver(); }
   $("sendBtn").disabled=false;
 }
 async function sendButton(id,title){ await callFn("webchat",{ channel_id:st.channelId, buttonId:id, text:title }); }
