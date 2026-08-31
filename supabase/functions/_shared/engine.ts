@@ -3321,6 +3321,30 @@ function sinPreguntaFinal(texto: string): string {
 // por cada marcador envía el archivo correspondiente del catálogo del producto
 // (config.ia_multimedia, expuesto en ctx._ia_multimedia) intercalado con el
 // texto. Los marcadores desconocidos se descartan (no se filtran al usuario).
+// 🔗 El link que no existe. Medido, y a la peor persona posible: una clienta reclamó
+// que su frasco llegó abierto y el bot le contestó «te mando el enlace para que puedas
+// hacer el cambio sin costo: [enlace de cambio]» — escribió el MARCADOR, literal. No
+// hay tal enlace ni tal autoservicio: le prometió un trámite inexistente a alguien que
+// ya está molesto, y encima le mandó algo roto.
+// Va por CÓDIGO y no por prompt porque el modelo escribe estos rellenos cuando le falta
+// un dato, y una regla más en un prompt largo no lo frena de forma fiable. Se quita la
+// ORACIÓN entera (no solo el corchete): sin el link, "te mando el enlace" sigue siendo
+// una promesa falsa. Lo que escribió alrededor se respeta.
+const RE_LINK_FANTASMA =
+  /[^.!?…\n]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n]*[.!?…]?/gi;
+
+// Quita las frases que prometen un enlace inventado. Si al sacarlas el mensaje se
+// queda en nada, se cae a pedir el detalle y pasar a una persona: mejor eso que
+// mandarle un trámite que no existe.
+function sinLinkFantasma(texto: string): { texto: string; habia: boolean } {
+  const t = String(texto ?? "");
+  RE_LINK_FANTASMA.lastIndex = 0;
+  if (!RE_LINK_FANTASMA.test(t)) return { texto: t, habia: false };
+  RE_LINK_FANTASMA.lastIndex = 0;
+  const limpio = t.replace(RE_LINK_FANTASMA, " ").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return { texto: limpio, habia: true };
+}
+
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
   let hizoHandoff = false; // true si se escaló a humano → el caller debe CORTAR el flujo
   // [[humano]] — la IA pide ayuda cuando juzga que no puede resolverlo sola.
@@ -3330,6 +3354,22 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   if (/\[\[\s*humano\s*\]\]/i.test(result)) {
     hizoHandoff = true;
     result = result.replace(/\[\[\s*humano\s*\]\]/gi, "").trim();
+  }
+  // Se quita ANTES de cualquier otra cosa: si prometió un enlace que no existe, esa
+  // frase no sale, y como lo que iba a resolver esa promesa queda sin resolver, lo
+  // toma una persona. Un marcador `[enlace de cambio]` llegando a un cliente que
+  // reclama es peor que no contestarle.
+  {
+    const _lk = sinLinkFantasma(result);
+    if (_lk.habia) {
+      result = _lk.texto;
+      hizoHandoff = true;
+      if (result.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 20) {
+        result = "Déjame revisarlo bien para no darte un dato equivocado 🙏 Te ayudo en un momento.";
+      }
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🔗 Iba a mandar un enlace que no existe",
+        "Se le quitó la frase y se pasó a una persona.").catch(() => {});
+    }
   }
   // El acuse del traspaso va DESPUÉS del mensaje que escribió la IA, no antes.
   // `pasarAHumano` estaba arriba, así que el cliente leía primero "en un momento te
