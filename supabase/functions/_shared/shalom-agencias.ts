@@ -663,11 +663,34 @@ export function agenciasDeCiudad(ciudad: string): Agencia[] {
 // Sigue valiendo la regla de siempre: esto CONFIRMA, no descarta. La lista es un
 // volcado con fecha, no la verdad viva de Shalom.
 export function sedeReconocida(sede: string, ciudad: string): string | null {
+  return _resuelveSede(sede, ciudad).motivo;
+}
+
+// La oficina EXACTA que eligió, o null si no se puede saber con certeza. Sale del
+// mismo razonamiento que `sedeReconocida` a propósito: son la misma pregunta vista
+// de dos lados —"¿es segura?" y "¿cuál es?"— y tenerlas en dos copias era garantía
+// de que un día dijeran cosas distintas. Se usa para mandarle la ficha de su sede.
+export function agenciaExacta(sede: string, ciudad: string): Agencia | null {
+  const r = _resuelveSede(sede, ciudad);
+  return r.motivo ? null : r.a;
+}
+
+// Nombre de archivo estable para la ficha de una oficina. Lleva departamento,
+// provincia y distrito además del nombre porque hay agencias que se llaman igual
+// en sitios distintos ("Atahualpa", "Av. Ejército") y una sola palabra las mezcla.
+export function slugAgencia(a: Agencia): string {
+  return [a.d, a.p, a.t, a.l].map((x) => _n(x)).join("-")
+    .replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+}
+
+function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a: Agencia | null } {
   const s = String(sede ?? "").trim();
+  const _no = (motivo: string) => ({ motivo, a: null });
+  const _si = (a: Agencia | null) => ({ motivo: null, a });
   if (!s) {
-    return String(ciudad ?? "").trim()
+    return _no(String(ciudad ?? "").trim()
       ? "no dijo la oficina — confírmala con él antes de despachar"
-      : "falta la sede/agencia de destino — confírmala";
+      : "falta la sede/agencia de destino — confírmala");
   }
   // ⚠️ La coincidencia por nombre NO alcanza: hay agencias que se llaman igual o
   // parecido en departamentos distintos. Medido — una clienta de AREQUIPA pidió
@@ -683,9 +706,11 @@ export function sedeReconocida(sede: string, ciudad: string): string | null {
   const deLaZona = AGENCIAS.filter((a) => todas.includes(a.l) && enSuZona(a));
   const cs = deLaZona.length ? deLaZona.map((a) => a.l) : [];
   if (todas.length && !deLaZona.length) {
-    return `la oficina que dijo ("${s}") no es de su zona — confírmasela antes de despachar`;
+    return _no(`la oficina que dijo ("${s}") no es de su zona — confírmasela antes de despachar`);
   }
-  if (cs.some((a) => _n(a) === _n(s))) return null;   // nombró una agencia tal cual
+  // Nombró una agencia tal cual.
+  const _tal = deLaZona.find((a) => _n(a.l) === _n(s));
+  if (_tal) return _si(_tal);
   // 🏙️ ¿Lo que dijo es una CIUDAD? Va ANTES del parecido de nombre, y por eso se mira
   // con `_deCiudadEstricto` (distrito/provincia/departamento, sin el "que la ciudad
   // aparezca dentro del nombre de la agencia", que es un último recurso para LISTARLE
@@ -695,21 +720,22 @@ export function sedeReconocida(sede: string, ciudad: string): string | null {
   // "Chiclayo" dentro del nombre (Aeropuerto y Miraflores). El operador leía 2 y el
   // cliente había visto 4: dos números distintos para la misma pregunta.
   const _ciudadDicha = _deCiudadEstricto(s);
-  if (_ciudadDicha.length === 1) return null;
+  if (_ciudadDicha.length === 1) return _si(_ciudadDicha[0]);
   if (_ciudadDicha.length > 1) {
-    return `en ${_sinRuido(s) || s} hay ${_ciudadDicha.length} oficinas Shalom — confirma con él a cuál va`;
+    return _no(`en ${_sinRuido(s) || s} hay ${_ciudadDicha.length} oficinas Shalom — confirma con él a cuál va`);
   }
-  if (cs.length === 1) return null;                   // su texto apunta a una sola
+  // Su texto apunta a una sola.
+  if (cs.length === 1) return _si(deLaZona[0]);
   if (cs.length > 1) {
-    return `hay ${cs.length} oficinas Shalom que calzan con "${s}" — confirma la exacta`;
+    return _no(`hay ${cs.length} oficinas Shalom que calzan con "${s}" — confirma la exacta`);
   }
   // No nombró ninguna agencia. ¿Será que dijo su ciudad?
   const enCiudad = agenciasDeCiudad(s);
-  if (enCiudad.length === 1) return null;             // esa ciudad tiene una sola
+  if (enCiudad.length === 1) return _si(enCiudad[0]);  // esa ciudad tiene una sola
   if (enCiudad.length > 1) {
-    return `en ${_sinRuido(s) || s} hay ${enCiudad.length} oficinas Shalom — confirma con él a cuál va`;
+    return _no(`en ${_sinRuido(s) || s} hay ${enCiudad.length} oficinas Shalom — confirma con él a cuál va`);
   }
-  return "dijo una oficina que no está en la lista — confírmasela antes de despachar";
+  return _no("dijo una oficina que no está en la lista — confírmasela antes de despachar");
 }
 
 // Los OTROS distritos de su misma provincia donde también hay oficina. Cuando el

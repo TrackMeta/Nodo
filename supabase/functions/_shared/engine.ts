@@ -13,7 +13,10 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
-import { sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia, agenciasCercanasAlDistrito } from "./shalom-agencias.ts";
+import {
+  sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
+  agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
+} from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
 
@@ -9336,6 +9339,13 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             }
             run.vars[c.clave] = val;
             ctx[c.clave] = val;
+            // 📍 Eligió su oficina: se marca para mandarle la FICHA después del mensaje
+            // (ver `_ficha_sede`). Acá solo se anota cuál es, porque la imagen tiene que
+            // ir DESPUÉS del texto que se la confirma, no antes.
+            if (c.clave === "sede") {
+              const _ag = agenciaExacta(val, String(ctx.ciudad ?? ""));
+              if (_ag) (run.vars as any)._ficha_sede = slugAgencia(_ag);
+            }
             await setField(db, run.channel_id, run.contact_id, c.clave, val);
             const duda = datoDudoso(c.clave, val, ctx);
             if (duda) {
@@ -12622,6 +12632,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = conEmojiMinimo(salida, ctx, _min);
       }
       const handoff = await emitIaText(db, run, salida, ctx);
+      // 📍 La FICHA de su oficina, detrás del mensaje que se la confirma. Es una imagen
+      // con el nombre, la dirección y la referencia: el cliente la reenvía a quien va a
+      // recoger o se la muestra al mototaxista sin copiar nada a mano. Se manda UNA vez
+      // —la marca se borra pase lo que pase— y solo cuando sabemos con certeza cuál es
+      // la oficina; si la sede quedó vaga no hay ficha que mandar, y decirle una al azar
+      // sería mandarlo al local equivocado.
+      if ((run.vars as any)?._ficha_sede && !handoff) {
+        const _slug = String((run.vars as any)._ficha_sede);
+        delete (run.vars as any)._ficha_sede;
+        try {
+          const { data: _f } = await db.from("sede_imagenes").select("url,nombre").eq("slug", _slug).maybeSingle();
+          if (_f?.url) {
+            await emit(db, run, {
+              media_url: _f.url,
+              media_kind: "image",
+              caption: "📍 Esta es tu agencia para el recojo.",
+              _noTpl: true,
+            }, ctx);
+          }
+        } catch { /* sin ficha → el texto ya le dijo la dirección igual */ }
+      }
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
       // acaba de salir, se los manda el motor. Va acá (después) para no duplicarlos.
       if (op === "generar_texto" && !handoff) {
