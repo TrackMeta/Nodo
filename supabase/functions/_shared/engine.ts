@@ -3427,6 +3427,51 @@ function conAgencias(texto: string, lista: string): string {
   return t.trimEnd() + "\n\n" + lista;
 }
 
+// 📍 Las sedes escritas DE CORRIDO —"puede ser Ciudad de Dios, Guadalupe La Libertad,
+// Pacasmayo Centro, Pacasmayo Las Palmeras o San Pedro de Lloc"— no se leen: el cliente ve
+// un párrafo con cinco nombres parecidos y contesta "no sé cuál". Una por línea sí se
+// escanea con el pulgar.
+//
+// La regla del prompt («cada una EN SU LÍNEA, nunca de corrido») falló DOS veces, así que
+// baja a código, igual que pasó con el Yape y con la lista de precios: cuando una regla de
+// prompt se cae dos veces, deja de ser una regla y pasa a ser una función.
+function sedesEnLineas(texto: string, agencias: { l: string }[]): string {
+  const t = String(texto ?? "");
+  if (!agencias.length || !t.trim()) return t;
+  // Las etiquetas largas primero: si "Pacasmayo Centro" se probara después de "Pacasmayo",
+  // el nombre quedaría partido a la mitad.
+  const etqs = [...new Set(agencias.map((a) => bonito(a.l)).filter((x) => x.length > 3))]
+    .sort((a, b) => b.length - a.length);
+  if (!etqs.length) return t;
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Los asteriscos van dentro del match para que no queden sueltos al reordenar.
+  const rx = new RegExp(`\\*?(${etqs.map(esc).join("|")})\\*?`, "gi");
+  return t.split("\n").map((linea) => {
+    const hall = [...linea.matchAll(rx)];
+    // Con una sola no hay nada que desenrollar; ya viene una por línea.
+    if (hall.length < 2) return linea;
+    const ini = hall[0].index ?? 0;
+    const fin = (hall[hall.length - 1].index ?? 0) + hall[hall.length - 1][0].length;
+    // ⛔ Dos guardas contra el falso positivo. La línea de una oficina ya bien puesta
+    // —"San Pedro de Lloc (San Pedro de Lloc) — a media cdra..."— trae el nombre DOS
+    // veces, porque el pueblo se llama igual que la agencia, y sin esto se partía en dos.
+    //  · nombres DISTINTOS: el mismo repetido no es una enumeración.
+    //  · un separador de verdad entre ellos: en una enumeración hay una coma o un "o";
+    //    entre la oficina y su distrito solo hay un paréntesis.
+    const _sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (new Set(hall.map((m) => _sinT(m[1]))).size < 2) return linea;
+    if (!/,|\s(?:o|y)\s/i.test(linea.slice(ini, fin))) return linea;
+    // Lo de antes suele terminar en "(puede ser" o en dos puntos: sobra al abrir la lista.
+    const antes = linea.slice(0, ini)
+      .replace(/[\s:,(]*(?:puede ser|pueden ser|por ejemplo|como|son)?[\s:,(]*$/i, "").trimEnd();
+    // Lo de después arranca con la basura de la enumeración —")", ",", " o "— y luego trae
+    // la pregunta de cierre, que sí se conserva.
+    const luego = linea.slice(fin).replace(/^[\s),.;]*(?:o|y)?[\s),.;]*/i, "").trim();
+    const lista = hall.map((m) => `*${m[1]}*`).join("\n");
+    return (antes ? antes + "\n" : "") + lista + (luego ? "\n\n" + luego : "");
+  }).join("\n");
+}
+
 // `preguntoElCliente`: además de la promesa incumplida, cubre el caso de que él lo haya
 // PEDIDO y la respuesta no traiga ninguna cifra. Consultar su caso está bien; dejar la
 // pregunta del precio sin contestar, no — es la pregunta que más se hace y la que decide.
@@ -12364,7 +12409,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       // 📍 Pidió la SEDE sin listar las oficinas: se las pega el motor, con las de SU ciudad.
       // Ver conAgencias — la regla del prompt falló dos veces y por eso vive acá.
-      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia" && RE_PIDE_SEDE.test(salida)) {
+      // Y si las nombró TODAS en una sola línea, se desenrollan: ver sedesEnLineas.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia") {
         try {
           // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
           // su PROVINCIA y el encabezado tiene que decirlo: pegarlas bajo "En JEQUETEPEQUE
@@ -12385,6 +12431,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
                 "Pidió la sede sin listarlas.").catch(() => {});
+            }
+            // Las que él mismo escribió apiladas en una línea. Va DESPUÉS de conAgencias
+            // para que la lista recién pegada —que ya viene una por línea— no se toque.
+            const _corrido = salida;
+            salida = sedesEnLineas(salida, _ags);
+            if (salida !== _corrido) {
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Sedes puestas en líneas",
+                "Las había nombrado de corrido en una sola línea.").catch(() => {});
             }
           }
         } catch (_) { /* sin agencias legibles → se envía tal cual */ }
