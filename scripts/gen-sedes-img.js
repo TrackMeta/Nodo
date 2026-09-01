@@ -55,12 +55,12 @@
 
   // ── La tarjeta ────────────────────────────────────────────────────────
   // Tamaño pensado para WhatsApp: se ve completa en la burbuja sin abrirla.
-  // La direccion de Shalom termina repitiendo la ciudad y ademas viene CORTADA en
+  // La dirección de Shalom termina repitiendo la ciudad y además viene CORTADA en
   // la fuente ("... PISO 1 TRUJILLO - TRUJILL"). Ese rabo no informa y encima se lee
-  // como un error, asi que se le quita cuando lo ultimo es el distrito o la provincia
+  // como un error, así que se le quita cuando lo último es el distrito o la provincia
   // (entera o a medias).
   function _dirLimpia(a) {
-    const partes = String(a.dir ?? "").split(/s+-s+|,/).map((p) => p.trim()).filter(Boolean);
+    const partes = String(a.dir ?? "").split(/\s+-\s+|,/).map((p) => p.trim()).filter(Boolean);
     const lugar = [_n(a.t), _n(a.p), _n(a.d)];
     while (partes.length > 1) {
       const u = _n(partes[partes.length - 1]);
