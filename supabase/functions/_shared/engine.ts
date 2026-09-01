@@ -3481,6 +3481,14 @@ function sinPreguntaFinal(texto: string): string {
 // un dato, y una regla más en un prompt largo no lo frena de forma fiable. Se quita la
 // ORACIÓN entera (no solo el corchete): sin el link, "te mando el enlace" sigue siendo
 // una promesa falsa. Lo que escribió alrededor se respeta.
+// Promete MANDAR un archivo (foto, video, catálogo). Se usa para detectar la promesa
+// incumplida: si la escribió y no puso el `[[media:tag]]`, el cliente se queda esperando
+// algo que nunca llega. Pide un verbo de envío EN PRIMERA PERSONA pegado al sustantivo —
+// así no pesca "¿me mandas una foto del comprobante?" (que se lo pide ÉL a él) ni
+// "la foto del producto es real".
+const RE_PROMETE_ARCHIVO =
+  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b/i;
+
 const RE_LINK_FANTASMA =
   /[^.!?…\n]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n]*[.!?…]?/gi;
 
@@ -3577,8 +3585,32 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   // más sensible). Si la IA además escribió texto, se envía + el acuse (handoff claro).
   try {
     const re = /\[\[media:([\w-]+)\]\]/g;
-    if (!re.test(result)) { if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx); return hizoHandoff; }
     const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
+    if (!re.test(result)) {
+      if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx);
+      // 📷 PROMETIÓ una foto y NO la mandó. Medido con el Dermachem: «Claro, te paso una
+      // foto del *Dermachem* para que veas su presentación y tamaño» — y no salió ninguna.
+      // El dueño la había subido, la ficha se la lista con su `[[media:tag]]`, y el modelo
+      // igual escribió la promesa sin poner el marcador. Es la misma familia del enlace
+      // fantasma: promesa incumplida que el cliente SÍ ve, y encima se queda esperando.
+      // Con archivo cargado se manda igual (que es lo que el cliente pidió); sin archivo,
+      // lo toma una persona, que sí puede mandárselo.
+      if (RE_PROMETE_ARCHIVO.test(result)) {
+        if (catalog.length && catalog[0]?.media_url) {
+          const a = catalog[0];
+          await emit(db, run, { media_kind: a.media_kind, media_url: a.media_url, mime: a.mime, filename: a.filename, caption: "" }, ctx);
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📷 Prometió una foto sin el marcador",
+            "Se envió igual el archivo del producto.").catch(() => {});
+        } else {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📷 Prometió un archivo que no existe",
+            "El producto no tiene archivos cargados (Productos → Archivos que la IA puede enviar).").catch(() => {});
+          await pasarAHumano(db, run.channel_id, run.contact_id,
+            "Le prometió una foto/archivo al cliente y el producto no tiene ninguno cargado.", { aviso: false }).catch(() => {});
+          hizoHandoff = true;
+        }
+      }
+      return hizoHandoff;
+    }
     re.lastIndex = 0;
     let last = 0; let m: RegExpExecArray | null;
     while ((m = re.exec(result)) !== null) {
