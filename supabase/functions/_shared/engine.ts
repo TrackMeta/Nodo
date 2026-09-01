@@ -2560,6 +2560,26 @@ async function execute(db: SupabaseClient, run: Run) {
     switch (node.tipo) {
       case "mensaje": {
         const bubbles = node.config?.bubbles ?? [{ text: node.config?.text ?? "" }];
+        // 💸 Pedirle plata SIN decirle a dónde mandarla. El mensaje del adelanto lleva
+        // {{datos_pago}}, que sale de Negocio → Datos de pago. Si el dueño todavía no lo
+        // llenó, la variable resuelve a vacío y al cliente le llega "confírmalo con un
+        // adelanto de S/ 20", un renglón en blanco, y "mándame la captura". Se queda con
+        // la plata en la mano sin saber a qué número. Medido en la regresión con un canal
+        // recién creado — que es justo cuando más pasa, y nadie se entera.
+        // No se manda a ciegas: lo toma una persona, que sí puede darle los datos.
+        const _pideDatosPago = bubbles.some((b: any) => /\{\{\s*datos_pago\s*\}\}/.test(String(b?.text ?? "")));
+        if (_pideDatosPago && !String(ctx.datos_pago ?? "").trim()) {
+          await logEvent(db, run.channel_id, run.contact_id, "error", "💸 Sin datos de pago configurados",
+            "El flujo iba a pedirle el adelanto y no hay a dónde pagar (Negocio → Datos de pago está vacío).").catch(() => {});
+          await deliverMessage(db, run.channel_id, run.contact_id,
+            "¡Gracias! 🙌 En un momento te paso los datos para el pago y dejamos tu pedido listo. 😊").catch(() => {});
+          await pasarAHumano(db, run.channel_id, run.contact_id,
+            "El bot iba a cobrarle el adelanto pero el negocio NO tiene datos de pago cargados.",
+            { aviso: false }).catch(() => {});
+          run.estado = "esperando";
+          await saveRun(db, run);
+          return;
+        }
         let hasButtons = false;
         for (const b of bubbles) {
           if (await ritmo(db, run, b)) break;   // escribió mientras tanto → no le hablamos encima
