@@ -5794,7 +5794,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     if (ai?.api_key) {
       const { data: ch } = await db.from("channels").select("ocr_config, moneda, timezone").eq("id", channelId).maybeSingle();
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (ch as any)?.moneda ?? null, false, (ch as any)?.timezone)
-        ?? "Eres un validador experto de comprobantes de pago.") +
+        ?? ocrSystemMinimo((ch as any)?.timezone)) +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
       const raw = await runAI({
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
@@ -6542,7 +6542,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
-        ?? "Eres un validador experto de comprobantes de pago.") +
+        ?? ocrSystemMinimo((ch as any)?.timezone)) +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
       const raw = await runAI({
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
@@ -6767,7 +6767,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false; // sin IA → que lo tome un humano por el flujo normal
   const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
-    ?? "Eres un validador experto de comprobantes de pago.";
+    ?? ocrSystemMinimo((ch as any)?.timezone);
   const system = ocrSys +
     "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
     "`valido` juzga SOLO que el pago sea legítimo (destinatario correcto, sin fraude/montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
@@ -9654,6 +9654,30 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
 // fecha, anti-fraude) sin tener que repetirlo en cada flujo.
 // `montoEsperado` es el precio VIVO de este cliente (opción + oferta): sin él la
 // IA no puede saber si el pago "corresponde al producto elegido".
+// 🗓️ El ancla de fecha del OCR. Vive FUERA de buildOcrSystem a propósito: esa función
+// devuelve null cuando el dueño no configuró el validador (`ocr_config` vacío, que es como
+// nace toda cuenta nueva), y los llamadores caían a un system pelado —"Eres un validador
+// experto de comprobantes de pago"— SIN saber qué día es hoy. Medido en la regresión: un
+// Yape con la fecha de HOY se rechazó con «el comprobante no es vigente, tiene fecha futura
+// (31 ago. 2026)». El modelo asume que el año en curso es el de su entrenamiento, así que un
+// pago del presente le parece del futuro. Le pasa a cualquiera que todavía no haya tocado
+// Pagos → Validador: sus clientes pagan bien y el bot los rechaza.
+function anclaDeFechaOcr(tz?: string | null): string {
+  const tzNeg = tz || "America/Lima";
+  const ahora = new Date();
+  let hoyStr = ahora.toISOString();
+  let anioActual = String(ahora.getUTCFullYear());
+  try {
+    hoyStr = ahora.toLocaleString("es-PE", { timeZone: tzNeg, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    anioActual = ahora.toLocaleDateString("es-PE", { timeZone: tzNeg, year: "numeric" });
+  } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
+  return `## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy.`;
+}
+// El system mínimo para validar un comprobante cuando el dueño NO configuró el validador.
+// Lleva el ancla de fecha sí o sí: es lo único sin lo cual el OCR se equivoca solo.
+function ocrSystemMinimo(tz?: string | null): string {
+  return "Eres un validador experto de comprobantes de pago.\n\n" + anclaDeFechaOcr(tz);
+}
 function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null, noJuzgarMonto?: boolean, tz?: string | null): string | null {
   if (!ocr || ocr.activo === false) return null;
   const metodos = Array.isArray(ocr.metodos) ? ocr.metodos.filter((m: any) => m && (m.app || m.titular || m.numero)) : [];
@@ -9666,19 +9690,9 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   const paisesTxt = paises.length ? paises.join(", ") : "";
   const apps = [...new Set(metodos.map((m: any) => String(m?.app ?? "").trim()).filter(Boolean))].slice(0, 10);
   p.push(`Eres un validador experto de comprobantes de pago${paisesTxt ? " de " + paisesTxt : ""}${apps.length ? ` (${apps.join(", ")}, y transferencias bancarias)` : ""}. Analiza la captura con el máximo detalle y criterio anti-fraude.`);
-  // Ancla de fecha: sin decirle qué día es HOY, el modelo asume que el año en
-  // curso es el de su entrenamiento y marca como "futuro/sospechoso" un
-  // comprobante con la fecha real (ej. un pago de 2026). Le damos el presente
-  // en la zona horaria del NEGOCIO (no Lima fija) para juzgar la antigüedad bien.
-  const tzNeg = tz || "America/Lima";
-  const ahora = new Date();
-  let hoyStr = ahora.toISOString();
-  let anioActual = String(ahora.getUTCFullYear());
-  try {
-    hoyStr = ahora.toLocaleString("es-PE", { timeZone: tzNeg, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    anioActual = ahora.toLocaleDateString("es-PE", { timeZone: tzNeg, year: "numeric" });
-  } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
-  p.push(`## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy.`);
+  // Ancla de fecha: ver anclaDeFechaOcr (vive fuera para que también la reciba quien
+  // NO configuró el validador — sin ella el OCR rechaza pagos legítimos por "futuros").
+  p.push(anclaDeFechaOcr(tz));
   if (metodos.length) {
     p.push("## Métodos de pago VÁLIDOS de este negocio\nEl pago solo es válido si va dirigido a uno de estos destinatarios:\n" +
       metodos.map((m: any) => "- " + [m.app && `App/Banco: ${m.app}`, m.titular && `Titular esperado: ${m.titular}`, m.numero && `Número/cuenta: ${m.numero}`, m.notas && `(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
@@ -11400,8 +11414,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // monto esperado (sin monto acordado indicado aquí), por favor pagar el monto
     // correcto». Pago hecho, venta perdida y el cliente sin entender qué le faltaba.
     const montoIA = (esExtraNode && Number.isFinite(esperado)) ? esperado : null;
-    const vt = buildOcrSystem(info.ocr, montoIA, ctx.moneda ?? null, montoIA == null, await tzDe(db, run));
-    if (vt) system = system ? (vt + "\n\n" + system) : vt;
+    // Sin validador configurado, `vt` es null y el nodo se quedaba SOLO con el prompt que
+    // escribió el dueño en el flujo — sin saber qué día es hoy. Es el mismo agujero de los
+    // otros tres sitios: el ancla de fecha va siempre, la configure o no.
+    const _tzOcr = await tzDe(db, run);
+    const vt = buildOcrSystem(info.ocr, montoIA, ctx.moneda ?? null, montoIA == null, _tzOcr)
+      ?? anclaDeFechaOcr(_tzOcr);
+    system = system ? (vt + "\n\n" + system) : vt;
   }
 
   try {

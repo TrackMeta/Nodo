@@ -350,9 +350,12 @@
       // recurrente que ya confía): el saldo debe quedar en 0 y marcarse pagado_total
       // (en la agencia no le cobran nada al recoger). Se valida el adelanto en AUTO
       // temporalmente para verificar el crédito sin simular la aprobación manual.
+      // `?? {}` en los backups: un canal recién creado tiene pedidos_config/entregas en NULL
+      // y el harness reventaba con "Cannot read properties of null" — el motor sí lo tolera
+      // (usa optional chaining), así que era el harness el que no corría en un canal limpio.
       const chRow = (await sel("channels", `select=pedidos_config&id=eq.${CH}`))[0];
-      const pcBak = JSON.parse(JSON.stringify(chRow.pedidos_config));
-      const pc = JSON.parse(JSON.stringify(chRow.pedidos_config)); pc.adelanto = pc.adelanto || {}; pc.adelanto.validacion = "auto";
+      const pcBak = JSON.parse(JSON.stringify(chRow.pedidos_config ?? {}));
+      const pc = JSON.parse(JSON.stringify(chRow.pedidos_config ?? {})); pc.adelanto = pc.adelanto || {}; pc.adelanto.validacion = "auto";
       await patch("channels", `id=eq.${CH}`, { pedidos_config: pc });
       try {
         const wa = "519990000013";
@@ -375,9 +378,9 @@
       // el piso) debe DESPACHAR igual, con el saldo ajustado a lo que falta (117). Se
       // fija el mínimo global + validación auto temporalmente y se restaura al final.
       const chRow = (await sel("channels", `select=entregas,pedidos_config&id=eq.${CH}`))[0];
-      const entBak = JSON.parse(JSON.stringify(chRow.entregas)), pcBak = JSON.parse(JSON.stringify(chRow.pedidos_config));
-      const ent = JSON.parse(JSON.stringify(chRow.entregas)); ent.adelanto_minimo_default = 10;
-      const pc = JSON.parse(JSON.stringify(chRow.pedidos_config)); pc.adelanto = pc.adelanto || {}; pc.adelanto.validacion = "auto";
+      const entBak = JSON.parse(JSON.stringify(chRow.entregas ?? {})), pcBak = JSON.parse(JSON.stringify(chRow.pedidos_config ?? {}));
+      const ent = JSON.parse(JSON.stringify(chRow.entregas ?? {})); ent.adelanto_minimo_default = 10;
+      const pc = JSON.parse(JSON.stringify(chRow.pedidos_config ?? {})); pc.adelanto = pc.adelanto || {}; pc.adelanto.validacion = "auto";
       await patch("channels", `id=eq.${CH}`, { entregas: ent, pedidos_config: pc });
       try {
         const wa = "519990000014";
