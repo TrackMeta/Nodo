@@ -926,7 +926,13 @@ function openMenu(ev,o){
   // sin haber despachado/cobrado atribuye a Meta una venta nunca cobrada y le manda al
   // cliente una clave VACÍA. Estos estados solo se ofrecen desde su paso previo. El botón
   // primario guía el camino correcto; el ⋮ sigue permitiendo retroceder y las correcciones.
-  const preReq={ saldo_pagado:["despachado","en_agencia"], recogido:["saldo_pagado"], entregado_cobrado:["en_reparto"] };
+  // `entregado_cobrado` también desde `confirmado`: en Lima pasa seguido que el motorizado
+  // ya entregó y nadie marcó "salió a reparto". Obligar a pasar por ahí para poder cerrarlo
+  // le disparaba al cliente el aviso «🛵 ¡Tu pedido ya salió! … ten listo S/ X» DESPUÉS de
+  // haberlo recibido y pagado. Cerrar desde confirmado no se salta ninguna plata: el cobro
+  // ES la entrega. (saldo_pagado y recogido sí siguen atados a su paso previo: ahí el cobro
+  // ocurre ANTES y saltárselo manda una clave vacía y atribuye a Meta una venta sin cobrar.)
+  const preReq={ saldo_pagado:["despachado","en_agencia"], recogido:["saldo_pagado"], entregado_cobrado:["en_reparto","confirmado"] };
   trans.forEach(([e])=>{
     if(e===o.estado) return;
     if(preReq[e] && !preReq[e].includes(o.estado)) return; // salto que se salta pasos → no ofrecerlo

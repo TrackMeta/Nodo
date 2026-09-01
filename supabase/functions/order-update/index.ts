@@ -57,7 +57,9 @@ Deno.serve(async (req) => {
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
 
   const { data: order } = await db.from("orders")
-    .select("id, channel_id, contact_id, estado, shipping, amount, currency, product_id, order_bumps")
+    // products(nombre): lo usa el resumen del pedido que va en el aviso de estado — sin él
+    // decía «📦 *3 frascos*» sin decir de qué producto.
+    .select("id, channel_id, contact_id, estado, shipping, amount, currency, product_id, order_bumps, products(nombre)")
     .eq("id", body.order_id).maybeSingle();
   if (!order) return json({ error: "no_existe" }, 404);
   // Multi-tenant: si entra un humano (no el service-role interno del Copiloto),
@@ -469,7 +471,8 @@ Deno.serve(async (req) => {
     const _amt = Number((patch.amount as number) ?? (order as any).amount) || 0;
     const _bumps = Array.isArray(patch.order_bumps) ? patch.order_bumps : ((order as any).order_bumps ?? []);
     const _total = _amt + (_bumps as any[]).reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
-    const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency);
+    const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency, _bumps as any[],
+      (order as any).products?.nombre ?? null);
     if (txt) {
       // Este aviso por defecto es TEXTO LIBRE. Meta lo rechaza fuera de la ventana de
       // servicio de 24h (mover una tarjeta a "despachado"/"en_agencia" suele pasar días

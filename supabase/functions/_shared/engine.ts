@@ -5352,8 +5352,75 @@ async function triggerPedidoEstado(
 // flujo pedido_estado): así ningún paso queda MUDO por tener la config vacía. El
 // negocio puede sobrescribir cada uno con su propio texto/plantilla. Devuelve
 // null si ese estado no manda nada por defecto (o le falta el dato clave).
+// 🧾 {{resumen_pedido}} — el detalle final de lo que compró, para la burbuja de
+// confirmación. Lo pidió Rodrigo: el cliente cerraba la venta sin ver nunca junto lo que
+// lleva, cuánto es, y a dónde va — quedaba desperdigado en quince mensajes. Y el REGALO
+// era lo peor: se descuenta del stock, viaja en la caja, y en el chat no se nombraba
+// nunca (ver `regalo_mencionar`), así que llegaba una sorpresa que nadie agradece.
+// Se arma con el pedido YA GRABADO, no con lo que la IA recuerde: si acá dice 3 frascos
+// es porque hay 3 en la base.
+function resumenPedido(o: any, sym: string, producto?: string | null): string {
+  const s = (o?.shipping ?? {}) as any;
+  const L: string[] = [];
+  // El nombre del producto NO vive en `shipping` (ahí solo va la presentación elegida):
+  // sin pasarlo, el resumen decía «📦 *2 frascos*», sin decir de qué.
+  const prod = String(producto || s.producto_nombre || s.producto || "").trim();
+  const opcion = String(s.opcion || "").trim();
+  // Atributos (talla, color…): van pegados a la línea del producto, que es donde el
+  // cliente los busca para revisar que no haya un error.
+  const attrs = Object.entries(s.atributos ?? {})
+    .map(([k, v]) => `${k}: ${String(v).trim()}`).filter((t) => !/:\s*$/.test(t));
+  const cabeza = [prod, opcion].filter(Boolean).join(" · ");
+  if (cabeza) L.push(`📦 *${cabeza}*${attrs.length ? ` (${attrs.join(", ")})` : ""}`);
+  else if (attrs.length) L.push(`📦 ${attrs.join(", ")}`);
+  // Lo que va ADEMÁS en la caja. El regalo se nombra con todas sus letras: es la parte
+  // que más se agradece y la única que el cliente no puede adivinar del precio.
+  for (const b of (Array.isArray(o?.order_bumps) ? o.order_bumps : [])) {
+    const n = String((b as any)?.nombre ?? "").trim();
+    if (!n) continue;
+    const esRegalo = (b as any)?.es_regalo === true || Number((b as any)?.precio) === 0;
+    const tal = String((b as any)?.talla ?? (b as any)?.variante ?? "").trim();
+    L.push(esRegalo
+      ? `🎁 De regalo: *${n}*${tal ? ` (${tal})` : ""} — va incluido, no te cuesta nada`
+      : `➕ ${n}${tal ? ` (${tal})` : ""}${(b as any)?.precio != null ? ` — ${sym} ${(b as any).precio}` : ""}`);
+  }
+  // A dónde va. En Lima es una dirección; en provincia, la agencia de su ciudad — y si la
+  // oficina está marcada para confirmar, NO se nombra (se la desmentiríamos dos mensajes
+  // después, que es justo el bug que ya cerró `sede_por_confirmar` en los avisos).
+  if (String(s.zona || "") === "lima") {
+    const dir = String(s.direccion || "").trim();
+    const ref = String(s.referencia || "").trim();
+    if (dir) L.push(`📍 ${dir}${ref ? ` (ref: ${ref})` : ""}`);
+  } else {
+    const ciudad = enTitulo(String(s.ciudad || ""));
+    const sede = String(s.sede_por_confirmar ?? "").trim() ? "" : String(s.sede || "").trim()
+      .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim();
+    // Sin sede confirmada queda «📍 Agencia — Juliaca», que se lee cortado. Con ciudad
+    // sola se dice en prosa; la oficina exacta se confirma después.
+    if (sede) L.push(`📍 Agencia *${sede}*${ciudad ? ` — ${ciudad}` : ""}`);
+    else if (ciudad) L.push(`📍 Agencia en ${ciudad} (te confirmo la oficina)`);
+    const dni = String(s.dni || "").trim();
+    const quien = String(s.cliente || "").trim();
+    if (quien || dni) L.push(`🪪 Recoge ${quien || "tú"}${dni ? ` · DNI ${dni}` : ""}`);
+  }
+  if (!L.length) return "";
+  // La plata al final, que es donde se mira. En provincia se separa lo pagado de lo que
+  // falta: ver un total pelado después de haber yapeado el adelanto asusta.
+  const total = o?.amount != null ? Number(o.amount) : null;
+  const adel = Number(s.adelanto_abonado ?? s.adelanto);
+  const saldo = s.saldo != null && s.saldo !== "" ? Number(s.saldo) : null;
+  if (total != null) {
+    if (String(s.zona || "") !== "lima" && Number.isFinite(adel) && adel > 0 && saldo != null && saldo > 0) {
+      L.push(`💰 Total *${sym} ${total}* — adelanto ${sym} ${adel} · falta *${sym} ${saldo}* al recogerlo`);
+    } else {
+      L.push(`💰 Total *${sym} ${total}*`);
+    }
+  }
+  return L.join("\n");
+}
 export function mensajeEstadoDefault(
   estado: string, shipping: Record<string, any> | null, amount?: number | null, moneda?: string | null,
+  bumps?: any[] | null, producto?: string | null,
 ): string | null {
   const s = shipping || {};
   const sym = moneda === "USD" ? "$" : "S/";
@@ -5393,11 +5460,22 @@ export function mensajeEstadoDefault(
     // enTitulo también acá: los pedidos creados ANTES de normalizarlo al guardar
     // tienen la ciudad como la tecleó el cliente.
     const donde = enTitulo(String(s.ciudad || s.sede || ""));
+    // 🧾 En provincia el pedido queda REALMENTE cerrado acá, no al dar los datos: es el
+    // momento equivalente al "¡Listo! quedó confirmado" de Lima, y hasta ahora el cliente
+    // pagaba su adelanto sin volver a ver nunca qué lleva ni a dónde va. Va el resumen
+    // completo, regalo incluido.
+    const det = resumenPedido({ shipping: s, amount, order_bumps: bumps ?? [] }, sym, producto);
     return `✅ ¡Recibí tu adelanto! Ya estoy preparando tu pedido para despacharlo` +
       (donde ? ` a la agencia de *${donde}*` : "") + ".\n\n" +
-      (saldo != null && saldo > 0
-        ? `Los *${sym} ${saldo}* que faltan los pagas recién cuando llegue — ahí te paso tu clave para recogerlo. 🙌`
-        : "Te aviso apenas esté en la agencia con tu clave para recogerlo. 🙌");
+      (det ? det + "\n\n" : "") +
+      // Con el resumen puesto, repetir «los S/ X que faltan» acá es decir dos veces lo
+      // mismo en la misma burbuja. Sin resumen (pedido sin datos legibles) se dice igual,
+      // porque el saldo es lo único que el cliente NO puede dejar de saber.
+      (det
+        ? "Te aviso apenas llegue a la agencia y te paso tu clave para recogerlo. 🙌"
+        : (saldo != null && saldo > 0
+          ? `Los *${sym} ${saldo}* que faltan los pagas recién cuando llegue — ahí te paso tu clave para recogerlo. 🙌`
+          : "Te aviso apenas esté en la agencia con tu clave para recogerlo. 🙌"));
   }
   if (estado === "en_reparto") {
     const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
@@ -6521,10 +6599,14 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       // (que es lo normal: los avisos son opcionales) deja mudo el momento en que más
       // ansioso está el cliente. Medido en la prueba de Rodrigo: pagó y no recibió nada.
       if (!arranco) {
-        const { data: o2 } = await db.from("orders").select("shipping, amount, currency")
+        // `products(nombre)` en el mismo select: sin el nombre, el resumen del pedido decía
+        // «📦 *3 frascos*» sin decir de QUÉ (shipping solo guarda la presentación elegida).
+        const { data: o2 } = await db.from("orders")
+          .select("shipping, amount, currency, order_bumps, products(nombre)")
           .eq("id", (order as any).id).maybeSingle();
         const txt = mensajeEstadoDefault("adelanto_validado",
-          (o2 as any)?.shipping ?? null, (o2 as any)?.amount ?? null, (o2 as any)?.currency ?? null);
+          (o2 as any)?.shipping ?? null, (o2 as any)?.amount ?? null, (o2 as any)?.currency ?? null,
+          (o2 as any)?.order_bumps ?? null, (o2 as any)?.products?.nombre ?? null);
         if (txt) await deliverMessage(db, channelId, contactId, txt).catch(() => {});
       }
     }
@@ -10161,8 +10243,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "\n\nA cada línea súmale, después de un «·», en pocas palabras qué gana con esa opción" +
           (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
           ". El ahorro solo si sale de restar los precios de arriba — nunca inventes un descuento ni un precio tachado. " +
-          "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y tu pregunta para " +
-          "avanzar. No des por elegida la más barata." +
+          "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y cierras " +
+          "preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
+          "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata." +
           // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
           // el modelo les pone delante: con una presentación llamada "Básica" salía "La
           // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
@@ -10452,9 +10535,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // más común comprando por WhatsApp, y en Lima se responde sola: paga cuando lo tiene
         // en la mano. Antes ni se llegaba a esto —la palabra "estafa" escalaba el chat a un
         // humano sin contestar nada— y era regalar la venta más fácil de cerrar.
-        L.push("Si duda de si es confiable o teme que no le llegue, tienes LA respuesta y es tu mejor argumento: paga RECIÉN cuando " +
-          "recibe el pedido, en la puerta de su casa. No adelanta nada, así que no arriesga nada. Díselo con seguridad y calidez, sin ofenderte " +
-          "ni ponerte a la defensiva, y cierra pidiéndole el siguiente dato.");
+        L.push("Si duda de si es confiable o teme que no le llegue, tienes LA respuesta: paga RECIÉN cuando " +
+          "recibe el pedido, en la puerta de su casa. Díselo con seguridad y calidez, sin ofenderte ni ponerte " +
+          "a la defensiva, y cierra pidiéndole el siguiente dato.");
+        // ⛔ Decisión de Rodrigo: el dato sí ("pagas al recibir"), el DISCURSO no. «Sin
+        // adelantos ni riesgos» es venderle tranquilidad a quien no la pidió, y al nombrar
+        // el riesgo lo mete en la conversación. Además obliga a explicar algo que en Lima
+        // es lo normal. Se dice el hecho y se sigue.
+        L.push("⛔ Pero dilo como un HECHO, no como argumento de venta: nunca escribas «sin adelantos», " +
+          "«sin riesgos», «no arriesgas nada», «no pagas nada por adelantado» ni nada por el estilo, " +
+          "ni siquiera para tranquilizarlo. Con «pagas al recibirlo» ya está dicho todo.");
         // ¿El delivery lleva POS? Es una perilla del negocio (Negocio → Entrega), porque
         // depende del courier con el que trabaje. Sin saberlo, la IA respondía a "¿puedo
         // pagar con tarjeta?" que solo se acepta efectivo — y con POS eso es una venta
@@ -10598,6 +10688,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           L.push("⛔ NUNCA le digas que paga TODO al recoger, ni «pagas cuando lo tengas», ni «no adelantas nada»: " +
             "eso es de Lima. Acá va un adelanto para que salga el despacho, y en la agencia paga solo el SALDO. " +
             "Si te pregunta cómo paga, díselo así de claro y sin rodeos — enterarse tarde es lo que le tumba la venta.");
+          // El mismo error dicho AL REVÉS, que por eso se escapó de la regla de arriba.
+          // Medido con un cliente de Chiclayo: «el envío es por agencia 📦 para que NO PAGUES
+          // NADA EXTRA al recoger». Suena a beneficio y el cliente entiende que en la agencia
+          // no desembolsa nada — cuando ahí paga el saldo, que es casi todo el pedido.
+          // Y de paso inventa un porqué: va por agencia porque no repartimos en su ciudad,
+          // no como una gentileza para ahorrarle un cobro.
+          L.push("⛔ Tampoco al revés: nada de «no pagas nada extra al recoger», «sin costos adicionales al " +
+            "recogerlo» ni frases parecidas. En la agencia SÍ paga —el saldo— y esa frase le hace entender lo " +
+            "contrario. El envío por agencia no es un beneficio que le conseguiste: es que su ciudad no entra " +
+            "en nuestro reparto. No le inventes un motivo bonito.");
         }
         L.push("El adelanto **no lo pides tú**: sale solo, en el mensaje siguiente, con los datos de pago. " +
           "Y TAMPOCO lo anuncies, de NINGUNA forma: ni \"en breve\", ni \"ahora\", ni \"enseguida\", ni \"te va a llegar\", " +
@@ -12512,7 +12612,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // tomaba el último → mover el Pedido A mandaba la guía/sede/foto del Pedido B (el más
     // nuevo) → el cliente iba a la sede equivocada. Sin `_order_id`, cae al último (compat).
     const oid = (run.vars as any)?._order_id;
-    const oq = db.from("orders").select("estado, amount, currency, shipping");
+    const oq = db.from("orders").select("estado, amount, currency, shipping, order_bumps");
     const { data: o } = oid
       ? await oq.eq("id", oid).maybeSingle()
       : await oq.eq("contact_id", run.contact_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -12526,11 +12626,18 @@ async function buildContext(db: SupabaseClient, run: Run) {
       // El texto del nodo lo usa como variable, así que la misma burbuja sirve para los
       // dos casos sin duplicar el flujo.
       ctx.pago_titulo = (o as any).shipping?.pagado_total ? "¡Pago completo recibido!" : "¡Adelanto recibido!";
+      // {{resumen_pedido}} — el detalle final del pedido, para la burbuja de confirmación.
+      // Se arma acá (y no al crear el pedido) para que cualquier mensaje posterior lo pueda
+      // usar con el estado de ESE momento: el adelanto ya abonado, la sede ya confirmada.
+      try {
+        ctx.resumen_pedido = resumenPedido(o, simboloMoneda((o as any).currency), String(ctx.producto_nombre ?? ""));
+      } catch (_) { ctx.resumen_pedido = ""; }
     }
   } catch (_) { /* columna/tabla pendiente */ }
   // Sin pedido legible la variable quedaría vacía y el mensaje empezaría con un espacio
   // suelto (" 🎉 Ya empiezo a preparar tu despacho"). El default es el caso normal.
   if (!ctx.pago_titulo) ctx.pago_titulo = "¡Adelanto recibido!";
+  if (ctx.resumen_pedido == null) ctx.resumen_pedido = "";
 
   // {{logistica_modo}} — "auto" | "manual", lo que eligió el negocio en
   // Pagos y atención → Agente de logística. Lo usan los flujos de cobro de
