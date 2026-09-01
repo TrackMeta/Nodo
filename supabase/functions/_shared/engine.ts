@@ -11122,6 +11122,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "no se ubica, NO la repitas: pregúntale por qué zona o distrito vive y ubícale la que le queda cerca " +
               "con la REFERENCIA (el mercado, el óvalo, el grifo). Si aun así no lo tiene claro, dile que se la " +
               "confirmas antes de despachar y sigue con la venta — no lo dejes trabado eligiendo oficina.");
+          } else {
+            // 🕳️ SU DISTRITO NO TIENE OFICINA. La lista solo contiene sitios donde Shalom SÍ
+            // tiene agencia, así que un distrito chico —Jequetepeque, por ejemplo— no aparece
+            // en ningún campo y `agenciasDeCiudad` devuelve vacío. Hasta ahora eso no empujaba
+            // NADA al prompt: el bot seguía la venta sin nombrarle una sola agencia y más
+            // adelante le pedía «Sede de la agencia», un dato que el cliente no tiene cómo
+            // responder porque nunca le mostraron opciones. Termina en un pedido con la sede
+            // en blanco o en el cliente abandonando.
+            // No se puede deducir su provincia (haría falta el padrón de los 1870 distritos),
+            // así que se hace lo honesto: se le dice que se la confirmamos y se le pregunta a
+            // qué ciudad suele ir, sin trabar la venta ni inventarle una oficina.
+            L.push(`📍 No tengo oficinas de ${ctx.ciudad} en la lista: puede ser un distrito chico donde la agencia ` +
+              "no tiene local. ⛔ NO inventes ninguna ni le digas que «hay varias». Dile con naturalidad que la " +
+              "oficina más cercana se la confirmas antes de despachar, y pregúntale a qué CIUDAD suele ir a hacer " +
+              "sus trámites o compras —esa sí va a tener agencia— para buscarle la que le queda cerca. " +
+              "Sigue con el pedido igual: esto no lo detiene.");
           }
         } catch (_) { /* sin ciudad legible → sin lista */ }
         L.push(_modoEnv === "agencia"
