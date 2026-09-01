@@ -10223,15 +10223,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const d = String(g?.desc ?? g?.regalo_desc ?? "").trim();
         return `- ${g?.nombre || "regalo"}${d ? `: ${d}` : ""}`;
       }).join("\n");
+      // 🔁 En el turno del CIERRE el bloque cambia entero. Pedirle por texto "menciónalo
+      // como gancho pero no al confirmar" no funcionó —medido en la regresión: la IA
+      // escribió «y de regalo te incluye una gorra Runner» y justo debajo el resumen del
+      // sistema puso «🎁 De regalo: Gorra Runner»—, así que la regla pasa a código: cuando
+      // ya están todos los datos, el bloque directamente NO le ofrece nombrarlo.
+      // Es el mismo patrón que la lista de precios con la opción ya elegida: una regla de
+      // prompt que falla se convierte en una rama, no en una frase más larga.
+      const _cerrando = ctx.datos_completos === "si";
       parts.push(
         "## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS, ya incluido en el pedido:\n" + lista +
-        // Antes decía "y al confirmar el pedido, nómbralo entre lo que va a recibir". Desde
-        // que el resumen del pedido lo lista solo ({{resumen_pedido}}), eso es decirlo dos
-        // veces seguidas — y encima choca con la regla de no repetir lo que ya dice el
-        // mensaje del sistema, y con la de no cerrar cada burbuja recordando el regalo.
-        '\nMENCIÓNALO UNA VEZ como gancho para cerrar ("y de regalo te incluye…"). Al confirmar NO lo repitas: ' +
-        "el resumen del pedido que manda el sistema ya lo nombra. " +
-        "Va GRATIS y ya está incluido: NO lo cobres, NO lo ofrezcas como si tuviera que aceptarlo o pagarlo, NO prometas más de uno " +
+        (_cerrando
+          ? "\n⛔ AHORA NO lo nombres: el pedido se cierra en este mismo turno y el resumen que manda el " +
+            "sistema ya lo lista. Escribirlo tú es decirlo dos veces seguidas."
+          : '\nMENCIÓNALO UNA VEZ como gancho para cerrar ("y de regalo te incluye…").') +
+        " Va GRATIS y ya está incluido: NO lo cobres, NO lo ofrezcas como si tuviera que aceptarlo o pagarlo, NO prometas más de uno " +
         "y NO exageres. Si pregunta qué es, explícaselo con su descripción.",
       );
     }
