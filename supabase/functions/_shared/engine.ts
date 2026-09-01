@@ -10632,8 +10632,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (_otros.length) {
               L.push(`En esa misma zona también hay oficina en: ${_otros.slice(0, 10).join(", ")}. ` +
                 "Si te dice que vive en uno de esos distritos, ofrécele el de ÉL en vez de los del centro: le queda " +
-                "mucho más cerca. Si no lo menciona, no lo abrumes con la lista entera.");
+                "mucho más cerca. Si no lo menciona, no lo abrumes con la lista entera.\n" +
+                // Medido: el cliente dijo «no conozco ninguna de esas, vivo por Pimentel» y el bot
+                // le contestó «te conviene la agencia de Chiclayo *Pimentel*»… y a renglón seguido
+                // le volvió a pegar la lista de las cuatro del centro con «¿cuál te queda más
+                // cerca?» — la lista que acababa de mandarle, y que ni siquiera incluye la suya.
+                // Al que dice que no se ubica, repetirle lo mismo es lo peor que se le puede hacer.
+                "⛔ Y cuando le ofrezcas la de SU distrito, NO vuelvas a listar las del centro ni le preguntes " +
+                "cuál le queda más cerca: ya está resuelto. Nómbrala sola y sigue pidiéndole sus datos.");
             }
+            // Ya se la mandaste una vez. Repetirla no lo ayuda a ubicarse: lo abruma con lo
+            // mismo. Medido en el chat de arriba, dos veces seguidas en el mismo minuto.
+            L.push("⛔ Esta lista se manda UNA sola vez. Si ya se la pasaste y te dice que no conoce ninguna o que " +
+              "no se ubica, NO la repitas: pregúntale por qué zona o distrito vive y ubícale la que le queda cerca " +
+              "con la REFERENCIA (el mercado, el óvalo, el grifo). Si aun así no lo tiene claro, dile que se la " +
+              "confirmas antes de despachar y sigue con la venta — no lo dejes trabado eligiendo oficina.");
           }
         } catch (_) { /* sin ciudad legible → sin lista */ }
         L.push(_modoEnv === "agencia"
