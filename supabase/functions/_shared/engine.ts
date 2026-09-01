@@ -528,7 +528,17 @@ async function runEngineInner(
       if (recFlowId) {
         const { data: fRec } = await db.from("flows")
           .select("id, nombre, estado").eq("id", recFlowId).eq("channel_id", channelId).maybeSingle();
-        if (fRec && (fRec as any).estado === "activo") flow = { id: (fRec as any).id, nombre: (fRec as any).nombre };
+        if (fRec && (fRec as any).estado === "activo") {
+          flow = { id: (fRec as any).id, nombre: (fRec as any).nombre };
+          // 🔁 La Recepción ya venía conversando: el saludo del flujo NO puede tratarlo como
+          // si acabara de escribir. Medido: la clienta contestó «Lucero Ramos, DNI 70112345,
+          // Arequipa» y el flujo arrancó soltándole «¿Desde dónde nos escribe?» — le pidió
+          // justo lo que acababa de dar, en el turno siguiente al que la Recepción le había
+          // preguntado. Se reinyecta su mensaje al nodo de IA (mismo mecanismo que el
+          // remarketing y que la pregunta del primer mensaje): sale el saludo Y su mensaje
+          // se atiende, con sus datos ya capturados.
+          reinyectarTrasArranque = true;
+        }
       }
       if (!flow) return;
     }
@@ -1467,10 +1477,22 @@ function pideReclamo(text: string): boolean {
 // adelantar el guion del dueño.
 const RE_TRAE_PREGUNTA =
   /[?¿]|\b(cu[aá]nto|cu[aá]nta|cu[aá]l|cu[aá]ndo|c[oó]mo|d[oó]nde|qu[eé]\s|por\s?qu[eé]|se\s+puede|puedo|tienen|tienes|hay\s|hacen|env[ií]an|sirve|funciona|es\s+bueno|me\s+sirve)\b/i;
+// ¿El primer mensaje trae algo que el saludo fijo va a IGNORAR? Dos casos, los dos medidos:
+//   · una PREGUNTA — «hola, ¿se puede usar en el embarazo?» recibía solo «¿desde dónde nos
+//     escribe?», con la pregunta de salud sin contestar;
+//   · DATOS que el flujo está a punto de pedirle — «quiero el serum, soy Ana Lopez, DNI
+//     12345678, de Cusco, 2 frascos» y el saludo le preguntaba de dónde escribe. Que te
+//     pregunten lo que acabas de decir es la forma más rápida de parecer un robot.
+// Un DNI/celular (6+ dígitos seguidos) o una enumeración con comas son la firma de ese
+// mensaje "todo junto" con el que la gente compra por WhatsApp.
+// Sin nada de eso NO se toca el arranque: el saludo del dueño es su guion y adelantarse
+// ahí lo rompería.
 function traePregunta(text?: string | null): boolean {
   const t = String(text ?? "").trim();
   if (t.length < 6 || t.length > 400) return false;
-  return RE_TRAE_PREGUNTA.test(t);
+  if (RE_TRAE_PREGUNTA.test(t)) return true;
+  if (/\d{6,}/.test(t)) return true;
+  return t.length > 25 && t.split(",").filter((x) => x.trim().length > 1).length >= 3;
 }
 
 const PIDE_CANCELAR = [
