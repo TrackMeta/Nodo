@@ -3325,6 +3325,24 @@ function conEnvioExplicado(texto: string, courier: string, modo: string): string
 const RE_PROMETE_PRECIOS =
   /\b(te (cuento|paso|digo|comparto|mando)( ya)? (los|las) (precios|opciones|promociones|presentaciones)|te (cuento|digo) cuánto (cuesta|sale|te sale))\b/i;
 
+// Pide la SEDE y no la lista. La regla del prompt falló DOS veces: en Chiclayo preguntó
+// «¿a qué sede prefieres?» sin mostrar ninguna, y en Piura «me falta un dato: Sede de la
+// agencia» a secas. Pedirle que elija entre opciones que no ve es hacerlo adivinar, y en
+// provincia es el paso donde más se traba la venta. Segunda vez que una regla de texto no
+// pega → pasa a código, igual que los precios prometidos y no dichos (ver conPrecios).
+const RE_PIDE_SEDE =
+  /\b(qu[eé]|cu[aá]l|cual)\b[^.!?\n]{0,40}\b(sede|oficina|agencia)\b|\b(sede|oficina)\b[^.!?\n]{0,30}\b(prefieres|eliges|recoges|recojes|te queda|vas a recoger|quieres)\b|\bme falta[^.!?\n]{0,30}\b(sede|agencia)\b/i;
+
+function conAgencias(texto: string, lista: string): string {
+  const t = String(texto ?? "");
+  if (!lista || !RE_PIDE_SEDE.test(t)) return t;
+  // Si YA nombró alguna de las oficinas, la lista está puesta (o eligió una): no se duplica.
+  const nombres = lista.split("\n").map((l) => l.replace(/^\*|\*.*$/g, "").trim()).filter((x) => x.length > 3);
+  const sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (nombres.some((n) => sinT(t).includes(sinT(n)))) return t;
+  return t.trimEnd() + "\n\n" + lista;
+}
+
 function conPrecios(texto: string, lista: string): string {
   const t = String(texto ?? "");
   if (!lista || !RE_PROMETE_PRECIOS.test(t)) return t;
@@ -12140,6 +12158,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             salida = conPrecios(salida, conPre.map((o) => `• ${o.nombre} — ${sym} ${o.precio}`).join("\n"));
           }
         } catch (_) { /* sin opciones legibles → se envía tal cual */ }
+      }
+      // 📍 Pidió la SEDE sin listar las oficinas: se las pega el motor, con las de SU ciudad.
+      // Ver conAgencias — la regla del prompt falló dos veces y por eso vive acá.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia" && RE_PIDE_SEDE.test(salida)) {
+        try {
+          const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          if (_ags.length) {
+            const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
+            const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
+              `*${bonito(x.l)}*` + (x.ref ? ` — ${bonito(x.ref, true)}` : x.dir ? ` — ${bonito(x.dir, true)}` : "")).join("\n");
+            const _antes = salida;
+            salida = conAgencias(salida, `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}`);
+            if (salida !== _antes) {
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
+                "Pidió la sede sin listarlas.").catch(() => {});
+            }
+          }
+        } catch (_) { /* sin agencias legibles → se envía tal cual */ }
       }
       // Pedir datos SIN saber cuántas unidades lleva. El bot pasaba a "pásame tu nombre
       // y tu celular" con dos presentaciones sobre la mesa y el cliente sin elegir
