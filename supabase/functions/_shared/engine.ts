@@ -10735,6 +10735,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           } else {
             L.push("El pago es en EFECTIVO al recibir. Si pregunta por tarjeta, dile con naturalidad que por ahora solo efectivo contra entrega.");
           }
+          // ⏰ «¿A QUÉ HORA LLEGA?» — la pregunta más común de la contraentrega en Lima, y
+          // el bot no tenía con qué contestarla: sabía el DÍA (hoy/mañana) y nada de la hora.
+          // El campo existía desde siempre en Negocio → Entrega y NADIE lo leía; salió en la
+          // auditoría de perillas muertas.
+          //
+          // 🔴 Se le dice la FRANJA, nunca una hora ni un turno: decisión de Rodrigo — su
+          // motorizado va por RUTA, no por horario. Prometer «entre 4 y 8» fabrica un reclamo
+          // con nombre y apellido. Las tres salidas son las que él mismo usaba a mano cuando
+          // vendía por WhatsApp: priorizar su zona, dejar encargado, o reprogramar.
+          const _hEnt = (_entPos as any)?.entregas?.horario ?? {};
+          const _desde = String(_hEnt.desde ?? "").trim(), _hasta = String(_hEnt.hasta ?? "").trim();
+          if (_desde && _hasta) {
+            L.push(`⏰ Repartimos de *${_desde}* a *${_hasta}*. Si te pregunta a qué hora le llega, dile esa franja ` +
+              "y que el motorizado lo llama antes para coordinar.\n" +
+              "⛔ NUNCA le prometas una hora ni un turno («entre 4 y 8», «en la mañana», «a las 3»): el motorizado va " +
+              "por RUTA y no elige el orden. Prometerlo es un reclamo seguro.\n" +
+              "Si insiste con una hora o te pide que sea más temprano, no le digas que no a secas: le pedimos al " +
+              "motorizado que priorice su zona dentro de la ruta, puede dejarlo encargado con alguien, o se lo " +
+              "reprogramamos para otro día que le acomode. Ofrécele esas tres, no una hora.");
+          }
         } catch (_) { /* sin config de entregas → no se afirma nada de la tarjeta */ }
         // El motivo lo calcula entregaHoy() y NO siempre es de horario: puede ser que en esa
         // zona NUNCA se entregue el mismo día (mismo_dia:false). Antes se le pedía a la IA

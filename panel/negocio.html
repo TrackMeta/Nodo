@@ -385,6 +385,9 @@ function renderEntregas(b){
         E.pos_tarjeta===true,"pos_tarjeta")}
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
         <label style="margin:0;font-size:12.5px;font-weight:700">Horario de entrega</label>
+        <span style="font-size:11.5px;color:var(--faint);flex-basis:100%;margin-bottom:-4px">Es lo que el bot
+          contesta cuando le preguntan <b>“¿a qué hora llega?”</b>. Da la franja, nunca una hora ni un turno —
+          el motorizado va por ruta.</span>
         <input class="in" id="entDesde" type="time" value="${esc(E.horario.desde||"09:00")}" style="width:120px"/>
         <span style="font-size:12.5px;color:var(--muted)">a</span>
         <input class="in" id="entHasta" type="time" value="${esc(E.horario.hasta||"19:00")}" style="width:120px"/>
