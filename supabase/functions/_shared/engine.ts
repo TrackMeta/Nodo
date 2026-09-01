@@ -2058,6 +2058,11 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "⛔ NUNCA escribas «sin riesgo», «no hay riesgo», «sin adelantos», «no arriesgas nada», " +
   "«no pagas nada por adelantado» ni variantes, ni siquiera para tranquilizarlo, ni aunque " +
   "el texto del negocio lo diga así: al nombrar el riesgo lo metes en la conversación. " +
+  // La primera versión listaba frases y el modelo las esquivó parafraseando: «pagas al
+  // recibir en tu casa, NADA ANTES». Prohibir frases sueltas no alcanza — se prohíbe la
+  // COLETILLA, cualquiera sea su forma.
+  "Y tampoco la coletilla que lo niega: «nada antes», «nada por adelantado», «no pagas hasta " +
+  "que…», «cero riesgo». Con decir cuándo paga ya está: no le agregues nada detrás. " +
   "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, adelanto para despachar " +
   "y el saldo al recoger.";
 
@@ -2197,8 +2202,13 @@ function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNeg
     "Tienen que APORTAR: marcan de qué habla la frase (✅ lo que queda listo, 📦 el envío, 💰 el precio, " +
     "📍 la dirección, ⏱️ el plazo), no decoran. Nunca dos pegados, nunca en medio de una frase, nunca uno " +
     "por oración (la lista de precios es la excepción: ahí va uno por línea). " +
-    "⛔ Sin ninguno cuando el cliente reclama, se queja o algo salió mal, y sin ninguno en el mensaje donde " +
-    "le pides sus datos o el pago: ahí resta seriedad.";
+    // El "sin emoji al pedir datos" chocaba con la plantilla del propio motor, que arma la
+    // lista de datos con un 👇 («pásame estos datos 👇»). El modelo veía la orden y el
+    // ejemplo contrario en el mismo prompt. Se acota: el que resta seriedad es el emoji
+    // decorativo junto a la PLATA; el que señala la lista de datos ayuda a leerla.
+    "⛔ Sin ninguno cuando el cliente reclama, se queja o algo salió mal, y sin ninguno en el mensaje del " +
+    "PAGO (montos, cuentas, comprobantes): ahí resta seriedad. Al pedirle sus datos puedes usar UNO que " +
+    "señale la lista (👇) y ninguno más.";
 }
 
 async function runReception(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<{ hecho: boolean; flowId?: string }> {
@@ -2295,6 +2305,12 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   // comprar y ya le caíste con un folleto.
   parts.push(
     "## Contesta lo que te preguntó, nada más\n" +
+    // Esta regla va DESPUÉS del bloque de traspaso a la venta, y en un prompt lo último
+    // pesa: sin esta línea le estaría diciendo "contesta" a quien acaba de recibir la orden
+    // de responder SOLO con `[[ir:N]]`. Si ya sabe qué producto quiere, el traspaso manda —
+    // su pregunta la contesta la venta, que sí tiene la ficha delante.
+    "(Esto es para cuando le CONTESTAS. Si ya sabes qué producto quiere, manda la regla de " +
+    "arriba: respondes solo con la etiqueta y no escribes nada más.)\n" +
     "Una o dos frases: respondes SU pregunta y cierras invitándolo a lo que sigue. Ya está.\n" +
     "⛔ NO le sumes datos que no pidió, aunque los sepas y suenen bien: nada de encadenar el " +
     "precio, la garantía, los plazos y las ventajas en el mismo mensaje. El conocimiento del " +
@@ -10175,7 +10191,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }).join("\n");
       parts.push(
         "## 🎁 Regalo con la compra\nAl comprar, el cliente se lleva GRATIS, ya incluido en el pedido:\n" + lista +
-        '\nMENCIÓNALO UNA VEZ como gancho para cerrar ("y de regalo te incluye…") y, al confirmar el pedido, nómbralo entre lo que va a recibir. ' +
+        // Antes decía "y al confirmar el pedido, nómbralo entre lo que va a recibir". Desde
+        // que el resumen del pedido lo lista solo ({{resumen_pedido}}), eso es decirlo dos
+        // veces seguidas — y encima choca con la regla de no repetir lo que ya dice el
+        // mensaje del sistema, y con la de no cerrar cada burbuja recordando el regalo.
+        '\nMENCIÓNALO UNA VEZ como gancho para cerrar ("y de regalo te incluye…"). Al confirmar NO lo repitas: ' +
+        "el resumen del pedido que manda el sistema ya lo nombra. " +
         "Va GRATIS y ya está incluido: NO lo cobres, NO lo ofrezcas como si tuviera que aceptarlo o pagarlo, NO prometas más de uno " +
         "y NO exageres. Si pregunta qué es, explícaselo con su descripción.",
       );
@@ -10341,16 +10362,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // tiene que releerlo para comparar, y comparar es justo lo que lo lleva al pack
           // grande. El molde se arma acá con SUS presentaciones reales a propósito: cuando
           // el ejemplo llevaba precios inventados, el modelo copiaba esos números.
-          "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
-          "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido. " +
-          "Estas son, con sus precios exactos:\n\n" +
-          molde +
-          "\n\nA cada línea súmale, después de un «·», en pocas palabras qué gana con esa opción" +
-          (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
-          ". El ahorro solo si sale de restar los precios de arriba — nunca inventes un descuento ni un precio tachado. " +
-          "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y cierras " +
-          "preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
-          "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata." +
+          // 🔁 Solo MIENTRAS NO HAYA ELEGIDO. Con la opción ya sellada, este bloque le pedía
+          // «nómbralas TODAS en lista» y el bloque "## Ya eligió" —que se empuja al mismo
+          // tiempo— le prohibía volver a listarlas. Dos órdenes opuestas sobre lo mismo, en el
+          // mismo prompt: el modelo tenía que adivinar, y adivinar acá es re-abrirle la
+          // decisión a alguien que ya compró.
+          (String(ctx.opcion_elegida ?? "").trim()
+            ? "\n\n💰 Ya eligió: NO le vuelvas a listar las presentaciones. Si pregunta por un precio, " +
+              "dile el de LO SUYO y sigue. Estas son las cifras exactas, para que no inventes ninguna:\n\n" + molde
+            : "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
+              "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido. " +
+              "Estas son, con sus precios exactos:\n\n" +
+              molde +
+              "\n\nA cada línea súmale, después de un «·», en pocas palabras qué gana con esa opción" +
+              (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
+              ". El ahorro solo si sale de restar los precios de arriba — nunca inventes un descuento ni un precio tachado. " +
+              "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y cierras " +
+              "preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
+              "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata.") +
           // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
           // el modelo les pone delante: con una presentación llamada "Básica" salía "La
           // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
@@ -10500,6 +10529,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "## Largo del mensaje\n" +
       "Esto es WhatsApp, no un folleto: **2 o 3 frases y punto**. Solo te extiendes si el cliente " +
       "pidió una explicación.\n" +
+      // Las LISTAS no son "extenderse": son lo contrario. Este tope peleaba con los dos sitios
+      // donde el motor pide explícitamente una lista —los precios y los datos del pedido—, y el
+      // modelo tenía que elegir a cuál hacerle caso. Igual que el tope de negritas comiéndose
+      // los precios: una regla general sin su excepción escrita se come a la específica.
+      "Las LISTAS no cuentan acá: la de precios y la de datos que le pides van en líneas sueltas " +
+      "aunque pasen de tres — leerlas de un vistazo es justo lo que las hace cortas.\n" +
       "UN argumento por mensaje: el que hace falta AHORA. No cierres cada burbuja recordándole el " +
       "regalo, la contraentrega, el envío y las bondades del producto todos juntos — cada cosa se " +
       "dice una vez, cuando suma, y no se repite.\n" +
@@ -10812,11 +10847,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "contrario. El envío por agencia no es un beneficio que le conseguiste: es que su ciudad no entra " +
             "en nuestro reparto. No le inventes un motivo bonito.");
         }
-        L.push("El adelanto **no lo pides tú**: sale solo, en el mensaje siguiente, con los datos de pago. " +
-          "Y TAMPOCO lo anuncies, de NINGUNA forma: ni \"en breve\", ni \"ahora\", ni \"enseguida\", ni \"te va a llegar\", " +
-          "ni \"recibirás un mensaje con…\". Da igual cómo lo formules: no menciones que viene otro mensaje. Sale " +
-          "INMEDIATAMENTE después del tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
-          "No lo negocies ni preguntes con cuánto quiere adelantar.");
+        // "TAMPOCO lo anuncies, de NINGUNA forma" se leía como "no menciones el adelanto",
+        // que choca de frente con la regla de arriba (si pregunta cómo paga, díselo claro:
+        // adelanto + saldo). Lo prohibido es anunciar que VIENE OTRO MENSAJE, no la
+        // existencia del adelanto. Se dice cuál de las dos cosas es.
+        L.push("El adelanto **no se lo pides tú**: el monto y las cuentas salen solos, en el mensaje siguiente. " +
+          "Explicarle CÓMO funciona el pago (un adelanto para despachar y el saldo al recoger) sí puedes, y debes " +
+          "si pregunta. Lo que NO haces es anunciar que viene otro mensaje: ni \"en breve\", ni \"ahora\", ni " +
+          "\"enseguida\", ni \"te va a llegar\", ni \"recibirás un mensaje con…\". Sale INMEDIATAMENTE después del " +
+          "tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
+          "Tampoco negocies el monto ni le preguntes con cuánto quiere adelantar.");
       }
       // "Solo me falta tu número de celular" a alguien que te escribe POR WhatsApp.
       // La regla vivía únicamente en la rama de provincia (y encima colgada del
@@ -11120,9 +11160,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "acaba de contarte —sin repetirle la etiqueta que usó ni ponerte a diagnosticarlo— y recién ahí conecta " +
       "con lo del producto que le resuelve justo eso. Es el momento donde más se gana o se pierde una venta.\n" +
       "## Cómo vendes (no solo respondes)\n" +
-      "1. CIERRA SIEMPRE. Cada mensaje tuyo termina moviendo la venta un paso: una pregunta corta que lo acerque " +
-      "a comprar («¿te lo dejo listo?», «¿te paso los datos?», «¿en qué te lo mando?»). Responder la duda y " +
+      // ⚠️ El ejemplo de acá era «¿te lo dejo listo?» — la MISMA frase que "## Cómo cerrar"
+      // prohíbe dos bloques más abajo cuando ya están todos los datos. El modelo recibía la
+      // frase como modelo a imitar y como frase prohibida en el mismo prompt. Y "SIEMPRE" a
+      // secas choca con "## Datos", que le pide cerrar SIN pregunta cuando el sistema va a
+      // confirmar el pedido en ese mismo turno. La excepción va dicha acá, no adivinada.
+      "1. CIERRA MOVIENDO LA VENTA. Cada mensaje tuyo termina un paso más cerca: una pregunta corta " +
+      "(«¿te paso los datos?», «¿en qué te lo mando?», «¿cuántas llevas?»). Responder la duda y " +
       "quedarte ahí deja al cliente sin saber qué sigue, y ahí se enfría la venta.\n" +
+      "   ⛔ ÚNICA excepción: cuando ya tienes TODOS sus datos. Ahí no preguntas nada — cierras " +
+      "afirmando, porque el pedido se confirma en ese mismo turno (ver «Cómo cerrar» y «Datos»).\n" +
       "2. RESPONDE CON ARGUMENTO. Dos o tres frases: contesta lo que preguntó y súmale UNA razón concreta para " +
       "comprarlo (algo del producto, no un adjetivo). Una línea suelta suena a contestador automático. " +
       "Excepción: cuando solo estás pidiendo un dato o el pago, ahí sí va corto y directo.\n" +
