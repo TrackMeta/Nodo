@@ -26,9 +26,18 @@ Deno.serve(async (req) => {
   let body: {
     channel_id?: string; text?: string; buttonId?: string; reset?: boolean; flow_id?: string;
     media?: { kind?: string; url?: string; mime?: string; caption?: string };
+    // 📍 Ubicación de WhatsApp. El banco de pruebas no la sabía mandar, así que el camino
+    // que la convierte en la dirección del pedido no se podía probar sin un WhatsApp real.
+    // Se arma igual que en el webhook: lugar con nombre/dirección → texto; pin → coordenadas.
+    location?: { lat?: number; lng?: number; name?: string; address?: string };
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, text, buttonId, reset, media, flow_id } = body;
+  const { channel_id, text, buttonId, reset, media, flow_id, location } = body;
+  const _lugar = location
+    ? [location.name, location.address].map((x) => String(x ?? "").trim()).filter(Boolean).join(" · ")
+    : "";
+  const _coords = location && location.lat != null && location.lng != null ? `${location.lat}, ${location.lng}` : "";
+  const _ubiTxt = location ? (_lugar ? `[ubicación] ${_lugar}` : _coords ? `[ubicación] ${_coords}` : "[ubicación]") : "";
   if (!channel_id) return json({ error: "falta_channel" }, 400);
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   const mediaKind = media?.url ? (media.kind || "document") : null;
@@ -37,8 +46,8 @@ Deno.serve(async (req) => {
   const { data: contact } = await db.from("contacts").upsert(
     {
       channel_id, wa_id: TEST_WA_ID, nombre: "Prueba (webchat)",
-      last_input: media?.caption ?? text ?? buttonId ?? (mediaKind ? `[${mediaKind}]` : ""),
-      last_input_type: mediaKind ?? (buttonId ? "interactive" : "text"),
+      last_input: _ubiTxt || media?.caption || text || buttonId || (mediaKind ? `[${mediaKind}]` : ""),
+      last_input_type: location ? "location" : (mediaKind ?? (buttonId ? "interactive" : "text")),
       ultimo_mensaje_at: new Date().toISOString(),
       ultimo_mensaje_cliente_at: new Date().toISOString(),
     },
@@ -136,12 +145,14 @@ Deno.serve(async (req) => {
   }
 
   // Guardar el mensaje entrante (del "cliente").
-  const content = mediaKind
+  const content = location
+    ? { lat: location.lat, lng: location.lng, name: location.name ?? null, address: location.address ?? null }
+    : mediaKind
     ? { media_url: media!.url, caption: media?.caption ?? "", mime: media?.mime ?? "" }
     : (buttonId ? { id: buttonId, title: body.text ?? buttonId } : { text: text ?? "" });
   await db.from("messages").insert({
     channel_id, contact_id: contactId, direction: "in",
-    type: mediaKind ?? (buttonId ? "interactive" : "text"),
+    type: location ? "location" : (mediaKind ?? (buttonId ? "interactive" : "text")),
     content, status: "delivered",
   });
 
@@ -158,7 +169,8 @@ Deno.serve(async (req) => {
       // mensaje de texto con el título (el atajo "escribe por el cliente").
       ? { type: "button" as const, buttonId, title: text ?? buttonId }
       : {
-        type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text",
+        type: "message" as const, text: _ubiTxt || media?.caption || text || "",
+        msgType: location ? "location" : (mediaKind ?? "text"),
         // Media de prueba (URL pública de Storage): imagen → OCR, audio → STT.
         mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined,
       };

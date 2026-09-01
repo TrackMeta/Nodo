@@ -8768,6 +8768,36 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   const texto = String(ctx.last_input ?? "");
   if (!campos.length || !texto) return;
 
+  // 📍 Mandó su UBICACIÓN de WhatsApp → ESO es su dirección. Decisión de Rodrigo: para
+  // el motorizado el pin es MEJOR que una dirección escrita (no hay «Av. Bolívar 720»
+  // mal copiada ni número que no existe), así que se guarda y no se le pide que la
+  // escriba. Antes el bot la agradecía y le pedía la dirección en texto igual: al
+  // cliente, que acababa de mandar lo más preciso que tenía, eso se le lee como que no
+  // le hicimos caso.
+  //   · Compartió un LUGAR (con nombre/dirección) → se guarda ese texto tal cual.
+  //   · Pin suelto (solo coordenadas) → se guarda un enlace de mapa que el motorizado
+  //     abre de un toque, con las coordenadas al lado para el rótulo y el Excel.
+  // Se hace ACÁ, deterministamente, y no se deja a la IA: es un dato de despacho.
+  if (String(ctx.last_input_type ?? "") === "location" && campos.some((c) => c.clave === "direccion")) {
+    const yaHay = String(ctx.direccion ?? run.vars.direccion ?? "").trim();
+    const crudo = texto.replace(/^\[ubicaci[oó]n\]\s*/i, "").trim();
+    const coords = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(crudo);
+    const valor = coords
+      // Sin emoji: el rótulo, el Excel del courier y la hoja se lo llevan tal cual, y en el
+      // resumen el 📍 ya lo pone la etiqueta (salía "📍 📍 https://…").
+      ? `https://maps.google.com/?q=${coords[1]},${coords[2]} (ubicación compartida)`
+      : crudo;
+    // No pisa una dirección que ya dio escrita: si la escribió y DESPUÉS mandó el pin,
+    // el pin es un complemento, no una corrección — y pisarla podría dejar el rótulo
+    // solo con un enlace justo cuando ya teníamos la calle.
+    if (valor && !yaHay) {
+      ctx.direccion = valor; run.vars.direccion = valor;
+      await setField(db, run.channel_id, run.contact_id, "direccion", valor).catch(() => {});
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Dirección por ubicación de WhatsApp",
+        coords ? "Pin compartido — se guardó el enlace del mapa" : crudo.slice(0, 120)).catch(() => {});
+    }
+  }
+
   // Lo que el cliente ya dijo ANTES, no solo su último mensaje.
   //
   // Con `last_input` a secas se perdía todo lo del PRIMER mensaje: ese lo atiende
@@ -10833,14 +10863,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "Si ya sabe cuánto es y a dónde pagar, tu mensaje cierra invitándolo a mandar la captura, nada más.",
       );
     }
-    // Mandó su UBICACIÓN de WhatsApp. Si compartió un lugar con nombre/dirección, eso
-    // ya viaja como texto y el extractor lo pesca solo. Si mandó un pin suelto, lo que
-    // llega son coordenadas: el courier no reparte con eso. Sin decírselo, la IA leía
-    // "[ubicación] -12.09, -77.03" y o lo ignoraba o daba la dirección por recibida.
-    if (String(ctx.last_input_type ?? "") === "location" && !/[a-záéíóúñ]{3}/i.test(String(ctx.last_input ?? "").replace(/^\[ubicación\]\s*/i, ""))) {
-      parts.push("## Te mandó su ubicación\nCompartió un pin de WhatsApp (solo coordenadas), no una dirección escrita. " +
-        "Agradéceselo y pídele la dirección en texto — calle y número, y una referencia — porque el courier no puede repartir con un pin. " +
-        "NO des su dirección por recibida ni la inventes a partir del pin.");
+    // 📍 Mandó su UBICACIÓN de WhatsApp. Ya quedó guardada como su dirección (ver
+    // extraerDatos): para el motorizado el pin es MEJOR que la dirección escrita, así que
+    // NO se le pide que la escriba. Antes se le agradecía y se le pedía igual en texto —
+    // al cliente que acaba de mandar lo más preciso que tiene, eso se le lee como que no
+    // le hicimos caso. Lo único que sí ayuda es una referencia, y se pide UNA vez, sin
+    // trabar la venta si no la da.
+    if (String(ctx.last_input_type ?? "") === "location") {
+      const _pin = !/[a-záéíóúñ]{3}/i.test(String(ctx.last_input ?? "").replace(/^\[ubicación\]\s*/i, ""));
+      parts.push("## Te mandó su ubicación\nCompartió su ubicación por WhatsApp y ESA es su dirección: ya quedó anotada. " +
+        "Dale el acuse en una línea (que sabes a dónde llevárselo) y sigue con lo que falte del pedido. " +
+        "⛔ NO le pidas que te escriba la dirección: ya te la dio, y pedírsela otra vez es hacerle repetir lo que acaba de mandar." +
+        (_pin
+          ? " Es un pin, así que si te falta la referencia pídesela de paso —«¿alguna referencia para que lo ubique rápido?»— " +
+            "pero UNA sola vez: si no contesta eso, el pedido sigue igual."
+          : ""));
     }
     // Falta ELEGIR la opción (hay varias con precio y el cliente no eligió): sin
     // opción no hay precio y el pedido saldría en S/0. Prioridad sobre "cierra": la
