@@ -174,15 +174,17 @@ const NEG_FIELDS=[
   ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta."],
 ];
 const TONOS={ cercano:"Cercano y amigable, con tuteo", formal:"Formal y profesional, trato de usted", directo:"Directo y breve, sin rodeos", divertido:"Divertido y relajado, con buena onda", ventas:"Persuasivo y orientado a cerrar la venta" };
+// El TONO se compila acá porque el motor no tiene de dónde deducirlo. Las negritas y
+// los emojis NO: desde el 2026-08-31 el motor lee `negocio_form` directo y arma su
+// propio bloque de formato (estiloDeEscritura). Dejarlos también acá metía DOS
+// instrucciones distintas en el mismo prompt — y la de acá era la mala: "puedes usar
+// … con moderación" es exactamente la redacción con la que el modelo no pone ni una
+// negrita. Medido: el bot escribía plano teniendo las perillas activadas.
 function compilePersona(form){
   const p=[];
-  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, asesor(a) de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, preséntate así.`);
+  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, asesor(a) de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, ese es.`);
   const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
   if(t.length) p.push("Tono: "+t.join(". ")+".");
-  p.push(form.negritas?"Puedes usar *negritas* de WhatsApp (un asterisco a cada lado) para resaltar lo importante, con moderación.":"No uses formato de negritas.");
-  const mx=Number(form.emoji_max); const mnRaw=Number(form.emoji_min)||0;
-  const mn=isNaN(mx)?mnRaw:Math.min(mnRaw,Math.max(0,mx)); // nunca min>max ("entre 5 y 2" no tiene sentido para la IA)
-  if(!isNaN(mx)){ p.push(mx<=0?"No uses emojis.":`Usa emojis con moderación: entre ${mn} y ${mx} por mensaje, solo cuando aporten.`); }
   return p.length?p.join(" "):"";
 }
 function compileNegocio(form){
