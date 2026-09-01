@@ -41,7 +41,9 @@
     const src = await (await fetch(RAW + "?v=" + Date.now())).text();
     const i = src.indexOf("export const AGENCIAS");
     if (i < 0) throw new Error("No encuentro AGENCIAS en shalom-agencias.ts");
-    const ini = src.indexOf("[", i);
+    // OJO: el "[" del TIPO ("Agencia[]") viene antes que el del array y abre y cierra
+    // en el acto — arrancar ahi devolvia una lista vacia. Se busca desde el "=".
+    const ini = src.indexOf("[", src.indexOf("=", i));
     let prof = 0, fin = -1;
     for (let k = ini; k < src.length; k++) {
       if (src[k] === "[") prof++;
