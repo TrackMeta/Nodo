@@ -2631,9 +2631,9 @@ async function generarFlujoFisico(flowId, N, E){
       detalle:"con su nombre basta, NO le exijas apellidos. Pregúntalo CORTO (una línea) y sin " +
               "explicarle para qué lo necesitas",
       requerido:true, solo_si_zona:"lima" },
-    { clave:"nombre_completo", label:"Nombre y apellidos, como en tu DNI",
-      detalle:"la agencia no entrega si no coinciden. Pregúntalo CORTO (una línea): el «como en tu DNI» " +
-              "ya explica el porqué, no le agregues más",
+    { clave:"nombre_completo", label:"Nombre y apellidos",
+      detalle:"la agencia no entrega si no coinciden con el DNI. Pregúntalo CORTO (una línea) y " +
+              "sin explicarle para qué: el cliente ya sabe que la agencia le pide su nombre",
       requerido:true, solo_si_zona:"provincia" },
     // 📞 El CELULAR va antes de la dirección: es el orden en que Rodrigo los pide a mano
     // (nombre → celular → dirección) y el que el cliente copia sin saltarse ninguno.
