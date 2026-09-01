@@ -2627,7 +2627,7 @@ async function generarFlujoFisico(flowId, N, E){
     //  · Provincia: Shalom NO entrega si el nombre no coincide con el DNI que presentan,
     //    así que ahí sí se piden los apellidos, y se dice POR QUÉ (el cliente colabora
     //    mucho más cuando entiende que es la agencia la que se lo va a exigir).
-    { clave:"nombre_completo", label:"¿A nombre de quién?",
+    { clave:"nombre_completo", label:"Nombre",
       detalle:"con su nombre basta, NO le exijas apellidos. Pregúntalo CORTO (una línea) y sin " +
               "explicarle para qué lo necesitas",
       requerido:true, solo_si_zona:"lima" },
@@ -2635,7 +2635,10 @@ async function generarFlujoFisico(flowId, N, E){
       detalle:"la agencia no entrega si no coinciden. Pregúntalo CORTO (una línea): el «como en tu DNI» " +
               "ya explica el porqué, no le agregues más",
       requerido:true, solo_si_zona:"provincia" },
-    { clave:"direccion", label:"Dirección exacta", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
+    // 📞 El CELULAR va antes de la dirección: es el orden en que Rodrigo los pide a mano
+    // (nombre → celular → dirección) y el que el cliente copia sin saltarse ninguno.
+    { clave:"telefono", label:"Celular", detalle:"9 dígitos; el courier lo llama para coordinar el envío", requerido:true, validar:"telefono", solo_si_sin_numero:true },
+    { clave:"direccion", label:"Dirección", detalle:"calle y número, o dónde entregar aunque sea impreciso", requerido:true, solo_si_zona:"lima" },
     { clave:"referencia", label:"Referencia", detalle:"algo cerca para ubicarlo", requerido:false, solo_si_zona:"lima" },
     { clave:"dni", label:"DNI", detalle:"8 dígitos, se lo pide la agencia", requerido:true, validar:"dni", solo_si_zona:"provincia" },
     { clave:"sede", label:"Sede de la agencia", detalle:"la oficina EXACTA donde lo va a recoger (ej. «Av. España»), NO la ciudad", requerido:true, validar:"sede", solo_si_zona:"provincia" },
@@ -2646,7 +2649,6 @@ async function generarFlujoFisico(flowId, N, E){
     // `validar:"telefono"` — la ficha prometía "9 dígitos" y no lo verificaba nadie: un
     // "no tengo" o un número a medias se guardaba igual y el paquete salía con un teléfono
     // que no llama a nadie. El DNI y la sede sí tenían validación dura; su gemelo no.
-    { clave:"telefono", label:"Número de celular para la entrega", detalle:"9 dígitos; el courier lo llama para coordinar el envío", requerido:true, validar:"telefono", solo_si_sin_numero:true },
     // VA ÚLTIMO y solo en LIMA: tener los datos NO es lo mismo que querer
     // comprar. En Lima el pedido nace "confirmado" y sale un motorizado, así que
     // un mensaje de consulta bien completo ("¿tienen talla 38? soy Juan Pérez,
