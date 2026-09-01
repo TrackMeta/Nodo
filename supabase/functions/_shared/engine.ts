@@ -2044,6 +2044,24 @@ const REGLA_TUTEO =
   "dime, tienes, quieres, necesitas). ⛔ NUNCA voseo argentino: nada de «querés», «tenés», " +
   "«necesitás», «podés», «vos», «acá tenés». Tampoco español de España («vale», «os», «vosotros»).";
 
+// ⛔ Decisión de Rodrigo (2026-08-31): el HECHO sí («pagas al recibir»), el DISCURSO no.
+// «Sin riesgo», «sin adelantos», «no arriesgas nada» es venderle tranquilidad a quien no
+// la pidió — y nombrar el riesgo es meterlo en la conversación.
+//
+// Va acá, al lado de REGLA_TUTEO y empujada en los MISMOS sitios, porque la primera
+// versión la puse solo en la rama de provincia de la venta… y la frase salió por la
+// RECEPCIÓN: «pero sin riesgo: en Lima entregamos contraentrega». Venía del conocimiento
+// del negocio, que la tiene escrita. Una regla de comportamiento tiene que valer en TODOS
+// los caminos que le hablan al cliente, no solo en el que la vi fallar.
+const REGLA_SIN_DISCURSO_RIESGO =
+  "## Del pago se dice el hecho, no el discurso\n" +
+  "⛔ NUNCA escribas «sin riesgo», «no hay riesgo», «sin adelantos», «no arriesgas nada», " +
+  "«no pagas nada por adelantado» ni variantes, ni siquiera para tranquilizarlo, ni aunque " +
+  "el texto del negocio lo diga así: al nombrar el riesgo lo metes en la conversación. " +
+  "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, adelanto para despachar " +
+  "y el saldo al recoger.";
+
+
 export async function routeDecision(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
   const det = await matchTrigger(db, channelId, text, adId);
   if (det.flow) return det;
@@ -2205,6 +2223,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   parts.push("## Tu rol AHORA: RECEPCIÓN\n" + (String(rec.prompt || "").trim() ||
     "Eres la recepción de este negocio. Saluda con calidez, cuenta brevemente qué vendemos y ayuda al cliente a decir qué producto le interesa."));
   parts.push(REGLA_TUTEO);
+  parts.push(REGLA_SIN_DISCURSO_RIESGO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
     // 🔢 Con UN solo producto no hay nada que elegir. Medido: con la lista trayendo un
@@ -7260,6 +7279,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     if (!ai?.api_key) { await deliverMessage(db, run.channel_id, run.contact_id, fallback).catch(() => {}); return; }
     const parts: string[] = [];
     parts.push(REGLA_TUTEO);
+    parts.push(REGLA_SIN_DISCURSO_RIESGO);
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     parts.push(estiloDeEscritura((info as any)?.estilo, { emojisProducto: String(ctx.emojis ?? "") }));
@@ -7417,6 +7437,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const prod = (order as any).product?.nombre || ctx.producto_nombre || "tu compra";
   const parts: string[] = [];
     parts.push(REGLA_TUTEO);
+    parts.push(REGLA_SIN_DISCURSO_RIESGO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + resolve(String(ctx.contexto_producto), ctx));
   // Mismo formato que la venta: el cliente no debería notar que lo atiende otro camino.
@@ -10034,6 +10055,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
     const parts: string[] = [];
     parts.push(REGLA_TUTEO);
+    parts.push(REGLA_SIN_DISCURSO_RIESGO);
     // ⛔ El adicional llegó tarde: `actualizarPedido` no lo sumó porque el paquete ya
     // salió. Los mensajes que siguen en el flujo los escribe la IA ("¿qué talla?",
     // "queda todo confirmado con las zapatillas y las medias") y sin saber esto le
@@ -10592,13 +10614,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         L.push("Si duda de si es confiable o teme que no le llegue, tienes LA respuesta: paga RECIÉN cuando " +
           "recibe el pedido, en la puerta de su casa. Díselo con seguridad y calidez, sin ofenderte ni ponerte " +
           "a la defensiva, y cierra pidiéndole el siguiente dato.");
-        // ⛔ Decisión de Rodrigo: el dato sí ("pagas al recibir"), el DISCURSO no. «Sin
-        // adelantos ni riesgos» es venderle tranquilidad a quien no la pidió, y al nombrar
-        // el riesgo lo mete en la conversación. Además obliga a explicar algo que en Lima
-        // es lo normal. Se dice el hecho y se sigue.
-        L.push("⛔ Pero dilo como un HECHO, no como argumento de venta: nunca escribas «sin adelantos», " +
-          "«sin riesgos», «no arriesgas nada», «no pagas nada por adelantado» ni nada por el estilo, " +
-          "ni siquiera para tranquilizarlo. Con «pagas al recibirlo» ya está dicho todo.");
+        // El «sin riesgos / sin adelantos» ya está prohibido de forma GLOBAL
+        // (REGLA_SIN_DISCURSO_RIESGO): valía solo acá y la frase salía igual por la Recepción.
         // ¿El delivery lleva POS? Es una perilla del negocio (Negocio → Entrega), porque
         // depende del courier con el que trabaje. Sin saberlo, la IA respondía a "¿puedo
         // pagar con tarjeta?" que solo se acepta efectivo — y con POS eso es una venta
