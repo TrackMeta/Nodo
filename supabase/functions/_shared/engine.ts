@@ -471,6 +471,7 @@ async function runEngineInner(
       } catch (e) { console.error("[ruteo/memoria]", (e as any)?.message ?? e); }
     }
     let reinyectarTrasArranque = false;
+    let _saludoRecien = "";
     // ❓ SU PRIMER MENSAJE TRAE UNA PREGUNTA. El saludo de "Mensajes iniciales" es fijo y no
     // la lee, así que la pregunta se quedaba sin contestar hasta que el cliente la repitiera.
     // Medido: «hola, ¿se puede usar en el embarazo?» recibió solo «¿Desde dónde nos escribe?»
@@ -560,10 +561,27 @@ async function runEngineInner(
       // decir que sí. Se le entrega ese mismo mensaje al run recién parqueado, igual que en
       // la recompra.
       await execute(db, run);
+      // 📣 Lo que el saludo ACABA de decirle, para que la IA no lo repita en el mismo turno.
+      // Medido: el cliente preguntó «¿cuánto cuesta el dermachem?», el rotador le contestó
+      // «¿Desde dónde nos escribe?» y la IA —que no se enteraba— le preguntó otra vez de
+      // dónde escribe, en la burbuja siguiente. Dos veces la misma pregunta, y su pregunta
+      // sin contestar. La Recepción ya tenía esta guarda (`saludoEmitido`); la venta no.
+      try {
+        const { data: _ult } = await db.from("messages").select("content")
+          .eq("contact_id", contactId).eq("direction", "out")
+          .order("ts", { ascending: false }).limit(2);
+        const _txt = (_ult ?? []).map((x: any) => String(x?.content?.text ?? "").trim())
+          .filter(Boolean).reverse().join("\n");
+        if (_txt) _saludoRecien = _txt.slice(0, 400);
+      } catch (_) { /* sin el saludo a mano, la IA responde como antes */ }
       const vivo = await getActiveRun(db, contactId);
       if (vivo && (vivo.vars as any)?._await) {
         const listo = await resumeRun(db, vivo, event);
-        if (listo) { run = vivo; } else return;
+        // ⚠️ `vivo` se RELEE de la base, así que hay que ponérselo acá: escribirlo antes
+        // sobre `run` se perdía en cuanto `run = vivo` (fue el primer intento, y el bot
+        // siguió repitiendo la pregunta). Va en memoria y no se persiste a propósito:
+        // solo vale para este turno, el siguiente ya no tiene el saludo detrás.
+        if (listo) { run = vivo; run.vars._saludo_recien = _saludoRecien; } else return;
       } else return;
     }
   }
@@ -3347,6 +3365,14 @@ function conEnvioExplicado(texto: string, courier: string, modo: string): string
 const RE_PROMETE_PRECIOS =
   /\b(te (cuento|paso|digo|comparto|mando)( ya)? (los|las) (precios|opciones|promociones|presentaciones)|te (cuento|digo) cuánto (cuesta|sale|te sale))\b/i;
 
+// 💰 El CLIENTE preguntó el precio. Medido: «hola, ¿cuánto cuesta el dermachem?» y el bot
+// contestó «¿para qué tipo de manchas lo buscas?» — consultivo, sí, pero sin decirle el
+// precio ni reconocer que se lo preguntó. La ficha pide vender consultivo y la regla de
+// arriba pide contestar lo que preguntó: entre las dos, el precio se caía. Preguntar por
+// su caso está bien; NO decirle cuánto cuesta cuando lo pidió, no.
+const RE_CLIENTE_PIDE_PRECIO =
+  /\b(cu[aá]nto\s+(cuesta|sale|vale|est[aá]|es)|qu[eé]\s+precio|a\s+c[oó]mo|precio[s]?\b|cu[aá]nto\s+me\s+(sale|cuesta)|qu[eé]\s+cuesta)\b/i;
+
 // Pide la SEDE y no la lista. La regla del prompt falló DOS veces: en Chiclayo preguntó
 // «¿a qué sede prefieres?» sin mostrar ninguna, y en Piura «me falta un dato: Sede de la
 // agencia» a secas. Pedirle que elija entre opciones que no ve es hacerlo adivinar, y en
@@ -3365,9 +3391,12 @@ function conAgencias(texto: string, lista: string): string {
   return t.trimEnd() + "\n\n" + lista;
 }
 
-function conPrecios(texto: string, lista: string): string {
+// `preguntoElCliente`: además de la promesa incumplida, cubre el caso de que él lo haya
+// PEDIDO y la respuesta no traiga ninguna cifra. Consultar su caso está bien; dejar la
+// pregunta del precio sin contestar, no — es la pregunta que más se hace y la que decide.
+function conPrecios(texto: string, lista: string, preguntoElCliente = false): string {
   const t = String(texto ?? "");
-  if (!lista || !RE_PROMETE_PRECIOS.test(t)) return t;
+  if (!lista || !(RE_PROMETE_PRECIOS.test(t) || preguntoElCliente)) return t;
   // Si YA hay un precio escrito en el mensaje, la promesa está cumplida.
   if (/\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
   return t.trimEnd() + "\n\n" + lista;
@@ -3375,8 +3404,15 @@ function conPrecios(texto: string, lista: string): string {
 
 // La pregunta se arma con los precios REALES de sus presentaciones, no la
 // improvisa el modelo: cuando la cantidad es lo que cambia, se dice el ahorro.
-function preguntaCuantos(ops: Opcion[], ctx: any): string {
+//
+// 🎨 Y con el MISMO formato que usa la IA (2026-09-01): precio en negrita, uno por
+// línea, y cerrando con «¿cuántas unidades o qué oferta?». Este mensaje lo escribe el
+// MOTOR, así que se había quedado con el formato viejo —«• 1 frasco — S/ 79», sin
+// negrita y con un «¿cuál te preparo?» que suena a formulario— justo el que Rodrigo
+// pidió cambiar. Convivían dos presentaciones de precio y esta era la fea.
+function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true): string {
   const sym = simboloMoneda(ctx.moneda as string);
+  const pz = (v: unknown) => (negritas ? `*${sym} ${v}*` : `${sym} ${v}`);
   const conPrecio = ops.filter((o) => o.precio != null && Number(o.precio) > 0);
   const lista = conPrecio.length > 1 ? conPrecio : ops;
   const cants = lista.map((o) => Number(o.cantidad ?? 0));
@@ -3387,11 +3423,12 @@ function preguntaCuantos(ops: Opcion[], ctx: any): string {
     const ahorro = Math.round((unitario * Number(b.cantidad) - Number(b.precio)) * 100) / 100;
     // Una sola pregunta: "¿cuántos llevas?" y "¿cuál te preparo?" juntas se leen
     // como si le preguntaran dos cosas distintas.
-    return `Antes de anotarte, ¿cuántos llevas? ${a.nombre} sale ${sym} ${a.precio} y ${b.nombre} ` +
-      `te queda en ${sym} ${b.precio}` + (ahorro > 0 ? ` — ahorras ${sym} ${ahorro}` : "") + " 🙌";
+    return `Antes de anotarte, ¿cuántos llevas? ${a.nombre} sale ${pz(a.precio)} y ${b.nombre} ` +
+      `te queda en ${pz(b.precio)}` + (ahorro > 0 ? ` — ahorras ${pz(ahorro)}` : "") + " 🙌";
   }
-  return "Antes de anotarte, ¿cuál te preparo?\n" +
-    lista.map((o) => `• ${o.nombre}${o.precio != null ? ` — ${sym} ${o.precio}` : ""}`).join("\n");
+  return "Estas son las opciones 👇\n" +
+    lista.map((o) => `${o.nombre}${o.precio != null ? ` — ${pz(o.precio)}` : ""}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n") +
+    "\n\n¿Cuántas unidades o qué oferta te preparo?";
 }
 
 function sinDatoInventado(texto: string, cierre: string): string {
@@ -11378,6 +11415,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 🎨 Formato y emojis: los arma estiloDeEscritura con las perillas del dueño, el mismo
     // bloque que usan la Recepción y el post-venta para que el bot no cambie de voz al
     // pasar de una a otra dentro del mismo chat.
+    // 📣 El saludo del flujo salió en ESTE mismo turno (ver `_saludo_recien`): la IA tiene
+    // que continuar desde ahí, no volver a saludar ni repetir la pregunta que ya le hizo.
+    if (String(run.vars._saludo_recien ?? "").trim()) {
+      parts.push("## Ojo: el saludo YA salió en este mismo turno\nAcabas de enviarle esto:\n\"" +
+        String(run.vars._saludo_recien).trim() + "\"\n" +
+        "⛔ NO vuelvas a saludar ni repitas ninguna pregunta que ya esté ahí — el cliente vería la misma " +
+        "pregunta dos veces seguidas. Contesta lo que TE preguntó él y, si te falta un dato, pídele uno " +
+        "DISTINTO al que el saludo ya pidió.");
+    }
     parts.push(estiloDeEscritura(_est, {
       emojisProducto: String(ctx.emojis ?? ""),
       emojisNegocio: String((ctx as any)._negocio_emojis ?? ""),
@@ -12171,13 +12217,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       // Prometió decir los precios y no dijo ninguno: se los pega el motor, con las cifras
       // reales de la ficha (ver conPrecios).
-      if (op === "generar_texto" && ctx._product_id && RE_PROMETE_PRECIOS.test(salida)) {
+      // El cliente PIDIÓ el precio o el bot lo prometió: en los dos casos el mensaje no
+      // puede salir sin una cifra. Se arma con la MISMA forma que usa la IA (negrita y una
+      // por línea), no con la lista de viñetas vieja: si el motor tiene que completar, que
+      // no se note el remiendo.
+      const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
+      if (op === "generar_texto" && ctx._product_id && (RE_PROMETE_PRECIOS.test(salida) || _pidioPrecio)) {
         try {
           const opsP = await loadOpciones(db, run, ctx._product_id);
           const conPre = opsP.filter((o) => o.precio != null && Number(o.precio) > 0);
           if (conPre.length) {
             const sym = simboloMoneda(ctx.moneda as string);
-            salida = conPrecios(salida, conPre.map((o) => `• ${o.nombre} — ${sym} ${o.precio}`).join("\n"));
+            const _pz = (v: unknown) => (_negOn ? `*${sym} ${v}*` : `${sym} ${v}`);
+            salida = conPrecios(
+              salida,
+              conPre.map((o) => `${o.nombre} — ${_pz(o.precio)}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n"),
+              _pidioPrecio,
+            );
           }
         } catch (_) { /* sin opciones legibles → se envía tal cual */ }
       }
@@ -12226,7 +12282,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 oq.nombre + " (ya la había dicho: \"" + String(ctx.last_input ?? "").slice(0, 40) + "\")").catch(() => {});
             } else if (!run.vars._preg_pres) {
               run.vars._preg_pres = 1;
-              salida = preguntaCuantos(opsPend, ctx);
+              salida = preguntaCuantos(opsPend, ctx, _negOn);
             } else {
               const op0 = opsPend[0];
               await setField(db, run.channel_id, run.contact_id, "opcion_id", op0.id);
