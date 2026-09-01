@@ -248,6 +248,30 @@ async function runEngineInner(
     // Sin pedido o sin métodos configurados: sigue la conversación normal.
   }
 
+  // 🇵🇪 «YA CANCELÉ el adelanto» = YA PAGUÉ. En pasado no es ni una solicitud de baja ni
+  // una pregunta de cómo pagar: es un cliente diciendo que la plata ya salió.
+  //
+  // 🔴 Las dos ramas de arriba están detrás de `pideCancelar()`, que solo reconoce frases
+  // de SOLICITUD ("quiero cancelar", "cancela mi pedido"). El pasado no calza con ninguna,
+  // así que `cancelarSignificaPagar` —que sí sabe leerlo, tiene su RE_CANCELE_PASADO— nunca
+  // llegaba a consultarse. Medido: «listo, ya cancelé el adelanto» y el bot le contestó
+  // «para Piura se requiere un adelanto de S/ 20 para poder despachar», o sea pidiéndole
+  // que pague lo que acababa de decir que pagó. El peor mensaje posible después de cobrar.
+  // ⚠️ Sobre el texto LIMPIO, no el crudo: `RE_CANCELE_PASADO` termina en `\b` y la "é" de
+  // «cancelé» no es carácter de palabra para el regex, así que `cancelé\b` NO matchea el
+  // texto con tilde — solo la versión sin acentos que produce limpiaOpt. Probado: la misma
+  // frase daba false en crudo y true en limpio. Es la trampa de siempre con \b y acentos.
+  if (event.type === "message" && RE_CANCELE_PASADO.test(limpiaOpt(event.text)) &&
+      cancelarSignificaPagar(event.text) && !pideCancelar(event.text)) {
+    await logEvent(db, channelId, contactId, "nota", "💸 Dice que ya pagó («cancelé»)",
+      String(event.text ?? "").slice(0, 120)).catch(() => {});
+    // Se le pide el comprobante y NO se toca el pedido: decirlo no es haberlo pagado, pero
+    // tratarlo como si no hubiera pagado tampoco. La captura resuelve las dos cosas.
+    await deliverMessage(db, channelId, contactId,
+      "¡Perfecto! 🙌 Mándame la *captura* del pago y lo verifico al toque.").catch(() => {});
+    return;
+  }
+
   if (event.type === "message" && pideCancelar(event.text) && !cancelarSignificaPagar(event.text)) {
     const ord = await tienePedidoVivo(db, contactId);
     if (ord) {
@@ -447,6 +471,14 @@ async function runEngineInner(
       } catch (e) { console.error("[ruteo/memoria]", (e as any)?.message ?? e); }
     }
     let reinyectarTrasArranque = false;
+    // ❓ SU PRIMER MENSAJE TRAE UNA PREGUNTA. El saludo de "Mensajes iniciales" es fijo y no
+    // la lee, así que la pregunta se quedaba sin contestar hasta que el cliente la repitiera.
+    // Medido: «hola, ¿se puede usar en el embarazo?» recibió solo «¿Desde dónde nos escribe?»
+    // — una pregunta de SALUD ignorada, y el cliente decidiendo si sigue escribiendo o no.
+    // Con pregunta se reinyecta el mensaje al nodo de IA (el mismo mecanismo del
+    // remarketing): sale el saludo Y la respuesta. Sin pregunta NO se toca nada: el saludo
+    // solo es el arranque que el dueño diseñó, y adelantarse ahí rompería su guion.
+    if (event.type === "message" && traePregunta(event.text)) reinyectarTrasArranque = true;
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
     // sin nombrarlo ("sí, apártamela, talla 39 negra" / "¿qué precio tenía?"), así que el
     // ruteo por keyword no encuentra nada y lo mandaba al saludo de bienvenida o a Recepción
@@ -1429,6 +1461,18 @@ function pideReclamo(text: string): boolean {
 // la verdad (lo estoy viendo) y te llega el aviso.
 // Lista CORTA y explícita a propósito: "ya no lo quiero" queda FUERA porque es la respuesta
 // normal a un extra ofrecido y escalaría media venta.
+// ¿El mensaje trae una PREGUNTA de verdad? Se usa para decidir si el primer mensaje del
+// cliente se reinyecta al nodo de IA (ver el uso). Pide signo de interrogación o un
+// arranque interrogativo claro — "hola quiero el dermachem" NO es pregunta y no debe
+// adelantar el guion del dueño.
+const RE_TRAE_PREGUNTA =
+  /[?¿]|\b(cu[aá]nto|cu[aá]nta|cu[aá]l|cu[aá]ndo|c[oó]mo|d[oó]nde|qu[eé]\s|por\s?qu[eé]|se\s+puede|puedo|tienen|tienes|hay\s|hacen|env[ií]an|sirve|funciona|es\s+bueno|me\s+sirve)\b/i;
+function traePregunta(text?: string | null): boolean {
+  const t = String(text ?? "").trim();
+  if (t.length < 6 || t.length > 400) return false;
+  return RE_TRAE_PREGUNTA.test(t);
+}
+
 const PIDE_CANCELAR = [
   "cancelalo", "cancelala", "cancelame el pedido", "cancela el pedido", "cancela mi pedido",
   "cancelar el pedido", "cancelar mi pedido", "quiero cancelar", "quiero cancelarlo",
@@ -5840,6 +5884,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false;
   let parsed: any = null;
+  let _ocrErr = "";
   try {
     const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
@@ -5855,7 +5900,23 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       });
       parsed = JSON.parse(raw);
     }
-  } catch (_) { parsed = null; }
+  } catch (e) { parsed = null; _ocrErr = String((e as any)?.message ?? e).slice(0, 180); }
+  // 🔴 Distinguir «NO es un pago» de «no lo pude leer». Los dos caían al mismo `return
+  // false` y el comprobante se descartaba EN SILENCIO: medido con una clienta de Arequipa
+  // que mandó su Yape y el bot le contestó pidiéndole el celular, como si no hubiera
+  // mandado nada. Un veredicto ("es una foto del producto") está bien; un ERROR del lector
+  // sobre una imagen que llega en plena venta es plata que se pierde sin que nadie se
+  // entere — ni el cliente, ni el dueño. Ahora queda escrito y lo mira una persona.
+  if (!parsed && _ocrErr) {
+    await logEvent(db, channelId, contactId, "error", "🖼️ No pude leer la imagen que mandó",
+      `Llegó en plena venta y el lector de comprobantes falló: ${_ocrErr}`).catch(() => {});
+    await deliverMessage(db, channelId, contactId,
+      "¡Gracias! 🙌 Déjame revisar tu imagen bien y en un momento te confirmo. 😊").catch(() => {});
+    await pasarAHumano(db, channelId, contactId,
+      "Mandó una imagen en plena venta y el lector de comprobantes falló — míralo por si era su pago.",
+      { aviso: false }).catch(() => {});
+    return true;
+  }
   // Solo intervenimos si el OCR CONFIRMA que es un pago (es_pago true). Sin
   // confirmación (foto random, o sin IA configurada) NO interceptamos.
   if (!parsed || parsed.es_pago !== true) return false;
@@ -9078,6 +9139,23 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
               ctx["_error_" + c.clave] = v.motivo ?? "";
               continue;
             }
+            // 📍 La REFERENCIA que repite la dirección. El cliente manda todo junto
+            // ("Gabriela Ruiz, Lima, Pueblo Libre, Av Bolivar 720") y el extractor pone casi
+            // la misma frase en los dos campos: en el resumen sale «📍 Av Bolivar 720 (ref:
+            // Av Bolivar 720, Pueblo Libre)» y en el RÓTULO igual, gastando la línea que el
+            // motorizado usa para ubicarse. Salió en los 2 chats donde dio la dirección con
+            // distrito. Una referencia contenida en la dirección no aporta: se descarta y el
+            // campo queda libre por si da una de verdad ("frente al parque").
+            if (c.clave === "referencia") {
+              const _n = (x: string) => String(x ?? "").toLowerCase().normalize("NFD")
+                .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+              const _ref = _n(val), _dir = _n(String(ctx.direccion ?? ""));
+              if (_ref && _dir && (_dir.includes(_ref) || _ref.includes(_dir))) {
+                await logEvent(db, run.channel_id, run.contact_id, "campo", "Referencia descartada",
+                  `Repetía la dirección: "${String(val).slice(0, 60)}"`).catch(() => {});
+                continue;
+              }
+            }
             run.vars[c.clave] = val;
             ctx[c.clave] = val;
             await setField(db, run.channel_id, run.contact_id, c.clave, val);
@@ -9792,7 +9870,14 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
       reglas.push("Extrae el monto pagado tal como figura en el comprobante. NO juzgues si alcanza o no —no tienes el precio acordado— y NUNCA rechaces un comprobante por su monto: de eso me encargo yo por separado.");
     }
   }
-  if (r.verificar_fecha) reglas.push(`Respecto a la fecha de HOY indicada arriba, la fecha/hora del comprobante no debe superar las ${Number(r.fecha_max_horas ?? 48)} horas de antigüedad. Solo márcalo sospechoso si es realmente ANTERIOR a esa ventana; un comprobante fechado hoy o en las últimas horas es VÁLIDO aunque el año sea ${anioActual}.`);
+  // 🔴 Acá había un `${anioActual}` que quedó COLGADO al mover el ancla de fecha a
+  // `anclaDeFechaOcr`: la variable se fue con ella y esta línea siguió nombrándola.
+  // `buildOcrSystem` reventaba con "anioActual is not defined" para TODO canal con el
+  // validador configurado, y como la llamada al OCR está envuelta en un try/catch que
+  // dejaba `parsed = null`, cada comprobante se descartaba EN SILENCIO. Lo destapó el
+  // registro de errores que se agregó justo arriba — sin él seguiría invisible.
+  // Ya no hace falta el año: la fecha de hoy va en el bloque de arriba con todas sus letras.
+  if (r.verificar_fecha) reglas.push(`Respecto a la fecha de HOY indicada arriba, la fecha/hora del comprobante no debe superar las ${Number(r.fecha_max_horas ?? 48)} horas de antigüedad. Solo márcalo sospechoso si es realmente ANTERIOR a esa ventana; un comprobante fechado hoy o en las últimas horas es VÁLIDO aunque su año te parezca lejano.`);
   if (r.operacion_unica) reglas.push("Extrae el número de operación/constancia. Es la clave anti-reuso: si falta o es ilegible, desconfía.");
   if (r.rechazar_editados) reglas.push("Detecta señales de edición/montaje (tipografías inconsistentes, recortes, píxeles alterados, datos que no cuadran). Ante duda razonable, INVÁLIDO.");
   const nivel = r.exigencia === "alta" ? "ALTA (rechaza ante cualquier duda)" : r.exigencia === "baja" ? "BAJA (aprueba si lo esencial coincide)" : "MEDIA (equilibrio entre seguridad y fluidez)";
@@ -10841,7 +10926,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // 📋 En LISTA, no en párrafo: cuatro oficinas con su referencia metidas en una
               // sola frase no se leen, y este es el cliente que YA quiere comprar y solo
               // necesita ubicar a dónde. Se le da el mensaje armado para que lo copie.
-              `). Si te pregunta cuáles hay o no sabe cuál elegir, mándaselas ASÍ, cada una en su línea:\n\n` +
+              // 🔴 Antes decía "SI te pregunta cuáles hay o no sabe cuál elegir". Demasiado
+              // estrecho: medido en Chiclayo, el bot le preguntó DOS VECES "¿a qué sede
+              // prefieres?" sin listarle ninguna — le pidió elegir entre opciones que nunca
+              // le mostró. Y en Piura las soltó de corrido, en mayúsculas y sin referencias
+              // ("AAHH SANTA ROSA PIURA · AEROPUERTO PIURA · PARQUE INDUSTRIAL..."), que es
+              // ilegible. La condición ahora es la única que importa: si vas a pedirle la
+              // sede, se la muestras.
+              `). ⛔ NUNCA le preguntes por la sede sin listárselas: pedirle que elija entre ` +
+              `opciones que no ve es hacerle adivinar. Cada vez que toques el tema de la sede ` +
+              `—se la pidas tú o pregunte él— van ASÍ, cada una EN SU LÍNEA, nunca de corrido ` +
+              `ni separadas por puntos:\n\n` +
               // La ciudad la escribió el cliente, casi siempre en minúscula ("chiclayo").
               // Se fuerza el camino de capitalizar para que no salga en medio del mensaje así.
               `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}\n\n¿Cuál te queda más cerca?\n\n` +
@@ -11228,7 +11323,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // sistema ("¡Listo! ✅ Tu pedido quedó confirmado. Pagas al recibirlo"). Pasaba en
         // todas las ventas de Lima. El sistema es el que tiene los datos exactos, así que la
         // confirmación la da él y la IA solo cierra la conversación.
-        "Ese mensaje del sistema YA le dice que su pedido quedó confirmado y cómo paga, así que NO lo repitas: no escribas «tu pedido está confirmado» ni le vuelvas a listar la dirección, el monto ni la forma de pago. Cierra corto y cálido, y déjale a él esa parte.");
+        // Prohibir por lista no alcanzó: medido en 3 de 5 ventas de Lima, la IA igual
+        // escribía la dirección y la forma de pago justo antes del resumen del sistema, que
+        // dice lo mismo. Lo que sí funciona es darle la FORMA exacta de su mensaje en vez
+        // de una lista de cosas que no puede decir. Mismo aprendizaje que con el regalo.
+        "Justo después de tu mensaje sale el del sistema, que YA le dice que quedó confirmado, con su producto, " +
+        "su dirección y cómo paga. Tu mensaje es SOLO una línea cálida de cierre, sin ningún dato: nada de " +
+        "«tu pedido está confirmado», ni la dirección, ni el monto, ni la forma de pago, ni cuándo llega. " +
+        "Así de corto: «¡Gracias, Milagros! Lo dejo listo 🙌» o «Listo, Jorge, gracias por la compra ✨». " +
+        "Una línea y punto — el detalle lo pone él.");
     }
     // Cómo se ESCRIBE un mensaje de WhatsApp. Faltaba por completo: los mensajes fijos del
     // dueño van con negritas y emojis, y en cuanto tomaba la IA el chat se volvía gris.
