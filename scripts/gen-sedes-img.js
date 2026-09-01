@@ -55,8 +55,33 @@
 
   // ── La tarjeta ────────────────────────────────────────────────────────
   // Tamaño pensado para WhatsApp: se ve completa en la burbuja sin abrirla.
+  // La direccion de Shalom termina repitiendo la ciudad y ademas viene CORTADA en
+  // la fuente ("... PISO 1 TRUJILLO - TRUJILL"). Ese rabo no informa y encima se lee
+  // como un error, asi que se le quita cuando lo ultimo es el distrito o la provincia
+  // (entera o a medias).
+  function _dirLimpia(a) {
+    const partes = String(a.dir ?? "").split(/s+-s+|,/).map((p) => p.trim()).filter(Boolean);
+    const lugar = [_n(a.t), _n(a.p), _n(a.d)];
+    while (partes.length > 1) {
+      const u = _n(partes[partes.length - 1]);
+      if (u.length >= 4 && lugar.some((L) => L.startsWith(u) || u.startsWith(L))) partes.pop();
+      else break;
+    }
+    return partes.join(" - ");
+  }
+
   function dibuja(a) {
-    const W = 900, H = 560, P = 56;
+    const W = 900, P = 56;
+    // Primero se MIDE, después se dibuja: una oficina con dirección corta y sin
+    // referencia dejaba media tarjeta en blanco, y en el chat eso se ve como un
+    // error de carga. El alto lo decide el contenido.
+    const medir = document.createElement("canvas").getContext("2d");
+    medir.font = "27px Arial, sans-serif";
+    const lDir = parte(medir, bonito(_dirLimpia(a)), W - P * 2, 2);
+    medir.font = "24px Arial, sans-serif";
+    const lRef = a.ref ? parte(medir, bonito(a.ref), W - P * 2, 2) : [];
+    const H = 278 + lDir.length * 38 + (lRef.length ? 56 + lRef.length * 34 : 0) + 60;
+
     const c = document.createElement("canvas");
     c.width = W; c.height = H;
     const x = c.getContext("2d");
@@ -85,15 +110,15 @@
     // Dirección (parte en dos líneas si no entra)
     x.fillStyle = "#111827"; x.font = "27px Arial, sans-serif";
     let y = 278;
-    for (const linea of parte(x, bonito(a.dir), W - P * 2, 2)) { x.fillText(linea, P, y); y += 38; }
+    for (const linea of lDir) { x.fillText(linea, P, y); y += 38; }
 
     // Referencia
-    if (a.ref) {
+    if (lRef.length) {
       x.fillStyle = "#E4002B"; x.font = "bold 21px Arial, sans-serif";
       x.fillText("REFERENCIA", P, y + 22);
       x.fillStyle = "#374151"; x.font = "24px Arial, sans-serif";
       y += 56;
-      for (const linea of parte(x, bonito(a.ref), W - P * 2, 2)) { x.fillText(linea, P, y); y += 34; }
+      for (const linea of lRef) { x.fillText(linea, P, y); y += 34; }
     }
 
     // Pie
