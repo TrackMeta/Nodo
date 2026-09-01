@@ -5352,6 +5352,23 @@ async function triggerPedidoEstado(
 // flujo pedido_estado): así ningún paso queda MUDO por tener la config vacía. El
 // negocio puede sobrescribir cada uno con su propio texto/plantilla. Devuelve
 // null si ese estado no manda nada por defecto (o le falta el dato clave).
+// 🧾 {{promesa_despacho}} — qué prueba va a recibir DESPUÉS de pagar el adelanto, dicho
+// ANTES de pedírselo. Es la objeción que el cliente de provincia no dice en voz alta
+// («¿y si mando la plata y no me manda nada?»), y hasta ahora el bot le pedía el adelanto
+// sin ofrecerle nada a cambio: la guía y los avisos existen, pero llegaban DESPUÉS de que
+// ya había pagado. Misma información, en el orden que no sirve.
+//
+// ⚠️ Solo promete lo que este canal REALMENTE hace. La foto de la guía es una perilla
+// (Pagos → Avisos → Despachado) y viene apagada: prometerla a secas sería exactamente el
+// tipo de promesa incumplida que ya costó caro en otros lados del motor.
+function promesaDespacho(pedidosCfg: any, zona: string): string {
+  if (String(zona || "") === "lima") return ""; // contraentrega: no adelanta nada, no hay qué prometer
+  const conFoto = (pedidosCfg?.avisos?.despachado ?? {}).foto_guia === true;
+  return conFoto
+    ? "Apenas lo despache te mando la *foto de la guía* de la agencia y te aviso en cuanto llegue. 📦"
+    : "Apenas lo despache te paso el *número de guía* de la agencia para que le hagas seguimiento, y te aviso en cuanto llegue. 📦";
+}
+
 // 🧾 {{resumen_pedido}} — el detalle final de lo que compró, para la burbuja de
 // confirmación. Lo pidió Rodrigo: el cliente cerraba la venta sin ver nunca junto lo que
 // lleva, cuánto es, y a dónde va — quedaba desperdigado en quince mensajes. Y el REGALO
@@ -5477,15 +5494,22 @@ export function mensajeEstadoDefault(
           ? `Los *${sym} ${saldo}* que faltan los pagas recién cuando llegue — ahí te paso tu clave para recogerlo. 🙌`
           : "Te aviso apenas esté en la agencia con tu clave para recogerlo. 🙌"));
   }
+  // 🛵 SALIÓ A REPARTO. Reescrito con lo que Rodrigo mandaba a mano el día de la entrega,
+  // que apuntaba a la fuga más cara de la contraentrega: el cliente que no contesta el
+  // teléfono y el paquete se devuelve. El mensaje viejo («va en camino a tu dirección»)
+  // suena a que toca la puerta en diez minutos —y se marca "en reparto" a media mañana
+  // para entregar a las 6— y sobre todo NO le pide lo único que evita la devolución:
+  // que esté atento a la llamada del motorizado.
   if (estado === "en_reparto") {
     const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
     const dir = String(s.direccion || "").trim();
-    // El POS NO se menciona acá (decisión de Rodrigo): el aviso va a TODOS los pedidos de
-    // Lima y nombrar la tarjeta en cada uno es ruido. La IA sí lo dice, pero solo cuando
-    // viene al caso —si pregunta cómo paga o si dice que no tiene efectivo—, y el rótulo lo
-    // lleva para quien entrega. Ver la perilla en Negocio → Entrega.
-    return `🛵 ¡Tu pedido ya salió! El motorizado va en camino${dir ? ` a ${dir}` : ""}. ` +
-      `${cobra != null ? `Ten listo *${sym} ${cobra}* para pagar al recibir. ` : ""}¡Gracias por tu compra! 🎉`;
+    // La dirección puede ser el enlace del mapa que compartió (ver extraerDatos): en el
+    // mensaje al cliente eso no aporta —él sabe dónde vive— y encima queda feo.
+    const dirTxt = /^https?:\/\//i.test(dir) ? "" : dir;
+    return `🛵 ¡Tu pedido ya salió! El motorizado lo tiene${dirTxt ? ` para llevarlo a ${dirTxt}` : ""} ` +
+      `y te va a llamar para coordinar la hora. *Mantente atento a su llamada o mensaje* — si no te ubica, el pedido se regresa. ` +
+      `${cobra != null ? `\n\nTen listo *${sym} ${cobra}* para pagar al recibirlo. ` : ""}` +
+      `\n\n¿No vas a estar? Avísame y lo dejamos con alguien o lo reprogramamos, sin problema. 🙌`;
   }
   if (estado === "despachado") {
     const guia = String(s.guia || "").trim();
@@ -12704,7 +12728,11 @@ async function buildContext(db: SupabaseClient, run: Run) {
     const { data: chL } = await db.from("channels").select("pedidos_config, moneda").eq("id", run.channel_id).maybeSingle();
     ctx.logistica_modo = String((chL as any)?.pedidos_config?.log?.modo ?? "manual");
     ctx.moneda = String((chL as any)?.moneda || "PEN");
-  } catch (_) { ctx.logistica_modo = "manual"; ctx.moneda = "PEN"; }
+    // {{promesa_despacho}} — la prueba que va a recibir, dicha ANTES de cobrarle el
+    // adelanto. Se arma con lo que este canal realmente manda (ver promesaDespacho).
+    ctx.promesa_despacho = promesaDespacho((chL as any)?.pedidos_config, String(ctx.zona_entrega ?? ""));
+  } catch (_) { ctx.logistica_modo = "manual"; ctx.moneda = "PEN"; ctx.promesa_despacho = ""; }
+  if (ctx.promesa_despacho == null) ctx.promesa_despacho = "";
   return ctx;
 }
 function resolve(text: string, ctx: any): string {
