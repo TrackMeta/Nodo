@@ -2170,7 +2170,14 @@ function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNeg
       "saltarle a la vista. Van en *asteriscos* los precios y montos, la fecha o el plazo, la clave de " +
       "recojo, la talla o presentación que quedó, el nombre de la agencia, y el nombre del producto la " +
       "primera vez que lo nombras. Dos o tres por mensaje; si " +
-      "resaltas todo, no resaltas nada. Nunca para adornar ni para gritar."
+      "resaltas todo, no resaltas nada. Nunca para adornar ni para gritar. " +
+      // El tope se comía justo las negritas que más valen. Medido dos veces seguidas: el
+      // mensaje ya gastaba una en *Dermachem* (el nombre del producto, que también le pedimos)
+      // y las tres de la lista de precios quedaban en texto plano — el dato por el que el
+      // cliente relee el chat. La lista de precios no cuenta contra el tope: cada precio va
+      // en negrita SIEMPRE, aunque sean cinco.
+      "⛔ EXCEPCIÓN: cuando listas precios, cada precio va en *negrita*, sin importar cuántos " +
+      "sean — esa lista no cuenta contra el tope de dos o tres."
     : "No uses negritas ni ningún formato: el dueño las tiene desactivadas.");
 
   if (!emOn) {
@@ -2279,6 +2286,28 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   // El mismo bloque de formato/emojis que la venta: sin esto la Recepción escribía plano
   // y el chat cambiaba de voz justo al pasar de la puerta a la venta.
   parts.push(estiloDeEscritura((ch as any)?.negocio_form));
+  // ✂️ Contesta lo que te PREGUNTÓ y cierra. Nada más.
+  // Medido con «¿hacen envíos a provincia? ¿tienen tienda física?»: contestó el envío…
+  // y siguió con que no hay tienda, que por eso el precio es mejor, que en Lima es
+  // contraentrega y que revisas antes de pagar — un párrafo de cosas que nadie preguntó.
+  // Pasa justo cuando el conocimiento está bien lleno: el modelo lo lee como un guion a
+  // recitar. Y en la PUERTA es donde más caro sale: el cliente todavía no sabe si te va a
+  // comprar y ya le caíste con un folleto.
+  parts.push(
+    "## Contesta lo que te preguntó, nada más\n" +
+    "Una o dos frases: respondes SU pregunta y cierras invitándolo a lo que sigue. Ya está.\n" +
+    "⛔ NO le sumes datos que no pidió, aunque los sepas y suenen bien: nada de encadenar el " +
+    "precio, la garantía, los plazos y las ventajas en el mismo mensaje. El conocimiento del " +
+    "negocio está para CONTESTAR, no para recitarlo.\n" +
+    "Si preguntó dos cosas, contesta las dos — pero cada una en su frase corta, no un párrafo " +
+    "por cada una. Lo que sobra se lo dices después, cuando venga al caso.\n" +
+    // Al recortar, el modelo se llevó el dato: «solo pagas un adelanto para despachar», sin
+    // el monto. Corto no es vago — el número ES la respuesta, y omitirlo obliga a preguntar
+    // de nuevo. Lo que sobra son los TEMAS que no pidió, no las cifras del que sí pidió.
+    "⛔ Corto NO es vago: si lo que preguntó tiene un número (el adelanto, el precio, el plazo, " +
+    "los días de entrega), dilo con la cifra. Recortar es quitar TEMAS que no preguntó, nunca " +
+    "el dato concreto del tema que sí preguntó.",
+  );
   const hist = await historial(db, run, 10);
   const content = `El cliente escribe:\n"${event.text ?? ""}"` +
     (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje, breve y cálido.` : "");
@@ -11097,6 +11126,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "2. RESPONDE CON ARGUMENTO. Dos o tres frases: contesta lo que preguntó y súmale UNA razón concreta para " +
       "comprarlo (algo del producto, no un adjetivo). Una línea suelta suena a contestador automático. " +
       "Excepción: cuando solo estás pidiendo un dato o el pago, ahí sí va corto y directo.\n" +
+      // Ojo con el otro extremo, que aparece justo cuando el conocimiento está bien lleno:
+      // el modelo lo lee como un guion a recitar y suelta el precio + la garantía + los
+      // plazos + las ventajas en el mismo mensaje. UNA razón, la que viene al caso.
+      "⛔ Pero UNA razón, no todas: no encadenes datos que no te pidió (el precio, la garantía, los plazos, " +
+      "las ventajas del negocio) en el mismo mensaje. El conocimiento está para CONTESTAR, no para recitarlo — " +
+      "lo que sobra se lo dices después, cuando venga al caso.\n" +
       "⛔ La pregunta con la que cierras tiene que MOVER la venta. Nunca ofrezcas repetir lo que acabas de " +
       "decir («¿quieres que te lo repita para que lo copies?») ni preguntes si entendió: eso no avanza nada y " +
       "delata que estás rellenando.\n" +
