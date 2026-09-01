@@ -13,7 +13,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
-import { sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia } from "./shalom-agencias.ts";
+import { sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia, agenciasCercanasAlDistrito } from "./shalom-agencias.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
 
@@ -11063,6 +11063,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // medido, a "¿qué sedes de Shalom hay en Chiclayo?" contestó "tenemos varias"
         // sin saber cuántas ni cuáles. Y el cliente que no sabe el nombre de su oficina
         // sí reconoce la calle, así que la dirección es lo que le permite elegir.
+        //
+        // _sedeCiudad = la ciudad que se nombra al pedirle la sede al final del bloque.
+        // Si su distrito NO tiene oficina, nombrar SU distrito es mandarlo a buscar algo
+        // que no existe («¿a qué sede de Shalom de Jequetepeque llegas?» — a ninguna, no
+        // hay): ahí se nombra la PROVINCIA, que es donde sí están las que se le mostraron.
+        let _sedeCiudad = String(ctx.ciudad ?? "");
         try {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           if (_ags.length) {
@@ -11123,21 +11129,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "con la REFERENCIA (el mercado, el óvalo, el grifo). Si aun así no lo tiene claro, dile que se la " +
               "confirmas antes de despachar y sigue con la venta — no lo dejes trabado eligiendo oficina.");
           } else {
-            // 🕳️ SU DISTRITO NO TIENE OFICINA. La lista solo contiene sitios donde Shalom SÍ
-            // tiene agencia, así que un distrito chico —Jequetepeque, por ejemplo— no aparece
-            // en ningún campo y `agenciasDeCiudad` devuelve vacío. Hasta ahora eso no empujaba
-            // NADA al prompt: el bot seguía la venta sin nombrarle una sola agencia y más
-            // adelante le pedía «Sede de la agencia», un dato que el cliente no tiene cómo
-            // responder porque nunca le mostraron opciones. Termina en un pedido con la sede
-            // en blanco o en el cliente abandonando.
-            // No se puede deducir su provincia (haría falta el padrón de los 1870 distritos),
-            // así que se hace lo honesto: se le dice que se la confirmamos y se le pregunta a
-            // qué ciudad suele ir, sin trabar la venta ni inventarle una oficina.
-            L.push(`📍 No tengo oficinas de ${ctx.ciudad} en la lista: puede ser un distrito chico donde la agencia ` +
-              "no tiene local. ⛔ NO inventes ninguna ni le digas que «hay varias». Dile con naturalidad que la " +
-              "oficina más cercana se la confirmas antes de despachar, y pregúntale a qué CIUDAD suele ir a hacer " +
-              "sus trámites o compras —esa sí va a tener agencia— para buscarle la que le queda cerca. " +
-              "Sigue con el pedido igual: esto no lo detiene.");
+            // 🕳️ SU DISTRITO NO TIENE OFICINA. La lista de agencias solo contiene sitios donde
+            // Shalom SÍ tiene local, así que un distrito chico —Jequetepeque, por ejemplo— no
+            // aparecía en ningún campo y esto no empujaba NADA al prompt: el bot seguía la venta
+            // sin nombrarle una sola agencia y después le pedía «Sede de la agencia», un dato que
+            // el cliente no tiene cómo responder porque nunca le mostraron opciones.
+            //
+            // Con el padrón de distritos (distritos-peru.ts) se resuelve a su PROVINCIA y se le
+            // ofrecen las de ahí, diciéndole con todas sus letras que quedan en otro pueblo —
+            // nunca como si fueran «las de su ciudad», que sería mandarlo a un viaje sorpresa.
+            const _cerca = agenciasCercanasAlDistrito(String(ctx.ciudad ?? ""));
+            if (_cerca && _cerca.agencias.length) {
+              _sedeCiudad = bonito(_cerca.prov);
+              const _rz = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
+              const _lst = [..._cerca.agencias].sort((x, y) => _rz(x) - _rz(y)).slice(0, 6).map((x) =>
+                `*${bonito(x.l)}* (${bonito(x.t)})` + (x.ref ? ` — ${bonito(x.ref, true)}` : "")).join("\n");
+              L.push(`📍 En *${bonito(ctx.ciudad)}* NO hay oficina de la agencia. Las más cercanas están en su misma ` +
+                `provincia (${bonito(_cerca.prov)}), en otros pueblos — díselo así, sin hacerle creer que quedan en ` +
+                `su distrito:\n\n${_lst}\n\n` +
+                "Van ASÍ, cada una EN SU LÍNEA, nunca de corrido ni separadas por comas — de corrido no se leen. " +
+                "Después pregúntale cuál le queda mejor o a cuál puede llegar. ⛔ NO inventes ninguna otra y NO le " +
+                "digas que tiene una en su distrito. Sigue con el pedido igual: esto no lo detiene.");
+            } else {
+              // Ni el padrón lo resuelve (nombre repetido en varias provincias, o no es un
+              // distrito): se le pregunta, que es lo único honesto.
+              _sedeCiudad = "";
+              L.push(`📍 No tengo oficinas de ${ctx.ciudad} en la lista y no puedo deducir su provincia. ` +
+                "⛔ NO inventes ninguna ni le digas que «hay varias». Dile con naturalidad que la oficina más " +
+                "cercana se la confirmas antes de despachar, y pregúntale a qué CIUDAD suele ir a hacer sus " +
+                "trámites o compras —esa sí va a tener agencia— para buscarle la que le queda cerca. " +
+                "Sigue con el pedido igual: esto no lo detiene.");
+            }
           }
         } catch (_) { /* sin ciudad legible → sin lista */ }
         L.push(_modoEnv === "agencia"
@@ -11157,7 +11179,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Pedir la sede nombrando la ciudad: "Av. España" a secas no sirve para
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.
-        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${ctx.ciudad ? " de " + ctx.ciudad : ""}** lo va a recoger. ` +
+        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${_sedeCiudad ? " de " + _sedeCiudad : ""}** lo va a recoger. ` +
           `Pregúntale la oficina de Shalom de su ciudad, no en abstracto. 🔑 Si el cliente NO sabe la oficina exacta, NO lo bloquees, NO insistas y NO le hagas notar que falta ese dato: acepta lo que diga (aunque sea solo su ciudad) y SIGUE NORMAL con el pedido y el adelanto, como si estuviera completo. NO le prometas "coordinar" ni "confirmar" la oficina, NO le anuncies que la afinas después, y NO lo derives a nadie: simplemente continúa con naturalidad (la sede exacta se resuelve por dentro, sin comentárselo).`);
         // Datos de despacho que SIGUEN faltando (dinámico): así la IA NO confirma un
         // pedido que el motor todavía no puede crear. OJO: la SEDE ya NO es un
@@ -12344,13 +12366,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Ver conAgencias — la regla del prompt falló dos veces y por eso vive acá.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia" && RE_PIDE_SEDE.test(salida)) {
         try {
-          const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
+          // su PROVINCIA y el encabezado tiene que decirlo: pegarlas bajo "En JEQUETEPEQUE
+          // tenemos estas" sería mandarlo a buscar en su pueblo algo que está a un viaje.
+          const _prop = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          const _cer = _prop.length ? null : agenciasCercanasAlDistrito(String(ctx.ciudad ?? ""));
+          const _ags = _prop.length ? _prop : (_cer?.agencias ?? []);
+          const _cab = _prop.length
+            ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇`
+            : `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* no hay oficina; las más cercanas están en ` +
+              `*${bonito(String(_cer?.prov ?? "").toUpperCase())}* 👇`;
           if (_ags.length) {
             const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
             const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
               `*${bonito(x.l)}*` + (x.ref ? ` — ${bonito(x.ref, true)}` : x.dir ? ` — ${bonito(x.dir, true)}` : "")).join("\n");
             const _antes = salida;
-            salida = conAgencias(salida, `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}`);
+            salida = conAgencias(salida, `${_cab}\n${_lista}`);
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
                 "Pidió la sede sin listarlas.").catch(() => {});

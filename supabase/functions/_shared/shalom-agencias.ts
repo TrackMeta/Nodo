@@ -1,3 +1,5 @@
+import { provinciasDeDistrito } from "./distritos-peru.ts";
+
 // ═══════════════════════════════════════════════════════════════════
 // Nodo · shalom-agencias.ts — las 552 agencias de Shalom, con su ubicación.
 //
@@ -724,4 +726,25 @@ export function otrosDistritosConAgencia(ciudad: string): string[] {
   return [...new Set(
     AGENCIAS.filter((a) => _n(a.p) === prov && _n(a.t) !== c).map((a) => a.t),
   )];
+}
+
+// 🕳️ El distrito del cliente NO tiene oficina Shalom. Con el padrón de distritos
+// (distritos-peru.ts) se resuelve a qué PROVINCIA pertenece y se devuelven las
+// agencias de esa provincia — que quedan en otro pueblo, y por eso el llamador
+// tiene que decírselo así al cliente, nunca como si fueran "las de su ciudad".
+//
+// Si el nombre existe en varias provincias (hay 102 así, "Miraflores" entre
+// ellos) se queda con las que SÍ tienen agencia; si aun así hay más de una
+// provincia candidata, devuelve vacío: mandar un paquete a otro departamento por
+// adivinar es peor que preguntarle a qué ciudad suele ir.
+export function agenciasCercanasAlDistrito(
+  ciudad: string,
+): { prov: string; dep: string; agencias: Agencia[] } | null {
+  const cands = provinciasDeDistrito(_sinRuido(ciudad) || _n(ciudad));
+  if (!cands.length) return null;
+  const conAgencia = cands
+    .map((c) => ({ ...c, agencias: AGENCIAS.filter((a) => _n(a.p) === _n(c.prov)) }))
+    .filter((c) => c.agencias.length);
+  if (conAgencia.length !== 1) return null;
+  return conAgencia[0];
 }
