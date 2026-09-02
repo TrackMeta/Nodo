@@ -9029,6 +9029,11 @@ async function sellaSedeUnica(
     const ags = agenciasDeCiudad(String(run.vars?.ciudad ?? ctx?.ciudad ?? ""));
     if (ags.length !== 1) return;
     await set("sede", ags[0].l);
+    // Y la FICHA de esa oficina, igual que cuando la nombra el cliente. Sin esto, al
+    // dejar de preguntarle la sede también dejaba de llegarle la tarjeta con la dirección
+    // — justo al cliente de pueblo chico, que es el que más la necesita. La marca la
+    // consume runIa después de su mensaje (ver `_ficha_sede`).
+    (run.vars as any)._ficha_sede = slugAgencia(ags[0]);
     await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
       `${run.vars?.ciudad ?? ctx?.ciudad}: es la única oficina que hay ahí`).catch(() => {});
   } catch { /* sin ciudad legible → se le pregunta como siempre */ }
@@ -13495,6 +13500,18 @@ async function buildContext(db: SupabaseClient, run: Run) {
       ctx.pedido_estado = (o as any).estado;
       ctx.pedido_monto = (o as any).amount;
       for (const [k, v] of Object.entries((o as any).shipping ?? {})) ctx["pedido_" + k] = v;
+      // {{pedido_guia_linea}} — la guía YA redactada, o vacía si todavía no la hay. Escribir
+      // "Tu guía es *{{pedido_guia}}*" a mano en un aviso se ve bien el día que hay guía y
+      // sale "Tu guía es **" el día que no: el asterisco suelto no lo arregla `resolve`,
+      // que solo cierra líneas enteras vacías. Con esto el negocio pone UNA variable en su
+      // línea y desaparece sola cuando no aplica.
+      ctx.pedido_guia_linea = String((o as any).shipping?.guia ?? "").trim()
+        ? `🚚 Tu número de guía es *${String((o as any).shipping.guia).trim()}* para que le hagas seguimiento.`
+        : "";
+      // {{pedido_sede_bonita}} — la agencia sin gritar. `pedido_sede` viene como la tecleó
+      // el cliente o en MAYÚSCULAS del volcado de Shalom.
+      ctx.pedido_sede_bonita = enTitulo(String((o as any).shipping?.sede ?? (o as any).shipping?.ciudad ?? "").trim()
+        .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim());
       // {{pago_titulo}} — cómo se saluda el pago del adelanto. A quien paga el TOTAL de
       // una (pasa seguido) llamarle "adelanto" es decirle algo falso: cree que todavía
       // debe el saldo en la agencia, y el que cree que le falta plata no va a recoger.
