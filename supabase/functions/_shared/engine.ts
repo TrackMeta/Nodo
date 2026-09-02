@@ -6635,7 +6635,18 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   // del extra se reaplicaban al PRINCIPAL (regresión del extra-talla por otra vía). En
   // `esperando_adelanto` lo esperado es un PAGO por imagen, así que un texto SÍ es una
   // modificación legítima (ahí el cliente pide "quita las medias" antes de pagar).
-  if (aw?.type === "input" && String((order as any).estado) !== "esperando_adelanto") return false;
+  //
+  // ⛔ EXCEPCIÓN: se ARREPIENTE de un extra que YA está sumado. Ahí el mensaje no es la
+  // respuesta a la oferta —a esa ya contestó que sí— sino una corrección, y el anti-
+  // secuestro lo dejaba caer en tierra de nadie: medido, el cliente dijo "uy no, mejor
+  // quítamelo" y el bot le contestó "listo, dejo solo el Dermachem"… con el protector de
+  // S/39 todavía en el pedido y el saldo sin tocar. Le prometimos quitarlo y le cobramos
+  // igual. Solo entra si de verdad hay un extra cobrable puesto.
+  const _extraPuesto = (Array.isArray((order as any).order_bumps) ? (order as any).order_bumps : [])
+    .some((b: any) => Number(b?.precio) > 0);
+  const _pideQuitar = /\b(qu[ií]ta(me)?(lo|la)?|saca(me)?(lo|la)?|s[aá]ca(lo|la)|remueve|elimina|b[oó]rra(lo|la)|ya no (lo )?quiero|mejor no|sin el|solo el)\b/i.test(txt);
+  if (aw?.type === "input" && String((order as any).estado) !== "esperando_adelanto"
+      && !(_extraPuesto && _pideQuitar)) return false;
   const bumps: any[] = Array.isArray((order as any).order_bumps) ? [...(order as any).order_bumps] : [];
   const sym = simboloMoneda((order as any).currency);
   const amount = Number((order as any).amount) || 0;

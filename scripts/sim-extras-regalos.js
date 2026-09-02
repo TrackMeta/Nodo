@@ -148,7 +148,9 @@
         await send(wa, nombre, "ya, sumame el protector solar"); await sleep(P);
         const { o } = await pedido(wa);
         const saldo = Number(o?.shipping?.saldo);
-        const outs = await dichos(wa, 6);
+        // Solo el ÚLTIMO mensaje: mirando los 6 anteriores entraba el "pedir el adelanto"
+        // original y el assert fallaba por un mensaje del pasado, no por una repetición.
+        const outs = await dichos(wa, 1);
         return [
           ck(conExtra(o).length === 1, `el extra quedó en el pedido (${conExtra(o).length})`),
           ck(Number.isFinite(saldo) && saldo === 138, `saldo=${o?.shipping?.saldo} (esperado 138 = 119+39-20)`),
