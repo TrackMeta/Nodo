@@ -3399,8 +3399,13 @@ const RE_CLIENTE_PIDE_PRECIO =
 // agencia» a secas. Pedirle que elija entre opciones que no ve es hacerlo adivinar, y en
 // provincia es el paso donde más se traba la venta. Segunda vez que una regla de texto no
 // pega → pasa a código, igual que los precios prometidos y no dichos (ver conPrecios).
+// La última alternativa (`sede|oficina` … `?` en la misma línea) cubre el caso en que la
+// pide como DATO de la lista y manda a unas "opciones" que nunca mostró. Medido en
+// Jequetepeque: «📌 *Sede de la agencia* (de las opciones en Pacasmayo o Guadalupe) ¿Cuál
+// te queda mejor?» — el cliente no vio ninguna. Las de arriba no lo pescaban porque miden
+// la distancia entre las palabras y ahí hay medio paréntesis en medio.
 const RE_PIDE_SEDE =
-  /\b(qu[eé]|cu[aá]l|cual)\b[^.!?\n]{0,40}\b(sede|oficina|agencia)\b|\b(sede|oficina)\b[^.!?\n]{0,30}\b(prefieres|eliges|recoges|recojes|te queda|vas a recoger|quieres)\b|\bme falta[^.!?\n]{0,30}\b(sede|agencia)\b/i;
+  /\b(qu[eé]|cu[aá]l|cual)\b[^.!?\n]{0,40}\b(sede|oficina|agencia)\b|\b(sede|oficina)\b[^.!?\n]{0,30}\b(prefieres|eliges|recoges|recojes|te queda|vas a recoger|quieres)\b|\bme falta[^.!?\n]{0,30}\b(sede|agencia)\b|\b(sede|oficina)\b[^\n]{0,90}[?¿]|\b(sede|oficina) de (la|tu) agencia\b/i;
 
 // 😊 Garantiza que el mensaje no salga PELADO cuando el dueño pidió emojis. La regla del
 // prompt falló dos veces —moverla al final del prompt y repetir el conteo no alcanzó: los
@@ -6901,9 +6906,15 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     }
   } catch (_) { parsed = null; }
 
-  // No es un comprobante (una foto cualquiera, una equivocación) → no
-  // interceptamos: la IA sigue atendiendo normal.
-  if (parsed && parsed.es_pago === false) return false;
+  // No es un comprobante (una foto cualquiera, una equivocación) → no interceptamos:
+  // la IA sigue atendiendo normal. Pero SE LE AVISA: sin esto la IA veía llegar una
+  // imagen sin contexto y contestaba "ya confirmé tu adelanto y preparo tu pedido" a
+  // alguien que había mandado una selfie. El cliente se queda tranquilo creyendo que
+  // pagó, y el pedido no sale nunca. Medido en la batería de compradores.
+  if (parsed && parsed.es_pago === false) {
+    await setField(db, channelId, contactId, "_img_no_pago", "si").catch(() => {});
+    return false;
+  }
 
   // parseMonto, no Number: el OCR devuelve el monto tal como lo ve en la captura
   // ("1,234.00") y Number() de eso es NaN → el adelanto entraba sin monto legible.
@@ -7140,7 +7151,12 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   // timeout/rate-limit), NO se descarta el comprobante del saldo: cae a la tarjeta MANUAL con la
   // foto (igual que el adelanto). Antes `!parsed` retornaba false → el pago real del cliente
   // quedaba sin señal (ni tarjeta ni Telegram), la clave nunca salía → dead-air invisible.
-  if (parsed && parsed.es_pago === false) return false;
+  // La marca `_img_no_pago` es la misma que deja el interceptor del adelanto: la IA tiene
+  // que saber que lo que llegó NO era un pago, o lo da por confirmado igual.
+  if (parsed && parsed.es_pago === false) {
+    await setField(db, channelId, contactId, "_img_no_pago", "si").catch(() => {});
+    return false;
+  }
 
   // Ídem que el adelanto: un saldo de "1,234.00" leído con Number() daba NaN.
   const monto = parseMonto(parsed?.monto, {}) ?? NaN;
@@ -11686,6 +11702,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "⛔ Y hasta saberlo NO le confirmes el pedido ni le digas cómo le llega ni cómo se paga: todavía no lo sabes.",
       );
     }
+    // 📷 Le llegó una IMAGEN que NO es un comprobante (una selfie, una foto del producto,
+    // una equivocación). Sin decírselo, la IA la trata como pago y contesta "ya confirmé
+    // tu adelanto y preparo tu pedido" — medido en la batería, con una selfie. El cliente
+    // se va tranquilo creyendo que pagó y el pedido no sale nunca. La marca la dejan los
+    // interceptores del adelanto y del saldo (`_img_no_pago`) y se consume acá.
+    if (String((ctx as any)._img_no_pago ?? "") === "si") {
+      parts.push(
+        "## ⚠️ La imagen que te mandó NO es un comprobante de pago\n" +
+        "La leímos y no es una captura de Yape/Plin/transferencia (o no se puede leer). " +
+        "⛔ PROHIBIDO decirle que confirmaste su pago, que recibiste el adelanto o que su pedido ya sale: " +
+        "no entró un centavo. Agradécele el envío, dile con naturalidad que esa imagen no es el comprobante " +
+        "y pídele la captura del pago. Si la foto era de otra cosa (una duda, el producto), respóndele eso.",
+      );
+      await setField(db, run.channel_id, run.contact_id, "_img_no_pago", "").catch(() => {});
+      delete (ctx as any)._img_no_pago;
+    }
     const faltan = (ctx as any)._datos_faltan as CampoDato[] | undefined;
     if (faltan?.length) {
       const errores = faltan.map((c) => ctx["_error_" + c.clave]).filter(Boolean);
@@ -12646,7 +12678,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 📍 Pidió la SEDE sin listar las oficinas: se las pega el motor, con las de SU ciudad.
       // Ver conAgencias — la regla del prompt falló dos veces y por eso vive acá.
       // Y si las nombró TODAS en una sola línea, se desenrollan: ver sedesEnLineas.
-      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia") {
+      // Una vez que eligió una oficina DE VERDAD, repetirle la lista en cada mensaje que
+      // la mencione es ruido: la lista sirve para elegir. Pero el guard mira si la sede
+      // identifica una oficina real, no si el campo está lleno — el extractor guarda ahí
+      // el nombre de su pueblo ("jequetepeque"), y con eso todavía no eligió nada.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
           // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
           // su PROVINCIA y el encabezado tiene que decirlo: pegarlas bajo "En JEQUETEPEQUE
@@ -12864,9 +12901,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // —la marca se borra pase lo que pase— y solo cuando sabemos con certeza cuál es
       // la oficina; si la sede quedó vaga no hay ficha que mandar, y decirle una al azar
       // sería mandarlo al local equivocado.
-      if ((run.vars as any)?._ficha_sede && !handoff) {
+      // La ficha va DETRÁS del mensaje que le nombra la agencia, no del turno en que el
+      // motor la selló. Medido: la sede se dedujo mientras el bot le mandaba la lista de
+      // precios, y al cliente le cayó la foto de una agencia de la nada, un turno antes
+      // de que nadie le hablara de agencias. Si este mensaje no la menciona, la marca se
+      // queda para el siguiente — con tope, para que no aparezca diez turnos después.
+      const _menciona = (t: string) => /\b(agencia|oficina|sede|shalom|recog|recoj)/i.test(t);
+      if ((run.vars as any)?._ficha_sede && !handoff && !_menciona(salida)) {
+        const _n = Number((run.vars as any)._ficha_espera ?? 0) + 1;
+        if (_n >= 3) delete (run.vars as any)._ficha_sede;   // nunca la nombró: se deja pasar
+        else (run.vars as any)._ficha_espera = _n;
+      } else if ((run.vars as any)?._ficha_sede && !handoff) {
         const _slug = String((run.vars as any)._ficha_sede);
         delete (run.vars as any)._ficha_sede;
+        delete (run.vars as any)._ficha_espera;
         try {
           const { data: _f } = await db.from("sede_imagenes").select("url,nombre").eq("slug", _slug).maybeSingle();
           if (_f?.url) {
