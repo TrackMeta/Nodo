@@ -82,3 +82,21 @@ supabase functions delete tmp-sim --project-ref ahoxdyffbwjlshmdezwi
 
 Las tres copias que vivían en esa carpeta (`engine.ts`, `memoria.ts`, `shalom-agencias.ts`)
 eran **código muerto**: `index.ts` importaba el motor real de `_shared`. No hay que reponerlas.
+
+## ⚠️ Si lo corres sobre un canal con datos que te importan
+
+`run()` empieza con `clean()`: **borra productos, flujos y contactos del canal**.
+Si vas a correrlo sobre el canal bueno, la copia de seguridad tiene que incluir
+`product_versions` — ahí viven las PRESENTACIONES (los precios). Pasó el
+2026-09-01: se respaldó `products`, `flows`, `flow_nodes`, `flow_edges`,
+`flow_triggers` y `angulos`, se restauró todo… y el producto quedó **sin precios**,
+porque las versiones cuelgan del producto y se fueron con él.
+
+Tablas a respaldar, por canal:
+`products`, `product_versions`, `flows`, `flow_nodes`, `flow_edges`,
+`flow_triggers`, `angulos`.
+
+Y NO sirve correrlo en un canal vacío recién creado: la credencial de IA vive
+cifrada **por canal** (`channel_ai` → Vault), no se copia con la configuración, y
+sin ella el motor manda todo a la Bandeja — salen los 14 casos en rojo con todo
+en `undefined` y parece un desastre del código.
