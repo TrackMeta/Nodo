@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 
@@ -471,8 +471,14 @@ Deno.serve(async (req) => {
     const _amt = Number((patch.amount as number) ?? (order as any).amount) || 0;
     const _bumps = Array.isArray(patch.order_bumps) ? patch.order_bumps : ((order as any).order_bumps ?? []);
     const _total = _amt + (_bumps as any[]).reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
+    // ⏱️ El plazo de la agencia, si el negocio lo configuró (Negocio → Entrega y logística).
+    let _dem = "";
+    try {
+      const { data: chD } = await db.from("channels").select("entregas").eq("id", channelId).maybeSingle();
+      _dem = demoraProvincia((chD as any)?.entregas, String((ship2 as any)?.ciudad ?? ""));
+    } catch { /* sin config → el mensaje va sin plazo, como siempre */ }
     const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency, _bumps as any[],
-      (order as any).products?.nombre ?? null);
+      (order as any).products?.nombre ?? null, _dem);
     if (txt) {
       // Este aviso por defecto es TEXTO LIBRE. Meta lo rechaza fuera de la ventana de
       // servicio de 24h (mover una tarjeta a "despachado"/"en_agencia" suele pasar días

@@ -414,6 +414,22 @@ function renderEntregas(b){
       <div style="font-size:11px;color:var(--muted);background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.38);border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.45"><b style="color:#e0900a">Ojo con bajarlo mucho:</b> mientras menos seña exijas, cierras más ventas… pero también despachas con menos compromiso → más riesgo de que el cliente <b style="color:#e0900a">no recoja</b> (pierdes el flete y el paquete viajó al vicio). Es tu perilla de riesgo.</div>
     </div>
     <div class="card">
+      ${cardHd("clock","Cuánto demora a provincia","#0ea5e9")}
+      <p class="sub">Lo que tarda la agencia en tener el paquete listo para recoger, contando desde que lo despachas. Es la pregunta que hace <b>todo</b> cliente de provincia después de pagar el adelanto — y si no lo llenas, el bot no la contesta: prefiere callarse antes que inventar una fecha.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12.5px;font-weight:700">Suele llegar en</label>
+        <input class="in" id="demMin" type="number" min="1" max="60" step="1" placeholder="2" value="${esc(E.provincia_demora?.min??"")}" style="width:80px"/>
+        <span style="color:var(--muted);font-size:13px">a</span>
+        <input class="in" id="demMax" type="number" min="1" max="60" step="1" placeholder="4" value="${esc(E.provincia_demora?.max??"")}" style="width:80px"/>
+        <span style="color:var(--muted);font-size:13px">días</span>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Deja el segundo vacío si es un número fijo. Disponible en los flujos como <b style="color:var(--brand)">{{demora_provincia}}</b>.</span>
+      </div>
+      <label style="margin-top:16px">Destinos que demoran distinto <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      <p class="sub" style="margin-top:2px">La selva y la sierra alta suelen tardar más. Escribe el departamento, la provincia o la ciudad — el bot sabe a qué departamento pertenece el pueblo del cliente, así que con poner <b>Loreto</b> ya cubres Nauta, Yurimaguas y todos los demás.</p>
+      <div id="demList" style="margin-top:4px"></div>
+      <button class="btn" id="demAdd" style="height:32px;margin-top:8px">+ Destino</button>
+    </div>
+    <div class="card">
       ${cardHd("truck","Envío aéreo (Shalom)","#8b5cf6")}
       <p class="sub">Para destinos muy alejados, Shalom despacha por <b>vía aérea</b> y llega mucho más rápido que el terrestre. Escribe acá esas zonas: cuando un cliente sea de una de ellas, el bot le ofrece el aéreo <b>como un beneficio</b> (mismo precio, sin recargo). En el pedido y el rótulo verás <b>“AÉREO”</b> para despacharlo por avión.</p>
       <label style="margin-top:4px">Destinos con envío aéreo <span style="color:var(--faint);font-weight:400">(uno por línea)</span></label>
@@ -483,8 +499,17 @@ function renderEntregas(b){
   $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
   $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };
   $("ferAdd").onclick=()=>{ E.feriados_fechas.push(""); paintFeriados(); };
+  // ⏱️ Demora a provincia. Los números se guardan como número o se borran: un "" en la
+  // config haría que el motor arme "suele llegar en  días", que es peor que no decir nada.
+  { const g=(v)=>v===""?undefined:Math.max(1,Math.round(Number(v)||0))||undefined;
+    E.provincia_demora = E.provincia_demora || {};
+    $("demMin").onchange=(ev)=>{ E.provincia_demora.min = g(ev.target.value); };
+    $("demMax").onchange=(ev)=>{ E.provincia_demora.max = g(ev.target.value); };
+    $("demAdd").onclick=()=>{ (E.provincia_demora.excepciones=E.provincia_demora.excepciones||[]).push({destinos:"",min:undefined,max:undefined}); paintDemoras(); };
+  }
   $("entSave").onclick=guardarEntregas;
   paintFeriados();
+  paintDemoras();
   paintZonas();
 }
 // Los 3 modos de cobro del envío. El texto importa tanto como la opción: la
@@ -539,6 +564,27 @@ function paintFeriados(){
       <button class="btn fdel" style="height:32px">${icon("trash")}</button>`;
     r.querySelector(".fd").onchange=(ev)=>{ E.feriados_fechas[i]=ev.target.value; };
     r.querySelector(".fdel").onclick=()=>{ E.feriados_fechas.splice(i,1); paintFeriados(); };
+    box.appendChild(r);
+  });
+}
+function paintDemoras(){
+  const E=st.ent, box=$("demList"); if(!box) return;
+  const ex=(E.provincia_demora=E.provincia_demora||{}).excepciones||[];
+  box.innerHTML="";
+  if(!ex.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint)">Sin excepciones: todo el país usa el plazo de arriba.</div>`; return; }
+  ex.forEach((d,i)=>{
+    const r=document.createElement("div"); r.style.cssText="display:flex;gap:7px;align-items:center;margin-bottom:6px;flex-wrap:wrap";
+    r.innerHTML=`<input class="in dds" placeholder="Loreto, Ucayali, Madre de Dios" value="${esc(d.destinos||"")}" style="flex:1;min-width:200px"/>
+      <input class="in dmi" type="number" min="1" max="60" placeholder="4" value="${esc(d.min??"")}" style="width:72px"/>
+      <span style="color:var(--muted);font-size:13px">a</span>
+      <input class="in dma" type="number" min="1" max="60" placeholder="7" value="${esc(d.max??"")}" style="width:72px"/>
+      <span style="color:var(--muted);font-size:13px">días</span>
+      <button class="btn ddel" style="height:32px">${icon("trash")}</button>`;
+    const g=(v)=>v===""?undefined:Math.max(1,Math.round(Number(v)||0))||undefined;
+    r.querySelector(".dds").onchange=(ev)=>{ d.destinos=ev.target.value; };
+    r.querySelector(".dmi").onchange=(ev)=>{ d.min=g(ev.target.value); };
+    r.querySelector(".dma").onchange=(ev)=>{ d.max=g(ev.target.value); };
+    r.querySelector(".ddel").onclick=()=>{ ex.splice(i,1); paintDemoras(); };
     box.appendChild(r);
   });
 }
@@ -605,6 +651,15 @@ function paintZonas(){
 async function guardarEntregas(){
   const E=st.ent;
   E.feriados_fechas=(E.feriados_fechas||[]).filter(Boolean);
+  // ⏱️ Demora a provincia: fuera las excepciones a medio llenar (un destino sin días, o
+  // días sin destino, no dice nada y el motor tendría que adivinar a qué se refieren).
+  if(E.provincia_demora){
+    const d=E.provincia_demora;
+    d.excepciones=(d.excepciones||[]).filter(x=>x&&String(x.destinos||"").trim()&&x.min);
+    if(!d.excepciones.length) delete d.excepciones;
+    if(d.max && d.min && d.max<d.min) d.max=d.min;      // "de 5 a 2 días" no existe
+    if(!d.min && !d.excepciones) delete E.provincia_demora;
+  }
   // Se fija el modo aunque no lo hayan tocado: así el motor deja de adivinarlo
   // desde el toggle viejo y hay una sola respuesta a "¿quién paga el envío?".
   E.envio_modo=envModoDe(E);

@@ -17,6 +17,7 @@ import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
 } from "./shalom-agencias.ts";
+import { provinciasDeDistrito } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
 
@@ -3296,6 +3297,17 @@ const CON_TILDE: Record<string, string> = {
   farmacia: "farmacia", boticas: "boticas", gasolinera: "gasolinera",
   telefonica: "telefónica", electrica: "eléctrica", basilica: "basílica",
 };
+// 📍 Cómo se le describe una oficina al cliente: la REFERENCIA si dice algo ("a espaldas
+// del Makro"), y si no la dirección. El volcado de Shalom trae referencias que son puro
+// relleno —"......." en Puerto Iquitos— y se las estábamos mostrando tal cual, como si el
+// bot se hubiera roto. Se exige que tenga letras de verdad antes de usarla.
+function pistaAgencia(a: { ref?: string; dir?: string }): string {
+  const util = (x: string) => (String(x ?? "").match(/[a-záéíóúñü]/gi) ?? []).length >= 3;
+  if (util(a.ref ?? "")) return ` — ${bonito(String(a.ref), true)}`;
+  if (util(a.dir ?? "")) return ` — ${bonito(String(a.dir), true)}`;
+  return "";
+}
+
 function bonito(txt: string, frase = false): string {
   let t = String(txt ?? "").trim();
   if (!t) return "";
@@ -5809,6 +5821,10 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
 export function mensajeEstadoDefault(
   estado: string, shipping: Record<string, any> | null, amount?: number | null, moneda?: string | null,
   bumps?: any[] | null, producto?: string | null,
+  // ⏱️ Cuánto demora la agencia ("2 a 4 días"), ya redactado por demoraProvincia. Va como
+  // parámetro porque esta función es pura —no toca la base— y el plazo depende del destino.
+  // Vacío = no se dice nada de tiempos, que es lo correcto cuando el negocio no lo configuró.
+  demora?: string | null,
 ): string | null {
   const s = shipping || {};
   const sym = moneda === "USD" ? "$" : "S/";
@@ -5859,6 +5875,11 @@ export function mensajeEstadoDefault(
       // Con el resumen puesto, repetir «los S/ X que faltan» acá es decir dos veces lo
       // mismo en la misma burbuja. Sin resumen (pedido sin datos legibles) se dice igual,
       // porque el saldo es lo único que el cliente NO puede dejar de saber.
+      // ⏱️ "¿Y cuándo llega?" es lo primero que piensa el que acaba de soltar su adelanto.
+      // Si el negocio configuró el plazo se lo decimos acá mismo, sin que tenga que
+      // preguntarlo. En DÍAS y como estimado: una fecha exacta que la agencia no cumpla es
+      // un reclamo, y el paquete no lo movemos nosotros.
+      ((demora ?? "").trim() ? `📦 Suele estar disponible para recoger en *${String(demora).trim()}*.\n\n` : "") +
       (det
         ? "Te aviso apenas llegue a la agencia y te paso tu clave para recogerlo. 🙌"
         : (saldo != null && saldo > 0
@@ -7016,9 +7037,14 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
         const { data: o2 } = await db.from("orders")
           .select("shipping, amount, currency, order_bumps, products(nombre)")
           .eq("id", (order as any).id).maybeSingle();
+        let _dem = "";
+        try {
+          const { data: chD } = await db.from("channels").select("entregas").eq("id", channelId).maybeSingle();
+          _dem = demoraProvincia((chD as any)?.entregas, String((o2 as any)?.shipping?.ciudad ?? ""));
+        } catch { /* sin config → sin plazo */ }
         const txt = mensajeEstadoDefault("adelanto_validado",
           (o2 as any)?.shipping ?? null, (o2 as any)?.amount ?? null, (o2 as any)?.currency ?? null,
-          (o2 as any)?.order_bumps ?? null, (o2 as any)?.products?.nombre ?? null);
+          (o2 as any)?.order_bumps ?? null, (o2 as any)?.products?.nombre ?? null, _dem);
         if (txt) await deliverMessage(db, channelId, contactId, txt).catch(() => {});
       }
     }
@@ -8636,6 +8662,41 @@ function esDestinoAereo(entregas: any, ciudad: string): boolean {
   // mínimo para no casar por ruido). El negocio controla la lista.
   return dests.some((d) => c === d || c.includes(d) || (d.length >= 4 && d.includes(c)));
 }
+// ── ⏱️ Cuánto demora a provincia ────────────────────────────────────
+// Lo que tarda la agencia en tener el paquete listo para recoger. Es LA pregunta
+// después de pagar el adelanto ("ok señorita, ¿cuándo llega?") y hasta hoy el bot no
+// la contestaba: no tenía el dato en ninguna parte y —bien hecho— prefería callarse
+// antes que inventar una fecha. El negocio lo pone en Negocio → Entrega y logística.
+//
+// Devuelve el plazo YA REDACTADO ("2 a 4 días", "3 días") o "" si no está configurado.
+// Vacío es una respuesta válida y significa "no digas nada de tiempos".
+export function demoraProvincia(entregas: any, ciudad: string): string {
+  const d = entregas?.provincia_demora;
+  if (!d) return "";
+  const c = limpiaZona(String(ciudad ?? ""));
+  // El pueblo del cliente casi nunca es el departamento. Con el padrón se sabe a qué
+  // provincia y departamento pertenece, así que poner "Loreto" cubre Nauta y Yurimaguas
+  // sin que el dueño tenga que listar cada pueblo de la selva.
+  const ambito = new Set<string>([c]);
+  try {
+    for (const x of provinciasDeDistrito(c)) { ambito.add(limpiaZona(x.prov)); ambito.add(limpiaZona(x.dep)); }
+    for (const a of agenciasDeCiudad(c)) { ambito.add(limpiaZona(a.p)); ambito.add(limpiaZona(a.d)); }
+  } catch { /* sin padrón legible → solo el nombre que escribió */ }
+  let min = d.min, max = d.max;
+  for (const ex of (d.excepciones ?? [])) {
+    const dests = String(ex?.destinos ?? "").split(/[\n,;]+/).map((s: string) => limpiaZona(s))
+      .filter((s: string) => s.length >= 3);
+    if (!ex?.min || !dests.length) continue;
+    if (dests.some((x: string) => [...ambito].some((a) => a && (a === x || a.includes(x))))) {
+      min = ex.min; max = ex.max;
+      break;                                   // la primera que calza manda
+    }
+  }
+  if (!min) return "";
+  const dia = (n: number) => `${n} ${n === 1 ? "día" : "días"}`;
+  return max && max > min ? `${min} a ${dia(max)}` : dia(min);
+}
+
 function mensajeAereo(entregas: any): string {
   const m = String(entregas?.aereo?.mensaje ?? "").trim();
   return m || "¡Buena noticia! 🙌 Para tu zona el envío lo hacemos aéreo con Shalom, así te llega mucho más rápido. 😊";
@@ -11198,7 +11259,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // La REFERENCIA va primero: el cliente no ubica «Av. Panamericana 975», pero sí
             // «a media cuadra del óvalo Señor de Sipán». La dirección queda de respaldo.
             const _lista = _muestra.map((x) =>
-              `*${bonito(x.l)}*` + (x.ref ? ` — ${bonito(x.ref, true)}` : x.dir ? ` — ${bonito(x.dir, true)}` : "")).join("\n");
+              `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
             L.push(`📍 Oficinas de Shalom en ${ctx.ciudad} (son ${_ags.length}` +
               (_ags.length > _muestra.length ? `, acá van ${_muestra.length}` : "") +
               // 📋 En LISTA, no en párrafo: cuatro oficinas con su referencia metidas en una
@@ -11272,7 +11333,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               _sedeCiudad = bonito(_cerca.prov);
               const _rz = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
               const _lst = [..._cerca.agencias].sort((x, y) => _rz(x) - _rz(y)).slice(0, 6).map((x) =>
-                `*${bonito(x.l)}* (${bonito(x.t)})` + (x.ref ? ` — ${bonito(x.ref, true)}` : "")).join("\n");
+                `*${bonito(x.l)}* (${bonito(x.t)})` + pistaAgencia(x)).join("\n");
               L.push(`📍 En *${bonito(ctx.ciudad)}* NO hay oficina de la agencia. Las más cercanas están en su misma ` +
                 `provincia (${bonito(_cerca.prov)}), en otros pueblos — díselo así, sin hacerle creer que quedan en ` +
                 `su distrito:\n\n${_lst}\n\n` +
@@ -11299,6 +11360,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Beneficio aéreo: si su ciudad está en la lista del negocio, el envío va
         // por Shalom AÉREO (llega más rápido). Se presenta como un BENEFICIO, mismo
         // precio, sin recargo y sin hacerlo sentir culpable.
+        // ⏱️ "¿Cuándo llega?" es la pregunta de TODO cliente de provincia, y sobre todo
+        // después de soltar el adelanto. Si el negocio configuró el plazo, se contesta; si
+        // no, se calla — que es lo que hacía siempre, pero ahora dicho a propósito.
+        try {
+          const entDem = await loadEntregas(db, run);
+          const _dem = demoraProvincia((entDem as any)?.entregas, String(ctx.ciudad ?? ""));
+          L.push(_dem
+            ? `⏱️ Cuánto demora: el paquete suele estar en su agencia en **${_dem}** desde que se despacha. ` +
+              `Si pregunta cuándo llega, díselo así, en días. ⛔ NUNCA le des una FECHA exacta ("llega el jueves 12") ` +
+              `ni digas que llega "mañana": es un estimado de la agencia, no una entrega nuestra, y una fecha ` +
+              `incumplida es un reclamo seguro.`
+            : "⏱️ NO tienes el plazo de la agencia: si pregunta cuándo llega, NO inventes días ni fechas. " +
+              "Dile con naturalidad que apenas lo despaches le pasas el número de guía para que le haga seguimiento, " +
+              "y que le avisas en cuanto esté disponible para recoger.");
+        } catch { /* sin config → sin plazo, y el bot no inventa */ }
         try {
           const entAer = await loadEntregas(db, run);
           if (esDestinoAereo((entAer as any)?.entregas, String(ctx.ciudad ?? ""))) {
@@ -12519,7 +12595,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (_ags.length) {
             const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
             const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
-              `*${bonito(x.l)}*` + (x.ref ? ` — ${bonito(x.ref, true)}` : x.dir ? ` — ${bonito(x.dir, true)}` : "")).join("\n");
+              `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
             const _antes = salida;
             salida = conAgencias(salida, `${_cab}\n${_lista}`);
             if (salida !== _antes) {
@@ -13457,10 +13533,37 @@ async function buildContext(db: SupabaseClient, run: Run) {
     ctx.promesa_despacho = promesaDespacho((chL as any)?.pedidos_config, String(ctx.zona_entrega ?? ""));
   } catch (_) { ctx.logistica_modo = "manual"; ctx.moneda = "PEN"; ctx.promesa_despacho = ""; }
   if (ctx.promesa_despacho == null) ctx.promesa_despacho = "";
+  // {{demora_provincia}} — "2 a 4 días", según el destino del cliente. Sale VACÍA si el
+  // negocio no lo configuró, y esa es la gracia: la plantilla que la use queda en blanco
+  // en vez de prometer un plazo inventado. Ver demoraProvincia.
+  ctx.demora_provincia = "";
+  if (String(ctx.zona_entrega ?? "") === "provincia") {
+    try {
+      const entD = await loadEntregas(db, run);
+      ctx.demora_provincia = demoraProvincia((entD as any)?.entregas, String(ctx.ciudad ?? ""));
+    } catch { /* sin config → vacía */ }
+  }
+  // {{demora_provincia_linea}} — la misma info ya redactada como frase, para pegarla en un
+  // mensaje del flujo sin tener que escribir el "suele llegar en" alrededor. Sin plazo
+  // configurado queda vacía y `resolve` cierra el hueco que deja.
+  ctx.demora_provincia_linea = ctx.demora_provincia
+    ? `📦 Suele estar disponible para recoger en *${ctx.demora_provincia}*.`
+    : "";
   return ctx;
 }
 function resolve(text: string, ctx: any): string {
-  return (text ?? "").replace(/\{\{\s*([\w\-.]+)\s*\}\}/g, (_, k) => (ctx[k] ?? "").toString());
+  // Una variable que se resuelve VACÍA —{{demora_provincia}} sin configurar,
+  // {{promesa_despacho}} cuando falla la lectura— deja su línea en blanco y el mensaje le
+  // llega al cliente con un hueco en el medio, que se lee como algo que no cargó. Se
+  // cierra el hueco SOLO en ese caso: si nada quedó vacío, el texto del dueño se respeta
+  // tal cual, con los saltos que él haya puesto.
+  let hubo = false;
+  const out = (text ?? "").replace(/\{\{\s*([\w\-.]+)\s*\}\}/g, (_, k) => {
+    const v = (ctx[k] ?? "").toString();
+    if (!v.trim()) hubo = true;
+    return v;
+  });
+  return hubo ? out.replace(/\n[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, "\n\n").trim() : out;
 }
 
 // ── Helpers de datos ───────────────────────────────────────────────
