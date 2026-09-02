@@ -3492,9 +3492,13 @@ function sedesEnLineas(texto: string, agencias: { l: string }[]): string {
     // Lo de antes suele terminar en "(puede ser" o en dos puntos: sobra al abrir la lista.
     const antes = linea.slice(0, ini)
       .replace(/[\s:,(]*(?:puede ser|pueden ser|por ejemplo|como|son)?[\s:,(]*$/i, "").trimEnd();
-    // Lo de después arranca con la basura de la enumeración —")", ",", " o "— y luego trae
-    // la pregunta de cierre, que sí se conserva.
-    const luego = linea.slice(fin).replace(/^[\s),.;]*(?:o|y)?[\s),.;]*/i, "").trim();
+    // Lo que sigue arranca con la basura de la enumeración —")", ",", " o "— y luego trae
+    // la pregunta de cierre, que sí se conserva. Ojo con el relleno del final: la IA cierra
+    // estas listas con "etc.)" o "entre otras", y al desenrollar quedaba una línea suelta
+    // que decía solo «etc.)» — se le mandó así a un cliente.
+    let luego = linea.slice(fin).replace(/^[\s),.;]*(?:o|y)?[\s),.;]*/i, "").trim();
+    luego = luego.replace(/^(?:etc\.?|entre otras|entre otros|otras m[aá]s)\b[\s).,;]*/i, "").trim();
+    if (luego.replace(/[^a-záéíóúñü]/gi, "").length < 4) luego = "";
     const lista = hall.map((m) => `*${m[1]}*`).join("\n");
     return (antes ? antes + "\n" : "") + lista + (luego ? "\n\n" + luego : "");
   }).join("\n");
@@ -11906,6 +11910,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "Perú, se lo mandamos a esa dirección sin problema y él lo recoge. Pregúntaselo, que muchas veces sí lo tiene.",
       );
     }
+    // 🔁 CORRIGE su oficina ANTES de que el pedido exista. `maybeCambioDatos` cubre el
+    // cambio cuando ya hay pedido; acá no lo hay todavía y la sede está sellada, así que
+    // el extractor no la pisa ("no se pisa lo ya capturado"). Medido: dijo "la de óvalo
+    // papal", después "ay no, mejor la de atahualpa", el bot le contestó «lo dejo en la
+    // oficina de Atahualpa» y el pedido salió con OVALO PAPAL. El cliente iría a una
+    // agencia y el paquete a otra. La última oficina que nombra es la que vale.
+    try {
+      const _ofi = oficinaDeTexto(String(ctx.last_input ?? ""));
+      if (_ofi && limpiaZona(_ofi.l) !== limpiaZona(String(ctx.sede ?? ""))) {
+        run.vars.sede = _ofi.l;
+        ctx.sede = _ofi.l;
+        await setField(db, run.channel_id, run.contact_id, "sede", _ofi.l);
+        (run.vars as any)._ficha_sede = slugAgencia(_ofi);
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Cambió de oficina",
+          `Ahora recoge en ${_ofi.l} (${_ofi.t})`).catch(() => {});
+      }
+    } catch { /* sin oficina legible → se queda la que había */ }
     // 📷 Le llegó una IMAGEN que NO es un comprobante (una selfie, una foto del producto,
     // una equivocación). Sin decírselo, la IA la trata como pago y contesta "ya confirmé
     // tu adelanto y preparo tu pedido" — medido en la batería, con una selfie. El cliente
