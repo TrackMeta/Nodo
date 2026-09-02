@@ -24,6 +24,11 @@
  * ⚠️ Necesita la Edge Function `tmp-sim` desplegada (se borra en las limpiezas):
  *    git checkout dced10d -- supabase/functions/tmp-sim/index.ts  y desplegarla.
  *
+ * 🔴 Y HAY QUE VOLVER A DESPLEGARLA CADA VEZ QUE CAMBIA EL MOTOR. tmp-sim empaqueta
+ *    su propia copia de _shared/engine.ts al desplegarse: si solo despliegas webchat y
+ *    el webhook, esta bateria sigue probando el motor VIEJO y te miente en verde y en
+ *    rojo. Paso una vez: 18 conversaciones contra una version de hace horas.
+ *
  * 🔴 La lección de siempre: verde ≠ chat sano. Los asserts son la red de
  * seguridad; los bugs de verdad salen LEYENDO los chats en la Bandeja.
  * ═══════════════════════════════════════════════════════ */
