@@ -256,6 +256,9 @@
       run: async (s) => {
         const { wa, nombre } = s;
         await send(wa, nombre, "hola quiero 3 frascos del dermachem, soy Manuel Vega, vivo en Av Brasil 1250 Jesus Maria, mi celular es 987654321"); await sleep(P);
+        // En Lima el flujo EXIGE el si del cliente (campo `confirmo`), asi que el escenario
+        // tiene que darlo: sin esto el pedido no nace y el rojo es del assert, no del bot.
+        await send(wa, nombre, "si, confirmo"); await sleep(P);
         const { o } = await pedido(wa);
         return [
           ck(!!o, "creó el pedido de una"),
@@ -324,6 +327,7 @@
         await send(wa, nombre, "quiero 1 frasco del dermachem, soy de surco"); await sleep(P);
         await send(wa, nombre, "no gracias, solo eso"); await sleep(P);
         await send(wa, nombre, DATOS + ", Av Caminos del Inca 890"); await sleep(P);
+        await send(wa, nombre, "si, confirmo"); await sleep(P);
         const { c, o } = await pedido(wa);
         return [
           ck(!c?.no_remarketing, "no lo marcó como opt-out"),

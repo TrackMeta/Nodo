@@ -8821,6 +8821,24 @@ const PAISES_FUERA: Array<[string, RegExp]> = [
 ];
 const RE_PROCEDENCIA = /\b(desde|vivo en|estoy en|soy de|radico en|resido en|escribo de(sde)?|aqu[ií] en)\b/;
 
+// ¿Este texto nombra UNA oficina Shalom concreta (y no un distrito)? Sirve para creerle
+// al cliente antes que al extractor de lugares: cuando contesta con el nombre de su
+// agencia, la IA tiene prohibido devolver un lugar y aun así devuelve uno inventado.
+function oficinaDeTexto(texto: string): { l: string; t: string; p: string; d: string; ref?: string; dir?: string } | null {
+  const crudo = String(texto ?? "").trim();
+  if (crudo.length < 3) return null;
+  try {
+    // Se busca el nombre de la agencia DENTRO del texto (candidatasAgencia), no al revés:
+    // "la de ovalo papal" no calza con ninguna oficina si se compara el texto entero.
+    const pelado = crudo.replace(RUIDO_CIUDAD, " ").replace(/\s+/g, " ").trim();
+    if (!pelado || provinciasDeDistrito(pelado).length) return null;   // es un distrito de verdad
+    const labels = candidatasAgencia(crudo);
+    if (labels.length !== 1) return null;                              // ninguna o varias → no se adivina
+    const ags = agenciasDeCiudad(labels[0]).filter((a) => limpiaZona(a.l) === limpiaZona(labels[0]));
+    return ags.length === 1 ? ags[0] : null;
+  } catch { return null; }
+}
+
 function paisExtranjero(texto: string): string | null {
   const t = String(texto ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   if (!RE_PROCEDENCIA.test(t)) return null;
@@ -9124,10 +9142,14 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // ANTES de las ramas de Lima a propósito: si no, "Óvalo Papal" cae en el camino de
   // "Lima, distrito por confirmar" y la venta entera se va a la zona equivocada.
   try {
-    if (!provinciasDeDistrito(lugar).length) {
-      const _cands = agenciasDeCiudad(lugar);
-      const _porNombre = candidatasAgencia(lugar);
-      const _unica = (_cands.length === 1 && _porNombre.includes(_cands[0].l)) ? _cands[0] : null;
+    // Se prueba con el TEXTO CRUDO además de con el lugar extraído: cuando el cliente
+    // contesta solo con el nombre de su oficina, el extractor de IA tiene prohibido
+    // devolver un lugar… y aun así devuelve uno inventado. Medido: ante "la de ovalo
+    // papal" respondió "Lince", que sí es un distrito de Lima — y la venta de un cliente
+    // de Trujillo se pasó entera a contraentrega en Lima. Mirando la oficina primero, esa
+    // alucinación ya no decide nada.
+    const _unica = oficinaDeTexto(lugar) ?? oficinaDeTexto(texto);
+    {
       // Si el pueblo se llama igual que la oficina, no hay nada que corregir.
       if (_unica && limpiaZona(_unica.t) !== limpiaZona(lugar)) {
         await set("zona_entrega", "provincia");
@@ -9139,7 +9161,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
         await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
         (run.vars as any)._ficha_sede = slugAgencia(_unica);
         await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
-          `"${lugar}" es una oficina, no una ciudad → ${_unica.t} (sede ${_unica.l})`);
+          `nombró una oficina, no una ciudad → ${_unica.t} (sede ${_unica.l})`);
         return;
       }
     }
