@@ -3652,17 +3652,39 @@ function sinPreguntaFinal(texto: string): string {
   if (i < 0) return texto;
   const linea = lineas[i];
   // Corta la última oración de esa línea (por . ! ? … o el signo de apertura ¿).
-  const corte = Math.max(
-    linea.lastIndexOf("¿"),
-    ...[".", "!", "…", "?"].map((s) => linea.lastIndexOf(s, linea.length - 2)),
-  );
-  let recortada = corte > 0 ? linea.slice(0, linea.startsWith("¿") ? 0 : corte + (linea[corte] === "¿" ? 0 : 1)).trimEnd() : "";
+  //
+  // 🔴 El «¿» MANDA sobre los puntos, y va primero. Antes se tomaba el mayor de los dos
+  // índices, así que un punto DENTRO de la pregunta ganaba — y las direcciones están
+  // llenas: "jr.", "av.", "cdra.", "Mz.". Medido en vivo: «¿Lo vas a recoger en la
+  // oficina de Oxapampa — Entre av. angélica frey y jr. lima?» salió cortado en
+  // «…y jr.» y así se lo mandamos al cliente, a media dirección.
+  let corte = -1;
+  const q = linea.lastIndexOf("¿");
+  if (q > 0) {
+    corte = q;                       // la pregunta arranca acá: de la ¿ en adelante se va
+  } else if (q < 0) {
+    // Sin signo de apertura hay que adivinar dónde termina la oración anterior, y el
+    // mismo problema vuelve por otro lado ("…en av. lima?"). Un punto solo cierra
+    // oración si lo que sigue empieza en MAYÚSCULA: tras una abreviatura viene minúscula.
+    for (const s of [".", "!", "…"]) {
+      let k = linea.lastIndexOf(s, linea.length - 2);
+      while (k > 0) {
+        const resto = linea.slice(k + 1);
+        if (!resto.trim() || /^\s+[¿"«(]?[A-ZÁÉÍÓÚÑ¡]/.test(resto)) { corte = Math.max(corte, k + 1); break; }
+        k = linea.lastIndexOf(s, k - 1);
+      }
+    }
+  }
+  let recortada = corte > 0 ? linea.slice(0, corte).trimEnd() : "";
   // Puntuación colgante: cuando la pregunta iba pegada con coma ("…gorra de regalo
   // incluida, ¿te lo confirmo?"), el corte dejaba la frase terminando en COMA —
   // "…gorra de regalo incluida," — que se lee como un mensaje cortado a la mitad. Se
   // limpia el conector suelto y se cierra con punto.
   recortada = recortada.replace(/[\s]*(?:,|;|:|—|-|\by\b|\be\b|\bo\b|\bpero\b|\bademás\b)\s*$/i, "").trimEnd();
-  if (recortada && !/[.!?…]$/.test(recortada)) recortada += ".";
+  // El punto se pone para no dejar la frase colgando, pero detrás de un emoji sobra:
+  // "ya tengo tus datos 🙌." se lee como un tropiezo. El emoji ya cierra la frase.
+  if (recortada && !/[.!?…]$/.test(recortada) &&
+      !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]$/u.test(recortada)) recortada += ".";
   lineas[i] = recortada;
   const out = lineas.join("\n").trimEnd();
   // No basta con que quede ALGO: "Perfecto, ¿qué talla prefieres?" recortado deja un
@@ -4923,6 +4945,19 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // cliente). La bandera se limpia al confirmar la sede en el panel.
     const zonaShip = String(ship.zona ?? ctx.zona_entrega ?? "").toLowerCase();
     if (zonaShip === "provincia") {
+      // 🏢 Su ciudad tiene UNA sola oficina y él no la nombró: no hay nada que confirmar,
+      // la sellamos nosotros. Al bot se le pide que no se la pregunte —preguntar "¿cuál
+      // prefieres?" con una sola opción confunde— y el efecto era que la sede quedaba
+      // vacía y el pedido salía marcado "te confirmo la oficina" para un pueblo donde solo
+      // existe esa. Un dato que sabemos con certeza no se le pide a nadie.
+      if (!String(ship.sede ?? "").trim()) {
+        const _unica = agenciasDeCiudad(String(ship.ciudad ?? ctx.ciudad ?? ""));
+        if (_unica.length === 1) {
+          ship.sede = _unica[0].l;
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
+            `${ship.ciudad ?? ctx.ciudad}: es la única oficina que hay ahí`).catch(() => {});
+        }
+      }
       const motivo = sedeImprecisa(String(ship.sede ?? ""), String(ship.ciudad ?? ctx.ciudad ?? ""));
       if (motivo) ship.sede_por_confirmar = motivo;
       // Beneficio aéreo: marca el pedido para que el rótulo/Compras/Kanban digan
@@ -5731,11 +5766,18 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
     if (dir) L.push(`📍 ${dir}${ref ? ` (ref: ${ref})` : ""}`);
   } else {
     const ciudad = enTitulo(String(s.ciudad || ""));
-    const sede = String(s.sede_por_confirmar ?? "").trim() ? "" : String(s.sede || "").trim()
-      .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim();
+    // `enTitulo` porque el cliente escribe su oficina como le sale ("oxapampa") y este
+    // renglón se le muestra a ÉL y se imprime en el rótulo: en minúscula parece un error.
+    const sede = String(s.sede_por_confirmar ?? "").trim() ? "" : enTitulo(String(s.sede || "").trim()
+      .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim());
+    // La oficina se llama igual que el pueblo en medio Perú (Oxapampa, San Pedro de Lloc):
+    // repetirlo daba «📍 Agencia *Oxapampa* — Oxapampa», que se lee como un error de copiar.
+    const _pelado = (x: string) =>
+      x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
+    const _mismo = !!sede && _pelado(sede) === _pelado(ciudad);
     // Sin sede confirmada queda «📍 Agencia — Juliaca», que se lee cortado. Con ciudad
     // sola se dice en prosa; la oficina exacta se confirma después.
-    if (sede) L.push(`📍 Agencia *${sede}*${ciudad ? ` — ${ciudad}` : ""}`);
+    if (sede) L.push(`📍 Agencia *${sede}*${ciudad && !_mismo ? ` — ${ciudad}` : ""}`);
     else if (ciudad) L.push(`📍 Agencia en ${ciudad} (te confirmo la oficina)`);
     const dni = String(s.dni || "").trim();
     // enTitulo también acá, por los pedidos creados ANTES de normalizarlo al capturar.
@@ -8877,6 +8919,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     }
     await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
       `${z.nombre} → ${esLima ? "lima" : "provincia"}${esLima ? ` · hoy: ${run.vars.entrega_hoy}` : ""}`);
+    if (!esLima) await sellaSedeUnica(db, run, ctx, set);
     return;
   }
 
@@ -8904,6 +8947,27 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   await set("entrega_hoy", "no");
   await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
   await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta", `${lugar} → provincia`);
+  await sellaSedeUnica(db, run, ctx, set);
+}
+
+// 🏢 Si en su ciudad hay UNA sola oficina, la sede queda sellada acá y nadie se la pregunta.
+// Va apenas se resuelve la zona —no al crear el pedido— porque en el medio está la lista de
+// datos que faltan: con la sede vacía el bot la pedía igual ("me falta un dato: sede de la
+// agencia"), justo lo que queríamos evitar. Un dato que sabemos con certeza no se pregunta.
+async function sellaSedeUnica(
+  db: SupabaseClient,
+  run: Run,
+  ctx: any,
+  set: (k: string, v: string) => Promise<void>,
+) {
+  try {
+    if (String(run.vars?.sede ?? ctx?.sede ?? "").trim()) return;
+    const ags = agenciasDeCiudad(String(run.vars?.ciudad ?? ctx?.ciudad ?? ""));
+    if (ags.length !== 1) return;
+    await set("sede", ags[0].l);
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
+      `${run.vars?.ciudad ?? ctx?.ciudad}: es la única oficina que hay ahí`).catch(() => {});
+  } catch { /* sin ciudad legible → se le pregunta como siempre */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -11153,7 +11217,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               `ni separadas por puntos:\n\n` +
               // La ciudad la escribió el cliente, casi siempre en minúscula ("chiclayo").
               // Se fuerza el camino de capitalizar para que no salga en medio del mensaje así.
-              `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}\n\n¿Cuál te queda más cerca?\n\n` +
+              // Con UNA sola oficina no hay nada que elegir: preguntarle "¿cuál te queda más
+              // cerca?" delante de una sola línea suena a que le falta ver algo, y medido en
+              // Oxapampa la IA rellenó ese hueco con "¿o en qué otra zona andas?" — le abrió
+              // una duda que no tenía y le hizo pensar que su pueblo no calificaba.
+              (_ags.length === 1
+                // El mensaje va escrito tal como se le manda al cliente: si acá se pone
+                // "UNA" en mayúscula para enfatizar, el bot la copia y le llega gritada.
+                ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos una sola oficina 👇\n${_lista}\n\n` +
+                  `Como es la única, NO le preguntes cuál prefiere, ni si la quiere, ni le pidas otra zona: ` +
+                  `se la das por buena y sigues con el pedido ("te lo dejo ahí" y adelante).\n\n`
+                : `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}\n\n¿Cuál te queda más cerca?\n\n`) +
               // Negritas SOLO en lo que el ojo busca: la ciudad y el nombre de cada oficina.
               // Si se marca también la referencia, deja de resaltar nada.
               "Las negritas van tal cual: la ciudad y el NOMBRE de cada oficina en *asteriscos*, la referencia en texto normal. " +
@@ -11575,10 +11649,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // escribía la dirección y la forma de pago justo antes del resumen del sistema, que
         // dice lo mismo. Lo que sí funciona es darle la FORMA exacta de su mensaje en vez
         // de una lista de cosas que no puede decir. Mismo aprendizaje que con el regalo.
-        "Justo después de tu mensaje sale el del sistema, que YA le dice que quedó confirmado, con su producto, " +
-        "su dirección y cómo paga. Tu mensaje es SOLO una línea cálida de cierre, sin ningún dato: nada de " +
-        "«tu pedido está confirmado», ni la dirección, ni el monto, ni la forma de pago, ni cuándo llega. " +
-        "Así de corto: «¡Gracias, Milagros! Lo dejo listo 🙌» o «Listo, Jorge, gracias por la compra ✨». " +
+        // ⛔ En PROVINCIA todavía no compró nada: lo que sale detrás no es una confirmación,
+        // es el pedido del adelanto. Medido en vivo — el cliente leyó «Listo, Percy, gracias
+        // por la compra ✨» y el mensaje siguiente le pedía S/20 para despachar. Darle las
+        // gracias por una compra que aún no ocurrió le dice que ya está, y el que cree que
+        // ya está no paga. La línea cálida sirve igual, pero sin dar la venta por hecha.
+        (String(ctx.zona_entrega ?? "") === "provincia"
+          ? "Justo después de tu mensaje sale el del sistema, que le pide el ADELANTO para despachar y le dice " +
+            "cómo pagarlo. Tu mensaje es SOLO una línea cálida, sin ningún dato y sin dar la compra por hecha: " +
+            "nada de «gracias por la compra», «tu pedido está confirmado», el monto, la forma de pago ni cuándo " +
+            "llega. Así de corto: «¡Listo, Milagros! Te lo preparo 🙌» o «Perfecto, Jorge, lo dejo apartado ✨». "
+          : "Justo después de tu mensaje sale el del sistema, que YA le dice que quedó confirmado, con su producto, " +
+            "su dirección y cómo paga. Tu mensaje es SOLO una línea cálida de cierre, sin ningún dato: nada de " +
+            "«tu pedido está confirmado», ni la dirección, ni el monto, ni la forma de pago, ni cuándo llega. " +
+            "Así de corto: «¡Gracias, Milagros! Lo dejo listo 🙌» o «Listo, Jorge, gracias por la compra ✨». ") +
         "Una línea y punto — el detalle lo pone él.");
     }
     // Cómo se ESCRIBE un mensaje de WhatsApp. Faltaba por completo: los mensajes fijos del
