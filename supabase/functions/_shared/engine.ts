@@ -280,7 +280,11 @@ async function runEngineInner(
     const ord = await tienePedidoVivo(db, contactId);
     if (ord) {
       const yaSalio = ESTADOS_DESPACHADO.has(String(ord.estado ?? ""));
-      const conAdelanto = Number((ord.shipping as any)?.adelanto ?? 0) > 0
+      // Lo que de verdad PAGÓ, no lo que se le pidió: `shipping.adelanto` es el monto
+      // solicitado y vale 20 en todo pedido de provincia, así que al cancelar se le decía
+      // "como dejaste un adelanto, un asesor coordina la devolución" a alguien que no
+      // había pagado un sol. Le prometíamos devolverle plata que nunca entró.
+      const conAdelanto = Number((ord.shipping as any)?.adelanto_abonado ?? 0) > 0
         || !!(ord.shipping as any)?.adelanto_comprobante;
       if (yaSalio) {
         // Ya está en la calle: cancelar solo saldría caro (flete, devolución). Decide una persona.
@@ -6653,8 +6657,26 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   const _extraPuesto = (Array.isArray((order as any).order_bumps) ? (order as any).order_bumps : [])
     .some((b: any) => Number(b?.precio) > 0);
   const _pideQuitar = /\b(qu[ií]ta(me)?(lo|la)?|saca(me)?(lo|la)?|s[aá]ca(lo|la)|remueve|elimina|b[oó]rra(lo|la)|ya no (lo )?quiero|mejor no|sin el|solo el)\b/i.test(txt);
+  // Y lo mismo para CAMBIAR LA CANTIDAD del producto principal. Medido: con el adelanto
+  // ya pagado el cliente escribió "oye, mejor mándame 3 frascos", el bot le contestó dos
+  // veces que sí —"cambio a 3 frascos", "te dejo el pedido con 3"— y el pedido se quedó en
+  // 2 y S/119. Le llegan dos frascos creyendo que pidió tres, y el negocio deja de cobrar
+  // S/30. Se exige el número JUNTO al sustantivo de la presentación ("3 frascos") y que no
+  // esté hablando del extra: así un "sí, mándame 1" que responde a la oferta del bump no
+  // se reinterpreta como un cambio del principal, que es lo que este guard protege.
+  const _nombreExtra = String((((order as any).order_bumps ?? [])[0] || {}).nombre ?? "").split(/[·\-]/)[0].trim();
+  const _hablaDelExtra = _nombreExtra.length > 3 &&
+    new RegExp(_nombreExtra.split(/\s+/)[0], "i").test(txt);
+  const _pideOtraCantidad = /\b\d+\s*(frasco|frascos|unidad|unidades|par|pares|pack|packs|caja|cajas|kit|kits)\b/i.test(txt)
+    && !_hablaDelExtra;
+  //
+  // ⛔ Y NUNCA bloquea la CONFIRMACIÓN de un cambio que nosotros mismos propusimos. Si hay
+  // `_mod_pendiente`, la última pregunta sobre la mesa es la nuestra ("¿lo confirmo?") y el
+  // "sí" del cliente le pertenece. Medido: el bot propuso pasar a 3 frascos por S/149, el
+  // cliente dijo "sí, confirmo", el bot contestó "listo, dejo confirmado tu pedido de 3
+  // frascos"… y el pedido se quedó en 2 y S/119. Le llegan dos y dejamos de cobrar S/30.
   if (aw?.type === "input" && String((order as any).estado) !== "esperando_adelanto"
-      && !(_extraPuesto && _pideQuitar)) return false;
+      && !ship._mod_pendiente && !(_extraPuesto && _pideQuitar) && !_pideOtraCantidad) return false;
   const bumps: any[] = Array.isArray((order as any).order_bumps) ? [...(order as any).order_bumps] : [];
   const sym = simboloMoneda((order as any).currency);
   const amount = Number((order as any).amount) || 0;
