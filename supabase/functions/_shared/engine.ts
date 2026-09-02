@@ -6770,7 +6770,18 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   if (conf < 0.6) return false;
 
   if (p.accion === "quitar") {
-    const nom = String(p.item ?? "").trim();
+    let nom = String(p.item ?? "").trim();
+    // 🎁 El REGALO no se quita por descarte. Medido: el cliente aceptó el protector de
+    // S/39 y al toque dijo "uy no, mejor quítamelo, solo el serum" — y el bot propuso
+    // sacarle el JABÓN DE REGALO, dejando el pedido en un absurdo S/158 (el regalo no
+    // cuesta nada) y al protector adentro. Nadie pide que le quiten un regalo sin
+    // nombrarlo: si el cliente no lo nombró y hay UN item cobrable, ese es el que quiere
+    // fuera. Si de verdad quiere quitar el regalo, lo dice y se respeta.
+    const _cobrables = removibles.filter((b) => b.precio > 0);
+    const _apuntaAlRegalo = removibles.some((b) =>
+      b.precio === 0 && b.nombre && lowN.includes(b.nombre.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(" ")[0]));
+    const _elegidoEsRegalo = removibles.some((b) => b.precio === 0 && nom && b.nombre === nom);
+    if (_elegidoEsRegalo && !_apuntaAlRegalo && _cobrables.length === 1) nom = _cobrables[0].nombre;
     const hit = removibles.find((b) => b.nombre === nom) ?? (nom ? removibles.find((b) => b.nombre.toLowerCase().includes(nom.toLowerCase()) || nom.toLowerCase().includes(b.nombre.toLowerCase())) : undefined);
     if (!hit) return false;                                  // no identificó QUÉ quitar → deja seguir el flujo normal
     const resumen = `quitar "${hit.nombre}"${hit.precio > 0 ? ` (−${sym}${hit.precio})` : ""} → queda ${sym}${valorOrden(amount, bumps.filter((_, i) => i !== hit.i))}`;
@@ -13208,6 +13219,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
           }
         } catch { /* sin ciudad legible → se envía tal cual */ }
+      }
+      // 🎁 El REGALO, dicho UNA vez mientras todavía sirve para vender. El dueño lo activa
+      // para usarlo de gancho y el prompt lo ofrece como "puedes mencionarlo"; medido, la
+      // IA no lo menciona nunca: el regalo entraba al pedido y el cliente se enteraba
+      // recién al recibirlo —o ni eso—. Se pega en el momento en que ya hay algo que
+      // ganar (cuando pide datos o cierra) y no se repite.
+      if (op === "generar_texto" && !String((run.vars as any)?._regalo_dicho ?? "").trim()
+          && /(p[aá]same|d[ií]me|necesito).{0,40}(datos|nombre|dni|direcci)|qued[oó] (confirmado|listo)|te lo (dejo|preparo)/i.test(salida)) {
+        try {
+          const _pid = String(ctx._product_id ?? "");
+          if (_pid) {
+            const { data: _pr } = await db.from("products").select("config").eq("id", _pid).maybeSingle();
+            const _cfg = (_pr as any)?.config ?? {};
+            const _regs = (_cfg.regalos ?? []).filter((r: any) => r?.nombre);
+            const _nom = _regs[0]?.nombre ? String(_regs[0].nombre) : "";
+            if (_cfg.regalo_mencionar && _nom && !new RegExp(_nom.split(" ")[0], "i").test(salida)
+                && !/regalo/i.test(salida)) {
+              salida = salida.trimEnd() + `\n\n🎁 Y va de regalo con tu pedido: *${_nom}*.`;
+              (run.vars as any)._regalo_dicho = "si";
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🎁 Regalo mencionado",
+                `${_nom} — la IA no lo había nombrado`).catch(() => {});
+            }
+          }
+        } catch { /* sin producto legible → sin mención */ }
       }
       // 🗺️ La confirmación del distrito repetido, pegada al mensaje en que le pide la
       // dirección. Se lo pedí por prompt y no lo hizo —el patrón de siempre—, así que lo

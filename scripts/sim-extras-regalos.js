@@ -213,8 +213,16 @@
         await yape(wa, nombre, 20); await sleep(POCR);
         await send(wa, nombre, "sí, agrégame el protector"); await sleep(P);
         await send(wa, nombre, "uy no, mejor quítamelo, solo el serum"); await sleep(P);
+        // Quitar algo TOCA PLATA, así que el motor propone y pide el sí (confirmar-y-
+        // aplicar). El escenario tiene que darlo: sin esto el rojo es del assert.
+        await send(wa, nombre, "sí, confirmo"); await sleep(P);
         const { o } = await pedido(wa);
-        return [ck(conExtra(o).length === 0, `el extra se quitó del pedido (quedan ${conExtra(o).length})`)];
+        const saldo = Number(o?.shipping?.saldo);
+        return [
+          ck(conExtra(o).length === 0, `el extra se quitó del pedido (quedan ${conExtra(o).length})`),
+          ck(conRegalo(o).length === 1, `el REGALO sigue puesto (${conRegalo(o).length})`),
+          ck(Number.isFinite(saldo) && saldo === 99, `saldo=${o?.shipping?.saldo} (esperado 99, sin el extra)`),
+        ];
       } },
 
     { id: "E9", wa: "51987300109", nombre: "Percy Ríos", zona: "Huancayo",
