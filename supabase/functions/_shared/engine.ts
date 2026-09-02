@@ -5073,6 +5073,25 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars.pedido_creado = "si";
     await setField(db, run.channel_id, run.contact_id, "pedido_creado", "si").catch(() => {});
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    // 📍 La FICHA de su agencia, si quedó pendiente. Se manda acá porque este es el momento
+    // en que la sede es DEFINITIVA. Sin esto se perdía justo en el caso que más la necesita:
+    // el pueblo con una sola oficina, donde el motor la sella y el bot —al no tener que
+    // preguntarla— nunca la nombra. Medido: el cliente cerró su pedido en Andahuaylas sin
+    // enterarse de a dónde iba a recoger.
+    if ((run.vars as any)?._ficha_sede) {
+      const _slugP = String((run.vars as any)._ficha_sede);
+      delete (run.vars as any)._ficha_sede;
+      delete (run.vars as any)._ficha_espera;
+      try {
+        const { data: _fp } = await db.from("sede_imagenes").select("url").eq("slug", _slugP).maybeSingle();
+        if (_fp?.url) {
+          await emit(db, run, {
+            media_url: _fp.url, media_kind: "image",
+            caption: "📍 Esta es tu agencia para el recojo.", _noTpl: true,
+          }, ctx);
+        }
+      } catch { /* sin ficha → el resumen ya le dice la agencia */ }
+    }
     // 📊 La venta se le acredita al ÚLTIMO copy con variante que recibió (7 días). Es la
     // métrica de respaldo: confirma si el copy que engancha además vende.
     await marcarVarianteCompra(db, run.contact_id, Number(amount) || 0);
@@ -9152,7 +9171,21 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // papal" respondió "Lince", que sí es un distrito de Lima — y la venta de un cliente
     // de Trujillo se pasó entera a contraentrega en Lima. Mirando la oficina primero, esa
     // alucinación ya no decide nada.
-    const _unica = oficinaDeTexto(lugar) ?? oficinaDeTexto(texto);
+    let _unica = oficinaDeTexto(lugar) ?? oficinaDeTexto(texto);
+    // ⛔ Y la oficina NO puede mudarlo de ciudad. Medido: un cliente dijo "soy de arequipa"
+    // y después "av ejercito" —que en Arequipa no existe pero en TACNA sí— y el pedido se
+    // fue a Tacna, a 400 km de donde vive. Si ya sabemos su ciudad y la oficina no es de
+    // ahí, no se toca: `sedeReconocida` la marca para confirmar, que es lo correcto.
+    {
+      const _prev = String(ctx.ciudad ?? "").trim();
+      const _suya = (a: { t: string; p: string; d: string }) =>
+        [a.t, a.p, a.d].some((x) => limpiaZona(x) === limpiaZona(_prev));
+      if (_unica && _prev && !_suya(_unica)) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
+          `Dijo "${_unica.l}" (${_unica.t}) pero es de ${_prev} — se conserva su ciudad`).catch(() => {});
+        _unica = null;
+      }
+    }
     {
       // Si el pueblo se llama igual que la oficina, no hay nada que corregir.
       if (_unica && limpiaZona(_unica.t) !== limpiaZona(lugar)) {
