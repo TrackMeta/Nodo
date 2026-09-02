@@ -9006,7 +9006,18 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // La lista del negocio es la fuente de verdad de la cobertura propia.
   await set("zona_entrega", "provincia");
   await set("zona_nombre", "");
-  await set("ciudad", enTitulo(lugar));
+  // 🏙️ El cliente contesta con el NOMBRE DE SU OFICINA, no con el de su ciudad: "la de
+  // huancayo centro", "el shalom de trujillo la perla". Guardar eso como ciudad la
+  // rompe — medido: ciudad quedó "Huancayo Centro", ninguna agencia calzó y el bot le
+  // preguntó «¿a qué ciudad sueles ir?» a alguien que acababa de decir Huancayo. Si al
+  // quitarle el ruido de agencia queda una ciudad que SÍ tiene oficinas, esa es su
+  // ciudad; el nombre completo se lo queda la sede, que es donde sirve.
+  let _ciudad = lugar;
+  if (!agenciasDeCiudad(lugar).length) {
+    const _pelado = String(lugar).replace(RUIDO_CIUDAD, " ").replace(/\s+/g, " ").trim();
+    if (_pelado && _pelado.length >= 3 && agenciasDeCiudad(_pelado).length) _ciudad = _pelado;
+  }
+  await set("ciudad", enTitulo(_ciudad));
   await set("zona_distrito_incierto", "");
   await set("entrega_hoy", "no");
   await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
@@ -9076,6 +9087,11 @@ type CampoDato = {
 // Palabras que no identifican NINGUNA oficina en particular. Si al sacarlas la
 // sede queda vacía o queda solo la ciudad, el cliente todavía no dijo cuál es.
 const RUIDO_SEDE = /\b(shalom|olva|agencia|agencias|sede|oficina|sucursal|terminal|de|del|la|el|los|las|en|a|por|mi|su)\b/g;
+
+// Lo mismo, pero para rescatar la CIUDAD de dentro del nombre de una oficina ("la de
+// huancayo centro" → "huancayo"). Lleva además las palabras con que la gente ubica una
+// sede —centro, principal, av…— que en el nombre de una ciudad nunca aportan.
+const RUIDO_CIUDAD = /\b(shalom|olva|agencia|agencias|sede|oficina|sucursal|terminal|principal|centro|central|av|avenida|jr|jiron|jirón|calle|de|del|la|el|los|las|en|a|por|mi|su)\b/gi;
 
 // Validaciones DURAS, por código. Contar dígitos es exactamente lo que un LLM
 // hace mal, así que no se lo preguntamos: lo verificamos.
@@ -11658,9 +11674,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "  Para dejarlo listo, pásame estos datos 👇\n" +
             // 📌 delante de cada dato: es lo que Rodrigo usa a mano, y ayuda al cliente a
             // ver de un golpe cuántas cosas le piden (y a no saltarse una).
-            faltan.map((c) => `  📌 *${limpiaLabel(c.label)}*`).join("\n") + "\n" +
+            // `confirmo` NO es un dato: es el sí del cliente. Listado entre el nombre y la
+            // dirección le llegaba «📌 *Confirmación de la compra*», y eso no se puede
+            // escribir — el cliente se queda mirando qué le piden. Se saca de la lista; el
+            // cierre se le pide con palabras, que es como se pide un sí.
+            faltan.filter((c) => c.clave !== "confirmo")
+              .map((c) => `  📌 *${limpiaLabel(c.label)}*`).join("\n") + "\n" +
             "Esos son EXACTAMENTE los que faltan: no agregues ninguno más ni repitas los que ya te dio. " +
-            "Si te manda solo algunos, agradéceselos y pide en lista los que sigan faltando."),
+            "Si te manda solo algunos, agradéceselos y pide en lista los que sigan faltando." +
+            (faltan.some((c) => c.clave === "confirmo")
+              ? " Y cierra pidiéndole que confirme la compra con sus palabras («¿te lo confirmo y lo mando?»), " +
+                "NUNCA como un 📌 de la lista: el sí no es un dato que se copie."
+              : "")),
         // La pregunta se hinchaba explicando para qué sirve el dato ("¿a nombre de quién lo
         // dejamos para que el motorizado pregunte por esa persona al entregar?"). Pedir un
         // dato es el momento de MENOS fricción posible: cuanto más larga la pregunta, más
