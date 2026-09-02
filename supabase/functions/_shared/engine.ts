@@ -8963,6 +8963,39 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     return;
   }
 
+  // 3·0) 🏢 Lo que dijo NO es un lugar: es el NOMBRE DE UNA OFICINA. Pasa todo el tiempo
+  // —"la de óvalo papal", "atahualpa", "wanchaq co"— porque para el cliente la agencia ES
+  // el destino. Guardarlo como ciudad rompe el pedido de raíz: medido, un cliente dijo
+  // "soy de trujillo", después "la de atahualpa", y el pedido salió con ciudad
+  // "Atahualpa" (que no existe) mientras el bot le hablaba de una entrega en Lima. La
+  // guía habría ido a un destino inventado.
+  //
+  // Se resuelve con lo que ya sabemos: si NO es un distrito del padrón y calza con UNA
+  // sola oficina, su ciudad es el DISTRITO de esa oficina y la sede es esa oficina. Va
+  // ANTES de las ramas de Lima a propósito: si no, "Óvalo Papal" cae en el camino de
+  // "Lima, distrito por confirmar" y la venta entera se va a la zona equivocada.
+  try {
+    if (!provinciasDeDistrito(lugar).length) {
+      const _cands = agenciasDeCiudad(lugar);
+      const _porNombre = candidatasAgencia(lugar);
+      const _unica = (_cands.length === 1 && _porNombre.includes(_cands[0].l)) ? _cands[0] : null;
+      // Si el pueblo se llama igual que la oficina, no hay nada que corregir.
+      if (_unica && limpiaZona(_unica.t) !== limpiaZona(lugar)) {
+        await set("zona_entrega", "provincia");
+        await set("zona_nombre", "");
+        await set("ciudad", enTitulo(_unica.t));
+        await set("sede", _unica.l);
+        await set("zona_distrito_incierto", "");
+        await set("entrega_hoy", "no");
+        await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
+        (run.vars as any)._ficha_sede = slugAgencia(_unica);
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
+          `"${lugar}" es una oficina, no una ciudad → ${_unica.t} (sede ${_unica.l})`);
+        return;
+      }
+    }
+  } catch { /* sin padrón legible → sigue el camino de siempre */ }
+
   // 3a) Calzó un DISTRITO de la lista → veredicto determinista y CONFIRMADO.
   // La lista manda: un distrito destildado (cubro=false) es provincia.
   if (z) {
