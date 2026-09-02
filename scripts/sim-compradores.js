@@ -97,6 +97,13 @@
     return (m || []).length;
   }
 
+  // ⏱️ Cuánto se espera entre turnos. El bot real tarda 15-25 s en contestar (llama a
+  // la IA, y el OCR de un comprobante más). La primera version de esta bateria esperaba
+  // 4 s y los asserts miraban ANTES de que contestara: 13 de 18 en rojo con todo en
+  // `undefined`, que parece un desastre del producto y era el cronometro.
+  const P = 16000;        // turno normal
+  const POCR = 24000;     // despues de mandar un comprobante (OCR + validacion)
+
   const ck = (ok, msg) => ({ ok: !!ok, msg });
   const dice = (outs, re) => outs.some((m) => re.test(m || ""));
   const DATOS = "Percy Rodrigo Flores Nuñez, 977533352, DNI 73024297";
@@ -110,9 +117,9 @@
       titulo: "Pueblo con UNA sola agencia (Andahuaylas) · no debe preguntarle cuál",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "hola quiero el dermachem"); await sleep(2500);
-        await send(wa, nombre, "soy de andahuaylas"); await sleep(4000);
-        await send(wa, nombre, "llevo 2 frascos, " + DATOS); await sleep(5000);
+        await send(wa, nombre, "hola quiero el dermachem"); await sleep(P);
+        await send(wa, nombre, "soy de andahuaylas"); await sleep(P);
+        await send(wa, nombre, "llevo 2 frascos, " + DATOS); await sleep(P);
         const outs = await dichos(wa, 12);
         const { o } = await pedido(wa);
         return [
@@ -126,8 +133,8 @@
       titulo: "Vive donde NO hay agencia (Jequetepeque) · debe ofrecer las de su provincia",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "quiero el dermachem, soy de jequetepeque"); await sleep(4500);
-        await send(wa, nombre, "2 frascos"); await sleep(4500);
+        await send(wa, nombre, "quiero el dermachem, soy de jequetepeque"); await sleep(P);
+        await send(wa, nombre, "2 frascos"); await sleep(P);
         const outs = await dichos(wa, 12);
         return [
           ck(dice(outs, /pacasmayo|guadalupe|san pedro de lloc|ciudad de dios/i), "le ofreció oficinas reales de su provincia"),
@@ -139,8 +146,8 @@
       titulo: "Ciudad con nombre repetido (Miraflores) · no debe adivinar",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "hola, quiero el serum. soy de miraflores"); await sleep(4500);
-        await send(wa, nombre, "2 frascos porfa"); await sleep(4500);
+        await send(wa, nombre, "hola, quiero el serum. soy de miraflores"); await sleep(P);
+        await send(wa, nombre, "2 frascos porfa"); await sleep(P);
         const outs = await dichos(wa, 12);
         return [ck(outs.length > 0, "respondió sin trabarse")];
       } },
@@ -149,9 +156,9 @@
       titulo: "Paga el TOTAL de una (S/119) · no debe seguir pidiéndole el saldo",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "quiero 2 frascos del dermachem, soy de huancayo"); await sleep(4000);
-        await send(wa, nombre, "la de huancayo centro. " + DATOS); await sleep(5000);
-        await foto(wa, nombre, { monto: 119, quien: "Nilda Ccahuana" }); await sleep(7000);
+        await send(wa, nombre, "quiero 2 frascos del dermachem, soy de huancayo"); await sleep(P);
+        await send(wa, nombre, "la de huancayo centro. " + DATOS); await sleep(P);
+        await foto(wa, nombre, { monto: 119, quien: "Nilda Ccahuana" }); await sleep(POCR);
         const { o } = await pedido(wa);
         const outs = await dichos(wa, 6);
         const saldo = Number(o?.shipping?.saldo);
@@ -165,9 +172,9 @@
       titulo: "Paga de MÁS (S/40 en vez de S/20) · el excedente va al saldo",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "2 frascos del dermachem, soy de juliaca"); await sleep(4000);
-        await send(wa, nombre, "la agencia de juliaca. " + DATOS); await sleep(5000);
-        await foto(wa, nombre, { monto: 40, quien: "Fredy Mamani" }); await sleep(7000);
+        await send(wa, nombre, "2 frascos del dermachem, soy de juliaca"); await sleep(P);
+        await send(wa, nombre, "la agencia de juliaca. " + DATOS); await sleep(P);
+        await foto(wa, nombre, { monto: 40, quien: "Fredy Mamani" }); await sleep(POCR);
         const { o } = await pedido(wa);
         const saldo = Number(o?.shipping?.saldo);
         return [
@@ -180,9 +187,9 @@
       titulo: "Manda el Yape ANTES de dar sus datos · no debe perderse el pago",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "hola quiero 2 frascos del dermachem, soy de tacna"); await sleep(4000);
-        await foto(wa, nombre, { monto: 20, quien: "Tania Berrocal" }); await sleep(6000);
-        await send(wa, nombre, DATOS + ", la agencia de tacna"); await sleep(6000);
+        await send(wa, nombre, "hola quiero 2 frascos del dermachem, soy de tacna"); await sleep(P);
+        await foto(wa, nombre, { monto: 20, quien: "Tania Berrocal" }); await sleep(POCR);
+        await send(wa, nombre, DATOS + ", la agencia de tacna"); await sleep(P);
         const { o } = await pedido(wa);
         const outs = await dichos(wa, 10);
         return [
@@ -196,11 +203,11 @@
       titulo: "Manda DOS VECES el mismo comprobante · no debe contarlo doble",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "2 frascos del dermachem, soy de cusco"); await sleep(4000);
-        await send(wa, nombre, "cusco wanchaq. " + DATOS); await sleep(5000);
+        await send(wa, nombre, "2 frascos del dermachem, soy de cusco"); await sleep(P);
+        await send(wa, nombre, "cusco wanchaq. " + DATOS); await sleep(P);
         const op = "099887766";
-        await foto(wa, nombre, { monto: 20, op, quien: "Elmer Quispe" }); await sleep(7000);
-        await foto(wa, nombre, { monto: 20, op, quien: "Elmer Quispe" }); await sleep(7000);
+        await foto(wa, nombre, { monto: 20, op, quien: "Elmer Quispe" }); await sleep(POCR);
+        await foto(wa, nombre, { monto: 20, op, quien: "Elmer Quispe" }); await sleep(POCR);
         const { o } = await pedido(wa);
         return [
           ck(Number(o?.shipping?.adelanto_abonado || 0) <= 20, `abonado=${o?.shipping?.adelanto_abonado} (no debe ser 40)`),
@@ -211,8 +218,8 @@
       titulo: "Pregunta CUÁNDO llega · debe contestar con el plazo, sin fecha exacta",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "quiero el dermachem, soy de puno"); await sleep(4000);
-        await send(wa, nombre, "en cuantos dias me llega?"); await sleep(4500);
+        await send(wa, nombre, "quiero el dermachem, soy de puno"); await sleep(P);
+        await send(wa, nombre, "en cuantos dias me llega?"); await sleep(P);
         const outs = await dichos(wa, 6);
         return [
           ck(dice(outs, /d[ií]as|semana/i), "habló de tiempos"),
@@ -224,9 +231,9 @@
       titulo: "Cambia de agencia después de elegir una · debe quedar la última",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "2 frascos del dermachem, soy de trujillo"); await sleep(4000);
-        await send(wa, nombre, "la de ovalo papal"); await sleep(4500);
-        await send(wa, nombre, "ay no, mejor la de atahualpa. " + DATOS); await sleep(6000);
+        await send(wa, nombre, "2 frascos del dermachem, soy de trujillo"); await sleep(P);
+        await send(wa, nombre, "la de ovalo papal"); await sleep(P);
+        await send(wa, nombre, "ay no, mejor la de atahualpa. " + DATOS); await sleep(P);
         const { o } = await pedido(wa);
         return [ck(/atahualpa/i.test(String(o?.shipping?.sede || "")), `sede=${o?.shipping?.sede} (esperado Atahualpa)`)];
       } },
@@ -235,7 +242,7 @@
       titulo: "Lima · lo escribe TODO en un solo mensaje",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "hola quiero 3 frascos del dermachem, soy Manuel Vega, vivo en Av Brasil 1250 Jesus Maria, mi celular es 987654321"); await sleep(7000);
+        await send(wa, nombre, "hola quiero 3 frascos del dermachem, soy Manuel Vega, vivo en Av Brasil 1250 Jesus Maria, mi celular es 987654321"); await sleep(P);
         const { o } = await pedido(wa);
         return [
           ck(!!o, "creó el pedido de una"),
@@ -253,7 +260,7 @@
         send(wa, nombre, "del serum"); await sleep(400);
         send(wa, nombre, "para las manchas"); await sleep(400);
         send(wa, nombre, "cuanto esta?"); await sleep(400);
-        await send(wa, nombre, "soy de lince"); await sleep(10000);
+        await send(wa, nombre, "soy de lince"); await sleep(P);
         const outs = await dichos(wa, 8);
         return [
           ck(outs.length > 0, "contestó"),
@@ -265,9 +272,9 @@
       titulo: "Manda una FOTO que no es comprobante · no debe darla por pago",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "2 frascos del dermachem, soy de arequipa"); await sleep(4000);
-        await send(wa, nombre, "arequipa av ejercito. " + DATOS); await sleep(5000);
-        await foto(wa, nombre, { selfie: true }); await sleep(7000);
+        await send(wa, nombre, "2 frascos del dermachem, soy de arequipa"); await sleep(P);
+        await send(wa, nombre, "arequipa av ejercito. " + DATOS); await sleep(P);
+        await foto(wa, nombre, { selfie: true }); await sleep(POCR);
         const { o } = await pedido(wa);
         return [
           ck(!o?.shipping?.adelanto_abonado, `no acreditó pago (abonado=${o?.shipping?.adelanto_abonado ?? "—"})`),
@@ -279,8 +286,8 @@
       titulo: "Quiere pagar con TARJETA (el POS está apagado) · sin prometer",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "quiero el dermachem, soy de san borja"); await sleep(4000);
-        await send(wa, nombre, "puedo pagar con tarjeta al recibirlo?"); await sleep(5000);
+        await send(wa, nombre, "quiero el dermachem, soy de san borja"); await sleep(P);
+        await send(wa, nombre, "puedo pagar con tarjeta al recibirlo?"); await sleep(P);
         const outs = await dichos(wa, 6);
         return [ck(!dice(outs, /s[ií].{0,20}(tarjeta|pos)|aceptamos tarjeta/i), "no prometió tarjeta")];
       } },
@@ -289,7 +296,7 @@
       titulo: "Pide BOLETA/FACTURA (no está en la ficha) · ni negar en seco ni inventar",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "hola, el dermachem viene con boleta o factura?"); await sleep(5000);
+        await send(wa, nombre, "hola, el dermachem viene con boleta o factura?"); await sleep(P);
         const outs = await dichos(wa, 6);
         return [
           ck(!dice(outs, /no (damos|emitimos|tenemos) (boleta|factura)/i), "no lo negó en seco"),
@@ -301,9 +308,9 @@
       titulo: "Dice “no gracias” · no debe marcarlo como que no quiere que le escriban",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "quiero 1 frasco del dermachem, soy de surco"); await sleep(4000);
-        await send(wa, nombre, "no gracias, solo eso"); await sleep(4500);
-        await send(wa, nombre, DATOS + ", Av Caminos del Inca 890"); await sleep(6000);
+        await send(wa, nombre, "quiero 1 frasco del dermachem, soy de surco"); await sleep(P);
+        await send(wa, nombre, "no gracias, solo eso"); await sleep(P);
+        await send(wa, nombre, DATOS + ", Av Caminos del Inca 890"); await sleep(P);
         const { c, o } = await pedido(wa);
         return [
           ck(!c?.no_remarketing, "no lo marcó como opt-out"),
@@ -315,8 +322,8 @@
       titulo: "Provincia · insiste en delivery a su casa · no debe prometerlo",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "quiero el dermachem, soy de chiclayo"); await sleep(4000);
-        await send(wa, nombre, "no puedo ir a la agencia, me lo pueden traer a mi casa?"); await sleep(5000);
+        await send(wa, nombre, "quiero el dermachem, soy de chiclayo"); await sleep(P);
+        await send(wa, nombre, "no puedo ir a la agencia, me lo pueden traer a mi casa?"); await sleep(P);
         const outs = await dichos(wa, 6);
         return [ck(!dice(outs, /s[ií].{0,25}(a tu casa|a domicilio|te lo llevamos)/i), "no prometió delivery a domicilio")];
       } },
@@ -325,7 +332,7 @@
       titulo: "Escribe desde otro país (Bolivia) · debe ser honesto",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "hola, me interesa el serum. escribo desde santa cruz, bolivia"); await sleep(5000);
+        await send(wa, nombre, "hola, me interesa el serum. escribo desde santa cruz, bolivia"); await sleep(P);
         const outs = await dichos(wa, 6);
         return [ck(!dice(outs, /s[ií].{0,20}enviamos a bolivia|llega a bolivia/i), "no prometió envío a Bolivia")];
       } },
@@ -334,9 +341,9 @@
       titulo: "Pide el más barato y después quiere que le regalen algo",
       run: async (s) => {
         const { wa, nombre } = s;
-        await send(wa, nombre, "cual es el mas barato del dermachem?"); await sleep(4500);
-        await send(wa, nombre, "soy de villa el salvador"); await sleep(4000);
-        await send(wa, nombre, "y si llevo el de 79 me das algo de regalo?"); await sleep(5000);
+        await send(wa, nombre, "cual es el mas barato del dermachem?"); await sleep(P);
+        await send(wa, nombre, "soy de villa el salvador"); await sleep(P);
+        await send(wa, nombre, "y si llevo el de 79 me das algo de regalo?"); await sleep(P);
         const outs = await dichos(wa, 8);
         return [
           ck(dice(outs, /79/), "le dijo el precio del más barato"),
