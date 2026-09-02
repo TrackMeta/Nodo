@@ -29,7 +29,15 @@
  * ═══════════════════════════════════════════════════════ */
 (function () {
   const BASE = "https://ahoxdyffbwjlshmdezwi.supabase.co";
-  const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.rEJlxKPUAqQY6BUZY9YHzXfsg7WNAkTGZ0kzHUwtoOA";
+  // 🔑 La clave anónima se TOMA del panel, no se copia a mano. Copiada a mano una vez
+  // salió mal y el efecto fue engañosísimo: los ENVÍOS funcionaban igual (las Edge
+  // Functions validan el token del usuario, no la apikey) pero todas las LECTURAS
+  // devolvían 401 — 13 de 18 escenarios en rojo con todo en `undefined`, como si el
+  // producto estuviera roto. Se resuelve al cargar el script; `run()` la espera.
+  let ANON = null;
+  const listo = import("/Nodo/panel/shell.js")
+    .then((sh) => { ANON = sh.SUPABASE_ANON_KEY; })
+    .catch(() => { throw new Error("No pude leer la clave del panel — abre el panel logueado."); });
   const CH = (() => {
     try { const s = window.__nodoTest?.getSt?.(); if (s?.channelId) return s.channelId; } catch (_) {}
     try { return JSON.parse(localStorage.getItem("nodo.channelId")); } catch (_) {}
@@ -354,6 +362,7 @@
 
   // ════════════════════════════════════════════════════
   async function run({ solo = null, lote = 3 } = {}) {
+    await listo;                    // sin la clave del panel, las lecturas dan 401 y todo sale en rojo
     const lista = solo ? ESCENARIOS.filter((e) => solo.includes(e.id)) : ESCENARIOS;
     const st = { estado: "corriendo", t0: Date.now(), hecho: 0, total: lista.length, results: [] };
     window.__SC = st;
