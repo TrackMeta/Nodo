@@ -770,7 +770,7 @@ function injectDespachoCss() {
 // el estado de la ventana a la vista.
 // `momento` = "despachado" | "en_agencia" | "adelanto_validado" (la plantilla
 // por defecto de cada uno se configura en Pagos y avisos).
-export async function cargarAviso(supa, channelId, contactId, momento) {
+export async function cargarAviso(supa, channelId, contactId, momento, orderId = null) {
   const info = { abierta: false, restante: "", fepActivo: false, fepRestante: "", tpls: [], preferida: null, flujo: null, flujoId: null, texto: "" };
   try {
     // Ventana de SERVICIO (24h desde el último mensaje del cliente): es la que habilita
@@ -845,6 +845,20 @@ export async function cargarAviso(supa, channelId, contactId, momento) {
       ((x.config?.estados) || []).map(String).includes(momento) && x.flows?.estado === "activo");
     if (t) { info.flujo = t.flows?.nombre || "Aviso"; info.flujoId = t.flow_id; }
   } catch (_) { /* sin disparadores */ }
+  if (info.flujo) return info;
+  // 📨 Ni mensaje propio ni flujo: NO significa que no haya nada que mandar. El motor
+  // tiene un aviso por defecto para cada momento —el de "llegó a la agencia" trae el
+  // saldo y anuncia la clave de recojo— y el panel lo ignoraba: proponía "no avisarle"
+  // y el dueño confirmaba en silencio. Medido: un pedido pagado llegó a Andahuaylas y
+  // el cliente nunca se enteró. Se pide el texto REAL al motor (misma función que
+  // envía, así que no hay dos versiones que se separen) y se ofrece.
+  if (orderId) {
+    try {
+      const { data } = await supa.functions.invoke("order-update",
+        { body: { order_id: orderId, estado: momento, preview: true } });
+      if (data?.preview) { info.texto = String(data.preview); info.porDefecto = true; }
+    } catch (_) { /* sin preview → se sigue avisando que no hay nada escrito */ }
+  }
   return info;
 }
 
@@ -870,14 +884,14 @@ export function avisoBlockHtml(info) {
     ${info.fepActivo ? `<div class="avz-fep">Llegó por anuncio${info.fepRestante ? ` — aún gratis por ${esc(info.fepRestante)}` : " — aún gratis"}: la plantilla no te cuesta</div>` : ""}
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
-      info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
+      info.porDefecto ? "El mensaje del sistema" : info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
       !hayFlujo ? "Todavía no escribiste el mensaje de este momento, así que no se enviaría nada. Escríbelo en Pagos y avisos → Avisos de pedido."
         : !info.abierta ? "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada."
         : info.texto ? `“${esc(info.texto.length > 120 ? info.texto.slice(0, 120) + "…" : info.texto)}”`
         : "Es el flujo que se dispara con este estado.",
       // Siempre a Pagos y avisos → Avisos de pedido (ahí se escribe/edita el
       // mensaje de cada momento; si escribes uno, manda ese y el flujo no dispara).
-      `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">${info.texto ? "Editar este mensaje →" : info.flujo ? "Editarlo en Pagos y avisos →" : "Escribirlo ahora →"}</a>`,
+      `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">${info.porDefecto ? "Escribir uno propio →" : info.texto ? "Editar este mensaje →" : info.flujo ? "Editarlo en Pagos y avisos →" : "Escribirlo ahora →"}</a>`,
       !info.abierta || !hayFlujo)}
     ${op("plantilla", "Una plantilla aprobada",
       hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas y activas — créalas en Plantillas.",
@@ -916,7 +930,7 @@ function wireAviso(root) {
 export async function pedirAviso(o, deps, momento, titulo, detalle) {
   const { supa, channelId, contactId } = deps;
   injectDespachoCss();
-  const info = await cargarAviso(supa, channelId, contactId, momento);
+  const info = await cargarAviso(supa, channelId, contactId, momento, o && o.id);
   return new Promise((resolve) => {
     const ov = document.createElement("div");
     ov.className = "overlay";
@@ -947,7 +961,7 @@ export async function openDespachoModal(o, deps) {
   const { updateOrder, toast, supa, channelId, contactId, sugerido = null } = deps;
   const s = o.shipping || {};
   injectDespachoCss();
-  const info = await cargarAviso(supa, channelId, contactId || o.contact_id, "despachado");
+  const info = await cargarAviso(supa, channelId, contactId || o.contact_id, "despachado", o && o.id);
   // La foto vive en shipping.guia_foto → el motor la publica sola como
   // {{pedido_guia_foto}} (buildContext vuelca TODO shipping a variables), así
   // que el aviso puede mandarla sin que haya que tocar el motor.
@@ -2039,7 +2053,7 @@ export function elegirPedidosDespacho(orders, deps) {
 export async function openDespachoLoteModal(orders, deps) {
   const { updateOrder, toast, supa, channelId } = deps;
   injectDespachoCss();
-  const info = await cargarAviso(supa, channelId, orders[0] && orders[0].contact_id, "despachado");
+  const info = await cargarAviso(supa, channelId, orders[0] && orders[0].contact_id, "despachado", orders[0] && orders[0].id);
   return new Promise((resolve) => {
     const ov = document.createElement("div");
     ov.className = "overlay";

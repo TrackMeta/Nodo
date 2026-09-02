@@ -52,6 +52,8 @@ Deno.serve(async (req) => {
     reject?: string; reject_motivo?: string;
     // Cómo avisarle al cliente este cambio (lo elige el humano al mover el pedido).
     aviso?: { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
+    // Solo mirar: devuelve el mensaje que le llegaría al cliente, sin mover nada.
+    preview?: boolean;
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
@@ -66,6 +68,29 @@ Deno.serve(async (req) => {
   // su cuenta debe ser dueña del canal del pedido.
   if (!interno && !(await userOwnsChannel(db, uid, (order as any).channel_id))) {
     return json({ error: "forbidden_channel" }, 403);
+  }
+
+  // 👁️ VISTA PREVIA: qué mensaje le llegaría al cliente si mueves el pedido a `estado`.
+  // No toca nada. Existe para que el panel pueda MOSTRAR el aviso por defecto del motor
+  // en vez de proponer "no avisarle": el dueño que no escribió un texto propio veía
+  // "no se enviaría nada" y confirmaba en silencio… con un mensaje correcto ya escrito
+  // acá. La preview sale de la MISMA función que envía, así que no hay dos versiones.
+  if (body.preview === true) {
+    const shipP = { ...((order as any).shipping ?? {}) };
+    let demP = "";
+    try {
+      const { data: chP } = await db.from("channels").select("entregas")
+        .eq("id", (order as any).channel_id).maybeSingle();
+      demP = demoraProvincia((chP as any)?.entregas, String(shipP?.ciudad ?? ""));
+    } catch { /* sin config → sin plazo */ }
+    const bumpsP = ((order as any).order_bumps ?? []) as any[];
+    const totalP = (Number((order as any).amount) || 0) +
+      bumpsP.reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
+    return json({
+      ok: true,
+      preview: mensajeEstadoDefault(String(body.estado ?? ""), shipP, totalP,
+        (order as any).currency, bumpsP, (order as any).products?.nombre ?? null, demP) ?? "",
+    });
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
