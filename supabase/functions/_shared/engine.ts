@@ -13228,8 +13228,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // IA no lo menciona nunca: el regalo entraba al pedido y el cliente se enteraba
       // recién al recibirlo —o ni eso—. Se pega en el momento en que ya hay algo que
       // ganar (cuando pide datos o cierra) y no se repite.
+      // El disparador es la LISTA DE PRECIOS (dos o más cifras), que es el momento en que
+      // el cliente decide y donde un regalo de verdad inclina la balanza. La primera
+      // versión se colgaba de "pásame tus datos" y no disparaba nunca: medido en Piura, el
+      // bot pasó de las oficinas al cobro sin decir esa frase, y el jabón viajó de sorpresa.
       if (op === "generar_texto" && !String((run.vars as any)?._regalo_dicho ?? "").trim()
-          && /(p[aá]same|d[ií]me|necesito).{0,40}(datos|nombre|dni|direcci)|qued[oó] (confirmado|listo)|te lo (dejo|preparo)/i.test(salida)) {
+          && (String(salida).match(/S\/\s?\d/g) ?? []).length >= 2) {
         try {
           const _pid = String(ctx._product_id ?? "");
           if (_pid) {
