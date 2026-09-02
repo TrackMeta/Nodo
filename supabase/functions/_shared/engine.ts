@@ -6009,10 +6009,37 @@ const SALDO_SCHEMA = {
     // por no aparecer ahí.
     metodo: { type: ["string", "null"], description: "app o banco del pago tal como se ve en el comprobante (Yape, Plin, BCP, Interbank, BBVA…), o null" },
     motivo: { type: "string", description: "explicación breve" },
+    // 🔒 Transcripción LITERAL. No es para leerla nadie: es la prueba de que el modelo
+    // está mirando la imagen y no inventándola. Medido: se le mandó una foto de una cara
+    // sin una sola letra y devolvió es_pago=true, monto 124 y operación "YP060625582J" —
+    // se acreditó un adelanto que nunca existió. Como el prompt le dice cuál es el titular
+    // y el número esperados, al alucinar los copia y pasa todas las verificaciones. Lo que
+    // NO puede inventar sin contradecirse es la transcripción: el código exige que el
+    // monto aparezca en ella (ver `pruebaDeTexto`).
+    texto_visible: {
+      type: ["string", "null"],
+      description: "TRANSCRIBE LITERALMENTE todo el texto que se ve en la imagen, tal cual, sin interpretarlo " +
+        "ni completarlo. Si la imagen no tiene texto, devuelve cadena vacía. NUNCA inventes texto que no esté.",
+    },
   },
   required: ["es_pago", "valido", "motivo"],
   additionalProperties: false,
 } as const;
+
+// ¿Lo que el modelo dice haber leído está de verdad en la imagen? Se comprueba que el
+// MONTO aparezca en la transcripción. Si el campo no viene (proveedor que ignora el
+// esquema), se devuelve `true` a propósito: mejor seguir como siempre que frenar todos
+// los pagos legítimos de un negocio por un cambio de formato.
+function pruebaDeTexto(parsed: any, monto: number): boolean {
+  const t = parsed?.texto_visible;
+  if (t == null) return true;                       // el modelo no lo devolvió → como antes
+  const plano = String(t).toLowerCase().replace(/[\s,]/g, "");
+  if (plano.replace(/[^a-z0-9]/g, "").length < 10) return false;   // imagen sin texto real
+  if (!Number.isFinite(monto)) return false;
+  // El monto puede verse como "20", "20.00" o "20.0": basta con que su parte entera esté.
+  const entero = String(Math.trunc(monto));
+  return plano.includes(entero);
+}
 
 // Con qué app/banco pagó, tal como se ve en el comprobante. Se guarda para el
 // CONCILIADOR: si subes el reporte de Yape y esta venta se pagó por BCP, no
@@ -6140,7 +6167,10 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       const { data: ch } = await db.from("channels").select("ocr_config, moneda, timezone").eq("id", channelId).maybeSingle();
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (ch as any)?.moneda ?? null, false, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
-        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo.";
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo y texto_visible. " +
+        "En `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin " +
+        "interpretarlo ni completarlo, y cadena vacía si la imagen no tiene texto—: es la prueba de que " +
+        "estás mirando la imagen y no suponiendo lo que debería decir.";
       const raw = await runAI({
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [imageBlock(url), { type: "text", text: "¿Es un comprobante de pago? Extrae el monto pagado y el nº de operación." }],
@@ -6937,7 +6967,10 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     if (ai?.api_key) {
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
-        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo. " +
+        "Y en `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin interpretarlo " +
+        "ni completarlo, y cadena vacía si no tiene texto—: es la prueba de que estás mirando la imagen y no " +
+        "suponiendo lo que debería decir.";
       const raw = await runAI({
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [imageBlock(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
@@ -7028,7 +7061,14 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // (sinOpVerificable). Sin `oper` no hay nada que deduplicar en el ledger → el MISMO
   // screenshot ilegible podía auto-validar DOS pedidos distintos (doble despacho contra un
   // solo pago real). La seguridad del dinero manda sobre la conveniencia.
-  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel && !!oper;
+  // 🔒 Y que lo que dice haber leído esté de verdad en la imagen (ver pruebaDeTexto): sin
+  // esto, una foto cualquiera con la que el modelo alucine un comprobante se auto-aprueba.
+  const _hayPrueba = pruebaDeTexto(parsed, monto);
+  if (!_hayPrueba) {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
+      "El monto que dice leer no aparece en el texto de la imagen — puede no ser un comprobante").catch(() => {});
+  }
+  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel && !!oper && _hayPrueba;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -7257,7 +7297,13 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   // 🔒 Sin nº de operación legible NO se auto-aprueba (igual que adelanto/digital): sin `oper`
   // no hay nada que deduplicar → el mismo comprobante ilegible soltaría la clave de recojo de
   // dos pedidos. Cae a manual.
-  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper;
+  // Misma prueba que en el adelanto: que el monto esté de verdad escrito en la imagen.
+  const _pruebaSaldo = pruebaDeTexto(parsed, monto);
+  if (!_pruebaSaldo) {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante del saldo a revisión manual",
+      "El monto que dice leer no aparece en el texto de la imagen").catch(() => {});
+  }
+  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && _pruebaSaldo;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo", contactId))) reuse = true;
@@ -9138,6 +9184,17 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // Es zona Lima (CONTRAENTREGA), pero falta el distrito para despachar y para
   // saber si llega hoy → lo dejamos ABIERTO y la IA le pregunta el distrito. Sin
   // esto, "soy de Lima" caía a provincia y se le ofrecía agencia + adelanto (mal).
+  // ⛔ Y NO se degrada una zona ya resuelta. Medido: un cliente de Tacna que ya tenía su
+  // zona puesta escribió "av vigil. Percy Rodrigo…, DNI 73024297" —el nombre de su oficina
+  // más sus datos— y el extractor devolvió "Lima": la venta entera se pasó a contraentrega
+  // en Lima, con el adelanto ya pagado. Un "Lima" que el cliente NO escribió no puede
+  // tumbar una ciudad de provincia que él sí dijo.
+  if (esLimaGenerica(lugar) && String(ctx.zona_entrega ?? "") === "provincia"
+      && String(ctx.ciudad ?? "").trim() && !/\blima\b/i.test(texto)) {
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "Zona NO degradada",
+      `Se leyó "Lima" pero él nunca lo escribió y ya era ${ctx.ciudad} — se conserva`).catch(() => {});
+    return;
+  }
   if (esLimaGenerica(lugar)) {
     await set("zona_entrega", "lima");
     await set("zona_nombre", "Lima");
