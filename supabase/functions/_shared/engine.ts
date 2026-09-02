@@ -2994,6 +2994,14 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // El flujo igual trae detrás su burbuja fija —"¡Genial! Te lo sumo al pedido, lo pagas
   // junto con el resto"— y eso sería mentirle dos veces: ni va en ese envío ni lo va a
   // pagar junto. Se cambia por la verdad; el equipo ya recibió el aviso para decidir.
+  // ⛔ "Estoy verificando tu adelanto" cuando YA se validó. Pasa con el que paga antes de
+  // dar sus datos: el pago se acredita solo al crear el pedido (le llega el "✅ ¡Recibí tu
+  // adelanto!" con su resumen) y detrás sale igual la burbuja fija del flujo diciendo que
+  // lo está verificando. Leído seguido, parece que el bot se desdice. Se omite.
+  if (/estoy verificando tu (adelanto|pago)/i.test(text) &&
+      String((ctx as any)?.pedido_estado ?? "") === "adelanto_validado") {
+    return true;
+  }
   if ((run?.vars as any)?._extra_tarde && /te lo sumo al pedido|te los sumo al pedido/i.test(text)) {
     text = "¡Gracias! 🙌 Justo tu pedido ya salió, así que eso no alcanza a ir en el mismo envío. " +
       "Se lo paso al equipo para que te digan cómo hacértelo llegar. 😊";
@@ -6298,6 +6306,34 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
   const ship = ((o as any)?.shipping ?? {}) as any;
   const esperado = Number(ship.adelanto);
   const cuadra = okIa && Number.isFinite(esperado) && Number.isFinite(monto) && monto >= esperado - 1;
+
+  // 💸 Con validación AUTOMÁTICA y el monto cuadrando, no hay razón para dejarlo esperando
+  // a un humano: se reentra por el camino normal del adelanto, que ahora sí encuentra el
+  // pedido recién creado. Antes esto SIEMPRE quedaba "a validar" aunque el negocio tuviera
+  // la validación en auto — el cliente pagaba primero (que es lo más entusiasta que puede
+  // hacer) y era justo al que se le castigaba con la espera. Medido en la batería: pagó,
+  // le dijimos "en un momento te confirmo", y ahí se quedó.
+  //
+  // Se reentra en vez de copiar la acreditación acá: ese camino aparta stock, sincroniza
+  // la hoja, ofrece el extra y avisa. Dos copias de eso es dos verdades sobre el dinero.
+  try {
+    const { data: chP } = await db.from("channels").select("pedidos_config").eq("id", run.channel_id).maybeSingle();
+    if (cuadra && String((chP as any)?.pedidos_config?.adelanto?.validacion ?? "manual") === "auto") {
+      const tomo = await maybeAdelanto(db, run.channel_id, run.contact_id, {} as EngineEvent, url);
+      if (tomo) {
+        run.vars.adelanto_prepagado = "si";
+        ctx.adelanto_prepagado = "si";
+        await logEvent(db, run.channel_id, run.contact_id, "nota",
+          "Adelanto prepagado validado solo", "Pagó antes de dar sus datos y el monto cuadraba").catch(() => {});
+        for (const k of ["_prepago_adel_url", "_prepago_adel_monto", "_prepago_adel_oper", "_prepago_adel_ok"]) {
+          await setField(db, run.channel_id, run.contact_id, k, "");
+          delete ctx[k];
+        }
+        return;
+      }
+    }
+  } catch (e) { console.error("[prepago auto]", (e as any)?.message ?? e); }
+
   await db.from("orders").update({
     shipping: {
       ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
@@ -6850,7 +6886,12 @@ async function maybeCambioVariante(db: SupabaseClient, channelId: string, contac
   return true;
 }
 
-async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
+// `urlDirecta`: el comprobante YA subido. Lo usa el prepago (pagó antes de dar sus datos):
+// la imagen llegó cuando el pedido no existía, y al crearse se reentra por acá para que el
+// pago siga EXACTAMENTE el mismo camino que cualquier otro —claim anti-reúso, stock,
+// Sheets, avisos, extras—. Duplicar ese camino para el prepago era garantizar que un día
+// los dos dijeran cosas distintas con la plata del cliente.
+async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent, urlDirecta?: string): Promise<boolean> {
   const { data: order } = await db.from("orders")
     .select("id, estado, amount, currency, shipping")
     .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "esperando_adelanto")
@@ -6862,7 +6903,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
 
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas, timezone").eq("id", channelId).maybeSingle();
   const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
-  const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
+  const url = urlDirecta ?? await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
 
   const esperado = Number(ship.adelanto);
@@ -8721,6 +8762,28 @@ function mensajeAereo(entregas: any): string {
   return m || "¡Buena noticia! 🙌 Para tu zona el envío lo hacemos aéreo con Shalom, así te llega mucho más rápido. 😊";
 }
 
+// 🌎 Países desde donde escribe gente que ve los anuncios y no puede comprar acá. Solo
+// cuenta si viene como PROCEDENCIA: "Bolivia" a secas puede ser la Av. Bolivia de Lima,
+// y "chile" aparece dentro de "Chilca". Por eso el nombre del país va precedido de una
+// fórmula de origen y delimitado por \b.
+const PAISES_FUERA: Array<[string, RegExp]> = [
+  ["Bolivia", /bolivia/], ["Chile", /chile\b/], ["Ecuador", /ecuador/], ["Colombia", /colombia/],
+  ["Argentina", /argentina/], ["Venezuela", /venezuela/], ["México", /m[eé]xico|mexico/],
+  ["España", /espa[ñn]a/], ["Estados Unidos", /estados unidos|ee\.? ?uu|usa\b/],
+  ["Brasil", /brasil/], ["Paraguay", /paraguay/], ["Uruguay", /uruguay/],
+  ["Panamá", /panam[aá]/], ["Costa Rica", /costa rica/], ["Italia", /italia/], ["Japón", /jap[oó]n/],
+];
+const RE_PROCEDENCIA = /\b(desde|vivo en|estoy en|soy de|radico en|resido en|escribo de(sde)?|aqu[ií] en)\b/;
+
+function paisExtranjero(texto: string): string | null {
+  const t = String(texto ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!RE_PROCEDENCIA.test(t)) return null;
+  // Perú manda: "soy de Lima, Perú" no es extranjero.
+  if (/\bper[uú]\b|\bperu\b/.test(t)) return null;
+  for (const [nombre, re] of PAISES_FUERA) if (re.test(t)) return nombre;
+  return null;
+}
+
 // "Lima" a secas = la ciudad, no un distrito. El cliente que dice "soy de Lima"
 // SÍ es zona Lima (contraentrega), pero todavía no sabemos su distrito. Esto lo
 // distingue de nombrar un lugar específico fuera de la lista (→ provincia).
@@ -8926,6 +8989,30 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
 
   // Se prueba mensaje por mensaje y se corta con el PRIMERO que dé un lugar
   // (recordar: van del más nuevo al más viejo, así que gana lo más reciente).
+  // 🌎 ¿Escribe desde OTRO PAÍS? Vale la pena mirarlo antes que nada: hoy "escribo desde
+  // santa cruz, bolivia" caía a provincia y el bot le ofrecía agencia Shalom (que no
+  // existe allá) y le pedía DNI. Medido en la batería: le mandó la lista de precios en
+  // soles y siguió como si nada — el cliente da sus datos y recién ahí se descubre.
+  //
+  // El guard contra el falso positivo es lo delicado: en Lima hay una *Av. Bolivia* y un
+  // *jr. Ecuador*. Por eso pide las dos cosas: que el país venga como PROCEDENCIA ("desde
+  // X", "vivo en X", "soy de X", "estoy en X") y que ese mismo texto no calce con una zona
+  // tuya ni con un distrito del padrón peruano.
+  for (const t of textos) {
+    const _pais = paisExtranjero(t);
+    if (_pais && !matchZona(zonas, t) && !provinciasDeDistrito(limpiaZona(t)).length) {
+      await set("zona_entrega", "fuera");
+      await set("zona_nombre", "");
+      await set("ciudad", "");
+      await set("pais_cliente", _pais);
+      await set("entrega_hoy", "no");
+      await set("entrega_motivo", `escribe desde ${_pais} — fuera de nuestra cobertura`);
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
+        `${_pais} → fuera del país`);
+      return;
+    }
+  }
+
   let z: Zona | null = null;
   let lugar: string | null = null;
   // Dijo "soy de provincia" (o "del interior") sin nombrar su ciudad: sirve para saber que
@@ -9033,6 +9120,17 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
       `${z.nombre} → ${esLima ? "lima" : "provincia"}${esLima ? ` · hoy: ${run.vars.entrega_hoy}` : ""}`);
     if (!esLima) await sellaSedeUnica(db, run, ctx, set);
+    // 🗺️ Su distrito de Lima se llama IGUAL que un distrito de provincia (Miraflores está
+    // en Lima, Arequipa, Huánuco y Yauyos; Santa Rosa en media docena de sitios). Lo damos
+    // por Lima, que acierta casi siempre, pero se marca para CONFIRMARLO de pasada cuando
+    // le pidamos la dirección — una línea, sin un paso extra. Sin eso, el de Miraflores de
+    // Arequipa se va convencido de que le llega mañana a su puerta.
+    if (esLima) {
+      try {
+        const _fuera = provinciasDeDistrito(z.nombre).filter((p) => limpiaZona(p.dep) !== "lima");
+        await set("distrito_ambiguo", _fuera.length ? z.nombre : "");
+      } catch { /* sin padrón → sin aviso, como antes */ }
+    }
     return;
   }
 
@@ -11702,6 +11800,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "⛔ Y hasta saberlo NO le confirmes el pedido ni le digas cómo le llega ni cómo se paga: todavía no lo sabes.",
       );
     }
+    // 🗺️ Su distrito existe en Lima Y fuera de Lima (ver `distrito_ambiguo`). Se confirma
+    // UNA vez y PEGADO a lo que ya le estás pidiendo, nunca como pregunta suelta: para el
+    // 99% que sí es de Lima, un paso extra es fricción pura; para el otro 1% evita mandar
+    // un motorizado a un distrito que está a 1000 km.
+    if (String(ctx.distrito_ambiguo ?? "").trim() && String(ctx.zona_entrega ?? "") === "lima") {
+      parts.push(
+        `## 🗺️ Confírmale el distrito, de pasada\n` +
+        `*${bonito(String(ctx.distrito_ambiguo))}* también existe fuera de Lima, así que en el mismo mensaje ` +
+        `en que le pidas la dirección añade la confirmación en UNA línea corta y natural ` +
+        `("y confírmame que es ${bonito(String(ctx.distrito_ambiguo))} de Lima 🙂"). ` +
+        `⛔ NO hagas de esto un paso aparte, no lo repitas si ya te lo confirmó, y no le expliques por qué preguntas.`,
+      );
+    }
+    // 🌎 Escribe desde OTRO PAÍS. Se le dice la verdad de una y NO se le piden datos: un
+    // pedido a Bolivia no lo puede despachar nadie, y dejarlo avanzar hasta el DNI le hace
+    // perder el tiempo a él y ensucia tus pedidos. Pero no se cierra la puerta en seco:
+    // mucha gente de afuera compra para un familiar en Perú, y esa venta sí se puede.
+    if (String(ctx.zona_entrega ?? "") === "fuera") {
+      parts.push(
+        `## 🌎 Te escribe desde ${String(ctx.pais_cliente ?? "otro país")}\n` +
+        "Solo entregamos DENTRO del Perú: no hay envío internacional. Díselo con amabilidad y de una, " +
+        "sin dar rodeos y sin pedirle ningún dato — nombre, DNI, dirección, nada: no hay pedido que armar. " +
+        "⛔ NO le prometas envío, ni que lo consultas, ni que 'lo estás viendo'. " +
+        "Y déjale la puerta abierta con lo que SÍ se puede: si tiene un familiar o alguien de confianza en " +
+        "Perú, se lo mandamos a esa dirección sin problema y él lo recoge. Pregúntaselo, que muchas veces sí lo tiene.",
+      );
+    }
     // 📷 Le llegó una IMAGEN que NO es un comprobante (una selfie, una foto del producto,
     // una equivocación). Sin decírselo, la IA la trata como pago y contesta "ya confirmé
     // tu adelanto y preparo tu pedido" — medido en la batería, con una selfie. El cliente
@@ -12887,6 +13012,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (_hayQuePedir && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
           salida = conPeticionFinal(salida, cierreHonesto, _lblTal);
         }
+      }
+      // 🗺️ La confirmación del distrito repetido, pegada al mensaje en que le pide la
+      // dirección. Se lo pedí por prompt y no lo hizo —el patrón de siempre—, así que lo
+      // pone el motor: es UNA línea y evita mandar un motorizado a 1000 km. Se pega una
+      // sola vez (al pegarla se borra la marca) y solo si él no lo dijo ya.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "lima"
+          && String(ctx.distrito_ambiguo ?? "").trim() && !String(ctx.direccion ?? "").trim()
+          && /direcci[oó]n/i.test(salida) && !/de lima/i.test(salida)) {
+        const _d = bonito(String(ctx.distrito_ambiguo));
+        salida = salida.trimEnd() + `\n\nAh, y confírmame que es *${_d}* de Lima 🙂`;
+        await setField(db, run.channel_id, run.contact_id, "distrito_ambiguo", "").catch(() => {});
+        delete (ctx as any).distrito_ambiguo;
+        run.vars.distrito_ambiguo = "";
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🗺️ Distrito repetido",
+          `${_d} existe también fuera de Lima — se le pidió confirmar`).catch(() => {});
       }
       // 😊 De ÚLTIMO, cuando el texto ya está armado del todo: si el dueño pidió emojis y
       // el mensaje quedó sin uno solo, se le pone el que aporta. Ver conEmojiMinimo.
