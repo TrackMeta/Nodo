@@ -5841,8 +5841,11 @@ export function mensajeEstadoDefault(
   const _sedeCruda = s.destino
     ? String(s.destino)
     : (String(s.sede_por_confirmar ?? "").trim() ? String(s.ciudad || "") : String(s.sede || s.ciudad || ""));
-  const sede = _sedeCruda.trim()
-    .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim();
+  // `enTitulo` porque la sede viene como la escribió el cliente ("oxapampa") o como está
+  // en el volcado de Shalom, TODO EN MAYÚSCULAS ("ANDAHUAYLAS"). Estos avisos los lee él:
+  // gritarle el nombre de su agencia en medio de la frase se ve como un error.
+  const sede = enTitulo(_sedeCruda.trim()
+    .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim());
   // Lo que falta cobrar cuando `shipping.saldo` no está escrito (pedido creado a mano,
   // venta manual, adelanto validado por un camino que no lo selló). El respaldo era el
   // TOTAL pelado, así que a quien ya había adelantado se le pedía otra vez la plata
