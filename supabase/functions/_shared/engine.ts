@@ -6583,7 +6583,12 @@ const ESTADOS_DESPACHADO = new Set(["despachado", "en_reparto", "en_agencia", "e
 // Señal barata de "quiero MODIFICAR mi pedido" (quitar un item o cambiar la cantidad),
 // para no gastar una llamada de IA en cada turno. El clasificador + la confirmación
 // hacen el trabajo fino; acá solo abrimos la puerta.
-const QUITAR_KW = /\b(quita|quitar|q[uú]itame|saca|sacar|s[aá]came|elimina|eliminar|remueve|remover|b[oó]rra|ya no (lo|la|los|las)? ?(quiero|va|necesito|deseo)|sin (el|la|los|las)|no (lo|la|los|las) ?(quiero|deseo)|no quiero (el|la|los|las|ese|esa|esos|esas))\b/i;
+// OJO con el PRONOMBRE PEGADO, que es como se habla acá: "quítamelo", "sácamelo",
+// "bórramelo". Medido — el cliente aceptó el protector de S/39 y al toque escribió "uy no,
+// mejor quítamelo": ninguna de las señales calzaba (`quita` y `quítame` mueren en el \b
+// que sigue), así que el mensaje nunca llegó al interceptor, el bot le contestó "ya lo
+// quito del pedido" y le cobramos el extra igual.
+const QUITAR_KW = /\b(quita(me)?(lo|la|los|las)?|quitar|q[uú]ita(me)?(lo|la|los|las)?|saca(me)?(lo|la|los|las)?|sacar|s[aá]ca(me)?(lo|la|los|las)?|elimina(lo|la|los|las)?|eliminar|remueve(lo|la)?|remover|b[oó]rra(me)?(lo|la|los|las)?|ya no (lo|la|los|las)? ?(quiero|va|necesito|deseo)|sin (el|la|los|las)|no (lo|la|los|las) ?(quiero|deseo)|no quiero (el|la|los|las|ese|esa|esos|esas))\b/i;
 const CANT_VERBO = /\b(mejor|quiero|quisiera|m[aá]nda|manda|env[ií]a|env[ií]ame|que sean|aumenta|agrega|s[uú]be|s[uú]beme|baja|cambia|hazlo|p[oó]n(me|los|las)?|ll[eé]vame|ser[ií]an|ll[eé]vate)\b/i;
 const CANT_TOKEN = /(\b\d+\b|\bun\b|\buno\b|\buna\b|\bdos\b|\btres\b|\bcuatro\b|\bcinco\b|\bseis\b|\bpar\b|\bpares\b|\bunidad|\bdocena)/i;
 
