@@ -8862,6 +8862,21 @@ function oficinaDeTexto(texto: string): { l: string; t: string; p: string; d: st
   } catch { return null; }
 }
 
+// ¿El cliente nombró una CIUDAD peruana dentro de este texto? Se prueban frases de 3, 2 y
+// 1 palabra contra el padrón ("san pedro de lloc" antes que "san"). Sirve para el mensaje
+// que trae ciudad y oficina juntas —"arequipa av ejercito"—: ahí manda la ciudad, porque
+// esa oficina puede existir en otro departamento y mudarlo 400 km.
+function ciudadEnTexto(texto: string): string | null {
+  const pal = limpiaZona(String(texto ?? "")).split(/\s+/).filter((w) => w.length >= 4);
+  for (let n = 4; n >= 1; n--) {
+    for (let i = 0; i + n <= pal.length; i++) {
+      const frase = pal.slice(i, i + n).join(" ");
+      try { if (provinciasDeDistrito(frase).length) return frase; } catch { /* sigue */ }
+    }
+  }
+  return null;
+}
+
 function paisExtranjero(texto: string): string | null {
   const t = String(texto ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   if (!RE_PROCEDENCIA.test(t)) return null;
@@ -9177,7 +9192,11 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // fue a Tacna, a 400 km de donde vive. Si ya sabemos su ciudad y la oficina no es de
     // ahí, no se toca: `sedeReconocida` la marca para confirmar, que es lo correcto.
     {
-      const _prev = String(ctx.ciudad ?? "").trim();
+      // Su ciudad: la que ya sabíamos o, si todavía no hay, la que nombra en ESTE mismo
+      // mensaje. El segundo caso es el que fallaba: el saludo del rotador se come el primer
+      // mensaje, así que "soy de arequipa" y "arequipa av ejercito" llegan juntos y cuando
+      // se mira la oficina la ciudad aún está vacía.
+      const _prev = String(ctx.ciudad ?? "").trim() || (ciudadEnTexto(texto) ?? "");
       const _suya = (a: { t: string; p: string; d: string }) =>
         [a.t, a.p, a.d].some((x) => limpiaZona(x) === limpiaZona(_prev));
       if (_unica && _prev && !_suya(_unica)) {
@@ -13157,9 +13176,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _enCiudad = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           const _yaElegida = agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
           if (_enCiudad.length === 1 && _yaElegida) {
-            const _sin = sinPreguntaFinal(salida);
-            if (_sin !== salida) {
-              salida = _sin.trimEnd() +
+            // Se quita la ORACIÓN que la pide, no la "pregunta final": medido, la escribe
+            // sin signo de interrogación ("dime a qué oficina de Shalom en Andahuaylas
+            // quieres que te lo envíe para dejarlo listo.") y el recorte por "?" no la veía.
+            const _limpio = salida.split(/\n/).map((l) =>
+              l.split(/(?<=[.!?¡¿])\s+/).filter((o) => !RE_PIDE_SEDE.test(o)).join(" ").trim()
+            ).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+            // Solo si lo que sobrevive sigue siendo un mensaje de verdad.
+            if (_limpio !== salida && _limpio.replace(/[\s\p{P}]/gu, "").length >= 20) {
+              salida = _limpio +
                 `\n\n📍 Te lo dejo en *${bonito(_enCiudad[0].l)}*, que es la única oficina que hay en ` +
                 `${bonito(String(ctx.ciudad))}.`;
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🏢 Una sola oficina",
