@@ -96,8 +96,12 @@
         await send(wa, nombre, "hola quiero el dermachem"); await sleep(P);
         await send(wa, nombre, "2 frascos, soy de los olivos"); await sleep(P);
         await send(wa, nombre, DATOS_LIMA + ", Av Universitaria 2340"); await sleep(P);
-        await send(wa, nombre, "sí, agrégame el protector solar"); await sleep(P);
+        // OJO con el ORDEN: `extras_momento:"antes"` NO es "antes de cerrar" — es
+        // cierra/paga → se le ofrece el extra → recién ahí se entrega. Así que el cliente
+        // confirma PRIMERO y acepta el extra cuando se lo ofrecen. Pedirlo adelantado hacía
+        // que el escenario terminara antes de la oferta y el rojo era del guion.
         await send(wa, nombre, "sí confirmo"); await sleep(P);
+        await send(wa, nombre, "sí, agrégame el protector solar"); await sleep(P);
         const { o } = await pedido(wa);
         const ex = conExtra(o);
         return [

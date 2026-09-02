@@ -5078,7 +5078,10 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // el pueblo con una sola oficina, donde el motor la sella y el bot —al no tener que
     // preguntarla— nunca la nombra. Medido: el cliente cerró su pedido en Andahuaylas sin
     // enterarse de a dónde iba a recoger.
-    if ((run.vars as any)?._ficha_sede) {
+    // ⛔ Solo en PROVINCIA. En Lima el pedido va a su puerta y no hay nada que recoger:
+    // medido, a una clienta de Los Olivos con entrega a domicilio le llegó la ficha de una
+    // agencia diciéndole "esta es tu agencia para el recojo" — se iba a ir a buscarla.
+    if ((run.vars as any)?._ficha_sede && String((ship as any).zona ?? ctx.zona_entrega ?? "") === "provincia") {
       const _slugP = String((run.vars as any)._ficha_sede);
       delete (run.vars as any)._ficha_sede;
       delete (run.vars as any)._ficha_espera;
