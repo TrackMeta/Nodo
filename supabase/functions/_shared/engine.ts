@@ -9325,7 +9325,7 @@ async function sellaSedeUnica(
     // Y la FICHA de esa oficina, igual que cuando la nombra el cliente. Sin esto, al
     // dejar de preguntarle la sede también dejaba de llegarle la tarjeta con la dirección
     // — justo al cliente de pueblo chico, que es el que más la necesita. La marca la
-    // consume runIa después de su mensaje (ver `_ficha_sede`).
+    // manda `crearPedido`, que es donde la sede queda firme (ver `_ficha_sede`).
     (run.vars as any)._ficha_sede = slugAgencia(ags[0]);
     await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
       `${run.vars?.ciudad ?? ctx?.ciudad}: es la única oficina que hay ahí`).catch(() => {});
@@ -9771,8 +9771,8 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             run.vars[c.clave] = val;
             ctx[c.clave] = val;
             // 📍 Eligió su oficina: se marca para mandarle la FICHA después del mensaje
-            // (ver `_ficha_sede`). Acá solo se anota cuál es, porque la imagen tiene que
-            // ir DESPUÉS del texto que se la confirma, no antes.
+            // (ver `_ficha_sede`). Acá solo se anota cuál es; la manda `crearPedido`, que es
+            // el único sitio donde la sede ya quedó firme.
             if (c.clave === "sede") {
               const _ag = agenciaExacta(val, String(ctx.ciudad ?? ""));
               if (_ag) (run.vars as any)._ficha_sede = slugAgencia(_ag);
@@ -13215,38 +13215,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = conEmojiMinimo(salida, ctx, _min);
       }
       const handoff = await emitIaText(db, run, salida, ctx);
-      // 📍 La FICHA de su oficina, detrás del mensaje que se la confirma. Es una imagen
-      // con el nombre, la dirección y la referencia: el cliente la reenvía a quien va a
-      // recoger o se la muestra al mototaxista sin copiar nada a mano. Se manda UNA vez
-      // —la marca se borra pase lo que pase— y solo cuando sabemos con certeza cuál es
-      // la oficina; si la sede quedó vaga no hay ficha que mandar, y decirle una al azar
-      // sería mandarlo al local equivocado.
-      // La ficha va DETRÁS del mensaje que le nombra la agencia, no del turno en que el
-      // motor la selló. Medido: la sede se dedujo mientras el bot le mandaba la lista de
-      // precios, y al cliente le cayó la foto de una agencia de la nada, un turno antes
-      // de que nadie le hablara de agencias. Si este mensaje no la menciona, la marca se
-      // queda para el siguiente — con tope, para que no aparezca diez turnos después.
-      const _menciona = (t: string) => /\b(agencia|oficina|sede|shalom|recog|recoj)/i.test(t);
-      if ((run.vars as any)?._ficha_sede && !handoff && !_menciona(salida)) {
-        const _n = Number((run.vars as any)._ficha_espera ?? 0) + 1;
-        if (_n >= 3) delete (run.vars as any)._ficha_sede;   // nunca la nombró: se deja pasar
-        else (run.vars as any)._ficha_espera = _n;
-      } else if ((run.vars as any)?._ficha_sede && !handoff) {
-        const _slug = String((run.vars as any)._ficha_sede);
-        delete (run.vars as any)._ficha_sede;
-        delete (run.vars as any)._ficha_espera;
-        try {
-          const { data: _f } = await db.from("sede_imagenes").select("url,nombre").eq("slug", _slug).maybeSingle();
-          if (_f?.url) {
-            await emit(db, run, {
-              media_url: _f.url,
-              media_kind: "image",
-              caption: "📍 Esta es tu agencia para el recojo.",
-              _noTpl: true,
-            }, ctx);
-          }
-        } catch { /* sin ficha → el texto ya le dijo la dirección igual */ }
-      }
+      // 🖼️ La ficha de la agencia NO se manda desde acá. Se intentó —detrás del mensaje
+      // que la nombra, esperando hasta 3 turnos— y el resultado era impredecible: dependía
+      // de si la IA mencionaba la agencia en ESE mensaje, y varias veces le cayó la foto
+      // detrás de la lista de precios, sin que nadie le hubiera hablado de agencias. Ahora
+      // sale de un solo sitio, `crearPedido`, que es donde la sede queda firme y el mensaje
+      // siguiente habla de la agencia. Un solo camino, siempre con contexto.
       // Dijo que iba a pagar: si la IA NO le pasó los datos de pago en la respuesta que
       // acaba de salir, se los manda el motor. Va acá (después) para no duplicarlos.
       if (op === "generar_texto" && !handoff) {
