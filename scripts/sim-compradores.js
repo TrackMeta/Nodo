@@ -218,7 +218,10 @@
         const { wa, nombre } = s;
         await send(wa, nombre, "2 frascos del dermachem, soy de cusco"); await sleep(P);
         await send(wa, nombre, "cusco wanchaq. " + DATOS); await sleep(P);
-        const op = "099887766";
+        // Operacion NUEVA en cada corrida: el ledger anti-reuso sobrevive al borrado de
+        // contactos, asi que una fija queda quemada y el segundo comprobante se rechaza
+        // por reuso… y tambien el primero. El escenario dejaba de probar lo suyo.
+        const op = "0" + Math.floor(10000000 + Math.random() * 89999999);
         await foto(wa, nombre, { monto: 20, op, quien: "Elmer Quispe" }); await sleep(POCR);
         await foto(wa, nombre, { monto: 20, op, quien: "Elmer Quispe" }); await sleep(POCR);
         const { o } = await pedido(wa);

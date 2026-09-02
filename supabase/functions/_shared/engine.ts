@@ -13113,6 +13113,28 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = conPeticionFinal(salida, cierreHonesto, _lblTal);
         }
       }
+      // 🏢 Su ciudad tiene UNA sola oficina y ya está sellada: no se le pregunta cuál. Se
+      // lo pedí por prompt y lo saltea cada tanto —"¿a qué oficina de Shalom en Andahuaylas
+      // quieres que te lo enviemos?" con una sola existiendo y ya elegida—, así que lo hace
+      // el motor: se le corta la pregunta y se le dice cuál es. Si la pregunta no se puede
+      // cortar limpio, no se toca nada: un mensaje raro es peor que una pregunta de más.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && RE_PIDE_SEDE.test(salida)) {
+        try {
+          const _enCiudad = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          const _yaElegida = agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
+          if (_enCiudad.length === 1 && _yaElegida) {
+            const _sin = sinPreguntaFinal(salida);
+            if (_sin !== salida) {
+              salida = _sin.trimEnd() +
+                `\n\n📍 Te lo dejo en *${bonito(_enCiudad[0].l)}*, que es la única oficina que hay en ` +
+                `${bonito(String(ctx.ciudad))}.`;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🏢 Una sola oficina",
+                "Se le quitó la pregunta de qué sede: no hay otra").catch(() => {});
+            }
+          }
+        } catch { /* sin ciudad legible → se envía tal cual */ }
+      }
       // 🗺️ La confirmación del distrito repetido, pegada al mensaje en que le pide la
       // dirección. Se lo pedí por prompt y no lo hizo —el patrón de siempre—, así que lo
       // pone el motor: es UNA línea y evita mandar un motorizado a 1000 km. Se pega una
