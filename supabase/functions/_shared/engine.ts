@@ -2286,6 +2286,13 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/, "negocio"],
   ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
   ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
+  // 🏪 El revendedor. Medido: «¿hacen precio por mayor? quiero revender en mi botica…
+  // unas 20 unidades» → «para revender no manejamos precio por mayor». Nadie escribió
+  // eso, y ahí se fue una venta de 20 unidades y un canal de distribución. Que el bot
+  // no tenga una presentación de 20 no significa que el dueño no quiera el negocio:
+  // esto lo decide él, y ahora le queda anotado con la frase del cliente.
+  ["precio por mayor", /\b(por mayor|al por mayor|mayorista|revender|reventa|distribuidor|precio de distribuidor)\b/,
+    /\b(por mayor|mayorista|revend|distribuidor)/, "negocio"],
   // Atributos del producto que la gente pregunta ANTES de comprar y que casi nunca
   // están escritos. Medidos los cuatro en chats reales, y en las dos direcciones:
   // "no son impermeables" y "no tenemos tienda física" (negó sin saber), "son 100%
@@ -11925,6 +11932,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "contrario. El envío por agencia no es un beneficio que le conseguiste: es que su ciudad no entra " +
             "en nuestro reparto. No le inventes un motivo bonito.");
         }
+        // 💰 Y el caso contrario, que es el MEJOR cliente que te puede tocar: el que
+        // ofrece pagar TODO por adelantado. Medido en Cajamarca — «prefiero pagarte todo
+        // ahorita, no solo los 20» → «entiendo, pero requiere un adelanto de S/20 y el
+        // resto lo pagas al recoger». Le dijimos que no a alguien que quería darnos el
+        // 100% por adelantado: cero riesgo de que el paquete se quede en la agencia, y lo
+        // rechazamos. El motor SÍ lo soporta (si el pago cubre el total, lo acredita al
+        // saldo y no queda nada por cobrar); era la IA la que lo negaba de su cosecha.
+        if (Number(ctx.adelanto) > 0) {
+          L.push("✅ Si ÉL propone pagar el TOTAL por adelantado (no solo el adelanto), dile que sí: paga el " +
+            "monto completo a la misma cuenta y en la agencia ya no paga nada. No lo ofrezcas tú ni se lo " +
+            "sugieras — el mensaje de pago que sale solo pide el adelanto — pero si él lo pide, JAMÁS se lo " +
+            "niegues: es la mejor venta que puedes hacer.");
+        }
         // "TAMPOCO lo anuncies, de NINGUNA forma" se leía como "no menciones el adelanto",
         // que choca de frente con la regla de arriba (si pregunta cómo paga, díselo claro:
         // adelanto + saldo). Lo prohibido es anunciar que VIENE OTRO MENSAJE, no la
@@ -12487,6 +12507,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 `❓ Preguntó por ${delAmbito.map(([n]) => n).join(", ")} y no está en la ficha`,
                 String(cita).slice(0, 180)).catch(() => {});
             }
+            // 🏪 El mayorista NO puede quedarse solo en la bitácora: el bot le va a decir que
+            // el precio por cantidad lo ve el dueño, y eso tiene que ser verdad. Va por
+            // Telegram, una sola vez, y sin pausar el bot — que siga vendiéndole packs
+            // mientras tanto. Es la única pregunta de esta lista que trae plata detrás.
+            if (nuevos.includes("precio por mayor")) {
+              const _cita = String(citaDe(/\b(por mayor|al por mayor|mayorista|revender|reventa|distribuidor)\b/i) ||
+                ctx.last_input || "").slice(0, 180);
+              await notifyAdmin(db, run,
+                `🏪 *TE PIDEN PRECIO POR MAYOR*\n\n👤 ${String(ctx.nombre ?? "Un cliente")}\n💬 “${_cita}”\n\n` +
+                `El bot NO le puso precio (no lo tiene) y le dijo que eso lo ves tú. Sigue vendiéndole packs normales.`,
+              ).catch(() => {});
+            }
           }
         } catch (_) { /* el registro nunca debe tumbar la respuesta */ }
         // Esta pregunta suele DECIDIR la compra, así que la respuesta tiene que vender.
@@ -12499,6 +12531,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // aplica: acá inventar no cuesta una venta, cuesta un daño — y el bot lo hizo en
         // las dos direcciones posibles (negar "no está recomendado en el embarazo" es tan
         // inventado como afirmar que sí). Va ANTES para que mande sobre el resto.
+        // 🏪 El mayoreo tiene su propio bloque porque la regla general ("no lo niegues") no
+        // le gana a la objeción de precio que el dueño sí escribió ("los packs YA son el
+        // descuento, no bajes de ahí"). La IA aplicaba esa —correcta para un consumidor— a
+        // un revendedor que pedía 20 unidades, y le cerraba la puerta: «no manejamos precio
+        // por mayor, el precio es fijo para todos». Son dos cosas distintas y hay que
+        // decírselo. El precio mayorista no lo pone el bot: lo pone el dueño.
+        if (faltan.includes("precio por mayor")) {
+          parts.push("## 🏪 Te está pidiendo precio por MAYOR (para revender)\n" +
+            "Esto NO es la objeción de «hazme un descuento» de un cliente suelto: es alguien que quiere comprar " +
+            "cantidad para revender, y eso puede valer mucho más que una venta. ⛔ No le digas que no manejamos " +
+            "precio por mayor —nadie lo escribió— ni le inventes un precio o un mínimo. " +
+            "Dile la verdad: el precio por cantidad lo ve el dueño directamente, que ya tiene su consulta y le " +
+            "responde por acá mismo (es cierto: se le acaba de avisar). Pregúntale cuántas unidades quiere, y " +
+            "déjale claro que mientras tanto puede llevarse los packs normales al precio de siempre.");
+        }
         const _esSalud = faltan.some((t) => /embarazo|lactancia|contraindicaciones|niños|menores/i.test(t));
         if (_esSalud) {
           parts.push("## 🩺 Te preguntó algo de SALUD y no está en la ficha\n" +
