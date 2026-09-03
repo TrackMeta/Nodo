@@ -6391,6 +6391,59 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       }
     }
   }
+  // 🛵 PAGÓ POR ADELANTADO UN PEDIDO DE LIMA (contraentrega). Este interceptor da por hecho
+  // que quien manda una captura está pagando el adelanto de PROVINCIA, y a un cliente de
+  // Lima que yapeó su pedido completo le contestó «¡Recibí tu pago! 🙌 Para despachar tu
+  // pedido a la agencia solo me falta tu DNI» — habla de una agencia que no existe en su
+  // caso, le pide un dato que en Lima no se usa… y sobre todo NO acredita nada: el pedido
+  // seguía con su saldo intacto, así que el motorizado le iba a cobrar los mismos S/119 que
+  // acababa de pagar. Cobrarle dos veces al que se adelantó a pagar es lo peor que le
+  // podemos hacer justo a ese cliente.
+  // Acreditar solo no se puede (una captura se edita en un minuto), así que el pago queda
+  // guardado en SU pedido, se avisa al dueño y lo confirma una persona — sin prometerle al
+  // cliente nada que todavía no sea cierto.
+  {
+    const { data: ordLima } = await db.from("orders")
+      .select("id, amount, currency, order_bumps, shipping, estado")
+      .eq("channel_id", channelId).eq("contact_id", contactId)
+      .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const _shL = ((ordLima as any)?.shipping ?? {}) as any;
+    if (ordLima && String(_shL.zona ?? "") === "lima") {
+      const _monto = parseMonto(parsed?.monto, {});
+      const _oper = parsed?.operacion ? String(parsed.operacion).trim() : "";
+      const _porCobrar = Number(_shL.saldo) || (Number((ordLima as any).amount) || 0) +
+        (((ordLima as any).order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+      // Write ESTRECHO del shipping (0068): el operador puede estar editando la dirección
+      // en el panel al mismo tiempo, y un update con el snapshot viejo se la pisaría.
+      // ⚠️ try/catch, NO `.catch()`: `db.rpc()` devuelve un builder que no es una Promise
+      // de verdad y no tiene `.catch` — el TypeError se lo tragaba el caller y el pago
+      // desaparecía en silencio, que es justo lo que este bloque viene a evitar.
+      const _patch = {
+        pago_adelantado_comprobante: url, pago_adelantado_monto: _monto ?? "",
+        pago_adelantado_operacion: _oper, pago_adelantado_por_validar: true,
+      };
+      try {
+        await db.rpc("order_patch_shipping", { p_order_id: (ordLima as any).id, p_patch: _patch });
+      } catch (_) {
+        await db.from("orders").update({ shipping: { ..._shL, ..._patch } })
+          .eq("id", (ordLima as any).id);
+      }
+      await logEvent(db, channelId, contactId, "nota", "💸 Pagó por adelantado un pedido de Lima",
+        `${_monto != null ? "Monto leído: " + _monto + ". " : ""}Por cobrar en la puerta: ${_porCobrar}. ` +
+        `Queda por validar: si está bien, el motorizado NO debe cobrar.`).catch(() => {});
+      const _sym2 = simboloMoneda((ordLima as any).currency);
+      await deliverMessage(db, channelId, contactId,
+        `¡Gracias por adelantarte con el pago! 🙌 Ya tengo tu comprobante${_monto != null ? ` de *${_sym2} ${_monto}*` : ""} ` +
+        `y lo estoy verificando. En cuanto quede confirmado, cuando llegue el motorizado ya no pagas nada. 😊`,
+      ).catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `💸 Pagó POR ADELANTADO un pedido de Lima (contraentrega)${_monto != null ? `: ${_monto}` : ""}` +
+        `${_oper ? ` · op ${_oper}` : ""}. Por cobrar en la puerta: ${_porCobrar}. ` +
+        `Valida el comprobante y avísale al motorizado que NO cobre.`, { aviso: false }).catch(() => {});
+      return true;
+    }
+  }
   // Es un pago, pero no hay ninguna venta suya a la que atarlo. No se promete despacho ni se
   // guarda como "prepago del adelanto" (no habría pedido que lo enganche y quedaría invisible
   // para siempre): se reconoce la captura sin afirmar nada y lo toma una persona.
@@ -11755,6 +11808,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // más común comprando por WhatsApp, y en Lima se responde sola: paga cuando lo tiene
         // en la mano. Antes ni se llegaba a esto —la palabra "estafa" escalaba el chat a un
         // humano sin contestar nada— y era regalar la venta más fácil de cerrar.
+        // 🏢 Cliente de LIMA que pide AGENCIA. Pasa seguido: gente que no para en casa, o
+        // que vio que a provincia va por Shalom y cree que es así para todos. Medido: «estoy
+        // en Lima pero quiero que me llegue a la agencia Shalom… a la de Villa El Salvador»
+        // → «Perfecto, domicilio en Villa El Salvador». Le cambiamos la entrega sin decirle
+        // nada: él espera recogerla en una oficina y le va a tocar el motorizado en una
+        // dirección que nunca dio. Eso es un rechazo en la puerta con el flete pagado.
+        if (AGENCIA_KW.test(String(ctx.last_input ?? "").toLowerCase())) {
+          L.push("🏢 Te está pidiendo que se lo mandes a una AGENCIA, y él es de Lima. Acá no despachamos " +
+            "por agencia: en Lima va a su puerta. Díselo claro y como lo que es —una ventaja: no tiene que " +
+            "ir a recogerlo y paga recién cuando lo tiene en la mano—, y confírmale que le va bien así. " +
+            "⛔ Lo que NO puedes hacer es contestarle «perfecto, domicilio en X» como si te hubiera pedido " +
+            "eso: te pidió otra cosa y se va a enterar cuando le toquen la puerta.");
+        }
         L.push("Si duda de si es confiable o teme que no le llegue, tienes LA respuesta: paga RECIÉN cuando " +
           "recibe el pedido, en la puerta de su casa. Díselo con seguridad y calidez, sin ofenderte ni ponerte " +
           "a la defensiva, y cierra pidiéndole el siguiente dato.");
