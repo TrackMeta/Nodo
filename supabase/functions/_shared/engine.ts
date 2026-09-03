@@ -231,9 +231,15 @@ async function runEngineInner(
   // air) y te avisa. La consulta al canal solo corre si el texto ya disparó la
   // red determinista, así que es barata. Se puede apagar (humano.reclamos=false).
   if (event.type === "message" && pideReclamo(event.text)) {
-    const { data: chR } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
-    if (((chR as any)?.pedidos_config?.humano?.reclamos ?? true) !== false) {
-      await pasarAHumano(db, channelId, contactId, "😠 Reclamo / cliente molesto: “" + String(event.text ?? "").slice(0, 120) + "”", { aviso: true });
+    // "¿esto es una estafa, no?" sin pedido de por medio no es un reclamo: es LA objeción
+    // más común antes de comprar, y el negocio ya tiene escrita la respuesta. Escalarla
+    // dejaba al que estaba a punto de comprar esperando a un asesor. Con pedido, escala.
+    const dudaSinComprar = dudaNoReclamo(event.text) && !(await tienePedidoVivo(db, contactId));
+    const { data: chR } = dudaSinComprar
+      ? { data: null }
+      : await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+    if (!dudaSinComprar && ((chR as any)?.pedidos_config?.humano?.reclamos ?? true) !== false) {
+      await pasarAHumano(db, channelId, contactId, "😠 Reclamo / cliente molesto: “" + String(event.text ?? "").slice(0, 120) + "”", { aviso: true, molesto: true });
       return;
     }
   }
@@ -1485,11 +1491,20 @@ const PIDE_RECLAMO = [
 // estafa?" duda. Y el que duda todavía no compró — escalarlo es regalar la venta. Estas
 // formas dubitativas vetan la escalada aunque la frase pegue con la lista de arriba.
 const RE_DUDA_NO_RECLAMO =
-  /\b(no ser[aá]|ser[aá] que|no sea|espero que no|c[oó]mo s[eé] que|como se que|me da (miedo|cosa|desconfianza)|desconf[ií]|es seguro|son seguros?|es confiable|puedo confiar)\b/i;
+  // La coletilla final —"…es una estafa, ¿no?", "…es puro cuento, ¿verdad?"— es la forma
+  // peruana de DUDAR en voz alta, no de acusar. Sin ella, "oye este producto es una estafa
+  // no?" (un cliente que todavía no compra y está desconfiando) se escalaba a una persona:
+  // se regalaba la venta y encima se desperdiciaba la objeción que el negocio ya tiene
+  // escrita para exactamente eso. El que acusa de verdad no pregunta al final.
+  /\b(no ser[aá]|ser[aá] que|no sea|espero que no|c[oó]mo s[eé] que|como se que|me da (miedo|cosa|desconfianza)|desconf[ií]|es seguro|son seguros?|es confiable|puedo confiar)\b|[,¿\s](no|verdad|cierto|o no)\s*\?/i;
+// La duda solo desactiva la escalada mientras NO haya pedido. Al que ya compró, "¿me
+// estafaron?" no le sobra: ahí la misma palabra es un reclamo y quiere una persona.
+function dudaNoReclamo(text: string): boolean {
+  return RE_DUDA_NO_RECLAMO.test(String(text ?? ""));
+}
 function pideReclamo(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 240) return false; // los reclamos suelen ser largos (rants)
-  if (RE_DUDA_NO_RECLAMO.test(String(text))) return false; // duda previa a comprar, no acusación
   return PIDE_RECLAMO.some((f) => {
     const n = limpiaOpt(f);
     if (!n) return false;
@@ -1866,7 +1881,7 @@ function horarioAtencion(hcfg: any, tz: string): { dentro: boolean; proxima: str
 //   false/omitido → no manda nada (el caller ya avisó por su cuenta).
 async function pasarAHumano(
   db: SupabaseClient, channelId: string, contactId: string, motivo: string,
-  opts?: { aviso?: boolean | "fuera" },
+  opts?: { aviso?: boolean | "fuera"; molesto?: boolean },
 ) {
   try {
     await db.from("contacts").update({ bot_activo: false }).eq("id", contactId);
@@ -1882,7 +1897,15 @@ async function pasarAHumano(
       const h = horarioAtencion(hcfg, tz);
       dentro = h.dentro; proxima = h.proxima;
       if (opts.aviso === true || !dentro) {
-        if (!dentro) {
+        // A alguien que acaba de escribir "esto es una estafa" o "no me llegó nada" el
+        // acuse normal le contesta "¡Gracias! 🙌", y eso lo enciende más: le agradeces
+        // el reclamo. Mismo camino, otro tono — solo pisa el DEFAULT; si el dueño
+        // escribió su propio aviso, manda el suyo.
+        if (opts.molesto && !String(hcfg[dentro ? "aviso_dentro" : "aviso_fuera"] ?? "").trim()) {
+          avisoTxt = dentro
+            ? "Lamento el inconveniente 🙏 Le paso tu caso a una persona del equipo para que lo revise y te responda por aquí en un momento."
+            : `Lamento el inconveniente 🙏 Ahora mismo no hay un asesor en línea${proxima ? `, pero te responde ${proxima}` : ""}. Cuéntame por aquí qué pasó y lo vemos apenas volvamos.`;
+        } else if (!dentro) {
           avisoTxt = String(hcfg.aviso_fuera ?? "").trim() ||
             `¡Gracias por escribir! 🙌 Ahora mismo no hay un asesor en línea${proxima ? `, pero te responde ${proxima}` : ""}. Déjame tu consulta por aquí y la vemos apenas volvamos. 🙏`;
         } else {
@@ -2158,7 +2181,9 @@ async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: stri
 const REGLA_TUTEO =
   "## Cómo hablas\nEscribes en español peruano y tratas al cliente de TÚ (tú, avísame, cuéntame, " +
   "dime, tienes, quieres, necesitas). ⛔ NUNCA voseo argentino: nada de «querés», «tenés», " +
-  "«necesitás», «podés», «vos», «acá tenés». Tampoco español de España («vale», «os», «vosotros»).";
+  "«necesitás», «podés», «vos», «acá tenés». Tampoco español de España («vale», «os», «vosotros»).\n" +
+  "✍️ Escribes SIN faltas de ortografía: «parezca», «hacer», «vez», «hay». Puedes sonar cercano " +
+  "y hasta soltar el «tú» de confianza, pero una palabra mal escrita le baja la confianza al cliente.";
 
 // ⛔ Decisión de Rodrigo (2026-08-31): el HECHO sí («pagas al recibir»), el DISCURSO no.
 // «Sin riesgo», «sin adelantos», «no arriesgas nada» es venderle tranquilidad a quien no
@@ -7620,7 +7645,7 @@ async function maybeReclamoSinPedido(
     "Lamento el inconveniente 🙏 Déjame revisarlo con alguien del equipo y te respondemos por acá.").catch(() => {});
   await pasarAHumano(db, channelId, contactId,
     `Reclama por una compra que NO figura a su nombre en el bot: “${String(event.text).slice(0, 160)}”. ` +
-    `Puede haber comprado desde otro número o estar cargada a mano.`, { aviso: true }).catch(() => {});
+    `Puede haber comprado desde otro número o estar cargada a mano.`, { aviso: true, molesto: true }).catch(() => {});
   await logEvent(db, channelId, contactId, "nota", "🛟 Reclamo sin pedido registrado",
     "Se atendió y pasó a un humano en vez de arrancarle la venta").catch(() => {});
   return true;
