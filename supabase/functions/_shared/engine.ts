@@ -1543,6 +1543,10 @@ function pideReclamo(text: string): boolean {
 // cliente se reinyecta al nodo de IA (ver el uso). Pide signo de interrogación o un
 // arranque interrogativo claro — "hola quiero el dermachem" NO es pregunta y no debe
 // adelantar el guion del dueño.
+// Regateo, comparación con otro vendedor y "está caro": afirmaciones, sin signo de
+// pregunta, que el saludo fijo se lleva por delante.
+const RE_TRAE_OBJECION =
+  /\b(descuento|rebaja|rebajas|m[aá]s barato|otro lado|otra tienda|la competencia|[uú]ltimo precio|precio final|me lo dejas|me lo deja|te lo compro|lo compro all[aá]|est[aá] caro|muy caro|carazo|no me alcanza|promoci[oó]n|oferta especial)\b/i;
 const RE_TRAE_PREGUNTA =
   /[?¿]|\b(cu[aá]nto|cu[aá]nta|cu[aá]l|cu[aá]ndo|c[oó]mo|d[oó]nde|qu[eé]\s|por\s?qu[eé]|se\s+puede|puedo|tienen|tienes|hay\s|hacen|env[ií]an|sirve|funciona|es\s+bueno|me\s+sirve)\b/i;
 // ¿El primer mensaje trae algo que el saludo fijo va a IGNORAR? Dos casos, los dos medidos:
@@ -1560,6 +1564,12 @@ function traePregunta(text?: string | null): boolean {
   if (t.length < 6 || t.length > 400) return false;
   if (RE_TRAE_PREGUNTA.test(t)) return true;
   if (/\d{6,}/.test(t)) return true;
+  // 💰 Una OBJECIÓN de precio no lleva signo de pregunta y es exactamente lo que no se
+  // puede dejar pasar. Medido: «en otro lado me dejan el serum a 60 soles, si no me lo
+  // dejas a 65 lo compro allá» — el saludo contestó «¿desde dónde nos escribe?», nadie
+  // le respondió el regateo, y el negocio tenía la objeción escrita palabra por palabra.
+  // Al que compara precios se le contesta en el mismo turno o se va con el otro.
+  if (RE_TRAE_OBJECION.test(t)) return true;
   return t.length > 25 && t.split(",").filter((x) => x.trim().length > 1).length >= 3;
 }
 
@@ -2264,6 +2274,13 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
 // quedaba registrada en ningún lado.
 const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   ["certificado", /certificad/, /certificad/, "producto"],
+  // 🇵🇪 El permiso sanitario: lo pregunta quien va en serio (cosmético, suplemento,
+  // alimento) y el bot lo negaba de memoria. Medido: «¿tiene registro sanitario de
+  // DIGEMID?» → «No contamos con registro sanitario de Digemid, pero sí garantizamos
+  // que es original». Nadie escribió eso en ninguna parte: negó un permiso que el
+  // producto probablemente TIENE, y de paso dejó por escrito que vende sin registro.
+  ["el registro sanitario", /\b(registro sanitario|digemid|digesa|senasa|notificaci[oó]n sanitaria|permiso sanitario)\b/,
+    /\b(registro sanitario|digemid|digesa|senasa|notificaci[oó]n sanitaria)\b/, "producto"],
   ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/, "negocio"],
   ["garantía", /garant[ií]a/, /garant[ií]a/, "producto"],
   ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/, "negocio"],
@@ -12298,9 +12315,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (String(run.vars._saludo_recien ?? "").trim()) {
       parts.push("## Ojo: el saludo YA salió en este mismo turno\nAcabas de enviarle esto:\n\"" +
         String(run.vars._saludo_recien).trim() + "\"\n" +
-        "⛔ NO vuelvas a saludar ni repitas ninguna pregunta que ya esté ahí — el cliente vería la misma " +
-        "pregunta dos veces seguidas. Contesta lo que TE preguntó él y, si te falta un dato, pídele uno " +
-        "DISTINTO al que el saludo ya pidió.");
+        "⛔ NO vuelvas a saludar ni repitas ninguna pregunta que ya esté ahí — ni con otras palabras: " +
+        "«¿desde dónde nos escribe?» y «¿de qué distrito me escribes?» son la MISMA pregunta, y el cliente " +
+        "las ve seguidas. Tu turno es para atender lo que él dijo: contéstale su pregunta o su objeción " +
+        "—el precio, que en otro lado se lo dejan más barato, si sirve para su caso— con lo que tienes en " +
+        "la ficha, ANTES de pedirle nada. Si te falta un dato, pídele uno DISTINTO al que el saludo ya pidió.");
     }
     // 🎨 El bloque de ESTILO se guarda para el FINAL (ver más abajo, justo antes de armar
     // el prompt). Acá quedaba enterrado bajo doce bloques de reglas de venta, y medido en un
