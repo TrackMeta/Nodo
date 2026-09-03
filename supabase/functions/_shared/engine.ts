@@ -1569,9 +1569,18 @@ const RE_DUDA_NO_RECLAMO =
 function dudaNoReclamo(text: string): boolean {
   return RE_DUDA_NO_RECLAMO.test(String(text ?? ""));
 }
+// 📦 El paquete llegó MAL. No trae ninguna de las palabras de enojo de la lista —el cliente
+// suele preguntarlo con toda educación—, pero es el reclamo más caro que existe: hay que
+// decidir si se repone, y eso lo decides tú. Medido: «me llegó el frasco pero está abierto
+// y derramado, ¿qué hago?» — el bot contestó solo, con mucha empatía, ofreciéndole «enviarte
+// uno nuevo o una solución rápida»… y nadie se enteró nunca. Una reposición prometida por
+// el bot que el negocio no sabe que debe.
+const RE_PRODUCTO_DANADO =
+  /\b(lleg[oó]\w*|vino|recib[ií])\b[^.!?]{0,50}\b(roto|rota|abiert[oa]|derramad\w+|da[ñn]ad\w+|malogrado|malograda|incompleto|incompleta|vac[ií]o|vac[ií]a|golpead\w+|manchad\w+|vencid\w+|otro producto|otra cosa)\b|\b(est[aá]|vino)\s+(todo\s+)?(roto|rota|abiert[oa]|derramad\w+|da[ñn]ad\w+|malogrado|vac[ií]o)\b|\bno\s+me\s+lleg[oó]\s+(completo|todo|el\s+regalo)\b/i;
 function pideReclamo(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 240) return false; // los reclamos suelen ser largos (rants)
+  if (RE_PRODUCTO_DANADO.test(String(text ?? ""))) return true;
   return PIDE_RECLAMO.some((f) => {
     const n = limpiaOpt(f);
     if (!n) return false;
@@ -1683,9 +1692,18 @@ const CANCELAR_ES_PAGO = [
 const RE_CANCELE_PASADO = /\b(ya\s+)?(cancele|cancelé|cancelado|cancelamos|cancelaron)\b/i;
 
 // ¿El "cancelar" del mensaje es en realidad PAGAR? Devuelve true = no tocar el pedido.
+// 💸 Pero si en el mismo mensaje pide que le DEVUELVAN la plata, no hay ambigüedad que
+// resolver: quiere darse de baja. Medido, y es de los peores que vi: «sabes que mejor
+// cancélalo, ya no lo quiero, devuélvanme mi adelanto» → la palabra "adelanto" hizo que se
+// leyera como "cancelar = pagar" y el bot le contestó «¡Claro! Para cancelar el saldo de
+// S/59: [Yape] mándame la captura». Le pedimos MÁS plata a quien pedía que le devolvieran
+// la suya. Este veto va primero: la devolución manda sobre cualquier palabra de pago.
+const RE_PIDE_DEVOLUCION =
+  /\b(devu[eé]lv\w+|devolucion\w*|devoluci[oó]n|reembols\w+|me\s+devuelv\w+|regr[eé]s\w+me|que\s+me\s+devuelvan|recuperar\s+mi\s+(plata|dinero))\b|\bya\s+no\s+(lo|la)\s+(quiero|necesito)\b/i;
 function cancelarSignificaPagar(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t) return false;
+  if (RE_PIDE_DEVOLUCION.test(String(text ?? ""))) return false;
   // "S/ 129", "129 soles" pegado a cancelar → está hablando de plata
   if (/\bcancel\w*\b[^.]{0,30}\b(s\/?\s*\d|\d+\s*(soles|lucas))/i.test(t)) return true;
   if (CANCELAR_ES_PAGO.some((p) => {
