@@ -288,6 +288,16 @@ async function runEngineInner(
         || !!(ord.shipping as any)?.adelanto_comprobante;
       if (yaSalio) {
         // Ya está en la calle: cancelar solo saldría caro (flete, devolución). Decide una persona.
+        // Antes del "te atiende un asesor" va la verdad concreta: el aviso genérico deja al
+        // cliente sin saber qué pasó con SU pedido, y lo que quiere saber es si se paró o no.
+        {
+          const _s = (ord.shipping ?? {}) as Record<string, any>;
+          const _d = enTitulo(String(_s.destino ?? _s.sede ?? _s.ciudad ?? "").trim()
+            .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, ""));
+          await deliverMessage(db, channelId, contactId,
+            `Entiendo 🙏 Lo que pasa es que tu pedido ya salió${_d ? ` rumbo a *${_d}*` : ""}, ` +
+            "así que anularlo ya no depende de mí: tengo que verlo con el equipo y la agencia.").catch(() => {});
+        }
         await pasarAHumano(db, channelId, contactId,
           `🚫 Quiere CANCELAR su pedido y YA SALIÓ (${ord.estado}${ord.amount ? ` · ${ord.amount}` : ""}): “${String(event.text ?? "").slice(0, 120)}”. ` +
           `Míralo con el courier antes de cancelar${conAdelanto ? " y ojo que dejó adelanto" : ""}.`,
@@ -1527,6 +1537,16 @@ const PIDE_CANCELAR = [
   "deseo cancelar", "necesito cancelar", "puedo cancelar", "se puede cancelar",
   "anula el pedido", "anula mi pedido", "anular el pedido", "anular mi pedido", "anulalo",
   "me arrepenti", "ya no voy a comprar", "ya no quiero el pedido", "dejalo sin efecto",
+  // Con el pronombre pegado, que es como se pide de verdad. Medido: "anúlame el pedido"
+  // no estaba (sí "anula el pedido") y la petición se perdió — se la tragó la oferta del
+  // extra, que la leyó como un rechazo y contestó "tu pedido queda tal cual" a alguien que
+  // acababa de pedir cancelarlo. Es el mismo tropiezo del enclítico que el "quítamelo".
+  "anulame el pedido", "anulame mi pedido", "anulame la compra", "anulamelo", "anulame todo",
+  "cancelamelo", "cancelame la compra", "cancelame todo", "quiero anular", "quiero anularlo",
+  "necesito anular", "deseo anular", "ya no quiero la compra", "ya no quiero nada",
+  "dalo de baja", "dar de baja el pedido", "da de baja mi pedido",
+  // ⛔ A propósito NO se añade "ya no lo quiero" a secas: con la oferta de un extra sobre
+  // la mesa esa frase significa "no quiero el protector", y cancelaría la venta entera.
 ];
 function pideCancelar(text: string): boolean {
   const t = limpiaOpt(text);
