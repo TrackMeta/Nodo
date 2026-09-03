@@ -6574,6 +6574,12 @@ const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|di
 // corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
 const NOMBRE_KW = /\b(a nombre|nombre de|nombre del|destinatari|lo recoge|la recoge|lo recoje|la recoje|recoja|figure a|figura a|a mi (esposa|esposo|mama|mamá|papa|papá|hijo|hija|hermano|hermana|amig|vecin))\b/i;
 const TEL_KW = /\b(telefono|teléfono|celular|numero|número|whatsapp|contacto|llam)/i;
+// «Y otro para mi hermana», «también quiero uno para mi mamá»: NO es corregir su pedido,
+// es un pedido MÁS para otra persona. Pide el "para" a propósito — «ponlo a nombre de mi
+// hermana» (mismo pedido, otro destinatario) tiene que seguir cambiando los datos, y
+// «quiero otro frasco» es cantidad, que tiene su propio camino.
+const RE_OTRO_PEDIDO =
+  /\b(y\s+)?(otro|otra|uno|una)\s+(m[aá]s\s+)?(para|pa'?)\s+(mi|el|la|su|un[ao]?|otra)\b|\btambi[eé]n\s+(quiero\s+|quisiera\s+|dame\s+)?(otro|otra|uno|una)\b|\baparte\s+(quiero|dame|otro|otra|uno|una)\b|\b(otro|otra)\s+(pedido|envio|env[ií]o)\s+(para|a)\b/i;
 // Lo que el cliente dice cuando NO quiere cambiar la dirección (no es un destino).
 const RE_DIR_NO_ES_DIR =
   /^(a |en |la |el |lo )*(misma|mismo|igual|de siempre|siempre|anterior|de antes|otra vez)( direccion| dir| lugar| sitio| casa| lado)?( que (antes|siempre|el anterior|la anterior))?\.?$|^(donde|como) (siempre|antes|la (vez )?pasada|el otro pedido|el anterior)\.?$|^la (de|del) (siempre|antes|otro pedido|anterior)\.?$/;
@@ -6592,6 +6598,23 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order) return false;
+  // 👥 SEGUNDO pedido para OTRA persona. Medido, y de los caros: una clienta de Miraflores
+  // cerró su pedido y escribió «y otro para mi hermana en Trujillo, ella se llama Ruth
+  // Salas DNI 41234567». Esto leyó el nombre y el DNI como una CORRECCIÓN y le cambió el
+  // destinatario a SU pedido: el paquete quedó saliendo a Lima, a nombre de una señora de
+  // Trujillo. Ella se quedaba sin lo suyo y el pedido de la hermana no existía — dos ventas
+  // rotas de un solo mensaje. Un segundo pedido no lo puede armar este camino (el run tiene
+  // UN pedido), así que lo que toca es no romper nada y ponerle una persona: son dos ventas.
+  if (RE_OTRO_PEDIDO.test(txt)) {
+    await deliverMessage(db, channelId, contactId,
+      "¡Buenísimo! 🙌 Ese segundo pedido lo armamos aparte para que no se mezcle con el tuyo — " +
+      "el tuyo queda tal cual. Un asesor te escribe por acá en un momento para dejarlo listo. 😊",
+    ).catch(() => {});
+    await pasarAHumano(db, channelId, contactId,
+      `👥 Quiere un SEGUNDO pedido para otra persona: “${String(txt).slice(0, 160)}”. ` +
+      `Su pedido NO se tocó. Hay que crear el otro a mano (Venta manual).`, { aviso: false });
+    return true;
+  }
   // ¿El paquete YA salió? Justo abajo, `maybeModificarPedido` respeta ESTADOS_DESPACHADO
   // para no dejar cambiar la CANTIDAD de un pedido en camino. Acá no se respetaba, y lo que
   // se toca acá es peor: sede, dirección, DNI y destinatario, o sea a dónde va el paquete y
