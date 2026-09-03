@@ -6813,8 +6813,16 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   const _nombreExtra = String((((order as any).order_bumps ?? [])[0] || {}).nombre ?? "").split(/[·\-]/)[0].trim();
   const _hablaDelExtra = _nombreExtra.length > 3 &&
     new RegExp(_nombreExtra.split(/\s+/)[0], "i").test(txt);
-  const _pideOtraCantidad = /\b\d+\s*(frasco|frascos|unidad|unidades|par|pares|pack|packs|caja|cajas|kit|kits)\b/i.test(txt)
-    && !_hablaDelExtra;
+  // El número casi nunca viene con el sustantivo: se dice "mejor que sean 3", "hazme 2",
+  // "sube a 3". Medido: una clienta con su pedido de 1 frasco ya confirmado escribió
+  // "mejor que sean 3, y me lo mandas el sábado"; el bot le contestó que el pack de 3 era
+  // lo ideal y le discutió la fecha… y el pedido se quedó en 1 frasco y S/79. Le llega uno
+  // creyendo que pidió tres y dejamos de cobrar S/70. Por eso, además del "3 frascos"
+  // literal, entra el número suelto cuando viene con una fórmula de CAMBIO.
+  const _pideOtraCantidad = (
+      /\b\d+\s*(frasco|frascos|unidad|unidades|par|pares|pack|packs|caja|cajas|kit|kits)\b/i.test(txt) ||
+      /\b(mejor(\s+que\s+sean)?|que\s+sean|s[uú]bel[oa]\s+a|sube\s+a|c[aá]mbial[oa]\s+a|cambia\s+a|hazme|ponme|m[aá]ndame|env[ií]ame|and[aá]|agr[eé]game)\s+(\d+|dos|tres|cuatro|cinco)\b/i.test(txt)
+    ) && !_hablaDelExtra;
   //
   // ⛔ Y NUNCA bloquea la CONFIRMACIÓN de un cambio que nosotros mismos propusimos. Si hay
   // `_mod_pendiente`, la última pregunta sobre la mesa es la nuestra ("¿lo confirmo?") y el
