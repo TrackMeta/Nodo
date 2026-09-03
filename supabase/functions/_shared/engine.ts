@@ -405,6 +405,38 @@ async function runEngineInner(
     }
   }
 
+  // 📄 «¿Me pasas la guía para rastrearlo?» / «Ya pasaron 5 días y no me llega nada».
+  // Medido: el bot contestó «voy a verificar el estado de tu pedido y en un momento te
+  // confirmo la guía» — no verificó nada, no avisó a nadie, y la clienta se quedó esperando
+  // un número que nunca iba a llegar. Es el pedido de provincia en su momento más frágil:
+  // ya pagó el adelanto y no tiene el paquete. Si la guía está cargada se la da el MOTOR;
+  // si no, se le dice la verdad y lo toma una persona, que sí puede conseguirla.
+  if (event.type === "message" && pideGuia(event.text)) {
+    const { data: ordG } = await db.from("orders")
+      .select("id, estado, shipping")
+      .eq("channel_id", channelId).eq("contact_id", contactId)
+      .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (ordG && ESTADOS_DESPACHADO.has(String((ordG as any).estado ?? ""))) {
+      const _shG = ((ordG as any).shipping ?? {}) as any;
+      const _guia = String(_shG.guia ?? _shG.codigo_envio ?? "").trim();
+      if (_guia) {
+        await deliverMessage(db, channelId, contactId,
+          `📄 Tu número de guía es *${_guia}* — con ese código puedes rastrearlo en Shalom. ` +
+          `Igual te aviso apenas llegue a tu agencia. 🙌`).catch(() => {});
+        await logEvent(db, channelId, contactId, "nota", "📄 Le pasó su número de guía", _guia).catch(() => {});
+      } else {
+        await deliverMessage(db, channelId, contactId,
+          "Déjame conseguirte el número de guía con el equipo y te lo paso por acá 🙌 " +
+          "Perdona la espera — apenas lo tenga te escribo.").catch(() => {});
+        await pasarAHumano(db, channelId, contactId,
+          `📄 Pide la GUÍA de su pedido (ya despachado) y no hay ninguna cargada: “${String(event.text ?? "").slice(0, 120)}”. ` +
+          `Consíguesela y pásasela.`, { aviso: false });
+      }
+      return;
+    }
+  }
+
   // Reclama su vuelto (pagó de más) → el bot lo tranquiliza y te avisa para que
   // hagas la devolución, sin pausar ni traspasar (así el cliente no queda en el
   // aire si no estás). Si está desactivado, sigue el flujo normal (lo ve la IA).
@@ -1602,6 +1634,15 @@ function pideReclamo(text: string): boolean {
 // cliente se reinyecta al nodo de IA (ver el uso). Pide signo de interrogación o un
 // arranque interrogativo claro — "hola quiero el dermachem" NO es pregunta y no debe
 // adelantar el guion del dueño.
+// 📄 Pide la guía / rastrear, o avisa que su pedido no llega. Solo aplica con el paquete
+// ya despachado (lo comprueba el caller): antes de eso, "¿cuándo llega?" es venta.
+const RE_PIDE_GUIA =
+  /\b(gu[ií]a|tracking|rastre\w+|seguimiento|n[uú]mero de (env[ií]o|seguimiento)|c[oó]digo de (env[ií]o|rastreo))\b|\b(no me (ha\s+)?lleg\w+|todav[ií]a no (me )?(ha\s+)?lleg\w+|sigue sin llegar|a[uú]n no (me )?lleg\w+)\b|\bya pasaron \d+ d[ií]as\b/i;
+function pideGuia(text?: string | null): boolean {
+  const t = String(text ?? "");
+  if (!t.trim() || t.length > 240) return false;
+  return RE_PIDE_GUIA.test(t);
+}
 // 📅 Pide que la entrega sea OTRO día. Pide una señal de fecha/ausencia junto al verbo:
 // "¿cuándo llega?" es una pregunta y la contesta la IA; esto es un cambio de plan.
 const RE_REPROGRAMAR =
