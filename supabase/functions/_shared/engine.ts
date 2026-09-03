@@ -368,6 +368,43 @@ async function runEngineInner(
     // Sin pedido vivo no hay nada que cancelar → sigue la conversación normal.
   }
 
+  // 📅 «Mañana no voy a estar, ¿lo pueden traer el lunes?». En Lima el pedido sale al día
+  // siguiente, así que esto hay que atenderlo ANTES de que salga: si no, el motorizado va,
+  // no hay nadie, y se pierden el flete y la venta. Medido: el bot contestó «claro, podemos
+  // reprogramar sin problema, ¿te lo dejo para ese día?», la clienta dijo que sí… y el
+  // clasificador del adicional se comió ese sí con un «tu pedido queda tal cual». El pedido
+  // quedó igual, saliendo al día siguiente. Reprogramar un reparto no lo puede hacer el bot
+  // —es tu ruta—, así que queda anotado en el pedido, se te avisa, y al cliente se le dice
+  // lo que de verdad va a pasar.
+  if (event.type === "message" && pideReprogramar(event.text)) {
+    const { data: ordR } = await db.from("orders")
+      .select("id, estado, shipping")
+      .eq("channel_id", channelId).eq("contact_id", contactId)
+      .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const _shR = ((ordR as any)?.shipping ?? {}) as any;
+    if (ordR && !ESTADOS_DESPACHADO.has(String((ordR as any).estado ?? ""))) {
+      const _txtR = String(event.text ?? "").slice(0, 160);
+      try {
+        await db.rpc("order_patch_shipping", {
+          p_order_id: (ordR as any).id,
+          p_patch: { reprogramacion_pedida: _txtR, reprogramacion_at: new Date().toISOString() },
+        });
+      } catch (_) {
+        await db.from("orders").update({ shipping: { ..._shR, reprogramacion_pedida: _txtR } })
+          .eq("id", (ordR as any).id);
+      }
+      await logEvent(db, channelId, contactId, "nota", "📅 Pide reprogramar la entrega", _txtR).catch(() => {});
+      await deliverMessage(db, channelId, contactId,
+        "¡Anotado! 🙌 Le aviso al equipo para que no salga cuando no estés y lo coordinamos para el día " +
+        "que me dices. Te confirmo por acá apenas esté listo. 😊").catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `📅 Pide REPROGRAMAR la entrega: “${_txtR}”. El pedido NO se despachó todavía — coordínalo con el reparto.`,
+        { aviso: false });
+      return;
+    }
+  }
+
   // Reclama su vuelto (pagó de más) → el bot lo tranquiliza y te avisa para que
   // hagas la devolución, sin pausar ni traspasar (así el cliente no queda en el
   // aire si no estás). Si está desactivado, sigue el flujo normal (lo ve la IA).
@@ -1556,6 +1593,15 @@ function pideReclamo(text: string): boolean {
 // cliente se reinyecta al nodo de IA (ver el uso). Pide signo de interrogación o un
 // arranque interrogativo claro — "hola quiero el dermachem" NO es pregunta y no debe
 // adelantar el guion del dueño.
+// 📅 Pide que la entrega sea OTRO día. Pide una señal de fecha/ausencia junto al verbo:
+// "¿cuándo llega?" es una pregunta y la contesta la IA; esto es un cambio de plan.
+const RE_REPROGRAMAR =
+  /\b(no\s+(voy\s+a\s+)?(estar|estare|estaré)|no\s+me\s+(van\s+a\s+)?(encontrar|hallar)|nadie\s+(va\s+a\s+)?(estar|haber)|no\s+hay\s+nadie)\b|\b(reprogram\w+|repro\b)|\b(tra[ée]r?(lo|melo)?|entr[eé]g\w+|d[eé]jal[oa]|mandal[oa]|env[ií]al[oa])\s+(mejor\s+)?(el|para\s+el|pasado)\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana|fin\s+de\s+semana)\b|\b(otro\s+d[ií]a|cambiar\s+(la\s+fecha|el\s+d[ií]a)|para\s+la\s+(pr[oó]xima\s+)?semana)\b/i;
+function pideReprogramar(text?: string | null): boolean {
+  const t = String(text ?? "");
+  if (!t.trim() || t.length > 240) return false;
+  return RE_REPROGRAMAR.test(t);
+}
 // «Lo recoge mi esposo», «va a ir mi mamá», «yo no puedo ir». Quién retira el paquete es
 // un dato de despacho: en la agencia lo entregan contra el DNI del destinatario.
 const RE_RECOGE_OTRO =
