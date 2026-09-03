@@ -567,6 +567,23 @@ async function runEngineInner(
       }
       if (!flow) return;
     }
+    // 🔁 NO ES SU PRIMER MENSAJE. Si ya le habíamos escrito antes —la Recepción, un asesor,
+    // otro producto—, su mensaje viene de una conversación en curso: casi siempre es la
+    // RESPUESTA a lo último que le preguntamos. Medido en tres chats seguidos: la Recepción
+    // preguntaba «¿qué producto te interesa?», el cliente contestaba «2 frascos» / «comas» /
+    // «estoy en Lima», el ruteo abría la venta con eso… y el flujo soltaba el saludo fijo
+    // («¿Desde dónde nos escribe?») encima de la respuesta que acababa de dar, sin atenderla
+    // y sin decir nada más. Le preguntas lo que te acaba de contestar y ahí muere la venta.
+    // El arranque por PREGUNTA y el que viene de Recepción ya reinyectaban; faltaba el caso
+    // de siempre: el ruteo encontró el producto por su cuenta. Sale el saludo Y su mensaje
+    // se atiende, con lo que dijo ya capturado.
+    if (!reinyectarTrasArranque && event.type === "message") {
+      try {
+        const { count: _out } = await db.from("messages").select("id", { count: "exact", head: true })
+          .eq("contact_id", contactId).eq("direction", "out");
+        if ((_out ?? 0) > 0) reinyectarTrasArranque = true;
+      } catch (_) { /* sin el conteo, se arranca como antes */ }
+    }
     // Registrar en la Timeline si el ruteo lo decidió la IA (transparencia).
     if (decision.tier === "ia" || decision.tier === "fallback") {
       await logEvent(db, channelId, contactId, "nota", "🧭 Ruteo por IA", decision.reason ?? "").catch(() => {});
@@ -11500,12 +11517,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "para algo que sale solo: si toca pagar, los datos ya van saliendo. Dilo afirmando o no lo digas.\n" +
       "   BIEN: \"Listo, queda confirmado tu pedido a nombre de Rosa, con recojo en la agencia de Cusco.\" (y cortas ahí)\n" +
       "3. No narres pasos que NO han pasado ni hables de \"el sistema\", \"un asesor\" o \"el área de pagos\" " +
-      "en tercera persona. Habla del presente y de lo que le toca al cliente ahora.\n" +
+      "en tercera persona. Habla del presente y de lo que le toca al cliente ahora. Tampoco te excuses con " +
+      "«eso no lo manejo yo» ni «esa consulta no me corresponde»: tú ERES el negocio. Si algo no está en tu ficha, " +
+      "no lo niegues ni lo inventes — dile que lo confirmas y sigue con la venta, o pásalo a una persona.\n" +
       "4. Si le pasas datos de pago, di SIEMPRE el monto exacto en el MISMO mensaje. Nunca lo invites a pagar sin " +
       "decirle cuánto: termina pagando de más o de menos y hay que devolvérselo.\n" +
       "5. No ofrezcas nada que el negocio no controla: horarios o franjas de entrega (\"¿en la mañana o en la tarde?\"), " +
       "días exactos que no te dieron, descuentos, ni RESERVAR o apartar stock (\"¿te reservo una talla?\"). No existe " +
       "apartado: lo único que aparta unidades es un pedido creado. Tampoco metas presión con escasez inventada.\n" +
+      "   ⛔ Esto vale para AFIRMAR una hora, no solo para preguntarla. Si el negocio te dio una franja de " +
+      "reparto, esa franja se dice entera y tal cual; lo que NO puedes es acomodarla a lo que al cliente le " +
+      "conviene. Medido: alguien avisó que trabaja hasta las 6 y se le contestó «entregamos de 09:00 a 19:00, " +
+      "así que te lo hacemos llegar después de las 6» — el motorizado va por RUTA y no elige el orden, así que " +
+      "eso es un rechazo en la puerta. Y el horario de ATENCIÓN del negocio (cuándo respondemos mensajes) NO es " +
+      "una ventana de entrega: nunca lo uses para decirle entre qué horas le llega.\n" +
       "6. Si el cliente hizo una pregunta y quedó sin responder —típico con su PRIMER mensaje, que lo contesta un saludo " +
       "automático— respóndela ahora, antes de seguir vendiendo. Revisa la conversación: si preguntó por garantía, " +
       "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.\n" +
