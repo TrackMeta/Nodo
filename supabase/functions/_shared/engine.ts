@@ -3855,7 +3855,10 @@ function sinPreguntaFinal(texto: string): string {
 // así no pesca "¿me mandas una foto del comprobante?" (que se lo pide ÉL a él) ni
 // "la foto del producto es real".
 const RE_PROMETE_ARCHIVO =
-  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b/i;
+  // "te puedo enviar" / "acá te puedo pasar": la promesa dicha con el verbo modal. Medido:
+  // «aquí te puedo enviar algunas fotos para que veas el frasco» — no salió ninguna, y el
+  // cliente que las pidió se queda mirando el chat. Para él es la misma promesa.
+  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b/i;
 
 const RE_LINK_FANTASMA =
   /[^.!?…\n]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n]*[.!?…]?/gi;
