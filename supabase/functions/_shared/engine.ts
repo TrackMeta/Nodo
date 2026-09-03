@@ -1707,7 +1707,11 @@ const PIDE_RECOMPRA = [
 // "ya te preparo tus 2 frascos" y en el panel no había nada. Con el sustantivo suelto
 // ("2 más") no hace falta pedir "unidades": en post-venta, más = más de lo que compró.
 const RE_MAS_UNIDADES =
-  /\b(quiero|dame|damelo|mandame|env[ií]ame|enviame|pedir|pido|encargame|separame|llevo|me llevo|necesito|comprar|compro)\b[^.!?¿?]{0,24}\b(\d{1,2}|un|uno|una|dos|tres|cuatro|cinco|seis|otro|otra|otros|otras)\b[^.!?¿?]{0,18}\bmas\b/;
+  // Los INFINITIVOS (mandar/enviar/agregar) faltaban y es como más se pide: "¿me puedes
+  // mandar 3 frascos más?" no disparaba nada. Medido — la clienta lo pidió así y el bot le
+  // contestó "te preparo otro pedido aparte" sin crear nada. Siempre hace falta un número
+  // y un "más" detrás, así que "¿me puedes mandar la dirección?" sigue sin contar.
+  /\b(quiero|dame|damelo|mandame|mandar|env[ií]ame|enviame|enviar|mandas|env[ií]as|agregar|agregame|pedir|pido|encargame|encargar|separame|separar|llevo|me llevo|necesito|comprar|compro)\b[^.!?¿?]{0,24}\b(\d{1,2}|un|uno|una|dos|tres|cuatro|cinco|seis|otro|otra|otros|otras)\b[^.!?¿?]{0,18}\bmas\b/;
 // Pide una unidad ADICIONAL, no corregir la suya. Se exige un sustantivo de unidad
 // ("ahora el PAR talla 40", "el otro PEDIDO") para no confundirlo con un dato que llega
 // tarde: "ahora la dirección es Av X" NO puede leerse como una segunda compra.
@@ -5175,6 +5179,16 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
             for (const al of alerts) {
               const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
               await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre}${detalle} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
+              // Y en la bitácora, no solo en Telegram. El diseño es "avisa pero NO bloquea",
+              // así que enterarte es la única defensa contra despachar lo que no tienes: si
+              // el aviso vive solo en Telegram —token caído, notificaciones silenciadas, mil
+              // mensajes al día— la sobreventa es invisible en el panel. Medido: el stock de
+              // un producto cayó de 100 a -120 sin un solo rastro acá. Solo cuando está
+              // AGOTADO: "stock bajo" en cada venta sería puro ruido.
+              if (al.agotado) {
+                await logEvent(db, run.channel_id, run.contact_id, "error", "📦 Vendido SIN stock",
+                  `${al.nombre}${detalle}: quedan ${al.restante}. Se vendió igual — repón o avísale al cliente.`).catch(() => {});
+              }
             }
           }
         }
@@ -7800,12 +7814,30 @@ async function relanzarVenta(db: SupabaseClient, channelId: string, contactId: s
 async function recompraEnRunActivo(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   if (event.type !== "message" || !event.text) return false;
   const { data: order } = await db.from("orders")
-    .select("estado, product_id")
+    // `shipping` y `currency`: para decirle CUÁNTO le falta si quiere recomprar debiendo.
+    .select("estado, product_id, shipping, currency")
     .eq("channel_id", channelId).eq("contact_id", contactId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const estado = String((order as any)?.estado ?? "");
   if (!order || !COMPRADO_STATES.has(estado)) return false; // aún no hay pedido cerrado → no es recompra
-  if (SALDO_PENDIENTE.has(estado)) return false; // debe el saldo: primero se cierra ese pedido
+  // 💸 DEBE EL SALDO: no se le abre un pedido nuevo, primero se cierra el que tiene. La
+  // decisión es correcta, pero antes se salía en silencio y el mensaje caía en la IA, que
+  // contestaba "perfecto, te preparo el pedido de 3 frascos por separado" — y ese pedido
+  // no existía. La clienta se quedaba esperando algo que nadie iba a preparar.
+  // Ahora se le dice la verdad, y de paso empuja el cobro parado: la venta nueva es el
+  // mejor argumento para que pague la anterior.
+  if (SALDO_PENDIENTE.has(estado)) {
+    if (!pideRecompra(event.text) && !pideUnidadAdicional(event.text)) return false;
+    const _s = ((order as any).shipping ?? {}) as Record<string, any>;
+    const _falta = _s.saldo != null && String(_s.saldo).trim() !== "" ? String(_s.saldo) : "";
+    await deliverMessage(db, channelId, contactId,
+      `¡Claro que sí! 🙌 Solo que primero cerremos el pedido que ya tienes: ` +
+      (_falta ? `te falta *${simboloMoneda((order as any).currency)} ${_falta}* para recogerlo. ` : "queda el saldo pendiente. ") +
+      "Apenas me pases la captura te doy tu clave y te preparo el nuevo de una. 😊").catch(() => {});
+    await logEvent(db, channelId, contactId, "nota", "🔁 Quiere recomprar debiendo el saldo",
+      "Se le pidió cerrar el pedido anterior primero").catch(() => {});
+    return true;
+  }
   // Dispara si: pide recompra del MISMO ("otro par", "de nuevo") O nombra por keyword
   // OTRO producto del catálogo. Sin lo segundo, "ya compré las zapatillas, ahora
   // quiero el curso" lo tragaba el nodo parqueado y el bot NEGABA vender el curso.
