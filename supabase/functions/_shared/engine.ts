@@ -223,7 +223,20 @@ async function runEngineInner(
   // encima de alguien que ya pidió un humano. Le confirma que lo pasa (con la
   // expectativa según horario) para no dejarlo en el aire.
   if (event.type === "message" && pideHumano(event.text)) {
-    await pasarAHumano(db, channelId, contactId, "Lo pidió explícitamente: “" + String(event.text ?? "").slice(0, 120) + "”", { aviso: true });
+    // 📞 Pidió que lo LLAMEN, no que le contesten por chat. El acuse genérico le decía
+    // «en un momento te atiende un asesor por aquí» — o sea, justo lo que él dijo que no
+    // quería. Se le contesta lo suyo (queda arriba en Directo, que es la cola de llamadas)
+    // y se le deja la puerta abierta por chat, sin prometerle una hora.
+    const _quiereLlamada = /\b(me\s+(pueden|puedes|podr[ií]an)\s+llamar|que\s+me\s+llamen|quiero\s+que\s+me\s+llamen|ll[aá]mame|ll[aá]menme|prefiero\s+(hablar\s+)?por\s+tel[eé]fono|una\s+llamada)\b/i
+      .test(String(event.text ?? ""));
+    if (_quiereLlamada) {
+      await deliverMessage(db, channelId, contactId,
+        "¡Claro! 📞 Le paso tu número a un asesor para que te llame. Y si mientras tanto quieres " +
+        "avanzar por acá, dime nomás y seguimos. 🙂").catch(() => {});
+    }
+    await pasarAHumano(db, channelId, contactId,
+      (_quiereLlamada ? "📞 PIDE QUE LO LLAMEN: “" : "Lo pidió explícitamente: “") +
+      String(event.text ?? "").slice(0, 120) + "”", { aviso: _quiereLlamada ? "fuera" : true });
     return;
   }
 
@@ -11156,6 +11169,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           key + ": cierra el pedido, no acepta el adicional (" + String(ctx.last_input ?? "").slice(0, 50) + ") → " + rama).catch(() => {});
         val = rama;
       }
+    }
+    // 💸 Rechazar el adicional Y PEDIR ALGO en el mismo mensaje no es solo un "no". Medido:
+    // «no quiero el jabón, descuéntamelo del precio» se leyó como rechazo y salió el acuse
+    // fijo «tu pedido queda tal cual» — el cliente pidió un descuento y nadie le contestó ni
+    // que sí ni que no. Se queda esperando pagar menos, y eso se descubre en la puerta. El
+    // regalo no baja el precio, y decírselo es un mensaje, no un acuse: va por "duda", que
+    // es la rama donde la IA sí le responde.
+    if (val === "rechaza" && cands.some((c: any) => c.clave === "duda") &&
+        /\b(descuent\w*|descuento|rebaj\w*|m[aá]s barato|baj\w+ el precio|menos precio|precio final|me lo dejas)\b/i
+          .test(normalize(String(ctx.last_input ?? "")))) {
+      val = "duda";
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Rechazó el adicional pidiendo descuento",
+        `${key}: “${String(ctx.last_input ?? "").slice(0, 60)}” — se le responde en vez de cerrar con el acuse`).catch(() => {});
     }
     if (val === "rechaza" && cands.some((c: any) => c.clave === "duda")) {
       const t = " " + normalize(String(ctx.last_input ?? "")) + " ";
