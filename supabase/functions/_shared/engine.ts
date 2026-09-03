@@ -2247,7 +2247,8 @@ const REGLA_SIN_DISCURSO_RIESGO =
   // recibir en tu casa, NADA ANTES». Prohibir frases sueltas no alcanza — se prohíbe la
   // COLETILLA, cualquiera sea su forma.
   "Y tampoco la coletilla que lo niega: «nada antes», «nada por adelantado», «no pagas hasta " +
-  "que…», «cero riesgo». Con decir cuándo paga ya está: no le agregues nada detrás. " +
+  "que…», «cero riesgo», «sin adelanto», «sin pagos antes», «sin pagar nada antes». " +
+  "Con decir cuándo paga ya está: no le agregues nada detrás. " +
   "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, adelanto para despachar " +
   "y el saldo al recoger.";
 
@@ -6446,9 +6447,20 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
         `${_monto != null ? "Monto leído: " + _monto + ". " : ""}Por cobrar en la puerta: ${_porCobrar}. ` +
         `Queda por validar: si está bien, el motorizado NO debe cobrar.`).catch(() => {});
       const _sym2 = simboloMoneda((ordLima as any).currency);
+      // 💰 Y CUÁNTO pagó. La primera versión de este bloque le decía «cuando llegue el
+      // motorizado ya no pagas nada» a cualquiera: probado con un abono de S/50 sobre un
+      // pedido de S/119, o sea le prometí que estaba todo pagado cuando le faltaban S/69.
+      // La misma mentira que el bloque venía a corregir, del otro lado. Con un pago corto
+      // se le dice la diferencia, que además es lo que el motorizado va a cobrarle.
+      const _falta = _monto != null && Number.isFinite(_porCobrar)
+        ? +(_porCobrar - _monto).toFixed(2) : null;
+      const _cubre = _falta == null || _falta <= 1;   // 1 de tolerancia, como el adelanto
       await deliverMessage(db, channelId, contactId,
         `¡Gracias por adelantarte con el pago! 🙌 Ya tengo tu comprobante${_monto != null ? ` de *${_sym2} ${_monto}*` : ""} ` +
-        `y lo estoy verificando. En cuanto quede confirmado, cuando llegue el motorizado ya no pagas nada. 😊`,
+        `y lo estoy verificando. ` +
+        (_cubre
+          ? `En cuanto quede confirmado, cuando llegue el motorizado ya no pagas nada. 😊`
+          : `Con eso te quedan *${_sym2} ${_falta}* por pagar al recibirlo. 😊`),
       ).catch(() => {});
       await pasarAHumano(db, channelId, contactId,
         `💸 Pagó POR ADELANTADO un pedido de Lima (contraentrega)${_monto != null ? `: ${_monto}` : ""}` +
@@ -12104,7 +12116,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // esperaba 30. Ahora manda el del motor, que es el que se cobra de verdad.
         if (ctx.adelanto != null && String(ctx.adelanto).trim() !== "") {
           L.push(`El adelanto de este pedido es de **${simboloMoneda(ctx.moneda as string)} ${ctx.adelanto}** — ese monto exacto, no otro. ` +
-            `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.`);
+            `Si en algún texto del producto o del negocio aparece un adelanto distinto, ese está desactualizado: vale este.\n` +
+            // 💰 El error de plata más fácil de cometer con esto. Medido: «el total con envío
+            // a Huancayo por 2 frascos es S/139 (S/119 por los productos más S/20 de adelanto
+            // para el envío)». El adelanto NO es el envío ni un cargo aparte: es una PARTE del
+            // precio que él paga antes. Sumarlo le cobra S/20 de más a alguien que todavía
+            // está decidiendo, y es de las cosas que hacen que no conteste más.
+            `⛔ El adelanto NO se SUMA al precio ni es el costo del envío: es una PARTE del precio, ` +
+            `la que paga ahora para que despachemos. El total es el precio del pack, y nada más. ` +
+            `Si te pregunta cuánto es en total, le dices el precio; y si quiere el detalle: tanto ahora ` +
+            `y el resto (el saldo) al recogerlo.`);
         }
         // ⛔ Y con eso puesto, la mentira que sale sola. Medido con un cliente de Chiclayo:
         // «lo enviamos por agencia sin costo adicional, solo pagas todo cuando recojas» —
