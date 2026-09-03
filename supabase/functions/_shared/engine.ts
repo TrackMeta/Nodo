@@ -1543,6 +1543,10 @@ function pideReclamo(text: string): boolean {
 // cliente se reinyecta al nodo de IA (ver el uso). Pide signo de interrogación o un
 // arranque interrogativo claro — "hola quiero el dermachem" NO es pregunta y no debe
 // adelantar el guion del dueño.
+// «Lo recoge mi esposo», «va a ir mi mamá», «yo no puedo ir». Quién retira el paquete es
+// un dato de despacho: en la agencia lo entregan contra el DNI del destinatario.
+const RE_RECOGE_OTRO =
+  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar)\b|\b(recoge|recogerlo|recogerá|retira|va a ir|ir[aá])\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero)\w*|\byo no puedo (ir|recoger|acercarme)\b|\b(a nombre de mi)\b/i;
 // Regateo, comparación con otro vendedor y "está caro": afirmaciones, sin signo de
 // pregunta, que el saludo fijo se lleva por delante.
 const RE_TRAE_OBJECION =
@@ -11870,7 +11874,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _dem = demoraProvincia((entDem as any)?.entregas, String(ctx.ciudad ?? ""));
           L.push(_dem
             ? `⏱️ Cuánto demora: el paquete suele estar en su agencia en **${_dem}** desde que se despacha. ` +
-              `Si pregunta cuándo llega, díselo así, en días. ⛔ NUNCA le des una FECHA exacta ("llega el jueves 12") ` +
+              `Si pregunta cuándo llega, díselo así, en días, y CON el número: escribe "${_dem}" tal cual. ` +
+              `Medido: salió «suele estar en la agencia de Ica días desde que se despacha» —sin el número—, ` +
+              `que no le dice nada y encima se lee como un mensaje roto. ⛔ NUNCA le des una FECHA exacta ("llega el jueves 12") ` +
               `ni digas que llega "mañana": es un estimado de la agencia, no una entrega nuestra, y una fecha ` +
               `incumplida es un reclamo seguro.`
             : "⏱️ NO tienes el plazo de la agencia: si pregunta cuándo llega, NO inventes días ni fechas. " +
@@ -11888,6 +11894,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // si le preguntas por SU ciudad.
         L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${_sedeCiudad ? " de " + _sedeCiudad : ""}** lo va a recoger. ` +
           `Pregúntale la oficina de Shalom de su ciudad, no en abstracto. 🔑 Si el cliente NO sabe la oficina exacta, NO lo bloquees, NO insistas y NO le hagas notar que falta ese dato: acepta lo que diga (aunque sea solo su ciudad) y SIGUE NORMAL con el pedido y el adelanto, como si estuviera completo. NO le prometas "coordinar" ni "confirmar" la oficina, NO le anuncies que la afinas después, y NO lo derives a nadie: simplemente continúa con naturalidad (la sede exacta se resuelve por dentro, sin comentárselo).`);
+        // 🧍 «Lo va a recoger mi esposo / mi mamá / mi hermano». Pasa todo el tiempo en
+        // provincia (la clienta trabaja, la agencia queda lejos) y el bot lo ignoraba: le
+        // repetía el bloque de envío y le pedía SU nombre. En Shalom el paquete se entrega
+        // contra el DNI del destinatario, así que si lo recoge otra persona y va a nombre
+        // de ella, en la ventanilla no se lo dan: el paquete se devuelve y el pedido se
+        // pierde entero. Es un dato de despacho, y hay que pedirlo en ese momento.
+        if (RE_RECOGE_OTRO.test(String(ctx.last_input ?? ""))) {
+          L.push("🧍 Te dijo que el pedido lo va a recoger OTRA PERSONA. En la agencia lo entregan contra el DNI " +
+            "de quien figura como destinatario, así que el pedido tiene que ir a nombre de quien lo va a recoger. " +
+            "Dile eso mismo, sin alarmarla, y pídele el **nombre completo y el DNI de esa persona** — son esos los " +
+            "que van al despacho, no los suyos. Si insiste en que vaya a su nombre, avísale que en ventanilla se lo " +
+            "pueden negar.");
+        }
         // Datos de despacho que SIGUEN faltando (dinámico): así la IA NO confirma un
         // pedido que el motor todavía no puede crear. OJO: la SEDE ya NO es un
         // bloqueo duro — se acepta aunque sea solo la ciudad (crearPedido la marca
