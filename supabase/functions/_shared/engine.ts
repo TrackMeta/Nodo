@@ -12087,6 +12087,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "pero UNA sola vez: si no contesta eso, el pedido sigue igual."
           : ""));
     }
+    // 📷 Le mandó una FOTO que no era un comprobante (su piel, el producto de otra marca,
+    // una captura). En este nodo la IA NO recibe la imagen —solo el nodo de OCR la mira—,
+    // y sin decírselo hace las dos cosas malas: la describe como si la viera, o le pide
+    // una foto a quien acaba de mandarle una. Medidas las dos, con el MISMO caso: a una
+    // clienta que mandó una foto contestó «por la foto veo que son manchas oscuras que el
+    // Dermachem puede ayudar a aclarar» —un diagnóstico inventado sobre la piel de una
+    // persona—, y a otra, con una imagen que no tenía nada que ver, «¿me ayudas con una
+    // foto para ver qué tipo de mancha tienes?». Lo honesto: acusar recibo y preguntar.
+    if (String(ctx.last_input_type ?? "") === "image") {
+      parts.push("## Te mandó una FOTO y tú NO puedes verla\n" +
+        "Llegó una imagen suya, pero tú no la ves: no tienes ni idea de qué hay ahí. " +
+        "⛔ NUNCA la describas ni digas lo que «se ve» en ella, y menos si es su cuerpo o su piel: " +
+        "eso sería inventarle un diagnóstico. ⛔ Tampoco le pidas una foto — acaba de mandarte una, " +
+        "y pedírsela otra vez es la forma más rápida de que sienta que no le haces caso.\n" +
+        "Lo que haces: acusas recibo con naturalidad («gracias por la foto 🙌») y le pides que te lo " +
+        "cuente ÉL con sus palabras —qué tipo de mancha es, desde cuándo la tiene—, que además es la " +
+        "pregunta que necesitas para venderle bien. Sigue la conversación desde ahí.");
+    }
     // Falta ELEGIR la opción (hay varias con precio y el cliente no eligió): sin
     // opción no hay precio y el pedido saldría en S/0. Prioridad sobre "cierra": la
     // IA primero consigue la elección.
