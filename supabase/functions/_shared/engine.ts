@@ -6554,7 +6554,25 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
       telefono: (ctc as any)?.wa_id || "—",
       cambios: cambios.join(" · "),
     }).catch(() => {});
-    return false;
+    // 🗣️ Y SE LE CONTESTA. Devolver `false` a secas dejaba el mensaje en manos de la IA,
+    // que sin saber que el paquete ya salió improvisaba: medido, un pedido despachado a
+    // Calle Tacna con su guía impresa, el cliente pidió cambiarlo a Miraflores Chiclayo y
+    // el bot le dijo "listo, cambio la entrega, te lo dejo actualizado". El paquete iba a
+    // llegar a la otra agencia y él se enteraba al ir a buscarlo. Redirigir es gestión con
+    // el courier: se le dice la verdad y el equipo (ya avisado arriba) le confirma.
+    // ⚠️ Del pedido REAL, no de `sh`: `sh` es la copia que ya lleva aplicado lo que el
+    // cliente pidió, y usándola le decíamos "ya salió hacia Miraflores Chiclayo" —
+    // justamente el destino nuevo— cuando el paquete iba a Calle Tacna. Lo contrario de
+    // la verdad, y encima lo dejaba tranquilo.
+    const _real = ((order as any).shipping ?? {}) as Record<string, any>;
+    const _dest = enTitulo(String(_real.destino ?? _real.sede ?? _real.ciudad ?? "").trim()
+      .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, ""));
+    const _guia = String(_real.guia ?? "").trim();
+    await deliverMessage(db, channelId, contactId,
+      `Tu pedido ya salió${_dest ? ` hacia *${_dest}*` : ""}${_guia ? ` con la guía *${_guia}*` : ""}, ` +
+      "así que ese cambio ya no lo puedo hacer yo desde acá. 🙏 Se lo paso al equipo para ver con la agencia " +
+      "si todavía se puede redirigir, y te confirman por acá.").catch(() => {});
+    return true;   // mensaje TOMADO: que la IA no conteste encima prometiendo el cambio
   }
   // Cambió la DIRECCIÓN y el distrito guardado ya no aparece en ella → probablemente se
   // mudó de distrito ("mejor mándalo a Av Primavera 1500, SURCO" con el pedido en
