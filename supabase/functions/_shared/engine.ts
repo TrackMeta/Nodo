@@ -2409,6 +2409,14 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/, "negocio"],
   ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
   ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
+  // ⏳ Cuánto tiempo le guarda el paquete la AGENCIA. Medido: «no puedo ir hasta el sábado,
+  // ¿lo guardan?» → «sí, la agencia guarda tu paquete hasta que puedas pasar a recogerlo
+  // sin problema». Eso es política de Shalom, no nuestra, y no es cierta: pasados unos días
+  // lo devuelven al remitente y el flete de vuelta lo paga el negocio. Prometerle tiempo
+  // ilimitado es fabricar justo esa devolución.
+  ["cuánto tiempo lo guardan en la agencia",
+    /\b(lo\s+guardan|la\s+guardan|guardan\s+(el|mi)\s+(paquete|pedido)|cu[aá]nto\s+(tiempo\s+)?(lo\s+)?guardan|hasta\s+cu[aá]ndo\s+(lo\s+)?(puedo\s+)?(recog|retir)|cu[aá]ntos\s+d[ií]as\s+(lo\s+)?guardan)/,
+    /\b(guardan|d[ií]as en la agencia|plazo de recojo|lo devuelven)/, "negocio"],
   // 🏪 El revendedor. Medido: «¿hacen precio por mayor? quiero revender en mi botica…
   // unas 20 unidades» → «para revender no manejamos precio por mayor». Nadie escribió
   // eso, y ahí se fue una venta de 20 unidades y un canal de distribución. Que el bot
@@ -12887,6 +12895,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "Dile la verdad: el precio por cantidad lo ve el dueño directamente, que ya tiene su consulta y le " +
             "responde por acá mismo (es cierto: se le acaba de avisar). Pregúntale cuántas unidades quiere, y " +
             "déjale claro que mientras tanto puede llevarse los packs normales al precio de siempre.");
+        }
+        // ⏳ Cuánto se lo guardan en la agencia. Sin bloque propio, el bot hacía una de dos:
+        // prometerle que se lo guardan «hasta que puedas» (falso, y termina en devolución
+        // con flete doble) o, con la red puesta, saltarse la pregunta y seguir pidiendo
+        // datos. Las dos pierden. Hay una respuesta honesta que además juega a favor.
+        if (faltan.includes("cuánto tiempo lo guardan en la agencia")) {
+          parts.push("## ⏳ Te pregunta cuántos días se lo guardan en la agencia\n" +
+            "No tienes el plazo exacto y NO te lo inventes, pero tampoco le digas que se lo guardan " +
+            "«hasta que pueda»: la agencia lo devuelve al remitente pasados unos días, y esa devolución " +
+            "la termina pagando el negocio. Contéstale con lo que sí es cierto: que apenas llegue le " +
+            "avisas y que conviene recogerlo lo antes que pueda porque la agencia lo guarda unos días, " +
+            "que si se le complica te escriba y lo vemos, y que el día exacto se lo confirmas cuando " +
+            "el paquete esté allá. Y sigue con la venta, sin dramatizar.");
         }
         const _esSalud = faltan.some((t) => /embarazo|lactancia|contraindicaciones|niños|menores/i.test(t));
         if (_esSalud) {
