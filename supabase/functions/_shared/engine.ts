@@ -7750,7 +7750,11 @@ const RE_ANUNCIA_PAGO =
 // El cliente dijo que lo quiere (no que le expliquen más). Es la señal que separa
 // "mándale el Yape de una" de "todavía está preguntando".
 const RE_QUIERE_COMPRAR =
-  /\b(lo quiero|la quiero|me lo llevo|quiero comprar|quiero el |quiero la |quiero uno|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
+  // La forma peruana de decidirse trae la CANTIDAD, no el verbo: «quiero 2 frascos»,
+  // «dame 1», «me llevo los 3». Sin eso, el que ya se decidió seguía contando como alguien
+  // que solo pregunta. A propósito NO entra «quiero saber/preguntar/consultar/ver si»: ese
+  // es el curioso, y confundirlo con un comprador despacha pedidos que nadie pidió.
+  /\b(lo quiero|la quiero|los quiero|me lo llevo|me llevo|quiero comprar|quiero el |quiero la |quiero uno|quiero (?:dos|tres|cuatro|cinco|\d)|d[ae]me (?:uno|una|dos|tres|\d)|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
 // ¿Ya mostró intención de COMPRAR (no solo de preguntar)? Mira su último mensaje y los
 // anteriores: la señal puede haber quedado un par de turnos atrás.
 async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
@@ -10242,6 +10246,25 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   } catch (_) { /* si no se puede leer, se comporta como antes */ }
   (ctx as any)._pack_mixto = packMixto;
   run.vars._pack_mixto = packMixto;
+  // 🛒 CERRAR DIRECTO (decisión de Rodrigo, 2026-09-03). En Lima el flujo pide un campo
+  // `confirmo` antes de crear el pedido, y existe por algo: sin él, un mensaje de consulta
+  // bien completo ("¿tienen talla 38? soy Juan Pérez, Av. Larco 100") despachaba un pedido
+  // que nadie pidió, con el flete pagado. Pero al que YA dijo que lo quiere y encima dio
+  // sus datos, preguntarle "¿te lo confirmo?" es un turno de más justo cuando la venta ya
+  // está hecha — y ahí es donde se enfrían. El campo se queda; se da por cumplido solo con
+  // intención EXPLÍCITA de compra (la misma que ya usa el motor para los datos de pago).
+  if (pendientes.length === 1 && pendientes[0]?.clave === "confirmo" &&
+      !faltaOpcion && !faltaVariante && !packMixto) {
+    try {
+      if (await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
+        pendientes.splice(0, 1);
+        ctx.confirmo = "si"; run.vars.confirmo = "si";
+        await setField(db, run.channel_id, run.contact_id, "confirmo", "si").catch(() => {});
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "🛒 Cierre directo",
+          "Ya había dicho que lo quiere y dio sus datos — no se le vuelve a preguntar").catch(() => {});
+      }
+    } catch (_) { /* sin historial legible → se le pregunta, como antes */ }
+  }
   const completo = pendientes.length === 0 && !faltaOpcion && !faltaVariante && !packMixto;
   run.vars.datos_completos = completo ? "si" : "no";
   ctx.datos_completos = completo ? "si" : "no";
