@@ -5491,6 +5491,30 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     }
     const { error } = await db.from("orders").update(patch).eq("id", orderId);
     if (error) throw new Error(error.message);
+    // 💰 Aceptó una venta EXTRA y el resumen que tiene a la vista dice otro número. En
+    // provincia el extra sube el saldo y ahí se le dice; en LIMA no hay saldo, así que el
+    // cliente se quedaba con «Total S/ 149» en pantalla y el motorizado tocando la puerta
+    // con S/ 188. Ese susto se discute EN LA PUERTA, que es el peor lugar. El total lo dice
+    // el motor —no la IA— porque es plata: se calcula igual que en el panel (amount + bumps).
+    if (bumpUpsell && Number(bumpUpsell.value) > 0) {
+      try {
+        const { data: oT } = await db.from("orders")
+          .select("amount, order_bumps, shipping").eq("id", orderId).maybeSingle();
+        const _sh = ((oT as any)?.shipping ?? {}) as any;
+        // Solo en LIMA. En provincia el número que le importa es el SALDO que paga al
+        // recoger (el extra ya lo subió) y se lo dice su propio camino; decirle acá un
+        // total distinto al saldo lo confunde justo antes de pagar el adelanto.
+        if (String(_sh?.zona ?? "") === "lima") {
+          const _tot = Number((oT as any)?.amount ?? 0) +
+            (((oT as any)?.order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+          if (_tot > 0) {
+            await deliverMessage(db, run.channel_id, run.contact_id,
+              `Con eso tu pedido queda en *${simboloMoneda(ctx.moneda as string)} ${+_tot.toFixed(2)}* en total 🙌`,
+            ).catch(() => {});
+          }
+        }
+      } catch (_) { /* el total es un extra de cortesía: nunca tumba la venta */ }
+    }
     // Sincroniza la ETAPA del contacto con el nuevo estado del pedido (como crearPedido,
     // order-update y el scheduler). Esta 3ra ruta —cancelar/cerrar por la IA— NO lo hacía: un
     // "cancélalo" dejaba al contacto pegado como lead VIVO (fantasma en Embudo/Directo), y un
@@ -11190,7 +11214,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "⛔ NO se los ofrezcas tú ni los metas en la conversación: se le ofrecen solos al cerrar el pedido, " +
         "con su mensaje y su precio. Están acá para UNA sola cosa: que si el cliente los nombra o pregunta " +
         "por ellos, NUNCA le digas que no los tienes ni que «solo vendes» el producto principal. Confírmale " +
-        "que sí los manejas, en una línea, y sigue con lo que estaban viendo — que se los sumas al cerrar.",
+        "que sí los manejas, en una línea, y sigue con lo que estaban viendo — que se los sumas al cerrar.\n" +
+        "⛔ Y aunque te lo pida, NO lo des por incluido en el pedido: el pedido que se crea lleva SOLO el " +
+        "producto principal, y el adicional se le ofrece con su precio justo después, para que lo acepte él. " +
+        "Nada de «te lo mando con el protector» ni meterlo en el resumen. Medido: un cliente pidió «3 frascos " +
+        "y el protector solar también», el bot le dijo que se lo mandaba, y el pedido salió sin el protector — " +
+        "prometido, no cobrado y no despachado. Dile «el protector te lo sumo ahora y te digo el precio», y deja " +
+        "que la oferta salga.",
       );
     }
     // 🧹 Lo que YA le dijiste. La economía del mensaje sale mejor con un DATO que con una
