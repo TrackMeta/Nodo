@@ -253,7 +253,16 @@ async function update(t, patch){
   Object.assign(t,patch); return true;
 }
 async function remove(t){
-  if(!await confirmDialog({title:"Eliminar etiqueta",message:`¿Eliminar la etiqueta "${t.nombre}"?`,confirmText:"Eliminar",danger:true})) return;
+  // Borrar es MÁS destructivo que renombrar (que sí avisaba): además de desenganchar las
+  // campañas/secuencias que segmentan por este NOMBRE, se lleva por delante los contact_tags
+  // (on delete cascade) → se pierde a quién se la habías puesto, y eso no se deshace. Se dice
+  // cuántos contactos la tienen antes de preguntar.
+  let cuantos=null;
+  try{ const { count }=await supa.from("contact_tags").select("contact_id",{count:"exact",head:true}).eq("tag_id",t.id); cuantos=count??null; }catch(_){}
+  const linea = cuantos ? `La tienen <b>${cuantos} contacto${cuantos===1?"":"s"}</b> y la van a perder. ` : "";
+  if(!await confirmDialog({title:"Eliminar etiqueta",
+    messageHtml:`¿Eliminar la etiqueta "${esc(t.nombre)}"? ${linea}Si alguna campaña o secuencia segmenta por ella, dejará de encontrar a nadie (los segmentos guardan la etiqueta por su nombre). Esto no se puede deshacer.`,
+    confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("tags").delete().eq("id",t.id);
   if(error){ toast(error.message,true); return; }
   toast("Eliminada"); await load();
