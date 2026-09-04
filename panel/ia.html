@@ -143,7 +143,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean } from "./shell.js";
-import { mountDateRange, computePreset, rangeLabel, ymd as ymdDia } from "./date-range.js";
+import { mountDateRange, computePreset, ymd as ymdDia } from "./date-range.js";
 const $ = (id) => document.getElementById(id);
 // ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
 // Claude: IDs vigentes de la Messages API (el backend no manda temperature
@@ -1000,7 +1000,7 @@ async function renderGastoIa(){
         <span id="gastoIaDr" style="margin-left:auto"></span></div>
       <div class="desc">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor; esto es para que no tengas que salir de acá para saber cómo vas.</div>
       <div style="display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 4px">
-        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">${esc(rangeLabel(gastoRango).toUpperCase())}</div>
+        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">GASTO</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalMes)}</div></div>
         ${diasCon>1?`<div><div style="font-size:11.5px;color:var(--muted);font-weight:700">POR DÍA</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(porDia)}</div></div>`:""}
