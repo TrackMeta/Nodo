@@ -568,10 +568,33 @@ async function simulate(){
   if(error){ res.innerHTML=`<span style="color:var(--red)">Error: ${esc(error.message||"no se pudo probar")}</span>`; return; }
   const flowName=data.flow ? esc(data.flow.nombre||"flujo") : null;
   const conf=data.confidence!=null?` · ${Math.round(data.confidence*100)}% confianza`:"";
+  // 📝 "Ningún flujo" cuando la palabra SÍ coincide, pero el flujo está en borrador: es la
+  // causa más común de "puse la palabra clave y no pasa nada", y el simulador —que existe
+  // justo para explicar por qué— lo dejaba en un "no se activaría" a secas. Medido: "quiero
+  // un curso de maquillaje" coincide con su keyword y el flujo está en borrador; el
+  // resultado no lo mencionaba y no había forma de saberlo desde acá.
+  let porBorrador="";
+  if(!data.flow){
+    const t=norm(text);
+    for(const tr of (st.triggers||[])){
+      if(!tr.activo) continue;
+      const kws=(tr.config?.keywords||[]).filter(Boolean);
+      const pega=kws.some(k=>{ const n=norm(k); if(!n) return false;
+        const m=tr.config?.match||"contiene";
+        return m==="exacta" ? t===n : m==="empieza" ? t.startsWith(n) : t.includes(n); });
+      if(!pega) continue;
+      const f=(st.flows||[]).find(x=>x.id===tr.flow_id);
+      if(f && f.estado!=="activo"){
+        porBorrador=`La palabra clave sí coincide con <b>${esc(f.nombre||"un flujo")}</b>, pero ese flujo está en <b>${esc(f.estado||"borrador")}</b>: por eso no se activa. Publícalo para que empiece a atender.`;
+        break;
+      }
+    }
+  }
   res.innerHTML=`
     <span class="badge ${data.tier}">${esc(data.tier_label)}</span>
     <div class="resline">${flowName?`Se activaría <b>${flowName}</b>`:`<b>No se activaría ningún flujo</b> con este mensaje.`}</div>
-    ${data.reason?`<div class="resmeta">${esc(data.reason)}${conf}</div>`:(conf?`<div class="resmeta">${conf.replace(" · ","")}</div>`:"")}`;
+    ${data.reason?`<div class="resmeta">${esc(data.reason)}${conf}</div>`:(conf?`<div class="resmeta">${conf.replace(" · ","")}</div>`:"")}
+    ${porBorrador?`<div class="resmeta" style="color:var(--amber);margin-top:7px">${porBorrador}</div>`:""}`;
 }
 
 boot();
