@@ -329,15 +329,16 @@ function renderConocimiento(b){
       const prev = m.media_kind==="image"
         ? `<img src="${esc(m.media_url)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"/>`
         : `<div style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">${icon(m.media_kind==="audio"?"mic":"file")}</div>`;
+      // Sin campo "tag": es el identificador que la IA escribe por dentro y no aporta nada
+      // que el dueño lo teclee — se genera solo de lo que él SÍ escribe (cuándo usarlo).
+      // Lo único que se le pide es el archivo y la situación.
       el.innerHTML=`${prev}
         <div style="flex:1;min-width:0">
-          <div class="row" style="align-items:center;gap:8px"><span style="flex:0 0 auto;font-size:12px;color:var(--muted)">tag</span>
-            <input class="in mmt" style="flex:1" value="${esc(m.tag||"")}" placeholder="ej. prueba_envios, audio_provincia"/>
+          <div class="row" style="align-items:flex-start;gap:8px">
+            <textarea class="in mmdesc" rows="2" style="flex:1;min-height:46px;line-height:1.45;resize:vertical" placeholder="¿Cuándo enviarlo? Ej. cuando un cliente de provincia duda de que el envío llegue">${esc(m.descripcion||"")}</textarea>
             <button class="btn danger mmd" style="flex:0 0 auto;border:1px solid var(--border)">${icon("trash")}</button></div>
-          <textarea class="in mmdesc" rows="2" style="margin-top:8px;min-height:46px;line-height:1.45;resize:vertical" placeholder="¿Cuándo enviarlo? Ej. cuando el cliente de provincia duda de que el envío llegue">${esc(m.descripcion||"")}</textarea>
           <div style="font-size:10.5px;color:var(--faint);margin-top:4px">${esc(m.filename||"")}</div>
         </div>`;
-      el.querySelector(".mmt").oninput=(e)=>{ m.tag=e.target.value.replace(/[^\w-]/g,"").toLowerCase(); };
       el.querySelector(".mmdesc").oninput=(e)=>{ m.descripcion=e.target.value; };
       el.querySelector(".mmd").onclick=()=>{ form.multimedia.splice(i,1); paintMM(); };
       box.appendChild(el);
@@ -350,6 +351,20 @@ function renderConocimiento(b){
   const harvest=()=>{
     NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; });
     form.extra=$("nf_extra").value;
+    // El tag se deriva de lo que el dueño escribió ("cuando el cliente de provincia duda
+    // del envío" → `cliente_provincia_duda`). Un tag con sentido ayuda al modelo a elegir
+    // el archivo correcto; uno como `img_20260904_120345` no le dice nada. Si no escribió
+    // descripción, queda el del nombre del archivo.
+    const usados=new Set();
+    (form.multimedia||[]).forEach((m)=>{
+      const base=String(m.descripcion||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+        .replace(/[^a-z0-9\s]/g," ").split(/\s+/)
+        .filter(w=>w.length>2 && !["que","los","las","del","para","con","cuando","una","uno","por","the"].includes(w))
+        .slice(0,3).join("_");
+      let tag=base || String(m.tag||"archivo");
+      let n=2; while(usados.has(tag)) tag=(base||"archivo")+"_"+n++;
+      usados.add(tag); m.tag=tag;
+    });
   };
   $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado"); };

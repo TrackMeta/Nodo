@@ -141,6 +141,25 @@ const MOMENTOS=[
   ["en_agencia","Llegó a la agencia","Le avisas que ya puede recogerlo y le pides el saldo."],
 ];
 
+// Sube un archivo y lo deja pegado al aviso de ese momento. Reusa media-upload.
+function pickAvisoMedia(k, onDone){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*,audio/*,application/pdf";
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      const cfg=st.pedidos; if(!cfg) return;
+      cfg.avisos=cfg.avisos||{};
+      (cfg.avisos[k]=cfg.avisos[k]||{}).media={ media_kind:data.kind||"image", media_url:data.url, mime:file.type, filename:file.name };
+      toast("Archivo adjunto — recuerda guardar"); if(onDone) onDone();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
 function render(b){
   const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
   const D = defaultPedidos();
@@ -309,6 +328,7 @@ function render(b){
           <textarea class="in" data-avtxt="${k}" rows="3" placeholder="Escribe lo que le va a llegar al cliente…"
             style="min-height:74px;line-height:1.5;font-family:var(--font);resize:vertical">${esc(a.texto||"")}</textarea>
           <div data-avvars="${k}"></div>
+          <div data-avmm="${k}" style="margin-top:9px"></div>
           ${k==="despachado" ? `<div data-avfoto style="display:flex;align-items:center;gap:9px;margin-top:9px;cursor:pointer">
             <span class="sw ${a.foto_guia?'on':''}" data-avfotosw style="flex:none"></span>
             <span style="font-size:12.5px">Adjuntar la foto de la guía<div style="font-size:11px;color:var(--faint)">La que subes al registrar el despacho. Si no subiste ninguna, sale solo el texto.</div></span>
@@ -373,6 +393,26 @@ function render(b){
     const btn=attachVarPicker(ta,{ supa, channelId:st.channelId });
     if(cont && btn) cont.appendChild(btn);
   });
+  // 📎 Archivo adjunto por momento: una imagen/audio que acompaña SIEMPRE a ese aviso.
+  // A diferencia de la biblioteca de la IA (Negocio), acá no hay tag ni "cuándo": el
+  // archivo está pegado al momento y sale con él, sin que nadie decida nada.
+  const paintAvMM=(k)=>{
+    const box=b.querySelector(`[data-avmm="${k}"]`); if(!box) return;
+    const m=(p.avisos[k]||{}).media;
+    if(!m || !m.media_url){
+      box.innerHTML=`<button class="btn" data-avadd="${k}" style="height:30px;padding:0 11px;font-size:12.5px">📎 Adjuntar imagen o audio</button>`;
+      box.querySelector("[data-avadd]").onclick=()=>pickAvisoMedia(k,()=>paintAvMM(k));
+      return;
+    }
+    const prev = m.media_kind==="image"
+      ? `<img src="${esc(m.media_url)}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none"/>`
+      : `<div style="width:52px;height:52px;border-radius:8px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">${icon(m.media_kind==="audio"?"mic":"file")}</div>`;
+    box.innerHTML=`<div style="display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:10px;padding:8px 10px">
+      ${prev}<div style="flex:1;min-width:0;font-size:12px;color:var(--muted)">Va junto a este aviso<div style="font-size:10.5px;color:var(--faint)">${esc(m.filename||"")}</div></div>
+      <button class="btn danger" data-avdel="${k}" style="flex:none;border:1px solid var(--border);height:30px">${icon("trash")}</button></div>`;
+    box.querySelector("[data-avdel]").onclick=()=>{ delete (p.avisos[k]||{}).media; paintAvMM(k); };
+  };
+  MOMENTOS.forEach(([k])=>paintAvMM(k));
   const foto=b.querySelector("[data-avfoto]");
   if(foto) foto.onclick=()=>{
     const a=p.avisos.despachado=p.avisos.despachado||{};
@@ -388,11 +428,15 @@ function render(b){
     // plantilla para cuando está cerrada. El toggle de la foto ya se fue
     // guardando en p.avisos al tocarlo, así que se conserva.
     const fotoGuia=!!(p.avisos.despachado||{}).foto_guia;
+    // Los archivos adjuntos de cada momento se guardaron al subirlos (no vienen del DOM),
+    // así que hay que rescatarlos ANTES del reset — igual que el toggle de la foto de guía.
+    const mediaPrev={}; MOMENTOS.forEach(([k])=>{ const m=(p.avisos[k]||{}).media; if(m) mediaPrev[k]=m; });
     p.avisos={};
     b.querySelectorAll("[data-avtxt]").forEach(ta=>{
       const k=ta.dataset.avtxt, t=ta.value.trim();
       if(t) (p.avisos[k]=p.avisos[k]||{}).texto=t;
     });
+    Object.entries(mediaPrev).forEach(([k,m])=>{ (p.avisos[k]=p.avisos[k]||{}).media=m; });
     b.querySelectorAll("[data-aviso]").forEach(sel=>{
       const [name,language]=(sel.value||"").split("|");
       if(name){ const a=p.avisos[sel.dataset.aviso]=p.avisos[sel.dataset.aviso]||{}; a.template=name; a.language=language||"es"; }

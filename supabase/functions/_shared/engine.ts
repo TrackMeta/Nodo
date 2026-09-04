@@ -7806,6 +7806,21 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
           (o2 as any)?.shipping ?? null, (o2 as any)?.amount ?? null, (o2 as any)?.currency ?? null,
           (o2 as any)?.order_bumps ?? null, (o2 as any)?.products?.nombre ?? null, _dem);
         if (txt) await deliverMessage(db, channelId, contactId, txt).catch(() => {});
+        // 📎 Y el archivo que el dueño dejó pegado a este aviso (Pagos y avisos). Va
+        // también acá, y no solo en order-update, porque este es el camino cuando el pago
+        // lo valida el BOT solo: sin esto el cliente recibía la imagen si el adelanto lo
+        // aprobabas tú a mano, y no si lo aprobaba el bot — el mismo momento contado de
+        // dos formas distintas según quién apretó el botón.
+        try {
+          const { data: chAv } = await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
+          const mmA = (chAv as any)?.pedidos_config?.avisos?.adelanto_validado?.media;
+          if (mmA?.media_url) {
+            await deliverStep(db, channelId, contactId, { bubbles: [{
+              media_kind: mmA.media_kind || "image", media_url: mmA.media_url,
+              mime: mmA.mime, filename: mmA.filename, caption: "",
+            }] }, (o2 as any)?.id).catch(() => {});
+          }
+        } catch (_) { /* sin adjunto configurado, queda el texto */ }
       }
     }
     await avisar(db, channelId, contactId, "adelanto_auto",

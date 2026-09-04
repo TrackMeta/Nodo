@@ -411,9 +411,21 @@ Deno.serve(async (req) => {
         if (await ventana24hAbierta(db, (order as any).contact_id)) {
           // Con la foto de la guía: UNA burbuja de imagen con el texto de pie.
           // Si el pedido no tiene foto, emit() manda el pie como texto solo.
+          // 📎 Archivo FIJO de este aviso (Pagos y avisos → "Adjuntar imagen o audio"): el
+          // mismo para todos los clientes que llegan a este momento — la foto de "así te
+          // llega a la agencia", un audio explicando cómo recoger. No lo elige la IA: está
+          // pegado al momento. Va como burbuja aparte y DESPUÉS del texto, para que el
+          // cliente lea primero de qué se trata; un archivo suelto sin contexto no se abre.
+          const mmA = cfg.media && cfg.media.media_url ? cfg.media : null;
           const bubbles = cfg.foto_guia
             ? [{ media_kind: "image", media_url: "{{pedido_guia_foto}}", caption: texto, text: texto }]
             : [{ text: texto }];
+          if (mmA) {
+            bubbles.push({
+              media_kind: mmA.media_kind || "image", media_url: mmA.media_url,
+              mime: mmA.mime, filename: mmA.filename, caption: "",
+            } as any);
+          }
           // deliverStep devuelve false si Meta rechazó el envío → NO marcar como enviado.
           if (await deliverStep(db, (order as any).channel_id, (order as any).contact_id, { bubbles }, (order as any).id)) avisoEnviado = "mensaje";
           else avisoError = "Meta rechazó el envío del aviso";
