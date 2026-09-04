@@ -201,7 +201,9 @@ async function deleteSeq(){
   if(!await confirmDialog({title:"Eliminar secuencia",message:`¿Eliminar "${st.seq.nombre}"? Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("sequences").delete().eq("id",st.seq.id);
   if(error){ toast(error.message,true); return; }
-  st.seq=null; toast("Secuencia eliminada"); showGrid(); await load();
+  // La secuencia ya no existe: sus cambios sin guardar tampoco. Sin esto el aviso de
+  // "cambios sin guardar" seguía saltando al salir de la página, por una secuencia borrada.
+  st.seq=null; st.dirty=false; toast("Secuencia eliminada"); showGrid(); await load();
 }
 function miniTimeline(pasos){
   const p=pasos||[]; if(!p.length) return `<div class="mtl"><span class="more" style="margin:0">Sin pasos aún</span></div>`;
