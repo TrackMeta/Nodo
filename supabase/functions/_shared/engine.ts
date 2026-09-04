@@ -1662,6 +1662,10 @@ const RE_PAGA_AL_RECOGER =
 // otra cosa y no puede borrar un producto del pedido.
 const RE_QUITA_EXTRA =
   /\b(qu[ií]t(a|amelo|alo|ame|enlo)|s[aá]c(alo|amelo|ame)|mejor no( lo)? (quiero|lo llevo)?|mejor sin (eso|el|la)|sin (eso|el protector)|ya no (lo )?quiero|cancela(me)? (eso|el extra)|elim[ií]nalo|b[oó]rralo|d[eé]jalo sin eso|no me lo pongas|mejor no)\b/i;
+// 💳 Pregunta por el MEDIO de pago (no por el precio): tarjeta, POS, efectivo, Yape, o
+// directamente «¿cómo pago?». Es una pregunta que decide compras y no se puede esquivar.
+const RE_COMO_PAGA =
+  /\b(con\s+)?(tarjeta|visa|mastercard|pos|d[eé]bito|cr[eé]dito)\b|\bc[oó]mo\s+(se\s+)?(paga|pago|pagar[ií]a)\b|\bqu[eé]\s+(formas?|medios?|m[eé]todos?)\s+de\s+pago\b|\bacept(an|as)\s+(tarjeta|yape|plin|transferencia|efectivo)\b|\bse\s+puede\s+pagar\s+con\b|\bpago\s+en\s+efectivo\b/i;
 // 🙋 Condiciones concretas por las que un cliente pregunta «¿sirve para…?». No es una lista
 // de lo que el producto hace: es la palabra que hay que ir a buscar EN LA FICHA antes de
 // afirmar o negar nada sobre ella.
@@ -2428,6 +2432,21 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "y el saldo al recoger.";
 
 
+// 💵 Un pago se acusa cuando está VERIFICADO, no cuando el cliente lo dice. Medido, y de
+// los caros: «ya cancelé el pedido, te mando la captura» —en Perú "cancelar" es pagar— y el
+// bot contestó «Gracias, Nora. Ya recibimos tu pago y todo está listo para el envío». No
+// había llegado ninguna captura, el pedido seguía con su saldo entero, y encima era un
+// pedido de Lima que se paga AL RECIBIR. Cuando el repartidor toque el timbre a cobrar
+// S/119, esa clienta va a discutir con toda la razón: se lo dijo el bot por escrito.
+const REGLA_PAGO_NO_CONFIRMADO =
+  "## No des por recibido un pago que no viste\n" +
+  "Que el cliente diga que pagó no es que hayas recibido el pago. ⛔ NUNCA escribas «ya " +
+  "recibimos tu pago», «pago confirmado», «ya está pagado» ni «queda cancelado» por su sola " +
+  "palabra: solo cuando el sistema te lo dé por validado.\n" +
+  "Lo que haces mientras tanto: le agradeces y le pides la **captura del pago** para revisarla. " +
+  "Y si su pedido es de los que se pagan AL RECIBIR, díselo —que no hace falta que pague antes— " +
+  "y ofrécele revisar la captura por si ya transfirió.";
+
 // 🪞 Lo que se anuncia como hecho, tiene que estar hecho. El motor a veces necesita que el
 // cliente confirme antes de tocar el pedido (cambiar de presentación mueve precio y stock),
 // y ahí la respuesta no puede sonar a hecho consumado. Medido: pidió «oye mejor mándame 2,
@@ -2644,6 +2663,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   parts.push(REGLA_TUTEO);
   parts.push(REGLA_SIN_DISCURSO_RIESGO);
   parts.push(REGLA_NO_DAR_POR_HECHO);
+  parts.push(REGLA_PAGO_NO_CONFIRMADO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
     // 🔢 Con UN solo producto no hay nada que elegir. Medido: con la lista trayendo un
@@ -8440,6 +8460,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
+    parts.push(REGLA_PAGO_NO_CONFIRMADO);
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     parts.push(estiloDeEscritura((info as any)?.estilo, { emojisProducto: String(ctx.emojis ?? "") }));
@@ -8599,6 +8620,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
+    parts.push(REGLA_PAGO_NO_CONFIRMADO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + resolve(String(ctx.contexto_producto), ctx));
   // Mismo formato que la venta: el cliente no debería notar que lo atiende otro camino.
@@ -11723,6 +11745,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
+    parts.push(REGLA_PAGO_NO_CONFIRMADO);
     // 📅 «¿Me lo separas hasta que cobre?» — el cliente que YA decidió y solo tiene la
     // plata en otro día. Medido: «quiero 3 frascos pero pago recién el viernes cuando me
     // paguen, ¿me lo separas?» → «no manejamos separaciones ni reservas para que todos
@@ -12316,6 +12339,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // configuración del negocio. Se le da a la IA masticado y con la orden
     // explícita de no contradecirlo — sabe qué decir, no qué decidir. (La IA no
     // sabe qué hora es ni qué zonas cubrimos; el código sí.)
+    // 💳 Pregunta CÓMO paga y todavía no sabemos de dónde es. Todo lo que el motor tiene
+    // para contestar eso vive en las ramas de abajo (Lima / provincia) y ninguna corre sin
+    // zona, así que la pregunta se quedaba sin respuesta: medido, «quiero 2 frascos, ¿puedo
+    // pagar con tarjeta cuando me lo entreguen?» → «¿desde qué distrito o ciudad nos
+    // escribes?», y del pago ni una palabra. Se contesta lo que sí es cierto para las dos
+    // zonas y se le pide la ciudad EN EL MISMO mensaje.
+    if (!ctx.zona_entrega && RE_COMO_PAGA.test(String(ctx.last_input ?? ""))) {
+      parts.push("## 💳 Te preguntó cómo se paga y aún no sabes de dónde es\n" +
+        "⛔⛔ PROHIBIDO decirle que SÍ o que NO se puede pagar con **tarjeta**, POS, Yape, Plin o " +
+        "transferencia. Todavía no sabes su zona y ese dato depende de ella: si te adelantas, le " +
+        "prometes una forma de pago que a lo mejor no existe, y se entera con el repartidor en la " +
+        "puerta. (Medido: contestó «en Lima puedes pagar con tarjeta al recibir» con el POS apagado.)\n" +
+        "Contéstale EXACTAMENTE esto, adaptando el saludo: «Depende de a dónde te lo mandamos: " +
+        "en Lima lo pagas cuando lo recibes, y a provincia va por agencia con un adelanto y el resto " +
+        "al recoger. ¿De qué distrito o ciudad me escribes?»\n" +
+        "Ni una palabra más sobre medios de pago hasta que te diga su zona.");
+    }
     if (ctx.zona_entrega) {
       const L: string[] = [];
       if (ctx.zona_entrega === "lima" && ctx.zona_distrito_incierto === "si") {
