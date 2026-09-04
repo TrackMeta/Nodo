@@ -2257,7 +2257,7 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
       `Elige el número del producto que el cliente quiere. Si el mensaje no calza claramente con ninguno (saludo genérico, spam, off-topic), usa 0.\n` +
       `Responde exactamente: {"idx": <número entre 0 y ${cands.length}>, "confianza": <0.0 a 1.0>}`;
 
-    const raw = await runAI({ provider: ai.provider as Provider, apiKey: ai.api_key, model, system, content: prompt, maxTokens: 120 });
+    const raw = await runAI({ db, channelId: channelId, origen: "clasificar", provider: ai.provider as Provider, apiKey: ai.api_key, model, system, content: prompt, maxTokens: 120 });
     const m = /\{[\s\S]*\}/.exec(raw);
     if (!m) return null;
     let parsed: any;
@@ -2666,7 +2666,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje, breve y cálido.` : "");
   let result = "";
   try {
-    result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
+    result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
   } catch (e) { console.error("[recepcion/ai]", (e as any)?.message ?? e); return { hecho: false }; }
   // 🎯 ENTREGA A LA VENTA. La etiqueta [[ir:N]] jamás debe llegar al cliente, así que se
   // saca del texto pase lo que pase. Si N es válido, este turno NO lo contesta Recepción:
@@ -4383,7 +4383,7 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
     mime = r.headers.get("content-type") || "audio/ogg";
     bytes = new Uint8Array(await r.arrayBuffer());
   }
-  const texto = await transcribeAudio(ai.api_key, bytes, mime);
+  const texto = await transcribeAudio(ai.api_key, bytes, mime, { db, channelId });
   return esAlucinacionSTT(texto) ? null : (texto || null);
 }
 
@@ -6552,7 +6552,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
         "En `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin " +
         "interpretarlo ni completarlo, y cadena vacía si la imagen no tiene texto—: es la prueba de que " +
         "estás mirando la imagen y no suponiendo lo que debería decir.";
-      const raw = await runAI({
+      const raw = await runAI({ db, channelId: channelId, origen: "ocr",
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [imageBlock(url), { type: "text", text: "¿Es un comprobante de pago? Extrae el monto pagado y el nº de operación." }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
@@ -6915,7 +6915,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false;
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "clasificar",
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
     system: "Extraes datos de despacho que un cliente peruano CORRIGE/cambia para su pedido. Respondes SOLO con un JSON, sin explicaciones. Copia el valor TAL CUAL lo dijo. Si un dato NO aparece en el mensaje, déjalo vacío (jamás lo inventes).",
     content: `Mensaje del cliente:\n"""${txt}"""\n\nDevuelve SOLO lo que el cliente indique concretamente:\n- "sede": la oficina/sede de agencia (Shalom/Olva) donde recoge, si la nombra.\n- "dni": su número de DNI (documento de identidad peruano, 8 dígitos), si lo da. OJO: NO pongas acá un número de celular.\n- "direccion": la dirección de entrega (calle/avenida/jirón con número o un punto concreto), si la da.\n- "nombre": el nombre completo del DESTINATARIO que recoge/recibe el paquete, si el cliente lo cambia o aclara (ej. "que salga a nombre de María Torres").\n- "telefono": el número de celular de contacto (9 dígitos), si lo da como su teléfono. NUNCA lo pongas en "dni".\nJSON: {"sede":"","dni":"","direccion":"","nombre":"","telefono":""}`,
@@ -7159,7 +7159,7 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
     if (/\b(si|sip|dale|ok|okey|confirmo|confirmalo|correcto|asi es|hazlo|ya|de una|claro|por favor|porfa|va|listo)\b/i.test(lowN) && !/\bno\b/i.test(lowN)) decision = "si";
     else if (/\b(no|mejor no|dejalo|olvidalo|asi esta bien|dejala asi|dejalo asi|cancela el cambio|no importa)\b/i.test(lowN)) decision = "no";
     else if (ai?.api_key) {
-      const raw = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 12,
+      const raw = await runAI({ db, channelId: channelId, origen: "clasificar", provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 12,
         system: "Respondes SOLO 'SI', 'NO' o 'OTRO'. El cliente tenía un cambio en su pedido pendiente de confirmar.",
         content: `Cambio propuesto: ${pend.resumen}\nMensaje del cliente: """${txt}"""\n¿El cliente CONFIRMA el cambio (SI), lo RECHAZA (NO), o habla de otra cosa (OTRO)?` }).catch(() => "OTRO");
       const r = String(raw ?? "").toUpperCase();
@@ -7248,7 +7248,7 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
 
   const listaItems = removibles.length ? removibles.map((b) => `- "${b.nombre}"${b.regalo ? " (regalo)" : ` (${sym}${b.precio})`}`).join("\n") : "(ninguno)";
   const listaPres = opciones.length ? opciones.map((o) => `- "${o.nombre}" · ${sym}${o.precio}${o.cantidad ? ` · ${o.cantidad} u.` : ""}`).join("\n") : "(una sola presentación)";
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "ocr",
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 120,
     system: "Analizas si un cliente peruano quiere MODIFICAR su pedido ya armado. Respondes SOLO con un JSON, sin explicar. Copia nombres TAL CUAL de las listas; si no calza con ninguno, deja vacío.",
     content: `Pedido actual — presentación: "${ship.opcion ?? ""}". Items adicionales que se pueden QUITAR:\n${listaItems}\n\nPresentaciones disponibles del producto:\n${listaPres}\n\nMensaje del cliente:\n"""${txt}"""\n\n¿Qué quiere?\n- "accion": "quitar" (sacar un item adicional), "cantidad" (cambiar CUÁNTAS unidades / de presentación), o "ninguna".\n- OJO: cambiar la TALLA o el COLOR del producto NO es cambiar la cantidad → eso es "ninguna". Dar un dato (su nombre, DNI, dirección, una talla) tampoco → "ninguna".\n- "item": el nombre EXACTO (de la lista de arriba) del item a quitar, si accion=quitar.\n- "presentacion": el nombre EXACTO (de la lista) de la presentación que quiere, si accion=cantidad y calza una.\n- "cantidad_pedida": el número de unidades que pidió, si accion=cantidad (aunque no calce ninguna presentación).\n- "confianza": 0.0 a 1.0.\nJSON: {"accion":"","item":"","presentacion":"","cantidad_pedida":0,"confianza":0}`,
@@ -7418,7 +7418,7 @@ async function maybeCambioVariante(db: SupabaseClient, channelId: string, contac
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false;
   const listaEjes = ejes.map((a) => `- "${a.nombre}" (actual: ${atrib[a.nombre] ?? "?"}) — opciones: ${parseValores(a.valores).join(", ")}`).join("\n");
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "clasificar",
     provider: ai.provider, apiKey: ai.api_key, model: ai.model, maxTokens: 100,
     system: "El cliente CAMBIA un atributo (talla/color) de su pedido ya hecho. Respondes SOLO con un JSON. Para cada atributo, si el cliente pide un valor NUEVO, ponlo TAL CUAL una de las opciones; si no lo cambia, déjalo vacío. Jamás inventes un valor fuera de las opciones.",
     content: `Atributos del producto:\n${listaEjes}\n\nMensaje del cliente:\n"""${txt}"""\n\nJSON con SOLO los atributos que cambia: {${ejes.map((a) => `"${a.nombre}":""`).join(",")}}`,
@@ -7510,7 +7510,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
         "Y en `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin interpretarlo " +
         "ni completarlo, y cadena vacía si no tiene texto—: es la prueba de que estás mirando la imagen y no " +
         "suponiendo lo que debería decir.";
-      const raw = await runAI({
+      const raw = await runAI({ db, channelId: channelId, origen: "ocr",
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [imageBlock(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
@@ -7758,7 +7758,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 
   let parsed: any = null;
   try {
-    const raw = await runAI({
+    const raw = await runAI({ db, channelId: channelId, origen: "ocr",
       provider: ai.provider, apiKey: ai.api_key, model: ai.model,
       system,
       content: [imageBlock(url), { type: "text", text: `Es el comprobante del SALDO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
@@ -8357,7 +8357,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     const hist = await historial(db, run, 8);
     const content = `El cliente (con su pago en verificación) te escribe:\n"${event.text ?? ""}"` +
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
-    const result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
+    const result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
     await emitIaText(db, run, result || fallback, ctx);
   } catch (e) {
     console.error("[responderVerificando]", (e as any)?.message ?? e);
@@ -8532,7 +8532,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
     let result = "";
     try {
-      result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
+      result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
     } catch (e) {
       // Si la IA falla, NO caer al ruteo genérico (runReception "¿qué producto?"):
       // este cliente ya compró y debe el saldo. Se le da un recordatorio fijo y se
@@ -8585,7 +8585,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
 
   let result = "";
   try {
-    result = await runAI({ provider: ai.provider, apiKey: ai.api_key, model: ai.model, system, content, maxTokens: 500 });
+    result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system, content, maxTokens: 500 });
   } catch (e) {
     // Si la IA falla, NO caer al ruteo genérico (runReception "¿qué producto?"):
     // es un comprador. Se le responde un acuse cálido de soporte y se corta acá,
@@ -8659,7 +8659,7 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
     ? `## La conversación hasta ahora\n${hist}\n\nGenera las 3 sugerencias para el asesor.`
     : "El cliente todavía no ha escrito nada en este chat. Sugiere 3 formas cálidas de iniciar o retomar la conversación.";
 
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "asistente",
     provider: ai.provider, apiKey: ai.api_key, model: ai.model,
     system, content, maxTokens: 700,
     jsonSchema: {
@@ -8717,7 +8717,7 @@ export async function leerGuiaShalom(db: SupabaseClient, channelId: string, imag
     },
     required: ["nro_guia", "codigo", "dest_dni"], additionalProperties: false,
   };
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "ocr",
     provider: A.provider, apiKey: A.apiKey, model: A.model, system,
     content: [imageBlock(imageUrl), { type: "text", text: "Extrae los datos de esta guía de Shalom. Usa SIEMPRE el DESTINATARIO, nunca el remitente." }],
     maxTokens: 400, jsonSchema: schema as unknown as Record<string, unknown>,
@@ -8870,7 +8870,7 @@ export async function armarProducto(
     required: ["nombre", "tipo", "ia"], additionalProperties: false,
   };
 
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "asistente",
     provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 2400,
     jsonSchema: schema as unknown as Record<string, unknown>,
@@ -8942,7 +8942,7 @@ export async function armarNegocio(
     required: ["rubro"], additionalProperties: false,
   };
 
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "asistente",
     provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 2400,
     jsonSchema: schema as unknown as Record<string, unknown>,
@@ -9035,7 +9035,7 @@ export async function asesorIa(
     required: ["recomendaciones"], additionalProperties: false,
   };
 
-  const raw = await runAI({
+  const raw = await runAI({ db, channelId: channelId, origen: "asistente",
     provider: A.provider, apiKey: A.apiKey, model: A.model,
     system, content, maxTokens: 2000,
     jsonSchema: schema as unknown as Record<string, unknown>,
@@ -9104,7 +9104,7 @@ export async function operaParse(
     },
     required: ["tipo"], additionalProperties: false,
   };
-  const raw = await runAI({ provider: A.provider, apiKey: A.apiKey, model: A.model, system, content, maxTokens: 500, jsonSchema: schema as unknown as Record<string, unknown> });
+  const raw = await runAI({ db, channelId: channelId, origen: "asistente", provider: A.provider, apiKey: A.apiKey, model: A.model, system, content, maxTokens: 500, jsonSchema: schema as unknown as Record<string, unknown> });
   let a: any = {};
   try { const m = /\{[\s\S]*\}/.exec(raw); a = m ? JSON.parse(m[0]) : JSON.parse(raw); } catch { return { tipo: "none", mensaje: "No entendí el comando. Intenta de otra forma." }; }
 
@@ -9519,7 +9519,7 @@ async function extraerLugar(db: SupabaseClient, channelId: string, texto: string
     const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (!ai?.api_key) return null; // sin IA → solo match determinista
-    const raw = await runAI({
+    const raw = await runAI({ db, channelId: channelId, origen: "extraer",
       provider: ai.provider, apiKey: ai.api_key, model: ai.model,
       system: "Extraes lugares del Perú de mensajes de clientes. Responde SOLO con un JSON, sin explicaciones.",
       content: `Mensaje del cliente:\n"${texto}"\n\n¿A qué distrito, ciudad o localidad del Perú se refiere para su entrega? ` +
@@ -10243,7 +10243,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         const procesar = async (grupo: CampoDato[], fuente: string, guard: boolean) => {
           if (!grupo.length || !fuente.trim()) return;
           const lista = grupo.map((c) => `- "${c.clave}": ${c.label}${c.detalle ? ` (${c.detalle})` : ""}`).join("\n");
-          const raw = await runAI({
+          const raw = await runAI({ db, channelId: run.channel_id, origen: "extraer",
             provider: ai.provider, apiKey: ai.api_key, model: ai.model,
             // Dos reglas aprendidas probando con el modelo real:
             // 1) Si NO le decimos que copie tal cual, "corrige" solo: un DNI de 7
@@ -10776,7 +10776,7 @@ async function classify(
         `que sí quiere ese adicional (ej. "sí sumo las medias", "dale agrégalo").\n` +
         `Responde exactamente: {"idx":<0-${opts.candidatos.length}>,"confianza":<0.0-1.0>}`;
 
-    const raw = await runAI({
+    const raw = await runAI({ db, channelId, origen: "clasificar",
       provider: ai.provider as Provider, apiKey: ai.api_key, model, system, content: prompt, maxTokens: 120,
     });
     const m = /\{[\s\S]*\}/.exec(raw);
@@ -13293,7 +13293,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       } catch (_) { /* sin memoria → responde normal */ }
     }
 
-    const result = await runAI({
+    const result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
       provider, apiKey: ai.api_key, model, system, content, maxTokens,
       jsonSchema: op === "extraer" ? cfg.json_schema : undefined,
     });
