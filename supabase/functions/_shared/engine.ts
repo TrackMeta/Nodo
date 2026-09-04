@@ -1662,6 +1662,20 @@ const RE_PAGA_AL_RECOGER =
 // otra cosa y no puede borrar un producto del pedido.
 const RE_QUITA_EXTRA =
   /\b(qu[ií]t(a|amelo|alo|ame|enlo)|s[aá]c(alo|amelo|ame)|mejor no( lo)? (quiero|lo llevo)?|mejor sin (eso|el|la)|sin (eso|el protector)|ya no (lo )?quiero|cancela(me)? (eso|el extra)|elim[ií]nalo|b[oó]rralo|d[eé]jalo sin eso|no me lo pongas|mejor no)\b/i;
+// 🙋 Condiciones concretas por las que un cliente pregunta «¿sirve para…?». No es una lista
+// de lo que el producto hace: es la palabra que hay que ir a buscar EN LA FICHA antes de
+// afirmar o negar nada sobre ella.
+const RE_CONDICION =
+  /\b(acn[eé]|espinillas?|ros[aá]cea|melasma|cloasma|vit[ií]ligo|psoriasis|eccema|dermatitis|estr[ií]as|cicatri\w*|quemadur\w*|arrugas?|ojeras|verrugas?|hongos|caspa|alopecia|celulitis|patas de gallo|papada|flacidez|varices|v[aá]rices)\b/i;
+// 👤 «Mi mamá», «su esposa», «la señora»: un parentesco, no un nombre. Se cuela cuando el
+// cliente dice quién recibe sin decir cómo se llama, y termina impreso en el rótulo.
+const RE_PARENTESCO =
+  /^(?:la |el |mi |su |de mi |a nombre de mi |para mi )*(mam[aá]|papa|pap[aá]|madre|padre|esposa?|espos[oa]|marido|mujer|hermana?|herman[oa]|hija?|hij[oa]|t[ií]a?|t[ií][oa]|abuela?|abuel[oa]|suegra?|suegr[oa]|cu[ñn]ada?|cu[ñn]ad[oa]|sobrina?|sobrin[oa]|prima?|prim[oa]|nieta?|niet[oa]|yerno|nuera|vecina?|vecin[oa]|amiga?|amig[oa]|novia?|novi[oa]|pareja|se[ñn]ora?|se[ñn]or|jefa?|jef[ea]|casera?|caser[oa]|enamorada?|enamorad[oa])\s*$/i;
+function esParentesco(v: string): boolean {
+  const t = String(v ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!t || t.length > 28) return false;
+  return RE_PARENTESCO.test(t);
+}
 // 💸 DICE QUE YA PAGÓ (pago hecho, no prometido). Aparte de RE_ANUNCIA_PAGO, que cubre el
 // pago FUTURO ("ya te yapeo", "¿cómo te pago?"): mezclarlas haría que el motor le mandara
 // los datos de pago a alguien que acaba de pagar. Medido: «ya te hice el yape de 119»
@@ -5172,6 +5186,33 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // conciliador entonces buscaba UN movimiento por el total mientras en el banco había dos
     // (S/50 y S/49) y marcaba como "sin respaldo" una venta perfectamente cobrada. Se hace
     // acá y no en el generador para que valga también para los flujos ya creados.
+    // ☎️ El TELÉFONO de contacto que el cliente dictó y el flujo no mapeó. Medido: «quiero 2
+    // frascos lima, el pedido va a nombre de mi mamá, su celular es 987654321, ella recibe»
+    // → el pedido nació con `tel: ""`. Ese número es el de quien RECIBE, que es justo a quien
+    // llama el motorizado cuando llega y no encuentra a nadie. Solo se toma un celular
+    // peruano (9 dígitos que empiezan en 9) y solo si lo dijo COMO teléfono —con la palabra
+    // delante—, para no confundirlo con un DNI o un monto.
+    // Se miran sus ÚLTIMOS mensajes, no solo el último: el pedido casi nunca se crea en el
+    // mismo turno en que dio el número. Medido: dio el celular de su mamá en el primer
+    // mensaje, el pedido se creó dos turnos después —al dar el nombre— y el teléfono se
+    // perdió igual. Es la cuarta vez que este mismo patrón muerde (detectarOpcion, los
+    // datos de pago, los huecos de ficha): `last_input` es solo el último mensaje.
+    if (!String(ship.tel ?? "").trim()) {
+      let _txt = String(ctx.last_input ?? "");
+      try {
+        const { data: _ins } = await db.from("messages").select("content")
+          .eq("contact_id", run.contact_id).eq("direction", "in")
+          .order("ts", { ascending: false }).limit(5);
+        const _prev = (_ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "")).filter(Boolean);
+        if (_prev.length) _txt = [_txt, ..._prev].join("\n");
+      } catch (_) { /* sin historial → queda el último mensaje */ }
+      // Cada línea por separado: el número tiene que estar en la MISMA frase donde habla de
+      // un teléfono, o un DNI de otro mensaje se colaría como celular.
+      for (const _l of _txt.split("\n")) {
+        const _cel = (_l.match(/\b9\d{8}\b/) ?? [])[0];
+        if (_cel && TEL_KW.test(_l.toLowerCase())) { ship.tel = _cel; break; }
+      }
+    }
     if (!ship.digital_metodo && run.vars?.pago_metodo) ship.digital_metodo = run.vars.pago_metodo;
     if (!ship.digital_operacion && run.vars?.pago_operacion) ship.digital_operacion = run.vars.pago_operacion;
     if (!ship.digital_abonos && Array.isArray(run.vars?._pago_abonos) && (run.vars._pago_abonos as any[]).length > 1) {
@@ -10402,6 +10443,16 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 continue;
               }
             }
+            // 👤 Un PARENTESCO no es un nombre. Medido: «el pedido va a nombre de mi mamá,
+            // ella recibe» → el pedido salió a nombre de "Mi Mama", y así iba al rótulo y a
+            // la hoja del courier. El repartidor pregunta por una persona, no por un
+            // parentesco, y en la agencia lo entregan contra un DNI que nunca va a decir
+            // eso. Se descarta y se sigue pidiendo el nombre de verdad.
+            if (/nombre|cliente|destinatario/i.test(c.clave) && esParentesco(val)) {
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "Nombre descartado",
+                `"${String(val).slice(0, 40)}" es un parentesco, no un nombre`).catch(() => {});
+              continue;
+            }
             run.vars[c.clave] = val;
             ctx[c.clave] = val;
             // 📍 Eligió su oficina: se marca para mandarle la FICHA después del mensaje
@@ -12377,6 +12428,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `NO le des a entender que se pasó una hora de corte ni que "hoy ya no alcanza": en su zona el reparto funciona así siempre. `
           : `SÍ entregamos en su distrito, pero HOY ya no alcanza${ctx.entrega_motivo ? ` porque ${ctx.entrega_motivo}` : ""}. ${_diLo}` +
             `Explícale ese motivo real con amabilidad, en una línea y sin dramatizar. `;
+        // 🧍 En Lima también recibe otra persona a veces, y ahí el rótulo tiene que llevar
+        // SU nombre y SU celular: es a quien toca el timbre el motorizado. Medido: «el pedido
+        // va a nombre de mi mamá, su celular es 987654321, ella recibe. yo soy Luis Paz» → el
+        // bot contestó «te lo envío a nombre de tu mamá» y el pedido salió a nombre de Luis.
+        // Prometió un rótulo que no podía poner: nunca le preguntó cómo se llama la mamá.
+        if (RE_RECOGE_OTRO.test(String(ctx.last_input ?? ""))) {
+          L.push("🧍 Te dijo que el pedido lo recibe OTRA PERSONA. El repartidor va a preguntar por ella, " +
+            "así que el pedido va a NOMBRE de quien recibe. Pídele su **nombre completo** (y su celular, si " +
+            "no te lo dio) en el mismo mensaje. ⛔ No le digas que ya va a nombre de esa persona si todavía " +
+            "no te dio el nombre: eso no lo puedes hacer sin el dato.");
+        }
         L.push(ctx.entrega_hoy === "si"
           ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo: le llega **hoy**."
           : _noHoy +
@@ -13199,7 +13261,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const hist = previos.join(" \n ");
         if (hist.trim()) preg = (preg + " \n " + hist).toLowerCase();
       } catch (_) { /* sin historial → queda el último mensaje */ }
-      const huecos = TEMAS_FICHA.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt));
+      const huecos: Array<[string, RegExp, RegExp, "producto" | "negocio"]> =
+        TEMAS_FICHA.filter(([, enPregunta, enFicha]) => enPregunta.test(preg) && !enFicha.test(fichaTxt));
+      // 🙋 «¿Sirve para X?» donde X es una condición concreta. Va aparte del array porque
+      // hay que comparar ESA palabra contra la ficha, no una lista contra otra: con una
+      // entrada fija en TEMAS_FICHA bastaba con que la ficha nombrara UNA condición
+      // cualquiera para dar por cubiertas TODAS. Medido: la ficha del sérum dice "melasma",
+      // así que «¿tienen crema para el acné?» contaba como cubierto y el bot respondió de
+      // memoria «para acné activo no es lo indicado» — una negativa que nadie escribió, y
+      // con ella desaconsejó la compra. Negar de memoria cuesta igual que prometer.
+      const _cond = (preg.match(RE_CONDICION) ?? [])[0];
+      if (_cond) {
+        const _reCond = new RegExp("\\b" + _cond.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+        if (!_reCond.test(fichaTxt)) huecos.push([`si sirve para ${_cond}`, _reCond, _reCond, "producto"]);
+      }
       const faltan = huecos.map(([nombre]) => nombre);
       // La frase donde de verdad lo preguntó — para citarla en el registro del hueco.
       const citaDe = (re: RegExp) => lineas.find((l) => re.test(l.toLowerCase())) ?? "";
