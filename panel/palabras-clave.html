@@ -368,18 +368,29 @@ function addNewChip(){
 }
 
 // ── Colisiones: una misma palabra normalizada en 2+ triggers ──
+// ⚠️ Se cuentan TRIGGERS DISTINTOS, no ocurrencias: "serum" y "sérum" normalizan igual y
+// viven en la MISMA lista, así que contando ocurrencias el aviso saltaba diciendo que la
+// palabra "también dispara otro flujo" — señalando una colisión consigo misma. Medido en
+// el canal de Rodrigo: Dermachem tiene serum/sérum y el otro flujo solo palabras de
+// maquillaje; no había ninguna colisión real y el panel le pedía arreglarlo igual.
+// La repetición DENTRO del mismo trigger sí vale decirla, pero es otra cosa: sobra, no
+// choca — y se avisa con su propio texto (`dups`).
 function collisions(){
   const map={};
   for(const t of st.triggers){
     for(const k of (t.config?.keywords||[])){ const n=norm(k); if(!n) continue; (map[n]=map[n]||[]).push(t.id); }
   }
-  const conf={};
-  for(const [w,ids] of Object.entries(map)){ if(ids.length>1) for(const id of ids){ (conf[id]=conf[id]||[]).push(w); } }
-  return conf;
+  const conf={}, dups={};
+  for(const [w,ids] of Object.entries(map)){
+    const unicos=[...new Set(ids)];
+    if(unicos.length>1){ for(const id of unicos){ (conf[id]=conf[id]||[]).push(w); } }
+    else if(ids.length>1){ (dups[unicos[0]]=dups[unicos[0]]||[]).push(w); }
+  }
+  return { conf, dups };
 }
 
 function renderKeywords(){
-  const box=$("kwList"); if(!box) return; const conf=collisions();
+  const box=$("kwList"); if(!box) return; const { conf, dups }=collisions();
   if(!st.triggers.length){ box.innerHTML=`<div class="empty">Aún no hay palabras clave. Crea la primera arriba, o hazlo desde la ficha de un producto.</div>`; return; }
   // Agrupar por producto (los flujos sin producto van en su propio grupo).
   const groups=new Map();
@@ -405,6 +416,7 @@ function renderKeywords(){
     for(const t of g.trigs){
       const match=t.config?.match||"contiene";
       const warned=conf[t.id];
+      const repes=dups[t.id];
       const kwsArr=(t.config?.keywords||[]).slice();
       const card=document.createElement("div"); card.className="kwrow"+(warned?" warn":""); card.style.cssText="padding:11px 13px";
       card.innerHTML=`
@@ -421,7 +433,8 @@ function renderKeywords(){
           <div class="sw${t.activo?" on":""}" data-act title="Activar/desactivar"></div>
           <button class="iconbtn" data-del title="Eliminar">${TRASH}</button>
         </div>
-        ${warned?`<div class="warnmsg" style="display:inline-flex;background:var(--amber-bg,#2c2311);border-radius:8px;padding:5px 9px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — se enruta a uno solo (no ambos); mejor usa palabras distintas</span></div>`:""}`;
+        ${warned?`<div class="warnmsg" style="display:inline-flex;background:var(--amber-bg,#2c2311);border-radius:8px;padding:5px 9px;font-weight:600">${WARN}<span>“${esc([...new Set(warned)].join(", "))}” también dispara otro flujo — se enruta a uno solo (no ambos); mejor usa palabras distintas</span></div>`:""}
+        ${repes?`<div class="warnmsg" style="display:inline-flex;background:var(--amber-bg,#2c2311);border-radius:8px;padding:5px 9px;font-weight:600">${WARN}<span>“${esc([...new Set(repes)].join(", "))}” ya está cubierta por otra frase de esta misma lista: las tildes y las mayúsculas no cuentan. Puedes quitar la repetida.</span></div>`:""}`;
       card.querySelector("[data-ci]").addEventListener("keydown",e=>{
         if(e.key==="Enter"){ e.preventDefault(); const v=e.target.value.trim(); if(v && !kwsArr.some(k=>norm(k)===norm(v))){ kwsArr.push(v); updateTrigger(t,{keywords:kwsArr}); } }
         else if(e.key==="Backspace" && !e.target.value && kwsArr.length){
