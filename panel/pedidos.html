@@ -376,7 +376,7 @@ function abrirExport(courier){
     body.innerHTML=`${nota}<table class="em-tbl"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
       ${arr.map(o=>{ const a=esAer(o); return `<tr data-id="${o.id}" class="${a?"aereo":""}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${a?'disabled title="Aéreo: se registra a mano"':(S.sel.has(o.id)?"checked":"")}></td>
-        <td>${esc((o.contact||{}).nombre||(o.shipping||{}).cliente||"—")}</td>
+        <td>${esc((o.shipping||{}).cliente||(o.contact||{}).nombre||"—")}</td>
         <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`; }).join("")}
     </tbody></table>`;
     const all=$q("#emAll");
@@ -858,7 +858,7 @@ function abrirImprimirRotulos(){
     body.innerHTML=`<table class="em-tbl"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
       ${arr.map(o=>`<tr data-id="${o.id}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${S.sel.has(o.id)?"checked":""}></td>
-        <td>${esc((o.contact||{}).nombre||(o.shipping||{}).cliente||"—")}</td>
+        <td>${esc((o.shipping||{}).cliente||(o.contact||{}).nombre||"—")}</td>
         <td>${detalle(o)}</td><td class="c-amt">${money(total(o),o.currency)}</td></tr>`).join("")}
     </tbody></table>`;
     const all=$q("#emAll");

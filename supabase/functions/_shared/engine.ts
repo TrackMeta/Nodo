@@ -7774,6 +7774,15 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // medias?" → y recién entonces "tu pedido queda cubierto por completo": la noticia
     // que más le importa (ya no debe nada) llegaba detrás de un intento de venta.
     if (pagadoTotal) await avisarPagadoTotal(db, channelId, contactId);
+    // 📊 Y sube la ETAPA del contacto: pagó, ya no es un "interesado". El mapa
+    // (stageDeEstado) tiene adelanto_validado → "confirmado" desde siempre, pero acá
+    // nadie lo llamaba: solo lo hacía order-update, o sea cuando el pago lo aprobaba el
+    // OPERADOR a mano. Con la validación automática del bot la etapa se quedaba en
+    // "interesado". Medido: un cliente pagó S/25 de adelanto y en Contactos seguía como
+    // "Interesado", igual que quien solo preguntó el precio. Y eso no es solo un número
+    // torcido en el Embudo: el remarketing de interesados le escribe «¿sigues
+    // interesado?» a alguien que ya puso su plata.
+    await moverEtapa(db, channelId, contactId, stageDeEstado("adelanto_validado")).catch(() => {});
     const ofrecio = await resumeIntoExtras(db, channelId, contactId).catch(() => false);
     if (!ofrecio) {
       const arranco = await triggerPedidoEstado(db, channelId, contactId, "adelanto_validado", true);
