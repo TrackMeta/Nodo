@@ -1710,8 +1710,12 @@ function pideReprogramar(text?: string | null): boolean {
 }
 // «Lo recoge mi esposo», «va a ir mi mamá», «yo no puedo ir». Quién retira el paquete es
 // un dato de despacho: en la agencia lo entregan contra el DNI del destinatario.
+// ⚠️ "RECOGE" es el verbo de la AGENCIA; en Lima, que es entrega a domicilio, se dice
+// RECIBE. Medido: «quiero 2 frascos lima, recibe mi hermana, su celular es 998877665» no
+// disparaba nada —la lista solo tenía recoger/retirar— y el pedido salió a nombre del
+// comprador sin que nadie preguntara cómo se llama la hermana.
 const RE_RECOGE_OTRO =
-  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar)\b|\b(recoge|recogerlo|recogerá|retira|va a ir|ir[aá])\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero)\w*|\byo no puedo (ir|recoger|acercarme)\b|\b(a nombre de mi)\b/i;
+  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar|recibe|recibir)\b|\b(recoge|recogerlo|recogerá|retira|recibe|recibir[aá]?|recepciona|va a ir|ir[aá]|est[aá] en casa|queda en casa)\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*|\byo no (puedo|voy a) (ir|estar|recoger|recibir|acercarme)\b|\b(a nombre de mi)\b/i;
 // Regateo, comparación con otro vendedor y "está caro": afirmaciones, sin signo de
 // pregunta, que el saludo fijo se lleva por delante.
 const RE_TRAE_OBJECION =
@@ -10471,6 +10475,15 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // rótulo del paquete y en el Excel del courier. Mismo trato que la ciudad.
             if (c.clave === "nombre_completo" || c.clave === "cliente") val = enTitulo(val);
             if (c.clave === "referencia") {
+              // Un CELULAR no es una referencia de ubicación. Medido: «recibe mi hermana, su
+              // celular es 998877665» dejó la referencia en "su hermana, su celular es
+              // 998877665" y así salía impresa en el rótulo, al lado de la dirección. El
+              // número ya tiene su campo; acá solo estorba y encima expone un dato personal
+              // en el paquete. Se limpia el teléfono y lo que queda sigue su camino.
+              val = String(val).replace(/\b9\d{8}\b/g, " ")
+                .replace(/\b(su|mi)\s+(celular|tel[eé]fono|n[uú]mero)\s+(es|:)?\s*/gi, " ")
+                .replace(/\s{2,}/g, " ").replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, "").trim();
+              if (!val) continue;
               const _n = (x: string) => String(x ?? "").toLowerCase().normalize("NFD")
                 .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
               const _ref = _n(val), _dir = _n(String(ctx.direccion ?? ""));
