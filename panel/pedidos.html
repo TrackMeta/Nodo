@@ -642,6 +642,7 @@ function kcard(o){
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
     ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>${icon("alert")} Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     ${s.distrito_por_confirmar?`<button class="kc-warn" data-cfdist>${icon("alert")} Confirmar distrito<br><span style="font-weight:500;opacity:.85">cambió su dirección y sigue en ${esc(s.distrito||"—")}</span></button>`:""}
+    ${s.variante_agotada?`<button class="kc-warn" data-cfvar>${icon("alert")} Confirmar qué se despacha<br><span style="font-weight:500;opacity:.85">${esc(s.variante_por_confirmar||"la variante pedida")} estaba agotada</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
       <button class="rot edit" title="Editar datos del pedido">${icon("edit")}</button>
@@ -662,6 +663,9 @@ function kcard(o){
   // Mismo destino que la sede: el formulario de envio, donde se corrige el distrito.
   const wd=el.querySelector("[data-cfdist]");
   if(wd) wd.onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
+  // Variante agotada: al editor, que es donde se cambia lo que se despacha.
+  const wv=el.querySelector("[data-cfvar]");
+  if(wv) wv.onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
   // Clic en el CUERPO de la tarjeta → abre la conversación de ese cliente en la
   // Bandeja (deep-link ?c=). Los botones internos (avanzar, editar, rótulo, ⋮)
   // se ignoran acá con closest(): siguen haciendo lo suyo. Sin contacto, no hace

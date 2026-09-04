@@ -978,6 +978,7 @@ export async function openDespachoModal(o, deps) {
       <div class="m-sub">${esc((o.contact || {}).nombre || "")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
       ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
       ${s.distrito_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} Cambió su dirección y el pedido sigue con distrito <b>${esc(s.distrito || "—")}</b>. Confírmalo antes de despachar o el reparto sale a la zona equivocada.</div>` : ""}
+      ${s.variante_agotada ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} El pedido se cerró sobre una variante AGOTADA (<b>${esc(s.variante_por_confirmar || "la que pidió")}</b>) y en el chat se le ofreció otra. Confirma qué se despacha antes de mandarlo.</div>` : ""}
       <div class="row2">
         <div><label>Agencia</label>
           <select data-d="agencia"><option value="shalom" ${s.agencia === "shalom" ? "selected" : ""}>Shalom</option><option value="olva" ${s.agencia === "olva" ? "selected" : ""}>Olva Courier</option><option value="otra" ${s.agencia && !["shalom", "olva"].includes(s.agencia) ? "selected" : ""}>Otra</option></select></div>
@@ -1927,6 +1928,10 @@ export async function openEditarPedido(o, deps) {
           body.product_id = pid;
           body.version_id = vid || null;
           if (zona === "provincia") { const pr = precioVer(pid, vid); if (pr != null) amount = pr; }
+          // Cambió lo que se despacha → el aviso de "variante agotada" ya se atendió.
+          // Igual que con la sede y el distrito: la marca la pone el motor y la levanta
+          // quien la resuelve, o se queda pegada para siempre en un pedido ya corregido.
+          ship.variante_agotada = null; ship.variante_por_confirmar = null;
         }
       }
       if (amount !== undefined) body.amount = amount;
