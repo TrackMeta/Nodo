@@ -9933,7 +9933,22 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
       await set("entrega_hoy", hoy ? "si" : "no");
       await set("entrega_motivo", motivo);
       // Cuándo le llega si hoy no alcanza: "mañana", "el lunes"… Ver proximaEntrega.
-      await set("entrega_cuando", hoy ? "hoy" : proximaEntrega(cfg, cfg?.timezone || "America/Lima"));
+      // ⛔ Salvo que no haya NADA en stock: entonces no hay día que prometer. El bloque de
+      // stock del prompt se lo dice a la IA, pero la confirmación del pedido es una
+      // plantilla fija («📅 Te llega *{{entrega_cuando}}*») que no consulta nada — medido
+      // con el stock en 0: «Tu pedido quedó confirmado… 📅 Te llega mañana». La venta se
+      // sigue tomando (es la decisión del negocio: no bloquear y avisar por Telegram), pero
+      // el día no se promete: ese cliente espera a la reposición.
+      const _sinNada = (() => {
+        const s = (ctx as any)?._stock;
+        if (!s || typeof s !== "object") return false;
+        const vals = Object.values(s).map(Number).filter((n) => Number.isFinite(n));
+        return vals.length > 0 && vals.every((n) => n <= 0);
+      })();
+      await set("entrega_cuando", _sinNada
+        ? "en cuanto repongamos"
+        : (hoy ? "hoy" : proximaEntrega(cfg, cfg?.timezone || "America/Lima")));
+      if (_sinNada) await set("entrega_hoy", "no");
     } else {
       await set("entrega_hoy", "no");
       await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
@@ -12143,7 +12158,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (agotadas.length) {
         const alt = hay.length
           ? `\nDISPONIBLE ahora: ${hay.slice(0, 20).join(", ")}.`
-          : "\nAhora mismo NO queda stock: no confirmes pedidos, avisa que estás reponiendo.";
+          // Sin NADA en stock la instrucción tiene que ser mucho más dura: medido con el
+          // stock en 0, a «¿cuánto cuesta? ¿tienen stock?» contestó «está disponible en
+          // estas opciones, con stock listo para ti», y a otro cliente le cerró 3 frascos
+          // prometiéndole que le llegaban mañana. Las dos son promesas que nadie puede
+          // cumplir hasta que repongan.
+          : "\n🚨 NO QUEDA NI UNA UNIDAD. ⛔ PROHIBIDO decir «hay stock», «está disponible», " +
+            "«tengo listo», «con stock listo para ti» o cualquier variante, y PROHIBIDO prometer " +
+            "cuándo llega («te llega mañana», «sale hoy»). Si pregunta si hay, la respuesta honesta " +
+            "es que justo se agotó y lo estás reponiendo. Puedes tomarle el pedido y sus datos para " +
+            "avisarle apenas llegue —eso sí ayuda—, pero DILE que va a esperar a la reposición: " +
+            "prometerle entrega inmediata es un reclamo seguro dentro de dos días.";
         // Veredicto de LO QUE ESTE CLIENTE PIDIÓ, ya resuelto por código. Leyendo la lista, el
         // modelo llega a cruzar los ejes: medido una vez, con 40 negro en 3 y 40 blanco en 0,
         // le dijo al cliente "la 40 negra está agotada, solo tengo la blanca" — al revés. Negar
