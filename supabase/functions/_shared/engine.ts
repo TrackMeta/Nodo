@@ -9002,6 +9002,17 @@ export async function operaParse(
     "- \"precio\": cambiar el precio de una presentación → devuelve prod_i, pres_j y valor_num (el nuevo precio).\n" +
     "- \"estado_venta\": poner a vender (valor_bool=true) o pausar (valor_bool=false) un producto → devuelve prod_i y valor_bool.\n" +
     "- \"adelanto\": cambiar el adelanto de provincia de un producto → devuelve prod_i y valor_num.\n" +
+    // 🗣️ El dueño escribe como habla, no como el esquema. Medido: "pausa el dermachem",
+    // "deja de vender dermachem" y "sube el precio del dermachem a 89" devolvían todos
+    // «no pude convertir eso en una acción soportada» — y son los tres comandos que más
+    // se van a escribir. Los mismos con la forma larga sí funcionaban.
+    "Formas de decirlo (todas válidas): pausar = «pausa», «pausa el X», «deja de vender X», " +
+    "«apaga X», «desactiva X», «no vendas X»; reanudar = «activa», «vuelve a vender», «prende», " +
+    "«reactiva»; precio = «sube/baja el precio», «ahora cuesta», «déjalo en», «ponlo a».\n" +
+    "Si te piden cambiar EL PRECIO sin decir qué presentación y el producto tiene varias, NO " +
+    "adivines: devuelve tipo \"none\" y en `mensaje` pregunta cuál, listándolas con su precio " +
+    "actual (ej. «¿cuál? 1 frasco (S/ 79), 2 frascos (S/ 119), 3 frascos (S/ 149)»). Si tiene " +
+    "una sola presentación, esa es y se aplica sin preguntar.\n" +
     "Reglas: usa SOLO índices que existan en la lista. Si no puedes mapear el comando a un producto de la lista con seguridad, o pide algo no soportado (borrar, campañas, pagos), devuelve tipo \"none\" con un `mensaje` corto explicando. NO inventes productos, precios ni índices.\n" +
     "Responde SOLO con el JSON del esquema.";
   const content = "## Productos (por índice)\n" + JSON.stringify(catForAI) + "\n\n## Comando del dueño\n\"" + comando + "\"";
