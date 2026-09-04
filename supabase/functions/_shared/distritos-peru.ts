@@ -1768,3 +1768,43 @@ export function provinciasDeDistrito(nombre: string): { prov: string; dep: strin
     return { prov, dep };
   });
 }
+
+// 🧭 ¿Este nombre puede ser de LIMA o de provincia? "San Juan" no es un distrito de Lima,
+// pero es el principio de los dos más poblados del país (San Juan de Lurigancho y San Juan
+// de Miraflores) y además el nombre exacto de cuatro pueblos de sierra. El cliente de Lima
+// que escribe "soy de San Juan" caía en "no está en la lista → provincia" y el bot le
+// ofrecía agencias de Ayacucho e Ica y le pedía un adelanto. Con esto se detecta el empate
+// y se le pregunta cuál, en vez de adivinar.
+//
+// Devuelve candidatos SOLO si hay de los dos lados (alguno en la provincia de Lima y alguno
+// fuera): un nombre que solo existe en provincia —"Huancayo"— no tiene nada de ambiguo.
+export function distritoAmbiguoLima(nombre: string, tope = 5): string[] {
+  const k = String(nombre ?? "").toUpperCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]+/g, " ").trim();
+  if (k.length < 3) return [];
+  const cand: { nombre: string; prov: string }[] = [];
+  const push = (key: string) => {
+    const v = DISTRITOS[key];
+    if (!v) return;
+    for (const s of (Array.isArray(v) ? v : [v])) cand.push({ nombre: key, prov: String(s).split("|")[0] });
+  };
+  push(k);                                    // el nombre tal cual (puede estar en varios sitios)
+  const pref = k + " ";
+  for (const key of Object.keys(DISTRITOS)) if (key.startsWith(pref)) push(key);
+  if (cand.length < 2) return [];
+  const enLima = cand.filter((c) => c.prov === "LIMA");
+  if (!enLima.length || enLima.length === cand.length) return [];   // todo Lima o nada de Lima → no hay empate
+  // Primero los de Lima (son los que el cliente suele querer decir) y sin repetir nombre.
+  const orden = [...enLima, ...cand.filter((c) => c.prov !== "LIMA")];
+  const vistos = new Set<string>();
+  const out: string[] = [];
+  for (const c of orden) {
+    if (vistos.has(c.nombre)) continue;
+    vistos.add(c.nombre);
+    out.push(c.nombre);
+    if (out.length >= tope) break;
+  }
+  // Un solo nombre no da para preguntar "¿cuál de estos?": el empate útil es el del nombre CORTADO
+  // ("San Juan" → Lurigancho, Miraflores, Bautista…). Con uno solo se sigue como siempre.
+  return out.length >= 2 ? out : [];
+}

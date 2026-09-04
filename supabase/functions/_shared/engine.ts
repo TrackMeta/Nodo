@@ -17,7 +17,7 @@ import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
 } from "./shalom-agencias.ts";
-import { provinciasDeDistrito } from "./distritos-peru.ts";
+import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
 
@@ -9996,6 +9996,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     {
       // Si el pueblo se llama igual que la oficina, no hay nada que corregir.
       if (_unica && limpiaZona(_unica.t) !== limpiaZona(lugar)) {
+        await set("zona_ambigua", "");
         await set("zona_entrega", "provincia");
         await set("zona_nombre", "");
         await set("ciudad", enTitulo(_unica.t));
@@ -10015,6 +10016,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // La lista manda: un distrito destildado (cubro=false) es provincia.
   if (z) {
     const esLima = z.cubro !== false;
+    await set("zona_ambigua", "");   // ya se resolvió: no queda empate que preguntar
     await set("zona_entrega", esLima ? "lima" : "provincia");
     await set("zona_nombre", z.nombre);
     await set("ciudad", z.nombre);
@@ -10077,6 +10079,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     return;
   }
   if (esLimaGenerica(lugar)) {
+    await set("zona_ambigua", "");
     await set("zona_entrega", "lima");
     await set("zona_nombre", "Lima");
     await set("ciudad", "Lima");
@@ -10087,8 +10090,26 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     return;
   }
 
+  // 3b·bis) 🧭 Nombre CORTADO que puede ser de Lima o de provincia. Medido en un chat de
+  // prueba: «soy de San Juan» → el bot lo mandó a provincia, le ofreció agencias de Ayacucho
+  // e Ica (y una de Lima mezclada) y le pidió un adelanto. En Perú "San Juan" a secas es casi
+  // siempre San Juan de Lurigancho o de Miraflores, los dos distritos más poblados del país.
+  // Adivinar acá cuesta la venta y el despacho: se le PREGUNTA cuál, sin decidir la zona.
+  // Va después de la lista del negocio (3a) a propósito: si el dueño tiene ese distrito
+  // configurado, su lista manda y esto no llega a correr.
+  {
+    const _amb = distritoAmbiguoLima(lugar);
+    if (_amb.length >= 2 && !String(ctx.zona_entrega ?? "").trim()) {
+      await set("zona_ambigua", _amb.map((x) => enTitulo(x)).join(" · "));
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona sin resolver",
+        `"${lugar}" puede ser ${_amb.length} distritos distintos (Lima y provincia) — se le pregunta cuál`);
+      return;   // sin zona: el flujo se la sigue pidiendo y la IA sabe qué preguntar
+    }
+  }
+
   // 3c) Nombró un lugar específico que NO está en la lista → Provincia (agencia).
   // La lista del negocio es la fuente de verdad de la cobertura propia.
+  await set("zona_ambigua", "");
   await set("zona_entrega", "provincia");
   await set("zona_nombre", "");
   // 🏙️ El cliente contesta con el NOMBRE DE SU OFICINA, no con el de su ciudad: "la de
@@ -11861,6 +11882,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
     parts.push(REGLA_PAGO_NO_CONFIRMADO);
+    // 🧭 Dijo un nombre de distrito CORTADO que existe en Lima y en provincia ("San Juan").
+    // El motor no decidió la zona a propósito: la IA tiene que preguntar cuál, porque de eso
+    // depende si paga al recibir o si le toca adelanto y agencia.
+    if (String((ctx as any).zona_ambigua ?? "").trim()) {
+      parts.push("## Su distrito todavía no está claro\nDijo un nombre que en Perú es de varios sitios a la vez: " +
+        String((ctx as any).zona_ambigua).trim() + ".\n" +
+        "⛔ NO decidas por él ni le hables todavía de agencia, adelanto ni contraentrega — de cuál sea depende " +
+        "cómo se le entrega, y equivocarse le manda el paquete a otro departamento. Pregúntale CUÁL de esos es, " +
+        "en una línea y sin dramatizar (ej.: «¿el de Lima o el de otro lado?» / nómbrale los dos más probables). " +
+        "Lo demás de la venta sigue igual: si te preguntó otra cosa, contéstasela primero.");
+    }
     // 📅 «¿Me lo separas hasta que cobre?» — el cliente que YA decidió y solo tiene la
     // plata en otro día. Medido: «quiero 3 frascos pero pago recién el viernes cuando me
     // paguen, ¿me lo separas?» → «no manejamos separaciones ni reservas para que todos
