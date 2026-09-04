@@ -411,7 +411,10 @@ export function printRotulo(o, remitente) {
       row("N° pedido", nro);
   } else {
     filas =
-      rowReq("Destinatario", c.nombre || s.cliente || "", true) +
+      // El nombre DEL PEDIDO manda sobre el de WhatsApp (mismo criterio que el rótulo de
+      // provincia, dos ramas más arriba). `c.nombre` es el push name del perfil y suele ser
+      // un apodo o un emoji: el rótulo de un pedido de Carla Mendoza salía impreso "P1".
+      rowReq("Destinatario", s.cliente || c.nombre || "", true) +
       row("Teléfono", tel) +
       rowReq("Dirección", s.direccion || "", true) +
       row("Distrito", (() => { const d = s.distrito || s.zona_nombre || ""; return d && d.toLowerCase() !== "lima" ? cap(d) : ""; })()) +

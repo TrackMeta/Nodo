@@ -750,7 +750,12 @@ function rotuloInner(o){
       row("N° pedido", nro);
   } else {
     filas =
-      row("Destinatario", c.nombre||s.cliente||"", true)+
+      // El nombre que dio PARA EL PEDIDO manda sobre el de WhatsApp, igual que en el
+      // rótulo de provincia (que ya lo hacía al revés que este). `c.nombre` es el push
+      // name del perfil: "Carlita ❤️", "Jhon 🔥", un emoji o el propio número. Medido: un
+      // pedido a nombre de Carla Mendoza salió impreso con "P1" —lo que el contacto tenía
+      // puesto en WhatsApp— y el motorizado habría tocado el timbre preguntando por eso.
+      row("Destinatario", s.cliente||c.nombre||"", true)+
       row("Teléfono", tel)+
       row("Dirección", s.direccion||"", true)+
       row("Distrito", s.distrito||"")+
