@@ -1980,7 +1980,10 @@ const DIA_NOMBRE: Record<string, string> = {
 };
 function fmtHora(hhmm: string): string {
   const [H, M] = String(hhmm || "09:00").split(":").map((n) => Number(n));
-  const ap = (H < 12 || H === 24) ? "a.m." : "p.m.";
+  // Sin puntos: la frase que lo usa termina en punto y salía «te responde mañana a las
+  // 9:00 a.m..» — el doble punto se ve en el mensaje que recibe el cliente justo cuando
+  // le estamos diciendo que espere. "9:00 am" es además como se escribe la hora en un chat.
+  const ap = (H < 12 || H === 24) ? "am" : "pm";
   let h12 = H % 12; if (h12 === 0) h12 = 12;
   return `${h12}:${String(M || 0).padStart(2, "0")} ${ap}`;
 }
