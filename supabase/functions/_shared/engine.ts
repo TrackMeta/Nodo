@@ -8767,7 +8767,12 @@ export async function armarProducto(
     (negocio ? `## Voz y datos del negocio (respeta el mismo tono/estilo)\n${negocio}\n\n` : "") +
     "## Reglas duras (MUY IMPORTANTE)\n" +
     "- NUNCA inventes datos que no puedes saber: precios/montos reales, número de Yape/Plin/cuenta, links de entrega, direcciones, zonas de envío, DNI. Deja esos campos vacíos y anótalos en `faltan` (ej. \"Precio real de cada presentación\", \"Tu Yape / datos de pago\", \"Link de entrega\").\n" +
-    "- El precio de cada presentación va SIEMPRE vacío: lo pone el dueño.\n" +
+    // 💰 Decisión de Rodrigo (2026-09-03): copiar el precio que ÉL escribió no es inventarlo.
+    // Antes se dejaba siempre vacío y se le pedía en `faltan` un dato que acababa de dar en
+    // el brief ("cuesta 65 soles, 2 por 110"), y tenía que reescribirlo a mano.
+    "- El precio SOLO se llena si el dueño lo dice en el brief, y copiando su número tal cual " +
+    "(«cuesta 65 soles, 2 por 110» → 65 y 110). Si no lo dice, va vacío y se anota en `faltan`. " +
+    "⛔ Jamás lo deduzcas, lo redondees ni lo calcules: un precio que él no escribió NO se pone.\n" +
     "- Si el brief no dice si es físico o digital, decídelo por sentido común.\n" +
     "- `atributos` = detalles que la IA PREGUNTA y que NO cambian el precio (talla, color, modelo, nombre para el certificado…). `presentaciones` = lo comprable con distinto precio (1 par / 2 pares, Básico / Premium, packs). Si el producto es simple, deja UNA presentación llamada \"Única\".\n" +
     // ⚠️ Un atributo es algo que el cliente ELIGE, y cada valor abre una variante de stock
@@ -8788,7 +8793,7 @@ export async function armarProducto(
     "{\n" +
     '  "nombre": "...", "emoji": "un emoji",\n' +
     '  "tipo": "fisico"  (SIN tilde) o "digital",\n' +
-    '  "presentaciones": [{"nombre":"1 par","descripcion":"","cantidad":1}]  (precio NO, lo pone el dueño),\n' +
+    '  "presentaciones": [{"nombre":"1 par","descripcion":"","cantidad":1,"precio":45}]  (precio SOLO si el dueño lo dijo; si no, omite la clave),\n' +
     '  "atributos": [{"nombre":"Talla","valores":"38, 39, 40"}]  (ARRAY de objetos, NUNCA un objeto {talla:[...]}; valores = texto separado por comas),\n' +
     '  "ia": {"resumen":"pitch corto de venta","detalle":"","reglas_producto":"","limites":"","estilo_venta":"consultivo","proceso":"","tecnicas":""},\n' +
     '  "faq": [{"q":"...","a":"..."}],\n' +
@@ -8809,7 +8814,7 @@ export async function armarProducto(
       emoji: { type: "string" },
       tipo: { type: "string", enum: ["fisico", "digital"] },
       atributos: { type: "array", items: { type: "object", properties: { nombre: { type: "string" }, valores: { type: "string" } }, required: ["nombre"], additionalProperties: false } },
-      presentaciones: { type: "array", items: { type: "object", properties: { nombre: { type: "string" }, descripcion: { type: "string" }, cantidad: { type: "number" } }, required: ["nombre"], additionalProperties: false } },
+      presentaciones: { type: "array", items: { type: "object", properties: { nombre: { type: "string" }, descripcion: { type: "string" }, cantidad: { type: "number" }, precio: { type: ["number", "null"] } }, required: ["nombre"], additionalProperties: false } },
       ia: { type: "object", properties: { resumen: { type: "string" }, detalle: { type: "string" }, reglas_producto: { type: "string" }, limites: { type: "string" }, estilo_venta: { type: "string" }, proceso: { type: "string" }, tecnicas: { type: "string" } }, additionalProperties: false },
       faq: { type: "array", items: { type: "object", properties: { q: { type: "string" }, a: { type: "string" } }, required: ["q", "a"], additionalProperties: false } },
       faltan: { type: "array", items: { type: "string" } },

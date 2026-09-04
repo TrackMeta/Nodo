@@ -4528,7 +4528,10 @@ async function armAplicar(d){
   // → borraba nombres/descripciones/cantidades curados que aún no tenían precio.
   if(Array.isArray(d.presentaciones)&&d.presentaciones.length && (reemplazar || !presCuradas.length)){
     (st.versions||[]).forEach(v=>{ if(v.id) st.delVersions.push(v.id); });
-    st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:"", cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
+    // 💰 El precio del borrador se respeta cuando VIENE (el asistente solo lo llena si el
+    // dueño lo escribió en su brief; nunca lo inventa). Antes se forzaba a "" y había que
+    // reescribir a mano un número que él acababa de dar — decisión de Rodrigo 2026-09-03.
+    st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:(Number(x.precio)>0?String(x.precio):""), cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
   }
   prodSync(); st.tab="inicio"; renderDetail(); armClose();
   toast("Borrador aplicado — revisa y Guarda cambios");
