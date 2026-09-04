@@ -8770,6 +8770,17 @@ export async function armarProducto(
     "- El precio de cada presentación va SIEMPRE vacío: lo pone el dueño.\n" +
     "- Si el brief no dice si es físico o digital, decídelo por sentido común.\n" +
     "- `atributos` = detalles que la IA PREGUNTA y que NO cambian el precio (talla, color, modelo, nombre para el certificado…). `presentaciones` = lo comprable con distinto precio (1 par / 2 pares, Básico / Premium, packs). Si el producto es simple, deja UNA presentación llamada \"Única\".\n" +
+    // ⚠️ Un atributo es algo que el cliente ELIGE, y cada valor abre una variante de stock
+    // propia. Medido con el brief de un shampoo: salieron «Contenido: 300ml», «Género:
+    // Hombres, Mujeres», «Frecuencia de uso: 3 veces por semana» y «Tiempo para resultados:
+    // 2 meses» — características del producto convertidas en preguntas. Con eso puesto, el
+    // bot le pregunta al cliente «¿qué tiempo para resultados prefieres?» y el inventario se
+    // parte en variantes que no existen.
+    "- Un atributo SOLO vale si el cliente tiene que ELEGIR entre 2 o más valores reales y " +
+    "eso cambia QUÉ unidad se despacha (talla, color, sabor, aroma). Si el dato es una " +
+    "característica única del producto —contenido, peso, tiempo de resultados, frecuencia de " +
+    "uso, para quién es— NO es un atributo: va en la descripción o en el detalle. Ante la duda, " +
+    "deja `atributos` vacío: un atributo de más hace que el bot pregunte tonterías y parte el stock.\n" +
     "- `ia.estilo_venta` debe ser uno de: consultivo, directo, educativo, urgencia, objeciones (o vacío).\n" +
     "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
     "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
