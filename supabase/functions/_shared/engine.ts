@@ -14853,26 +14853,6 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // dejaba ctx._atributos sin setear → la IA nunca pedía talla/color ni se
           // descontaba el stock. Solo pasaba con un producto que tuviera regalo.
           for (const a of attrs) for (const m of (a.media || [])) cat.push(m);
-          // 🏪 Y la biblioteca del NEGOCIO (Negocio → "Archivos que la IA puede enviar"):
-          // lo que no es de un producto concreto —la prueba de envíos a provincia, un audio
-          // explicando cómo llega por agencia, cómo se empaca—. Antes solo existía la del
-          // producto, así que eso había que repetirlo en la ficha de cada uno o no existía.
-          // Se suman al MISMO catálogo: el marcador [[media:tag]], el envío intercalado y
-          // los guards de "prometió una foto y no la mandó" ya funcionan igual para ambas.
-          // Van DESPUÉS de las del producto a propósito: si un tag se repite, gana el del
-          // producto, que es el más específico.
-          try {
-            const { data: chMM } = await db.from("channels")
-              .select("negocio_form").eq("id", run.channel_id).maybeSingle();
-            const mmNeg = (chMM as any)?.negocio_form?.multimedia;
-            if (Array.isArray(mmNeg)) {
-              for (const x of mmNeg) {
-                if (!x || !x.tag || !x.media_url) continue;
-                if (cat.some((y: any) => y && y.tag === x.tag)) continue;
-                cat.push(x);
-              }
-            }
-          } catch (_) { /* sin biblioteca del negocio, queda la del producto */ }
           if (cat.length) pc._ia_multimedia = cat;
           const env = (p as any).config?.envio;
           if (env && typeof env === "object") {
@@ -15195,6 +15175,32 @@ async function buildContext(db: SupabaseClient, run: Run) {
   ctx.demora_provincia_linea = ctx.demora_provincia
     ? `📦 Suele estar disponible para recoger en *${ctx.demora_provincia}*.`
     : "";
+  // 🏪 Biblioteca del NEGOCIO (Negocio → "Archivos que la IA puede enviar"): lo que no es
+  // de un producto concreto —la prueba de envíos a provincia, un audio explicando cómo
+  // llega por agencia, cómo se empaca—. Se suma al MISMO catálogo que la del producto, así
+  // que el marcador [[media:tag]], el envío intercalado y los guards ya existentes valen
+  // para las dos.
+  // Va acá, al final y FUERA del bloque del producto, porque el primer intento lo puse
+  // dentro y solo existía cuando había producto en contexto. Medido: un cliente escribió
+  // «¿me mandan una foto de los envíos que ya hicieron?» —el caso exacto para el que se
+  // sube este archivo—, cayó en RECEPCIÓN (aún sin producto), el catálogo estaba vacío y
+  // el bot terminó prometiendo la foto y escalando a un humano. Lo del negocio tiene que
+  // estar disponible siempre, que para eso es del negocio.
+  // Si un tag se repite, gana el del producto: es el más específico.
+  try {
+    const { data: chMM } = await db.from("channels")
+      .select("negocio_form").eq("id", run.channel_id).maybeSingle();
+    const mmNeg = (chMM as any)?.negocio_form?.multimedia;
+    if (Array.isArray(mmNeg) && mmNeg.length) {
+      const cat: any[] = Array.isArray((ctx as any)._ia_multimedia) ? [...(ctx as any)._ia_multimedia] : [];
+      for (const x of mmNeg) {
+        if (!x || !x.tag || !x.media_url) continue;
+        if (cat.some((y: any) => y && y.tag === x.tag)) continue;
+        cat.push(x);
+      }
+      if (cat.length) (ctx as any)._ia_multimedia = cat;
+    }
+  } catch (_) { /* sin biblioteca del negocio, queda la del producto */ }
   return ctx;
 }
 function resolve(text: string, ctx: any): string {
