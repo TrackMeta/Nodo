@@ -321,7 +321,7 @@ let USD_RATE=0;
 async function loadCurrency(){
   const ch=await getChannel(channelId);
   CUR=(ch&&ch.moneda)||"PEN";
-  USD_RATE = CUR==="USD" ? 1 : (Number(ch?.negocio?.usd_rate)>0 ? Number(ch.negocio.usd_rate) : 0);
+  USD_RATE = CUR==="USD" ? 1 : (Number(ch?.usd_rate)>0 ? Number(ch.usd_rate) : 0);
 }
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Versión corta (sin decimales) para el calendario de la Bitácora.

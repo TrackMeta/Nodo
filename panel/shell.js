@@ -185,7 +185,7 @@ export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const CH_COLS = "id,nombre,channel_type,phone_number_id,waba_id,pixel_id,page_id,vertical," +
   "telegram_chat_ids,buffer_default_seg,activo,ia_provider,timezone,gsheets,negocio,ia_perfiles," +
   "ia_router,negocio_form,ocr_config,pedidos_config,remarketing,entregas,telegram_avisos," +
-  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,resumenes,resumen_estado";
+  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,usd_rate,resumenes,resumen_estado";
 
 let _ch = { id: null, fila: null, vuelo: null };
 

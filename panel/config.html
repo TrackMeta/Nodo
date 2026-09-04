@@ -203,7 +203,7 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,usd_rate,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
@@ -284,7 +284,7 @@ function renderGeneral(b){
         <div class="desc" style="margin:2px 0 8px">Tu IA te la cobra tu proveedor <b>en dólares</b>. Con este número, ese gasto se convierte y entra en la <b>ganancia</b> del Dashboard como un costo más. Si lo dejas vacío, el gasto se sigue viendo, pero aparte y en dólares.</div>
         <div style="display:flex;align-items:center;gap:8px;max-width:340px">
           <span style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap">1 USD =</span>
-          <input class="in" id="g_tc" type="number" step="0.01" min="0" placeholder="ej. 3.75" value="${Number(st.channel?.negocio?.usd_rate)>0?esc(String(st.channel.negocio.usd_rate)):""}">
+          <input class="in" id="g_tc" type="number" step="0.01" min="0" placeholder="ej. 3.75" value="${Number(st.channel?.usd_rate)>0?esc(String(st.channel.usd_rate)):""}">
           <span id="g_tcCur" style="font-size:13px;color:var(--muted);font-weight:700">${esc(mon)}</span>
         </div>
       </div>
@@ -299,16 +299,19 @@ function renderGeneral(b){
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     const tc=Number($("g_tc")?.value);
-    // Se guarda dentro de `negocio` con merge: ese jsonb lo comparten otros ajustes y
-    // mandarlo entero desde acá borraría lo que esta pantalla no conoce.
-    const negocio={ ...(st.channel?.negocio||{}) };
-    if($("g_moneda").value!=="USD" && tc>0) negocio.usd_rate=+tc.toFixed(4); else delete negocio.usd_rate;
-    const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value, negocio };
+    const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value,
+      usd_rate: ($("g_moneda").value!=="USD" && tc>0) ? +tc.toFixed(4) : null };
     let { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    // Si falta la columna del tipo de cambio (migración 0089 sin aplicar), se guarda
+    // el resto y se dice qué falta — en vez de perder también la zona y la moneda.
+    if(error && /usd_rate/.test(error.message)){
+      ({ error }=await supa.from("channels").update({ timezone:patch.timezone, moneda:patch.moneda }).eq("id",st.channelId));
+      if(!error){ btn.disabled=false; btn.textContent=old; toast("Guardado; falta aplicar la migración 0089 para el tipo de cambio",true); return; }
+    }
     if(error && /moneda|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ timezone:patch.timezone }).eq("id",st.channelId)); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; st.channel.negocio=patch.negocio; toast("Guardado");
+    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; st.channel.usd_rate=patch.usd_rate; toast("Guardado");
   };
   renderUso();
 }
