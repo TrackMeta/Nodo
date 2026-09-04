@@ -3769,6 +3769,27 @@ function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true): string {
     "\n\n¿Cuántas unidades o qué oferta te preparo?";
 }
 
+// ⛔ «…, sin adelantos» / «…, sin riesgo» / «…, no pagas nada por adelantado». La coletilla
+// que Rodrigo prohibió y que el modelo vuelve a colar parafraseada. Se le quita del texto ya
+// escrito: se borra el fragmento que va tras la última coma (o el final de la oración), y
+// solo eso — el hecho («pagas al recibir el pedido») se queda, que es lo que sí se dice.
+const RE_COLETILLA_RIESGO =
+  /[,;]?\s*(?:y\s+|as[ií]\s+que\s+)?(?:completamente\s+|totalmente\s+|absolutamente\s+)?(?:sin\s+(?:ning[uú]n\s+)?(?:riesgos?|adelantos?|pagos?\s+(?:antes|por\s+adelantado)|pagar\s+nada\s+(?:antes|por\s+adelantado)|compromisos?)|cero\s+riesgos?|no\s+(?:pagas|pagás|paga)\s+nada\s+(?:por\s+)?(?:adelantado|antes)|nada\s+por\s+adelantado|no\s+arriesgas\s+nada)(?:\s+ni\s+[^,.!?\n]{0,40})?\b/gi;
+function sinColetillaRiesgo(texto: string): string {
+  const t = String(texto ?? "");
+  RE_COLETILLA_RIESGO.lastIndex = 0;
+  if (!RE_COLETILLA_RIESGO.test(t)) return t;
+  RE_COLETILLA_RIESGO.lastIndex = 0;
+  const limpio = t.replace(RE_COLETILLA_RIESGO, "")
+    // La coma o el "y" que quedaban colgando antes del punto/emoji.
+    .replace(/\s+([.!?])/g, "$1").replace(/[,;]\s*([.!?])/g, "$1")
+    // Y la coma inicial cuando la coletilla ABRÍA la frase ("Sin adelantos, pagas al recibir").
+    .replace(/^[\s,;:]+/, "")
+    .replace(/[ \t]{2,}/g, " ").trim();
+  // Si abría la frase, la que queda arranca en minúscula: se le devuelve la mayúscula.
+  return limpio.replace(/^(\p{Ll})/u, (m) => m.toUpperCase());
+}
+
 function sinDatoInventado(texto: string, cierre: string): string {
   const t = String(texto ?? "");
   RE_DATO_INVENTADO.lastIndex = 0;
@@ -13658,6 +13679,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ? `Son ${_precioTxt}. ¿Te paso los datos para que lo tengas ya?`
           : "¿Te paso los datos para que lo tengas ya?");
       }
+      // ⛔ La coletilla del riesgo, por CÓDIGO. Es decisión de Rodrigo que no se diga («del
+      // pago se dice el hecho, no el discurso»), está en el prompt con todas las letras y
+      // hasta con la lista de variantes… y salió TRES veces en un mismo día, siempre
+      // parafraseada: «sin adelantos», «sin adelanto ni pagos antes», «pagas al recibir el
+      // pedido, sin adelantos». Tercera vez que una regla de prompt falla = va a código.
+      // Se quita solo la COLETILLA (lo que viene tras la coma o al final), nunca la frase
+      // entera: «pagas al recibir el pedido, sin adelantos» tiene que seguir diciendo
+      // «pagas al recibir el pedido», que es el hecho y sí se dice.
+      if (op === "generar_texto") salida = sinColetillaRiesgo(salida);
       // Los datos de pago que la IA haya escrito a su manera, con el formato bueno.
       if (op === "generar_texto") {
         try {
