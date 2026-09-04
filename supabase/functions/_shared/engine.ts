@@ -6193,6 +6193,9 @@ export function mensajeEstadoDefault(
   // adelanto la cuenta da el total, igual que antes.
   const porCobrarDe = (tot: number | null | undefined): number | null => {
     if (tot == null) return null;
+    // ⚠️ `tot` YA viene con los adicionales sumados: order-update pasa amount + bumps (ver
+    // `_total` allá). Sumarlos otra vez acá los cobra DOS veces — probado: una venta manual
+    // de S/119 + Protector S/39 le pidió «ten listo S/197» en vez de S/158. No tocar.
     const ad = Number(s.adelanto_abonado ?? s.pago_acreditado_adelanto ?? s.adelanto);
     return Math.max(0, tot - (Number.isFinite(ad) && ad > 0 ? ad : 0));
   };
