@@ -4366,7 +4366,25 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
     bytes = new Uint8Array(await r.arrayBuffer());
   }
   const texto = await transcribeAudio(ai.api_key, bytes, mime);
-  return texto || null;
+  return esAlucinacionSTT(texto) ? null : (texto || null);
+}
+
+// 🎙️ Whisper, ante un audio SIN VOZ (ruido de la calle, música, un toque sin querer), no
+// devuelve vacío: devuelve una de sus frases fantasma, aprendidas de los subtítulos con los
+// que se entrenó. Medido con una nota de voz sin habla: «Subtítulos realizados por la
+// comunidad de Amara.org» — y el motor la trató como si el cliente hubiera ESCRITO eso.
+// Acá salió inofensivo (contestó un saludo), pero la alucinación puede ser un "sí, gracias"
+// y ese sí lo lee el clasificador: cierra un pedido o mata un adicional por un audio mudo.
+// Si es una de estas, se trata como "no se pudo escuchar" y se le pide por escrito, que es
+// lo honesto y lo que el motor ya sabe hacer.
+const RE_STT_FANTASMA =
+  /^\W*(subt[ií]tulos?\b.*|subtitulado\b.*|traducci[oó]n y subt[ií]tulos.*|amara\.org.*|gracias por (ver|mirar)( el)? (video|v[ií]deo).*|¡?gracias por su atenci[oó]n[.!]?|suscr[ií]b(ete|anse).*|www\.[\w.-]+|\.{2,}|[¿?¡!.,\-–—\s]*)\W*$/i;
+function esAlucinacionSTT(texto?: string | null): boolean {
+  const t = String(texto ?? "").trim();
+  if (!t) return true;
+  if (RE_STT_FANTASMA.test(t)) return true;
+  // Una transcripción de menos de 2 letras reales no dice nada tampoco.
+  return t.replace(/[^\p{L}\p{N}]/gu, "").length < 2;
 }
 
 // D4 · comprobantes en bucket PRIVADO + URL firmada larga (data financiera).
