@@ -10841,6 +10841,54 @@ function numeroDelProducto(t: string, cant: number): boolean {
   return false;
 }
 
+// Verbos con los que alguien PIDE, justo antes del número: "quiero 2", "llevo dos".
+const VERBO_COMPRA =
+  /(quiero|kiero|deseo|llevo|llevar|llevare|dame|deme|damelo|mandame|enviame|envieme|ponme|separame|apartame|necesito|pido|comprar|compro|seria|serian|son|va|van)$/;
+// Lo que se vende, justo después del número: "2 frascos", "3 kits".
+const UNIDAD_VENTA =
+  /^(frascos?|unidades?|und|uds?|kits?|packs?|cajas?|pares?|juegos?|botellas?|potes?|productos?|piezas?|bolsas?|sets?|combos?|tarros?|envases?)\b/;
+
+// ¿La menciona DE VERDAD, o el número apareció de casualidad? mencionaLaOpcion acepta
+// un número suelto en cualquier parte del texto, y en un mensaje de venta real vienen
+// a montones: el nombre del cliente ("Rita Uno"), su dirección ("av. Dos de Mayo",
+// "Mz. B Lt. 3"), su distrito. Medido: «quiero 2 frascos, soy de Surco, Rita Uno, av
+// primavera 100» hacía match también con la opción de 1 frasco —por el apellido—, el
+// motor lo leía como que estaba COMPARANDO presentaciones y no sellaba ninguna: al
+// cliente que ya había dicho cuántos quería le respondía con el catálogo entero
+// preguntándole cuántos quiere. Con "Rita Dos" (que solo refuerza la que pidió) la
+// misma frase sí cerraba: de tres pruebas idénticas cerró una.
+// Fuerte es nombrarla por lo suyo ("la premium") o el número pegado a lo que se vende
+// o al verbo con que la pide. Un número perdido en la dirección nunca es fuerte.
+function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
+  const t = sinTildes(texto);
+  if (!t.trim()) return false;
+  const tokens = (n: string) =>
+    sinTildes(n).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^[0-9]+$/.test(w));
+  const ajenas = new Set(todas.filter((o) => o.id !== op.id).flatMap((o) => tokens(o.nombre)));
+  const suelta = (w: string) =>
+    new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)").test(t);
+  // 1) Una palabra PROPIA de su nombre: "premium", "pack".
+  if (tokens(op.nombre).some((w) => !ajenas.has(w) && suelta(w))) return true;
+  // 2) Su cantidad, pero pegada al producto o al verbo con que la pide.
+  const cant = Number(op.cantidad ?? 0);
+  if (!(cant > 0)) return false;
+  const propias = tokens(op.nombre);
+  const pats = [String(cant), ...Object.entries(NUM_PALABRA).filter(([, n]) => n === cant).map(([w]) => w)];
+  for (const pat of pats) {
+    const g = new RegExp("(?:^|[^a-z0-9])" + pat + "(?![a-z0-9])", "g");
+    let m: RegExpExecArray | null;
+    while ((m = g.exec(t)) !== null) {
+      const resto = t.slice(m.index + m[0].length).replace(/^[\s.,;:!?¡¿()-]+/, "");
+      if (UNIDAD_VENTA.test(resto)) return true;
+      if (propias.some((w) => resto.startsWith(w))) return true;
+      const antes = t.slice(0, m.index).replace(/[^a-z0-9]+$/, "");
+      const ultima = antes.split(/[^a-z0-9]+/).pop() ?? "";
+      if (ultima && VERBO_COMPRA.test(ultima)) return true;
+    }
+  }
+  return false;
+}
+
 function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   const t = sinTildes(texto);
   if (!t.trim()) return false;
@@ -10925,7 +10973,14 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     // daba por buena— y con el plan sellado el motor le mandó los datos de pago a alguien
     // que solo estaba comparando. Nombrar dos es comparar, no elegir.
     const _mencionadas = list.filter((o) => mencionaLaOpcion(texto2, o, list));
-    if (_mencionadas.length > 1) return { ...cls, intencion: "comparando", clave: null };
+    if (_mencionadas.length > 1) {
+      // Salvo que UNA sola esté nombrada de verdad y sea justo la que eligió la IA:
+      // entonces las otras las trajo el nombre o la dirección del cliente, no él.
+      const _fuertes = _mencionadas.filter((o) => mencionaFuerte(texto2, o, list));
+      if (!(_fuertes.length === 1 && _fuertes[0].id === cls.clave)) {
+        return { ...cls, intencion: "comparando", clave: null };
+      }
+    }
     // Y que la haya NOMBRADO. Sin esto, un "quiero comprarlo" sellaba la más
     // barata: el cliente no elegía nada y el bot ya no le ofrecía el pack.
     if (op && !mencionaLaOpcion(texto2, op, list)) return { ...cls, intencion: "preguntando", clave: null };
