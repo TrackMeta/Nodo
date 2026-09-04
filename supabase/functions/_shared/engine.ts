@@ -5041,7 +5041,25 @@ function envioCobroDe(ctx: any, zona: string): number {
 // cliente pagó MÁS que lo esperado (típico cuando el remarketing bajó el precio
 // pero pagó el de lista), se registra lo que REALMENTE pagó y el excedente queda
 // como `vuelto` (saldo a favor del cliente). Si pagó lo justo, todo normal.
-function pagoRealYVuelto(run: Run, esperadoTotal: number): { amount: number; vuelto: number } {
+// 📏 Cuánto puede pagar de MÁS sin que salte la alarma. Era un monto FIJO (S/50 por
+// defecto), pensado para productos de S/79–180: con una oferta de remarketing de S/3 ese
+// margen es diecisiete veces el precio, así que un pago de S/50 pasaba como bueno sin que
+// nadie lo mirara. Ahora es proporcional —la mitad del precio—, con un piso de S/5 (para que
+// el redondeo de siempre no moleste) y el mismo tope de S/50 de antes. Si el dueño configuró
+// su propio margen en el Validador, ese manda y esto no se toca.
+//   oferta S/3   → margen 5   (paga 5 u 8: normal · paga 50: a revisar)
+//   curso S/120  → margen 50  · pack S/180 → margen 50 (igual que siempre)
+// ⚠️ El valor configurado actúa como TECHO, no como valor fijo: el panel guarda 50 por
+// defecto en todos los canales, así que "si está configurado, manda" era lo mismo que no
+// hacer nada (probado: con la oferta en S/3 un pago de S/50 seguía pasando derecho). Para
+// precios bajos manda la proporción; para los normales, el techo de siempre.
+function margenSobrepago(esperado: number, cfgDigital: any): number {
+  const raw = Number(cfgDigital?.revisar_sobre_sol);
+  const techo = Number.isFinite(raw) && raw >= 0 ? raw : 50;
+  if (!Number.isFinite(esperado) || esperado <= 0) return techo;
+  return Math.max(5, Math.min(techo, +(esperado * 0.5).toFixed(2)));
+}
+function pagoRealYVuelto(run: Run, esperadoTotal: number, margen?: number): { amount: number; vuelto: number } {
   // TOPE (decisión de Rodrigo, "topar en todo"): la venta cuenta SIEMPRE el precio
   // del producto; si pagó (o el OCR leyó) de más, el excedente es VUELTO, no venta.
   // Así ni el Dashboard ni Meta se inflan por un sobrepago o un misread del OCR.
@@ -5049,8 +5067,18 @@ function pagoRealYVuelto(run: Run, esperadoTotal: number): { amount: number; vue
   // y Number() de eso es NaN → el vuelto salía 0 y al cliente que pagó de más NUNCA se le
   // acreditaba el excedente, justo en las ventas grandes (≥ S/1,000) que es donde duele.
   const pagado = parseMonto(run.vars.pago_monto, {}) ?? NaN;
-  const vuelto = (Number.isFinite(pagado) && pagado > esperadoTotal + 0.5) ? +(pagado - esperadoTotal).toFixed(2) : 0;
-  return { amount: +esperadoTotal.toFixed(2), vuelto };
+  const exceso = (Number.isFinite(pagado) && pagado > esperadoTotal + 0.5) ? +(pagado - esperadoTotal).toFixed(2) : 0;
+  // 💰 Ajuste pedido por Rodrigo (2026-09-03): si pagó de más POR POCO, la venta vale lo que
+  // pagó y no le queda ningún vuelto pendiente. Es el caso real del remarketing: la oferta
+  // nueva está en S/3, el cliente todavía tiene el mensaje anterior de S/5 y paga 5 — ese
+  // dinero entró, contarlo como S/3 subcontaba el ingreso y le dejaba una deuda de S/2 que
+  // nadie le iba a mencionar.
+  // El tope original se mantiene para el exceso GRANDE, que es para lo que se puso: un OCR
+  // que lee "1,234" donde decía "123" no puede inflar el Dashboard ni lo que se manda a Meta.
+  // Ese caso sigue registrando el precio del producto y dejando el excedente como vuelto.
+  const lim = Number.isFinite(margen as number) ? Number(margen) : 50;
+  if (exceso > 0 && exceso <= lim) return { amount: +pagado.toFixed(2), vuelto: 0 };
+  return { amount: +esperadoTotal.toFixed(2), vuelto: exceso };
 }
 async function avisarVuelto(db: SupabaseClient, run: Run, amount: number, vuelto: number) {
   try {
@@ -5144,8 +5172,9 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       const patch: Record<string, unknown> = {
         estado: a.estado || "confirmada", shipping: merged, updated_at: new Date().toISOString(),
       };
-      // Registra lo REALMENTE pagado + el vuelto (excedente) si pagó de más.
-      const pr = pagoRealYVuelto(run, base);
+      // Registra lo REALMENTE pagado + el vuelto (excedente) si pagó MUCHO de más.
+      const _infoM = await channelIaInfo(db, run).catch(() => null);
+      const pr = pagoRealYVuelto(run, base, margenSobrepago(base, (_infoM as any)?.pedidos?.digital));
       if (base) patch.amount = pr.amount;
       if (pr.vuelto > 0) merged.vuelto = pr.vuelto;
       if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
@@ -5197,7 +5226,11 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // más, el excedente queda como `vuelto` (saldo a favor) y se avisa. El resto
     // de estados (físico) usan el monto esperado como siempre.
     let amount = esperado, vuelto = 0;
-    if (a.estado === "confirmada") { const pr = pagoRealYVuelto(run, esperado); amount = pr.amount; vuelto = pr.vuelto; if (vuelto > 0) ship.vuelto = vuelto; }
+    if (a.estado === "confirmada") {
+      const _infoM2 = await channelIaInfo(db, run).catch(() => null);
+      const pr = pagoRealYVuelto(run, esperado, margenSobrepago(esperado, (_infoM2 as any)?.pedidos?.digital));
+      amount = pr.amount; vuelto = pr.vuelto; if (vuelto > 0) ship.vuelto = vuelto;
+    }
 
     // Backstop anti-S/0: un pedido cuyo producto TIENE opciones con precio no debería
     // salir en 0 (señal de que la opción no se resolvió). La guardia de datos_completos
@@ -13401,10 +13434,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // Cubre (de una o acumulado) → limpia la bolsa y guarda las partes.
               if (abonos.length > 1) run.vars._pago_abonos = abonos;
               if (String(ctx._bolsa_pago ?? "")) await setField(db, run.channel_id, run.contact_id, "_bolsa_pago", "").catch(() => {});
-              // Freno: ¿el monto leído supera el precio por más de S/margen? → revisar a
-              // mano. El margen es un monto fijo configurable (revisar_sobre_sol, default 50).
-              const margenRevRaw = Number((info as any)?.pedidos?.digital?.revisar_sobre_sol);
-              const margenRev = Number.isFinite(margenRevRaw) && margenRevRaw >= 0 ? margenRevRaw : 50;
+              // Freno: ¿el monto leído supera el precio por más del margen? → revisar a mano.
+              // El margen ahora es PROPORCIONAL al precio (mitad, con piso 5 y tope 50), así
+              // que una oferta de S/3 no admite un pago de S/50 como si nada. Configurable
+              // igual que antes con `revisar_sobre_sol`, que si está puesto manda.
+              const margenRev = margenSobrepago(esperadoB, (info as any)?.pedidos?.digital);
               if (total > esperadoB + margenRev) sobrepagoSospechoso = true;
             }
           } else if (Number.isFinite(esperadoB) && esperadoB > 0) {
