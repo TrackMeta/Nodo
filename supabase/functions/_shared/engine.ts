@@ -8740,10 +8740,19 @@ function normalizarDraftProducto(d: any): any {
   d.ia = (d.ia && typeof d.ia === "object") ? d.ia : {};
   if (!d.ia.resumen && d.descripcion) d.ia.resumen = String(d.descripcion);
   if (!d.ia.detalle && d.detalle) d.ia.detalle = String(d.detalle);
-  // presentaciones: el precio SIEMPRE lo pone el dueño (se ignora si vino).
+  // presentaciones: el precio se conserva SOLO si el asistente lo copió del brief del dueño
+  // (decisión de Rodrigo 2026-09-03). El saneador lo borraba siempre, así que aunque el
+  // modelo lo devolviera bien, el borrador llegaba en blanco y había que reescribirlo.
+  // Se acepta un número positivo y razonable; cualquier otra cosa (0, texto, negativo) se
+  // descarta, que es la protección original: la IA no pone un precio que él no dijo.
   if (Array.isArray(d.presentaciones)) {
     d.presentaciones = d.presentaciones
-      .map((x: any) => ({ nombre: String(x?.nombre ?? "").trim(), descripcion: String(x?.descripcion ?? ""), cantidad: Number(x?.cantidad) || 1 }))
+      .map((x: any) => {
+        const p = Number(x?.precio);
+        const out: any = { nombre: String(x?.nombre ?? "").trim(), descripcion: String(x?.descripcion ?? ""), cantidad: Number(x?.cantidad) || 1 };
+        if (Number.isFinite(p) && p > 0) out.precio = p;
+        return out;
+      })
       .filter((x: any) => x.nombre);
   }
   return d;
@@ -8767,6 +8776,8 @@ export async function armarProducto(
     (negocio ? `## Voz y datos del negocio (respeta el mismo tono/estilo)\n${negocio}\n\n` : "") +
     "## Reglas duras (MUY IMPORTANTE)\n" +
     "- NUNCA inventes datos que no puedes saber: precios/montos reales, número de Yape/Plin/cuenta, links de entrega, direcciones, zonas de envío, DNI. Deja esos campos vacíos y anótalos en `faltan` (ej. \"Precio real de cada presentación\", \"Tu Yape / datos de pago\", \"Link de entrega\").\n" +
+    "  · La ÚNICA excepción: lo que el dueño escribió en su propio brief. Si ahí dice el " +
+    "precio, cópialo tal cual (no es inventarlo, es leerlo). Todo lo demás sigue vacío.\n" +
     // 💰 Decisión de Rodrigo (2026-09-03): copiar el precio que ÉL escribió no es inventarlo.
     // Antes se dejaba siempre vacío y se le pedía en `faltan` un dato que acababa de dar en
     // el brief ("cuesta 65 soles, 2 por 110"), y tenía que reescribirlo a mano.
