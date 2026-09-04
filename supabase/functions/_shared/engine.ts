@@ -14853,6 +14853,26 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // dejaba ctx._atributos sin setear → la IA nunca pedía talla/color ni se
           // descontaba el stock. Solo pasaba con un producto que tuviera regalo.
           for (const a of attrs) for (const m of (a.media || [])) cat.push(m);
+          // 🏪 Y la biblioteca del NEGOCIO (Negocio → "Archivos que la IA puede enviar"):
+          // lo que no es de un producto concreto —la prueba de envíos a provincia, un audio
+          // explicando cómo llega por agencia, cómo se empaca—. Antes solo existía la del
+          // producto, así que eso había que repetirlo en la ficha de cada uno o no existía.
+          // Se suman al MISMO catálogo: el marcador [[media:tag]], el envío intercalado y
+          // los guards de "prometió una foto y no la mandó" ya funcionan igual para ambas.
+          // Van DESPUÉS de las del producto a propósito: si un tag se repite, gana el del
+          // producto, que es el más específico.
+          try {
+            const { data: chMM } = await db.from("channels")
+              .select("negocio_form").eq("id", run.channel_id).maybeSingle();
+            const mmNeg = (chMM as any)?.negocio_form?.multimedia;
+            if (Array.isArray(mmNeg)) {
+              for (const x of mmNeg) {
+                if (!x || !x.tag || !x.media_url) continue;
+                if (cat.some((y: any) => y && y.tag === x.tag)) continue;
+                cat.push(x);
+              }
+            }
+          } catch (_) { /* sin biblioteca del negocio, queda la del producto */ }
           if (cat.length) pc._ia_multimedia = cat;
           const env = (p as any).config?.envio;
           if (env && typeof env === "object") {

@@ -187,6 +187,28 @@ function compilePersona(form){
   if(t.length) p.push("Tono: "+t.join(". ")+".");
   return p.length?p.join(" "):"";
 }
+// Sube un archivo y lo agrega a form.multimedia con un tag único. Reusa la Edge
+// Function media-upload, igual que la biblioteca de cada producto.
+function pickNegMedia(kind, onDone){
+  const accept={image:"image/*",audio:"audio/*",document:"*/*"}[kind]||"*/*";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
+    toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+      const arr=st.form.multimedia=st.form.multimedia||[];
+      const base=String((file.name||"archivo").replace(/\.[^.]+$/,"")).replace(/[^\w-]/g,"").toLowerCase().slice(0,20)||"archivo";
+      let tag=base, n=2; while(arr.some(x=>x.tag===tag)) tag=base+"_"+n++;
+      arr.push({ tag, media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, descripcion:"" });
+      toast("Archivo agregado — describe cuándo usarlo y guarda"); if(onDone) onDone();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
 function compileNegocio(form){
   const L=[]; const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
   if(form.nombre&&form.nombre.trim()) L.push(`# ${form.nombre.trim()}`);
@@ -198,6 +220,16 @@ function compileNegocio(form){
   const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
   if(faq.length) L.push("## Preguntas frecuentes\n"+faq.map(x=>`- P: ${(x.q||"").trim()}\n  R: ${(x.a||"").trim()}`).join("\n"));
   if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
+  // Archivos del NEGOCIO que la IA puede mandar sola. Mismo marcador que los del
+  // producto ([[media:TAG]]), y el motor junta las dos bibliotecas en un catálogo.
+  // El límite va escrito acá a propósito: sin él, el modelo mete un archivo en cada
+  // mensaje y la conversación se vuelve un álbum que el cliente tiene que ir pasando.
+  const mm=(form.multimedia||[]).filter(m=>m&&m.media_url&&m.tag);
+  if(mm.length) L.push("## Archivos que puedes enviar\n" +
+    "Cuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n" +
+    mm.map(m=>`- [[media:${m.tag}]] — ${(m.descripcion||"").trim()||"archivo del negocio"}`).join("\n") +
+    "\n⛔ Como MUCHO uno por conversación, y solo si responde algo que el cliente preguntó o una duda que mostró. " +
+    "No los mandes de saludo ni encadenes varios: cada archivo es una burbuja más que él tiene que abrir.");
   return L.join("\n\n");
 }
 function seedForm(){
@@ -208,6 +240,7 @@ function seedForm(){
   // (un canal nuevo salía con el campo vacío aunque el bot ya tiene nombre).
   if(!form.nombre && c.nombre) form.nombre=c.nombre;
   if(!Array.isArray(form.faq)) form.faq=[];
+  if(!Array.isArray(form.multimedia)) form.multimedia=[];
   if(form.negritas===undefined) form.negritas=true;
   if(form.emoji_min===undefined) form.emoji_min=0;
   if(form.emoji_max===undefined) form.emoji_max=2;
@@ -253,6 +286,14 @@ function renderConocimiento(b){
       <div class="desc" style="margin-top:0">Las dudas que más te hacen y su respuesta ideal. La IA responderá con estas.</div>
       <div id="faqList" style="margin-top:8px"></div>
       <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
+      <label style="margin-top:18px">Archivos que la IA puede enviar</label>
+      <div class="desc" style="margin-top:0">Fotos, audios o documentos <b>del negocio</b> (no de un producto): la prueba de tus envíos, un audio explicando cómo llega a provincia, cómo empacas. La IA los manda sola cuando vienen al caso — descríbele bien <b>cuándo</b> usar cada uno. Para lo que es de UN producto, súbelo en su ficha.</div>
+      <div id="mmList" style="margin-top:8px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn" id="mmImg">+ Imagen</button>
+        <button class="btn" id="mmAud">+ Audio</button>
+        <button class="btn" id="mmDoc">+ Archivo</button>
+      </div>
       <label style="margin-top:18px">Información adicional (texto libre)</label>
       <textarea class="in" id="nf_extra" rows="3" style="min-height:60px;line-height:1.5;resize:vertical" placeholder="Cualquier otra cosa que la IA deba saber y no encaje arriba.">${esc(form.extra||"")}</textarea>
       <div class="acts"><button class="btn primary" id="saveNegocio">Guardar conocimiento</button>
@@ -274,6 +315,38 @@ function renderConocimiento(b){
   };
   paintFaq();
   $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
+  // ── Archivos que la IA puede enviar (del NEGOCIO) ─────────────────
+  // Mismo mecanismo que los del producto: la IA escribe [[media:TAG]] y el motor
+  // lo cambia por el archivo. Acá van los que no son de un producto concreto —la
+  // prueba de envíos, el audio de cómo llega a provincia—, que antes había que
+  // repetir en la ficha de cada producto o directamente no existían.
+  const paintMM=()=>{
+    const box=$("mmList"); box.innerHTML="";
+    if(!form.multimedia.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Sin archivos todavía.</div>`; return; }
+    form.multimedia.forEach((m,i)=>{
+      const el=document.createElement("div");
+      el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start";
+      const prev = m.media_kind==="image"
+        ? `<img src="${esc(m.media_url)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"/>`
+        : `<div style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">${icon(m.media_kind==="audio"?"mic":"file")}</div>`;
+      el.innerHTML=`${prev}
+        <div style="flex:1;min-width:0">
+          <div class="row" style="align-items:center;gap:8px"><span style="flex:0 0 auto;font-size:12px;color:var(--muted)">tag</span>
+            <input class="in mmt" style="flex:1" value="${esc(m.tag||"")}" placeholder="ej. prueba_envios, audio_provincia"/>
+            <button class="btn danger mmd" style="flex:0 0 auto;border:1px solid var(--border)">${icon("trash")}</button></div>
+          <textarea class="in mmdesc" rows="2" style="margin-top:8px;min-height:46px;line-height:1.45;resize:vertical" placeholder="¿Cuándo enviarlo? Ej. cuando el cliente de provincia duda de que el envío llegue">${esc(m.descripcion||"")}</textarea>
+          <div style="font-size:10.5px;color:var(--faint);margin-top:4px">${esc(m.filename||"")}</div>
+        </div>`;
+      el.querySelector(".mmt").oninput=(e)=>{ m.tag=e.target.value.replace(/[^\w-]/g,"").toLowerCase(); };
+      el.querySelector(".mmdesc").oninput=(e)=>{ m.descripcion=e.target.value; };
+      el.querySelector(".mmd").onclick=()=>{ form.multimedia.splice(i,1); paintMM(); };
+      box.appendChild(el);
+    });
+  };
+  paintMM();
+  $("mmImg").onclick=()=>pickNegMedia("image",paintMM);
+  $("mmAud").onclick=()=>pickNegMedia("audio",paintMM);
+  $("mmDoc").onclick=()=>pickNegMedia("document",paintMM);
   const harvest=()=>{
     NEG_FIELDS.forEach(([k])=>{ const el=$("nf_"+k); if(el) form[k]=el.value; });
     form.extra=$("nf_extra").value;
