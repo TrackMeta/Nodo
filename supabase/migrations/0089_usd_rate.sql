@@ -18,5 +18,9 @@
 
 alter table channels add column if not exists usd_rate numeric(12,4);
 
+-- OJO: la 0073 revoco el SELECT de TABLA sobre channels y lo re-otorga columna por
+-- columna, asi que una columna nueva nace invisible para el panel. El grant va en la
+-- 0090 (se detecto despues: el panel daba "permission denied for table channels").
+
 comment on column channels.usd_rate is
   'Cuánto vale 1 USD en la moneda del canal. Solo para convertir costos que llegan en dólares (hoy: el consumo de IA). NULL = sin configurar.';
