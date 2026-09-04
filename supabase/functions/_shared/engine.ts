@@ -13427,7 +13427,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const falta = Math.round((esperadoB - total) * 100) / 100;
               const sym = simboloMoneda(ctx.moneda as string);
               await setField(db, run.channel_id, run.contact_id, "_bolsa_pago", JSON.stringify({ esperado: esperadoB, moneda: ctx.moneda ?? null, abonos }));
-              const msg = `PAGO_NO ¡Recibí tu abono de ${sym}${montoB}! 🙌 Van ${sym}${total} de ${sym}${esperadoB}, faltan ${sym}${falta}. Cuando completes el resto, mándame la captura y te lo entrego. 😊`;
+              // 🏷️ ¿Pagó JUSTO el precio de una promo que ya venció? Es el que recibió el
+              // remarketing, se demoró unos días y paga con el mensaje viejo. Medido: le
+              // salía «estoy revisando tu comprobante» y ahí moría — sin decirle que la
+              // promo caducó ni cuánto cuesta ahora. Decírselo con el número es la
+              // diferencia entre perderlo y recuperarlo, y es lo que él necesita saber.
+              let _porPromo = "";
+              try {
+                const { data: cOf } = await db.from("contacts")
+                  .select("oferta_activa").eq("id", run.contact_id).maybeSingle();
+                const of = (cOf as any)?.oferta_activa;
+                const pOf = Number(of?.precio);
+                if (of && Number.isFinite(pOf) && Math.abs(montoB - pOf) <= 0.5 &&
+                    of.vence && new Date(of.vence).getTime() <= Date.now()) {
+                  _porPromo = ` Ojo: el precio de *${sym}${pOf}* era una promoción que ya venció, por eso te sale la diferencia.`;
+                }
+              } catch (_) { /* sin oferta legible → mensaje normal */ }
+              const msg = `PAGO_NO ¡Recibí tu abono de ${sym}${montoB}! 🙌${_porPromo} Van ${sym}${total} de ${sym}${esperadoB}, faltan ${sym}${falta}. Cuando completes el resto, mándame la captura y te lo entrego. 😊`;
               if (cfg.guardar_en) { run.vars[cfg.guardar_en] = msg; await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, msg); }
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🪙 Abono parcial (bolsa)", `${total} de ${esperadoB} · falta ${falta}`).catch(() => {});
             } else {
