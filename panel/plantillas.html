@@ -517,8 +517,33 @@ async function saveTpl(){
   if(error){ toast(error.message,true); return; }
   toast("Guardado"); await openTpl(st.tpl.id);
 }
+// ¿Quién usa esta plantilla? Las campañas la guardan por template_id (FK con `on delete
+// set null` → la campaña sobrevive MUDA), y las secuencias y los avisos de pedido la
+// guardan por NOMBRE (quedan apuntando a algo que ya no existe). En los tres casos el
+// envío falla en Meta y el cliente no recibe nada, sin que nadie se entere. Se mira antes
+// de borrar para poder decirlo.
+async function usosDePlantilla(t){
+  const usos=[];
+  try{
+    const { data:cs }=await supa.from("campaigns").select("nombre").eq("channel_id",st.channelId).eq("template_id",t.id);
+    (cs||[]).forEach(c=>usos.push(`campaña "${c.nombre||"sin nombre"}"`));
+  }catch(_){}
+  try{
+    const { data:sq }=await supa.from("sequences").select("nombre,pasos").eq("channel_id",st.channelId);
+    (sq||[]).forEach(s=>{ if((s.pasos||[]).some(p=>p&&p.template_name===t.name)) usos.push(`secuencia "${s.nombre||"sin nombre"}"`); });
+  }catch(_){}
+  try{
+    const { data:ch }=await supa.from("channels").select("pedidos_config").eq("id",st.channelId).maybeSingle();
+    if(JSON.stringify(ch?.pedidos_config??{}).includes(`"${t.name}"`)) usos.push("los avisos de pedido");
+  }catch(_){}
+  return usos;
+}
 async function deleteTpl(){
-  if(!await confirmDialog({title:"Eliminar plantilla",message:"¿Eliminar esta plantilla?",confirmText:"Eliminar",danger:true})) return;
+  const usos=await usosDePlantilla(st.tpl);
+  const aviso = usos.length
+    ? `La están usando <b>${usos.map(esc).join(", ")}</b>. Al borrarla dejan de poder enviarla: Meta rechaza el envío y el cliente no recibe nada. `
+    : "";
+  if(!await confirmDialog({title:"Eliminar plantilla",messageHtml:`¿Eliminar la plantilla "${esc(st.tpl.name||"")}"? ${aviso}Esto no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   { const { error:eDel }=await supa.from("wa_templates").delete().eq("id",st.tpl.id); if(eDel){ toast(eDel.message,true); return; } } st.tpl=null; await loadList(); showGrid(); toast("Eliminada");
 }
 boot();

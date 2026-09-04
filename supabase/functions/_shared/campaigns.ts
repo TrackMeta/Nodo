@@ -373,7 +373,23 @@ export async function sendTemplateToContact(
   // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
   let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio, language").eq("channel_id", channelId).eq("name", tpl.name);
   if (tpl.language) tq = tq.eq("language", tpl.language);
-  const { data: tplRow } = await tq.maybeSingle();
+  let { data: tplRow } = await tq.maybeSingle();
+  // Sin fila para (canal, nombre, idioma): antes de darla por perdida, se reintenta SIN el
+  // filtro de idioma — el caller pudo pasar "es" contra una fila guardada en "es_PE". Si hay
+  // exactamente una con ese nombre, esa es.
+  if (!tplRow && tpl.language) {
+    const { data: solaPorNombre } = await db.from("wa_templates")
+      .select("estado_meta, params, body_preview, soporta_envio, language")
+      .eq("channel_id", channelId).eq("name", tpl.name);
+    if ((solaPorNombre ?? []).length === 1) tplRow = solaPorNombre![0] as any;
+  }
+  // Sigue sin existir: la borraron en el panel, o el paso/aviso quedó apuntando a un nombre
+  // viejo. TODAS las validaciones de abajo usan `?.`, así que sin fila se saltaban las tres y
+  // se intentaba enviar igual: Meta rechaza (132000), el mensaje queda "failed" y el cliente
+  // no recibe nada, sin motivo en ningún lado. Mejor fallar acá diciendo qué nombre sobra.
+  if (!tplRow) {
+    throw new Error(`Plantilla "${tpl.name}" no existe en este canal (¿la borraron o cambió de nombre?). Revísala en Plantillas.`);
+  }
   if ((tplRow as any)?.estado_meta && (tplRow as any).estado_meta !== "aprobada") {
     throw new Error(`Plantilla "${tpl.name}" no está aprobada por Meta (${(tplRow as any).estado_meta})`);
   }
