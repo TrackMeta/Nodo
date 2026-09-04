@@ -1000,7 +1000,8 @@ async function load(){
   // confiable y el ROI tampoco — se dice, en vez de mostrar un número bonito.
   K.push(kpi("trending", roiPct==null?"#6d8ea0":roiPct>=0?"#22c079":"#e2564a", "ROI",
     roiPct==null ? "—" : (roiPct>0?"+":"")+roiPct+"%",
-    roiPct==null ? "registra costos, anuncios o gastos para verlo"
+    roiPct==null ? (brutaDesconocida ? `${faltaTxt} — se registra al mover el pedido en Pedidos`
+                                     : "registra costos, anuncios o gastos para verlo")
       : sinCostoF ? `${faltaTxt} — cifra incompleta`
       : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
