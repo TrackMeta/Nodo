@@ -325,7 +325,10 @@ async function loadCurrency(){
 }
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Versión corta (sin decimales) para el calendario de la Bitácora.
-const moneyShort=(n)=>curSym()+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
+// Ojo con el CERO NEGATIVO: Math.round(-0.21) da -0 y se imprime "S/ -0", que en el
+// calendario de la Bitácora se lee como un día en pérdida. Pasa con cualquier importe
+// que redondee a cero — el costo de IA de un día sin ventas, por ejemplo.
+const moneyShort=(n)=>{ const r=Math.round(Number(n||0)); return curSym()+" "+(Object.is(r,-0)?0:r).toLocaleString("es-PE"); };
 // Anima los números de los KPIs (0 → valor) al cargar. Genérico: separa prefijo
 // ("S/ "), número y sufijo, y re-formatea cada frame conservando los decimales.
 function animateNums(scope){
