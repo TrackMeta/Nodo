@@ -2495,7 +2495,13 @@ async function renderInicio(){
     const pe=$("hubPct"); if(pe){ pe.textContent=p+"%"; pe.style.background=g; pe.style.webkitBackgroundClip="text"; pe.style.backgroundClip="text"; pe.style.webkitTextFillColor="transparent"; }
   };
   st._refreshMeter=refreshMeter;
-  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc){ applyRow(acc.dataset.t); refreshMeter();
+  // 🔄 Se refrescan TODAS las filas, no solo la del bloque que estás tocando. Los campos de
+  // ENTREGA (el link/archivo de cada presentación) viven dentro del bloque "¿Cuánto cuesta?",
+  // así que editarlos refrescaba la fila del precio y dejaba "¿Cómo se entrega?" congelada.
+  // Medido en la UI: con los dos links ya puestos seguía diciendo "Falta el link o archivo",
+  // y al borrarlos los dos seguía diciendo "Entrega configurada" — en las dos direcciones el
+  // dueño ve lo contrario de lo que tiene. Recalcular las 6 filas cuesta nada.
+  const onEdit=(ev)=>{ const acc=ev.target.closest&&ev.target.closest('.acc-body')&&ev.target.closest('.acc'); if(acc){ b.querySelectorAll('.acc[data-t]').forEach(a=>applyRow(a.dataset.t)); refreshMeter();
     // Refresca EN VIVO el recuadro "Esto impide vender": antes solo se dibujaba al
     // renderizar el hub, así que al poner el precio/stock en el acordeón seguía
     // mostrando "Ninguna presentación tiene precio" hasta recargar (engañoso).
