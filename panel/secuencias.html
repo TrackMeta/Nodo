@@ -118,7 +118,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=9";
+import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=10";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -330,12 +330,15 @@ function renderDetail(){
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
   $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; $("s_segdesc").textContent=segDesc(s.segmento); };
   $("s_modo").onchange=(e)=>{ s.modo=e.target.value; $("s_mododesc").textContent=modoDesc(s.modo); $("s_banner").innerHTML=bannerModo(s.modo); };
-  $("s_producto").onchange=(e)=>{ st.seqProduct=e.target.value; };
+  // Al cambiar de producto hay que repintar el paso: el aviso de "este descuento es de otro
+  // producto" depende de esta elección.
+  $("s_producto").onchange=(e)=>{ st.seqProduct=e.target.value; st.stepsEd?.repaint?.(); };
   $("s_toggle").onclick=()=>{ s.activo=!(s.activo!==false); $("s_toggle").classList.toggle("on",s.activo); $("s_state").textContent=s.activo?"Activa":"Pausada"; };
   // Editor de pasos COMPARTIDO (mismo módulo que la sección Reenganche del producto).
   st.stepsEd = mountStepsEditor($("steps"), {
     seq:s, channelId:st.channelId, angulos:st.angulos,
-    ofertaProducts:st.products, actions:{ enabled:true, flows:st.flows, templates:st.templates },
+    ofertaProducts:st.products, seqProductId:()=>st.seqProduct||"",
+    actions:{ enabled:true, flows:st.flows, templates:st.templates },
   });
   // Foto del texto de cada versión al abrir: al guardar se compara para saber cuáles se
   // reescribieron y reiniciar su medición (ver subeRevSiCambio).

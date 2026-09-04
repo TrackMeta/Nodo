@@ -140,6 +140,11 @@ export function mountStepsEditor(el, opts){
   const angulos = (opts.angulos||[]).filter(a=>a&&a.slug);
   const presets = opts.presets || DEFAULT_PRESETS;
   const ofertaProducts = opts.ofertaProducts || [];
+  // Producto al que se enlaza ESTA secuencia (Secuencias lo elige en un select; desde Productos
+  // ya viene fijo). El descuento del paso debe salir de él: una oferta para OTRO producto
+  // nunca se aplica — el motor solo rebaja {{precio}} si la opción de la oferta es la que el
+  // cliente está comprando (buildContext / precioEsperado). Antes el default era prods[0].
+  const seqProductId = typeof opts.seqProductId === "function" ? opts.seqProductId : () => (opts.seqProductId || "");
   const actions = opts.actions || { enabled:false };
   if(!Array.isArray(seq.pasos)) seq.pasos = [];
   let sel = 0;
@@ -453,6 +458,16 @@ export function mountStepsEditor(el, opts){
     if(!paso.oferta) return "";
     // Precio vacío o ≤0 = producto GRATIS a todo el segmento. Se avisa en vivo y el guardado lo bloquea.
     if(paso.oferta.version_id && !(Number(paso.oferta.precio)>0)) return "Escribe el precio con descuento (mayor a 0). Si lo dejas vacío o en 0, se enviaría el producto GRATIS.";
+    // Descuento de OTRO producto. El motor solo rebaja {{precio}} —y solo acepta ese precio
+    // al validar el pago— si la opción de la oferta es la que el cliente está comprando. Con
+    // un descuento de otro producto, quien siga interesado en el de la secuencia recibe el
+    // copy con el precio de LISTA: el operador cree que mandó una oferta y no mandó nada.
+    // (Vale como venta cruzada a propósito, por eso avisa y no bloquea el guardado.)
+    const spId = seqProductId();
+    if(spId && paso.oferta.product_id && paso.oferta.product_id !== spId){
+      const nom = (ofertaProducts.find(p=>p.id===spId)||{}).nombre || "el de esta secuencia";
+      return "El descuento es de otro producto. Esta secuencia re-engancha " + nom + ": a quien siga en ese producto le va a llegar el precio de lista, sin rebaja. Solo déjalo así si es una venta cruzada a propósito.";
+    }
     const myP=Number(paso.oferta.precio); if(!Number.isFinite(myP)) return "";
     const idx=seq.pasos.indexOf(paso);
     for(let j=0;j<idx;j++){ const pj=seq.pasos[j];
@@ -465,7 +480,7 @@ export function mountStepsEditor(el, opts){
   function oferta(box, paso){
     const prods=ofertaProducts;
     const on=!!paso.oferta;
-    const pid = paso.oferta?.product_id || prods[0]?.id || "";
+    const pid = paso.oferta?.product_id || seqProductId() || prods[0]?.id || "";
     const prod = prods.find(p=>p.id===pid);
     const ops = prod?.opciones||[];
     box.innerHTML=`
@@ -488,7 +503,9 @@ export function mountStepsEditor(el, opts){
       :`<div style="font-size:11.5px;color:var(--amber);margin-top:9px">Primero crea una opción de compra con precio para poder ofrecer un descuento.</div>`):""}`;
     box.querySelector("[data-oftog]").onclick=()=>{
       if(paso.oferta){ delete paso.oferta; }
-      else { const p0=prods[0], o0=p0?.opciones?.[0]; paso.oferta={ product_id:p0?.id||"", version_id:o0?.id||"", precio:o0?.precio??"", vence_horas:48 }; }
+      // Por defecto, el producto de la secuencia (no el primero de la lista): el descuento
+      // tiene que ser del mismo producto que se está re-enganchando o no se aplica nunca.
+      else { const p0=prods.find(p=>p.id===seqProductId())||prods[0], o0=p0?.opciones?.[0]; paso.oferta={ product_id:p0?.id||"", version_id:o0?.id||"", precio:o0?.precio??"", vence_horas:48 }; }
       oferta(box,paso);
     };
     const pp=box.querySelector("[data-ofprod]"); if(pp) pp.onchange=(e)=>{ paso.oferta.product_id=e.target.value; const np=prods.find(p=>p.id===e.target.value), o0=np?.opciones?.[0]; paso.oferta.version_id=o0?.id||""; paso.oferta.precio=o0?.precio??""; oferta(box,paso); };
@@ -511,5 +528,7 @@ export function mountStepsEditor(el, opts){
   }
 
   paintJourney(); paintOne();
-  return { normalize };
+  // `repaint`: la página de Secuencias deja cambiar el producto de la secuencia con el editor
+  // ya montado, y el aviso del descuento depende de esa elección.
+  return { normalize, repaint(){ paintJourney(); paintOne(); } };
 }
