@@ -68,7 +68,7 @@ export async function construirResumen(
   const fromISO = from.toISOString(), toISO = to.toISOString();
   const chId = ch.id;
 
-  const [ordR, contR, leadR, adsR, expR, admR] = await Promise.all([
+  const [ordR, contR, leadR, adsR, expR, admR, tcR, iaR] = await Promise.all([
     // PAGINADO: un día con más de 1000 pedidos devolvía solo los 1000 primeros y TODO el
     // resumen salía corto — ventas, ingresos, ganancia y ROAS — justo el día que más
     // vendiste. Y sin avisar de nada, que es lo peor para un mensaje que se lee de reojo.
@@ -87,6 +87,12 @@ export async function construirResumen(
     db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd),
     db.from("manual_expenses").select("monto").eq("channel_id", chId).eq("fecha", diaYmd),
     db.from("ads_meta").select("account_currency").eq("channel_id", chId),
+    // Cuánto vale un dólar en la moneda del negocio: sin esto el gasto de Meta que
+    // llega en USD no se puede convertir, y el ROAS del digest sale ~3.75× inflado.
+    db.from("channels").select("usd_rate").eq("id", chId).maybeSingle(),
+    // Lo que costó la IA ese día. El Dashboard ya lo resta de la ganancia; si el digest
+    // no lo hiciera, los dos darían una neta distinta para el mismo día.
+    db.from("ai_usage").select("costo_usd").eq("channel_id", chId).eq("dia", diaYmd),
   ]);
 
   // supabase-js NO lanza ante error de query (devuelve {data:null, error}). Sin revisar:
@@ -100,19 +106,34 @@ export async function construirResumen(
   const dg = resumirPedidos(orders);
   const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
   const leads = typeof leadR.count === "number" ? leadR.count : 0;
-  const gastoAds = (adsR.data ?? []).reduce((a: number, r: any) => a + Number(r?.gasto || 0), 0);
+  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA publicitaria, que puede
+  // no ser la del negocio. Sin convertir, ROAS y neta salen inflados ~3.75× (USD/PEN).
+  // Misma regla que el panel (shell.js › factorAds), para que el digest de Telegram y el
+  // Dashboard no den dos ROAS distintos del mismo día: si Meta ya factura en la moneda
+  // del negocio no se toca; si factura en dólares y hay tipo de cambio, se convierte; y
+  // si no se puede saber, se deja crudo y se avisa — nunca se adivina una tasa.
+  const _adm = (admR.data ?? []) as any[];
+  const _cur = String(ch?.moneda || "PEN").toUpperCase();
+  const _tasa = Number((tcR as any)?.data?.usd_rate) > 0 ? Number((tcR as any).data.usd_rate) : 0;
+  const _monedas = [...new Set(_adm.map((m) => String(m.account_currency || "").toUpperCase()).filter(Boolean))];
+  let _factor = 1, _sinConvertir = true;
+  if (_monedas.length && !_adm.some((m) => !m.account_currency)) {
+    if (_monedas.every((m) => m === _cur)) _sinConvertir = false;
+    else if (_monedas.length === 1 && _monedas[0] === "USD" && _cur !== "USD" && _tasa > 0) { _factor = _tasa; _sinConvertir = false; }
+  }
+  const gastoAds = (adsR.data ?? []).reduce((a: number, r: any) => a + Number(r?.gasto || 0), 0) * _factor;
   const gastosExtra = (expR.data ?? []).reduce((a: number, r: any) => a + Number(r?.monto || 0), 0);
-  // Ganancia neta = bruta − anuncios − gastos extra (igual que la banda del Dashboard).
-  const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra : null;
+  // El costo de la IA, en la moneda del negocio. Se guarda en dólares (así lo factura el
+  // proveedor) y solo entra si hay tipo de cambio: convertirlo con una tasa inventada
+  // sería peor que dejarlo fuera. Mismo criterio que el Dashboard.
+  const gastoIa = (_tasa > 0 || _cur === "USD")
+    ? (iaR as any)?.data?.reduce?.((a: number, r: any) => a + Number(r?.costo_usd || 0), 0) * (_cur === "USD" ? 1 : _tasa) || 0
+    : 0;
+  // Ganancia neta = bruta − anuncios − gastos extra − IA (igual que la banda del Dashboard).
+  const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra - gastoIa : null;
   // ROAS = lo cobrado por cada S/ 1 gastado en anuncios (mismo que el Dashboard).
   const roas = gastoAds > 0 ? dg.ingresos / gastoAds : 0;
-  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA (casi siempre USD), sin
-  // convertir a la del negocio → ROAS y neta salen inflados ~3.75×. El Dashboard ya AVISA;
-  // este digest (que llega 2 veces al día por Telegram) los mostraba sin ninguna advertencia.
-  const _adm = (admR.data ?? []) as any[];
-  const monedaRara = gastoAds > 0 && (
-    _adm.some((m) => m.account_currency && String(m.account_currency).toUpperCase() !== String(ch?.moneda || "PEN").toUpperCase())
-    || _adm.every((m) => !m.account_currency));
+  const monedaRara = gastoAds > 0 && _sinConvertir;
 
   const fechaLbl = new Intl.DateTimeFormat("es-PE", {
     timeZone: tz, weekday: "long", day: "numeric", month: "long",
@@ -136,9 +157,10 @@ export async function construirResumen(
   if (adsFail) L.push(`📣 <i>No pude leer el gasto de anuncios ahora — la ganancia neta queda para el próximo resumen.</i>`);
   else if (gastoAds > 0) L.push(`📣 Gasto en anuncios: ${money(gastoAds, sym)}${roas > 0 && !monedaRara ? ` · <b>ROAS ${roas.toFixed(1)}×</b>` : ""}`);
   if (gastosExtra > 0) L.push(`📋 Gastos extra: ${money(gastosExtra, sym)}`);
+  if (gastoIa > 0) L.push(`🤖 Tu IA: ${money(gastoIa, sym)}`);
   // Neta SOLO si el gasto de ads se pudo leer (si adsFail, gastoAds=0 y la neta saldría inflada).
   // Corazón verde solo en ganancia; en pérdida (neta<0) 🔻 rojo, como el Dashboard (no engañar de un vistazo).
-  if (!adsFail && neta != null && (gastoAds > 0 || gastosExtra > 0)) L.push(`${neta < 0 ? "🔻" : "💚"} Ganancia neta: <b>${money(neta, sym)}</b>${monedaRara ? " ⚠️" : ""}`);
+  if (!adsFail && neta != null && (gastoAds > 0 || gastosExtra > 0 || gastoIa > 0)) L.push(`${neta < 0 ? "🔻" : "💚"} Ganancia neta: <b>${money(neta, sym)}</b>${monedaRara ? " ⚠️" : ""}`);
   if (monedaRara) L.push(`⚠️ <i>El gasto de ads no está convertido a tu moneda — ROAS y ganancia neta no son confiables.</i>`);
   if (dg.ganancia != null || gastoAds > 0 || gastosExtra > 0) L.push("");
   const desglose = (dg.digital || dg.fisico) ? ` <i>(${dg.digital} digital · ${dg.fisico} físico)</i>` : "";

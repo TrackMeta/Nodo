@@ -1515,3 +1515,38 @@ export function waFmt(s) {
   t = t.replace(/(^|[\s(¡¿«"])~(?!\s)([^~\n]+?)(?<!\s)~(?=$|[\s.,!?)»:;"])/g, "$1<s>$2</s>");
   return t;
 }
+
+// ── El gasto de Meta, llevado a la moneda del negocio ────────────────
+// Meta factura cada cuenta publicitaria en su propia moneda y dice cuál es
+// (`ads_meta.account_currency`). Si es la misma del negocio, no hay nada que
+// hacer. Si es DÓLARES y el dueño puso cuánto vale el dólar (Ajustes ›
+// General), se convierte. Cualquier otro caso —otra moneda, varias cuentas con
+// monedas distintas, o Meta sin decirla— NO se adivina: se deja el número tal
+// cual y se avisa. Un ROAS convertido con una tasa inventada miente peor que
+// uno sin convertir, porque el aviso al menos se ve.
+//
+// Vive acá y no en cada pantalla a propósito: el Dashboard, su Bitácora y
+// Rendimiento tienen que dar el MISMO gasto para el mismo periodo. Dos copias
+// de esta regla es exactamente cómo empiezan a divergir.
+export function factorAds(rows, cur, tasa) {
+  const filas = rows || [];
+  const monedas = [...new Set(filas.map((m) => String(m.account_currency || "").toUpperCase()).filter(Boolean))];
+  if (!monedas.length || filas.some((m) => !m.account_currency)) return { factor: 1, aviso: "moneda sin confirmar" };
+  if (monedas.every((m) => m === cur)) return { factor: 1, aviso: "" };
+  if (monedas.length === 1 && monedas[0] === "USD" && cur !== "USD") {
+    return Number(tasa) > 0 ? { factor: Number(tasa), aviso: "" } : { factor: 1, aviso: "pon el valor del dólar en Ajustes" };
+  }
+  return { factor: 1, aviso: "moneda sin convertir" };
+}
+
+// Cuánto vale un dólar en la moneda del canal (channels.usd_rate). Se pide APARTE
+// de la ficha: es columna nueva (migración 0089) y pedirla junto al resto dejaría
+// sin ficha a todo el panel donde la migración no esté aplicada.
+export async function getUsdRate(channelId) {
+  const id = channelId || S.channelId;
+  if (!id) return 0;
+  try {
+    const { data } = await supa.from("channels").select("usd_rate").eq("id", id).maybeSingle();
+    return Number(data?.usd_rate) > 0 ? Number(data.usd_rate) : 0;
+  } catch (_) { return 0; }
+}

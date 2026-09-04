@@ -305,7 +305,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig, factorAds, getUsdRate } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import { ymdTZ } from "./date-range.js";
@@ -321,14 +321,7 @@ let USD_RATE=0;
 async function loadCurrency(){
   const ch=await getChannel(channelId);
   CUR=(ch&&ch.moneda)||"PEN";
-  if(CUR==="USD"){ USD_RATE=1; return; }
-  // Aparte del resto de la ficha: es columna nueva (0089) y pedirla junto a las
-  // demás dejaría sin ficha a todo el panel donde la migración no esté aplicada.
-  USD_RATE=0;
-  try{
-    const { data }=await supa.from("channels").select("usd_rate").eq("id",channelId).maybeSingle();
-    if(Number(data?.usd_rate)>0) USD_RATE=Number(data.usd_rate);
-  }catch(_){ /* sin tasa: el gasto de IA se muestra en dólares y aparte */ }
+  USD_RATE = CUR==="USD" ? 1 : await getUsdRate(channelId);
 }
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Versión corta (sin decimales) para el calendario de la Bitácora.
@@ -844,14 +837,15 @@ async function load(){
   (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (adCnt[a]||(adCnt[a]={fisico:0,digital:0}))[O.esFisico(o)?"fisico":"digital"]++; });
   const adTipo={};
   Object.keys(adCnt).forEach(a=>{ adTipo[a]=adCnt[a].fisico>=adCnt[a].digital?"fisico":"digital"; });
-  let gastoAds=0;
-  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo) gastoAds+=Number(i.gasto||0); });
-  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA de ads (casi siempre USD),
-  // pero bruta/cobrado están en la del negocio. Sin convertir, neta/ROAS/%ads salen inflados
-  // (~3.75× con USD/PEN). Aún no se convierte → se AVISA (Rendimiento ya avisa; el Dashboard
-  // no lo hacía y es PEOR: son los números que el dueño mira a diario para decidir su inversión).
+  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA de ads, que puede no ser
+  // la del negocio. Sin convertir, neta/ROAS/%ads salen inflados (~3.75× con USD/PEN).
+  // Ahora se convierte cuando se puede y se sigue avisando cuando no (ver factorAds).
   const _admRows = admR.error ? [] : (admR.data||[]);
-  const monedaAdsRara = gastoAds>0 && (_admRows.some(m=>m.account_currency && String(m.account_currency).toUpperCase()!==CUR) || _admRows.every(m=>!m.account_currency));
+  const _ads = factorAds(_admRows, CUR, USD_RATE);
+  let gastoAds=0;
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo) gastoAds+=Number(i.gasto||0)*_ads.factor; });
+  const monedaAdsRara = gastoAds>0 && !!_ads.aviso;
+  const avisoAds = _ads.aviso;
   // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
   // físico = margen (los que tienen costo registrado).
   // `cogsBruta` = lo que COSTÓ producir/entregar exactamente los pedidos que sí
@@ -929,7 +923,7 @@ async function load(){
       : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(m!=null){ const pid=o.product_id||"_none"; margenPorProd[pid]=(margenPorProd[pid]||0)+m; dailyMargin[k]=(dailyMargin[k]||0)+m; }
   });
-  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0); } });
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0)*_ads.factor; } });
   const dailyExpense={};
   if(tipo==="todo") expenses.forEach(e=>{ dailyExpense[e.fecha]=(dailyExpense[e.fecha]||0)+Number(e.monto||0); });
 
@@ -985,7 +979,7 @@ async function load(){
     brutaDesconocida?"—":money(bruta),
     brutaDesconocida?`no se puede calcular todavía · ${faltaTxt}`:brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
-    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · moneda sin convertir":"")));
+    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (avisoAds?" · "+avisoAds:"")));
   // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
   // anuncios"). Es el número por el que se decide subir o bajar la inversión, así que
   // merece verse solo. Sin gasto cargado NO se inventa un número: se dice qué falta.
@@ -993,7 +987,7 @@ async function load(){
   K.push(kpi("target", roas>=2?"#22c079":roas>0?"#f0a92b":"#6d8ea0", "ROAS",
     (hasAds && roas>0) ? roas.toFixed(1)+"×" : "—",
     !hasAds ? "conecta Meta para verlo"
-      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · moneda sin convertir":""}`
+      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${avisoAds?" · "+avisoAds:""}`
       : "aún sin cobrar nada en este período"));
   // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
   // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
@@ -1015,7 +1009,7 @@ async function load(){
   K.push(kpi("wallet", brutaDesconocida?"#6d8ea0":neta<0?"#e2564a":"#22c079", "Ganancia neta",
     brutaDesconocida?"—":money(neta),
     brutaDesconocida ? `no se puede calcular todavía · ${faltaTxt}`
-      : monedaAdsRara?"el gasto de ads NO está convertido a tu moneda — cifra no confiable":"lo que ganaste de verdad, tras todo"));
+      : monedaAdsRara?("el gasto de ads no está en tu moneda: "+avisoAds+" — cifra no confiable"):"lo que ganaste de verdad, tras todo"));
   // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
   if(vueltoTotal>0){
     K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
@@ -1303,7 +1297,7 @@ function renderSalesChart(data, hasAds){
 async function loadBitacora(monthStart){
   const from=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
   const to=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1); // exclusivo
-  const [ordR,prodR,insR,expR,iaR]=await Promise.all([
+  const [ordR,prodR,insR,expR,iaR,admR2]=await Promise.all([
     // Paginado por lo mismo que arriba: un mes con más de 1000 pedidos (o el cruce de
     // anuncios × días de ads_insights) dejaba la Bitácora corta y sin avisar.
     pageAll((f,t)=>supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",from.toISOString()).lt("created_at",to.toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
@@ -1314,6 +1308,9 @@ async function loadBitacora(monthStart){
     // Bitácora dice ser "el mismo criterio de profit que el Dashboard", y un costo que
     // solo resta en uno de los dos deja dos ganancias distintas para el mismo día.
     supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(from)).lt("dia",ymd(to)),
+    // La moneda de las cuentas de ads, por lo mismo: si arriba el gasto de Meta se
+    // convierte y acá no, el profit del día no coincide con el del periodo.
+    supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
   ]);
   const prods=prodR.error?[]:(prodR.data||[]);
   const prodPorId={},cantPorVersion={};
@@ -1337,7 +1334,10 @@ async function loadBitacora(monthStart){
       : O.margen(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1);
     const d=D(k); if(m!=null) d.margin+=m; d.rev+=O.cobrado(o); d.sales++;
   });
-  (insR.error?[]:(insR.data||[])).forEach(i=>{ if(tipo==="todo"||adTipo[i.ad_id]===tipo){ D(i.fecha).spend+=Number(i.gasto||0); } });
+  // Mismo factor de moneda que la banda de arriba, o el profit del día y el del
+  // periodo dirían cosas distintas para los mismos anuncios.
+  const _adsB = factorAds(admR2&&!admR2.error?(admR2.data||[]):[], CUR, USD_RATE);
+  (insR.error?[]:(insR.data||[])).forEach(i=>{ if(tipo==="todo"||adTipo[i.ad_id]===tipo){ D(i.fecha).spend+=Number(i.gasto||0)*_adsB.factor; } });
   if(tipo==="todo") (expR.error?[]:(expR.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); });
   // Mismo trato que arriba: solo entra convertido a tu moneda (si no, no se puede
   // restar de una ganancia en soles sin inventar una tasa).

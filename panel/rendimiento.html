@@ -136,7 +136,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, icon, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -145,7 +145,7 @@ function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.ti
 
 // Moneda del canal (símbolo por código ISO), igual que el Dashboard.
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
-let CUR="PEN"; const curSym=()=>CUR_SYM[CUR]||CUR;
+let CUR="PEN"; let USD_RATE=0; const curSym=()=>CUR_SYM[CUR]||CUR;
 const money=(v)=>{ const s=v<0?"-":""; return s+curSym()+" "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
 const money0=(v)=>curSym()+" "+Math.round(v).toLocaleString("es-PE");
 const nf=(v,d=0)=>Number(v).toLocaleString("es-PE",{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -204,7 +204,13 @@ async function loadData(){
   const byAd={};
   const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
-  (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=+i.gasto||0; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=+i.gasto||0; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
+  // El gasto llega en la moneda de la CUENTA de Meta. Se lleva a la del negocio con
+  // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
+  // moneda no se toca; si factura en dólares y hay tipo de cambio, se convierte; y si
+  // no se puede saber, se deja crudo y el banner de arriba lo dice.
+  const _ads=factorAds(metaR.data||[], CUR, USD_RATE);
+  const _f=_ads.factor;
+  (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=(+i.gasto||0)*_f; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=(+i.gasto||0)*_f; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
   (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const mg=O.margen(o,o.product,1); const f=o.created_at?ymdLima(o.created_at):""; const d=day(row,f);
     if(esConf){ row.conf++; d.conf++; }
     if(esVenta){ row.ventas++; row.ingresos+=tot; d.ventas++; d.ingresos+=tot;
@@ -222,8 +228,11 @@ async function loadData(){
   Object.values(byAd).forEach(row=>{ row.neta=row._margen-row.gasto; });   // ganancia neta = margen − gasto de ads
   if(gen!==st.loadGen) return; // otra carga (otro bot/cuenta) la reemplazó
   st.rows=Object.values(byAd); st.loaded=true;
+  // Si el gasto SÍ se pudo convertir, no hay desajuste que avisar: las cifras ya están
+  // todas en la moneda del negocio. El banner solo debe salir cuando queda crudo.
+  st.adsConvertido = _ads.factor!==1 && !_ads.aviso;
   // Monedas de las cuentas de Meta (para avisar del desajuste con la moneda del negocio).
-  st.adCurrencies=[...new Set((metaR.data||[]).map(m=>m.account_currency).filter(Boolean).map(c=>String(c).toUpperCase()))];
+  st.adCurrencies=st.adsConvertido ? [] : [...new Set((metaR.data||[]).map(m=>m.account_currency).filter(Boolean).map(c=>String(c).toUpperCase()))];
   // ¿Hay gasto cuya moneda NO conocemos? account_currency lo llena un fetch best-effort
   // de ads-sync; si falló (o Meta no devolvió currency), queda null → el banner de
   // desajuste desaparecía aunque el gasto (casi siempre USD) siguiera sin convertir y
@@ -290,6 +299,8 @@ async function loadAccount(){
   try{ const { data }=await supa.from("ad_accounts").select("account_id,nombre").eq("channel_id",st.channelId).eq("activo",true); st.adAccounts=data||[]; }catch(_){}
   if(st.account!=="all" && !st.adAccounts.some(a=>a.account_id===st.account)) st.account="all";
   try{ const data=await getChannel(st.channelId); st.syncError=data?.ads_sync_error||null; CUR=(data&&data.moneda)||"PEN"; }catch(_){}
+  // Cuanto vale el dolar, para convertir el gasto si la cuenta de Meta factura en USD.
+  USD_RATE = CUR==="USD" ? 1 : await getUsdRate(st.channelId);
   renderStatus(); await reload();
 }
 function renderStatus(){
@@ -370,7 +381,7 @@ function render(){
       <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
       ${st.vista==="copy"?"":`<div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>`}
     </div>
-    ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${monedaMismatch==="desconocida"?`No pude confirmar en qué <b>moneda</b> factura tu cuenta de Meta (la sincronización no la trajo).`:`Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>.`} El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) puede NO estar convertido — no compares estos números hasta confirmar la moneda.</div>`:""}
+    ${monedaMismatch?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${monedaMismatch==="desconocida"?`No pude confirmar en qué <b>moneda</b> factura tu cuenta de Meta (la sincronización no la trajo).`:`Tu cuenta de Meta factura en <b>${esc(monedaMismatch)}</b> pero tu negocio está en <b>${esc(CUR)}</b>.${monedaMismatch==="USD"?` Pon <b>cuánto vale un dólar</b> en <a href="config.html">Ajustes → General</a> y lo convierto solo.`:""}`} El <b>gasto</b> (y por ende el <b>CPA</b>, <b>ROAS</b> y la <b>ganancia neta</b>) puede NO estar convertido — no compares estos números hasta confirmar la moneda.</div>`:""}
     ${st.hayVentaSinGasto?`<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} Hay ventas atribuidas a anuncios <b>sin gasto registrado</b> en este periodo (un anuncio borrado en Meta, o un mes anterior a lo que se sincronizó). El <b>ROAS</b> y la <b>ganancia neta</b> salen mejor de lo real porque falta ese gasto — tómalos con cuidado.</div>`:""}
     <div id="content"></div>`;
   wireToolbar();
