@@ -3007,6 +3007,36 @@ async function execute(db: SupabaseClient, run: Run) {
           await saveRun(db, run);
           return;
         }
+        // 💸 Hermano del guard de arriba: pedirle plata SIN decirle CUÁNTO. Las burbujas del
+        // adelanto llevan "un adelanto de *S/ {{adelanto}}*" y "Los *S/ {{saldo}}* que faltan";
+        // si esas variables llegan vacías (el nodo corrió antes de que la opción quedara
+        // sellada) al cliente le llega literal "un adelanto de *S/ *". Medido en un chat de
+        // prueba. Un precio en blanco no se manda: lo toma una persona, igual que sin datos
+        // de pago. (Solo cuenta la variable que va pegada a un símbolo de moneda: un
+        // {{precio}} suelto en otro texto no dispara esto.)
+        const _MONEY = ["adelanto", "saldo", "precio", "total"];
+        const _huecoPlata = _MONEY.find((v) =>
+          bubbles.some((b: any) => {
+            const t = String(b?.text ?? "");
+            if (!new RegExp("[^\\n]{0,12}\\{\\{\\s*" + v + "\\s*\\}\\}").test(t)) return false;
+            // ¿lleva moneda delante? (S/, $, €… o el símbolo que use el negocio)
+            if (!new RegExp("(?:[^\\s\\p{L}\\p{N}]|S/)\\s*\\*?\\s*\\{\\{\\s*" + v + "\\s*\\}\\}", "u").test(t)) return false;
+            const val = String((ctx as any)[v] ?? "").trim();
+            return val === "" || !Number.isFinite(Number(val.replace(",", ".")));
+          })
+        );
+        if (_huecoPlata) {
+          await logEvent(db, run.channel_id, run.contact_id, "error", "💸 Monto vacío en el mensaje",
+            `El flujo iba a mandarle un mensaje con "${_huecoPlata}" en blanco (habría leído "S/ " sin número).`).catch(() => {});
+          await deliverMessage(db, run.channel_id, run.contact_id,
+            "¡Gracias! 🙌 Dame un momentito y te confirmo el monto exacto de tu pedido. 😊").catch(() => {});
+          await pasarAHumano(db, run.channel_id, run.contact_id,
+            `El bot iba a pedirle plata con el monto VACÍO (${_huecoPlata} sin valor). Revisa qué opción eligió el cliente.`,
+            { aviso: false }).catch(() => {});
+          run.estado = "esperando";
+          await saveRun(db, run);
+          return;
+        }
         let hasButtons = false;
         for (const b of bubbles) {
           if (await ritmo(db, run, b)) break;   // escribió mientras tanto → no le hablamos encima
