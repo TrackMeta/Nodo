@@ -10952,6 +10952,41 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
   if (calzan.length !== 1) return false;                   // ambiguo o ninguna → que lo vea un humano
 
   const op = calzan[0];
+  // 🙋 ¿PIDIÓ OTRA? El monto manda solo cuando el cliente no dijo cuál quería. Medido con un
+  // curso de S/120 (Básica) y S/180 (Premium): la clienta escribió «quiero la premium», pagó
+  // S/120 y el bot le entregó la BÁSICA y cerró la venta ahí — sin avisarle nada. Ella cree
+  // que compró la Premium y se entera al entrar al curso; el negocio se come el reclamo.
+  // Si nombró una opción MÁS CARA que lo que pagó, no se cierra en silencio: se le dice la
+  // diferencia y se le deja elegir, que es lo que haría cualquier vendedor.
+  try {
+    const { data: insOp } = await db.from("messages").select("content")
+      .eq("contact_id", run.contact_id).eq("direction", "in")
+      .order("ts", { ascending: false }).limit(6);
+    const dicho = (insOp ?? []).map((m: any) => String(m?.content?.text ?? m?.content?.caption ?? "")).join(" · ");
+    const nrm = (t: string) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const dichoN = nrm(dicho);
+    const pedida = list.find((o) => {
+      const n = nrm(String(o.nombre ?? "")).trim();
+      if (n.length < 4 || String(o.id) === String(op.id)) return false;
+      return new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "u").test(dichoN);
+    });
+    const pPedida = pedida ? precioVivo(pedida) : null;
+    if (pedida && pPedida != null && pPedida > pagado + tol + 0.01) {
+      const sym = simboloMoneda(ctx.moneda as string);
+      const falta = +(pPedida - pagado).toFixed(2);
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 Pagó menos de la opción que pidió",
+        `Pidió "${pedida.nombre}" (${sym}${pPedida}) y pagó ${sym}${pagado} — no se entregó nada todavía`).catch(() => {});
+      await deliverMessage(db, run.channel_id, run.contact_id,
+        `¡Gracias por tu pago de *${sym} ${pagado}*! 🙌 Me pediste la *${pedida.nombre}*, que son *${sym} ${pPedida}*, ` +
+        `así que faltarían *${sym} ${falta}*. Me los mandas y te la activo al toque. ` +
+        `Y si prefieres quedarte con la *${op.nombre}* por lo que ya pagaste, dímelo y te la dejo lista ahora mismo. 😊`,
+      ).catch(() => {});
+      await pasarAHumano(db, run.channel_id, run.contact_id,
+        `💸 Pagó ${sym}${pagado} pero pidió "${pedida.nombre}" (${sym}${pPedida}). Le avisé la diferencia y le ofrecí la ${op.nombre}.`,
+        { aviso: false }).catch(() => {});
+      return false;                                        // NO se sella: no se entrega nada todavía
+    }
+  } catch (_) { /* si no se puede leer el historial, se sigue como antes */ }
   run.vars.opcion_id = op.id;
   ctx.opcion_id = op.id;
   await setField(db, run.channel_id, run.contact_id, "opcion_id", op.id);
