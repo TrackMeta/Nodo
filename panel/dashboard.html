@@ -314,7 +314,15 @@ const $=(id)=>document.getElementById(id);
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
 let CUR="PEN";
 const curSym=()=>CUR_SYM[CUR]||CUR;
-async function loadCurrency(){ const ch=await getChannel(channelId); CUR=(ch&&ch.moneda)||"PEN"; }
+// Cuánto vale un dólar en la moneda del negocio (Ajustes › General). Sin esto, el
+// gasto de IA —que el proveedor cobra en dólares— no se puede sumar a una ganancia
+// en soles sin mentir: se muestra aparte y en dólares hasta que lo configuren.
+let USD_RATE=0;
+async function loadCurrency(){
+  const ch=await getChannel(channelId);
+  CUR=(ch&&ch.moneda)||"PEN";
+  USD_RATE = CUR==="USD" ? 1 : (Number(ch?.negocio?.usd_rate)>0 ? Number(ch.negocio.usd_rate) : 0);
+}
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Versión corta (sin decimales) para el calendario de la Bitácora.
 const moneyShort=(n)=>curSym()+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
@@ -453,6 +461,7 @@ async function pedirConsejo(){
   }).join("");
 }
 const IC={
+  robot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>',
   users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>',
@@ -722,7 +731,7 @@ async function load(){
   // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
   // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
   // según quién ganara la carrera — y el día que se probó, ganó el bueno.
-  const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR, admR] = await Promise.all([
+  const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR, admR, iaR] = await Promise.all([
     supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
     // Solo se usa para CONTAR los Lead. Traer las filas era doblemente malo: PostgREST
     // corta en 1000 y, sin .order(), esas 1000 son arbitrarias — el KPI no se quedaba
@@ -746,6 +755,9 @@ async function load(){
     // Embudo (que lo excluye). Traemos su etapa para descontarlo del mismo bucket.
     supa.from("contacts").select("stage").eq("channel_id",channelId).eq("wa_id","webchat-test").maybeSingle(),
     supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
+    // Lo que costó la IA en el periodo. Viene acumulado por día (ai_usage), siempre
+    // en dólares —que es como lo factura el proveedor— y se convierte más abajo.
+    supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(r.from)).lte("dia",ymd(r.toDay)),
   ]);
   if(cid!==channelId) return; // cambiaste de bot mientras cargaba → no pintes los números del anterior
   const s=stats.data||{};
@@ -879,7 +891,16 @@ async function load(){
   // así que solo se restan en la vista general ("Todo"), no por segmento.
   const expenses = expR.error ? [] : (expR.data||[]);
   const gastosExtra = tipo==="todo" ? expenses.reduce((a,e)=>a+Number(e.monto||0),0) : 0;
-  const neta = bruta - gastoAds - gastosExtra;
+  // ── Lo que costó la IA en el periodo ──────────────────────────────
+  // Es un costo operativo como cualquier otro: si no se resta, la "ganancia real"
+  // no es real. Se guarda en dólares (así lo factura el proveedor) y solo entra a
+  // la cuenta si hay tipo de cambio configurado — convertir con una tasa inventada
+  // sería peor que no convertir. Sin tasa se sigue viendo, aparte y en su moneda.
+  // Como los gastos extra, es overhead del negocio: no se reparte por segmento.
+  const iaUsd = (iaR&&!iaR.error?(iaR.data||[]):[]).reduce((a,x)=>a+Number(x.costo_usd||0),0);
+  const gastoIa = (tipo==="todo" && USD_RATE>0) ? iaUsd*USD_RATE : 0;
+  const iaSinConvertir = tipo==="todo" && USD_RATE<=0 && iaUsd>0;
+  const neta = bruta - gastoAds - gastosExtra - gastoIa;
   const roas = gastoAds>0 ? cobrado/gastoAds : 0;
   const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
   // ROI ≠ ROAS. El ROAS mide FACTURACIÓN por sol de ANUNCIOS; el ROI mide GANANCIA
@@ -888,7 +909,7 @@ async function load(){
   // (Primera versión de esto solo dividía entre ads + gastos extra, lo que inflaba el
   // ROI muchísimo: con S/665 de mercadería fuera de la cuenta, el número no significaba
   // nada. Lo cazó Rodrigo.)
-  const inversion = cogsBruta + gastoAds + gastosExtra;
+  const inversion = cogsBruta + gastoAds + gastosExtra + gastoIa;
   const roiPct = inversion>0 ? Math.round(neta/inversion*100) : null;
 
   // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
@@ -976,6 +997,13 @@ async function load(){
       : sinCostoF ? `${faltaTxt} — cifra incompleta`
       : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
   if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
+  // Lo que costó la IA. Sin tipo de cambio se muestra igual —en dólares, que es como
+  // llega la factura— pero fuera de la ganancia, y el pie dice qué falta para incluirlo.
+  if(tipo==="todo" && (gastoIa>0 || iaSinConvertir))
+    K.push(kpi("robot","#a855f7","Tu IA",
+      iaSinConvertir ? "$"+iaUsd.toFixed(2) : money(gastoIa),
+      iaSinConvertir ? "pon el valor del dólar en Ajustes para restarlo"
+        : `$${iaUsd.toFixed(2)} de tu proveedor · ya restado de tu ganancia`));
   // La neta sale de la bruta: si la bruta no se puede calcular, la neta tampoco.
   K.push(kpi("wallet", brutaDesconocida?"#6d8ea0":neta<0?"#e2564a":"#22c079", "Ganancia neta",
     brutaDesconocida?"—":money(neta),
@@ -1011,7 +1039,7 @@ async function load(){
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
   $("kpis").innerHTML=K.join("");
   animateNums($("kpis"));
-  renderBand({ bruta, gastoAds, gastosExtra, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
+  renderBand({ bruta, gastoAds, gastosExtra, gastoIa, iaUsd, iaSinConvertir, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
 
   renderMetricas(porStage);
   renderFunnel(porStage);
@@ -1148,7 +1176,8 @@ function renderBand(b){
   const brutaTxt = b.brutaDesconocida ? "—" : money(b.bruta);
   const netaTxt  = b.brutaDesconocida ? "—" : money(b.neta);
   const hasExtra = b.gastosExtra>0;
-  if(!b.hasAds && !hasExtra){
+  const hasIa = b.gastoIa>0;
+  if(!b.hasAds && !hasExtra && !hasIa){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
       <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
@@ -1159,6 +1188,7 @@ function renderBand(b){
   const steps=[`<div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${brutaTxt}</span>${brutaSub}</div>`];
   if(b.hasAds) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>`);
   if(hasExtra) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Gastos extra</span><span class="pb-v amber">${money(b.gastosExtra)}</span><span class="pb-s">operativos que registraste</span></div>`);
+  if(hasIa) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Tu IA</span><span class="pb-v amber">${money(b.gastoIa)}</span><span class="pb-s">$${b.iaUsd.toFixed(2)} de tu proveedor</span></div>`);
   steps.push(`<span class="pb-op">=</span><div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${b.brutaDesconocida?"":netaCls}">${netaTxt}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`);
   box.innerHTML=steps.join("");
 }
@@ -1266,13 +1296,17 @@ function renderSalesChart(data, hasAds){
 async function loadBitacora(monthStart){
   const from=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
   const to=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1); // exclusivo
-  const [ordR,prodR,insR,expR]=await Promise.all([
+  const [ordR,prodR,insR,expR,iaR]=await Promise.all([
     // Paginado por lo mismo que arriba: un mes con más de 1000 pedidos (o el cruce de
     // anuncios × días de ads_insights) dejaba la Bitácora corta y sin avisar.
     pageAll((f,t)=>supa.from("orders").select("product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",from.toISOString()).lt("created_at",to.toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     supa.from("products").select("id,config,product_versions(id,cantidad)").eq("channel_id",channelId),
     pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
     supa.from("manual_expenses").select("fecha,monto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)),
+    // El costo de la IA, por día. Va acá también y no solo en la banda de arriba: la
+    // Bitácora dice ser "el mismo criterio de profit que el Dashboard", y un costo que
+    // solo resta en uno de los dos deja dos ganancias distintas para el mismo día.
+    supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(from)).lt("dia",ymd(to)),
   ]);
   const prods=prodR.error?[]:(prodR.data||[]);
   const prodPorId={},cantPorVersion={};
@@ -1298,6 +1332,9 @@ async function loadBitacora(monthStart){
   });
   (insR.error?[]:(insR.data||[])).forEach(i=>{ if(tipo==="todo"||adTipo[i.ad_id]===tipo){ D(i.fecha).spend+=Number(i.gasto||0); } });
   if(tipo==="todo") (expR.error?[]:(expR.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); });
+  // Mismo trato que arriba: solo entra convertido a tu moneda (si no, no se puede
+  // restar de una ganancia en soles sin inventar una tasa).
+  if(tipo==="todo" && USD_RATE>0) (iaR&&!iaR.error?(iaR.data||[]):[]).forEach(x=>{ D(x.dia).exp+=Number(x.costo_usd||0)*USD_RATE; });
   return day;
 }
 async function renderBitacora(){

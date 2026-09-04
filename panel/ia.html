@@ -143,6 +143,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean } from "./shell.js";
+import { mountDateRange, computePreset, rangeLabel, ymd as ymdDia } from "./date-range.js";
 const $ = (id) => document.getElementById(id);
 // ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
 // Claude: IDs vigentes de la Messages API (el backend no manda temperature
@@ -944,17 +945,30 @@ function renderValidador(b){
 // dibuja: nadie ve un error por una función que aún no está.
 const USO_NOMBRES={ vender:"Vender y responder", ocr:"Leer comprobantes", stt:"Escuchar audios",
   extraer:"Tomar los datos del pedido", clasificar:"Entender qué quiso decir", asistente:"Asistentes del panel", otro:"Otros" };
+// El rango que se está mirando (mismo selector que el Dashboard, por si compara).
+let gastoRango=computePreset("30d");
+// ¿Este canal llegó a consumir IA alguna vez? Se pregunta UNA vez y aparte del rango:
+// si se dedujera del periodo elegido, elegir un mes sin consumo haría desaparecer la
+// tarjeta entera —y con ella el selector— y ya no habría cómo volver a otro periodo.
+let gastoIaHay=null;
 async function renderGastoIa(){
   const box=$("gastoIa"); if(!box) return;
-  const hoy=new Date(); const ymd=(d)=>d.toISOString().slice(0,10);
-  const primero=new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
+  if(gastoIaHay===null){
+    const { count, error:e0 }=await supa.from("ai_usage").select("dia",{count:"exact",head:true}).eq("channel_id", st.channelId);
+    gastoIaHay = e0 ? false : (count||0)>0;   // sin tabla (migración pendiente) → sin tarjeta
+  }
+  if(!gastoIaHay){ box.innerHTML=""; return; }
+  const desde=ymdDia(gastoRango.from), hasta=ymdDia(gastoRango.to);
   const { data, error }=await supa.from("ai_usage")
     .select("dia,origen,model,llamadas,tokens_in,tokens_out,costo_usd")
-    .eq("channel_id", st.channelId).gte("dia", ymd(primero)).order("dia",{ascending:false});
+    .eq("channel_id", st.channelId).gte("dia", desde).lte("dia", hasta).order("dia",{ascending:false});
   if(error || !Array.isArray(data)){ box.innerHTML=""; return; }
-  const hoyStr=ymd(hoy);
   const sum=(rows,campo)=>rows.reduce((a,r)=>a+Number(r[campo]||0),0);
-  const mes=data, deHoy=data.filter(r=>r.dia===hoyStr);
+  const mes=data;
+  // Días con consumo dentro del rango: el promedio se saca sobre los días que
+  // realmente operaron, no sobre los del calendario. Con "Máximo" (que arranca en
+  // 2020) dividir entre 2.000 días daría un promedio de cero y no diría nada.
+  const diasCon=new Set(data.filter(r=>Number(r.costo_usd||0)>0 || Number(r.llamadas||0)>0).map(r=>r.dia)).size;
   // Con centavos, redondear a 2 decimales convierte todo lo pequeño en "$0.00" y la
   // tarjeta parece rota justo cuando recién empiezas a medir. Bajo un dólar se muestran
   // los céntimos de verdad.
@@ -967,9 +981,9 @@ async function renderGastoIa(){
   // Por para-qué, de mayor a menor: el orden cuenta la historia solo.
   const porOrigen={}; mes.forEach(r=>{ porOrigen[r.origen]=(porOrigen[r.origen]||0)+Number(r.costo_usd||0); });
   const filas=Object.entries(porOrigen).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0);
-  const totalMes=sum(mes,"costo_usd"), totalHoy=sum(deHoy,"costo_usd");
+  const totalMes=sum(mes,"costo_usd");
+  const porDia=diasCon>0 ? totalMes/diasCon : 0;
   const llamadasMes=sum(mes,"llamadas");
-  if(!llamadasMes){ box.innerHTML=""; return; }   // sin datos todavía, sin tarjeta vacía
   const maxV=filas.length?filas[0][1]:1;
   // 💬 Cuánto cuesta CADA conversación: es el número con el que se decide si escalar, más
   // que el total del mes. Se divide entre los chats que empezaron este mes (los contactos
@@ -977,24 +991,25 @@ async function renderGastoIa(){
   let porChat="";
   try{
     const { count }=await supa.from("contacts").select("id",{count:"exact",head:true})
-      .eq("channel_id", st.channelId).gte("created_at", ymd(primero));
+      .eq("channel_id", st.channelId).gte("created_at", desde).lte("created_at", hasta+"T23:59:59.999Z");
     if(count>0) porChat=usd(totalMes/count)+` <span style="font-weight:600;color:var(--muted)">por conversación</span>`;
   }catch(_){ /* sin el dato, la tarjeta va igual */ }
   box.innerHTML=`
     <div class="card">
       <div class="chd"><span class="nm">Lo que gasta tu IA</span>
-        <span class="badge">este mes</span></div>
+        <span id="gastoIaDr" style="margin-left:auto"></span></div>
       <div class="desc">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor; esto es para que no tengas que salir de acá para saber cómo vas.</div>
       <div style="display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 4px">
-        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">HOY</div>
-             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalHoy)}</div></div>
-        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">ESTE MES</div>
+        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">${esc(rangeLabel(gastoRango).toUpperCase())}</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalMes)}</div></div>
+        ${diasCon>1?`<div><div style="font-size:11.5px;color:var(--muted);font-weight:700">POR DÍA</div>
+             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(porDia)}</div></div>`:""}
         <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">LLAMADAS</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${llamadasMes.toLocaleString("es-PE")}</div></div>
         ${porChat?`<div><div style="font-size:11.5px;color:var(--muted);font-weight:700">CADA CHAT</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${porChat}</div></div>`:""}
       </div>
+      ${llamadasMes?"":`<div class="desc" style="margin-top:10px">Sin consumo en este periodo.</div>`}
       ${filas.length?`<div style="margin-top:12px">${filas.map(([k,v])=>`
         <div style="display:flex;align-items:center;gap:10px;margin:7px 0">
           <div style="flex:0 0 190px;font-size:12.5px;color:var(--text)">${esc(USO_NOMBRES[k]||k)}</div>
@@ -1003,6 +1018,9 @@ async function renderGastoIa(){
           <div style="flex:0 0 62px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">${usd(v)}</div>
         </div>`).join("")}</div>`:""}
     </div>`;
+  const host=$("gastoIaDr");
+  if(host) mountDateRange(host, { valor:gastoRango, nota:"Por día de consumo · hora de tu negocio",
+    onChange:(r)=>{ gastoRango=r; renderGastoIa(); } });
 }
 
 // ── Proveedores (API keys) ──────────────────────────────────────────

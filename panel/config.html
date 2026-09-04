@@ -279,16 +279,36 @@ function renderGeneral(b){
       <div class="desc">La moneda en la que ves los importes del <b>Dashboard</b> (ventas, ganancia, ticket…) y la Bitácora. Elige la moneda con la que operas tu negocio.</div>
       <label>Moneda del negocio</label>
       <select class="in" id="g_moneda" style="max-width:340px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cd===mon?"selected":""}>${sy} · ${nm} (${cd})</option>`).join("")}</select>
+      <div id="g_tcBox" style="margin-top:16px;${mon==="USD"?"display:none":""}">
+        <label>Cuánto vale un dólar en tu moneda</label>
+        <div class="desc" style="margin:2px 0 8px">Tu IA te la cobra tu proveedor <b>en dólares</b>. Con este número, ese gasto se convierte y entra en la <b>ganancia</b> del Dashboard como un costo más. Si lo dejas vacío, el gasto se sigue viendo, pero aparte y en dólares.</div>
+        <div style="display:flex;align-items:center;gap:8px;max-width:340px">
+          <span style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap">1 USD =</span>
+          <input class="in" id="g_tc" type="number" step="0.01" min="0" placeholder="ej. 3.75" value="${Number(st.channel?.negocio?.usd_rate)>0?esc(String(st.channel.negocio.usd_rate)):""}">
+          <span id="g_tcCur" style="font-size:13px;color:var(--muted);font-weight:700">${esc(mon)}</span>
+        </div>
+      </div>
     </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
+  // El tipo de cambio solo tiene sentido si NO cobras en dólares.
+  $("g_moneda").onchange=()=>{
+    const m=$("g_moneda").value;
+    $("g_tcBox").style.display = m==="USD" ? "none" : "";
+    $("g_tcCur").textContent = m;
+  };
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value };
+    const tc=Number($("g_tc")?.value);
+    // Se guarda dentro de `negocio` con merge: ese jsonb lo comparten otros ajustes y
+    // mandarlo entero desde acá borraría lo que esta pantalla no conoce.
+    const negocio={ ...(st.channel?.negocio||{}) };
+    if($("g_moneda").value!=="USD" && tc>0) negocio.usd_rate=+tc.toFixed(4); else delete negocio.usd_rate;
+    const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value, negocio };
     let { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
     if(error && /moneda|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ timezone:patch.timezone }).eq("id",st.channelId)); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; toast("Guardado");
+    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; st.channel.negocio=patch.negocio; toast("Guardado");
   };
   renderUso();
 }
