@@ -4155,9 +4155,42 @@ function sinLinkFantasma(texto: string): { texto: string; habia: boolean } {
   return { texto: limpio, habia: true };
 }
 
+// ¿Esta frase le está preguntando al cliente de dónde escribe? (distrito/ciudad/zona)
+const RE_FRASE_ZONA = /(?:de|desde|en)\s+qu[eé]\s+(?:distrito|ciudad|provincia|zona|parte)\b|\bd[oó]nde\s+(?:nos|me|te|se)?\s*(?:escrib|encuentr|ubic)|\bde\s+d[oó]nde\s+(?:eres|es|nos|me)\b|\bcu[aá]l\s+es\s+tu\s+(?:distrito|ciudad)\b/i;
+// El saludo del flujo salió en ESTE mismo turno y ya preguntó de dónde escribe; la regla de
+// prompt que se lo dice a la IA falla justo cuando tiene más que contestar (medido 3 de 3 con
+// el cliente nombrando DOS productos en su primer mensaje: el rotador preguntaba «¿desde
+// dónde nos escribe?» y la IA cerraba con «¿de qué distrito o ciudad nos escribes?», seguidas).
+// Regla de prompt que falla dos veces, se pasa a código: se recorta la frase repetida.
+function quitaZonaRepetida(texto: string, saludo: string): string {
+  if (!texto || !saludo) return texto;
+  if (!RE_FRASE_ZONA.test(saludo)) return texto;       // el saludo no preguntó la zona → nada que quitar
+  if (!RE_FRASE_ZONA.test(texto)) return texto;
+  const lineas = texto.split("\n").map((ln) => {
+    if (!RE_FRASE_ZONA.test(ln)) return ln;
+    // Solo se cae la FRASE que pregunta la zona, no la línea entera: la IA suele meterla
+    // detrás de algo que sí vale ("Claro, tenemos ambos. ¿De qué distrito nos escribes?").
+    const frases = ln.split(/(?<=[?!.])\s+/);
+    let quedan = frases.filter((f) => !(RE_FRASE_ZONA.test(f) && /[?¿]/.test(f)));
+    // El emoji que iba detrás de la pregunta ("…¿de qué distrito? 📍") queda suelto al
+    // cortarla: se cae todo trozo que no tenga ni una letra ni un número.
+    if (quedan.length !== frases.length) quedan = quedan.filter((f) => /[\p{L}\p{N}]/u.test(f));
+    return quedan.length ? quedan.join(" ").trim() : "";
+  });
+  const limpio = lineas.filter((ln, i) => ln.trim() !== "" || i === 0 || lineas[i - 1]?.trim() !== "")
+    .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return limpio || texto;   // nunca dejar la burbuja vacía: si no queda nada, va como estaba
+}
+
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
   // Lo primero: el Markdown del modelo pasado al formato que WhatsApp sí entiende.
   result = aFormatoWhatsApp(result);
+  // 📣 Turno de reinyección (`_saludo_recien`, en memoria y solo para este turno): el saludo
+  // acaba de preguntar de dónde escribe. Que la IA no la repita en la burbuja siguiente.
+  {
+    const _sal = String(run?.vars?._saludo_recien ?? "").trim();
+    if (_sal) result = quitaZonaRepetida(result, _sal);
+  }
   let hizoHandoff = false; // true si se escaló a humano → el caller debe CORTAR el flujo
   // [[humano]] — la IA pide ayuda cuando juzga que no puede resolverlo sola.
   // Se saca del texto SIEMPRE (aunque el traspaso falle) para que el marcador
