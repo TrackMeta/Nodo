@@ -10945,10 +10945,34 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
     if (oferta && (oferta as any).opcion_id === o.id && Number.isFinite(Number((oferta as any).precio))) return Number((oferta as any).precio);
     return o.precio != null && Number.isFinite(Number(o.precio)) ? Number(o.precio) : null;
   };
-  const calzan = list.filter((o) => {
+  const calzan: Opcion[] = list.filter((o) => {
     const p = precioVivo(o);
     return p != null && p > 0 && Math.abs(pagado - p) <= tol + 0.01;
   });
+  // 💵 REDONDEÓ HACIA ARRIBA. Ningún precio calza exacto, pero si NOMBRÓ una opción y pagó
+  // de más por poco (el clásico "te mando 200" por un curso de 180), sabemos perfectamente
+  // qué compró. Medido: quedaba en revisión manual y la clienta que pagó DE MÁS se quedaba
+  // sin su curso esperando a que alguien lo mirara. Se sella su opción y el vuelto lo avisa
+  // el camino de siempre. El margen es el mismo que ya usa el freno de sobrepago.
+  if (!calzan.length) {
+    try {
+      const { data: insUp } = await db.from("messages").select("content")
+        .eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(6);
+      const nrmU = (t: string) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const dichoU = nrmU((insUp ?? []).map((m: any) => String(m?.content?.text ?? m?.content?.caption ?? "")).join(" · "));
+      const margenRaw = Number((infoT as any)?.pedidos?.digital?.revisar_sobre_sol);
+      const margen = Number.isFinite(margenRaw) && margenRaw >= 0 ? margenRaw : 50;
+      const nombrada = list.find((o) => {
+        const n = nrmU(String(o.nombre ?? "")).trim();
+        if (n.length < 4) return false;
+        if (!new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "u").test(dichoU)) return false;
+        const p = precioVivo(o);
+        return p != null && p > 0 && pagado >= p - tol && pagado <= p + margen;
+      });
+      if (nombrada) calzan.push(nombrada);
+    } catch (_) { /* sin historial → como antes */ }
+  }
   if (calzan.length !== 1) return false;                   // ambiguo o ninguna → que lo vea un humano
 
   const op = calzan[0];
