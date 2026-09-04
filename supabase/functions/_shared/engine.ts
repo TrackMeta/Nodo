@@ -2266,15 +2266,30 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
       const c = cands[idx - 1];
       return { tier: "ia", flow: { id: c.flow_id, nombre: c.label }, confidence: conf, reason: `IA eligió "${c.label}" (${Math.round(conf * 100)}%)` };
     }
+    // 🔎 Por qué NO se ruteó, dicho de verdad. Son dos cosas distintas y las dos salían con
+    // el mismo texto: en "Probar flujos" se leía «confianza 1 · IA sin confianza suficiente»
+    // (contradictorio) y «confianza 0.9 · IA sin confianza suficiente» para un mensaje que la
+    // IA descartó con toda seguridad. Quien mira esa pantalla está justamente tratando de
+    // entender su ruteo: darle un motivo que se contradice lo manda a buscar un problema que
+    // no existe. idx 0 = "no es ninguno de estos productos"; idx válido con poca confianza =
+    // "dudó". Solo cambia el TEXTO del diagnóstico, no a dónde se rutea.
+    const _pct = Number.isFinite(conf) ? ` (${Math.round(conf * 100)}%)` : "";
+    const _porQue = idx === 0
+      // Sin el %: cuando descarta, ese número es "seguridad de que NO es ninguno" y al lado
+      // de la frase se lee como lo contrario. Mejor no ponerlo que ponerlo ambiguo.
+      ? "La IA no lo asoció a ningún producto"
+      : (Number.isInteger(idx) && idx >= 1 && idx <= cands.length
+        ? `La IA dudó: se inclinaba por "${cands[idx - 1].label}"${_pct}, por debajo del mínimo (${Math.round(umbral * 100)}%)`
+        : "La IA no devolvió una opción válida");
     // Sin confianza suficiente → flujo de respaldo (menú) si está configurado.
     if (cfg.fallback_flow_id) {
       const { data: fb } = await db.from("flows")
         .select("id, nombre, estado").eq("id", cfg.fallback_flow_id).eq("channel_id", channelId).maybeSingle();
       if (fb && (fb as any).estado === "activo") {
-        return { tier: "fallback", flow: { id: (fb as any).id, nombre: (fb as any).nombre }, confidence: Number.isFinite(conf) ? conf : undefined, reason: "IA sin confianza suficiente → flujo de respaldo" };
+        return { tier: "fallback", flow: { id: (fb as any).id, nombre: (fb as any).nombre }, confidence: Number.isFinite(conf) ? conf : undefined, reason: _porQue + " → flujo de respaldo" };
       }
     }
-    return { tier: "none", flow: null, confidence: Number.isFinite(conf) ? conf : undefined, reason: "IA sin confianza suficiente" };
+    return { tier: "none", flow: null, confidence: Number.isFinite(conf) ? conf : undefined, reason: _porQue };
   } catch (e) {
     console.error("[aiRoute]", (e as any)?.message ?? e);
     return null; // decorativo: si la IA falla, el ruteo simplemente no arranca
