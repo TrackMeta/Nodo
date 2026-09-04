@@ -2394,7 +2394,15 @@ async function renderInicio(){
           <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
           <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Poner a vender</button></div>
         </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
-          <span style="font-size:12.5px;color:var(--green,var(--green));font-weight:600">● Activo — ya vende.</span>
+          ${est("activacion").ok
+            ? `<span style="font-size:12.5px;color:var(--green,var(--green));font-weight:600">● Activo — ya vende.</span>`
+            // El flujo puede estar ACTIVO y aun así no venderle a nadie: sin palabra clave
+            // el ruteo no encuentra el producto. Medido con este mismo producto recién
+            // activado: un cliente escribió "quiero el producto de prueba QA" —su nombre
+            // exacto— y cayó en Recepción, que le ofreció otro producto. Decirle al dueño
+            // "ya vende" cuando nadie puede llegar es la clase de mentira que hace que
+            // confíe en algo que no está funcionando.
+            : `<span style="font-size:12.5px;color:var(--amber,#f59e0b);font-weight:600">● Activo, pero todavía nadie llega: ${esc(est("activacion").msg||"faltan palabras clave")}.</span>`}
           <button class="btn" id="pausarVenta" style="height:30px;padding:0 12px;font-size:12.5px">Pausar</button>
         </div>`:"")}
     </div>`;
