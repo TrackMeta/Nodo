@@ -585,7 +585,16 @@ async function runEngineInner(
     // Con pregunta se reinyecta el mensaje al nodo de IA (el mismo mecanismo del
     // remarketing): sale el saludo Y la respuesta. Sin pregunta NO se toca nada: el saludo
     // solo es el arranque que el dueño diseñó, y adelantarse ahí rompería su guion.
-    if (event.type === "message" && traePregunta(event.text)) reinyectarTrasArranque = true;
+    // Y lo mismo si YA DIJO QUE QUIERE COMPRAR. Medido: «quiero 2 frascos, mándamelo a mi
+    // casa» y «OLA KIERO 1 FRASKO PARA LIMA COMAS» recibieron solo el saludo — al segundo
+    // le preguntó «¿desde dónde nos escribe?» después de que dijera que era de Comas.
+    // No trae signo de pregunta, así que no contaba como algo que atender, y el mensaje del
+    // que ya se decidió se quedaba esperando a que lo repitiera. El saludo del dueño sigue
+    // saliendo igual: lo que cambia es que además se le contesta.
+    if (event.type === "message" &&
+        (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")))) {
+      reinyectarTrasArranque = true;
+    }
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
     // sin nombrarlo ("sí, apártamela, talla 39 negra" / "¿qué precio tenía?"), así que el
     // ruteo por keyword no encuentra nada y lo mandaba al saludo de bienvenida o a Recepción
@@ -1634,6 +1643,12 @@ function pideReclamo(text: string): boolean {
 // cliente se reinyecta al nodo de IA (ver el uso). Pide signo de interrogación o un
 // arranque interrogativo claro — "hola quiero el dermachem" NO es pregunta y no debe
 // adelantar el guion del dueño.
+// 💵 ¿Puede pagar TODO al recibir/recoger? En provincia la respuesta es no —se despacha
+// con adelanto y el saldo se paga al recoger— y hay que decírsela, no esquivarla. Se
+// escribe de muchas formas: «pago cuando llegue», «pago contra entrega», «se paga al
+// recoger», «tengo que pagar antes?», «hay que adelantar algo?».
+const RE_PAGA_AL_RECOGER =
+  /\b(contra\s?entrega)\b|\bpag\w*\s+(cuando|al|una vez|apenas|luego de|despu[eé]s de)\s+(llegue|llega|lo reciba|recibir|recoger|recojo|retirar|est[eé]\s+(ah[ií]|en la agencia))|\b(puedo|se puede|podr[ií]a|hay c[oó]mo)\s+pagar\s+(ah[ií]|all[aá]|en la agencia|al recoger|al recibir|cuando)|\b(tengo|hay)\s+que\s+(pagar|adelantar|abonar)\s+(algo\s+)?(antes|por adelantado|primero)|\bpago\s+(al|contra)\s+(recibir|recoger|entregar)|\bhay\s+que\s+adelantar\b|\bse\s+paga\s+al\s+(recoger|recibir)\b/i;
 // 📄 Pide la guía / rastrear, o avisa que su pedido no llega. Solo aplica con el paquete
 // ya despachado (lo comprueba el caller): antes de eso, "¿cuándo llega?" es venta.
 const RE_PIDE_GUIA =
@@ -8072,7 +8087,11 @@ const RE_QUIERE_COMPRAR =
   // «dame 1», «me llevo los 3». Sin eso, el que ya se decidió seguía contando como alguien
   // que solo pregunta. A propósito NO entra «quiero saber/preguntar/consultar/ver si»: ese
   // es el curioso, y confundirlo con un comprador despacha pedidos que nadie pidió.
-  /\b(lo quiero|la quiero|los quiero|me lo llevo|me llevo|quiero comprar|quiero el |quiero la |quiero uno|quiero (?:dos|tres|cuatro|cinco|\d)|d[ae]me (?:uno|una|dos|tres|\d)|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
+  // 📱 Y como se escribe de verdad en WhatsApp: «kiero», «kero», «qiero». Medido: «OLA
+  // KIERO 1 FRASKO PARA LIMA COMAS» no contaba como querer comprar —por la K— y el cliente
+  // recibió solo el saludo preguntándole de dónde escribe, después de haber dicho que era
+  // de Comas. Escribir con faltas no es dudar.
+  /\b((?:lo|la|los) quier[oa]|me lo llevo|me llevo|(?:quiero|kiero|kero|qiero) comprar|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d)|d[ae]me (?:uno|una|dos|tres|\d)|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
 // ¿Ya mostró intención de COMPRAR (no solo de preguntar)? Mira su último mensaje y los
 // anteriores: la señal puede haber quedado un par de turnos atrás.
 async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
@@ -12407,6 +12426,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
           }
         } catch (_) { /* sin ciudad legible → sin lista */ }
+        // 💵 «¿Puedo pagar cuando llegue a la agencia?» es LA pregunta del cliente de
+        // provincia: está preguntando si tiene que soltar plata antes de ver el producto.
+        // Medido: «quiero 2 frascos a cusco, puedo pagar cuando llegue a la agencia?» → el
+        // bot le listó las oficinas de Cusco y no contestó una palabra de lo que preguntó.
+        // Dejarla sin respuesta es peor que decirle que no: se queda con la duda justo
+        // cuando le vas a pedir el adelanto, y ahí se cae la venta.
+        // Se responde primero eso y DESPUÉS se sigue con la sede.
+        if (RE_PAGA_AL_RECOGER.test(String(ctx.last_input ?? ""))) {
+          L.push("❗ TE ESTÁ PREGUNTANDO SI PUEDE PAGAR TODO AL RECOGER. Contéstale ESO primero, " +
+            "en la misma respuesta y antes que cualquier otra cosa: a provincia se despacha con un " +
+            "adelanto y el resto lo paga al recoger su paquete en la agencia. Dilo como el hecho que " +
+            "es, en una línea, sin pedir disculpas y sin discursos de riesgo. Recién después sigue " +
+            "con lo que faltaba (la sede, sus datos). ⛔ No lo ignores ni lo dejes para más adelante.");
+        }
         L.push(_modoEnv === "agencia"
           ? "💸 El ENVÍO lo paga ÉL en la agencia al recoger, aparte del producto. Díselo con naturalidad ANTES de pedirle sus datos y de cobrarle el adelanto: enterarse recién en el mostrador es de las razones más comunes por las que un paquete se queda sin recoger."
           : _modoEnv === "suma"
@@ -12773,7 +12806,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // oficina de Atahualpa» y el pedido salió con OVALO PAPAL. El cliente iría a una
     // agencia y el paquete a otra. La última oficina que nombra es la que vale.
     try {
-      const _ofi = oficinaDeTexto(String(ctx.last_input ?? ""));
+      // ⚠️ Solo para quien va POR AGENCIA. En Lima se entrega a domicilio y no hay sede que
+      // elegir, pero varios distritos limeños tienen oficina de Shalom con el nombre del
+      // distrito: medido, «quiero 3 frascos … soy de lima jesús maría» le selló la sede
+      // "JESUS MARIA" a un cliente de delivery a domicilio, porque su DISTRITO se leyó como
+      // el nombre de una oficina. El pedido de alguien que paga en la puerta se quedaba con
+      // una agencia de recojo pegada.
+      // Al de Lima que sí pide recoger (raro, pero pasa) se le respeta: para eso tiene que
+      // nombrar la agencia, no solo su distrito.
+      const _txtOfi = String(ctx.last_input ?? "");
+      const _puedeSede = String(ctx.zona_entrega ?? "") !== "lima" || AGENCIA_KW.test(limpiaZona(_txtOfi));
+      const _ofi = _puedeSede ? oficinaDeTexto(_txtOfi) : null;
       if (_ofi && limpiaZona(_ofi.l) !== limpiaZona(String(ctx.sede ?? ""))) {
         run.vars.sede = _ofi.l;
         ctx.sede = _ofi.l;
@@ -13168,6 +13211,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "ese mensaje: acaba de contarte algo personal.");
         }
         parts.push("## ⚠️ Te preguntó algo que NO está en la ficha (y puede decidir su compra)\n" +
+          // ❗ Lo primero, porque el fallo medido no fue inventar: fue IGNORAR. «quiero 3
+          // frascos, necesito factura, mi RUC es 20512345678, soy de lima jesús maría» →
+          // «Gracias por la info 🙂 …solo me pasas tu nombre completo y la dirección». Ni
+          // una palabra de la factura, teniendo este bloque delante: en modo tomar-datos el
+          // guion de la venta le gana a todo lo demás. Para el cliente, que le pidan otro
+          // dato en vez de contestarle es exactamente lo mismo que no leerlo.
+          `❗ ESTO SE CONTESTA EN TU PRÓXIMA RESPUESTA, no más adelante, y ANTES de pedirle ` +
+          `el siguiente dato. Si le pides el nombre o la dirección sin haberle contestado esto, ` +
+          `para él lo ignoraste.\n` +
           `Sobre esto no tienes dato: **${faltan.join(", ")}**. Que la ficha no lo mencione NO significa que no exista: ` +
           `no lo afirmes ni lo niegues, y NUNCA le desaconsejes la compra por esto ("para eso quizás necesites otra cosa") — ` +
           `estarías tumbando una venta con un dato que nadie escribió.\n` +
