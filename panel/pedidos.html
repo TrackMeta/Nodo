@@ -641,6 +641,7 @@ function kcard(o){
     ${diasEsp>=0?`<div style="font-size:11.5px;margin-top:3px;font-weight:${diasEsp>=2?"700":"500"};color:${diasEsp>=2?"var(--red)":"var(--faint)"}">⏳ ${diasEsp<1?"esperando el adelanto (hoy)":`sin adelanto hace ${diasEsp} día${diasEsp>1?"s":""}`}</div>`:""}
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
     ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>${icon("alert")} Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
+    ${s.distrito_por_confirmar?`<button class="kc-warn" data-cfdist>${icon("alert")} Confirmar distrito<br><span style="font-weight:500;opacity:.85">cambió su dirección y sigue en ${esc(s.distrito||"—")}</span></button>`:""}
     <div class="kc-act">
       ${mainBtn}
       <button class="rot edit" title="Editar datos del pedido">${icon("edit")}</button>
@@ -658,6 +659,9 @@ function kcard(o){
   el.querySelector(".kc-dots").onclick=(ev)=>{ ev.stopPropagation(); openMenu(ev,o); };
   const wb=el.querySelector("[data-cfsede]");
   if(wb) wb.onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
+  // Mismo destino que la sede: el formulario de envio, donde se corrige el distrito.
+  const wd=el.querySelector("[data-cfdist]");
+  if(wd) wd.onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
   // Clic en el CUERPO de la tarjeta → abre la conversación de ese cliente en la
   // Bandeja (deep-link ?c=). Los botones internos (avanzar, editar, rótulo, ⋮)
   // se ignoran acá con closest(): siguen haciendo lo suyo. Sin contacto, no hace

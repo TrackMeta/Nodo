@@ -974,6 +974,7 @@ export async function openDespachoModal(o, deps) {
       <h3>Registrar despacho</h3>
       <div class="m-sub">${esc((o.contact || {}).nombre || "")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
       ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
+      ${s.distrito_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} Cambió su dirección y el pedido sigue con distrito <b>${esc(s.distrito || "—")}</b>. Confírmalo antes de despachar o el reparto sale a la zona equivocada.</div>` : ""}
       <div class="row2">
         <div><label>Agencia</label>
           <select data-d="agencia"><option value="shalom" ${s.agencia === "shalom" ? "selected" : ""}>Shalom</option><option value="olva" ${s.agencia === "olva" ? "selected" : ""}>Olva Courier</option><option value="otra" ${s.agencia && !["shalom", "olva"].includes(s.agencia) ? "selected" : ""}>Otra</option></select></div>
@@ -1902,6 +1903,10 @@ export async function openEditarPedido(o, deps) {
       } else {
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
           referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
+        // Igual que la sede en provincia: si el operador ya puso el distrito, la marca de
+        // "confírmalo" deja de tener sentido. Sin esto el aviso se quedaba pegado para
+        // siempre en un pedido ya corregido.
+        if (g("#eDist").value.trim()) ship.distrito_por_confirmar = null;
         const a = g("#eAmountL").value; if (a !== "") amount = Number(a);
         // Lima no muestra campo de saldo, pero la ficha lo lee de shipping.saldo:
         // lo sincronizo con el delta de los extras para que no quede desfasado.

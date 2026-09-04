@@ -1327,8 +1327,20 @@ async function descartarExtraSiSeArrepiente(db: SupabaseClient, run: Run, ctx: a
   const { data: o } = await db.from("orders").select("estado, order_bumps, shipping").eq("id", oid).maybeSingle();
   if (!o || VARIANTE_NO_TOCAR.includes(String((o as any).estado))) return;
   const bumps: any[] = [...(((o as any).order_bumps ?? []) as any[])];
-  const idx = bumps.findIndex((b) => b?.stock_pendiente === true && !b?.regalo);
-  if (idx < 0) return;                                   // no hay extra esperando talla → nada que deshacer
+  let idx = bumps.findIndex((b) => b?.stock_pendiente === true && !b?.regalo);
+  // Un extra SIN variante (el protector, que es "Único") nunca queda `stock_pendiente`:
+  // entra al pedido de una. Medido: aceptó el protector (S/188), dijo «mejor no,
+  // quítamelo» y el bot contestó «te lo saco, quedaría en S/149. ¿Te lo confirmo así?»
+  // — pero el extra seguía DENTRO del pedido. Si el cliente no vuelve a contestar, se
+  // despacha y se le cobra un producto que pidió quitar dos mensajes antes.
+  // Acá se exige una forma INEQUÍVOCA ("quítamelo", "sácalo"), no el "no" a secas: sin
+  // la pregunta de la talla delante, un "no" puede estar respondiendo a cualquier cosa.
+  if (idx < 0 && RE_QUITA_EXTRA.test(String(ctx?.last_input ?? ""))) {
+    for (let i = bumps.length - 1; i >= 0; i--) {
+      if (!bumps[i]?.regalo && Number(bumps[i]?.precio) > 0) { idx = i; break; }
+    }
+  }
+  if (idx < 0) return;                                   // no hay extra que deshacer
   const quitado = bumps[idx];
   bumps.splice(idx, 1);
   const ship: any = { ...(((o as any).shipping ?? {}) as any) };
@@ -1644,6 +1656,12 @@ function pideReclamo(text: string): boolean {
 // recoger», «tengo que pagar antes?», «hay que adelantar algo?».
 const RE_PAGA_AL_RECOGER =
   /\b(contra\s?entrega)\b|\bpag\w*\s+(cuando|al|una vez|apenas|luego de|despu[eé]s de)\s+(llegue|llega|lo reciba|recibir|recoger|recojo|retirar|est[eé]\s+(ah[ií]|en la agencia))|\b(puedo|se puede|podr[ií]a|hay c[oó]mo)\s+pagar\s+(ah[ií]|all[aá]|en la agencia|al recoger|al recibir|cuando)|\b(tengo|hay)\s+que\s+(pagar|adelantar|abonar)\s+(algo\s+)?(antes|por adelantado|primero)|\bpago\s+(al|contra)\s+(recibir|recoger|entregar)|\bhay\s+que\s+adelantar\b|\bse\s+paga\s+al\s+(recoger|recibir)\b/i;
+// 🗑️ Pide QUITAR el extra, sin lugar a dudas. Aparte de la lista general de rechazos
+// (que incluye "no" y "no gracias"): esas valen cuando el bot acaba de preguntarle la
+// talla del extra, pero fuera de esa pregunta un "no" puede estar contestando cualquier
+// otra cosa y no puede borrar un producto del pedido.
+const RE_QUITA_EXTRA =
+  /\b(qu[ií]t(a|amelo|alo|ame|enlo)|s[aá]c(alo|amelo|ame)|mejor no( lo)? (quiero|lo llevo)?|mejor sin (eso|el|la)|sin (eso|el protector)|ya no (lo )?quiero|cancela(me)? (eso|el extra)|elim[ií]nalo|b[oó]rralo|d[eé]jalo sin eso|no me lo pongas|mejor no)\b/i;
 // 💸 DICE QUE YA PAGÓ (pago hecho, no prometido). Aparte de RE_ANUNCIA_PAGO, que cubre el
 // pago FUTURO ("ya te yapeo", "¿cómo te pago?"): mezclarlas haría que el motor le mandara
 // los datos de pago a alguien que acaba de pagar. Medido: «ya te hice el yape de 119»
@@ -2396,6 +2414,19 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "y el saldo al recoger.";
 
 
+// 🪞 Lo que se anuncia como hecho, tiene que estar hecho. El motor a veces necesita que el
+// cliente confirme antes de tocar el pedido (cambiar de presentación mueve precio y stock),
+// y ahí la respuesta no puede sonar a hecho consumado. Medido: pidió «oye mejor mándame 2,
+// no 1» y el bot contestó «¡Perfecto! Te lo dejo como *2 frascos*. Tu pedido quedaría en
+// *S/119*. ¿Lo confirmo?» — el pedido seguía en 1 frasco. Quien lea "te lo dejo" no vuelve
+// a contestar, y recibe un frasco creyendo que pidió dos.
+const REGLA_NO_DAR_POR_HECHO =
+  "## Si lo vas a preguntar, no lo des por hecho\n" +
+  "Cuando termines pidiendo una confirmación («¿lo confirmo?», «¿te lo dejo así?»), NO escribas " +
+  "antes el cambio como si ya estuviera aplicado: nada de «te lo dejo como…», «ya te lo cambié», " +
+  "«listo, actualizado». Se pregunta y ya: «¿te lo dejo en 2 frascos? Serían S/119». " +
+  "El cliente que lee un hecho consumado no vuelve a contestar, y se queda esperando algo que no pasó.";
+
 export async function routeDecision(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
   const det = await matchTrigger(db, channelId, text, adId);
   if (det.flow) return det;
@@ -2598,6 +2629,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     "Eres la recepción de este negocio. Saluda con calidez, cuenta brevemente qué vendemos y ayuda al cliente a decir qué producto le interesa."));
   parts.push(REGLA_TUTEO);
   parts.push(REGLA_SIN_DISCURSO_RIESGO);
+  parts.push(REGLA_NO_DAR_POR_HECHO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
     // 🔢 Con UN solo producto no hay nada que elegir. Medido: con la lista trayendo un
@@ -8366,6 +8398,7 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     const parts: string[] = [];
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
+    parts.push(REGLA_NO_DAR_POR_HECHO);
     if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
     if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
     parts.push(estiloDeEscritura((info as any)?.estilo, { emojisProducto: String(ctx.emojis ?? "") }));
@@ -8524,6 +8557,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const parts: string[] = [];
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
+    parts.push(REGLA_NO_DAR_POR_HECHO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (ctx.contexto_producto) parts.push(`## Sobre el producto (${prod})\n` + resolve(String(ctx.contexto_producto), ctx));
   // Mismo formato que la venta: el cliente no debería notar que lo atiende otro camino.
@@ -11637,6 +11671,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const parts: string[] = [];
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
+    parts.push(REGLA_NO_DAR_POR_HECHO);
     // 📅 «¿Me lo separas hasta que cobre?» — el cliente que YA decidió y solo tiene la
     // plata en otro día. Medido: «quiero 3 frascos pero pago recién el viernes cuando me
     // paguen, ¿me lo separas?» → «no manejamos separaciones ni reservas para que todos
