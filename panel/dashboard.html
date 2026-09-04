@@ -911,7 +911,13 @@ async function load(){
   // ROI muchísimo: con S/665 de mercadería fuera de la cuenta, el número no significaba
   // nada. Lo cazó Rodrigo.)
   const inversion = cogsBruta + gastoAds + gastosExtra + gastoIa;
-  const roiPct = inversion>0 ? Math.round(neta/inversion*100) : null;
+  // Si la ganancia bruta NO se puede calcular (ninguna venta tiene sus costos), la neta
+  // tampoco, y el ROI menos: `neta` vale entonces 0 − gastos, o sea el ROI sale −100%
+  // ("perdiste todo lo que invertiste") cuando en realidad no se sabe. La neta ya
+  // muestra "—" en ese caso; el ROI tiene que hacer lo mismo.
+  // Se veía poco porque hacía falta tener ads o gastos extra registrados; al empezar a
+  // restar el costo de IA la inversión ya nunca es cero y el −100% salía siempre.
+  const roiPct = (inversion>0 && !brutaDesconocida) ? Math.round(neta/inversion*100) : null;
 
   // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
   // Mismo criterio que la banda: digital = cobrado (sin COGS), físico = margen.
