@@ -118,7 +118,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=10";
+import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=11";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -170,7 +170,7 @@ function showDetail(){ $("gridView").style.display="none"; $("detailView").style
 async function load(){
   const [{ data:seqs },{ data:flows },{ data:tpl },{ data:prods },{ data:angs }]=await Promise.all([
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
-    supa.from("flows").select("id,nombre,role,kind").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("flows").select("id,nombre,role,kind,estado").eq("channel_id",st.channelId).order("nombre"),
     supa.from("wa_templates").select("id,name,language,activa,estado_meta,soporta_envio").eq("channel_id",st.channelId).eq("activa",true).order("name"),
     supa.from("products").select("id,nombre,emoji,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
     supa.from("angulos").select("nombre,slug").eq("channel_id",st.channelId).order("orden"),

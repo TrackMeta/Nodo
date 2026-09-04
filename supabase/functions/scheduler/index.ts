@@ -857,15 +857,27 @@ async function processSub(s: any, now: number): Promise<boolean> {
     // el próximo tick). Antes se marcaba toco=true a ciegas → paso perdido + oferta ya
     // escrita sin que el cliente viera nada (descuento fantasma).
     if (enVentana) {
-      const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
-      toco = !!ok;
-      if (!ok) {
-        // El flujo NO arrancó (ya hay un run activo/esperando: el cliente está a mitad de
-        // una conversación). NO se consume el paso ni se avanza: se REINTENTA el próximo
-        // tick, cuando el run se libere. Antes se caía a avanzar `paso_actual` igual (el
-        // `return` faltaba) → el paso de re-enganche se perdía en silencio sin enviar nada.
-        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
-        return false;
+      // `startFlowRun` devuelve false por DOS motivos muy distintos, y confundirlos deja la
+      // secuencia muerta: (a) el cliente está a mitad de otra conversación → hay que
+      // reintentar; (b) el flujo está en BORRADOR o lo borraron → no va a arrancar nunca, y
+      // reintentar cada tick clava al contacto en este paso para siempre (jamás le llegan los
+      // siguientes toques) sin que nadie se entere. El caso (b) se trata como la rama de
+      // plantilla de abajo: se registra el motivo y se AVANZA saltándose el toque.
+      const { data: fl } = await db.from("flows").select("estado").eq("id", paso.flow_id).maybeSingle();
+      const flujoUsable = !!fl && (fl as any).estado === "activo";
+      if (!flujoUsable) {
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: el flujo ${paso.flow_id} ${fl ? `está en "${(fl as any).estado}"` : "ya no existe"} → no puede arrancar; se salta este toque y avanza`);
+      } else {
+        const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
+        toco = !!ok;
+        if (!ok) {
+          // Ya hay un run activo/esperando: el cliente está a mitad de una conversación. NO se
+          // consume el paso ni se avanza: se REINTENTA el próximo tick, cuando el run se
+          // libere. Antes se caía a avanzar `paso_actual` igual (el `return` faltaba) → el
+          // paso de re-enganche se perdía en silencio sin enviar nada.
+          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
+          return false;
+        }
       }
     }
     else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);

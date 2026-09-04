@@ -236,7 +236,7 @@ export function mountStepsEditor(el, opts){
       if(m==="flow"){
         ofer.style.display="none"; if(paso.oferta) delete paso.oferta;
         delete paso.mensaje; delete paso.template_name; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
-        actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Flujo a iniciar</div><select class="sel se-fs" style="width:100%;height:36px"><option value="">— elige —</option>${(actions.flows||[]).map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}</option>`).join("")}</select></div>`;
+        actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Flujo a iniciar</div><select class="sel se-fs" style="width:100%;height:36px"><option value="">— elige —</option>${(actions.flows||[]).map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}${f.estado&&f.estado!=="activo"?" — en borrador, no arranca":""}</option>`).join("")}</select>${(actions.flows||[]).some(f=>f.id===paso.flow_id&&f.estado&&f.estado!=="activo")?`<div style="font-size:11.5px;color:var(--amber);margin-top:7px;font-weight:600">Ese flujo está en borrador: el motor no lo arranca, así que este toque se salta. Publícalo en Flujos.</div>`:""}</div>`;
         actBody.querySelector(".se-fs").onchange=(e)=>paso.flow_id=e.target.value||undefined;
       } else if(m==="plantilla"){
         ofer.style.display="block"; oferta(ofer,paso);
