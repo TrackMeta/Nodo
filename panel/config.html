@@ -203,11 +203,18 @@ async function boot(){
 }
 async function loadCfg(){
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,usd_rate,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
+    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
+  // El tipo de cambio se pide APARTE a propósito: es una columna nueva (0089) y si
+  // se pidiera junto al resto, un proyecto sin la migración tiraría el select entero
+  // al fallback y Ajustes se quedaría sin moneda, sin Meta y sin entregas.
+  try{
+    const { data:tcRow }=await supa.from("channels").select("usd_rate").eq("id",st.channelId).maybeSingle();
+    if(tcRow) st.channel.usd_rate=tcRow.usd_rate;
+  }catch(_){ /* sin la columna, el campo sale vacío y el guardado avisa */ }
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
   st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
   st.secrets = {};

@@ -321,7 +321,14 @@ let USD_RATE=0;
 async function loadCurrency(){
   const ch=await getChannel(channelId);
   CUR=(ch&&ch.moneda)||"PEN";
-  USD_RATE = CUR==="USD" ? 1 : (Number(ch?.usd_rate)>0 ? Number(ch.usd_rate) : 0);
+  if(CUR==="USD"){ USD_RATE=1; return; }
+  // Aparte del resto de la ficha: es columna nueva (0089) y pedirla junto a las
+  // demás dejaría sin ficha a todo el panel donde la migración no esté aplicada.
+  USD_RATE=0;
+  try{
+    const { data }=await supa.from("channels").select("usd_rate").eq("id",channelId).maybeSingle();
+    if(Number(data?.usd_rate)>0) USD_RATE=Number(data.usd_rate);
+  }catch(_){ /* sin tasa: el gasto de IA se muestra en dólares y aparte */ }
 }
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Versión corta (sin decimales) para el calendario de la Bitácora.
