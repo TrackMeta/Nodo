@@ -591,8 +591,13 @@ async function runEngineInner(
     // No trae signo de pregunta, así que no contaba como algo que atender, y el mensaje del
     // que ya se decidió se quedaba esperando a que lo repitiera. El saludo del dueño sigue
     // saliendo igual: lo que cambia es que además se le contesta.
+    // Y sobre todo si DICE QUE YA PAGÓ. Medido: «ya te hice el yape de 119» recibió solo
+    // «¿desde dónde nos escribe?» — a alguien que acababa de mandar plata. No hay forma
+    // peor de arrancar una conversación.
     if (event.type === "message" &&
-        (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")))) {
+        (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
+         RE_ANUNCIA_PAGO.test(String(event.text ?? "")) ||
+         RE_YA_PAGO.test(String(event.text ?? "")))) {
       reinyectarTrasArranque = true;
     }
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
@@ -1307,16 +1312,6 @@ const RECHAZA_EXTRA_TRAS_ACEPTAR = [
   "no", "no gracias", "no quiero", "no lo quiero", "mejor no", "ya no", "ya no lo quiero",
   "olvidalo", "dejalo asi", "dejalo", "asi esta bien", "asi nomas", "sacalo", "quitalo",
   "quitamelo", "sin eso", "no me lo pongas", "cancela eso", "mejor sin eso",
-  // 🩺 SALUD. Aparte de los demás porque acá inventar no cuesta una venta: cuesta un
-  // daño. Medido — a "¿se puede usar en el embarazo?" (un sérum, y la ficha no dice
-  // NADA del tema) el bot contestó "no está recomendado para usarse durante el
-  // embarazo, para cuidar tu piel y la salud del bebé". Se lo inventó entero: ni el
-  // dueño lo escribió nunca ni el bot tiene cómo saberlo. Y da igual el sentido —
-  // afirmar que SÍ se puede sería peor. Cae acá para que el bot no responda de memoria
-  // y le quede registrado al dueño como hueco de la ficha.
-  ["si se puede en el embarazo o la lactancia", /\b(embaraz|gestaci[oó]n|gestante|lactancia|dando de lactar|amamant|dar de lactar)/, /\b(embaraz|gestaci[oó]n|lactancia)/, "producto"],
-  ["contraindicaciones, alergias o efectos", /\b(al[eé]rgic|alergia|contraindicaci|efectos? (secundarios?|adversos?)|me hace da[nñ]o|es peligros|piel sensible|dermatitis|rosace|diab[eé]tic|hipertens|tomo (pastillas|medicament)|estoy medicad)/, /\b(contraindicaci|al[eé]rgic|efectos? secundarios?|piel sensible|no usar si)/, "producto"],
-  ["si lo pueden usar niños o menores", /\b(ni[nñ]os?|ni[nñ]a|menores?|mi hijo|mi hija|adolescente|de \d{1,2} a[nñ]os)/, /\b(ni[nñ]os?|menores|edad m[ií]nima|a partir de los \d)/, "producto"],
 ];
 async function descartarExtraSiSeArrepiente(db: SupabaseClient, run: Run, ctx: any) {
   const t = limpiaOpt(String(ctx?.last_input ?? ""));
@@ -1649,6 +1644,16 @@ function pideReclamo(text: string): boolean {
 // recoger», «tengo que pagar antes?», «hay que adelantar algo?».
 const RE_PAGA_AL_RECOGER =
   /\b(contra\s?entrega)\b|\bpag\w*\s+(cuando|al|una vez|apenas|luego de|despu[eé]s de)\s+(llegue|llega|lo reciba|recibir|recoger|recojo|retirar|est[eé]\s+(ah[ií]|en la agencia))|\b(puedo|se puede|podr[ií]a|hay c[oó]mo)\s+pagar\s+(ah[ií]|all[aá]|en la agencia|al recoger|al recibir|cuando)|\b(tengo|hay)\s+que\s+(pagar|adelantar|abonar)\s+(algo\s+)?(antes|por adelantado|primero)|\bpago\s+(al|contra)\s+(recibir|recoger|entregar)|\bhay\s+que\s+adelantar\b|\bse\s+paga\s+al\s+(recoger|recibir)\b/i;
+// 💸 DICE QUE YA PAGÓ (pago hecho, no prometido). Aparte de RE_ANUNCIA_PAGO, que cubre el
+// pago FUTURO ("ya te yapeo", "¿cómo te pago?"): mezclarlas haría que el motor le mandara
+// los datos de pago a alguien que acaba de pagar. Medido: «ya te hice el yape de 119»
+// recibió solo el saludo «¿desde dónde nos escribe?» — a alguien que ya mandó la plata.
+const RE_YA_PAGO =
+  /\b(ya (te )?(pagu[eé]|deposit[eé]|transfer[ií]|yape[eé]|yapi[eé]|plin[eé]|abon[eé])|ya (te )?hice (el|la|un|una) (yape|dep[oó]sito|transferencia|pago|plin)|ya (te )?mand[eé] (el|la) (yape|pago|dep[oó]sito|transferencia|voucher|comprobante)|ya (est[aá]|qued[oó]) (pagado|cancelado|depositado)|te (yape[eé]|deposit[eé]|transfer[ií])|acabo de (pagar|yapear|depositar|transferir)|hice el (yape|dep[oó]sito|pago)|aqu[ií] (est[aá]|te dejo) (el|mi) (voucher|comprobante|constancia))\b/i;
+// 📅 Pide que se lo separen/guarden para cuando cobre. Es un cliente decidido, no uno que
+// duda: lo único que dice es que su plata entra otro día.
+const RE_PIDE_SEPARAR =
+  /\b(me lo (separas?|guardas?|reservas?|apartas?)|se(pa|par)rame\w*|ap[aá]rtame\w*|gu[aá]rdame\w*|hacer(me)? una reserva|reservar\w*|separar\w*|apartar\w*)\b/i;
 // 📄 Pide la guía / rastrear, o avisa que su pedido no llega. Solo aplica con el paquete
 // ya despachado (lo comprueba el caller): antes de eso, "¿cuándo llega?" es venta.
 const RE_PIDE_GUIA =
@@ -10631,7 +10636,17 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   if (pendientes.length === 1 && pendientes[0]?.clave === "confirmo" &&
       !faltaOpcion && !faltaVariante && !packMixto) {
     try {
-      if (await intencionDeCompra(db, run.contact_id, String(ctx.last_input ?? ""))) {
+      // El que DICTA su pedido tampoco tiene que confirmarlo. Medido: «2 frascos para lima,
+      // san juan de lurigancho, mz f lote 12 grupo 3, Jose Luis Quispe» → «¿Lo confirmo y te
+      // lo mando?». Ahí no hay nada que confirmar: dijo cuántos, de dónde es, su dirección y
+      // su nombre. No trae un "quiero", que es lo único que se miraba.
+      // El guard de arriba se conserva donde importa: lo que separa a este de la consulta
+      // completa que despachaba pedidos fantasma («¿tienen talla 38? soy Juan Pérez, Av.
+      // Larco 100») es que aquella PREGUNTA. Si el mensaje trae pregunta, se le sigue
+      // preguntando; si es un dictado de datos, se cierra.
+      const _ult = String(ctx.last_input ?? "");
+      const _pregunta = /\?|\b(tienen|tendr[aá]n|hay stock|me puedes decir|quisiera saber|es cierto que|ser[aá]n?)\b/i.test(_ult);
+      if (await intencionDeCompra(db, run.contact_id, _ult) || (!_pregunta && _ult.trim().length >= 12)) {
         pendientes.splice(0, 1);
         ctx.confirmo = "si"; run.vars.confirmo = "si";
         await setField(db, run.channel_id, run.contact_id, "confirmo", "si").catch(() => {});
@@ -11622,6 +11637,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const parts: string[] = [];
     parts.push(REGLA_TUTEO);
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
+    // 📅 «¿Me lo separas hasta que cobre?» — el cliente que YA decidió y solo tiene la
+    // plata en otro día. Medido: «quiero 3 frascos pero pago recién el viernes cuando me
+    // paguen, ¿me lo separas?» → «no manejamos separaciones ni reservas para que todos
+    // tengan las mismas oportunidades». Una política que nadie escribió nunca, y una
+    // negativa a alguien que estaba comprando. Además sobra: en Lima paga al recibir, así
+    // que no hay nada que separar, y en provincia el despacho sale con su adelanto, o sea
+    // el viernes. La respuesta correcta existe y es un sí.
+    if (RE_PIDE_SEPARAR.test(String(ctx.last_input ?? ""))) {
+      parts.push("## 📅 Te pide que se lo separes / guardes para cuando cobre\n" +
+        "⛔ NO le inventes políticas («no hacemos reservas», «para que todos tengan las mismas " +
+        "oportunidades»): eso no lo dijo nadie y le estarías negando la compra a alguien que ya se decidió.\n" +
+        "La respuesta es que SÍ se puede, y es simple:\n" +
+        "· En **Lima**, no hay nada que separar: paga cuando lo recibe, así que puede pedirlo el día " +
+        "que le quede bien y le llega ese día o el siguiente.\n" +
+        "· En **provincia**, el paquete se despacha cuando entra su adelanto: si lo hace el viernes, " +
+        "ese día sale. Díselo así, sin drama.\n" +
+        "Déjale claro el paso para ese día: que te escriba y lo cierran. " +
+        "⛔ No lo presiones con urgencias ni escaseces inventadas.\n" +
+        "❗ Si todavía no sabes de dónde es, NO te vayas a preguntarle la ciudad sin contestarle: " +
+        "primero el sí («tranquilo, lo dejamos listo para el viernes») y en el MISMO mensaje le " +
+        "preguntas de dónde escribe para decirle cómo le llega. Medido: se le respondió solo " +
+        "«¿desde qué distrito o ciudad me escribes?» y su pregunta quedó en el aire.");
+    }
     // ⛔ El adicional llegó tarde: `actualizarPedido` no lo sumó porque el paquete ya
     // salió. Los mensajes que siguen en el flujo los escribe la IA ("¿qué talla?",
     // "queda todo confirmado con las zapatillas y las medias") y sin saber esto le
@@ -12816,7 +12854,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // nombrar la agencia, no solo su distrito.
       const _txtOfi = String(ctx.last_input ?? "");
       const _puedeSede = String(ctx.zona_entrega ?? "") !== "lima" || AGENCIA_KW.test(limpiaZona(_txtOfi));
-      const _ofi = _puedeSede ? oficinaDeTexto(_txtOfi) : null;
+      let _ofi = _puedeSede ? oficinaDeTexto(_txtOfi) : null;
+      // ⛔ Y la oficina NO puede mudarlo de ciudad, igual que en la detección de zona
+      // (:9797). Acá faltaba: medido, un cliente de Arequipa quedó con la sede "PRO" de
+      // LOS OLIVOS —sacada de la palabra "compro"— y su paquete se habría despachado a
+      // Lima. Si ya sabemos de dónde es y la oficina no es de ahí, no se toca.
+      if (_ofi) {
+        const _ciu = limpiaZona(String(ctx.ciudad ?? ""));
+        if (_ciu && ![_ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
+            `Sonó "${_ofi.l}" (${_ofi.t}) pero es de ${ctx.ciudad} — no se cambia la sede`).catch(() => {});
+          _ofi = null;
+        }
+      }
       if (_ofi && limpiaZona(_ofi.l) !== limpiaZona(String(ctx.sede ?? ""))) {
         run.vars.sede = _ofi.l;
         ctx.sede = _ofi.l;
@@ -13210,6 +13260,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "consulte con esa información. No cierres la venta a la fuerza ni le insistas con el pedido en " +
             "ese mensaje: acaba de contarte algo personal.");
         }
+        // ⛔ Y si era de SALUD, el genérico NO se manda: se contradicen. El de salud dice
+        // "deriva al médico y no cierres a la fuerza"; este dice "puentea a un beneficio y
+        // cierra con el siguiente paso". Medido: «quiero 1 frasco pero para mi hija de 15
+        // años, ¿le puede hacer daño?» → «Lo que sí te puedo contar es que tiene una textura
+        // ligera… ¿desde dónde me escribes?». Le hablaron de textura a quien preguntó si es
+        // seguro para su hija, porque el segundo bloque pisó al primero.
+        if (!_esSalud)
         parts.push("## ⚠️ Te preguntó algo que NO está en la ficha (y puede decidir su compra)\n" +
           // ❗ Lo primero, porque el fallo medido no fue inventar: fue IGNORAR. «quiero 3
           // frascos, necesito factura, mi RUC es 20512345678, soy de lima jesús maría» →

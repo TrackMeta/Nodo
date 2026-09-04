@@ -613,7 +613,17 @@ export function candidatasAgencia(texto: string): string[] {
   if (!t) return [];
   const exact = AGENCIAS_SHALOM.filter((a) => _n(a) === t);
   if (exact.length) return exact;
-  return AGENCIAS_SHALOM.filter((a) => { const na = _n(a); return na && (t.includes(na) || na.includes(t)); });
+  // El nombre de la oficina tiene que aparecer como PALABRA, no como pedazo de otra.
+  // Medido: «hola, mi hermana COMPRO esto y le funciono… soy de arequipa cerro colorado»
+  // → dentro de "compro" está "PRO", que es una oficina de Los Olivos, y el motor le selló
+  // esa sede a un cliente de Arequipa. Con `includes` a secas, cualquier oficina de nombre
+  // corto (PRO, SUR, ICA, LIMA) se cuela dentro de una palabra cualquiera del mensaje.
+  const _palabra = (texto: string, nombre: string) =>
+    new RegExp("(^|[^A-Z0-9])" + nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^A-Z0-9]|$)").test(texto);
+  // El sentido inverso (el cliente escribe menos que el nombre completo: "atahualpa" para
+  // "AV. ATAHUALPA") solo vale con algo suficientemente específico: con dos o tres letras
+  // sueltas no se elige una agencia.
+  return AGENCIAS_SHALOM.filter((a) => { const na = _n(a); return na && (_palabra(t, na) || (t.length >= 4 && na.includes(t))); });
 }
 
 // El cliente no escribe "CHICLAYO": escribe "la sede de Chiclayo nomás". Sin quitarle
