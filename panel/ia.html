@@ -955,7 +955,15 @@ async function renderGastoIa(){
   const hoyStr=ymd(hoy);
   const sum=(rows,campo)=>rows.reduce((a,r)=>a+Number(r[campo]||0),0);
   const mes=data, deHoy=data.filter(r=>r.dia===hoyStr);
-  const usd=(n)=>"$"+(Math.round(n*100)/100).toFixed(2);
+  // Con centavos, redondear a 2 decimales convierte todo lo pequeño en "$0.00" y la
+  // tarjeta parece rota justo cuando recién empiezas a medir. Bajo un dólar se muestran
+  // los céntimos de verdad.
+  const usd=(n)=>{
+    if(!(n>0)) return "$0.00";
+    if(n>=1) return "$"+n.toFixed(2);
+    if(n>=0.01) return "$"+n.toFixed(3);
+    return "$"+n.toFixed(4);
+  };
   // Por para-qué, de mayor a menor: el orden cuenta la historia solo.
   const porOrigen={}; mes.forEach(r=>{ porOrigen[r.origen]=(porOrigen[r.origen]||0)+Number(r.costo_usd||0); });
   const filas=Object.entries(porOrigen).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0);
@@ -963,6 +971,15 @@ async function renderGastoIa(){
   const llamadasMes=sum(mes,"llamadas");
   if(!llamadasMes){ box.innerHTML=""; return; }   // sin datos todavía, sin tarjeta vacía
   const maxV=filas.length?filas[0][1]:1;
+  // 💬 Cuánto cuesta CADA conversación: es el número con el que se decide si escalar, más
+  // que el total del mes. Se divide entre los chats que empezaron este mes (los contactos
+  // nuevos), que es la unidad en la que uno piensa el negocio.
+  let porChat="";
+  try{
+    const { count }=await supa.from("contacts").select("id",{count:"exact",head:true})
+      .eq("channel_id", st.channelId).gte("created_at", ymd(primero));
+    if(count>0) porChat=usd(totalMes/count)+` <span style="font-weight:600;color:var(--muted)">por conversación</span>`;
+  }catch(_){ /* sin el dato, la tarjeta va igual */ }
   box.innerHTML=`
     <div class="card">
       <div class="chd"><span class="nm">Lo que gasta tu IA</span>
@@ -975,6 +992,8 @@ async function renderGastoIa(){
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalMes)}</div></div>
         <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">LLAMADAS</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${llamadasMes.toLocaleString("es-PE")}</div></div>
+        ${porChat?`<div><div style="font-size:11.5px;color:var(--muted);font-weight:700">CADA CHAT</div>
+             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${porChat}</div></div>`:""}
       </div>
       ${filas.length?`<div style="margin-top:12px">${filas.map(([k,v])=>`
         <div style="display:flex;align-items:center;gap:10px;margin:7px 0">
