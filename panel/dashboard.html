@@ -988,7 +988,7 @@ async function load(){
     brutaDesconocida?"—":money(bruta),
     brutaDesconocida?`no se puede calcular todavía · ${faltaTxt}`:brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
-    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (avisoAds?" · "+avisoAds:"")));
+    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · "+avisoAds:"")));
   // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
   // anuncios"). Es el número por el que se decide subir o bajar la inversión, así que
   // merece verse solo. Sin gasto cargado NO se inventa un número: se dice qué falta.
@@ -996,7 +996,7 @@ async function load(){
   K.push(kpi("target", roas>=2?"#22c079":roas>0?"#f0a92b":"#6d8ea0", "ROAS",
     (hasAds && roas>0) ? roas.toFixed(1)+"×" : "—",
     !hasAds ? "conecta Meta para verlo"
-      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${avisoAds?" · "+avisoAds:""}`
+      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · "+avisoAds:""}`
       : "aún sin cobrar nada en este período"));
   // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
   // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
