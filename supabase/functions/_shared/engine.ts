@@ -618,8 +618,16 @@ async function runEngineInner(
     // mientras que «tengo paño en las mejillas desde que tuve a mi bebé» sí se atendía: o
     // sea que además era una lotería. RE_CONDICION es la lista de palabras que hay que ir a
     // buscar EN LA FICHA, así que nombrar una es exactamente "dijo algo que atender".
+    // 📣 …PERO NO SI LO ÚNICO QUE PIDE ES INFORMACIÓN. Meta rellena el chat del anuncio con
+    // «Hola. ¿Puedo obtener más información sobre <PRODUCTO>?»: es el primer mensaje de casi
+    // todo el que llega de un anuncio, trae signo de pregunta, y por eso entraba acá como
+    // "algo que atender". Lo que pide —información del producto— es EXACTAMENTE lo que el
+    // saludo acaba de soltar. Medido: cinco burbujas del rotador y una sexta de la IA sin
+    // nada nuevo que decir; y como no tenía nada, se dio por contestada la pregunta con la
+    // que el rotador cerraba («¿ya tienes un taladro?» → «Perfecto, que tengas taladro…»),
+    // poniéndole al cliente en la boca una respuesta que nunca dio.
     if (event.type === "message" &&
-        (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
+        ((traePregunta(event.text) && !soloPideInfo(event.text)) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
          RE_ANUNCIA_PAGO.test(String(event.text ?? "")) ||
          RE_YA_PAGO.test(String(event.text ?? "")) ||
          RE_CONDICION.test(String(event.text ?? "")))) {
@@ -1769,6 +1777,32 @@ function traePregunta(text?: string | null): boolean {
   // Al que compara precios se le contesta en el mismo turno o se va con el otro.
   if (RE_TRAE_OBJECION.test(t)) return true;
   return t.length > 25 && t.split(",").filter((x) => x.trim().length > 1).length >= 3;
+}
+
+
+// 📣 «Dame información» y NADA MÁS. Es el mensaje prearmado que Meta pone en el chat cuando
+// alguien toca el anuncio («Hola. ¿Puedo obtener más información sobre <PRODUCTO>?») y el
+// que escribe medio mundo a mano. Trae signo de pregunta, así que `traePregunta` lo daba por
+// una pregunta pendiente y la IA hablaba encima del saludo… para pedir lo que el saludo
+// acababa de dar. Los "Mensajes iniciales" del dueño SON la respuesta a este mensaje.
+//
+// Se detecta por lo que SOBRA: se le quitan el saludo, la cortesía y las palabras de pedir
+// información, y lo que queda tiene que ser solo el nombre del producto. Si queda cualquier
+// palabra que pregunta otra cosa («¿y cuánto cuesta?», «¿llega a Puno?», «¿sirve para
+// lámina galvanizada?»), NO entra acá y se atiende como siempre — que es el caso en el que
+// la reinyección vale oro.
+function soloPideInfo(text?: string | null): boolean {
+  const t = normalize(text ?? "").replace(/[¿?¡!.,;:()"']+/g, " ");
+  if (!t || t.length > 160) return false;
+  if (!/\b(informacion|informacio|info|informes|imformacion|imforme|imformes|detalles)\b/.test(t)) return false;
+  const resto = t
+    .replace(/\b(hola+|holi|buenas?|buenos|dias|tardes|noches|hi|hello|que tal|disculpa|disculpe|porfa|porfavor|por|favor|gracias|amigo|amiga|señor|senor|señora|senora)\b/g, " ")
+    .replace(/\b(me|te|le|se|lo|la|los|las|puedo|podria|podrias|puede|puedes|pueden|quisiera|quiero|kiero|deseo|necesito|gustaria|interesa|interesado|interesada|interesan|obtener|tener|recibir|saber|conocer|dar|darme|dame|mandar|mandame|enviar|enviame|pasar|pasame|brindar|brindame|solicitar|pedir|mas|toda|todo|un|una|unos|unas|el|de|del|sobre|acerca|respecto|a|al|por|y|e|en|con|para|este|esta|estos|ese|esa|eso|esto|aqui|producto|articulo|informacion|informacio|info|informes|imformacion|imforme|imformes|detalles)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+  // Palabras que convierten el mensaje en otra cosa: ya no está pidiendo la ficha, está
+  // preguntando algo concreto que el saludo puede no cubrir.
+  if (/[0-9]/.test(resto)) return false;   // una cantidad ya no es pedir la ficha
+  return !/\b(cuanto|cuesta|cuestan|precio|precios|vale|valen|costo|barato|oferta|descuento|sirve|sirven|funciona|funcionan|usa|usar|tienen|hay|stock|disponible|talla|tallas|color|colores|envian|envio|envios|mandan|llega|llegan|demora|demoran|tarda|garantia|pago|pagar|yape|plin|contraentrega|donde|cuando|como|cual|cuales|quien|que|si|no)\b/.test(resto);
 }
 
 const PIDE_CANCELAR = [
@@ -13633,7 +13667,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "«¿desde dónde nos escribe?» y «¿de qué distrito me escribes?» son la MISMA pregunta, y el cliente " +
         "las ve seguidas. Tu turno es para atender lo que él dijo: contéstale su pregunta o su objeción " +
         "—el precio, que en otro lado se lo dejan más barato, si sirve para su caso— con lo que tienes en " +
-        "la ficha, ANTES de pedirle nada. Si te falta un dato, pídele uno DISTINTO al que el saludo ya pidió.");
+        "la ficha, ANTES de pedirle nada. Si te falta un dato, pídele uno DISTINTO al que el saludo ya pidió. " +
+        "⛔ Y si el saludo termina PREGUNTÁNDOLE algo, él todavía NO te contestó eso: su " +
+        "mensaje es anterior a tu pregunta. Nunca supongas la respuesta ni arranques como si " +
+        "ya la tuvieras («perfecto, que tengas taladro…», «genial, entonces sí lo usas para…»). " +
+        "Habla SOLO de lo que él escribió.\n" +
+        "🤐 Y si el saludo ya cubrió todo lo que él dijo —te escribió pidiendo información y " +
+        "el saludo se la dio entera—, NO escribas nada: responde con texto vacío y deja que " +
+        "conteste su pregunta. Una burbuja de relleno detrás de las del saludo solo hace ruido " +
+        "y te obliga a inventar.");
     }
     // 🎨 El bloque de ESTILO se guarda para el FINAL (ver más abajo, justo antes de armar
     // el prompt). Acá quedaba enterrado bajo doce bloques de reglas de venta, y medido en un
