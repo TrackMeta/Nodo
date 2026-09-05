@@ -14,7 +14,7 @@
 //  · EXTRAS_CSS       — estilos de las tarjetas nuevas (una sola fuente)
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
-import { toast, icon, norm } from "./shell.js";
+import { toast, icon, norm, esUbicacionCompartida } from "./shell.js";
 import { cargarListas, sugerirAgencia } from "./courier-export.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -348,7 +348,13 @@ export function pedidoResumenHtml(o) {
     // es la ciudad genérica, no un distrito → no lo mostramos como distrito.
     const dist = s.distrito || s.zona_nombre || "";
     const distReal = dist && dist.toLowerCase() !== "lima" ? dist : "";
-    cliLines.push(mkLine("Dirección", s.direccion ? esc(s.direccion) : ""));
+    // 📍 Si compartió su UBICACIÓN, el enlace va CLICABLE: es lo que se abre al alistar el
+    // pedido para ubicar la dirección y escribirla. Salía como texto plano, así que había que
+    // seleccionarlo, copiarlo y pegarlo en el navegador — en cada pedido que llega con pin.
+    cliLines.push(mkLine("Dirección", !s.direccion ? ""
+      : esUbicacionCompartida(s.direccion)
+        ? `<a href="${esc(s.direccion.match(/^\S+/)[0])}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a>`
+        : esc(s.direccion)));
     cliLines.push(mkLine("Distrito", distReal ? esc(cap(distReal)) : ""));
     cliLines.push(mkLine("Provincia", esc(s.provincia || "Lima")));
     cliLines.push(mkLine("Referencia", s.referencia ? esc(s.referencia) : ""));
@@ -416,7 +422,10 @@ export function printRotulo(o, remitente) {
       // un apodo o un emoji: el rótulo de un pedido de Carla Mendoza salía impreso "P1".
       rowReq("Destinatario", s.cliente || c.nombre || "", true) +
       row("Teléfono", tel) +
-      rowReq("Dirección", s.direccion || "", true) +
+      // Con solo el pin no hay dirección que imprimir: `rowReq` lo marca "FALTA" en rojo, que
+      // es justo lo que hay que ver mientras se empaca (el paso de abrir el link y escribirla
+      // se saltó). Mismo criterio que el rótulo de pedidos.html.
+      rowReq("Dirección", esUbicacionCompartida(s.direccion) ? "" : (s.direccion || ""), true) +
       row("Distrito", (() => { const d = s.distrito || s.zona_nombre || ""; return d && d.toLowerCase() !== "lima" ? cap(d) : ""; })()) +
       row("Provincia", s.provincia || "Lima") +
       row("Referencia", s.referencia || "") +

@@ -194,7 +194,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll, esUbicacionCompartida } from "./shell.js";
 import * as O from "./orders.js";
 import { inicioDeHoyTZ } from "./date-range.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
@@ -704,14 +704,14 @@ const ROTULO_CSS=`
 // Arma el cuerpo <div class="lbl"> de UN pedido. Provincia = etiqueta para la
 // agencia (DNI + sede, sin guía todavía); Lima = hoja del motorizado con el
 // MONTO A COBRAR grande (contraentrega).
-// La dirección tal como debe salir IMPRESA. Si es el enlace de una ubicación compartida, se
-// queda con las coordenadas (lo único de ahí que el motorizado puede pasar a su GPS); si no,
-// va tal cual. Ver el comentario del rótulo de Lima.
+// La dirección tal como debe salir IMPRESA. Si lo único que hay es la UBICACIÓN que compartió
+// el cliente (un enlace de mapa), el rótulo NO la imprime: ni la URL ni las coordenadas le
+// sirven a quien lleva el paquete. El flujo real es que Rodrigo abre ese link al alistar el
+// pedido y escribe la dirección él; entonces un rótulo con el pin significa que ese paso se
+// saltó, y lo que hay que hacer es que salte a la vista mientras todavía se está empacando.
 function dirRotulo(dir){
   const d=String(dir||"").trim();
-  if(!/^https?:\/\//i.test(d)) return d;
-  const m=d.match(/(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
-  return m ? `${m[1]}, ${m[2]} (ubicación compartida)` : d;
+  return esUbicacionCompartida(d) ? "⚠ FALTA — el cliente mandó su ubicación, ábrela en el chat" : d;
 }
 function rotuloInner(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};

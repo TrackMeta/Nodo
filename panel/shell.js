@@ -630,6 +630,14 @@ function escAttr(s) { return escHtml(s).replace(/"/g, "&quot;"); }
 // "Ramírez", "Ángel"… (nombres peruanos comunes) en ninguna Bandeja/lista.
 export function norm(s) { return (s ?? "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
 
+// \ud83d\udccd \u00bfLa "direcci\u00f3n" del pedido es en realidad la UBICACI\u00d3N que comparti\u00f3 el cliente? El motor
+// guarda un enlace de mapa cuando manda su pin en vez de escribir la calle. Sirve en el chat y
+// en el panel (Rodrigo lo abre para ubicar la direcci\u00f3n y la escribe \u00e9l al alistar el pedido),
+// pero NO es una direcci\u00f3n: no puede ir a un r\u00f3tulo impreso ni al Excel del courier.
+export function esUbicacionCompartida(dir) {
+  return /^https?:\/\//i.test(String(dir ?? "").trim());
+}
+
 // ── Guarda de "cambios sin guardar" ─────────────────────────────────
 // Las pantallas-formulario (Productos, Negocio, IA) usan Guardar explícito;
 // como TODO navega por SPA (BOUNDARY vacío) y el bot se cambia en el sitio,
