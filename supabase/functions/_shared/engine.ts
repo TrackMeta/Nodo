@@ -2511,7 +2511,7 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "que…», «cero riesgo», «sin adelanto», «sin pagos antes», «sin pagar nada antes». " +
   "Con decir cuándo paga ya está: no le agregues nada detrás. " +
   "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, adelanto para despachar " +
-  "y el saldo al recoger.";
+  "y el saldo cuando el paquete llega a la agencia.";
 
 
 // 💵 Un pago se acusa cuando está VERIFICADO, no cuando el cliente lo dice. Medido, y de
@@ -3856,6 +3856,36 @@ const RE_NO_SABE_SEDE =
 // soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
 const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
 
+// 🏪 «PAGAS EN LA AGENCIA». Regla de Rodrigo, repetida cuatro veces: «el saldo siempre se
+// paga a nosotros, en la agencia no pagas nada». El saldo va a la MISMA cuenta cuando el
+// paquete llega, y recién con ese pago se le da la clave de recojo; en el mostrador de
+// Shalom no desembolsa nada. Lo que se cambia acá es el LUGAR por el MOMENTO — «cuando
+// recojas allí» → «cuando llegue a la agencia»— sin tocar el resto de la frase, para que
+// no quede mal escrita. La causa de fondo era el prompt (decía lo contrario) y ya está
+// corregida; esto es la red por si el modelo lo dice de otra forma.
+const CAMBIOS_PAGO_AGENCIA: Array<[RegExp, string]> = [
+  [/\bcuando\s+(?:lo\s+|la\s+)?recojas\s+(?:all[ií]|all[aá]|ah[ií]|en\s+la\s+agencia|en\s+shalom)\b/gi, "cuando llegue a la agencia"],
+  [/\bal\s+recoger(?:lo|la)?\s+en\s+la\s+agencia\b/gi, "cuando llegue a la agencia"],
+  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+en\s+la\s+agencia\b/gi, "$1 cuando llegue a la agencia"],
+  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+al\s+recoger(?:lo|la)?\b/gi, "$1 cuando llegue a la agencia"],
+  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+(?:all[ií]|all[aá]|ah[ií])\b/gi, "$1 cuando llegue a la agencia"],
+  [/\ben\s+la\s+agencia\s+(pagas|pagar[aá]s|abonas|cancelas)\b/gi, "cuando llegue a la agencia $1"],
+];
+// En PROVINCIA, además, el orden importa: primero paga el saldo, con ese pago se le da la
+// clave, y recién entonces recoge. «El saldo cuando recibas el paquete» lo cuenta al revés
+// —recibir y después pagar— y el cliente no va a pagar antes de ir; sin ese pago no hay
+// clave, así que el paquete se queda en la agencia. En Lima sí es «pagas cuando lo recibes»,
+// por eso estos dos solo corren con zona de provincia.
+const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
+  [/\bcuando\s+(?:lo\s+|la\s+)?(?:recibas|te\s+llegue|lo\s+tengas|lo\s+recibas)(?:\s+el\s+(?:paquete|pedido|producto))?\b/gi, "cuando llegue a la agencia"],
+  [/\bal\s+recibir(?:lo|la)?\b/gi, "cuando llegue a la agencia"],
+];
+function sinPagarEnLaAgencia(texto: string, provincia = false): string {
+  let t = String(texto ?? "");
+  for (const [re, a] of CAMBIOS_PAGO_AGENCIA) t = t.replace(re, a);
+  if (provincia) for (const [re, a] of CAMBIOS_PAGO_PROVINCIA) t = t.replace(re, a);
+  return t;
+}
 // 💰 «UN ADELANTO» SIN DECIR CUÁNTO. Salió al pedirle mensajes cortos: «hacemos envíos a
 // Mazamari por la agencia Shalom, con un adelanto para despachar» — más corto, sí, y más
 // vago justo en la parte de la plata. Hablar de dinero sin la cifra es peor que no hablar:
@@ -6813,7 +6843,7 @@ export async function avisarPagadoTotal(
   db: SupabaseClient, channelId: string, contactId: string,
 ): Promise<void> {
   await deliverMessage(db, channelId, contactId,
-    "✅ Con ese pago tu pedido queda *cubierto por completo*: al recogerlo en la agencia no pagas nada más por él. 🙌",
+    "✅ Con ese pago tu pedido queda *cubierto por completo*: ya no queda saldo por pagar. 🙌",
   ).catch(() => {});
 }
 
@@ -13082,7 +13112,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "puerta. (Medido: contestó «en Lima puedes pagar con tarjeta al recibir» con el POS apagado.)\n" +
         "Contéstale EXACTAMENTE esto, adaptando el saludo: «Depende de a dónde te lo mandamos: " +
         "en Lima lo pagas cuando lo recibes, y a provincia va por agencia con un adelanto y el resto " +
-        "al recoger. ¿De qué distrito o ciudad me escribes?»\n" +
+        "cuando llega a la agencia. ¿De qué distrito o ciudad me escribes?»\n" +
         "Ni una palabra más sobre medios de pago hasta que te diga su zona.");
     }
     if (ctx.zona_entrega) {
@@ -13377,7 +13407,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (RE_PAGA_AL_RECOGER.test(String(ctx.last_input ?? ""))) {
           L.push("❗ TE ESTÁ PREGUNTANDO SI PUEDE PAGAR TODO AL RECOGER. Contéstale ESO primero, " +
             "en la misma respuesta y antes que cualquier otra cosa: a provincia se despacha con un " +
-            "adelanto y el resto lo paga al recoger su paquete en la agencia. Dilo como el hecho que " +
+            "adelanto y el resto lo paga -a nosotros, a la misma cuenta- cuando su paquete YA está en la agencia; ahí se le da la clave y en el mostrador no desembolsa nada. Dilo como el hecho que " +
             "es, en una línea, sin pedir disculpas y sin discursos de riesgo. Recién después sigue " +
             "con lo que faltaba (la sede, sus datos). ⛔ No lo ignores ni lo dejes para más adelante.");
         }
@@ -13460,28 +13490,31 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `⛔ El adelanto NO se SUMA al precio ni es el costo del envío: es una PARTE del precio, ` +
             `la que paga ahora para que despachemos. El total es el precio del pack, y nada más. ` +
             `Si te pregunta cuánto es en total, le dices el precio; y si quiere el detalle: tanto ahora ` +
-            `y el resto (el saldo) al recogerlo.`);
+            `y el resto (el saldo) cuando llegue a la agencia.`);
         }
-        // ⛔ Y con eso puesto, la mentira que sale sola. Medido con un cliente de Chiclayo:
-        // «lo enviamos por agencia sin costo adicional, solo pagas todo cuando recojas» —
-        // pero provincia lleva adelanto para despachar. El cliente dice que sí creyendo que
-        // no adelanta nada, y dos mensajes después le cae un pedido de S/ 20 por Yape: ahí
-        // se cae la venta, y con razón. La rama de Lima sí tenía escrito su argumento de
-        // "no adelantas nada"; provincia no tenía el espejo que lo prohíbe.
         if (Number(ctx.adelanto) > 0) {
-          L.push("⛔ NUNCA le digas que paga TODO al recoger, ni «pagas cuando lo tengas», ni «no adelantas nada»: " +
-            "eso es de Lima. Acá va un adelanto para que salga el despacho, y en la agencia paga solo el SALDO. " +
-            "Si te pregunta cómo paga, díselo así de claro y sin rodeos — enterarse tarde es lo que le tumba la venta.");
-          // El mismo error dicho AL REVÉS, que por eso se escapó de la regla de arriba.
-          // Medido con un cliente de Chiclayo: «el envío es por agencia 📦 para que NO PAGUES
-          // NADA EXTRA al recoger». Suena a beneficio y el cliente entiende que en la agencia
-          // no desembolsa nada — cuando ahí paga el saldo, que es casi todo el pedido.
-          // Y de paso inventa un porqué: va por agencia porque no repartimos en su ciudad,
-          // no como una gentileza para ahorrarle un cobro.
-          L.push("⛔ Tampoco al revés: nada de «no pagas nada extra al recoger», «sin costos adicionales al " +
-            "recogerlo» ni frases parecidas. En la agencia SÍ paga —el saldo— y esa frase le hace entender lo " +
-            "contrario. El envío por agencia no es un beneficio que le conseguiste: es que su ciudad no entra " +
-            "en nuestro reparto. No le inventes un motivo bonito.");
+          // 🔴 EL SALDO SE NOS PAGA A NOSOTROS. Rodrigo lo repitió cuatro veces y la cuarta
+          // fue: «te lo voy a repetir no sé cuántas veces, el saldo siempre se paga a
+          // nosotros, en la agencia no pagas nada». Y tenía razón en insistir: el problema no
+          // era el modelo, era ESTE bloque, que decía «en la agencia paga solo el SALDO» y
+          // «En la agencia SÍ paga —el saldo—». O sea que la IA hacía lo que le mandaba el
+          // prompt. Cómo funciona de verdad: el saldo se paga a la MISMA cuenta cuando el
+          // paquete llega a la agencia, y recién ahí se le da la clave de recojo. En el
+          // mostrador de Shalom no desembolsa nada.
+          L.push("💰 CÓMO SE PAGA, exacto: un adelanto ahora para que salga el despacho, y el SALDO cuando el " +
+            "paquete YA ESTÁ en la agencia — a la misma cuenta nuestra, por Yape o transferencia, igual que el " +
+            "adelanto. Recién con ese pago se le pasa la clave para recogerlo.\n" +
+            "⛔ En la agencia NO paga NADA: Shalom no le cobra ni recibe plata suya. Nunca digas «pagas en la " +
+            "agencia», «pagas al recogerlo», «el saldo lo pagas allí/allá/ahí» ni nada que suene a que va a " +
+            "desembolsar en el mostrador — es falso y le cambia la idea de cómo funciona la compra. Si tienes " +
+            "que nombrar el momento, es «cuando llegue a la agencia», nunca el lugar donde paga.\n" +
+            "🔑 Y el ORDEN, que también se cuenta al revés: primero te paga el saldo, con ese pago le pasas " +
+            "la clave, y recién con la clave recoge. Nada de «pagas cuando lo recibas» ni «al recibirlo»: " +
+            "sin ese pago no hay clave, así que si cree que paga después de tenerlo, no va a pagar y el " +
+            "paquete se queda en la agencia.");
+          L.push("⛔ Y NUNCA le digas que paga TODO al recoger, ni «pagas cuando lo tengas», ni «no adelantas " +
+            "nada»: eso es de Lima. Acá va un adelanto para que salga el despacho. Enterarse tarde es lo que le " +
+            "tumba la venta.");
         }
         // 💰 Y el caso contrario, que es el MEJOR cliente que te puede tocar: el que
         // ofrece pagar TODO por adelantado. Medido en Cajamarca — «prefiero pagarte todo
@@ -13492,7 +13525,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // saldo y no queda nada por cobrar); era la IA la que lo negaba de su cosecha.
         if (Number(ctx.adelanto) > 0) {
           L.push("✅ Si ÉL propone pagar el TOTAL por adelantado (no solo el adelanto), dile que sí: paga el " +
-            "monto completo a la misma cuenta y en la agencia ya no paga nada. No lo ofrezcas tú ni se lo " +
+            "monto completo a la misma cuenta y ya no le queda saldo pendiente. No lo ofrezcas tú ni se lo " +
             "sugieras — el mensaje de pago que sale solo pide el adelanto — pero si él lo pide, JAMÁS se lo " +
             "niegues: es la mejor venta que puedes hacer.");
         }
@@ -13501,7 +13534,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // adelanto + saldo). Lo prohibido es anunciar que VIENE OTRO MENSAJE, no la
         // existencia del adelanto. Se dice cuál de las dos cosas es.
         L.push("El adelanto **no se lo pides tú**: el monto y las cuentas salen solos, en el mensaje siguiente. " +
-          "Explicarle CÓMO funciona el pago (un adelanto para despachar y el saldo al recoger) sí puedes, y debes " +
+          "Explicarle CÓMO funciona el pago (un adelanto para despachar y el saldo cuando llegue a la agencia) sí puedes, y debes " +
           "si pregunta. Lo que NO haces es anunciar que viene otro mensaje: ni \"en breve\", ni \"ahora\", ni " +
           "\"enseguida\", ni \"te va a llegar\", ni \"recibirás un mensaje con…\". Sale INMEDIATAMENTE después del " +
           "tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
@@ -14970,6 +15003,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
+        salida = sinPagarEnLaAgencia(salida, String(ctx.zona_entrega ?? "") === "provincia");
         // 💰 Y si nombró el adelanto sin decir cuánto, se le pone la cifra (ver arriba).
         {
           let _ad = Number(ctx.adelanto);
