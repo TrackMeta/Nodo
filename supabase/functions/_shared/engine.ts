@@ -3856,6 +3856,24 @@ const RE_NO_SABE_SEDE =
 // soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
 const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
 
+// 🗣️ TERCERA PERSONA. El bot habla del negocio como si fuera otro: «solo *te piden* un
+// adelanto de S/20», «ya *te envían* los datos de pago». Suena a que detrás hay alguien más
+// que va a aparecer, y el cliente se queda esperándolo — en el mensaje del adelanto, que es
+// justo donde va a soltar plata. Se pidió por prompt y volvió a salir en la corrida
+// siguiente, así que las formas que más aparecen se corrigen sobre el texto ya escrito.
+// Solo lo que es INEQUÍVOCO: «te piden un adelanto» solo puede referirse a nosotros.
+const CAMBIOS_TERCERA: Array<[RegExp, string]> = [
+  [/\bte\s+(?:piden|pedir[aá]n|van\s+a\s+pedir|solicitan)\s+(un|el)\s+adelanto/gi, "pagas $1 adelanto"],
+  [/\bte\s+(?:piden|pedir[aá]n|van\s+a\s+pedir|solicitan)\s+(?:que\s+)?pagar?\b/gi, "pagas"],
+  [/\bte\s+(?:env[ií]an|enviar[aá]n|mandan|mandar[aá]n|pasan|pasar[aá]n)\s+(los|el)\s+(datos|n[uú]mero)/gi, "te paso $1 $2"],
+  [/\bel\s+equipo\s+te\s+(?:pasa|env[ií]a|manda)\b/gi, "te paso"],
+  [/\bte\s+(?:contactar[aá]n|llamar[aá]n|escribir[aá]n)\b/gi, "te escribo"],
+];
+function sinTerceraPersona(texto: string): string {
+  let t = String(texto ?? "");
+  for (const [re, a] of CAMBIOS_TERCERA) t = t.replace(re, a);
+  return t;
+}
 function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null): string {
   const t = String(texto ?? "").trimStart();
   if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return texto;
@@ -12358,6 +12376,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // la frenó en el acto: «si el cliente pregunta otra vez, ¿qué pasa, no le vuelve a
     // explicar?». Tenía razón — dejar una pregunta sin contestar por haberla contestado antes
     // es peor que ser repetitivo. El problema nunca fue repetir: era el largo.
+    parts.push("## Hablas en PRIMERA persona\n" +
+      "El negocio eres tú. Nunca digas «te piden un adelanto», «ya te envían los datos», «el equipo te " +
+      "contacta», «te van a llamar»: acá no hay nadie más, y el cliente se queda esperando a alguien que " +
+      "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
+      "datos», «te escribo apenas llegue».");
     parts.push("## Escribe CORTO\n" +
       "Esto es WhatsApp, no un correo. Tu parte del mensaje son DOS o TRES líneas: le contestas lo que " +
       "preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
@@ -14889,6 +14912,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _formAntes = salida;
         salida = pinesConMayuscula(salida);
         salida = preciosEnLineas(salida, simboloMoneda(ctx.moneda as string));
+        // 🗣️ Y fuera la tercera persona: «solo te piden un adelanto de S/20» apareció en
+        // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
+        salida = sinTerceraPersona(salida);
         if (salida !== _formAntes) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🎨 Formato corregido al salir",
             "Etiquetas de los 📌 en minúscula y/o precios de corrido en una línea.").catch(() => {});
