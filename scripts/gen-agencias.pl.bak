@@ -33,7 +33,7 @@ sub esc {
     return $t;
 }
 
-my (@filas, $conAereo, $conRef, $conGeo);
+my (@filas, $conAereo, $conRef);
 for my $a (sort {
         ($a->{location}{department} // "") cmp ($b->{location}{department} // "")
      || ($a->{location}{province}   // "") cmp ($b->{location}{province}   // "")
@@ -90,25 +90,14 @@ for my $a (sort {
     $conAereo++ if $aereo;
     $conRef++   if $ref;
 
-    # 📍 COORDENADAS. El volcado de Shalom las trae en geo.lat/lng (532 de 552) y la primera
-    # version de este script las TIRABA. Sin ellas no habia forma de ordenar las oficinas por
-    # cercania: a una clienta de Pucusana (extremo sur de Lima) el bot le ofrecia la de Ancon
-    # (extremo norte), porque lo unico que se podia hacer era listarlas por orden alfabetico.
-    # 5 decimales = ~1 m, de sobra para esto y mas corto que volcar los 15 del origen.
-    my $geo = "";
-    if ($a->{geo} && defined $a->{geo}{lat} && defined $a->{geo}{lng}) {
-        $geo = sprintf(',y:%.5f,x:%.5f', $a->{geo}{lat}, $a->{geo}{lng});
-        $conGeo++;
-    }
-
     my $dtxt = $dir ? ',dir:"' . esc($dir) . '"' : "";
     my $rtxt = $ref ? ',ref:"' . esc($ref) . '"' : "";
-    push @filas, sprintf('  {l:"%s",d:"%s",p:"%s",t:"%s"%s%s%s%s},',
-        esc($l), esc($dep), esc($prov), esc($dist), $dtxt, $rtxt, $geo, $aereo);
+    push @filas, sprintf('  {l:"%s",d:"%s",p:"%s",t:"%s"%s%s%s},',
+        esc($l), esc($dep), esc($prov), esc($dist), $dtxt, $rtxt, $aereo);
 }
 
 open(my $o, ">:encoding(UTF-8)", "/tmp/agencias-datos.txt") or die $!;
 print $o join("\n", @filas), "\n";
 close $o;
 
-printf("filas: %d · con aéreo: %d · con coordenadas: %d\n", scalar @filas, $conAereo, $conGeo);
+printf("filas: %d · con aéreo: %d\n", scalar @filas, $conAereo);
