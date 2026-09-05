@@ -9604,6 +9604,15 @@ async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
 // Palabras que la gente usa para decir "no soy de Lima" y que NO nombran ninguna
 // ciudad: guardarlas como localidad deja el pedido con destino "provincia".
 const ES_CATEGORIA_NO_LUGAR = /^\s*(provincia|provincias|el\s+interior|interior\s+del\s+pa[ií]s|fuera\s+de\s+lima|otra\s+ciudad|otro\s+departamento|regi[oó]n)\s*$/i;
+// 🏠 Y estas NO dicen NADA de dónde vive: son la respuesta de quien contesta "¿a qué
+// dirección?" con "mi casa". A diferencia de las de arriba —que sí significan "no soy de
+// Lima"— acá no hay que deducir ninguna zona: se descarta el "lugar" y se le sigue pidiendo
+// la dirección. Medido: un cliente escribió "SOY DE LIMA" y luego "MI CASA"; el extractor
+// devolvió "Casa" como localidad, la zona se degradó a PROVINCIA y el bot le ofreció las
+// oficinas de "Casa Grande" (que es un distrito de La Libertad) hablándole del "envío por
+// Shalom en Casa". Anclado a la frase entera a propósito: "Casa Grande" sí es un distrito.
+const ES_NO_LUGAR_NEUTRO =
+  /^\s*(mi\s+)?(casa|cuarto|depa|departamento|domicilio|jato|hogar|oficina|trabajo|chamba|tienda|negocio)\s*$|^\s*(ac[aá]|aqu[ií]|donde\s+vivo|por\s+ac[aá]|por\s+aqu[ií]|en\s+mi\s+casa)\s*$/i;
 const limpiaZona = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 
 // ── Envío aéreo (beneficio por zona) ────────────────────────────────
@@ -9983,6 +9992,10 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // llega a ninguna parte. Se descarta como lugar: la zona se resolverá igual cuando
     // diga su ciudad, y mientras tanto el flujo se la sigue pidiendo.
     if (lugar && ES_CATEGORIA_NO_LUGAR.test(String(lugar))) { soloCategoria = true; lugar = null; z = null; continue; }
+    // 🏠 "mi casa" y compañía: no dicen dónde vive, así que NO deciden zona ninguna (ni
+    // siquiera "provincia", como sí hace la línea de arriba). Se descartan y se le sigue
+    // pidiendo la dirección; la zona que ya tuviera se queda como está.
+    if (lugar && ES_NO_LUGAR_NEUTRO.test(String(lugar))) { lugar = null; z = null; continue; }
     if (lugar) { texto = t; break; }
   }
   // Si no mencionó NINGÚN lugar, no se toca nada. Antes cualquier mensaje sin
