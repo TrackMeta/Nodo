@@ -3,13 +3,58 @@
 //   Banco de pruebas interno: el panel envía un mensaje "como cliente"
 //   a un contacto de prueba → se guarda como entrante → corre el motor.
 //   Permite probar flujos SIN un WhatsApp real.
+//
+//   ⏳ Y con el MISMO buffer que WhatsApp (channels.buffer_default_seg, 4s por defecto):
+//   los textos seguidos del cliente se juntan en un solo evento. Sin esto el banco de
+//   pruebas se comportaba distinto a producción —cada mensaje disparaba su propio turno—
+//   y eso es peor que no probar: se prueba algo que no va a pasar. Medido: dos mensajes
+//   con 19 ms de diferencia dieron dos respuestas idénticas acá y una sola en WhatsApp.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { runEngine, startFlowRun, aplicarStock } from "../_shared/engine.ts";
+import { runEngine, startFlowRun, aplicarStock, type EngineEvent } from "../_shared/engine.ts";
 
 const db = serviceClient();
 const TEST_WA_ID = "webchat-test";
+const MAX_BUFFER_SEG = 20;   // mismo tope que el webhook
+
+// Corre el motor tras el buffer. Si durante la espera llegó un mensaje MÁS NUEVO, este
+// turno cede: el del mensaje nuevo se encarga y une toda la cadena de textos seguidos.
+// Copia deliberada del `runEngineTask` del webhook —incluido el desempate por `id`, que
+// allá es `wamid`— para que los dos caminos se comporten igual. Si algún día cambia uno,
+// tiene que cambiar el otro: es exactamente la clase de bug que más veces ha mordido acá.
+async function correrMotor(
+  channelId: string, contactId: string, event: EngineEvent, msgId: string, bufferSeg: number,
+) {
+  try {
+    if (bufferSeg > 0 && event.type === "message") {
+      await new Promise((r) => setTimeout(r, bufferSeg * 1000));
+      const { data: msgs } = await db.from("messages")
+        .select("id, ts, type, content")
+        .eq("contact_id", contactId).eq("direction", "in")
+        .order("ts", { ascending: false }).order("id", { ascending: false }).limit(10);
+      if (!msgs?.length) return;
+      if ((msgs[0] as any).id !== msgId) return;   // ya no es el último → cede el turno
+      const chain: string[] = [];
+      for (let i = 0; i < msgs.length; i++) {
+        const m: any = msgs[i];
+        if (m.type !== "text") break;
+        if (i > 0) {
+          const gap = new Date((msgs[i - 1] as any).ts).getTime() - new Date(m.ts).getTime();
+          if (gap > bufferSeg * 1000) break;
+        }
+        chain.unshift(m.content?.text ?? "");
+      }
+      if (chain.length > 1) event = { ...event, text: chain.join("\n") };
+      // El operador pudo tomar el chat durante la espera (igual que en el webhook).
+      const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
+      if ((ct as any)?.bot_activo === false) return;
+    }
+    await runEngine(db, channelId, contactId, event);
+  } catch (e) {
+    console.error("[webchat] engine:", (e as any)?.message ?? e);
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -144,17 +189,18 @@ Deno.serve(async (req) => {
     return json({ ok: true, contact_id: contactId, started: flow_id });
   }
 
-  // Guardar el mensaje entrante (del "cliente").
+  // Guardar el mensaje entrante (del "cliente"). Se recupera su `id`: es la clave con la
+  // que el buffer decide cuál de los turnos en vuelo se queda con la ráfaga.
   const content = location
     ? { lat: location.lat, lng: location.lng, name: location.name ?? null, address: location.address ?? null }
     : mediaKind
     ? { media_url: media!.url, caption: media?.caption ?? "", mime: media?.mime ?? "" }
     : (buttonId ? { id: buttonId, title: body.text ?? buttonId } : { text: text ?? "" });
-  await db.from("messages").insert({
+  const { data: msgRow } = await db.from("messages").insert({
     channel_id, contact_id: contactId, direction: "in",
     type: location ? "location" : (mediaKind ?? (buttonId ? "interactive" : "text")),
     content, status: "delivered",
-  });
+  }).select("id").single();
 
   // Si el bot está en pausa (operador tomó la conversación), NO responder:
   // guarda el mensaje entrante pero no corre el motor. Igual que el webhook.
@@ -163,21 +209,32 @@ Deno.serve(async (req) => {
   }
 
   // Correr el motor.
-  try {
-    const event = buttonId
-      // `title` importa: si nadie espera este botón, el motor lo convierte en un
-      // mensaje de texto con el título (el atajo "escribe por el cliente").
-      ? { type: "button" as const, buttonId, title: text ?? buttonId }
-      : {
-        type: "message" as const, text: _ubiTxt || media?.caption || text || "",
-        msgType: location ? "location" : (mediaKind ?? "text"),
-        // Media de prueba (URL pública de Storage): imagen → OCR, audio → STT.
-        mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined,
-      };
-    await runEngine(db, channel_id, contactId, event);
-  } catch (e) {
-    console.error("[webchat] engine error:", e);
-    return json({ error: "engine_error", detalle: String(e) }, 500);
+  const event: EngineEvent = buttonId
+    // `title` importa: si nadie espera este botón, el motor lo convierte en un
+    // mensaje de texto con el título (el atajo "escribe por el cliente").
+    ? { type: "button" as const, buttonId, title: text ?? buttonId }
+    : {
+      type: "message" as const, text: _ubiTxt || media?.caption || text || "",
+      msgType: location ? "location" : (mediaKind ?? "text"),
+      // Media de prueba (URL pública de Storage): imagen → OCR, audio → STT.
+      mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined,
+    };
+  // Buffer SOLO para texto, igual que el webhook: un botón rutea al toque, y una imagen
+  // (comprobante) tiene que llegar entera y sin espera.
+  const esTexto = !buttonId && !mediaKind && !location;
+  const { data: ch } = await db.from("channels").select("buffer_default_seg").eq("id", channel_id).maybeSingle();
+  const bufferSeg = esTexto
+    ? Math.min(Math.max(Number((ch as any)?.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG)
+    : 0;
+  const task = correrMotor(channel_id, contactId, event, String((msgRow as any)?.id ?? ""), bufferSeg);
+  // Se le contesta YA al panel y el motor sigue por detrás: con el buffer, esperar el turno
+  // entero dejaba el botón de enviar bloqueado 25 s y era imposible mandar dos mensajes
+  // seguidos — o sea, imposible probar justo lo que el buffer viene a resolver. Las burbujas
+  // las pinta el realtime de la página, no esta respuesta.
+  if (typeof (globalThis as any).EdgeRuntime !== "undefined" && (globalThis as any).EdgeRuntime?.waitUntil) {
+    (globalThis as any).EdgeRuntime.waitUntil(task);
+  } else {
+    await task;
   }
   return json({ ok: true, contact_id: contactId });
 });
