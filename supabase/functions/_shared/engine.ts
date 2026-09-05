@@ -3842,6 +3842,12 @@ function repreguntaExtra(texto: string): string {
 // quiere comprar, solo no sabe dónde recogerlo— y el bot le contestaba "dime cuál te
 // queda cerca o si quieres te las nombro": le ofrecía la ayuda en vez de dársela,
 // teniendo la lista de su ciudad delante. Medido con un cliente de Piura.
+// 💸 «¿A qué número yapeo?» / «¿dónde te pago?» / «pásame la cuenta». Lo pregunta el que ya
+// se decidió, así que es el peor momento posible para contestarle de refilón. Es la misma
+// lista que usa el bloque digital de más abajo, sacada acá para que la use también la venta
+// física (ver la regla de tercera persona).
+const RE_PREGUNTA_DONDE_PAGAR =
+  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i;
 const RE_NO_SABE_SEDE =
   /\b(no s[eé]|no sabr[ií]a|ni idea|cu[aá]l(es)? hay|qu[eé] (sedes|oficinas|agencias)|no conozco|desconozco)\b/i;
 // Pedirle el DNI y la sede a alguien a quien nadie le explicó cómo le va a llegar el
@@ -3872,13 +3878,28 @@ function conEnvioExplicado(texto: string, courier: string, modo: string): string
 // El PLURAL no alcanzaba: medido en una prueba real, el bot escribió «¿me confirmas si
 // quieres 1, 2 o 3 frascos? Así te cuento *el precio* y te preparo todo» —singular y con
 // artículo— y la red no saltó. Le pidió elegir cantidad SIN decirle cuánto vale ninguna.
+// 🔴 Enumerar verbos se quedó corto TRES veces seguidas en una sola prueba: «te doy el
+// precio exacto», «te confirmo el precio» y «¿quieres que te cuente las opciones y
+// precios?». Las mismas ganas de decir el precio, tres formas distintas, y el cliente sin
+// ver una cifra las tres veces. La condición que de verdad importa no es CÓMO lo dice sino
+// QUÉ queda: si el mensaje habla de precios u opciones —o le pide elegir cantidad— y no
+// trae ninguna de las cifras reales, faltan los precios. Acotado a cuando todavía NO eligió
+// presentación, que es cuando la lista sirve; después sería repetírsela por gusto.
+const RE_HABLA_DE_PRECIOS =
+  /\b(precio|precios|cuesta|cuestan|opciones|presentaciones|promociones|ofertas|packs?)\b/i;
 const RE_PROMETE_PRECIOS =
-  /\b(te (cuento|paso|digo|comparto|mando|envío|envio)( ya| ahora)? (el|los|las) (precio|precios|opciones|promociones|presentaciones|ofertas)|te (cuento|digo|paso) cu[aá]nto (cuesta|sale|te sale|te queda))\b/i;
+  /\b(te\s+(cuento|paso|digo|comparto|mando|env[ií]o|doy|indico|detallo|muestro|armo|preparo)\s*(ya|ahora|enseguida)?\s+(el|los|las)\s+(precio|precios|opciones|promociones|presentaciones|ofertas|packs?)|te\s+(cuento|digo|paso|doy)\s+cu[aá]nto\s+(cuesta|sale|te\s+sale|te\s+queda|ser[ií]a))\b/i;
 // 🔢 «¿Cuántos quieres?» / «¿1, 2 o 3 frascos?» SIN una sola cifra en el mensaje. Es peor que
 // prometer el precio: le pide decidir con lo que no le diste. Nadie elige cantidad a ciegas,
 // así que el turno se pierde entero — y el que compara los packs es el que se lleva el grande.
+// 🔴 Las dos listas de arriba y de abajo tenían solo las formas FORMALES de decirlo, y el
+// modelo escribe como se habla. Medido en Puno: «¿Para cuántas unidades estás interesado?
+// Así te doy el precio exacto» — ninguna de las dos disparó (no está «te doy» ni «para
+// cuántas»), y el cliente se quedó eligiendo cantidad sin ver un solo precio. Es el mismo
+// agujero que tenía «¿cómo te llamas?» en RE_PIDE_SUS_DATOS.
 const RE_PIDE_ELEGIR_CANTIDAD =
-  /\b(cu[aá]nt[oa]s\s+(quieres|deseas|te\s+llevo|te\s+mando|vas\s+a\s+llevar|necesitas)|qu[eé]\s+(opci[oó]n|presentaci[oó]n|pack)\s+(quieres|prefieres|te\s+llevo)|(quieres|prefieres|te\s+llevo|llevas)\s+1\s*,?\s*2\s+o\s+3\b|\b1\s*,\s*2\s+o\s+3\s+(frascos?|unidades?|packs?))/i;
+  /\b(cu[aá]nt[oa]s\s+(unidades|frascos?|packs?|cajas?|piezas?|kits?)\b|cu[aá]nt[oa]s\b[^?!.\n]{0,80}\b(quieres|deseas|llevas|te\s+llevo|te\s+llevas|te\s+mando|te\s+preparo|vas\s+a\s+llevar|necesitas|est[aá]s\s+interesad[oa]|te\s+interesan|prefieres)\b|qu[eé]\s+(opci[oó]n|presentaci[oó]n|pack|oferta)\s+(quieres|prefieres|te\s+llevo|te\s+preparo)|\b1\s*,?\s*2\s+o\s+3\s*(frascos?|unidades?|packs?)?)/i;
+
 
 // 💰 El CLIENTE preguntó el precio. Medido: «hola, ¿cuánto cuesta el dermachem?» y el bot
 // contestó «¿para qué tipo de manchas lo buscas?» — consultivo, sí, pero sin decirle el
@@ -4029,7 +4050,14 @@ function conPrecios(texto: string, lista: string, preguntoElCliente = false): st
   // llamador): en los tres casos el mensaje no puede salir sin precios.
   if (!lista || !(RE_PROMETE_PRECIOS.test(t) || RE_PIDE_ELEGIR_CANTIDAD.test(t) || preguntoElCliente)) return t;
   // Si YA hay un precio escrito en el mensaje, la promesa está cumplida.
-  if (/\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
+  // ⛔ Pero un número CUALQUIERA no es un precio dicho. Medido en Puno: «Sí, enviamos por
+  // agencia Shalom. Solo pagas un adelanto de *S/ 20*… ¿Quieres que te cuente las opciones
+  // y precios para que elijas cuántas unidades llevas?» — y no salió ninguno, porque el 20
+  // del adelanto pasaba por precio. Ofrecerle contar los precios y no contárselos es la
+  // peor versión de esto: le pide permiso para vender y encima lo deja esperando.
+  // Solo cuenta si escribió alguna de las cifras REALES de sus presentaciones.
+  const cifras = (lista.match(/\d+(?:[.,]\d+)?/g) ?? []).filter((n) => Number(String(n).replace(",", ".")) >= 10);
+  if (cifras.length ? cifras.some((n) => t.includes(n)) : /\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
   return t.trimEnd() + "\n\n" + lista;
 }
 
@@ -12263,6 +12291,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
     parts.push(REGLA_PAGO_NO_CONFIRMADO);
+    parts.push("## El precio se da, no se ofrece\n" +
+      "⛔ Nunca le pidas permiso para decírselo: «¿quieres que te cuente las opciones y precios?», " +
+      "«¿te menciono los precios?», «así te doy el precio exacto». Eso gasta un turno entero para no " +
+      "decir nada, y el que está comparando ya se fue a otro chat. Si toca hablar de precio, lo pones: " +
+      "cada presentación en su línea, con su cifra, y cierras preguntándole cuántas unidades o qué " +
+      "oferta le preparas.\n" +
+      "⛔ Y nada de palabras enteras en mayúsculas para enfatizar («¿CUÁNTAS unidades quieres?»): en " +
+      "WhatsApp eso se lee como un grito. Lo que quieras resaltar va en *negrita*. Las mayúsculas que " +
+      "sí van son las de siempre: siglas (DNI, BCP) y nombres propios.");
     // 🧭 Dijo un nombre de distrito CORTADO que existe en Lima y en provincia ("San Juan").
     // El motor no decidió la zona a propósito: la IA tiene que preguntar cuál, porque de eso
     // depende si paga al recibir o si le toca adelanto y agencia.
@@ -13036,7 +13073,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // que no existe («¿a qué sede de Shalom de Jequetepeque llegas?» — a ninguna, no
         // hay): ahí se nombra la PROVINCIA, que es donde sí están las que se le mostraron.
         let _sedeCiudad = String(ctx.ciudad ?? "");
-        try {
+        // 🕒 …pero NO todavía si aún no eligió cuántas unidades lleva. La lista es lo que
+        // hace que la IA saque el tema de la sede, y elegir oficina de Shalom es logística
+        // de un pedido que no existe. Medido: el cliente escribió «hace envios / a puno»
+        // —o sea, si llegaba— y recibió la respuesta más las cuatro oficinas de Puno con
+        // sus referencias. No eligió ninguna, siguió preguntando precios cinco mensajes
+        // más, y la sede hubo que volver a pedírsela al final: la primera vez solo sirvió
+        // para que la conversación pareciera un formulario mientras él todavía evaluaba.
+        // Se corta de raíz —sin lista, la regla de abajo («NUNCA le preguntes por la sede
+        // sin listárselas») le impide preguntarla— en vez de recortarle el mensaje después,
+        // que es lo que se probó primero y se llevaba por delante la respuesta del envío.
+        // Si el que saca el tema es ÉL, la lista va igual: eso es contestarle, no cerrarle.
+        const _yaEligio = !!String(ctx.opcion_id ?? "").trim();
+        const _preguntaSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+        if (!_yaEligio && !_preguntaSede) {
+          L.push("🕒 Todavía NO le pidas la sede ni le hables de oficinas: primero tiene que decirte " +
+            "cuántas unidades lleva. Elegir agencia es logística de un pedido que aún no existe. " +
+            "Si te pregunta él por las oficinas, ahí sí se lo contestas.");
+        }
+        if (_yaEligio || _preguntaSede) try {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           if (_ags.length) {
             // Los aeropuertos y terminales al final: son agencias de verdad, pero casi nadie
@@ -13367,8 +13422,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     try {
       const dp = String(ctx.datos_pago ?? "").trim();
       if (dp && String(ctx._tipo ?? "") === "digital") {
-        const dijoQuePaga = /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i
-          .test(String(ctx.last_input ?? ""));
+        const dijoQuePaga = RE_PREGUNTA_DONDE_PAGAR.test(String(ctx.last_input ?? ""));
         if (dijoQuePaga) {
           const nums = dp.match(/\d{6,}/g) ?? [];
           const { data: outs } = await db.from("messages").select("content")
@@ -13392,6 +13446,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       }
     } catch (_) { /* sin datos de pago → la IA sigue como antes */ }
+    // 💸 «¿A qué número yapeo?» en la venta FÍSICA. El bloque de arriba solo cubre la
+    // digital, porque en provincia el adelanto lo manda el flujo con su propio mensaje.
+    // Pero sin ninguna instrucción la IA improvisa, y lo que improvisó fue esto: «Para el
+    // adelanto de *S/ 20* ya te envían los datos de pago enseguida. ¿En cuál sede de Shalom
+    // en Puno quieres recoger tu pedido?». Dos cosas mal en una línea: habla en TERCERA
+    // persona —como si detrás hubiera alguien más que va a escribir— y le cambia de tema
+    // justo después de que él preguntó dónde pagar. Los datos sí salieron en la burbuja
+    // siguiente, así que el cliente los tuvo; lo que no tuvo fue una respuesta.
+    if (RE_PREGUNTA_DONDE_PAGAR.test(String(ctx.last_input ?? ""))) {
+      parts.push("## Te está preguntando DÓNDE pagar\n" +
+        "⛔ Nunca en tercera persona: «ya te envían los datos», «te los van a mandar», «el equipo te pasa " +
+        "la cuenta». Acá no hay nadie más — el que le escribe eres tú, y eso lo deja esperando a alguien " +
+        "que no existe. Si los datos se los pasa el sistema enseguida, dilo en primera persona y en una " +
+        "línea («te paso los datos ahora 👇») y ahí termina tu mensaje.\n" +
+        "⛔ Y no le cambies de tema en la misma burbuja. Preguntarle otra cosa justo después de que él " +
+        "preguntó dónde pagar es dejarlo sin respuesta, y encima en el momento en que ya quería pagar.");
+    }
     // Venta DIGITAL: no hay datos que pedirle (ni dirección, ni DNI, ni talla). El modelo,
     // entrenado para cerrar pidiendo algo, se inventaba el trámite que falta. Medido en un
     // mismo chat: «Con ese último dato te lo dejo cerrado 🙂» —sin que el cliente hubiera
@@ -14620,26 +14691,42 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // no se note el remiendo.
       const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
       // …y el tercer disparador: le pide ELEGIR CANTIDAD y en el mensaje no hay una sola cifra.
-      // `conPrecios` no duplica nada si el texto ya trae precios, pero acá se exige que NO los
-      // traiga para no pegar la lista en un mensaje que solo dice «¿te llevo 2 entonces?».
-      const _symP = simboloMoneda(ctx.moneda as string);
-      const _traeCifra = new RegExp(`${_symP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\d`).test(salida);
-      const _eligeSinCifras = RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida)) && !_traeCifra;
-      if (op === "generar_texto" && ctx._product_id
-          && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _eligeSinCifras)) {
+      // ⛔ «Una cifra» tiene que ser un PRECIO SUYO, no cualquier número con S/ delante. Medido
+      // en Puno: «…el adelanto es de *S/ 20*… ¿cuántas unidades quieres llevar?» — el 20 del
+      // adelanto contaba como precio dicho, así que ni esta puerta ni conPrecios pegaban nada y
+      // el cliente tuvo que elegir cantidad sin ver un solo precio. Estaba mal en los DOS sitios
+      // con el mismo criterio flojo; ahora las dos miran las cifras reales de sus presentaciones.
+      let _opsPre: Opcion[] = [];
+      if (op === "generar_texto" && ctx._product_id) {
         try {
-          const opsP = await loadOpciones(db, run, ctx._product_id);
-          const conPre = opsP.filter((o) => o.precio != null && Number(o.precio) > 0);
-          if (conPre.length) {
-            const sym = simboloMoneda(ctx.moneda as string);
-            const _pz = (v: unknown) => (_negOn ? `*${sym} ${v}*` : `${sym} ${v}`);
-            salida = conPrecios(
-              salida,
-              conPre.map((o) => `${o.nombre} — ${_pz(o.precio)}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n"),
-              _pidioPrecio,
-            );
-          }
-        } catch (_) { /* sin opciones legibles → se envía tal cual */ }
+          _opsPre = (await loadOpciones(db, run, ctx._product_id))
+            .filter((o) => o.precio != null && Number(o.precio) > 0);
+        } catch (_) { /* sin opciones legibles → se cae al criterio de antes */ }
+      }
+      const _symP = simboloMoneda(ctx.moneda as string);
+      const _traeCifra = _opsPre.length
+        ? _opsPre.some((o) => sinFormato(salida).includes(String(o.precio)))
+        // Sin precios cargados se cae al criterio de antes: «el símbolo de moneda seguido de
+        // un número». Escrito sin escapes a propósito — construir la regex a mano acá se comía
+        // las contrabarras al pasar por el editor y dejaba un patrón que no casaba nada.
+        : sinFormato(salida).split(_symP).slice(1).some((p) => /^ *[0-9]/.test(p));
+      const _faltaElegir = !String(ctx.opcion_id ?? "").trim();
+      const _sinCifrasDebiendo = !_traeCifra && _faltaElegir &&
+        (RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida)) || RE_HABLA_DE_PRECIOS.test(sinFormato(salida)));
+      if (op === "generar_texto" && ctx._product_id
+          && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _sinCifrasDebiendo)) {
+        if (_opsPre.length) {
+          const sym = simboloMoneda(ctx.moneda as string);
+          const _pz = (v: unknown) => (_negOn ? `*${sym} ${v}*` : `${sym} ${v}`);
+          salida = conPrecios(
+            salida,
+            _opsPre.map((o) => `${o.nombre} — ${_pz(o.precio)}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n"),
+            // La decisiÃ³n ya se tomÃ³ ARRIBA: conPrecios tenÃ­a su propia lista de verbos y
+            // rechazaba lo que esta puerta acababa de aprobar (Â«Â¿quieres que te indique las
+            // opciones y los precios?Â» pasÃ³ acÃ¡ y muriÃ³ allÃ¡). Dos criterios para lo mismo.
+            _pidioPrecio || _sinCifrasDebiendo,
+          );
+        }
       }
       // 📍 Pidió la SEDE sin listar las oficinas: se las pega el motor, con las de SU ciudad.
       // Ver conAgencias — la regla del prompt falló dos veces y por eso vive acá.
@@ -14648,7 +14735,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // la mencione es ruido: la lista sirve para elegir. Pero el guard mira si la sede
       // identifica una oficina real, no si el campo está lleno — el extractor guarda ahí
       // el nombre de su pueblo ("jequetepeque"), y con eso todavía no eligió nada.
+      // 🕒 Y NO antes de que elija cuántas unidades lleva. Este es el TERCER sitio que
+      // puede sacar la lista (los otros dos son bloques del prompt: las oficinas de su
+      // ciudad y las de su provincia); los tres tienen que respetar la misma regla o el
+      // arreglo dura hasta que el modelo entre por otra puerta — que es exactamente lo que
+      // pasó al taparlas de a una. Si el que pregunta por las oficinas es ÉL, van igual.
+      const _yaEligioOp = !!String(ctx.opcion_id ?? "").trim();
+      const _elPidioSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && (_yaEligioOp || _elPidioSede)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
           // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
@@ -14705,6 +14800,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // ninguna: la venta se cerraba por la más barata. Decírselo en el prompt falló dos
       // veces, así que lo decide el motor. Se pregunta UNA vez; si aun así no elige, se
       // sella la primera para no dejar la venta trabada dando vueltas.
+      // 📍 La SEDE se ataja ANTES, no acá: sin la lista de agencias en el prompt la IA no
+      // saca el tema (ver el bloque de oficinas). Meterla en este guard se probó y salió
+      // mal — el recorte se llevaba por delante la respuesta al «¿hacen envíos a Puno?».
       if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()
           && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
