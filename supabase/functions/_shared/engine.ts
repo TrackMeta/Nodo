@@ -3856,7 +3856,7 @@ const RE_NO_SABE_SEDE =
 // soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
 const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
 
-function conEnvioExplicado(texto: string, courier: string, modo: string): string {
+function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null): string {
   const t = String(texto ?? "").trimStart();
   if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return texto;
   const quien = String(courier ?? "").trim() || "la agencia";
@@ -3867,7 +3867,18 @@ function conEnvioExplicado(texto: string, courier: string, modo: string): string
     : modo === "suma"
     ? " — el envío ya va incluido en tu total"
     : " — el envío corre por nuestra cuenta";
-  return `Te cuento cómo te llega 👇 Lo despacho por *agencia ${quien}* a tu ciudad y lo recoges ahí ` +
+  // 📍 «a tu ciudad» no le dice a dónde ir. Rodrigo, leyendo un chat suyo: «el cliente le dijo
+  // a mazamari pero nunca le ayudó a ubicar su agencia». Cuando su ciudad tiene UNA sola
+  // oficina el motor la sella solo y nadie se la nombra nunca — el cliente termina de dar sus
+  // datos y de pagar el adelanto sin saber a qué calle va a ir. Se dice acá, que es el mensaje
+  // que explica la entrega, con la referencia, que es lo que de verdad la ubica («a espaldas
+  // del Makro» le dice más que la dirección). Va por código y no por prompt porque el prompt
+  // ya lo pedía y la IA lo saltaba: se probó y la sede no aparecía por ningún lado.
+  const _pista = sede ? String(sede.ref || sede.dir || "").trim() : "";
+  const _donde = sede
+    ? `a la oficina *${bonito(sede.l)}*${_pista ? ` (${bonito(_pista, true)})` : ""}`
+    : "a tu ciudad";
+  return `Te cuento cómo te llega 👇 Lo despacho por *agencia ${quien}* ${_donde} y lo recoges ahí ` +
     `con una clave que te paso yo apenas llegue${costo}.\n\n` + t;
 }
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
@@ -8517,11 +8528,14 @@ async function maybePideReembolso(
 // IA obedezca. Idempotente igual entre turnos: el número queda en los salientes.
 // El cliente PIDE los datos otra vez ("cuál es el yape", "pásame el número"). Distinto de
 // anunciar que va a pagar: acá quiere el dato EN PANTALLA, aunque ya se lo hayan mandado.
+// Todas las formas de pedir «¿a dónde te pago?». 🔴 Enumerarlas se quedó corto otra vez:
+// «mándame el numero para yapear» no estaba (había «pásame» y «me pasas», no «mándame»), así
+// que el motor no mandó el bloque y la IA quedó prometiendo unos datos que nadie envió. Es el
+// mismo agujero que ya mordió con «¿cómo te llamas?» y con «te doy el precio»: la lista tiene
+// las formas que uno escribiría redactando, no las que la gente escribe en WhatsApp. Ahora
+// cubre cualquier verbo de "dame" seguido del medio de pago, y el «para yapear» del final.
 const RE_PIDE_DATOS =
-  /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|p[aá]same (el|tu) (yape|n[uú]mero|plin)|me pasas (el|tu) (yape|n[uú]mero)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero))\b/i;
-// Todas las formas de pedir "¿a dónde te pago?". Se amplió tras ver un chat real: a
-// "cual es el yape" no disparaba, así que el motor no mandaba el bloque con los datos y
-// el número quedaba en manos de la IA, que lo escribe en medio de una frase.
+  /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|(p[aá]same|pasame|m[aá]ndame|mandame|env[ií]ame|enviame|d[aá]me|dame|me pasas|me mandas|me env[ií]as|me das)[^.?!\n]{0,24}(yape|plin|n[uú]mero|nro|cuenta|datos)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero)|para (yapear|plinear|depositar|transferir))\b/i;
 const RE_ANUNCIA_PAGO =
   /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero|plin)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero))\b/i;
 // La IA ANUNCIA que va a pasar los datos de pago… y no los pasa. Medido: "Te paso los
@@ -8555,7 +8569,7 @@ const RE_PROMETE_PAGO =
   /\b(te (paso|comparto|env[ií]o|mando|dejo) (los |el )?(datos|n[uú]mero|yape|m[eé]todos?)|los datos (de pago|para (el|tu) pago)|te (los|lo) (paso|comparto|env[ií]o))\b/i;
 async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
-  yaEligio = false,
+  yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string },
 ): Promise<void> {
   try {
     // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
@@ -8594,7 +8608,21 @@ async function maybeDatosPago(
     const pid = (c as any)?.product_id;
     if (!pid) return;
     const { data: p } = await db.from("products").select("tipo").eq("id", pid).maybeSingle();
-    if (String((p as any)?.tipo ?? "") !== "digital") return;
+    // 💸 FÍSICO también. Antes esto salía SOLO en venta digital: en la física los datos de
+    // pago los manda el flujo al crear el pedido, o sea DESPUÉS de que el cliente entregue
+    // nombre, DNI y sede. Rodrigo lo cortó en seco: «eso de no entregar los métodos de pago
+    // si no tiene sus datos está pésimo, estás cortando la intención de pagar del cliente —
+    // hay clientes que pagan el adelanto y después dan sus datos». Y tiene con qué: si paga
+    // antes, `stashPrepagoAdelanto` guarda el comprobante y `engancharPrepagoAdelanto` se lo
+    // pega al pedido en cuanto nace. O sea que el camino de vuelta ya existía; lo único que
+    // faltaba era dejarlo pagar.
+    // Acotado a dos cosas: que lo PIDA él (una promesa suelta de la IA no basta) y que sea
+    // provincia, que es donde hay un adelanto real que cobrar. En Lima se paga al recibir.
+    const _esDigital = String((p as any)?.tipo ?? "") === "digital";
+    if (!_esDigital) {
+      if (!(loPide || RE_ANUNCIA_PAGO.test(texto))) return;
+      if (String(fisico?.zona ?? "") !== "provincia") return;
+    }
     const { data: f } = await db.from("custom_fields").select("valor")
       .eq("channel_id", channelId).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
     const dp = String((f as any)?.valor ?? "").trim();
@@ -8621,10 +8649,37 @@ async function maybeDatosPago(
         return nom.length > 2 && new RegExp("\\b" + nom + "\\b", "iu").test(texto);
       })
       : null;
-    await deliverMessage(db, channelId, contactId, elegido ?? dp);
+    // 💰 En la física el número solo no basta: hay que decirle CUÁNTO. El adelanto sale del
+    // pedido si ya existe y, si no, del que tenga puesto el negocio (Negocio → Entrega), que
+    // es el mismo que usa el interceptor del prepago para no contradecirse.
+    let _cab = "";
+    if (!_esDigital) {
+      let _ade = Number(fisico?.adelanto);
+      if (!Number.isFinite(_ade) || _ade <= 0) {
+        try {
+          const { data: chA } = await db.from("channels").select("entregas, moneda").eq("id", channelId).maybeSingle();
+          const d = (chA as any)?.entregas?.adelanto_default;
+          if (d != null && d !== "" && Number.isFinite(Number(d))) _ade = Number(d);
+          if (!fisico?.sym) fisico = { ...(fisico ?? {}), sym: simboloMoneda((chA as any)?.moneda) };
+        } catch (_) { /* sin config → se manda el bloque pelado */ }
+      }
+      // Sin monto no se manda nada: pedirle plata sin decirle cuánta es el mismo agujero
+      // que ya tapa el guard del nodo mensaje.
+      if (!Number.isFinite(_ade) || _ade <= 0) return;
+      _cab = `Para despachar tu pedido por agencia, el adelanto es de *${fisico?.sym ?? "S/"} ${_ade}* 👇\n\n`;
+    }
+    await deliverMessage(db, channelId, contactId, _cab + (elegido ?? dp) +
+      (_esDigital ? "" : "\n\nCuando lo hagas mándame la captura y lo verifico al toque. 😊"));
     await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago enviados",
       "Dijo que iba a pagar y todavía no los tenía").catch(() => {});
-  } catch (e) { console.error("[maybeDatosPago]", (e as any)?.message ?? e); }
+  } catch (e) {
+    // Antes esto moría en un console.error: los datos de pago no salían y en el panel no
+    // quedaba ni rastro — se veía como "la IA prometió el número y no llegó". Un fallo justo
+    // acá es plata que no entra, así que queda escrito en la Timeline.
+    console.error("[maybeDatosPago]", (e as any)?.message ?? e);
+    await logEvent(db, channelId, contactId, "error", "💳 No pude mandarle los datos de pago",
+      String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
+  }
 }
 
 // El cliente está a MITAD de la venta de un producto y pregunta por OTRO que también
@@ -12291,6 +12346,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
     parts.push(REGLA_PAGO_NO_CONFIRMADO);
+    // 🔁 NO REPETIR LA EXPLICACIÓN DEL ENVÍO. Rodrigo, leyendo un chat suyo: «yo siento que
+    // explica mucho». Medido en ese mismo chat, cuatro mensajes del bot y en TRES estaba la
+    // misma explicación —«un adelanto de S/ 20 para despachar y el saldo cuando recojas en la
+    // agencia»—, dicha entera cada vez. La primera informa; la segunda ya suena a que no te
+    // escuchó, y la tercera hace que el mensaje que sí importaba se pierda en el medio.
+    parts.push("## No repitas lo que ya le explicaste\n" +
+      "Cómo funciona el envío (agencia, adelanto, saldo al recoger, la clave, cuánto demora) se explica " +
+      "UNA vez. Si ya está dicho más arriba en este chat, das por sabido y sigues: como mucho una " +
+      "referencia corta («el adelanto de siempre», «lo mismo que te dije»), nunca el párrafo entero " +
+      "otra vez.\n" +
+      "Tu mensaje va CORTO: contesta lo que preguntó y da el siguiente paso. Si algo ya se lo dijiste, " +
+      "no cabe. Un cliente que lee lo mismo tres veces deja de leer.");
     parts.push("## El precio se da, no se ofrece\n" +
       "⛔ Nunca le pidas permiso para decírselo: «¿quieres que te cuente las opciones y precios?», " +
       "«¿te menciono los precios?», «así te doy el precio exacto». Eso gasta un turno entero para no " +
@@ -13128,8 +13195,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // El mensaje va escrito tal como se le manda al cliente: si acá se pone
                 // "UNA" en mayúscula para enfatizar, el bot la copia y le llega gritada.
                 ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos una sola oficina 👇\n${_lista}\n\n` +
-                  `Como es la única, NO le preguntes cuál prefiere, ni si la quiere, ni le pidas otra zona: ` +
-                  `se la das por buena y sigues con el pedido ("te lo dejo ahí" y adelante).\n\n`
+                  `Como es la única, NO le preguntes cuál prefiere, ni si la quiere, ni le pidas otra zona. ` +
+                  // 📍 Pero SÍ decirle cuál es. Medido: cliente de Mazamari, una sola oficina, el motor
+                  // la selló solo… y el cliente terminó la conversación entera sin enterarse de a dónde
+                  // iba a ir a recoger su paquete. «Se la das por buena y sigues» se leyó como «no la
+                  // menciones». Saber la calle es justo lo que le quita el miedo a pagar por adelantado.
+                  `Al contrario: díselo UNA vez, con su referencia tal como está arriba, para que sepa a ` +
+                  `dónde va a recogerlo («te lo dejo en *X*, que queda …»). Después no lo repitas.\n\n`
                 : `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}\n\n¿Cuál te queda más cerca?\n\n`) +
               // Negritas SOLO en lo que el ojo busca: la ciudad y el nombre de cada oficina.
               // Si se marca también la referencia, deja de resaltar nada.
@@ -13454,29 +13526,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // persona —como si detrás hubiera alguien más que va a escribir— y le cambia de tema
     // justo después de que él preguntó dónde pagar. Los datos sí salieron en la burbuja
     // siguiente, así que el cliente los tuvo; lo que no tuvo fue una respuesta.
-    // ⚠️ Y con DOS finales distintos según si los datos de pago pueden salir ya o no. El
-    // primer intento decía siempre «dile que se los pasas ahora», y en la prueba siguiente
-    // salió esto: el cliente escribió «mandame / numero / para yapear» faltándole todavía el
-    // nombre, y el bot contestó «Ya te envío los datos para Yape con el monto del adelanto de
-    // *S/ 20*. Me falta un dato: Nombre y apellidos.» — los datos NO salieron, porque sin el
-    // nombre no hay pedido que crear. Le prometió plata en la mano al que ya iba a pagar.
-    // Es el patrón de siempre: si el motor no va a hacer algo, la IA no puede anunciarlo.
+    // 💸 Le pregunta dónde pagar. Los datos SALEN ya, tenga o no sus datos cargados (ver
+    // maybeDatosPago): un cliente que dice «mándame el número, ahorita lo hago» está en el
+    // momento más caliente de la venta y hacerlo llenar un formulario antes es apagarlo.
+    // Si paga antes de dar sus datos, el comprobante se guarda y se engancha solo al pedido
+    // en cuanto nace (stashPrepagoAdelanto → engancharPrepagoAdelanto).
     if (RE_PREGUNTA_DONDE_PAGAR.test(String(ctx.last_input ?? ""))) {
       const _pendientes = ((ctx as any)._datos_faltan ?? []) as CampoDato[];
       parts.push("## Te está preguntando DÓNDE pagar\n" +
-        "⛔ Nunca en tercera persona: «ya te envían los datos», «te los van a mandar», «el equipo te pasa " +
-        "la cuenta». Acá no hay nadie más — el que le escribe eres tú, y eso lo deja esperando a alguien " +
-        "que no existe.\n" +
-        "⛔ Y no le cambies de tema en la misma burbuja. Preguntarle otra cosa justo después de que él " +
-        "preguntó dónde pagar es dejarlo sin respuesta, y encima en el momento en que ya quería pagar.\n" +
+        "Los datos salen enseguida por su cuenta, en su propia burbuja. Tú solo dilo en UNA línea y en " +
+        "primera persona («te paso el número ahora 👇»), sin escribir el número ni el titular — no los " +
+        "tienes, y si los inventas le llega un número equivocado.\n" +
+        "⛔ Nunca en tercera persona: «ya te envían los datos», «el equipo te pasa la cuenta». Acá no hay " +
+        "nadie más — el que le escribe eres tú, y eso lo deja esperando a alguien que no existe.\n" +
         (_pendientes.length
-          ? "🔴 OJO: los datos de pago TODAVÍA no pueden salir, porque falta " +
-            _pendientes.map((c) => limpiaLabel(c.label)).join(" y ") + ". ⛔ NO le digas «ya te envío los " +
-            "datos», «te los paso ahora» ni nada que suene a que van en camino: no van, y se va a quedar " +
-            "mirando el chat. Díselo como es, en una línea y sin rodeos: que apenas te dé ese dato le pasas " +
-            "el número para el Yape. Y pídeselo ahí mismo."
-          : "Los datos salen enseguida por su cuenta: dilo en primera persona y en una línea " +
-            "(«te paso los datos ahora 👇») y ahí termina tu mensaje, sin escribir el número ni el titular."));
+          ? "📌 Y en el MISMO mensaje pídele " + _pendientes.map((c) => limpiaLabel(c.label)).join(" y ") +
+            ", que es lo que falta para despachar. Sin condicionarlo: puede pagar primero y darte el dato " +
+            "después, o al revés. NO le digas que no puedes pasarle el número hasta que te lo dé."
+          : "Ya tienes todos sus datos, así que después del anuncio no le pidas nada más."));
     }
     // Venta DIGITAL: no hay datos que pedirle (ni dirección, ni DNI, ni talla). El modelo,
     // entrenado para cerrar pidiendo algo, se inventaba el trámite que falta. Medido en un
@@ -14694,7 +14761,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _cour = Object.keys((((_ent as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
           const _nom = _cour ? _cour.charAt(0).toUpperCase() + _cour.slice(1) : "";
           const _antes = salida;
-          salida = conEnvioExplicado(salida, _nom, modoEnvio(ctx));
+          // La oficina, si ya está resuelta: la que él eligió, o la única que hay en su
+          // ciudad (que el motor sella solo y hasta ahora no le nombraba nadie).
+          let _ofi = agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
+          if (!_ofi) {
+            const _unicas = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+            if (_unicas.length === 1) _ofi = _unicas[0];
+          }
+          salida = conEnvioExplicado(salida, _nom, modoEnvio(ctx), _ofi as any);
           if (salida !== _antes) run.vars._envio_explicado = 1;
         } catch (_) { /* sin config de courier → se envía tal cual */ }
       }
@@ -15122,7 +15196,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && _opsProd.length > 1
           && !!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
         await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
-          String(result), _digitalElegido);
+          String(result), _digitalElegido,
+          // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
+          // cuánto es ese adelanto, para no mandarle un número sin monto.
+          { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string) });
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
