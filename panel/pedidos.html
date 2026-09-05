@@ -704,6 +704,15 @@ const ROTULO_CSS=`
 // Arma el cuerpo <div class="lbl"> de UN pedido. Provincia = etiqueta para la
 // agencia (DNI + sede, sin guía todavía); Lima = hoja del motorizado con el
 // MONTO A COBRAR grande (contraentrega).
+// La dirección tal como debe salir IMPRESA. Si es el enlace de una ubicación compartida, se
+// queda con las coordenadas (lo único de ahí que el motorizado puede pasar a su GPS); si no,
+// va tal cual. Ver el comentario del rótulo de Lima.
+function dirRotulo(dir){
+  const d=String(dir||"").trim();
+  if(!/^https?:\/\//i.test(d)) return d;
+  const m=d.match(/(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
+  return m ? `${m[1]}, ${m[2]} (ubicación compartida)` : d;
+}
 function rotuloInner(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const zona=zonaDe(o);
@@ -761,7 +770,11 @@ function rotuloInner(o){
       // puesto en WhatsApp— y el motorizado habría tocado el timbre preguntando por eso.
       row("Destinatario", s.cliente||c.nombre||"", true)+
       row("Teléfono", tel)+
-      row("Dirección", s.direccion||"", true)+
+      // 📍 Si compartió su UBICACIÓN en vez de escribir la calle, el motor guarda un enlace de
+      // mapa. En el chat sirve (se abre de un toque), pero en un papel impreso una URL de 60
+      // caracteres es inservible: el motorizado no la puede tocar ni tipear entera. Se imprimen
+      // las coordenadas, que es lo único de ahí que puede copiar a su GPS.
+      row("Dirección", dirRotulo(s.direccion), true)+
       row("Distrito", s.distrito||"")+
       row("Referencia", s.referencia||"")+
       row("Pedido", pedido)+

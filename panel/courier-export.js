@@ -79,6 +79,13 @@ async function revisarEva(orders) {
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || "un pedido";
     if (!s.direccion) p.push(`${q}: falta dirección.`);
+    // 📍 El cliente compartió su UBICACIÓN por WhatsApp en vez de escribir la calle: el motor
+    // la guarda como un enlace de mapa, que es lo mejor que hay para el chat pero NO es una
+    // dirección — al Excel del courier le entraría una URL en la columna DIRECCIÓN y el
+    // repartidor no tiene a dónde ir. Se avisa antes de subirlo, que es cuando se puede
+    // arreglar (pedirle la calle o pasarle el pin al motorizado aparte).
+    else if (/^https?:\/\//i.test(String(s.direccion).trim()))
+      p.push(`${q}: solo compartió su ubicación (un enlace de mapa), no una dirección escrita — el courier no puede usarla.`);
     if (!s.distrito) p.push(`${q}: falta distrito.`);
     if (!telCliente(c, s)) p.push(`${q}: falta un teléfono válido — el courier no podrá coordinar la entrega.`);
     // El distrito va al Excel tal cual; si no coincide con la lista oficial de
