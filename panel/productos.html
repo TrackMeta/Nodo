@@ -4488,6 +4488,7 @@ function armRenderDraft(){
   if(Array.isArray(d.atributos)&&d.atributos.length) done.push(`Detalles a preguntar · ${d.atributos.length}`);
   if(Array.isArray(d.faq)&&d.faq.length) done.push(`Preguntas frecuentes · ${d.faq.length}`);
   if(Array.isArray(d.objeciones)&&d.objeciones.length) done.push(`Objeciones · ${d.objeciones.length}`);
+  if(Number.isFinite(Number(d.stock))) done.push(`Stock · ${Number(d.stock)} unidad(es)`);
   const faltan=Array.isArray(d.faltan)?d.faltan:[];
   const chk=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="color:var(--green,var(--green));flex:none;display:inline-flex">${ARM_CHK}</span>${t}</div>`;
   const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:var(--amber);flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
@@ -4546,6 +4547,18 @@ async function armAplicar(d){
   if(Array.isArray(d.objeciones)&&d.objeciones.length && (reemplazar || !pisaObj)){
     c.ia.objeciones_items=d.objeciones.filter(x=>x&&(x.o||x.r)).map(x=>({o:String(x.o||""),r:String(x.r||"")}));
     c.ia.objeciones=compileObj(c.ia.objeciones_items);
+  }
+  // 📦 STOCK. El asistente solo lo manda cuando el dueño dijo las unidades en su brief (y
+  // nunca si hay atributos, porque ahí va por variante). Sin esto, el número que él mismo
+  // escribió se perdía: en el brief del Magnesio venía "stock limitado a 50 unidades" y
+  // terminaba de texto en Límites, no en el inventario. Con variantes no se toca: la clave
+  // "_" es la del producto sin variantes y pisarla ahí rompería el reparto por talla/color.
+  const _stockNuevo=Number(d.stock);
+  const _stockActual=(c.stock&&typeof c.stock==="object")?c.stock:null;
+  const _yaTieneStock=!!(_stockActual&&Object.keys(_stockActual).length);
+  const _tieneVariantes=Array.isArray(c.atributos)&&c.atributos.some(a=>a&&String(a.valores||"").trim());
+  if(Number.isFinite(_stockNuevo)&&_stockNuevo>=0&&!_tieneVariantes&&(reemplazar||!_yaTieneStock)){
+    c.stock={ _:_stockNuevo };
   }
   // Presentaciones: se reemplazan solo si el dueño NO tiene presentaciones curadas, o si eligió
   // "Reemplazar todo". Antes solo miraba "tienePrecio" e ignoraba la elección "Solo lo vacío"

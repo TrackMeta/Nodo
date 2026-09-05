@@ -9223,6 +9223,16 @@ export async function armarProducto(
     "afirmaciones de salud si es un suplemento o cosmético, plazos que no controlas, " +
     "devoluciones que el dueño no ofrece). ⛔ NO es la disponibilidad ni el stock: la escasez " +
     "es un argumento de venta y va en `ia.tecnicas`, no acá.\n" +
+    // 📦 El STOCK es un dato que el dueño SÍ sabe y suele decir en el brief, pero no tenía
+    // casilla: en el brief del Magnesio venía «Stock limitado a 50 unidades» y el modelo, sin
+    // dónde ponerlo, lo metió en `limites` —el campo de "nunca digas esto"—, guardando el
+    // mejor gancho justo donde queda prohibido usarlo. Misma regla que el precio: copiar lo
+    // que él escribió no es inventarlo; deducirlo sí.
+    "- `stock`: las unidades que el dueño dice tener, SOLO si lo escribe en el brief («tengo " +
+    "50 unidades», «stock limitado a 50») y copiando su número tal cual. Si no lo dice, omite " +
+    "la clave y anótalo en `faltan` («Cuántas unidades tienes en stock»). ⛔ Jamás lo " +
+    "inventes ni lo estimes. Y si el producto tiene `atributos` (talla, color…), omítelo " +
+    "igual: ahí el stock va por variante y eso solo lo sabe él.\n" +
     "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
     // 🛡️ Las OBJECIONES son lo que el bot usa cuando el cliente DUDA, y es donde se gana o se
     // pierde la venta. El asistente no las generaba nunca: no estaban en el esquema ni en el
@@ -9244,6 +9254,7 @@ export async function armarProducto(
     '  "ia": {"resumen":"pitch corto de venta","detalle":"","reglas_producto":"","limites":"","estilo_venta":"consultivo","proceso":"","tecnicas":""},\n' +
     '  "faq": [{"q":"...","a":"..."}],\n' +
     '  "objeciones": [{"o":"está caro","r":"..."}],\n' +
+    '  "stock": 50  (SOLO si el dueño dijo cuántas unidades tiene; si no, omite la clave),\n' +
     '  "faltan": ["Precio real de cada presentación", "..."],\n' +
     '  "resumen_cambios": "una frase"\n' +
     "}\n" +
@@ -9265,6 +9276,7 @@ export async function armarProducto(
       ia: { type: "object", properties: { resumen: { type: "string" }, detalle: { type: "string" }, reglas_producto: { type: "string" }, limites: { type: "string" }, estilo_venta: { type: "string" }, proceso: { type: "string" }, tecnicas: { type: "string" } }, additionalProperties: false },
       faq: { type: "array", items: { type: "object", properties: { q: { type: "string" }, a: { type: "string" } }, required: ["q", "a"], additionalProperties: false } },
       objeciones: { type: "array", items: { type: "object", properties: { o: { type: "string" }, r: { type: "string" } }, required: ["o", "r"], additionalProperties: false } },
+      stock: { type: ["number", "null"] },
       faltan: { type: "array", items: { type: "string" } },
       resumen_cambios: { type: "string" },
     },
