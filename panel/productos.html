@@ -4513,8 +4513,11 @@ async function armAplicar(d){
   const dia=d.ia||{}; c.ia=c.ia||{};
   const IA_CAMPOS=["resumen","detalle","reglas_producto","limites","estilo_venta","proceso","tecnicas"];
   const IA_LBL={resumen:"Resumen de venta",detalle:"Detalle",reglas_producto:"Reglas del producto",limites:"Límites",estilo_venta:"Estilo de venta",proceso:"Proceso",tecnicas:"Técnicas"};
-  const pisaFaq=(Array.isArray(d.faq)&&d.faq.length) && Array.isArray(c.faq_items)&&c.faq_items.length;
-  const pisaObj=(Array.isArray(d.objeciones)&&d.objeciones.length) && Array.isArray(c.ia.objeciones_items)&&c.ia.objeciones_items.length;
+  // La FAQ y las objeciones ya NO entran al aviso de "esto se te va a pisar": se fusionan más
+  // abajo, así que no hay nada que perder y preguntarlo sería una alarma falsa. Se cuentan
+  // aparte para decírselo en positivo («se suman N a las que ya tienes»).
+  const _faqMias=Array.isArray(c.faq_items)?c.faq_items.length:0;
+  const _objMias=Array.isArray(c.ia.objeciones_items)?c.ia.objeciones_items.length:0;
   const pisaAtr=(Array.isArray(d.atributos)&&d.atributos.length) && Array.isArray(c.atributos)&&c.atributos.length;
   const pisaIa=IA_CAMPOS.filter(k=> dia[k] && String(c.ia[k]??"").trim() && String(c.ia[k]).trim()!==String(dia[k]).trim());
   // Presentaciones CURADAS del dueño: precio, descripción, cantidad≠1, o un nombre propio
@@ -4525,9 +4528,15 @@ async function armAplicar(d){
   const pisaNombre=!!(d.nombre && String(p.nombre??"").trim() && String(p.nombre).trim()!==String(d.nombre).trim());
   const pisaTipo=!!((d.tipo==="fisico"||d.tipo==="digital") && p.tipo && p.tipo!==d.tipo); // digital↔físico reconfigura todo
   let reemplazar=true;
-  if(pisaFaq||pisaObj||pisaAtr||pisaIa.length||pisaPres||pisaNombre||pisaTipo){
-    const items=[pisaNombre?"el nombre":"", pisaTipo?"el tipo (físico/digital)":"", pisaPres?`tus ${presCuradas.length} presentaciones`:"", pisaFaq?`tus ${c.faq_items.length} preguntas frecuentes`:"", pisaObj?`tus ${c.ia.objeciones_items.length} objeciones`:"", pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:"", ...pisaIa.map(k=>IA_LBL[k]||k)].filter(Boolean);
-    reemplazar=await confirmDialog({ title:"Ya tenías cosas escritas", message:`El borrador chocaría con: ${items.join(", ")}. Elige "Solo lo vacío" para conservarlas y llenar solo lo que falta, o "Reemplazar todo".`, confirmText:"Reemplazar todo", cancelText:"Solo lo vacío", danger:true });
+  if(pisaAtr||pisaIa.length||pisaPres||pisaNombre||pisaTipo){
+    const items=[pisaNombre?"el nombre":"", pisaTipo?"el tipo (físico/digital)":"", pisaPres?`tus ${presCuradas.length} presentaciones`:"", pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:"", ...pisaIa.map(k=>IA_LBL[k]||k)].filter(Boolean);
+    // Lo que se FUSIONA se dice en positivo y aparte: no es algo que el dueño esté por perder,
+    // así que meterlo en la misma frase que lo que sí se pisa lo asusta sin motivo.
+    const suma=[_faqMias?`tus ${_faqMias} preguntas frecuentes`:"", _objMias?`tus ${_objMias} objeciones`:""].filter(Boolean);
+    reemplazar=await confirmDialog({ title:"Ya tenías cosas escritas",
+      messageHtml:`El borrador chocaría con: <b>${items.map(esc).join(", ")}</b>. Elige "Solo lo vacío" para conservarlas y llenar solo lo que falta, o "Reemplazar todo".`
+        + (suma.length?`<br><br>${icon("check")} ${esc(suma.join(" y "))} no se tocan: las nuevas se <b>suman</b> a las que ya tienes.`:""),
+      confirmText:"Reemplazar todo", cancelText:"Solo lo vacío", danger:true });
   }
   if(d.nombre && (reemplazar || !String(p.nombre??"").trim())) p.nombre=String(d.nombre);
   if(d.emoji && (reemplazar || !String(p.emoji??"").trim())) p.emoji=String(d.emoji);
@@ -4536,16 +4545,36 @@ async function armAplicar(d){
     c.atributos=d.atributos.filter(a=>a&&a.nombre).map(a=>({ nombre:String(a.nombre), clave:slugAttr(a.nombre), obligatorio:true, valores:a.valores?String(a.valores):"", ayuda:"", media:[] }));
   }
   IA_CAMPOS.forEach(k=>{ if(dia[k] && (reemplazar || !String(c.ia[k]??"").trim())) c.ia[k]=String(dia[k]); });
-  if(Array.isArray(d.faq)&&d.faq.length && (reemplazar || !pisaFaq)){
-    c.faq_items=d.faq.filter(f=>f&&f.q&&f.a).map(f=>({q:String(f.q),a:String(f.a)}));
+  // 🧩 Las LISTAS se FUSIONAN, no se eligen. Con "Reemplazar todo" / "Solo lo vacío" —que es
+  // lo correcto para un texto— una lista siempre perdía algo: con 2 objeciones tuyas y 12 del
+  // asistente, "solo lo vacío" tiraba las 12 y "reemplazar" tiraba tus 2, cuando lo que quieres
+  // son las 14. Ahora se conservan SIEMPRE las del dueño y se agregan las del asistente que no
+  // repitan una que ya está. Se compara sin tildes ni mayúsculas y descartando la nueva si una
+  // contiene a la otra («está caro» vs «está muy caro»): no pesca todos los casi-duplicados,
+  // pero el error caro es el otro — perder la que el dueño escribió a mano.
+  const _clave=(s)=>String(s??"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^a-z0-9]+/g," ").trim();
+  const _fusiona=(mias,nuevas,campo)=>{
+    const out=[...mias];
+    for(const n of nuevas){
+      const kn=_clave(n[campo]); if(!kn) continue;
+      if(out.some(m=>{ const km=_clave(m[campo]); return km && (km===kn || km.includes(kn) || kn.includes(km)); })) continue;
+      out.push(n);
+    }
+    return out;
+  };
+  if(Array.isArray(d.faq)&&d.faq.length){
+    const _nuevasFaq=d.faq.filter(f=>f&&f.q&&f.a).map(f=>({q:String(f.q),a:String(f.a)}));
+    c.faq_items=_fusiona(Array.isArray(c.faq_items)?c.faq_items:[], _nuevasFaq, "q");
     c.faq=compileFaq(c.faq_items);
   }
   // 🛡️ OBJECIONES. El asistente ya las genera, pero acá se caían: este aplicador nunca las
   // leyó, así que un producto armado con IA nacía con CERO objeciones — justo lo que el bot
   // usa cuando el cliente duda. Se detectó comparando un Magnesio armado por el asistente
   // (0 objeciones) contra el Dermachem escrito a mano (11).
-  if(Array.isArray(d.objeciones)&&d.objeciones.length && (reemplazar || !pisaObj)){
-    c.ia.objeciones_items=d.objeciones.filter(x=>x&&(x.o||x.r)).map(x=>({o:String(x.o||""),r:String(x.r||"")}));
+  if(Array.isArray(d.objeciones)&&d.objeciones.length){
+    const _nuevasObj=d.objeciones.filter(x=>x&&(x.o||x.r)).map(x=>({o:String(x.o||""),r:String(x.r||"")}));
+    c.ia.objeciones_items=_fusiona(Array.isArray(c.ia.objeciones_items)?c.ia.objeciones_items:[], _nuevasObj, "o");
     c.ia.objeciones=compileObj(c.ia.objeciones_items);
   }
   // 📦 STOCK. El asistente solo lo manda cuando el dueño dijo las unidades en su brief (y
