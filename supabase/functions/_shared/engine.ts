@@ -3626,6 +3626,13 @@ const RE_DATO_INVENTADO =
 // sin que él se entere de que había un pack.
 const RE_PIDE_SUS_DATOS =
   /(nombre completo|tu nombre|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|n[uú]mero de celular|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos)/i;
+// 🔤 Los marcadores de WhatsApp (*negrita*, _cursiva_, ~tachado~) ROMPEN cualquier regex que
+// busque dos palabras seguidas: la IA escribe «¿me pasas tu *nombre*, *celular* y
+// *dirección*?» y «tu nombre» ya no calza porque en el medio hay un asterisco. Medido en una
+// prueba real: el guard que evita pedir datos sin saber la cantidad no disparó por eso, y el
+// cliente entregó nombre, celular y dirección antes de que le dijeran cuánto costaba nada.
+// Cualquier chequeo sobre lo que ESCRIBIÓ la IA debe pasar por acá primero.
+const sinFormato = (t: unknown) => String(t ?? "").replace(/[*_~`]/g, "");
 
 // La sede que el cliente dio "de memoria" ("la que está en la plaza", "la del
 // mercado") NO está validada contra nada: sin el directorio de Shalom, el motor
@@ -10785,7 +10792,29 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // 🔤 El NOMBRE, escrito como se escribe. La gente lo teclea en minúscula
             // («rodrigo flores») y salía tal cual en el resumen que lee el cliente, en el
             // rótulo del paquete y en el Excel del courier. Mismo trato que la ciudad.
-            if (c.clave === "nombre_completo" || c.clave === "cliente") val = enTitulo(val);
+            // 👤 El SEGUNDO APELLIDO que el extractor se come. Medido con el mismo nombre dos
+            // veces: «Percy Rodrigo Flores Nuñez» se guardó completo una vez y como «Percy
+            // Rodrigo Flores» la otra — intermitente, o sea del modelo. En Perú casi todos
+            // tienen dos apellidos, y ese nombre va al rótulo y, en provincia, tiene que
+            // calzar con el DNI para que le entreguen el paquete. Si en el mensaje del cliente
+            // el nombre que extrajo viene seguido de otra palabra que parece apellido, se
+            // recupera. Solo AGREGA lo que él escribió: nunca inventa ni corrige lo que dio.
+            if (c.clave === "nombre_completo" || c.clave === "cliente") {
+              try {
+                const _sn = (x: string) => String(x).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+                const _linea = String(texto).split("\n").find((l) => _sn(l).includes(_sn(val)));
+                if (_linea) {
+                  const _resto = _linea.slice(_sn(_linea).indexOf(_sn(val)) + val.length);
+                  // Hasta DOS palabras más, solo letras, y cortando en cuanto aparece algo que
+                  // no es nombre (una cifra, una coma, un "dni", el celular en la línea de al lado).
+                  const _mas = (_resto.match(/^(?:[ \t]+[\p{L}'´`]{2,})+/u)?.[0] ?? "")
+                    .trim().split(/\s+/).filter(Boolean).slice(0, 2)
+                    .filter((w) => !/^(dni|ce|con|mi|el|la|de|y|celular|tel|numero|n[uú]mero|direccion|direcci[oó]n)$/i.test(w));
+                  if (_mas.length) val = `${val} ${_mas.join(" ")}`;
+                }
+              } catch (_) { /* si algo falla, queda el nombre tal como lo extrajo la IA */ }
+              val = enTitulo(val);
+            }
             if (c.clave === "referencia") {
               // Un CELULAR no es una referencia de ubicación. Medido: «recibe mi hermana, su
               // celular es 998877665» dejó la referencia en "su hermana, su celular es
@@ -14428,7 +14457,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         } catch (_) { /* sin lista → se envía tal cual */ }
       }      // Provincia: explicarle la modalidad de envío ANTES de pedirle sus datos.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
-          && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(salida)) {
+          && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
           const _ent = await loadEntregas(db, run);
           const _cour = Object.keys((((_ent as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
@@ -14450,9 +14479,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // traiga para no pegar la lista en un mensaje que solo dice «¿te llevo 2 entonces?».
       const _symP = simboloMoneda(ctx.moneda as string);
       const _traeCifra = new RegExp(`${_symP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\d`).test(salida);
-      const _eligeSinCifras = RE_PIDE_ELEGIR_CANTIDAD.test(salida) && !_traeCifra;
+      const _eligeSinCifras = RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida)) && !_traeCifra;
       if (op === "generar_texto" && ctx._product_id
-          && (RE_PROMETE_PRECIOS.test(salida) || _pidioPrecio || _eligeSinCifras)) {
+          && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _eligeSinCifras)) {
         try {
           const opsP = await loadOpciones(db, run, ctx._product_id);
           const conPre = opsP.filter((o) => o.precio != null && Number(o.precio) > 0);
@@ -14532,7 +14561,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // veces, así que lo decide el motor. Se pregunta UNA vez; si aun así no elige, se
       // sella la primera para no dejar la venta trabada dando vueltas.
       if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()
-          && RE_PIDE_SUS_DATOS.test(salida)) {
+          && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
           const opsPend = await loadOpciones(db, run, ctx._product_id);
           if (opsPend.length > 1) {
@@ -14713,7 +14742,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // el motor: se le corta la pregunta y se le dice cuál es. Si la pregunta no se puede
       // cortar limpio, no se toca nada: un mensaje raro es peor que una pregunta de más.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
-          && RE_PIDE_SEDE.test(salida)) {
+          && RE_PIDE_SEDE.test(sinFormato(salida))) {
         try {
           const _enCiudad = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           const _yaElegida = agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
