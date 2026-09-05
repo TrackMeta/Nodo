@@ -3874,12 +3874,16 @@ function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: 
   // que explica la entrega, con la referencia, que es lo que de verdad la ubica («a espaldas
   // del Makro» le dice más que la dirección). Va por código y no por prompt porque el prompt
   // ya lo pedía y la IA lo saltaba: se probó y la sede no aparecía por ningún lado.
+  // 📦 Corto. La primera versión era una sola frase de 230 caracteres («Te cuento cómo te
+  // llega 👇 Lo despacho por *agencia X* a la oficina *Y* (…) y lo recoges ahí con una clave
+  // que te paso yo apenas llegue — el envío corre por nuestra cuenta.») y encabezaba un
+  // mensaje que ya traía la respuesta y la lista de datos: el resultado eran 400 caracteres
+  // para contestar «hace envios». Dice lo mismo en dos líneas.
   const _pista = sede ? String(sede.ref || sede.dir || "").trim() : "";
   const _donde = sede
-    ? `a la oficina *${bonito(sede.l)}*${_pista ? ` (${bonito(_pista, true)})` : ""}`
-    : "a tu ciudad";
-  return `Te cuento cómo te llega 👇 Lo despacho por *agencia ${quien}* ${_donde} y lo recoges ahí ` +
-    `con una clave que te paso yo apenas llegue${costo}.\n\n` + t;
+    ? `a la oficina *${bonito(sede.l)}* de *${quien}*${_pista ? `\n_${bonito(_pista, true)}_` : ""}`
+    : `a tu ciudad por *agencia ${quien}*`;
+  return `📦 Te llega ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.\n\n` + t;
 }
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
 // gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
@@ -12346,18 +12350,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     parts.push(REGLA_SIN_DISCURSO_RIESGO);
     parts.push(REGLA_NO_DAR_POR_HECHO);
     parts.push(REGLA_PAGO_NO_CONFIRMADO);
-    // 🔁 NO REPETIR LA EXPLICACIÓN DEL ENVÍO. Rodrigo, leyendo un chat suyo: «yo siento que
-    // explica mucho». Medido en ese mismo chat, cuatro mensajes del bot y en TRES estaba la
-    // misma explicación —«un adelanto de S/ 20 para despachar y el saldo cuando recojas en la
-    // agencia»—, dicha entera cada vez. La primera informa; la segunda ya suena a que no te
-    // escuchó, y la tercera hace que el mensaje que sí importaba se pierda en el medio.
-    parts.push("## No repitas lo que ya le explicaste\n" +
-      "Cómo funciona el envío (agencia, adelanto, saldo al recoger, la clave, cuánto demora) se explica " +
-      "UNA vez. Si ya está dicho más arriba en este chat, das por sabido y sigues: como mucho una " +
-      "referencia corta («el adelanto de siempre», «lo mismo que te dije»), nunca el párrafo entero " +
-      "otra vez.\n" +
-      "Tu mensaje va CORTO: contesta lo que preguntó y da el siguiente paso. Si algo ya se lo dijiste, " +
-      "no cabe. Un cliente que lee lo mismo tres veces deja de leer.");
+    // ✂️ MENSAJES CORTOS. Rodrigo, leyendo un chat suyo: «yo siento que explica mucho… me
+    // refiero a muy largo». Medido ahí mismo: mensajes del bot de 300-400 caracteres para
+    // contestar «hace envios» — la respuesta, más el modelo de entrega, más los beneficios,
+    // más un resumen de lo dicho. Un vendedor por WhatsApp contesta en dos líneas.
+    // 🔴 El primer intento de esto fue una regla de «no repitas lo que ya explicaste», y él
+    // la frenó en el acto: «si el cliente pregunta otra vez, ¿qué pasa, no le vuelve a
+    // explicar?». Tenía razón — dejar una pregunta sin contestar por haberla contestado antes
+    // es peor que ser repetitivo. El problema nunca fue repetir: era el largo.
+    parts.push("## Escribe CORTO\n" +
+      "Esto es WhatsApp, no un correo. Tu parte del mensaje son DOS o TRES líneas: le contestas lo que " +
+      "preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
+      "datos que faltan, las oficinas) van aparte y no cuentan para ese largo.\n" +
+      "⛔ No expliques lo que no te preguntó, no adornes cada respuesta con beneficios, y no cierres " +
+      "resumiendo lo que acabas de decir. Si tu mensaje tiene tres frases seguidas y él preguntó una " +
+      "sola cosa, sobran dos.\n" +
+      "✅ Pero si te vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo " +
+      "sentir mal — corto y directo. Dejarlo sin respuesta porque «ya se lo dijiste» es lo peor que " +
+      "puedes hacer: él no lo tiene claro, y por eso preguntó.");
     parts.push("## El precio se da, no se ofrece\n" +
       "⛔ Nunca le pidas permiso para decírselo: «¿quieres que te cuente las opciones y precios?», " +
       "«¿te menciono los precios?», «así te doy el precio exacto». Eso gasta un turno entero para no " +
