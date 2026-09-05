@@ -463,6 +463,13 @@ async function runEngineInner(
   let run = await getActiveRun(db, contactId);
 
   if (run) {
+    // 💸 «Devuélveme mi plata» ANTES que nada: es la única frase donde seguir vendiendo (o
+    // improvisar una respuesta) es peor que cortar. Va también acá y no solo en la rama sin
+    // run, porque el caso típico es justo con el run VIVO —parqueado esperando el adelanto—
+    // y ahí contestaba la IA de venta «déjame revisar tu caso y te confirmo» sin avisarle a
+    // nadie. El regex corta antes de tocar la base, así que no cuesta nada en los demás turnos.
+    try { if (await maybePideReembolso(db, channelId, contactId, event)) return; }
+    catch (e) { console.error("[pideReembolso/run]", (e as any)?.message ?? e); }
     // Recompra clara mientras el run de venta sigue vivo (parqueado en el extra /
     // "Fin"): se relanza la venta como pedido NUEVO en vez de que el nodo
     // parqueado la "confirme" sin poder grabarla. Ver recompraEnRunActivo.
@@ -534,6 +541,15 @@ async function runEngineInner(
       // humano, que sí puede buscar su compra. Ver maybeReclamoSinPedido.
       try { if (await maybeReclamoSinPedido(db, channelId, contactId, event)) return; }
       catch (e) { console.error("[reclamoSinPedido]", (e as any)?.message ?? e); }
+      // 💸 «Devuélveme mi plata». Entre los dos de arriba quedaba un hueco: maybePostventa
+      // exige un pedido YA COMPRADO y maybeReclamoSinPedido exige NO tener pedidos, así que
+      // el que pide su plata a mitad de la venta (pedido esperando_adelanto) no lo tomaba
+      // nadie y contestaba la IA de venta. Medido: «oye sabes que mejor ya no quiero,
+      // devuelveme mi plata» → «Entiendo, Wilmer. Déjame revisar tu caso y te confirmo en un
+      // momento 😊» … y el bot seguía activo, sin avisarle a nadie. Le prometió una respuesta
+      // que no iba a llegar, justo cuando hay plata suya de por medio.
+      try { if (await maybePideReembolso(db, channelId, contactId, event)) return; }
+      catch (e) { console.error("[pideReembolso]", (e as any)?.message ?? e); }
     }
     // Para el ruteo por anuncio: el ad_id del mensaje (referral fresco) o, si no vino en
     // este mensaje, el que ya quedó guardado en el contacto (vino de un anuncio antes).
@@ -8239,6 +8255,38 @@ async function maybeReclamoSinPedido(
     `Puede haber comprado desde otro número o estar cargada a mano.`, { aviso: true, molesto: true }).catch(() => {});
   await logEvent(db, channelId, contactId, "nota", "🛟 Reclamo sin pedido registrado",
     "Se atendió y pasó a un humano en vez de arrancarle la venta").catch(() => {});
+  return true;
+}
+
+// 💸 Pide que le devuelvan SU PLATA, en imperativo y ahora. En Perú se dice "plata", que
+// RE_RECLAMO no cubría (tiene "mi dinero" pero no "mi plata"), y en imperativo
+// ("devuélveme") tampoco: ahí solo estaba "quiero devolver", que es devolver el PRODUCTO.
+const RE_PIDE_REEMBOLSO =
+  /\b(devu[eé]lv\w*\s+(me\s+)?(mi|el|la)\s*(plata|dinero|adelanto|pago|deposito|dep[oó]sito)|me\s+(devuelve[ns]?|regresan?|retornan?|reintegran?)\s+(mi|el|la)\s*(plata|dinero|adelanto)|(quiero|necesito|dame|d[eé]jame)\s+(mi|el)\s*(plata|dinero|adelanto)\s*(de\s*vuelta|devuelt[ao])?|reembols)/i;
+// …pero NO cuando lo está PREGUNTANDO. «¿si no me funciona me devuelven mi plata?» es una
+// objeción de garantía, de las más comunes antes de comprar: escalarla mata la venta. Se
+// distingue por el signo de pregunta o por un condicional ("si no", "en caso de").
+const RE_ES_PREGUNTA_GARANTIA = /[?¿]|\b(si\s+no|si\s+acaso|en\s+caso|por\s+si|siempre\s+que|hay\s+garant|tienen\s+garant)\b/i;
+
+// El que pide su plata a mitad de la venta (pedido creado, todavía no entregado): no lo
+// toma postventa (exige pedido comprado) ni reclamoSinPedido (exige no tener pedidos). Se
+// le contesta una sola vez, sin inventarle política de devoluciones, y lo toma una persona.
+async function maybePideReembolso(
+  db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
+): Promise<boolean> {
+  if (event.type !== "message" || !event.text) return false;
+  const txt = String(event.text);
+  if (!RE_PIDE_REEMBOLSO.test(txt) || RE_ES_PREGUNTA_GARANTIA.test(txt)) return false;
+  const { data: o } = await db.from("orders").select("id, estado")
+    .eq("channel_id", channelId).eq("contact_id", contactId).limit(1);
+  if (!(o ?? []).length) return false;   // sin pedido no hay plata suya que devolver
+  // Sin deliverMessage propio: `pasarAHumano` con aviso ya le contesta al cliente («le paso
+  // tu caso a una persona…»). Medido con las dos: le llegaban DOS burbujas diciendo lo mismo.
+  await pasarAHumano(db, channelId, contactId,
+    `💸 PIDE QUE LE DEVUELVAN SU PLATA (pedido ${String((o ?? [])[0]?.estado ?? "?")}): “${txt.slice(0, 160)}”. ` +
+    `Atiéndelo tú: el bot no decide devoluciones.`, { aviso: true, molesto: true }).catch(() => {});
+  await logEvent(db, channelId, contactId, "nota", "💸 Pidió su plata de vuelta",
+    "Se atendió y pasó a un humano — el bot no promete devoluciones").catch(() => {});
   return true;
 }
 
