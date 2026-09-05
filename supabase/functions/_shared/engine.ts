@@ -3779,8 +3779,16 @@ function conEnvioExplicado(texto: string, courier: string, modo: string): string
 // tiene que preguntar otra vez o irse a buscar el precio más arriba en el chat. Es el
 // mismo patrón que ya se tapó con los datos de pago: prometer y no cumplir deja al
 // cliente esperando igual que no decir nada.
+// El PLURAL no alcanzaba: medido en una prueba real, el bot escribió «¿me confirmas si
+// quieres 1, 2 o 3 frascos? Así te cuento *el precio* y te preparo todo» —singular y con
+// artículo— y la red no saltó. Le pidió elegir cantidad SIN decirle cuánto vale ninguna.
 const RE_PROMETE_PRECIOS =
-  /\b(te (cuento|paso|digo|comparto|mando)( ya)? (los|las) (precios|opciones|promociones|presentaciones)|te (cuento|digo) cuánto (cuesta|sale|te sale))\b/i;
+  /\b(te (cuento|paso|digo|comparto|mando|envío|envio)( ya| ahora)? (el|los|las) (precio|precios|opciones|promociones|presentaciones|ofertas)|te (cuento|digo|paso) cu[aá]nto (cuesta|sale|te sale|te queda))\b/i;
+// 🔢 «¿Cuántos quieres?» / «¿1, 2 o 3 frascos?» SIN una sola cifra en el mensaje. Es peor que
+// prometer el precio: le pide decidir con lo que no le diste. Nadie elige cantidad a ciegas,
+// así que el turno se pierde entero — y el que compara los packs es el que se lleva el grande.
+const RE_PIDE_ELEGIR_CANTIDAD =
+  /\b(cu[aá]nt[oa]s\s+(quieres|deseas|te\s+llevo|te\s+mando|vas\s+a\s+llevar|necesitas)|qu[eé]\s+(opci[oó]n|presentaci[oó]n|pack)\s+(quieres|prefieres|te\s+llevo)|(quieres|prefieres|te\s+llevo|llevas)\s+1\s*,?\s*2\s+o\s+3\b|\b1\s*,\s*2\s+o\s+3\s+(frascos?|unidades?|packs?))/i;
 
 // 💰 El CLIENTE preguntó el precio. Medido: «hola, ¿cuánto cuesta el dermachem?» y el bot
 // contestó «¿para qué tipo de manchas lo buscas?» — consultivo, sí, pero sin decirle el
@@ -3831,6 +3839,36 @@ function conEmojiMinimo(texto: string, ctx: any, min: number): string {
     : /\b(gracias|listo|perfecto|genial)\b/i.test(t) ? "🙌"
     : "😊";
   return t.trimEnd() + " " + e;
+}
+
+// 📌 Los datos que se le piden van con su etiqueta tal como está configurada («Nombre»,
+// «Celular», «Dirección»). El motor se las pasa a la IA bien escritas y aun así las manda en
+// MINÚSCULA: medido en una prueba real, «📌 *nombre* 📌 *celular* 📌 *dirección*». Es una
+// regla de formato que el modelo cumple a veces, así que se corrige al salir. Solo toca la
+// primera letra de cada 📌: nada de tocar el resto (un «DNI» o un «RUC» deben quedar igual).
+function pinesConMayuscula(texto: string): string {
+  return String(texto ?? "").replace(/(📌\s*\*?\s*)(\p{Ll})/gu, (_m, pre, letra) => pre + letra.toLocaleUpperCase("es"));
+}
+
+// 💰 Las presentaciones escritas DE CORRIDO —«el frasco cuesta *S/ 79* · 2 frascos *S/ 119* ·
+// 3 frascos *S/ 149*»— obligan a releer para comparar, y comparar es justo lo que lleva al
+// pack grande. El prompt ya pide una por línea (con su molde y todo) y el modelo lo cumple a
+// veces: medido, en un turno de corrido y en el siguiente en lista. Se desenrolla al salir,
+// igual que `sedesEnLineas` hace con las oficinas.
+function preciosEnLineas(texto: string, sym: string): string {
+  const t = String(texto ?? "");
+  const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rxPrecio = new RegExp(`\\*?${esc}\\s*\\d`, "g");
+  return t.split("\n").map((linea) => {
+    // Tres o más precios en UNA línea: eso ya no es una frase, es una lista mal escrita.
+    if ((linea.match(rxPrecio) ?? []).length < 3) return linea;
+    // Se corta SOLO por · y ; —los separadores que usa el modelo para encadenarlas— y
+    // siempre que lo que sigue traiga su propio precio. La COMA queda fuera a propósito: es
+    // puntuación normal y partía frases enteras («Perfecto, el frasco cuesta S/ 79» dejaba
+    // «Perfecto» solo en su línea).
+    const partes = linea.split(new RegExp(`\\s*[·;]\\s+(?=[^·;]*${esc}\\s*\\d)`));
+    return partes.length >= 3 ? partes.map((p) => p.trim()).filter(Boolean).join("\n") : linea;
+  }).join("\n");
 }
 
 function conAgencias(texto: string, lista: string): string {
@@ -3897,7 +3935,9 @@ function sedesEnLineas(texto: string, agencias: { l: string }[]): string {
 // pregunta del precio sin contestar, no — es la pregunta que más se hace y la que decide.
 function conPrecios(texto: string, lista: string, preguntoElCliente = false): string {
   const t = String(texto ?? "");
-  if (!lista || !(RE_PROMETE_PRECIOS.test(t) || preguntoElCliente)) return t;
+  // `preguntoElCliente` también entra por «le pidió elegir cantidad sin cifras» (ver el
+  // llamador): en los tres casos el mensaje no puede salir sin precios.
+  if (!lista || !(RE_PROMETE_PRECIOS.test(t) || RE_PIDE_ELEGIR_CANTIDAD.test(t) || preguntoElCliente)) return t;
   // Si YA hay un precio escrito en el mensaje, la promesa está cumplida.
   if (/\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
   return t.trimEnd() + "\n\n" + lista;
@@ -14352,7 +14392,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // por línea), no con la lista de viñetas vieja: si el motor tiene que completar, que
       // no se note el remiendo.
       const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
-      if (op === "generar_texto" && ctx._product_id && (RE_PROMETE_PRECIOS.test(salida) || _pidioPrecio)) {
+      // …y el tercer disparador: le pide ELEGIR CANTIDAD y en el mensaje no hay una sola cifra.
+      // `conPrecios` no duplica nada si el texto ya trae precios, pero acá se exige que NO los
+      // traiga para no pegar la lista en un mensaje que solo dice «¿te llevo 2 entonces?».
+      const _symP = simboloMoneda(ctx.moneda as string);
+      const _traeCifra = new RegExp(`${_symP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\d`).test(salida);
+      const _eligeSinCifras = RE_PIDE_ELEGIR_CANTIDAD.test(salida) && !_traeCifra;
+      if (op === "generar_texto" && ctx._product_id
+          && (RE_PROMETE_PRECIOS.test(salida) || _pidioPrecio || _eligeSinCifras)) {
         try {
           const opsP = await loadOpciones(db, run, ctx._product_id);
           const conPre = opsP.filter((o) => o.precio != null && Number(o.precio) > 0);
@@ -14413,6 +14460,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
           }
         } catch (_) { /* sin agencias legibles → se envía tal cual */ }
+      }
+      // 🎨 Dos retoques de forma sobre lo que ya quedó escrito, los dos por reglas de prompt
+      // que el modelo cumple a veces (ver cada función): las etiquetas de los 📌 con su
+      // mayúscula, y las presentaciones desenrolladas si las encadenó en una sola línea.
+      if (op === "generar_texto") {
+        const _formAntes = salida;
+        salida = pinesConMayuscula(salida);
+        salida = preciosEnLineas(salida, simboloMoneda(ctx.moneda as string));
+        if (salida !== _formAntes) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🎨 Formato corregido al salir",
+            "Etiquetas de los 📌 en minúscula y/o precios de corrido en una línea.").catch(() => {});
+        }
       }
       // Pedir datos SIN saber cuántas unidades lleva. El bot pasaba a "pásame tu nombre
       // y tu celular" con dos presentaciones sobre la mesa y el cliente sin elegir
