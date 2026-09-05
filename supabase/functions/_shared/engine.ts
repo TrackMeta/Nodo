@@ -6500,7 +6500,11 @@ export function mensajeEstadoDefault(
   // para entregar a las 6— y sobre todo NO le pide lo único que evita la devolución:
   // que esté atento a la llamada del motorizado.
   if (estado === "en_reparto") {
-    const cobra = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
+    // Mismo cuidado que en `en_agencia`: si el saldo guardado no es un número, no se imprime
+    // («Ten listo *S/ abc*») — se cae al calculado desde el total.
+    const _cGuardado = Number(s.saldo);
+    const cobra = (s.saldo != null && s.saldo !== "" && Number.isFinite(_cGuardado))
+      ? s.saldo : porCobrarDe(amount);
     const dir = String(s.direccion || "").trim();
     // La dirección puede ser el enlace del mapa que compartió (ver extraerDatos): en el
     // mensaje al cliente eso no aporta —él sabe dónde vive— y encima queda feo.
@@ -6529,7 +6533,14 @@ export function mensajeEstadoDefault(
           ? `Ya está *todo pagado* ✅ — tu *clave de recojo* es *${clave}*. Muéstrala en la agencia para recogerlo. ¡Gracias por tu compra! 🎉`
           : `Ya está *todo pagado* ✅, no debes nada. En breve te paso tu *clave de recojo* para que puedas recogerlo. 🙌`);
     }
-    const saldo = (s.saldo != null && s.saldo !== "") ? s.saldo : porCobrarDe(amount);
+    // El saldo guardado solo vale si es un NÚMERO. Antes se usaba tal cual y un valor roto
+    // salía impreso: medido, con `shipping.saldo = "abc"` al cliente le llegaba «paga el saldo
+    // de *S/ abc*». Si no es un número se cae al calculado desde el total, que es de donde
+    // salía antes de que alguien lo editara. (El 0 y los negativos ya los atrapa `yaPagado`
+    // arriba: un sobrepago deja el saldo en negativo y ahí "todo pagado" es correcto.)
+    const _sGuardado = Number(s.saldo);
+    const saldo = (s.saldo != null && s.saldo !== "" && Number.isFinite(_sGuardado))
+      ? s.saldo : porCobrarDe(amount);
     return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
       `${saldo != null ? `Para recogerlo, paga el saldo de *${sym} ${saldo}* ` : "Para recogerlo, paga el saldo "}` +
       `y mándame la captura — apenas lo verifique te paso tu clave de recojo. 🙌`;
