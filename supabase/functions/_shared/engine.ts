@@ -10762,6 +10762,17 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                   `Repetía la dirección: "${String(val).slice(0, 60)}"`).catch(() => {});
                 continue;
               }
+              // 📍 …y tampoco es referencia su DISTRITO o su CIUDAD: ya van en su propio campo
+              // y en el rótulo. Medido: dijo la zona en un turno y la calle en otro, y el
+              // resumen salió «📍 mz x7 lt 10 villa san luis (ref: san juan de miraflores)» —
+              // el distrito repetido entre paréntesis, gastando la línea que el motorizado usa
+              // para ubicarse de verdad ("frente al parque", "portón azul").
+              const _zonas = [ctx.distrito, ctx.zona_nombre, ctx.ciudad].map((z) => _n(String(z ?? ""))).filter(Boolean);
+              if (_zonas.some((z) => z === _ref || (z.length > 3 && _ref === z))) {
+                await logEvent(db, run.channel_id, run.contact_id, "campo", "Referencia descartada",
+                  `Era su distrito/ciudad, no una referencia: "${String(val).slice(0, 60)}"`).catch(() => {});
+                continue;
+              }
             }
             // 👤 Un PARENTESCO no es un nombre. Medido: «el pedido va a nombre de mi mamá,
             // ella recibe» → el pedido salió a nombre de "Mi Mama", y así iba al rótulo y a
@@ -15440,7 +15451,22 @@ async function buildContext(db: SupabaseClient, run: Run) {
       // usar con el estado de ESE momento: el adelanto ya abonado, la sede ya confirmada.
       try {
         // El "cuándo" solo aplica a Lima (reparto propio); en provincia depende de la agencia.
-        const _cuandoLlega = String(ctx.zona_entrega ?? "") === "lima" ? String(ctx.entrega_cuando ?? "") : "";
+        let _cuandoLlega = String(ctx.zona_entrega ?? "") === "lima" ? String(ctx.entrega_cuando ?? "") : "";
+        // 📅 «Te llega mañana» a secas queda seco y encima es ambiguo: si el mensaje se lee al
+        // día siguiente, "mañana" ya no es mañana. Se le pega el día y la fecha —«mañana (jue
+        // 06/09)»— en la zona horaria del negocio, no en UTC. Solo cuando el motor dice HOY o
+        // MAÑANA: para "el lunes" o "en 2 días" la cuenta no es directa y prefiero no inventar.
+        try {
+          const _dias = /\bhoy\b/i.test(_cuandoLlega) ? 0 : /\bmañana\b/i.test(_cuandoLlega) ? 1 : null;
+          if (_dias != null && !/\d{1,2}\/\d{1,2}/.test(_cuandoLlega)) {
+            const _tz = await tzDe(db, run);
+            const _f = new Date(Date.now() + _dias * 86400000);
+            const _dia = new Intl.DateTimeFormat("es-PE", { timeZone: _tz, weekday: "short" }).format(_f)
+              .replace(/\.$/, "");
+            const _fecha = new Intl.DateTimeFormat("es-PE", { timeZone: _tz, day: "2-digit", month: "2-digit" }).format(_f);
+            _cuandoLlega = `${_cuandoLlega} (${_dia.charAt(0).toLocaleUpperCase("es") + _dia.slice(1)} ${_fecha})`;
+          }
+        } catch (_) { /* sin zona horaria legible → queda el "mañana" a secas, como antes */ }
         ctx.resumen_pedido = resumenPedido(o, simboloMoneda((o as any).currency), String(ctx.producto_nombre ?? ""), _cuandoLlega);
       } catch (_) { ctx.resumen_pedido = ""; }
     }
