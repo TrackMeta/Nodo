@@ -658,13 +658,22 @@ function _deCiudadEstricto(ciudad: string): Agencia[] {
   return AGENCIAS.filter((a) => _n(a.d) === c);
 }
 
+// 🏢 Puntos del volcado que NO son un mostrador donde un cliente va a recoger su paquete:
+// son el área corporativa y un almacén. Ofrecérselos a alguien manda a una persona a una
+// puerta donde no la van a atender. Medido: a un cliente de Pucusana (distrito de Lima sin
+// reparto propio) la lista de oficinas le salió "01 De Mayo, Almacenes Bsf, Ancón, Area
+// Shalom Empresas…". Se ocultan solo al OFRECER: si el cliente nombra una —porque Shalom se
+// la indicó— `sedeReconocida`/`candidatasAgencia` la siguen reconociendo igual.
+const NO_OFRECER = new Set(["area shalom empresas", "almacenes bsf"]);
+const _ofrecible = (a: Agencia) => !NO_OFRECER.has(_n(a.l));
+
 export function agenciasDeCiudad(ciudad: string): Agencia[] {
-  const estricto = _deCiudadEstricto(ciudad);
+  const estricto = _deCiudadEstricto(ciudad).filter(_ofrecible);
   if (estricto.length) return estricto;
   // Último intento: que la ciudad aparezca dentro del nombre de la agencia
   // ("HUANCAYO" → "HUANCAYO CO", "AEROPUERTO HUANCAYO").
   const c = _n(ciudad);
-  return c ? AGENCIAS.filter((a) => _n(a.l).includes(c)) : [];
+  return c ? AGENCIAS.filter((a) => _n(a.l).includes(c) && _ofrecible(a)) : [];
 }
 
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?
@@ -779,7 +788,9 @@ export function agenciasCercanasAlDistrito(
   const cands = provinciasDeDistrito(_sinRuido(ciudad) || _n(ciudad));
   if (!cands.length) return null;
   const conAgencia = cands
-    .map((c) => ({ ...c, agencias: AGENCIAS.filter((a) => _n(a.p) === _n(c.prov)) }))
+    // `_ofrecible`: acá también se están OFRECIENDO oficinas, así que el área corporativa y
+    // el almacén quedan fuera igual que en `agenciasDeCiudad`.
+    .map((c) => ({ ...c, agencias: AGENCIAS.filter((a) => _n(a.p) === _n(c.prov) && _ofrecible(a)) }))
     .filter((c) => c.agencias.length);
   if (conAgencia.length !== 1) return null;
   return conAgencia[0];

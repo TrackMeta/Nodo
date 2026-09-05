@@ -12831,7 +12831,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // ofrecen las de ahí, diciéndole con todas sus letras que quedan en otro pueblo —
             // nunca como si fueran «las de su ciudad», que sería mandarlo a un viaje sorpresa.
             const _cerca = agenciasCercanasAlDistrito(String(ctx.ciudad ?? ""));
-            if (_cerca && _cerca.agencias.length) {
+            // 🏙️ Provincia GRANDE (Lima tiene ~100 oficinas): listar "las 6 primeras" no es
+            // ayudar, es azar. Medido con un cliente de Pucusana —distrito de Lima sin reparto
+            // propio—: le salieron "01 De Mayo, Almacenes Bsf, Ancón, Area Shalom Empresas…",
+            // o sea las primeras por orden alfabético, con Ancón (extremo norte) ofrecida a
+            // alguien del extremo sur. Sin coordenadas no hay forma de ordenarlas por cercanía,
+            // así que se le pregunta por dónde le queda fácil y recién ahí se le ubica una.
+            if (_cerca && _cerca.agencias.length > 12) {
+              _sedeCiudad = bonito(_cerca.prov);
+              L.push(`📍 En *${bonito(ctx.ciudad)}* NO hay oficina de la agencia, y en su provincia ` +
+                `(${bonito(_cerca.prov)}) hay ${_cerca.agencias.length} repartidas por todos lados. ` +
+                "⛔ NO le pases una lista: las primeras de la lista no son las que le quedan cerca y lo " +
+                "vas a mandar al otro extremo. Dile que en su distrito no hay oficina y pregúntale por qué " +
+                "zona o distrito le queda fácil recogerlo; con eso le ubicas la suya. Si no lo tiene claro, " +
+                "dile que se la confirmas antes de despachar. Sigue con el pedido igual: esto no lo detiene.");
+            } else if (_cerca && _cerca.agencias.length) {
               _sedeCiudad = bonito(_cerca.prov);
               const _rz = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
               const _lst = [..._cerca.agencias].sort((x, y) => _rz(x) - _rz(y)).slice(0, 6).map((x) =>
@@ -14342,7 +14356,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // tenemos estas" sería mandarlo a buscar en su pueblo algo que está a un viaje.
           const _prop = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           const _cer = _prop.length ? null : agenciasCercanasAlDistrito(String(ctx.ciudad ?? ""));
-          const _ags = _prop.length ? _prop : (_cer?.agencias ?? []);
+          // 🏙️ Provincia grande (Lima tiene ~100 oficinas): pegar "las 8 primeras" es pegar las
+          // primeras del ABECEDARIO, no las que le quedan cerca. Medido con un cliente de
+          // Pucusana (extremo sur de Lima): le llegaron "01 De Mayo, Almacenes Bsf, Ancón…" —
+          // Ancón está en el extremo NORTE. El bloque del prompt ya le dice a la IA que en ese
+          // caso pregunte por qué zona le queda fácil; acá solo hay que no pisarlo con la lista.
+          const _provGrande = !_prop.length && (_cer?.agencias.length ?? 0) > 12;
+          const _ags = _provGrande ? [] : (_prop.length ? _prop : (_cer?.agencias ?? []));
           const _cab = _prop.length
             ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇`
             : `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* no hay oficina; las más cercanas están en ` +
