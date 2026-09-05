@@ -245,7 +245,7 @@ function pedidoProgresoHtml(o) {
   const saldoRecibido = !!(s.saldo_comprobante || s.saldo_recibido_at) || inc("saldo_pagado", "recogido");
   const pasos = zona === "provincia"
     ? [["Adelanto", inc("adelanto_validado", "por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido")],
-       ["Despacho", inc("despachado", "en_agencia", "saldo_pagado", "recogido")],
+       ["Envío", inc("despachado", "en_agencia", "saldo_pagado", "recogido")],
        ["Agencia", inc("en_agencia", "saldo_pagado", "recogido")],
        ["Saldo", saldoRecibido],
        ["Clave", inc("saldo_pagado", "recogido")],
@@ -411,7 +411,7 @@ export function printRotulo(o, remitente) {
       rowReq("DNI", s.dni || "", true) +
       row("Teléfono", tel) +
       rowReq("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
-      row("Envío", s.aereo ? "AÉREO — despachar por avión" : "", true) +
+      row("Envío", s.aereo ? "AÉREO — enviar por avión" : "", true) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("N° pedido", nro);
@@ -983,10 +983,10 @@ export async function openDespachoModal(o, deps) {
     const ov = document.createElement("div");
     ov.className = "overlay";
     ov.innerHTML = `<div class="modal">
-      <h3>Registrar despacho</h3>
+      <h3>Registrar envío</h3>
       <div class="m-sub">${esc((o.contact || {}).nombre || "")} — al guardar, el pedido pasa a <b>Despachado</b> y el bot puede enviarle la guía al cliente.</div>
-      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de despachar.</div>` : ""}
-      ${s.distrito_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} Cambió su dirección y el pedido sigue con distrito <b>${esc(s.distrito || "—")}</b>. Confírmalo antes de despachar o el reparto sale a la zona equivocada.</div>` : ""}
+      ${s.sede_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} La sede la capturó el bot y quedó por confirmar (${esc(s.sede_por_confirmar)}). Revisa que sea la oficina exacta antes de enviarlo.</div>` : ""}
+      ${s.distrito_por_confirmar ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} Cambió su dirección y el pedido sigue con distrito <b>${esc(s.distrito || "—")}</b>. Confírmalo antes de enviarlo o el reparto sale a la zona equivocada.</div>` : ""}
       ${s.variante_agotada ? `<div style="margin:0 0 12px;padding:8px 10px;border-radius:9px;border:1px solid var(--amber);background:var(--amber-bg,rgba(245,158,11,.13));color:var(--amber);font-size:12px;font-weight:600;line-height:1.4">${icon("alert","cxi")} El pedido se cerró sobre una variante AGOTADA (<b>${esc(s.variante_por_confirmar || "la que pidió")}</b>) y en el chat se le ofreció otra. Confirma qué se despacha antes de mandarlo.</div>` : ""}
       <div class="row2">
         <div><label>Agencia</label>
@@ -1065,7 +1065,7 @@ export async function openDespachoModal(o, deps) {
         ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
       } });
       if (!r) return; // el toast de error lo pone updateOrder
-      toast(avisoMsg(r, aviso, "Despacho registrado"));
+      toast(avisoMsg(r, aviso, "Envío registrado"));
       cerrar(true);
     };
     document.body.appendChild(ov);
@@ -2034,7 +2034,7 @@ export function elegirPedidosDespacho(orders, deps) {
     };
     ov.innerHTML = `<div class="modal sel-modal">
       <div class="sel-head"><div class="sel-ic">${icon("box","cxi")}</div>
-        <div><div class="sel-ttl">¿Cuáles vas a despachar?</div><div class="sel-sub">Marca los pedidos que llevas a la agencia ahora. Después registras sus guías.</div></div></div>
+        <div><div class="sel-ttl">¿Cuáles vas a enviar?</div><div class="sel-sub">Marca los pedidos que llevas a la agencia ahora. Después registras sus guías.</div></div></div>
       <div class="sel-search-wrap"><input class="sel-search" data-search placeholder="Buscar cliente, ciudad o destino…"/></div>
       <div class="sel-allbar"><label><input type="checkbox" data-all checked/> Seleccionar todos</label><span class="sel-cnt" data-cnt></span></div>
       <div class="sel-list">${orders.map(fila).join("")}</div>
@@ -2100,8 +2100,8 @@ export async function openDespachoLoteModal(orders, deps) {
       </tr>`;
     };
     ov.innerHTML = `<div class="modal dl-modal">
-      <h3>Registrar despacho en lote</h3>
-      <div class="m-sub">${orders.length} pedido${orders.length > 1 ? "s" : ""} por despachar. Pon el <b>N° de guía</b> y el <b>código de envío</b> de cada uno (Shalom pide los dos) y la clave. Al guardar pasan a Despachado y el bot avisa.</div>
+      <h3>Registrar envío en lote</h3>
+      <div class="m-sub">${orders.length} pedido${orders.length > 1 ? "s" : ""} por enviar. Pon el <b>N° de guía</b> y el <b>código de envío</b> de cada uno (Shalom pide los dos) y la clave. Al guardar pasan a Despachado y el bot avisa.</div>
       <div class="dl-tools">
         <button type="button" data-ocr>${icon("camera","cxi")} Leer guías de fotos</button>
         <button type="button" data-pegar>${icon("clipboard","cxi")} Pegar (texto)</button>
@@ -2115,7 +2115,7 @@ export async function openDespachoLoteModal(orders, deps) {
         <th>Cliente</th><th>N° de guía</th><th>Código de envío</th><th>Clave de recojo</th><th>Costo</th><th>Foto</th></tr></thead>
         <tbody>${orders.map(fila).join("")}</tbody></table></div>
       ${avisoBlockHtml(info)}
-      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Registrar despachos</button></div>
+      <div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Registrar envíos</button></div>
     </div>`;
     const cerrar = (v) => { ov.remove(); resolve(v); };
     ov.onclick = (e) => { if (e.target === ov) cerrar(0); };
@@ -2231,7 +2231,7 @@ export async function openDespachoLoteModal(orders, deps) {
         } });
         r ? ok++ : fail++;
       }
-      toast(`${ok} despacho(s) registrado(s)${fail ? ` · ${fail} con error` : ""}`);
+      toast(`${ok} envío(s) registrado(s)${fail ? ` · ${fail} con error` : ""}`);
       cerrar(ok);
     };
     document.body.appendChild(ov);
@@ -2239,7 +2239,7 @@ export async function openDespachoLoteModal(orders, deps) {
 }
 
 // Qué decirle al humano según lo que REALMENTE pasó con el aviso. Sin esto,
-// "Despacho registrado" se leía igual cuando el cliente recibió el aviso y
+// "Envío registrado" se leía igual cuando el cliente recibió el aviso y
 // cuando no le llegó nada.
 export function avisoMsg(r, aviso, base) {
   // "el aviso", no "la plantilla": este mismo error llega también cuando el aviso iba como
@@ -2406,7 +2406,7 @@ export function wireCopiloto(root, o, et, deps) {
   const b = (a) => el.querySelector(`[data-a="${a}"]`);
   if (et.id === "digital") { b("ok").onclick = () => aprobar("confirmada", "Aprobar el pago digital", "El bot le entrega el producto al instante y sigue vendiendo."); b("no").onclick = () => rechazar("digital"); }
   else if (et.id === "extra") { b("ok").onclick = aprobarExtra; b("no").onclick = () => rechazar("extra"); }
-  else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para despachar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
+  else if (et.id === "adelanto") { b("ok").onclick = () => aprobar("adelanto_validado", "Aprobar el adelanto", "El pedido pasa a listo para enviar y el bot le confirma."); b("no").onclick = () => rechazar("adelanto"); }
   else if (et.id === "saldo") {
     b("ok").onclick = () => {
       // Si el pedido aún no tiene clave, se escribe en el input del propio card y

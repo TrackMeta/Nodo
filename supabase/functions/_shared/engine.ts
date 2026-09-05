@@ -405,7 +405,7 @@ async function runEngineInner(
         "¡Anotado! 🙌 Le aviso al equipo para que no salga cuando no estés y lo coordinamos para el día " +
         "que me dices. Te confirmo por acá apenas esté listo. 😊").catch(() => {});
       await pasarAHumano(db, channelId, contactId,
-        `📅 Pide REPROGRAMAR la entrega: “${_txtR}”. El pedido NO se despachó todavía — coordínalo con el reparto.`,
+        `📅 Pide REPROGRAMAR la entrega: “${_txtR}”. El pedido NO ha salido todavía — coordínalo con el reparto.`,
         { aviso: false });
       return;
     }
@@ -436,7 +436,7 @@ async function runEngineInner(
           "Déjame conseguirte el número de guía con el equipo y te lo paso por acá 🙌 " +
           "Perdona la espera — apenas lo tenga te escribo.").catch(() => {});
         await pasarAHumano(db, channelId, contactId,
-          `📄 Pide la GUÍA de su pedido (ya despachado) y no hay ninguna cargada: “${String(event.text ?? "").slice(0, 120)}”. ` +
+          `📄 Pide la GUÍA de su pedido (ya enviado) y no hay ninguna cargada: “${String(event.text ?? "").slice(0, 120)}”. ` +
           `Consíguesela y pásasela.`, { aviso: false });
       }
       return;
@@ -5215,7 +5215,7 @@ function parseMonto(raw: unknown, ctx: any): number | undefined {
 // ═══════════════════════════════════════════════════════════════════
 const EST_HOJA: Record<string, string> = {
   esperando_adelanto: "Esperando adelanto", adelanto_validado: "Adelanto pagado",
-  por_despachar: "Por despachar", despachado: "Despachado", en_agencia: "En agencia",
+  por_despachar: "Por enviar", despachado: "Enviado", en_agencia: "En agencia",
   saldo_pagado: "Saldo pagado", recogido: "Recogido", confirmado: "Confirmado",
   en_reparto: "En reparto", entregado_cobrado: "Entregado y cobrado",
   reprogramado: "Reprogramado", rechazado: "Rechazado", no_recogido: "No recogido",
@@ -5930,8 +5930,8 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // o manda el color/talla equivocado y come la devolución.
     if ((ship as any).variante_agotada) {
       await logEvent(db, run.channel_id, run.contact_id, "error", "⚠️ Pedido con una variante AGOTADA",
-        `${(ship as any).variante_por_confirmar ?? ""} — el bot le ofreció otra en el chat. Confirma con el cliente antes de despachar.`).catch(() => {});
-      await notifyAdmin(db, run, `⚠️ Pedido cerrado sobre una variante AGOTADA (${(ship as any).variante_por_confirmar ?? "?"}). En el chat se le ofreció otra alternativa — confírmala con el cliente antes de despachar.`).catch(() => {});
+        `${(ship as any).variante_por_confirmar ?? ""} — el bot le ofreció otra en el chat. Confirma con el cliente antes de enviarlo.`).catch(() => {});
+      await notifyAdmin(db, run, `⚠️ Pedido cerrado sobre una variante AGOTADA (${(ship as any).variante_por_confirmar ?? "?"}). En el chat se le ofreció otra alternativa — confírmala con el cliente antes de enviarlo.`).catch(() => {});
     }
     await moverEtapa(db, run.channel_id, run.contact_id, stageDeEstado(a.estado || "carrito"));
     // Etiqueta automática de zona/tipo (filtrable en la Bandeja): Lima/Provincia
@@ -7531,7 +7531,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     // `sh` es una copia, así que con NO escribirla alcanza para que el pedido quede intacto.
     // Queda la nota en la bitácora y el aviso al dueño, que es quien puede llamar al courier.
     // No se pausa el bot: sigue atendiendo (regla de la casa — escalar poco, nunca dead air).
-    await logEvent(db, channelId, contactId, "nota", "🚚 Pidió cambiar datos con el pedido YA despachado — no se tocó",
+    await logEvent(db, channelId, contactId, "nota", "🚚 Pidió cambiar datos con el pedido YA enviado — no se tocó",
       cambios.join(" · ").slice(0, 120)).catch(() => {});
     const { data: ctc } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
     await avisar(db, channelId, contactId, "cambio_tras_despacho", {
@@ -7572,7 +7572,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     if (!_n(nDir).includes(_n(_dist))) {
       sh.distrito_por_confirmar = true;
       await notifyAdmin(db, { channel_id: channelId, contact_id: contactId } as Run,
-        `📍 Cambió su dirección a “${nDir}” pero el pedido sigue con distrito ${_dist}. Confirma el distrito en Pedidos antes de despachar.`).catch(() => {});
+        `📍 Cambió su dirección a “${nDir}” pero el pedido sigue con distrito ${_dist}. Confirma el distrito en Pedidos antes de enviarlo.`).catch(() => {});
     }
   }
   await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
@@ -13376,7 +13376,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             L.push("⛔ Esta lista se manda UNA sola vez. Si ya se la pasaste y te dice que no conoce ninguna o que " +
               "no se ubica, NO la repitas: pregúntale por qué zona o distrito vive y ubícale la que le queda cerca " +
               "con la REFERENCIA (el mercado, el óvalo, el grifo). Si aun así no lo tiene claro, dile que se la " +
-              "confirmas antes de despachar y sigue con la venta — no lo dejes trabado eligiendo oficina.");
+              "confirmas antes de mandárselo y sigue con la venta — no lo dejes trabado eligiendo oficina.");
           } else {
             // 🕳️ SU DISTRITO NO TIENE OFICINA. La lista de agencias solo contiene sitios donde
             // Shalom SÍ tiene local, así que un distrito chico —Jequetepeque, por ejemplo— no
@@ -13401,7 +13401,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 "⛔ NO le pases una lista: las primeras de la lista no son las que le quedan cerca y lo " +
                 "vas a mandar al otro extremo. Dile que en su distrito no hay oficina y pregúntale por qué " +
                 "zona o distrito le queda fácil recogerlo; con eso le ubicas la suya. Si no lo tiene claro, " +
-                "dile que se la confirmas antes de despachar. Sigue con el pedido igual: esto no lo detiene.");
+                "dile que se la confirmas antes de mandárselo. Sigue con el pedido igual: esto no lo detiene.");
             } else if (_cerca && _cerca.agencias.length) {
               _sedeCiudad = bonito(_cerca.prov);
               const _rz = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
@@ -13419,7 +13419,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               _sedeCiudad = "";
               L.push(`📍 No tengo oficinas de ${ctx.ciudad} en la lista y no puedo deducir su provincia. ` +
                 "⛔ NO inventes ninguna ni le digas que «hay varias». Dile con naturalidad que la oficina más " +
-                "cercana se la confirmas antes de despachar, y pregúntale a qué CIUDAD suele ir a hacer sus " +
+                "cercana se la confirmas antes de mandárselo, y pregúntale a qué CIUDAD suele ir a hacer sus " +
                 "trámites o compras —esa sí va a tener agencia— para buscarle la que le queda cerca. " +
                 "Sigue con el pedido igual: esto no lo detiene.");
             }

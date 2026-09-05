@@ -240,6 +240,6 @@ export async function generar(courier, orders, cfg) {
   // siguiente a partir de las 7pm, así que el archivo bajado de noche se guardaba fechado
   // mañana y descuadraba el archivo de despachos.
   const hoy = new Intl.DateTimeFormat("en-CA").format(new Date());
-  descargar(escribirZip(entries), `${courier.nombre.replace(/\s+/g, "_")}_por_despachar_${hoy}.${courier.ext}`);
+  descargar(escribirZip(entries), `${courier.nombre.replace(/\s+/g, "_")}_por_enviar_${hoy}.${courier.ext}`);
   return filas.length;
 }

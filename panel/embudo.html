@@ -463,7 +463,7 @@ function renderEntrega(cs){
   const kEl=$("entregaKpis"), fEl=$("entregaFun"), fugaEl=$("entregaFuga");
   if(conAdelanto===0){
     kEl.innerHTML=""; fugaEl.innerHTML="";
-    fEl.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><h4>Sin recojos todavía</h4>Aún no hay pedidos de provincia con adelanto pagado en este período. Cuando despaches a la agencia, verás aquí cuántos llegan a recoger.</div>`;
+    fEl.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><h4>Sin recojos todavía</h4>Aún no hay pedidos de provincia con adelanto pagado en este período. Cuando envíes a la agencia, verás aquí cuántos llegan a recoger.</div>`;
     return;
   }
   // Tasa de recojo = de los DESENLACES (recogió vs no recogió), cuántos recogieron.
@@ -481,7 +481,7 @@ function renderEntrega(cs){
 
   const niveles=[
     { lbl:"Con adelanto", n:conAdelanto,  c:"#8b5cf6" },
-    { lbl:"Despachados",  n:despachados,  c:"#3b82f6" },
+    { lbl:"Enviados",  n:despachados,  c:"#3b82f6" },
     { lbl:"En agencia",   n:enAgencia,    c:"#0ea5e9" },
     { lbl:"Pagaron saldo",n:pagaronSaldo, c:"#f59e0b" },
     { lbl:"Clave enviada",n:claveEnviada, c:"#10b981" },
@@ -531,7 +531,7 @@ function renderProvinciaAhora(cs){
       else if(e==="recogido") recojo++;
     }); });
   const rows=[
-    { label:"Con adelanto",  desc:"Adelanto pagado; listos para despachar a la agencia", color:"#8b5cf6", n:conAdel },
+    { label:"Con adelanto",  desc:"Adelanto pagado; listos para enviar a la agencia", color:"#8b5cf6", n:conAdel },
     { label:"Despachados",   desc:"Ya salieron; viajando a la agencia de destino",       color:"#3b82f6", n:desp },
     { label:"En agencia",    desc:"Llegaron; esperando que paguen el saldo",             color:"#0ea5e9", n:enAg },
     { label:"Pagaron saldo", desc:"Mandaron el comprobante del saldo — por validar",     color:"#f59e0b", n:pagoSaldo },

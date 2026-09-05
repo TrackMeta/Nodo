@@ -133,7 +133,7 @@ const $=(id)=>document.getElementById(id);
 // los placeholders p1–p4 que no correspondían a ninguna etapa del negocio.
 const STAGES=[["nuevo","Nuevo"],["curioso","Curioso"],["interesado","Interesado"],["caliente","Caliente"],["confirmado","Confirmado"],["comprado","Comprado"],["perdido","Perdido"]];
 // Estados del Kanban de Pedidos (orders.estado) para segmentar por logística.
-const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirmado (Lima)"],["en_reparto","En reparto"],["reprogramado","Reprogramado"],["entregado_cobrado","Entregado y cobrado"],["esperando_adelanto","Esperando adelanto"],["adelanto_validado","Adelanto validado"],["por_despachar","Por despachar"],["despachado","Despachado"],["en_agencia","En agencia"],["saldo_pagado","Saldo pagado"],["recogido","Recogido"],["no_recogido","No recogido"],["rechazado","Rechazado"]];
+const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirmado (Lima)"],["en_reparto","En reparto"],["reprogramado","Reprogramado"],["entregado_cobrado","Entregado y cobrado"],["esperando_adelanto","Esperando adelanto"],["adelanto_validado","Adelanto validado"],["por_despachar","Por enviar"],["despachado","Enviado"],["en_agencia","En agencia"],["saldo_pagado","Saldo pagado"],["recogido","Recogido"],["no_recogido","No recogido"],["rechazado","Rechazado"]];
 const STAGE_LBL=Object.fromEntries(STAGES);
 const OSTATE_LBL=Object.fromEntries(ORDER_STATES);
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };

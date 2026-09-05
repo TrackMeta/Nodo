@@ -1213,7 +1213,7 @@ function renderEntrega(host){
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a> y vale para todos tus productos.</p>
     ${st.prod.clase==="extra"
-      ? `<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:12px 13px;font-size:12.5px;color:var(--muted);line-height:1.55"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se despacha <b>junto con el pedido principal</b>, en el mismo envío. No lleva adelanto ni envío propios — usa los del pedido al que se sume.</div></div>`
+      ? `<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:12px 13px;font-size:12.5px;color:var(--muted);line-height:1.55"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se envía <b>junto con el pedido principal</b>, en el mismo envío. No lleva adelanto ni envío propios — usa los del pedido al que se sume.</div></div>`
       : `
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Adelanto de este producto</h4>
@@ -1227,7 +1227,7 @@ function renderEntrega(host){
         <label style="margin:0;font-size:12.5px;font-weight:700">Mínimo aceptable</label>
         <span style="color:var(--muted);font-size:13px">S/</span>
         <input class="in" id="pAdelMin" type="number" min="0" step="0.5" value="${esc(c.adelanto_minimo??"")}" placeholder="por defecto de Negocio" style="width:150px"/>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Lo <b>mínimo</b> que aceptas para despachar este producto igual (el resto se cobra al recoger). Vacío = usa el mínimo de Negocio (o el adelanto completo).</span>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Lo <b>mínimo</b> que aceptas para enviar este producto igual (el resto se cobra al recoger). Vacío = usa el mínimo de Negocio (o el adelanto completo).</span>
       </div>
     </div>
     <div class="card">

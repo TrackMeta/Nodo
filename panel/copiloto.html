@@ -69,7 +69,7 @@
       <div class="grow">
         <h1 class="nodo-title">Pagos por validar</h1>
         <p class="nodo-lead">Acá decides <b>una sola cosa: si aceptas un pago</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú apruebas o rechazas con un toque. Se actualiza sola: si entra un pago mientras miras, aparece acá.<br>
-        <span style="color:var(--faint)">Mover el pedido (despachar, avisar que llegó, entregar) es de <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
+        <span style="color:var(--faint)">Mover el pedido (enviar, avisar que llegó, entregar) es de <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions"><button class="btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
     </div>
@@ -421,7 +421,7 @@ function botones(o,et){
           <a class="btn" href="${chat}">Abrir el chat</a>`,
     wire:(el,o)=>{
       el.querySelector('[data-a="ok"]').onclick=()=>aprobar(o,"adelanto_validado","Aprobar el adelanto",
-        "El pedido pasa a listo para despachar y el bot le confirma al cliente.");
+        "El pedido pasa a listo para enviar y el bot le confirma al cliente.");
       el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"adelanto");
     }};
   if(et.id==="saldo") return {

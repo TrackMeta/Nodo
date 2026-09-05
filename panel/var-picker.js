@@ -35,7 +35,7 @@ export const VAR_GRUPOS = [
   ] },
   { g: "El pedido", items: [
     ["pedido_guia", "Nº de guía", ""],
-    ["pedido_guia_foto", "Foto de la guía", "La que subes al registrar el despacho"],
+    ["pedido_guia_foto", "Foto de la guía", "La que subes al registrar el envío"],
     ["pedido_agencia", "Agencia", ""],
     ["pedido_sede", "Sede / oficina", ""],
     ["pedido_clave_recojo", "Clave de recojo", ""],

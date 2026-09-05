@@ -168,14 +168,14 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Pedidos</h1>
-        <p class="nodo-lead">Acá <b>mueves el pedido</b>: confirmar, despachar, avisar que llegó, entregar. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso.<br>
+        <p class="nodo-lead">Acá <b>mueves el pedido</b>: confirmar, enviar, avisar que llegó, entregar. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso.<br>
         <span id="pedTrunc" style="display:none;color:var(--amber,#d97706);font-weight:700"></span>
         <span style="color:var(--faint)">Aprobar o rechazar un comprobante es de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
       </div>
       <div class="nodo-actions">
         <button class="nodo-btn" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir rótulos</button>
         <div class="expwrap">
-          <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por despachar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por enviar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="expmenu" id="exportMenu"></div>
         </div>
         <a href="pagos.html" class="nodo-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y avisos</a>
@@ -281,11 +281,11 @@ async function boot(){
 // Registrar despacho en lote (provincia/agencia): guía + código + clave de
 // varios pedidos a la vez. Excluye los aéreos (van a mano, uno por uno).
 async function despachoLote(){
-  if(st.kbZona!=="provincia"){ toast("El despacho en lote es para provincia (agencia con guía)",true); return; }
+  if(st.kbZona!=="provincia"){ toast("El envío en lote es para provincia (agencia con guía)",true); return; }
   const base=st.list.filter(o=>isFisico(o) && zonaDe(o)==="provincia" && POR_DESPACHAR.provincia.has(o.estado));
   const pend=base.filter(o=>!(o.shipping&&o.shipping.aereo));
   if(!pend.length){
-    toast(base.length ? "Los pedidos por despachar son aéreos: se registran a mano, no en lote" : "No hay pedidos de provincia por despachar", true);
+    toast(base.length ? "Los pedidos por enviar son aéreos: se registran a mano, no en lote" : "No hay pedidos de provincia por enviar", true);
     return;
   }
   // Paso 1: elegir cuáles despachar. Paso 2: registrar sus guías/códigos.
@@ -566,7 +566,7 @@ function primaryAction(o){
       ? { label:"Adelanto validado", estado:"adelanto_validado" }
       : { label:"Salió a reparto", estado:"en_reparto" };
     case "adelanto_validado":
-    case "por_despachar": return { label:"Registrar despacho…", modal:"despacho" };
+    case "por_despachar": return { label:"Registrar envío…", modal:"despacho" };
     case "despachado": return { label:"Avisar que llegó a agencia", estado:"en_agencia", modal:"llegada" };
     // en_agencia SIN comprobante de saldo: acción manual del operador (el cliente
     // pagó en efectivo/en la agencia). La clave ya se cargó en el despacho, así que
@@ -753,7 +753,7 @@ function rotuloInner(o){
       row("DNI", s.dni||"", true)+
       row("Teléfono", tel)+
       row("Agencia", [s.ciudad&&("Shalom "+cap(s.ciudad)), s.destino||s.sede].filter(Boolean).join(" · ")||(s.agencia?cap(s.agencia):""), true)+
-      row("Envío", s.aereo?"AÉREO — despachar por avión":"", true)+
+      row("Envío", s.aereo?"AÉREO — enviar por avión":"", true)+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       row("Incluye", bumpsTxt, true)+
@@ -845,7 +845,7 @@ function abrirImprimirRotulos(){
   ov.innerHTML=`<div class="modal"><div class="expmodal">
     <div class="em-head">
       <div class="em-logo" style="background:var(--brand)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div>
-      <div><div class="em-ttl">Imprimir rótulos</div><div class="em-sub">Marca los pedidos ${zona==="lima"?"de Lima":"de provincia"} por despachar; se imprime una etiqueta por hoja</div></div>
+      <div><div class="em-ttl">Imprimir rótulos</div><div class="em-sub">Marca los pedidos ${zona==="lima"?"de Lima":"de provincia"} por enviar; se imprime una etiqueta por hoja</div></div>
       <button class="em-x" title="Cerrar">${icon("x")}</button>
     </div>
     <div class="em-filters">
@@ -871,7 +871,7 @@ function abrirImprimirRotulos(){
   function render(){
     const arr=filtrar();
     const body=$q("#emBody");
-    if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} por despachar con esos filtros</div>`; foot(arr); return; }
+    if(!arr.length){ body.innerHTML=`<div class="em-empty">Sin pedidos ${zona==="lima"?"de Lima":"de provincia"} por enviar con esos filtros</div>`; foot(arr); return; }
     body.innerHTML=`<table class="em-tbl"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="emAll"></th><th>Cliente</th><th>${zona==="lima"?"Distrito":"Destino"}</th><th class="c-amt">Monto</th></tr></thead><tbody>
       ${arr.map(o=>`<tr data-id="${o.id}"><td class="c-chk"><input type="checkbox" class="emChk" data-id="${o.id}" ${S.sel.has(o.id)?"checked":""}></td>

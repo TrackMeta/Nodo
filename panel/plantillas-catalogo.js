@@ -11,7 +11,7 @@ export const CATALOGO = [
   {
     folder: "Recomendadas · Provincia", categoria: "UTILITY", name: "recordatorio_adelanto", language: "es",
     titulo: "Recordatorio de adelanto",
-    body: "¡Hola {{1}}! 👋 Tu pedido de {{2}} sigue apartado a tu nombre. Para prepararlo y despacharlo solo falta tu adelanto de {{3}}. Escríbenos por aquí y te ayudamos a completarlo. 😊",
+    body: "¡Hola {{1}}! 👋 Tu pedido de {{2}} sigue apartado a tu nombre. Para prepararlo y mandártelo solo falta tu adelanto de {{3}}. Escríbenos por aquí y te ayudamos a completarlo. 😊",
     params: ["{{nombre}}", "{{producto_nombre}}", "{{adelanto}}"],
     ejemplos: ["María", "Zapatillas Runner", "S/ 20"],
   },
@@ -31,8 +31,8 @@ export const CATALOGO = [
   },
   {
     folder: "Recomendadas · Provincia", categoria: "UTILITY", name: "pedido_despachado", language: "es",
-    titulo: "Pedido despachado (guía)",
-    body: "¡Hola {{1}}! Tu pedido de {{2}} ya fue despachado y va en camino 🚚. Número de guía: {{3}}. Te avisamos por aquí apenas llegue a la agencia. 📍",
+    titulo: "Pedido enviado (guía)",
+    body: "¡Hola {{1}}! Tu pedido de {{2}} ya salió y va en camino 🚚. Número de guía: {{3}}. Te avisamos por aquí apenas llegue a la agencia. 📍",
     params: ["{{nombre}}", "{{producto_nombre}}", "{{pedido_guia}}"],
     ejemplos: ["María", "Zapatillas Runner", "00123456789"],
   },

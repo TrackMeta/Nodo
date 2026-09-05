@@ -486,7 +486,7 @@ function renderEntregas(b){
     </div>
     <div class="card">
       ${cardHd("dollar","Adelanto de provincia","#22c079")}
-      <p class="sub">Cuánto pide el bot de <b>seña</b> para despachar un pedido a provincia. Es el valor por defecto para todos tus productos físicos; un producto puede pedir uno distinto desde su ficha.</p>
+      <p class="sub">Cuánto pide el bot de <b>seña</b> para enviar un pedido a provincia. Es el valor por defecto para todos tus productos físicos; un producto puede pedir uno distinto desde su ficha.</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Adelanto por defecto</label>
         <span style="color:var(--muted);font-size:13px">S/</span>
@@ -497,13 +497,13 @@ function renderEntregas(b){
         <label style="margin:0;font-size:12.5px;font-weight:700">Mínimo aceptable</label>
         <span style="color:var(--muted);font-size:13px">S/</span>
         <input class="in" id="entAdelMin" type="number" min="0" step="0.5" placeholder="opcional" value="${esc(E.adelanto_minimo_default??"")}" style="width:110px"/>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Lo <b>mínimo</b> que aceptas para despachar igual (el resto se paga al recoger). Vacío = exiges el adelanto completo. Un producto puede fijar el suyo desde su ficha.</span>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Lo <b>mínimo</b> que aceptas para enviar igual (el resto se paga al recoger). Vacío = exiges el adelanto completo. Un producto puede fijar el suyo desde su ficha.</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.38);border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.45"><b style="color:#e0900a">Ojo con bajarlo mucho:</b> mientras menos seña exijas, cierras más ventas… pero también despachas con menos compromiso → más riesgo de que el cliente <b style="color:#e0900a">no recoja</b> (pierdes el flete y el paquete viajó al vicio). Es tu perilla de riesgo.</div>
+      <div style="font-size:11px;color:var(--muted);background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.38);border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.45"><b style="color:#e0900a">Ojo con bajarlo mucho:</b> mientras menos seña exijas, cierras más ventas… pero también envías con menos compromiso → más riesgo de que el cliente <b style="color:#e0900a">no recoja</b> (pierdes el flete y el paquete viajó al vicio). Es tu perilla de riesgo.</div>
     </div>
     <div class="card">
       ${cardHd("clock","Cuánto demora a provincia","#0ea5e9")}
-      <p class="sub">Lo que tarda la agencia en tener el paquete listo para recoger, contando desde que lo despachas. Es la pregunta que hace <b>todo</b> cliente de provincia después de pagar el adelanto — y si no lo llenas, el bot no la contesta: prefiere callarse antes que inventar una fecha.</p>
+      <p class="sub">Lo que tarda la agencia en tener el paquete listo para recoger, contando desde que lo envías. Es la pregunta que hace <b>todo</b> cliente de provincia después de pagar el adelanto — y si no lo llenas, el bot no la contesta: prefiere callarse antes que inventar una fecha.</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Suele llegar en</label>
         <input class="in" id="demMin" type="number" min="1" max="60" step="1" placeholder="2" value="${esc(E.provincia_demora?.min??"")}" style="width:80px"/>
@@ -519,7 +519,7 @@ function renderEntregas(b){
     </div>
     <div class="card">
       ${cardHd("truck","Envío aéreo (Shalom)","#8b5cf6")}
-      <p class="sub">Para destinos muy alejados, Shalom despacha por <b>vía aérea</b> y llega mucho más rápido que el terrestre. Escribe acá esas zonas: cuando un cliente sea de una de ellas, el bot le ofrece el aéreo <b>como un beneficio</b> (mismo precio, sin recargo). En el pedido y el rótulo verás <b>“AÉREO”</b> para despacharlo por avión.</p>
+      <p class="sub">Para destinos muy alejados, Shalom lo manda por <b>vía aérea</b> y llega mucho más rápido que el terrestre. Escribe acá esas zonas: cuando un cliente sea de una de ellas, el bot le ofrece el aéreo <b>como un beneficio</b> (mismo precio, sin recargo). En el pedido y el rótulo verás <b>“AÉREO”</b> para despacharlo por avión.</p>
       <label style="margin-top:4px">Destinos con envío aéreo <span style="color:var(--faint);font-weight:400">(uno por línea)</span></label>
       <textarea class="in" id="aerDest" rows="4" placeholder="Iquitos&#10;Pucallpa&#10;Puerto Maldonado&#10;Tarapoto" style="min-height:96px;line-height:1.5;font-family:var(--font);resize:vertical">${esc((E.aereo.destinos||[]).join("\n"))}</textarea>
       <label style="margin-top:14px">Cómo lo presenta el bot <span style="color:var(--faint);font-weight:400">(mensaje de beneficio, opcional)</span></label>
@@ -528,13 +528,13 @@ function renderEntregas(b){
     </div>
     <div class="card">
       ${cardHd("truck","Exportar a couriers (Excel)","#18b7be")}
-      <p class="sub">Para bajar tus pedidos <b>por despachar</b> en el Excel de carga masiva de cada courier (botón <b>Exportar Excel</b> en <b>Pedidos</b>). <b>Eva Courier</b> (Lima) sale con lo que ya capturamos; <b>Shalom</b> (provincia) necesita estos datos tuyos:</p>
+      <p class="sub">Para bajar tus pedidos <b>por enviar</b> en el Excel de carga masiva de cada courier (botón <b>Exportar Excel</b> en <b>Pedidos</b>). <b>Eva Courier</b> (Lima) sale con lo que ya capturamos; <b>Shalom</b> (provincia) necesita estos datos tuyos:</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
         <label style="margin:0;font-size:12.5px;font-weight:700;min-width:150px">Oficina de origen (Shalom)</label>
         <input class="in" id="coOrigen" list="dlCoOrigen" placeholder="Escribe y elige tu agencia Shalom" value="${esc(E.courier.shalom.origen||"")}" style="flex:1;min-width:200px"/>
         <datalist id="dlCoOrigen">${dlOrigen}</datalist>
       </div>
-      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">La agencia Shalom <b>desde donde despachas</b>, elegida de la lista real de Shalom (columna ORIGEN).</div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">La agencia Shalom <b>desde donde envías</b>, elegida de la lista real de Shalom (columna ORIGEN).</div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
         <label style="margin:0;font-size:12.5px;font-weight:700;min-width:150px">Medida por defecto <span style="color:var(--faint);font-weight:400">(mercadería)</span></label>
         <select class="in" id="coMerc" style="flex:1;min-width:200px">${optMerc}</select>
