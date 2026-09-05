@@ -11,6 +11,7 @@ import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
+import { EST } from "../_shared/order-stats.ts";
 
 const db = serviceClient();
 // Estados que representan dinero cobrado/cierre → sellan confirmed_at.
@@ -113,6 +114,16 @@ Deno.serve(async (req) => {
     patch.version_id = (typeof body.version_id === "string" && body.version_id) ? body.version_id : null;
   }
   const newEstado = body.estado && body.estado !== (order as any).estado ? body.estado : null;
+  // 🚦 El estado tiene que ser uno de los que el sistema conoce (EST, la misma tabla que usan
+  // el Kanban y los números del Dashboard). Antes se escribía CUALQUIER string: un pedido con
+  // un estado inventado —probando escribí "entregado" en vez de "entregado_cobrado"— no cae
+  // en ninguna columna del Kanban, `stageDeEstado` devuelve null así que la etapa del contacto
+  // se congela, y como EST no lo clasifica desaparece de la plata del Dashboard. Todo eso en
+  // silencio. Desde los botones del panel no pasa (mandan estados válidos), pero esta función
+  // es un endpoint y el pedido queda en un limbo del que nadie se entera.
+  if (newEstado && !EST[newEstado]) {
+    return json({ error: "estado_desconocido", detalle: `"${newEstado}" no es un estado de pedido. Válidos: ${Object.keys(EST).join(", ")}` }, 400);
+  }
   if (newEstado) {
     patch.estado = newEstado;
     if (CONFIRM_STATES.includes(newEstado)) patch.confirmed_at = new Date().toISOString();
