@@ -1,3 +1,4 @@
+import { puntoDeDistrito } from "./distritos-geo.ts";
 import { provinciasDeDistrito } from "./distritos-peru.ts";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -804,9 +805,12 @@ export function otrosDistritosConAgencia(ciudad: string): string[] {
 // ellos) se queda con las que SÍ tienen agencia; si aun así hay más de una
 // provincia candidata, devuelve vacío: mandar un paquete a otro departamento por
 // adivinar es peor que preguntarle a qué ciudad suele ir.
+// `ordenadas` dice si de verdad se pudieron ordenar por cercanía. Si es false, la lista
+// viene en el orden del volcado (alfabético) y el llamador NO debería mostrar "las 6
+// primeras" como si fueran las más cercanas: ahí es mejor preguntarle al cliente.
 export function agenciasCercanasAlDistrito(
   ciudad: string,
-): { prov: string; dep: string; agencias: Agencia[] } | null {
+): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean } | null {
   const cands = provinciasDeDistrito(_sinRuido(ciudad) || _n(ciudad));
   if (!cands.length) return null;
   const conAgencia = cands
@@ -815,5 +819,12 @@ export function agenciasCercanasAlDistrito(
     .map((c) => ({ ...c, agencias: AGENCIAS.filter((a) => _n(a.p) === _n(c.prov) && _ofrecible(a)) }))
     .filter((c) => c.agencias.length);
   if (conAgencia.length !== 1) return null;
-  return conAgencia[0];
+  // 📍 ORDENADAS POR CERCANÍA al distrito del cliente. Antes salían en el orden del volcado
+  // (alfabético): a una clienta de Pucusana, la primera de "las de tu provincia" era Ancón,
+  // a 88 km, teniendo Punta Hermosa a 17. Con el punto del distrito (distritos-geo) y el de
+  // cada oficina (y/x) el orden es el correcto. Si no se puede ubicar el distrito —19 sin
+  // coordenada en el padrón— se devuelven como antes.
+  const p = puntoDeDistrito(_sinRuido(ciudad) || _n(ciudad), conAgencia[0].prov);
+  if (p) return { ...conAgencia[0], agencias: porCercania(conAgencia[0].agencias, p.y, p.x), ordenadas: true };
+  return { ...conAgencia[0], ordenadas: false };
 }

@@ -12837,7 +12837,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // o sea las primeras por orden alfabético, con Ancón (extremo norte) ofrecida a
             // alguien del extremo sur. Sin coordenadas no hay forma de ordenarlas por cercanía,
             // así que se le pregunta por dónde le queda fácil y recién ahí se le ubica una.
-            if (_cerca && _cerca.agencias.length > 12) {
+            if (_cerca && _cerca.agencias.length > 12 && !_cerca.ordenadas) {
               _sedeCiudad = bonito(_cerca.prov);
               L.push(`📍 En *${bonito(ctx.ciudad)}* NO hay oficina de la agencia, y en su provincia ` +
                 `(${bonito(_cerca.prov)}) hay ${_cerca.agencias.length} repartidas por todos lados. ` +
@@ -14361,7 +14361,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Pucusana (extremo sur de Lima): le llegaron "01 De Mayo, Almacenes Bsf, Ancón…" —
           // Ancón está en el extremo NORTE. El bloque del prompt ya le dice a la IA que en ese
           // caso pregunte por qué zona le queda fácil; acá solo hay que no pisarlo con la lista.
-          const _provGrande = !_prop.length && (_cer?.agencias.length ?? 0) > 12;
+          const _provGrande = !_prop.length && (_cer?.agencias.length ?? 0) > 12 && !_cer?.ordenadas;
           const _ags = _provGrande ? [] : (_prop.length ? _prop : (_cer?.agencias ?? []));
           const _cab = _prop.length
             ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇`
