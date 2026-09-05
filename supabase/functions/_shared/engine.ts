@@ -7179,6 +7179,27 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     sh.direccion = nDir;
     if (!yaSalio) await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
     cambios.push("dirección: " + nDir);
+    // 📍 Y el DISTRITO, si la dirección nueva es de otro. Se cambiaba solo la calle: medido,
+    // un pedido de San Borja al que el cliente pidió "mejor mándalo a mi trabajo: Av Javier
+    // Prado 1200, San Isidro" quedó con dirección de San Isidro y `distrito: "SAN BORJA"`.
+    // El rótulo y el reparto van por el distrito, así que el paquete salía a la zona
+    // equivocada con la calle correcta — el peor de los dos mundos, y en silencio.
+    if (String(sh.zona ?? "") === "lima") {
+      try {
+        const { data: chZ } = await db.from("channels").select("entregas").eq("id", channelId).maybeSingle();
+        const zonasCh: Zona[] = (chZ as any)?.entregas?.zonas ?? [];
+        const zNueva = zonasCh.length ? matchZona(zonasCh, nDir) : null;
+        if (zNueva && limpiaZona(zNueva.nombre) !== limpiaZona(String(sh.distrito ?? ""))) {
+          sh.distrito = zNueva.nombre;
+          sh.zona_nombre = zNueva.nombre;
+          if (!yaSalio) {
+            await setField(db, channelId, contactId, "zona_nombre", zNueva.nombre).catch(() => {});
+            await setField(db, channelId, contactId, "distrito", zNueva.nombre).catch(() => {});
+          }
+          cambios.push("distrito: " + zNueva.nombre);
+        }
+      } catch (_) { /* sin lista de zonas legible → queda la dirección sola, como antes */ }
+    }
   }
   // NOMBRE del destinatario (quien recoge/recibe). Vive en shipping.cliente y lo usa
   // el rótulo/guía y la agencia (que exige DNI+nombre que calcen). Guard por solape
