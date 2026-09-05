@@ -31,7 +31,16 @@ const PAGINA = 1000;   // tope duro de PostgREST por pagina
 
 // Cada entrada: [tabla, columna]. La búsqueda es por TEXTO sobre la columna, así
 // que da igual cómo esté anidada la URL dentro del JSON.
-const REFERENCIAS: Array<[string, string]> = [
+//
+// 🔴 ESTA LISTA ES LA QUE DECIDE QUÉ SE SALVA. Lo que guarde una URL del bucket y NO esté
+// acá, el recolector lo da por basura y lo borra esa misma noche. Ya pasó: las 552 FICHAS DE
+// LAS OFICINAS Shalom (`sede_imagenes.url`, 10 minutos de generación a mano) desaparecieron
+// enteras — la tabla conservó las 552 filas apuntando a archivos que ya no existían, así que
+// no se notaba desde el panel: el bot le mandaba al cliente una imagen rota al confirmarle su
+// sede. Se descubrió mirando el bucket, no el panel.
+//
+// ⛔ AL AGREGAR UNA FEATURE QUE SUBA ARCHIVOS, AGREGARLA ACÁ EN EL MISMO COMMIT.
+const REFERENCIAS: Array<[string, string, string?]> = [
   ["messages", "content"],
   ["quick_replies", "media"],
   ["products", "config"],
@@ -40,7 +49,16 @@ const REFERENCIAS: Array<[string, string]> = [
   ["orders", "shipping"],
   ["channels", "logo_url"],
   ["channels", "negocio"],
+  // La biblioteca de archivos del NEGOCIO (Negocio → multimedia) vive en `negocio_form`, no
+  // en `negocio`: son dos columnas distintas y solo estaba la segunda.
+  ["channels", "negocio_form"],
+  // Los adjuntos por momento de los AVISOS de pedido (Canales → Avisos).
+  ["channels", "pedidos_config"],
   ["contacts", "memoria_ia"],
+  // Las fichas de las 552 oficinas Shalom. Faltaba, y por eso se borraron.
+  ["sede_imagenes", "url", "slug"],
+  // `ultima_imagen` y cualquier otro campo capturado que guarde una URL.
+  ["contact_field_values", "value", "contact_id"],
 ];
 
 Deno.serve(async (req) => {
@@ -93,13 +111,18 @@ Deno.serve(async (req) => {
   //    que se recorre UNA vez el texto de las columnas que pueden traer URLs, por
   //    paginas, y se busca en memoria contra la lista de candidatos.
   const usados = new Set<string>();
-  for (const [tabla, col] of REFERENCIAS) {
+  for (const [tabla, col, clave] of REFERENCIAS) {
+    // La columna por la que se ordena para paginar. Casi siempre `id`, pero no todas las
+    // tablas la tienen: `sede_imagenes` se identifica por `slug` y con "id" la consulta
+    // reventaba entera. (Reventar es lo MENOS malo que podía pasar: la función devuelve
+    // "no_pude_verificar" y no borra nada. Pero así tampoco limpiaba.)
+    const orden = clave || "id";
     // PostgREST corta en 1000 filas y .limit() NO lo sube: hay que paginar con
     // .range() hasta que la pagina venga corta. Sin esto solo se revisarian los
     // primeros 1000 mensajes y el recolector borraria comprobantes en uso.
     for (let desde = 0; ; desde += PAGINA) {
-      const { data, error } = await db.from(tabla).select(`id, ${col}`)
-        .order("id", { ascending: true }).range(desde, desde + PAGINA - 1);
+      const { data, error } = await db.from(tabla).select(`${orden}, ${col}`)
+        .order(orden, { ascending: true }).range(desde, desde + PAGINA - 1);
       // supabase-js NO lanza ante un error de consulta: devuelve { data: null, error }.
       // Y no poder comprobar una fuente es exactamente cuando NO se debe borrar.
       if (error) return json({ error: "no_pude_verificar", detalle: `${tabla}.${col}: ${error.message}` }, 500);
