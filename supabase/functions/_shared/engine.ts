@@ -618,16 +618,17 @@ async function runEngineInner(
     // mientras que «tengo paño en las mejillas desde que tuve a mi bebé» sí se atendía: o
     // sea que además era una lotería. RE_CONDICION es la lista de palabras que hay que ir a
     // buscar EN LA FICHA, así que nombrar una es exactamente "dijo algo que atender".
-    // 📣 …PERO NO SI LO ÚNICO QUE PIDE ES INFORMACIÓN. Meta rellena el chat del anuncio con
-    // «Hola. ¿Puedo obtener más información sobre <PRODUCTO>?»: es el primer mensaje de casi
-    // todo el que llega de un anuncio, trae signo de pregunta, y por eso entraba acá como
-    // "algo que atender". Lo que pide —información del producto— es EXACTAMENTE lo que el
-    // saludo acaba de soltar. Medido: cinco burbujas del rotador y una sexta de la IA sin
-    // nada nuevo que decir; y como no tenía nada, se dio por contestada la pregunta con la
-    // que el rotador cerraba («¿ya tienes un taladro?» → «Perfecto, que tengas taladro…»),
-    // poniéndole al cliente en la boca una respuesta que nunca dio.
-    if (event.type === "message" &&
-        ((traePregunta(event.text) && !soloPideInfo(event.text)) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
+    // 🔑 …PERO NO SI ESCRIBIÓ SOLO LA PALABRA CLAVE. Entonces los "Mensajes iniciales" son
+    // toda la respuesta que le toca: el dueño los escribió justo para eso. Es el caso normal
+    // del anuncio, donde la keyword del producto ES la frase entera que Meta deja escrita
+    // («Hola. ¿Puedo obtener más información sobre <PRODUCTO>?»): trae signo de pregunta, así
+    // que entraba acá como "algo que atender" y la IA soltaba una burbuja detrás de las cinco
+    // del rotador. Sin nada que decir, se agarró de la última («¿ya tienes un taladro?») y se
+    // la dio por contestada —«Perfecto, que tengas taladro te ayuda…»— poniéndole al cliente
+    // en la boca una respuesta que nunca dio.
+    // Si además de la clave escribió algo suyo, se reinyecta como siempre: para eso está.
+    if (event.type === "message" && !soloLaPalabraClave(event.text, decision.keyword) &&
+        (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
          RE_ANUNCIA_PAGO.test(String(event.text ?? "")) ||
          RE_YA_PAGO.test(String(event.text ?? "")) ||
          RE_CONDICION.test(String(event.text ?? "")))) {
@@ -1780,29 +1781,30 @@ function traePregunta(text?: string | null): boolean {
 }
 
 
-// 📣 «Dame información» y NADA MÁS. Es el mensaje prearmado que Meta pone en el chat cuando
-// alguien toca el anuncio («Hola. ¿Puedo obtener más información sobre <PRODUCTO>?») y el
-// que escribe medio mundo a mano. Trae signo de pregunta, así que `traePregunta` lo daba por
-// una pregunta pendiente y la IA hablaba encima del saludo… para pedir lo que el saludo
-// acababa de dar. Los "Mensajes iniciales" del dueño SON la respuesta a este mensaje.
+// 🔑 ¿Escribió SOLO la palabra clave? Entonces los "Mensajes iniciales" son toda la
+// respuesta que le corresponde, y la IA no tiene por qué hablar encima.
 //
-// Se detecta por lo que SOBRA: se le quitan el saludo, la cortesía y las palabras de pedir
-// información, y lo que queda tiene que ser solo el nombre del producto. Si queda cualquier
-// palabra que pregunta otra cosa («¿y cuánto cuesta?», «¿llega a Puno?», «¿sirve para
-// lámina galvanizada?»), NO entra acá y se atiende como siempre — que es el caso en el que
-// la reinyección vale oro.
-function soloPideInfo(text?: string | null): boolean {
-  const t = normalize(text ?? "").replace(/[¿?¡!.,;:()"']+/g, " ");
-  if (!t || t.length > 160) return false;
-  if (!/\b(informacion|informacio|info|informes|imformacion|imforme|imformes|detalles)\b/.test(t)) return false;
-  const resto = t
-    .replace(/\b(hola+|holi|buenas?|buenos|dias|tardes|noches|hi|hello|que tal|disculpa|disculpe|porfa|porfavor|por|favor|gracias|amigo|amiga|señor|senor|señora|senora)\b/g, " ")
-    .replace(/\b(me|te|le|se|lo|la|los|las|puedo|podria|podrias|puede|puedes|pueden|quisiera|quiero|kiero|deseo|necesito|gustaria|interesa|interesado|interesada|interesan|obtener|tener|recibir|saber|conocer|dar|darme|dame|mandar|mandame|enviar|enviame|pasar|pasame|brindar|brindame|solicitar|pedir|mas|toda|todo|un|una|unos|unas|el|de|del|sobre|acerca|respecto|a|al|por|y|e|en|con|para|este|esta|estos|ese|esa|eso|esto|aqui|producto|articulo|informacion|informacio|info|informes|imformacion|imforme|imformes|detalles)\b/g, " ")
-    .replace(/[^a-z0-9]+/g, " ").trim();
-  // Palabras que convierten el mensaje en otra cosa: ya no está pidiendo la ficha, está
-  // preguntando algo concreto que el saludo puede no cubrir.
-  if (/[0-9]/.test(resto)) return false;   // una cantidad ya no es pedir la ficha
-  return !/\b(cuanto|cuesta|cuestan|precio|precios|vale|valen|costo|barato|oferta|descuento|sirve|sirven|funciona|funcionan|usa|usar|tienen|hay|stock|disponible|talla|tallas|color|colores|envian|envio|envios|mandan|llega|llegan|demora|demoran|tarda|garantia|pago|pagar|yape|plin|contraentrega|donde|cuando|como|cual|cuales|quien|que|si|no)\b/.test(resto);
+// Es el caso normal del anuncio: Meta rellena el chat con «Hola. ¿Puedo obtener más
+// información sobre <PRODUCTO>?» y ESA frase entera suele ser la keyword del producto.
+// Traía signo de pregunta, así que `traePregunta` la daba por una pregunta pendiente y
+// la IA soltaba una burbuja detrás de las cinco del rotador. Como no le quedaba nada que
+// decir, se agarraba de la última («¿ya tienes un taladro?») y se la daba por contestada:
+// «Perfecto, que tengas taladro te ayuda…», con el cliente sin haber dicho una palabra.
+//
+// Si además de la clave escribió algo suyo («…y me llega a Puno?», «¿sirve para lámina
+// galvanizada?»), eso sí lo atiende la IA en el mismo turno — que es para lo que existe
+// la reinyección.
+function soloLaPalabraClave(text?: string | null, keyword?: string | null): boolean {
+  const kw = normalize(keyword ?? "");
+  if (!kw) return false;             // sin keyword no hay nada que descontar
+  let resto = normalize(text ?? "");
+  if (!resto) return false;
+  // Fuera la clave (todas sus apariciones) y el relleno de cortesía con el que se escribe.
+  resto = resto.split(kw).join(" ")
+    .replace(/\b(hola+|holi|buenas?|buenos|dias|tardes|noches|hi|hello|que tal|disculpa|disculpe|porfa|porfavor|por favor|gracias|amigo|amiga|senor|senora|senorita)\b/g, " ")
+    .replace(/\b(el|la|los|las|un|una|unos|unas|de|del|sobre|acerca|respecto|a|al|y|e|o|u|en|con|para|me|mi|te|tu|se|lo|le|este|esta|estos|estas|ese|esa|eso|esto|aqui|ahi)\b/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return resto.length === 0;
 }
 
 const PIDE_CANCELAR = [
@@ -2273,6 +2275,10 @@ export interface RouteResult {
   flow: { id: string; nombre?: string } | null;
   confidence?: number;
   reason?: string;
+  // La palabra clave que matcheó, normalizada. La usa el arranque para saber si el cliente
+  // escribió SOLO la clave (→ salen únicamente los "Mensajes iniciales") o si además dijo
+  // algo suyo (→ el saludo Y la IA le contesta eso).
+  keyword?: string;
 }
 
 // Niveles 1-2: determinista (referral + keyword + flujo de entrada).
@@ -2286,15 +2292,19 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
     let entrada: any = null;
     let kwHit: any = null;
     let kwLen = 0;   // largo del keyword más específico que matcheó (desempate)
+    let kwTexto = "";  // ese mismo keyword, para saber qué escribió el cliente ADEMÁS de él
+    // El referral ya no corta el barrido: gana igual, pero se sigue mirando si el texto
+    // traía la keyword, porque de eso depende que el saludo salga solo o con la IA detrás.
+    let refHit: any = null;
     for (const t of triggers ?? []) {
       const flow = (t as any).flows;
       if (!flow || flow.estado !== "activo") continue;
       if (t.tipo === "entrada") { entrada = flow; continue; }
       // Referral CTWA: el anuncio identifica el producto sin depender del texto.
       // Gana sobre keyword (solo viene en el primer mensaje desde el anuncio).
-      if (t.tipo === "referral" && adId) {
+      if (t.tipo === "referral" && adId && !refHit) {
         const ads: string[] = (t.config?.ad_ids ?? []).map(String);
-        if (ads.includes(String(adId))) return { tier: "referral", flow };
+        if (ads.includes(String(adId))) refHit = flow;
       }
       if (t.tipo === "keyword") {
         const kws: string[] = (t.config?.keywords ?? []).map(normalize);
@@ -2306,16 +2316,19 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
         // hacía → ruteo al producto equivocado). Permite el plural opcional (es/s) + frontera,
         // igual que contienePalabra. Así "pago" matchea "pagos falsos" pero no "pagoda barata".
         const empiezaPalabra = (s: string, k: string) => s.startsWith(k) && /^(es|s)?([^\p{L}\p{N}]|$)/u.test(s.slice(k.length));
-        let best = 0;
+        let best = 0; let bestTxt = "";
         for (const k of kws) {
           if (!k) continue;
           const m = mode === "exacta" ? norm === k : mode === "empieza" ? empiezaPalabra(norm, k) : contienePalabra(norm, k);
-          if (m && k.length > best) best = k.length;
+          if (m && k.length > best) { best = k.length; bestTxt = k; }
         }
-        if (best > kwLen) { kwHit = flow; kwLen = best; } // keyword gana sobre entrada; el más específico gana
+        if (best > kwLen) { kwHit = flow; kwLen = best; kwTexto = bestTxt; } // keyword gana sobre entrada; el más específico gana
       }
     }
-    if (kwHit) return { tier: "keyword", flow: kwHit };
+    // La keyword solo se adjunta si apunta al MISMO flujo que ganó: la de otro producto no
+    // dice nada sobre lo que el cliente escribió de este.
+    if (refHit) return { tier: "referral", flow: refHit, keyword: kwHit?.id === refHit.id ? kwTexto : undefined };
+    if (kwHit) return { tier: "keyword", flow: kwHit, keyword: kwTexto };
     if (entrada) return { tier: "entrada", flow: entrada };
     return { tier: "none", flow: null };
   })();
@@ -13668,14 +13681,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "las ve seguidas. Tu turno es para atender lo que él dijo: contéstale su pregunta o su objeción " +
         "—el precio, que en otro lado se lo dejan más barato, si sirve para su caso— con lo que tienes en " +
         "la ficha, ANTES de pedirle nada. Si te falta un dato, pídele uno DISTINTO al que el saludo ya pidió. " +
-        "⛔ Y si el saludo termina PREGUNTÁNDOLE algo, él todavía NO te contestó eso: su " +
+        "⛔ Y si el saludo termina PREGUNTÁNDOLE algo, él TODAVÍA no te contestó eso: su " +
         "mensaje es anterior a tu pregunta. Nunca supongas la respuesta ni arranques como si " +
         "ya la tuvieras («perfecto, que tengas taladro…», «genial, entonces sí lo usas para…»). " +
-        "Habla SOLO de lo que él escribió.\n" +
-        "🤐 Y si el saludo ya cubrió todo lo que él dijo —te escribió pidiendo información y " +
-        "el saludo se la dio entera—, NO escribas nada: responde con texto vacío y deja que " +
-        "conteste su pregunta. Una burbuja de relleno detrás de las del saludo solo hace ruido " +
-        "y te obliga a inventar.");
+        "Y NUNCA escribas tú lo que contestaría ÉL («sí, ya tengo un taladro, ¿qué opciones " +
+        "tienes?»): el vendedor eres tú, el cliente habla solo. Escribe únicamente tu parte.\n" +
+        "🤐 Y si el saludo ya cubrió todo lo que él dijo, NO escribas nada: responde con texto " +
+        "vacío y espera a que conteste. Una burbuja de relleno detrás de las del saludo solo " +
+        "hace ruido y te obliga a inventar.");
     }
     // 🎨 El bloque de ESTILO se guarda para el FINAL (ver más abajo, justo antes de armar
     // el prompt). Acá quedaba enterrado bajo doce bloques de reglas de venta, y medido en un
