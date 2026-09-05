@@ -610,10 +610,19 @@ async function runEngineInner(
     // Y sobre todo si DICE QUE YA PAGÓ. Medido: «ya te hice el yape de 119» recibió solo
     // «¿desde dónde nos escribe?» — a alguien que acababa de mandar plata. No hay forma
     // peor de arrancar una conversación.
+    // 🙋 Y si abre CONTANDO SU PROBLEMA. Es el mensaje más común después de un anuncio y el
+    // que más ganas de comprar tiene detrás, pero no trae signo de pregunta ni dice "quiero",
+    // así que se quedaba sin atender. Medido en tres aperturas típicas: «hola, tengo manchas
+    // en la cara» y «hola, tengo mucho acné y cicatrices» recibieron SOLO «¿Desde dónde nos
+    // escribe?» —la persona cuenta lo que le pasa y el bot le contesta con un formulario—,
+    // mientras que «tengo paño en las mejillas desde que tuve a mi bebé» sí se atendía: o
+    // sea que además era una lotería. RE_CONDICION es la lista de palabras que hay que ir a
+    // buscar EN LA FICHA, así que nombrar una es exactamente "dijo algo que atender".
     if (event.type === "message" &&
         (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
          RE_ANUNCIA_PAGO.test(String(event.text ?? "")) ||
-         RE_YA_PAGO.test(String(event.text ?? "")))) {
+         RE_YA_PAGO.test(String(event.text ?? "")) ||
+         RE_CONDICION.test(String(event.text ?? "")))) {
       reinyectarTrasArranque = true;
     }
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
@@ -1686,7 +1695,7 @@ const RE_COMO_PAGA =
 // de lo que el producto hace: es la palabra que hay que ir a buscar EN LA FICHA antes de
 // afirmar o negar nada sobre ella.
 const RE_CONDICION =
-  /\b(acn[eé]|espinillas?|ros[aá]cea|melasma|cloasma|vit[ií]ligo|psoriasis|eccema|dermatitis|estr[ií]as|cicatri\w*|quemadur\w*|arrugas?|ojeras|verrugas?|hongos|caspa|alopecia|celulitis|patas de gallo|papada|flacidez|varices|v[aá]rices)\b/i;
+  /\b(acn[eé]|espinillas?|barros|ros[aá]cea|melasma|cloasma|pa[ñn]o|manchas?|pecas|vit[ií]ligo|psoriasis|eccema|dermatitis|estr[ií]as|cicatri\w*|quemadur\w*|arrugas?|ojeras|verrugas?|hongos|caspa|alopecia|celulitis|patas de gallo|papada|flacidez|varices|v[aá]rices)\b/i;
 // 👤 «Mi mamá», «su esposa», «la señora»: un parentesco, no un nombre. Se cuela cuando el
 // cliente dice quién recibe sin decir cómo se llama, y termina impreso en el rótulo.
 const RE_PARENTESCO =
