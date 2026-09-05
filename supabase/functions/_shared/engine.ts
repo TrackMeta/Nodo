@@ -2510,7 +2510,7 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "Y tampoco la coletilla que lo niega: «nada antes», «nada por adelantado», «no pagas hasta " +
   "que…», «cero riesgo», «sin adelanto», «sin pagos antes», «sin pagar nada antes». " +
   "Con decir cuándo paga ya está: no le agregues nada detrás. " +
-  "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, adelanto para despachar " +
+  "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, un adelanto y lo mando " +
   "y el saldo cuando el paquete llega a la agencia.";
 
 
@@ -3747,7 +3747,7 @@ function sinSedeConfirmada(texto: string, ciudad: string): string {
   t = t.replace(RE, (_m, prep) => `${prep} la agencia${dest ? " de " + dest : ""}`);
   if (!RE_YA_COORDINA_SEDE.test(t)) {
     t = t.trimEnd() + (/[.!?…]$/.test(t.trimEnd()) ? " " : ". ") +
-      "La oficina exacta te la confirmo antes de despacharlo 🙌";
+      "La oficina exacta te la confirmo antes de mandártelo 🙌";
   }
   return t;
 }
@@ -3889,6 +3889,30 @@ function sinPagarEnLaAgencia(texto: string, provincia = false): string {
   for (const [re, a] of CAMBIOS_PAGO_AGENCIA) t = t.replace(re, a);
   if (provincia) for (const [re, a] of CAMBIOS_PAGO_PROVINCIA) t = t.replace(re, a);
   return t;
+}
+// 📦 «DESPACHAR» es jerga nuestra, no del cliente. Rodrigo: «no me gusta la palabra
+// despachar». Él dice «que me lo manden». Se saca de todo lo que LEE el cliente —los
+// mensajes fijos del motor, las burbujas que genera el panel y lo que escribe la IA— y se
+// deja donde solo lo ve él (estados del pedido en el panel, avisos de Telegram, la Timeline):
+// ahí «Por despachar / Despachado» es la columna de trabajo y renombrarla sería otra cosa.
+const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
+  [/\bpara\s+que\s+despachemos(?![\p{L}\p{N}])/giu, "para que te lo mande"],
+  [/\bpara\s+que\s+(?:lo\s+|te\s+lo\s+)?despache(?![\p{L}\p{N}])/giu, "para que te lo mande"],
+  [/\bpara\s+despachar\s+(?:tu|el)\s+(pedido|paquete)(?![\p{L}\p{N}])/giu, "para mandarte el $1"],
+  [/\bpara\s+despachar(?:lo|la|te)?(?![\p{L}\p{N}])/giu, "para mandártelo"],
+  [/\bantes\s+de\s+despachar(?:lo|la)?(?![\p{L}\p{N}])/giu, "antes de mandártelo"],
+  [/\bdespachamos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
+  [/\bdespacharemos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
+  [/\b(?:lo\s+)?despacho\s+(?:hoy|mañana)?\s*(?![\p{L}\p{N}])/giu, "te lo mando "],
+  [/\bel\s+despacho(?![\p{L}\p{N}])/giu, "el envío"],
+  [/\bse\s+despacha(?![\p{L}\p{N}])/giu, "sale"],
+];
+function sinDespachar(texto: string): string {
+  let t = String(texto ?? "");
+  for (const [re, a] of CAMBIOS_DESPACHO) t = t.replace(re, a);
+  // Solo espacios y tabs: con s también entran los SALTOS DE LÍNEA, y al colapsarlos la lista
+  // de datos (📌 Nombre / 📌 Celular / 📌 DNI) salió entera en un solo renglón. Medido al probarlo.
+  return t.replace(/[ 	]{2,}/g, " ");
 }
 // 💰 «UN ADELANTO» SIN DECIR CUÁNTO. Salió al pedirle mensajes cortos: «hacemos envíos a
 // Mazamari por la agencia Shalom, con un adelanto para despachar» — más corto, sí, y más
@@ -6609,8 +6633,8 @@ function promesaDespacho(pedidosCfg: any, zona: string): string {
   if (String(zona || "") === "lima") return ""; // contraentrega: no adelanta nada, no hay qué prometer
   const conFoto = (pedidosCfg?.avisos?.despachado ?? {}).foto_guia === true;
   return conFoto
-    ? "Apenas lo despache te mando la *foto de la guía* de la agencia y te aviso en cuanto llegue. 📦"
-    : "Apenas lo despache te paso el *número de guía* de la agencia para que le hagas seguimiento, y te aviso en cuanto llegue. 📦";
+    ? "Apenas salga te mando la *foto de la guía* de la agencia y te aviso en cuanto llegue. 📦"
+    : "Apenas salga te paso el *número de guía* de la agencia para que le hagas seguimiento, y te aviso en cuanto llegue. 📦";
 }
 
 // 🧾 {{resumen_pedido}} — el detalle final de lo que compró, para la burbuja de
@@ -6757,7 +6781,7 @@ export function mensajeEstadoDefault(
     // pagaba su adelanto sin volver a ver nunca qué lleva ni a dónde va. Va el resumen
     // completo, regalo incluido.
     const det = resumenPedido({ shipping: s, amount, order_bumps: bumps ?? [] }, sym, producto);
-    return `✅ ¡Recibí tu adelanto! Ya estoy preparando tu pedido para despacharlo` +
+    return `✅ ¡Recibí tu adelanto! Ya estoy preparando tu pedido para mandártelo` +
       (donde ? ` a la agencia de *${donde}*` : "") + ".\n\n" +
       (det ? det + "\n\n" : "") +
       // Con el resumen puesto, repetir «los S/ X que faltan» acá es decir dos veces lo
@@ -7248,7 +7272,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   }
 
   const _cabeza = _corto
-    ? `¡Gracias por el pago! 🙌 Me llega *${_sym} ${_montoLeido}* y el adelanto para despachar es de *${_sym} ${_adel}*, así que faltarían *${_sym} ${(_adel! - _montoLeido!).toFixed(2).replace(/\.00$/, "")}*.`
+    ? `¡Gracias por el pago! 🙌 Me llega *${_sym} ${_montoLeido}* y el adelanto para mandártelo es de *${_sym} ${_adel}*, así que faltarían *${_sym} ${(_adel! - _montoLeido!).toFixed(2).replace(/\.00$/, "")}*.`
     : "¡Recibí tu pago! 🙌";
   // Con el pago corto NO se promete despacho aunque estén todos los datos: decir
   // "faltarían S/10" y a renglón seguido "en un momento te confirmo el despacho" es
@@ -7259,8 +7283,8 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       ? ` En cuanto completes esa diferencia y me pases ${_lista}, lo dejo en camino. 😊`
       : " Apenas completes esa diferencia lo dejo en camino. 😊")
     : _faltantes.length
-    ? ` Para despachar tu pedido a la agencia solo me falta ${_faltantes.length === 1 ? "" : "confirmar tus datos: "}${_lista}. Pásamelo${_faltantes.length === 1 ? "" : "s"} y lo dejo en camino. 😊`
-    : " Ya tengo tus datos, así que en un momento te confirmo el despacho. 😊";
+    ? ` Para mandarte el pedido solo me falta ${_faltantes.length === 1 ? "" : "confirmar tus datos: "}${_lista}. Pásamelo${_faltantes.length === 1 ? "" : "s"} y lo dejo en camino. 😊`
+    : " Ya tengo tus datos, así que en un momento te confirmo el envío. 😊";
   await deliverMessage(db, channelId, contactId, _cabeza + _cola).catch(() => {});
   if (_corto) {
     await pasarAHumano(db, channelId, contactId,
@@ -9169,11 +9193,11 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       // este cliente ya compró y debe el saldo. Se le da un recordatorio fijo y se
       // corta acá, conservando el contexto de post-venta.
       console.error("[postventa/saldo]", (e as any)?.message ?? e);
-      await deliverMessage(db, channelId, contactId, "¡Hola! 🙌 Para despachar tu pedido y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂").catch(() => {});
+      await deliverMessage(db, channelId, contactId, "¡Hola! 🙌 Para mandarte el pedido y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂").catch(() => {});
       return true;
     }
     await logEvent(db, channelId, contactId, "nota", "💵 Esperando saldo (recordatorio)", (event.text ?? "").slice(0, 80)).catch(() => {});
-    await emitIaText(db, run, result || "¡Hola! 🙌 Para poder despachar y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
+    await emitIaText(db, run, result || "¡Hola! 🙌 Para poder mandártelo y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
     return true;
   }
 
@@ -12513,7 +12537,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "La respuesta es que SÍ se puede, y es simple:\n" +
         "· En **Lima**, no hay nada que separar: paga cuando lo recibe, así que puede pedirlo el día " +
         "que le quede bien y le llega ese día o el siguiente.\n" +
-        "· En **provincia**, el paquete se despacha cuando entra su adelanto: si lo hace el viernes, " +
+        "· En **provincia**, el paquete sale cuando entra su adelanto: si lo hace el viernes, " +
         "ese día sale. Díselo así, sin drama.\n" +
         "Déjale claro el paso para ese día: que te escriba y lo cierran. " +
         "⛔ No lo presiones con urgencias ni escaseces inventadas.\n" +
@@ -12746,7 +12770,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "NO se la repitas como si fuera el destino («va a la agencia Shalom de …»): darle por buena lo deja creyendo " +
           "que ya está resuelto. Tampoco lo interrogues ni lo bloquees: la venta sigue igual, el adelanto también.\n" +
           `Nombra solo su CIUDAD (${ctx.ciudad || "la que dio"}) y dile en una línea que la oficina exacta se la ` +
-          "confirmas antes de despacharlo. De coordinarla se encarga una persona después, no tú.");
+          "confirmas antes de mandárselo. De coordinarla se encarga una persona después, no tú.");
       }
     } catch (_) { /* sin sede legible → nada que advertir */ }
     // Opciones de compra: la IA tiene que conocerlas para venderlas y para que
@@ -15013,6 +15037,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
+        salida = sinDespachar(salida);
         salida = sinPagarEnLaAgencia(salida, String(ctx.zona_entrega ?? "") === "provincia");
         // 💰 Y si nombró el adelanto sin decir cuánto, se le pone la cifra (ver arriba).
         {

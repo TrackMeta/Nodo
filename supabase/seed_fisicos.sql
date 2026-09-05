@@ -65,7 +65,7 @@ begin
     (a8, f1, 'accion', 'Crear pedido provincia',
       '{"acciones":[{"tipo":"crear_pedido","estado":"esperando_adelanto","monto":"{{precio}}","datos":{"zona":"provincia","sede":"{{agencia_destino}}","dni":"{{datos_recojo}}","adelanto":"{{adelanto}}"}}]}'::jsonb, false, 1200, 380),
     (a9, f1, 'pregunta', 'Pedir adelanto',
-      '{"text":"Para despachar tu pedido HOY solo confírmalo con un adelanto de *S/ {{adelanto}}* 💳\n(el resto lo pagas cuando llegue a tu agencia)\n\nYape / Plin: {{datos_pago}}\n\nMándame la captura del pago aquí 🙏","guardar_en":"msg_pago_adelanto"}'::jsonb, false, 1480, 380),
+      '{"text":"Para mandarte el pedido HOY solo confírmalo con un adelanto de *S/ {{adelanto}}* 💳\n(el resto lo pagas cuando llegue a tu agencia)\n\nYape / Plin: {{datos_pago}}\n\nMándame la captura del pago aquí 🙏","guardar_en":"msg_pago_adelanto"}'::jsonb, false, 1480, 380),
     (a9b, f1, 'condicion', '¿Mandó imagen?',
       '{"rutas":[{"handle":"ruta:es_imagen","nombre":"Es imagen","match":"todas","condiciones":[{"op":"campo_igual","campo":"last_input_type","valor":"image"}]}]}'::jsonb, false, 1760, 380),
     (a10, f1, 'ia', 'OCR del adelanto',

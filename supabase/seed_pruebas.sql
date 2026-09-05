@@ -237,7 +237,7 @@ begin
       false,1240,640) returning id into n9;
   insert into flow_nodes (flow_id,tipo,nombre,config,es_inicial,pos_x,pos_y) values
     (fF,'mensaje','Pedir el adelanto', jsonb_build_object('bubbles',jsonb_build_array(
-      jsonb_build_object('text', E'¡Perfecto! 🙌 Para despachar tu pedido a la agencia, confírmalo con un adelanto de *S/ {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque.'))),
+      jsonb_build_object('text', E'¡Perfecto! 🙌 Para mandarte el pedido, confírmalo con un adelanto de *S/ {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque.'))),
       false,1520,640) returning id into n10;
 
   insert into flow_edges (flow_id,source_node,source_handle,target_node) values
