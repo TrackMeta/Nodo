@@ -3856,6 +3856,47 @@ const RE_NO_SABE_SEDE =
 // soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
 const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
 
+// 💰 «UN ADELANTO» SIN DECIR CUÁNTO. Salió al pedirle mensajes cortos: «hacemos envíos a
+// Mazamari por la agencia Shalom, con un adelanto para despachar» — más corto, sí, y más
+// vago justo en la parte de la plata. Hablar de dinero sin la cifra es peor que no hablar:
+// el cliente se imagina un número, y casi siempre uno más alto. Si el mensaje nombra el
+// adelanto y no hay una cifra pegada, se la pone el motor.
+function conAdelantoConcreto(texto: string, monto: number, sym: string): string {
+  const t = String(texto ?? "");
+  if (!Number.isFinite(monto) || monto <= 0) return t;
+  // ¿Ya dice cuánto? Cualquier número cerca de la palabra cuenta como cifra dicha.
+  if (/adelanto[^.!?\n]{0,40}[0-9]|[0-9][^.!?\n]{0,40}adelanto/i.test(t)) return t;
+  let puesto = false;
+  return t.replace(/\b(un|el|con un|de un)\s+adelanto\b/i, (m) => {
+    if (puesto) return m;
+    puesto = true;
+    return `${m} de *${sym} ${monto}*`;
+  });
+}
+// 🧹 MULETILLAS DE ARRANQUE. Rodrigo, leyendo sus chats: «quita esas muletillas de arranque».
+// Son las frases con las que el modelo entra en calor antes de decir lo que importa —«Antes de
+// avanzar, ¿cuántas unidades quieres?», «Para ayudarte mejor, ¿de qué distrito me escribes?»—
+// y no aportan nada: la pregunta se entiende sola y sin ellas el mensaje entra de una. Además
+// delatan al robot, porque siempre son las mismas cuatro.
+// Se quitan por código y no por prompt porque son un tic del modelo: se le pidió escribir
+// corto y las siguió poniendo.
+// ⚠️ Solo al PRINCIPIO de una línea y solo la lista de abajo. «Antes de anotarte, ¿cuántos
+// llevas?» NO entra: esa la escribe el motor (preguntaCuantos) y ahí el "antes de anotarte"
+// sí dice algo — que lo va a apuntar.
+const RE_MULETILLA =
+  /^[\s>*_]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme)[,;:]?\s+/i;
+function sinMuletillaDeArranque(texto: string): string {
+  return String(texto ?? "").split("\n").map((l) => {
+    const limpio = l.replace(RE_MULETILLA, "");
+    if (limpio === l) return l;
+    // Lo que queda arranca en minúscula («¿cuántas unidades…»): se le devuelve la mayúscula,
+    // saltando el signo de apertura. Y si al quitarla no queda nada, se deja la línea como
+    // estaba: un renglón vacío en medio del mensaje se ve peor que la muletilla.
+    if (!limpio.trim()) return l;
+    const i = limpio.search(/[\p{L}\p{N}]/u);
+    return i < 0 ? limpio : limpio.slice(0, i) + limpio[i].toUpperCase() + limpio.slice(i + 1);
+  }).join("\n");
+}
 // 🗣️ TERCERA PERSONA. El bot habla del negocio como si fuera otro: «solo *te piden* un
 // adelanto de S/20», «ya *te envían* los datos de pago». Suena a que detrás hay alguien más
 // que va a aparecer, y el cliente se queda esperándolo — en el mensaje del adelanto, que es
@@ -4091,7 +4132,16 @@ function conPrecios(texto: string, lista: string, preguntoElCliente = false): st
   // Solo cuenta si escribió alguna de las cifras REALES de sus presentaciones.
   const cifras = (lista.match(/\d+(?:[.,]\d+)?/g) ?? []).filter((n) => Number(String(n).replace(",", ".")) >= 10);
   if (cifras.length ? cifras.some((n) => t.includes(n)) : /\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
-  return t.trimEnd() + "\n\n" + lista;
+  // 🧹 Y la frase que ANUNCIA los precios sobra, porque la lista va pegada justo debajo:
+  // «¿con cuántas unidades te interesa? Te paso las opciones y precios para que elijas.»
+  // seguido de las tres presentaciones. Anunciar algo que ya está a la vista es relleno, y
+  // es de lo que Rodrigo marcó como "muy largo". Se quita la oración —la misma que disparó
+  // este bloque— y solo si lo que queda sigue siendo un mensaje.
+  const _sinAnuncio = t.split("\n").map((l) =>
+    l.split(/(?<=[.!?…])\s+/).filter((o) => !RE_PROMETE_PRECIOS.test(o)).join(" ").trim()
+  ).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  const _base = _sinAnuncio.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length >= 20 ? _sinAnuncio : t;
+  return _base.trimEnd() + "\n\n" + lista;
 }
 
 // La pregunta se arma con los precios REALES de sus presentaciones, no la
@@ -12388,6 +12438,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "⛔ No expliques lo que no te preguntó, no adornes cada respuesta con beneficios, y no cierres " +
       "resumiendo lo que acabas de decir. Si tu mensaje tiene tres frases seguidas y él preguntó una " +
       "sola cosa, sobran dos.\n" +
+      "⛔ UNA sola pregunta por mensaje. Nada de preguntar lo mismo dos veces con otras palabras " +
+      "(«me confirmas cuántas unidades quieres… ¿cuántas te llevo?»): se pregunta una vez y se espera.\n" +
+      "⛔ Y no expliques PARA QUÉ le pides el dato («para darte el precio exacto», «así te digo cuál te " +
+      "conviene», «y seguimos con el pedido»). Pedirlo a secas es más corto y suena menos a trámite.\n" +
       "✅ Pero si te vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo " +
       "sentir mal — corto y directo. Dejarlo sin respuesta porque «ya se lo dijiste» es lo peor que " +
       "puedes hacer: él no lo tiene claro, y por eso preguntó.");
@@ -14915,6 +14969,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 🗣️ Y fuera la tercera persona: «solo te piden un adelanto de S/20» apareció en
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
+        salida = sinMuletillaDeArranque(salida);
+        // 💰 Y si nombró el adelanto sin decir cuánto, se le pone la cifra (ver arriba).
+        {
+          let _ad = Number(ctx.adelanto);
+          if (!Number.isFinite(_ad) || _ad <= 0) {
+            try {
+              const { data: _chAd } = await db.from("channels").select("entregas").eq("id", run.channel_id).maybeSingle();
+              const _d = (_chAd as any)?.entregas?.adelanto_default;
+              if (_d != null && _d !== "" && Number.isFinite(Number(_d))) _ad = Number(_d);
+            } catch (_) { /* sin config → se deja como está */ }
+          }
+          salida = conAdelantoConcreto(salida, _ad, simboloMoneda(ctx.moneda as string));
+        }
         if (salida !== _formAntes) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🎨 Formato corregido al salir",
             "Etiquetas de los 📌 en minúscula y/o precios de corrido en una línea.").catch(() => {});
