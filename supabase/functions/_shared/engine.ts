@@ -10070,7 +10070,16 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // papal" respondió "Lince", que sí es un distrito de Lima — y la venta de un cliente
     // de Trujillo se pasó entera a contraentrega en Lima. Mirando la oficina primero, esa
     // alucinación ya no decide nada.
-    let _unica = oficinaDeTexto(lugar) ?? oficinaDeTexto(texto);
+    // ⛔ …pero NO cuando el mismo texto calza con un distrito que el dueño SÍ cubre. Su lista
+    // manda: es su cobertura declarada. Medido: «Lima, Surquillo, Av Angamos 520» —una
+    // dirección de Lima de lo más normal— se fue a PROVINCIA porque existe una oficina
+    // llamada "AV. ANGAMOS" (en San Borja), y el bot le contestó «en Surquillo no hacemos
+    // entrega directa, pero cerca está la agencia Shalom de Av. Angamos», más el DNI que un
+    // cliente de Lima no necesita. Las avenidas de Lima se llaman igual que varias oficinas
+    // (Angamos, Grau, Arequipa, Universitaria, La Marina…), así que esto le pasaba a
+    // cualquiera que diera su calle. Si de verdad nombró la AGENCIA, la guarda 1b de arriba
+    // ya anuló `z` (pide las palabras "shalom/agencia/oficina/sede") y esto sigue corriendo.
+    let _unica = (z && z.cubro !== false) ? null : (oficinaDeTexto(lugar) ?? oficinaDeTexto(texto));
     // ⛔ Y la oficina NO puede mudarlo de ciudad. Medido: un cliente dijo "soy de arequipa"
     // y después "av ejercito" —que en Arequipa no existe pero en TACNA sí— y el pedido se
     // fue a Tacna, a 400 km de donde vive. Si ya sabemos su ciudad y la oficina no es de
