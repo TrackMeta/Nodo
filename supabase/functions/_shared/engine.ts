@@ -92,7 +92,13 @@ export async function runEngine(
 ) {
   const holder = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let locked = false;
-  for (let i = 0; i < 20 && !locked; i++) {           // hasta ~5s de espera (20 × 250ms)
+  // ⏳ Hasta ~30s. Eran ~5s, y un turno con llamada a la IA tarda 8-12s: dos mensajes
+  // seguidos del cliente —lo más normal del mundo en WhatsApp— se pisaban. Medido: mandó
+  // «A. Mazamari» y «Ase. Envios» con 19 ms de diferencia y le salieron DOS burbujas
+  // idénticas con la lista de precios; el segundo turno había leído las `vars` del run
+  // ANTES de que el primero guardara la suya, así que la guarda de "esto ya se lo pregunté"
+  // no existía todavía para él. Esperar es feo, contestar dos veces lo mismo es peor.
+  for (let i = 0; i < 120 && !locked; i++) {          // hasta ~30s de espera (120 × 250ms)
     try {
       const { data } = await db.rpc("contact_lock_try", {
         p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 90, p_holder: holder,
@@ -101,11 +107,11 @@ export async function runEngine(
     } catch { break; }                                // RPC ausente → proceder sin lock
     if (!locked) await new Promise((r) => setTimeout(r, 250));
   }
-  // Si tras ~5s no se consiguió el lock se procede IGUAL, a propósito: preferimos atender al
+  // Si tras ~30s no se consiguió el lock se procede IGUAL, a propósito: preferimos atender al
   // cliente con riesgo de carrera antes que dejarlo sin respuesta (aguas abajo protegen el
   // índice único de runs vivos y los CAS de pedido/pago). Pero queda el rastro: si algún día
   // aparece una doble respuesta o un dato pisado, esta línea es la que lo explica.
-  if (!locked) console.warn(`[runEngine] sin lock tras ~5s (contacto ${contactId}) — se procede igual`);
+  if (!locked) console.warn(`[runEngine] sin lock tras ~30s (contacto ${contactId}) — se procede igual`);
   try {
     return await runEngineInner(db, channelId, contactId, event);
   } finally {
@@ -3537,6 +3543,31 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // conversación con una burbuja vacía.
   if (!content.text && !isInteractive && !content.media_id) return true;
 
+  // 🔁 LA MISMA BURBUJA DOS VECES. Red de seguridad, no el arreglo: la causa se ataja en el
+  // candado por contacto (ver runEngine), pero si dos turnos se cruzan igual —o si una regla
+  // del prompt hace que el modelo repita palabra por palabra lo de hace un momento— el
+  // cliente NO puede leer dos veces lo mismo seguido. Medido: mandó dos mensajes con 19 ms
+  // de diferencia y recibió la lista de precios duplicada.
+  // La condición es estrecha a propósito: mismo texto exacto, dentro de un minuto, y SIN que
+  // el cliente haya escrito nada en medio. Así el «repíteme la cuenta» —que sí debe volver a
+  // salir igual— pasa, porque entre las dos salidas hay un mensaje suyo.
+  if (body && !isInteractive) {
+    try {
+      const desde = new Date(Date.now() - 60_000).toISOString();
+      const { data: ult } = await db.from("messages")
+        .select("direction, content, ts").eq("contact_id", run.contact_id)
+        .gte("ts", desde).order("ts", { ascending: false }).limit(6);
+      for (const m of (ult ?? []) as any[]) {
+        if (m.direction === "in") break;            // habló el cliente → repetir es legítimo
+        if (String(m?.content?.text ?? "").trim() === body.trim()) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Burbuja repetida, no se envió",
+            "Se iba a mandar el mismo texto otra vez sin que el cliente dijera nada en medio.").catch(() => {});
+          return true;
+        }
+      }
+    } catch (_) { /* sin la comprobación, se envía como antes */ }
+  }
+
   let wamid = ""; let status = "sent"; let error: any = null;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (body || isInteractive)) {
     try {
@@ -3671,8 +3702,13 @@ const RE_DATO_INVENTADO =
 // Pedir el nombre/DNI/dirección ES pasar a cerrar: si a esa altura el cliente
 // todavía no dijo cuántas unidades lleva, la venta se cierra por la más barata
 // sin que él se entere de que había un pack.
+// 🔴 Faltaba «¿cómo te llamas?» — la forma MÁS natural de pedir un nombre. Medido: con dos
+// mensajes seguidos del cliente, el segundo turno salió con «Perfecto, ¿cómo te llamas? Así
+// puedo dejar listo tu pedido», sin que él hubiera elegido presentación y sin que la guarda
+// se enterara. La lista tenía «tu nombre» y «nombre completo», o sea las dos maneras
+// FORMALES de pedirlo, justo las que un vendedor por WhatsApp no usa.
 const RE_PIDE_SUS_DATOS =
-  /(nombre completo|tu nombre|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|n[uú]mero de celular|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos)/i;
+  /(nombre completo|tu nombre|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
 // 🔤 Los marcadores de WhatsApp (*negrita*, _cursiva_, ~tachado~) ROMPEN cualquier regex que
 // busque dos palabras seguidas: la IA escribe «¿me pasas tu *nombre*, *celular* y
 // *dirección*?» y «tu nombre» ya no calza porque en el medio hay un asterisco. Medido en una
@@ -14691,7 +14727,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 oq.nombre + " (ya la había dicho: \"" + String(ctx.last_input ?? "").slice(0, 40) + "\")").catch(() => {});
             } else if (!run.vars._preg_pres) {
               run.vars._preg_pres = 1;
-              salida = preguntaCuantos(opsPend, ctx, _negOn);
+              // Lo que la IA escribió ANTES de ponerse a pedir datos es la respuesta a lo que
+              // el cliente preguntó, y se perdía ENTERA: la lista de opciones reemplazaba el
+              // mensaje completo. Medido: escribió «A. Mazamari» / «Ase. Envios» —o sea, si
+              // le llega a Mazamari— y lo único que recibió fue la lista de precios.
+              // Se conserva solo la parte informativa (sin signo de pregunta): así no salen
+              // dos preguntas distintas en la misma burbuja.
+              const _lin = salida.split("\n");
+              const _cor = _lin.findIndex((l) => RE_PIDE_SUS_DATOS.test(sinFormato(l)));
+              const _resp = (_cor > 0 ? _lin.slice(0, _cor).join("\n") : "").trim();
+              const _guardo = _resp && !_resp.includes("?") ? _resp : "";
+              if (_resp && !_guardo) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "🗑️ Se descartó lo que había escrito",
+                  "Iba a pedir datos sin saber la cantidad; su respuesta traía otra pregunta y no se pudo conservar.").catch(() => {});
+              }
+              salida = (_guardo ? _guardo + "\n\n" : "") + preguntaCuantos(opsPend, ctx, _negOn);
             } else {
               const op0 = opsPend[0];
               await setField(db, run.channel_id, run.contact_id, "opcion_id", op0.id);
@@ -14864,11 +14914,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ).join("\n").replace(/\n{3,}/g, "\n\n").trim();
             // Solo si lo que sobrevive sigue siendo un mensaje de verdad.
             if (_limpio !== salida && _limpio.replace(/[\s\p{P}]/gu, "").length >= 20) {
-              salida = _limpio +
-                `\n\n📍 Te lo dejo en *${bonito(_enCiudad[0].l)}*, que es la única oficina que hay en ` +
-                `${bonito(String(ctx.ciudad))}.`;
+              // ¿Lo que sobrevive YA nombra la oficina? Entonces el apéndice sobra y encima
+              // se lee mal. Medido: «Enviamos por Shalom a Mazamari, la única oficina que
+              // está cerca a la vía principal…» y detrás «📍 Te lo dejo en *Mazamari*, que
+              // es la única oficina que hay en Mazamari.» — la misma cosa dicha dos veces,
+              // y con el nombre repetido dentro de la propia frase porque la oficina se
+              // llama igual que la ciudad.
+              const _et = normalize(_enCiudad[0].l);
+              const _ciu = normalize(String(ctx.ciudad ?? ""));
+              const _yaLaNombra = _et && normalize(_limpio).includes(_et);
+              salida = _yaLaNombra ? _limpio : _limpio +
+                `\n\n📍 Te lo dejo en *${bonito(_enCiudad[0].l)}*, que es la única oficina que hay ` +
+                (_et === _ciu ? "ahí." : `en ${bonito(String(ctx.ciudad))}.`);
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🏢 Una sola oficina",
-                "Se le quitó la pregunta de qué sede: no hay otra").catch(() => {});
+                "Se le quitó la pregunta de qué sede: no hay otra" + (_yaLaNombra ? " (ya la nombraba)" : "")).catch(() => {});
             }
           }
         } catch { /* sin ciudad legible → se envía tal cual */ }
