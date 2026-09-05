@@ -3863,13 +3863,17 @@ const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave pa
 // recojas allí» → «cuando llegue a la agencia»— sin tocar el resto de la frase, para que
 // no quede mal escrita. La causa de fondo era el prompt (decía lo contrario) y ya está
 // corregida; esto es la red por si el modelo lo dice de otra forma.
+// ⚠️ El final de cada patrón NO puede ser `\b`: en JavaScript la frontera de palabra usa el
+// alfabeto ASCII, así que después de una vocal acentuada («allá», «ahí») no hay frontera y el
+// patrón no casa nunca. Medido: «el resto lo pagas cuando recojas allá» pasó intacto con la
+// regla puesta. Se cierra con un lookahead unicode y la bandera `u`.
 const CAMBIOS_PAGO_AGENCIA: Array<[RegExp, string]> = [
-  [/\bcuando\s+(?:lo\s+|la\s+)?recojas\s+(?:all[ií]|all[aá]|ah[ií]|en\s+la\s+agencia|en\s+shalom)\b/gi, "cuando llegue a la agencia"],
-  [/\bal\s+recoger(?:lo|la)?\s+en\s+la\s+agencia\b/gi, "cuando llegue a la agencia"],
-  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+en\s+la\s+agencia\b/gi, "$1 cuando llegue a la agencia"],
-  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+al\s+recoger(?:lo|la)?\b/gi, "$1 cuando llegue a la agencia"],
-  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+(?:all[ií]|all[aá]|ah[ií])\b/gi, "$1 cuando llegue a la agencia"],
-  [/\ben\s+la\s+agencia\s+(pagas|pagar[aá]s|abonas|cancelas)\b/gi, "cuando llegue a la agencia $1"],
+  [/\bcuando\s+(?:lo\s+|la\s+)?recojas\s+(?:all[ií]|all[aá]|ah[ií]|en\s+la\s+agencia|en\s+shalom)(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  [/\bal\s+recoger(?:lo|la)?\s+en\s+la\s+agencia(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+en\s+la\s+agencia(?![\p{L}\p{N}])/giu, "$1 cuando llegue a la agencia"],
+  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+al\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "$1 cuando llegue a la agencia"],
+  [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+(?:all[ií]|all[aá]|ah[ií])(?![\p{L}\p{N}])/giu, "$1 cuando llegue a la agencia"],
+  [/\ben\s+la\s+agencia\s+(pagas|pagar[aá]s|abonas|cancelas)(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia $1"],
 ];
 // En PROVINCIA, además, el orden importa: primero paga el saldo, con ese pago se le da la
 // clave, y recién entonces recoge. «El saldo cuando recibas el paquete» lo cuenta al revés
@@ -8768,7 +8772,7 @@ async function maybeDatosPago(
       // Sin monto no se manda nada: pedirle plata sin decirle cuánta es el mismo agujero
       // que ya tapa el guard del nodo mensaje.
       if (!Number.isFinite(_ade) || _ade <= 0) return;
-      _cab = `Para despachar tu pedido por agencia, el adelanto es de *${fisico?.sym ?? "S/"} ${_ade}* 👇\n\n`;
+      _cab = `Para mandarte el pedido, el adelanto es de *${fisico?.sym ?? "S/"} ${_ade}* 👇\n\n`;
     }
     await deliverMessage(db, channelId, contactId, _cab + (elegido ?? dp) +
       (_esDigital ? "" : "\n\nCuando lo hagas mándame la captura y lo verifico al toque. 😊"));
@@ -13496,24 +13500,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // 🔴 EL SALDO SE NOS PAGA A NOSOTROS. Rodrigo lo repitió cuatro veces y la cuarta
           // fue: «te lo voy a repetir no sé cuántas veces, el saldo siempre se paga a
           // nosotros, en la agencia no pagas nada». Y tenía razón en insistir: el problema no
-          // era el modelo, era ESTE bloque, que decía «en la agencia paga solo el SALDO» y
-          // «En la agencia SÍ paga —el saldo—». O sea que la IA hacía lo que le mandaba el
-          // prompt. Cómo funciona de verdad: el saldo se paga a la MISMA cuenta cuando el
-          // paquete llega a la agencia, y recién ahí se le da la clave de recojo. En el
-          // mostrador de Shalom no desembolsa nada.
-          L.push("💰 CÓMO SE PAGA, exacto: un adelanto ahora para que salga el despacho, y el SALDO cuando el " +
-            "paquete YA ESTÁ en la agencia — a la misma cuenta nuestra, por Yape o transferencia, igual que el " +
-            "adelanto. Recién con ese pago se le pasa la clave para recogerlo.\n" +
-            "⛔ En la agencia NO paga NADA: Shalom no le cobra ni recibe plata suya. Nunca digas «pagas en la " +
-            "agencia», «pagas al recogerlo», «el saldo lo pagas allí/allá/ahí» ni nada que suene a que va a " +
-            "desembolsar en el mostrador — es falso y le cambia la idea de cómo funciona la compra. Si tienes " +
-            "que nombrar el momento, es «cuando llegue a la agencia», nunca el lugar donde paga.\n" +
-            "🔑 Y el ORDEN, que también se cuenta al revés: primero te paga el saldo, con ese pago le pasas " +
-            "la clave, y recién con la clave recoge. Nada de «pagas cuando lo recibas» ni «al recibirlo»: " +
-            "sin ese pago no hay clave, así que si cree que paga después de tenerlo, no va a pagar y el " +
-            "paquete se queda en la agencia.");
+          // era el modelo, era ESTE bloque, que decía «en la agencia paga solo el SALDO».
+          //
+          // 🗣️ Y la SEGUNDA lección, de leer lo que salió después de arreglarlo: escrito como
+          // una lista de prohibiciones («nunca digas pagas en la agencia, tampoco al revés,
+          // tampoco…»), el modelo se las recitaba al cliente — «El saldo lo pagas a nosotros
+          // […], nunca en la agencia ni al recogerlo». Sonaba a que se estaba defendiendo de
+          // algo que el cliente ni se había planteado. Las prohibiciones viven ahora en el
+          // código (sinPagarEnLaAgencia) y acá va lo que SÍ tiene que decir: los tres pasos.
+          const _sym = simboloMoneda(ctx.moneda as string);
+          const _ad = ctx.adelanto;
+          const _sal = String(ctx.saldo ?? "").trim();
+          L.push("💰 CÓMO SE PAGA. Cuando te pregunte, díselo en estos tres pasos y en positivo:\n" +
+            `  1️⃣ Adelanto de *${_sym} ${_ad}* por Yape o transferencia y lo mando.\n` +
+            `  2️⃣ Cuando llega a la agencia te aviso y me pagas ${_sal ? `los *${_sym} ${_sal}*` : "el resto"} ` +
+            "a la misma cuenta.\n" +
+            "  3️⃣ Te paso tu clave y lo recoges — ahí ya no pagas nada.\n" +
+            "Si solo lo mencionas de pasada (no te lo preguntó), UNA línea basta: «con un adelanto de " +
+            `*${_sym} ${_ad}* lo mando y el resto me lo pagas cuando ya esté allá».\n` +
+            "⛔ Siempre en positivo. Nada de «nunca en la agencia», «no pagas al recogerlo», «sin costos " +
+            "extra»: decirle lo que NO pasa lo hace dudar de algo que ni se le había ocurrido, y el paso 3 " +
+            "ya deja claro que en el mostrador no desembolsa. Tampoco uses «despachar» ni «saldo» con él si " +
+            "puedes decir «lo mando» y «el resto».");
           L.push("⛔ Y NUNCA le digas que paga TODO al recoger, ni «pagas cuando lo tengas», ni «no adelantas " +
-            "nada»: eso es de Lima. Acá va un adelanto para que salga el despacho. Enterarse tarde es lo que le " +
+            "nada»: eso es de Lima. Acá va un adelanto para que salga el envío. Enterarse tarde es lo que le " +
             "tumba la venta.");
         }
         // 💰 Y el caso contrario, que es el MEJOR cliente que te puede tocar: el que
