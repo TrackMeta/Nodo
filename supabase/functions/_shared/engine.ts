@@ -9186,7 +9186,47 @@ export async function armarProducto(
     "uso, para quién es— NO es un atributo: va en la descripción o en el detalle. Ante la duda, " +
     "deja `atributos` vacío: un atributo de más hace que el bot pregunte tonterías y parte el stock.\n" +
     "- `ia.estilo_venta` debe ser uno de: consultivo, directo, educativo, urgencia, objeciones (o vacío).\n" +
+    // 💰 La DESCRIPCIÓN de cada presentación es la línea que el cliente lee al elegir cuánto
+    // lleva, y es lo único que empuja al pack grande. No estaba explicada en ninguna parte
+    // (el ejemplo la mostraba vacía), así que el modelo la llenaba con lo obvio: el contenido.
+    // Medido con un Magnesio armado por el asistente — «1 unidad: 1 frasco con Magnesio
+    // Complex 8 tipos en 1 / 2 unidades: 2 frascos con Magnesio Complex 8 tipos en 1 / 3
+    // unidades: 3 frascos…». Tres líneas que repiten el nombre del producto y no dan UNA
+    // razón para llevar más de uno.
+    "- `presentaciones[].descripcion`: una frase CORTA (4-8 palabras) que diga por qué elegir " +
+    "ESA y no otra: cuánto dura, qué logras con ella, o lo que ahorras. ⛔ NUNCA describas el " +
+    "contenido ni repitas el nombre del producto — el cliente ya lo sabe, y esa línea es la " +
+    "que decide si lleva uno o tres. Bien: «un mes para empezar a notar el cambio» · «el más " +
+    "pedido, no cortas el tratamiento» · «el precio más bajo por unidad». Mal: «1 frasco de " +
+    "X» · «2 frascos de X». Si no puedes decir nada útil sin inventar, déjala vacía.\n" +
+    // 🔢 Y si son CANTIDADES del mismo producto con precio, la cifra por unidad es el mejor
+    // argumento y ya está en el brief: no hay que inventarla, solo dividir. Medido: sin esta
+    // regla salían «ahorras comprando dos» y «el mejor precio por más» — verdad, pero sin el
+    // número que convence. Con 79 / 119 / 149 el pack de 3 sale a S/ 49.70 la unidad: 37%
+    // menos que llevar uno, y el cliente no se entera.
+    "  · Si las presentaciones son CANTIDADES del mismo producto y el dueño dio los precios, " +
+    "calcula el precio POR UNIDAD y ponlo en la descripción de las de 2 o más («te sale S/ 59.50 " +
+    "cada uno», «S/ 49.70 por frasco, el más barato»). Dividir un precio que él escribió no es " +
+    "inventarlo. Redondea a dos decimales y no exageres el ahorro.\n" +
+    // 🛑 `limites` es "nunca hagas / nunca prometas": lo que el bot NO puede decir. Sin
+    // explicarlo, el modelo lo leyó como "limitaciones" y metió ahí «Stock limitado a 50
+    // unidades, ¡aprovecha antes que se agote!» — un argumento de VENTA guardado justo en el
+    // campo que le prohíbe usarlo. Lo dejó mudo y encima le quitó su mejor gancho.
+    "- `ia.limites` = lo que el bot NUNCA debe decir ni prometer (promesas de resultado, " +
+    "afirmaciones de salud si es un suplemento o cosmético, plazos que no controlas, " +
+    "devoluciones que el dueño no ofrece). ⛔ NO es la disponibilidad ni el stock: la escasez " +
+    "es un argumento de venta y va en `ia.tecnicas`, no acá.\n" +
     "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
+    // 🛡️ Las OBJECIONES son lo que el bot usa cuando el cliente DUDA, y es donde se gana o se
+    // pierde la venta. El asistente no las generaba nunca: no estaban en el esquema ni en el
+    // formato de salida, así que un producto recién armado nacía con cero. Son distintas de
+    // la FAQ: la FAQ responde preguntas, esto rebate pegas.
+    "- `objeciones`: 5 a 8 PEGAS típicas de este producto con cómo rebatirlas, cada una como " +
+    "{\"o\":\"la pega en boca del cliente\",\"r\":\"la respuesta\"}. Son distintas de la FAQ: la FAQ " +
+    "resuelve dudas («¿cómo pago?»), esto rebate resistencias («está caro», «lo pienso», «ya " +
+    "uso otro», «no confío», «¿es original?», «¿y si no me funciona?»). La respuesta reconoce " +
+    "primero y después da la razón concreta (valor, garantía, prueba), sin discutir ni " +
+    "presionar. Incluye SIEMPRE «está caro» y una de duda/desconfianza.\n" +
     "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
     "## Formato de salida — usa EXACTAMENTE estas claves, NO las renombres ni las traduzcas:\n" +
     "{\n" +
@@ -9196,6 +9236,7 @@ export async function armarProducto(
     '  "atributos": [{"nombre":"Talla","valores":"38, 39, 40"}]  (ARRAY de objetos, NUNCA un objeto {talla:[...]}; valores = texto separado por comas),\n' +
     '  "ia": {"resumen":"pitch corto de venta","detalle":"","reglas_producto":"","limites":"","estilo_venta":"consultivo","proceso":"","tecnicas":""},\n' +
     '  "faq": [{"q":"...","a":"..."}],\n' +
+    '  "objeciones": [{"o":"está caro","r":"..."}],\n' +
     '  "faltan": ["Precio real de cada presentación", "..."],\n' +
     '  "resumen_cambios": "una frase"\n' +
     "}\n" +
@@ -9216,6 +9257,7 @@ export async function armarProducto(
       presentaciones: { type: "array", items: { type: "object", properties: { nombre: { type: "string" }, descripcion: { type: "string" }, cantidad: { type: "number" }, precio: { type: ["number", "null"] } }, required: ["nombre"], additionalProperties: false } },
       ia: { type: "object", properties: { resumen: { type: "string" }, detalle: { type: "string" }, reglas_producto: { type: "string" }, limites: { type: "string" }, estilo_venta: { type: "string" }, proceso: { type: "string" }, tecnicas: { type: "string" } }, additionalProperties: false },
       faq: { type: "array", items: { type: "object", properties: { q: { type: "string" }, a: { type: "string" } }, required: ["q", "a"], additionalProperties: false } },
+      objeciones: { type: "array", items: { type: "object", properties: { o: { type: "string" }, r: { type: "string" } }, required: ["o", "r"], additionalProperties: false } },
       faltan: { type: "array", items: { type: "string" } },
       resumen_cambios: { type: "string" },
     },
