@@ -6366,9 +6366,15 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
     if (!n) continue;
     const esRegalo = (b as any)?.es_regalo === true || Number((b as any)?.precio) === 0;
     const tal = String((b as any)?.talla ?? (b as any)?.variante ?? "").trim();
+    // 💸 El precio del extra solo se imprime si es un NÚMERO. El total de abajo ya lo suma con
+    // `Number(...)||0`, así que un precio roto valía 0 ahí pero se imprimía crudo acá: medido
+    // con un bump de precio "abc", el resumen decía «➕ Extra roto — S/ abc» y dos líneas más
+    // abajo «Total *S/ 119*» sin contarlo. El cliente ve un ítem con un precio imposible y un
+    // total que no le cuadra. Sin número, se nombra el extra y punto.
+    const _pb = Number((b as any)?.precio);
     L.push(esRegalo
       ? `🎁 De regalo: *${n}*${tal ? ` (${tal})` : ""} — va incluido, no te cuesta nada`
-      : `➕ ${n}${tal ? ` (${tal})` : ""}${(b as any)?.precio != null ? ` — ${sym} ${(b as any).precio}` : ""}`);
+      : `➕ ${n}${tal ? ` (${tal})` : ""}${Number.isFinite(_pb) ? ` — ${sym} ${(b as any).precio}` : ""}`);
   }
   // A dónde va. En Lima es una dirección; en provincia, la agencia de su ciudad — y si la
   // oficina está marcada para confirmar, NO se nombra (se la desmentiríamos dos mensajes
