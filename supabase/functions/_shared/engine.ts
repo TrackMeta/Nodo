@@ -13454,14 +13454,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // persona —como si detrás hubiera alguien más que va a escribir— y le cambia de tema
     // justo después de que él preguntó dónde pagar. Los datos sí salieron en la burbuja
     // siguiente, así que el cliente los tuvo; lo que no tuvo fue una respuesta.
+    // ⚠️ Y con DOS finales distintos según si los datos de pago pueden salir ya o no. El
+    // primer intento decía siempre «dile que se los pasas ahora», y en la prueba siguiente
+    // salió esto: el cliente escribió «mandame / numero / para yapear» faltándole todavía el
+    // nombre, y el bot contestó «Ya te envío los datos para Yape con el monto del adelanto de
+    // *S/ 20*. Me falta un dato: Nombre y apellidos.» — los datos NO salieron, porque sin el
+    // nombre no hay pedido que crear. Le prometió plata en la mano al que ya iba a pagar.
+    // Es el patrón de siempre: si el motor no va a hacer algo, la IA no puede anunciarlo.
     if (RE_PREGUNTA_DONDE_PAGAR.test(String(ctx.last_input ?? ""))) {
+      const _pendientes = ((ctx as any)._datos_faltan ?? []) as CampoDato[];
       parts.push("## Te está preguntando DÓNDE pagar\n" +
         "⛔ Nunca en tercera persona: «ya te envían los datos», «te los van a mandar», «el equipo te pasa " +
         "la cuenta». Acá no hay nadie más — el que le escribe eres tú, y eso lo deja esperando a alguien " +
-        "que no existe. Si los datos se los pasa el sistema enseguida, dilo en primera persona y en una " +
-        "línea («te paso los datos ahora 👇») y ahí termina tu mensaje.\n" +
+        "que no existe.\n" +
         "⛔ Y no le cambies de tema en la misma burbuja. Preguntarle otra cosa justo después de que él " +
-        "preguntó dónde pagar es dejarlo sin respuesta, y encima en el momento en que ya quería pagar.");
+        "preguntó dónde pagar es dejarlo sin respuesta, y encima en el momento en que ya quería pagar.\n" +
+        (_pendientes.length
+          ? "🔴 OJO: los datos de pago TODAVÍA no pueden salir, porque falta " +
+            _pendientes.map((c) => limpiaLabel(c.label)).join(" y ") + ". ⛔ NO le digas «ya te envío los " +
+            "datos», «te los paso ahora» ni nada que suene a que van en camino: no van, y se va a quedar " +
+            "mirando el chat. Díselo como es, en una línea y sin rodeos: que apenas te dé ese dato le pasas " +
+            "el número para el Yape. Y pídeselo ahí mismo."
+          : "Los datos salen enseguida por su cuenta: dilo en primera persona y en una línea " +
+            "(«te paso los datos ahora 👇») y ahí termina tu mensaje, sin escribir el número ni el titular."));
     }
     // Venta DIGITAL: no hay datos que pedirle (ni dirección, ni DNI, ni talla). El modelo,
     // entrenado para cerrar pidiendo algo, se inventaba el trámite que falta. Medido en un
