@@ -4225,7 +4225,12 @@ function quitaZonaRepetida(texto: string, saludo: string): string {
   });
   const limpio = lineas.filter((ln, i) => ln.trim() !== "" || i === 0 || lineas[i - 1]?.trim() !== "")
     .join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  return limpio || texto;   // nunca dejar la burbuja vacía: si no queda nada, va como estaba
+  // Si NO queda nada es porque el mensaje entero era la pregunta repetida: entonces la IA no
+  // tenía nada que agregar y la burbuja sobra. Devolver "" es seguro —`emitIaText` solo emite
+  // `if (result.trim())`— y es justo lo que hay que hacer: el saludo ya preguntó. Medido: a un
+  // «quiero» le salía «¿Desde dónde nos escribe?» y debajo «Perfecto, ¿desde qué distrito o
+  // ciudad nos escribes? 📍», que antes se colaba entera por este mismo `|| texto`.
+  return limpio;
 }
 
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
