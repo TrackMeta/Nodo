@@ -3972,6 +3972,24 @@ function sinPresentacionRepetida(texto: string, producto: string): string {
   if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
   return resto;
 }
+// 🏷️ «LA AGENCIA» A SECAS, Y «TE CONFIRMO LA AGENCIA». Rodrigo: «en ningún momento mencionas
+// Shalom y el cliente se puede confundir; y no le digas te confirmo la agencia porque puede
+// pensar que trabajamos con otras agencias que no son Shalom». Son dos cosas distintas y el
+// modelo las mezcla: la AGENCIA es la empresa —siempre la misma, la que tenga puesta el
+// negocio— y la OFICINA es el local donde va a recoger. Lo único que se le confirma es la
+// oficina. Y si en todo el mensaje habla de «la agencia» sin nombrarla, se nombra: el cliente
+// necesita saber a qué empresa va, no que existe "una agencia".
+function conAgenciaNombrada(texto: string, courier: string): string {
+  let t = String(texto ?? "");
+  t = t.replace(/\b(confirmo|confirmar[eé]|confirmamos|indico|paso|aviso)\s+(la|tu)\s+agencia\b/gi, "$1 $2 oficina");
+  t = t.replace(/\b(elegir|escoger|elijas|escojas|eliges|escoges)\s+(la|tu)\s+agencia\b/gi, "$1 $2 oficina");
+  t = t.replace(/\b(qu[eé]|cu[aá]l)\s+agencia\b/gi, "$1 oficina");
+  const nom = String(courier ?? "").trim();
+  if (!nom || t.toLowerCase().includes(nom.toLowerCase())) return t;
+  // La primera mención de «agencia» pasa a llevar el nombre; las demás se quedan como están
+  // para no repetirlo en cada línea.
+  return t.replace(/\bagencia\b/i, `agencia ${nom}`);
+}
 // 🧹 MULETILLAS DE ARRANQUE. Rodrigo, leyendo sus chats: «quita esas muletillas de arranque».
 // Son las frases con las que el modelo entra en calor antes de decir lo que importa —«Antes de
 // avanzar, ¿cuántas unidades quieres?», «Para ayudarte mejor, ¿de qué distrito me escribes?»—
@@ -12530,6 +12548,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // la frenó en el acto: «si el cliente pregunta otra vez, ¿qué pasa, no le vuelve a
     // explicar?». Tenía razón — dejar una pregunta sin contestar por haberla contestado antes
     // es peor que ser repetitivo. El problema nunca fue repetir: era el largo.
+    parts.push("## La agencia tiene nombre, y lo que se confirma es la OFICINA\n" +
+      "La agencia es SIEMPRE la misma —la del negocio— así que nómbrala: «por agencia Shalom», no «por " +
+      "agencia» a secas. Que sepa a qué empresa va.\n" +
+      "⛔ Y nunca «te confirmo la agencia» ni «qué agencia prefieres»: eso le hace pensar que trabajamos con " +
+      "varias y que todavía no sabemos con cuál. Lo que se elige y se confirma es la OFICINA (la sede): " +
+      "«te digo qué oficina te queda más cerca», «¿en cuál oficina lo recoges?».");
     parts.push("## Hablas en PRIMERA persona\n" +
       "El negocio eres tú. Nunca digas «te piden un adelanto», «ya te envían los datos», «el equipo te " +
       "contacta», «te van a llamar»: acá no hay nadie más, y el cliente se queda esperando a alguien que " +
@@ -12550,8 +12574,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // escribió «Para madre de dios» y recibió un párrafo sobre cortar láminas de 1.5 mm.
     {
       const _li = String(ctx.last_input ?? "");
-      const _hayQueVender = traePregunta(_li) || RE_TRAE_OBJECION.test(_li) || RE_CONDICION.test(_li) ||
-        RE_CLIENTE_PIDE_PRECIO.test(_li) || /\b(sirve|funciona|vale la pena|conviene|diferencia|por qu[eé])\b/i.test(_li);
+      // Una pregunta de LOGÍSTICA no es un turno de venta: preguntar qué oficinas hay, si
+      // llegan a su ciudad o cuánto demora no pide que le presenten el producto otra vez.
+      // Medido: «soy de puno, ¿qué oficinas tienen ahí?» y le llegó un párrafo sobre cortar
+      // láminas de 1.5 mm encima de la lista de oficinas.
+      const _esLogistica = /\b(sede|sedes|oficina|oficinas|agencia|agencias|env[ií]o|env[ií]os|env[ií]an|llega|llegan|demora|demoran|tarda|direcci[oó]n|recojo|recoger)\b/i.test(_li);
+      const _hayQueVender = !_esLogistica &&
+        (traePregunta(_li) || RE_TRAE_OBJECION.test(_li) || RE_CONDICION.test(_li) ||
+        RE_CLIENTE_PIDE_PRECIO.test(_li) || /\b(sirve|funciona|vale la pena|conviene|diferencia|por qu[eé])\b/i.test(_li));
       // 🔚 Se guarda para el FINAL: el prompt del propio flujo —el que dice «explica el valor»
       // y «habla en BENEFICIOS»— entra al final del system, y en un prompt lo ÚLTIMO pesa.
       // Puesta acá, noventa bloques antes, esta regla perdía siempre. Misma lección que el estilo.
@@ -13392,10 +13422,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _provs = provinciasDeDepartamento(String(ctx.ciudad ?? "")).map((p) => bonito(p));
           _sedeCiudad = "";
           L.push(`🗺️ Ojo: *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* es el DEPARTAMENTO, no su ciudad, ` +
-            "y las oficinas de un departamento pueden estar a horas unas de otras. ⛔ NO le listes ninguna " +
+            "y las oficinas de un mismo departamento pueden estar a horas unas de otras. ⛔ NO le listes ninguna " +
             "todavía ni le confirmes una sede. Pregúntale de qué CIUDAD o distrito es" +
             (_provs.length ? `; ahí tenemos oficinas por ${_provs.slice(0, 4).join(" y ")}` : "") +
-            ". Una línea, sin dramatizar, y sigue con el pedido: esto no lo detiene.");
+            ". Una línea, sin dramatizar, y sigue con el pedido: esto no lo detiene.\n" +
+            "🏷️ Al decírselo, nombra la agencia (es SIEMPRE la misma) y habla de la OFICINA, no de «la " +
+            "agencia»: «¿de qué ciudad eres? Así te digo qué oficina de Shalom te queda más cerca». Decirle " +
+            "«te confirmo la agencia» le hace pensar que trabajamos con varias y que todavía no sabemos con cuál.");
         }
         if (!_esDepto && (_yaEligio || _preguntaSede)) try {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
@@ -15142,6 +15175,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
+        // 🏷️ Y que la agencia salga CON NOMBRE, y que lo que se confirme sea la oficina.
+        if (/\bagencia/i.test(salida)) {
+          try {
+            const _entA = await loadEntregas(db, run);
+            const _cA = Object.keys((((_entA as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
+            salida = conAgenciaNombrada(salida, _cA ? _cA.charAt(0).toUpperCase() + _cA.slice(1) : "");
+          } catch (_) { /* sin courier configurado → se envía tal cual */ }
+        }
         // ✂️ Y si este turno no era para vender, fuera la presentación repetida del producto
         // (ver sinPresentacionRepetida: cinco reglas de prompt no lo lograron).
         if (!_turnoDeVenta) {
