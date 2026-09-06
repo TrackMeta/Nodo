@@ -806,10 +806,15 @@ function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a
 const _GENERICOS = new Set([
   "terminal", "terrestre", "aeropuerto", "mercado", "grifo", "plaza", "parque", "hospital",
   "colegio", "universidad", "estadio", "centro", "avenida", "jiron", "calle", "carretera",
-  "ovalo", "puente", "esquina", "costado", "espalda", "frente", "cuadra", "cuadras", "cdra",
-  "cdras", "sector", "urbanizacion", "barrio", "pueblo", "ciudad", "distrito", "provincia",
-  "agencia", "oficina", "sede", "local", "tienda", "banco", "iglesia", "comisaria", "cerca",
-  "nuevo", "nueva", "viejo", "vieja", "alto", "bajo", "norte", "chico", "grande",
+  "ovalo", "puente", "esquina", "costado", "espalda", "espaldas", "frente", "cuadra", "cuadras",
+  "cdra", "cdras", "sector", "urbanizacion", "barrio", "pueblo", "ciudad", "distrito",
+  "provincia", "agencia", "oficina", "sede", "local", "tienda", "banco", "iglesia", "comisaria",
+  "cerca", "nuevo", "nueva", "viejo", "vieja", "alto", "bajo", "norte", "chico", "grande",
+  // Los NÚMEROS escritos: entran al listado por nombres como «TRES DE OCTUBRE» o «DOS DE
+  // MAYO» y después capitalizan cualquier «a tres cdras.» de una referencia.
+  "uno", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez",
+  "once", "doce", "primera", "primero", "segunda", "segundo", "tercera", "tercero",
+  "media", "medio", "altura", "pasando", "junto", "antes", "despues", "entre", "hasta",
 ]);
 let _PROPIOS: Set<string> | null = null;
 function _setPropios(): Set<string> {
@@ -818,8 +823,12 @@ function _setPropios(): Set<string> {
   for (const a of AGENCIAS) {
     for (const campo of [a.l, a.t, a.p, a.d]) {
       for (const w of String(campo ?? "").split(/[^\p{L}\p{N}]+/u)) {
+        // ⚠️ `_n` devuelve MAYÚSCULAS. La primera versión comparaba contra una lista escrita
+        // en minúsculas, así que no excluía NADA y terminaba capitalizando «a Tres cdras.» y
+        // «una Cdra.» — palabras que entraron al índice por nombres como «TRES DE OCTUBRE» o
+        // «AV BALTA CDRA. 36».
         const n = _n(w);
-        if (n.length >= 4 && !_GENERICOS.has(n)) s.add(n);
+        if (n.length >= 4 && !_GENERICOS.has(n.toLowerCase())) s.add(n);
       }
     }
   }

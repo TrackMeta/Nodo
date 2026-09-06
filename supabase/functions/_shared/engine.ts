@@ -4029,8 +4029,11 @@ function conSede(texto: string, courier: string): string {
 // ⚠️ Solo al PRINCIPIO de una línea y solo la lista de abajo. «Antes de anotarte, ¿cuántos
 // llevas?» NO entra: esa la escribe el motor (preguntaCuantos) y ahí el "antes de anotarte"
 // sí dice algo — que lo va a apuntar.
+// 🔁 «Veo que eres de Madre de Dios, ¿en qué ciudad estás?» — Rodrigo: «no me gusta que le
+// diga "veo que eres de"». Es el mismo tic: repetirle lo que él acaba de escribir para
+// arrancar. Ya sabe de dónde es; lo que espera es la pregunta.
 const RE_MULETILLA =
-  /^[\s>*_]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme)[,;:]?\s+/i;
+  /^[\s>*_]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme|(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)[^,.;:!?\n]{0,40}|entiendo que (?:eres|est[aá]s|vienes)[^,.;:!?\n]{0,40}|seg[uú]n veo[^,.;:!?\n]{0,40})[,;:]?\s+/i;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const limpio = l.replace(RE_MULETILLA, "");
@@ -4202,9 +4205,13 @@ function preciosEnLineas(texto: string, sym: string): string {
   }).join("\n");
 }
 
-function conAgencias(texto: string, lista: string): string {
+// `forzar`: pegar la lista aunque el texto de la IA no pida la sede con todas sus letras.
+// Desde que la lista la escribe el MOTOR, la IA solo anuncia (Â«en tu ciudad tenemos estasÂ»)
+// y esa frase no siempre calza con RE_PIDE_SEDE; si el cliente PREGUNTÃ por las sedes, la
+// lista tiene que salir igual â quedarse sin ella es dejarlo sin lo que pidiÃ³.
+function conAgencias(texto: string, lista: string, forzar = false): string {
   const t = String(texto ?? "");
-  if (!lista || !RE_PIDE_SEDE.test(t)) return t;
+  if (!lista || !(forzar || RE_PIDE_SEDE.test(t))) return t;
   // Si YA nombró alguna de las oficinas, la lista está puesta (o eligió una): no se duplica.
   const nombres = lista.split("\n").map((l) => l.replace(/^\*|\*.*$/g, "").trim()).filter((x) => x.length > 3);
   const sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -10654,6 +10661,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
         await set("entrega_hoy", "no");
         await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
         (run.vars as any)._ficha_sede = slugAgencia(_unica);
+        (run.vars as any)._ficha_ahora = slugAgencia(_unica);   // la ficha sale este mismo turno
         await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
           `nombró una oficina, no una ciudad → ${_unica.t} (sede ${_unica.l})`);
         return;
@@ -10800,6 +10808,7 @@ async function sellaSedeUnica(
     // — justo al cliente de pueblo chico, que es el que más la necesita. La marca la
     // manda `crearPedido`, que es donde la sede queda firme (ver `_ficha_sede`).
     (run.vars as any)._ficha_sede = slugAgencia(ags[0]);
+    (run.vars as any)._ficha_ahora = slugAgencia(ags[0]);
     await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
       `${run.vars?.ciudad ?? ctx?.ciudad}: es la única oficina que hay ahí`).catch(() => {});
   } catch { /* sin ciudad legible → se le pregunta como siempre */ }
@@ -11319,7 +11328,17 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 continue;
               }
               const _ag = agenciaExacta(val, String(ctx.ciudad ?? ""));
-              if (_ag) (run.vars as any)._ficha_sede = slugAgencia(_ag);
+              if (_ag) {
+                (run.vars as any)._ficha_sede = slugAgencia(_ag);
+                // 🖼️ Y que la ficha salga YA, detrás del mensaje de este turno — no al crear
+                // el pedido. Rodrigo: «¿por qué no le pasa la imagen de la sede?». Porque se
+                // mandaba solo en `crearPedido`, o sea después de que entregara nombre, DNI y
+                // todo lo demás; en cuatro pruebas seguidas nunca se llegó ahí y él nunca la
+                // vio. El momento útil es este: acaba de decir dónde recoge y la foto le
+                // confirma que existe y por dónde queda. La marca la consume el post-proceso
+                // (después de emitIaText, para que la imagen vaya DEBAJO del texto).
+                (run.vars as any)._ficha_ahora = slugAgencia(_ag);
+              }
             }
             await setField(db, run.channel_id, run.contact_id, c.clave, val);
             const duda = datoDudoso(c.clave, val, ctx);
@@ -11475,6 +11494,17 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
         exacta ? `${pendSede.clave}: ${ciu} (agencia oficial de Shalom, dicha por el cliente)`
                : `${pendSede.clave}: ${ciu} (solo la ciudad — falta la oficina exacta, se confirma en Pedidos)`);
       const i = pendientes.indexOf(pendSede); if (i >= 0) pendientes.splice(i, 1);
+      // 🖼️ Y si la sede quedó EXACTA, la ficha con su foto sale detrás del mensaje de este
+      // mismo turno (ver `_ficha_ahora`). Este es el camino por el que pasa el cliente que
+      // nombra su sede —«Mazuko»— y era el único que no la marcaba: la foto se quedaba
+      // esperando a `crearPedido`, o sea a que entregara nombre, DNI y todo lo demás.
+      if (exacta) {
+        const _agE = agenciaExacta(ciu, String(ctx.ciudad ?? ""));
+        if (_agE) {
+          (run.vars as any)._ficha_sede = slugAgencia(_agE);
+          (run.vars as any)._ficha_ahora = slugAgencia(_agE);
+        }
+      }
     }
   }
   ctx._datos_faltan = pendientes;
@@ -13493,51 +13523,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // recoge un paquete ahí, y de primeras en la lista solo estorban.
             const _rezaga = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
             const _muestra = [..._ags].sort((x, y) => _rezaga(x) - _rezaga(y)).slice(0, 8);
-            // La REFERENCIA va primero: el cliente no ubica «Av. Panamericana 975», pero sí
-            // «a media cuadra del óvalo Señor de Sipán». La dirección queda de respaldo.
-            const _lista = _muestra.map((x) =>
-              `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
-            L.push(`📍 Oficinas de Shalom en ${ctx.ciudad} (son ${_ags.length}` +
-              (_ags.length > _muestra.length ? `, acá van ${_muestra.length}` : "") +
-              // 📋 En LISTA, no en párrafo: cuatro oficinas con su referencia metidas en una
-              // sola frase no se leen, y este es el cliente que YA quiere comprar y solo
-              // necesita ubicar a dónde. Se le da el mensaje armado para que lo copie.
-              // 🔴 Antes decía "SI te pregunta cuáles hay o no sabe cuál elegir". Demasiado
-              // estrecho: medido en Chiclayo, el bot le preguntó DOS VECES "¿a qué sede
-              // prefieres?" sin listarle ninguna — le pidió elegir entre opciones que nunca
-              // le mostró. Y en Piura las soltó de corrido, en mayúsculas y sin referencias
-              // ("AAHH SANTA ROSA PIURA · AEROPUERTO PIURA · PARQUE INDUSTRIAL..."), que es
-              // ilegible. La condición ahora es la única que importa: si vas a pedirle la
-              // sede, se la muestras.
-              `). ⛔ NUNCA le preguntes por la sede sin listárselas: pedirle que elija entre ` +
-              `opciones que no ve es hacerle adivinar. Cada vez que toques el tema de la sede ` +
-              `—se la pidas tú o pregunte él— van ASÍ, cada una EN SU LÍNEA, nunca de corrido ` +
-              `ni separadas por puntos:\n\n` +
-              // La ciudad la escribió el cliente, casi siempre en minúscula ("chiclayo").
-              // Se fuerza el camino de capitalizar para que no salga en medio del mensaje así.
-              // Con UNA sola oficina no hay nada que elegir: preguntarle "¿cuál te queda más
-              // cerca?" delante de una sola línea suena a que le falta ver algo, y medido en
-              // Oxapampa la IA rellenó ese hueco con "¿o en qué otra zona andas?" — le abrió
-              // una duda que no tenía y le hizo pensar que su pueblo no calificaba.
+            // 📋 LA LISTA LA ESCRIBE EL MOTOR, no la IA. Antes iba entera en el prompt y el
+            // modelo la retipeaba: le metía mayúsculas al azar («A Tres cdras.», «una Cdra.»,
+            // «grifo bronco»), a veces la ponía de corrido y a veces se saltaba una referencia.
+            // Rodrigo: «que la lista la escriba el motor».
+            // ⚠️ Y NI SIQUIERA los nombres: el primer intento le pasaba «son 4 (Alto Puno ·
+            // AV 4 De Noviembre CO · AV Costanera · Salcedo)» para que no inventara ninguna, y
+            // el modelo los listó igual — salieron DOS listas seguidas, la suya pelada y la del
+            // motor con referencias. Si no los tiene, no los puede copiar. Que no invente una
+            // sede ya lo cubre el código: `sedeReconocida` marca para confirmar cualquiera que
+            // no esté en el volcado.
+            L.push(`📍 En ${ctx.ciudad} tenemos ${_ags.length} sede${_ags.length === 1 ? "" : "s"} de la agencia.\n` +
+              "⛔ NO escribas tú ninguna ni las nombres: la lista con sus referencias se pega SOLA debajo de " +
+              "tu mensaje, ya formateada. Si escribes nombres, salen dos listas.\n" +
               (_ags.length === 1
-                // El mensaje va escrito tal como se le manda al cliente: si acá se pone
-                // "UNA" en mayúscula para enfatizar, el bot la copia y le llega gritada.
-                ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos una sola sede 👇\n${_lista}\n\n` +
-                  `Como es la única, NO le preguntes cuál prefiere, ni si la quiere, ni le pidas otra zona. ` +
-                  // 📍 Pero SÍ decirle cuál es. Medido: cliente de Mazamari, una sola oficina, el motor
-                  // la selló solo… y el cliente terminó la conversación entera sin enterarse de a dónde
-                  // iba a ir a recoger su paquete. «Se la das por buena y sigues» se leyó como «no la
-                  // menciones». Saber la calle es justo lo que le quita el miedo a pagar por adelantado.
-                  `Al contrario: díselo UNA vez, con su referencia tal como está arriba, para que sepa a ` +
-                  `dónde va a recogerlo («te lo dejo en *X*, que queda …»). Después no lo repitas.\n\n`
-                : `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lista}\n\n¿Cuál te queda más cerca?\n\n`) +
-              // Negritas SOLO en lo que el ojo busca: la ciudad y el nombre de cada oficina.
-              // Si se marca también la referencia, deja de resaltar nada.
-              "Las negritas van tal cual: la ciudad y el NOMBRE de cada oficina en *asteriscos*, la referencia en texto normal. " +
-              "Son las ÚNICAS que existen ahí. La REFERENCIA es lo que le hace reconocerla —«a espaldas del Makro» " +
-              "le dice mucho más que la dirección—, así que nunca la omitas. " +
-              "⛔ NUNCA inventes una oficina, NUNCA digas \"tenemos varias\" sin nombrarlas, y si la que él menciona no está " +
-              "en esta lista, NO se la confirmes.");
+                ? "Es la ÚNICA que hay ahí, así que NO le preguntes cuál prefiere ni le pidas otra zona: se la " +
+                  "das por buena, se lo dices en una línea y sigues con el pedido. La ficha con la foto de esa " +
+                  "sede se le manda sola.\n"
+                : "Dile en UNA línea que en su ciudad tenemos varias y pregúntale cuál le queda más cerca. " +
+                  "Nada más: los nombres y las referencias los pone el sistema justo debajo.\n") +
+              "⛔ Y si él menciona una sede, NO se la confirmes de memoria: eso lo valida el sistema.");
             // Y los distritos vecinos de su misma provincia donde también hay oficina:
             // el que vive en Pimentel escribe «soy de Chiclayo» y le estábamos ofreciendo
             // cuatro oficinas del centro teniendo una en su propio distrito.
@@ -14051,6 +14056,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         ctx.sede = _ofi.l;
         await setField(db, run.channel_id, run.contact_id, "sede", _ofi.l);
         (run.vars as any)._ficha_sede = slugAgencia(_ofi);
+        (run.vars as any)._ficha_ahora = slugAgencia(_ofi);
         await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Cambió de oficina",
           `Ahora recoge en ${_ofi.l} (${_ofi.t})`).catch(() => {});
       }
@@ -15204,7 +15210,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
               `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
             const _antes = salida;
-            salida = conAgencias(salida, `${_cab}\n${_lista}`);
+            salida = conAgencias(salida, `${_cab}\n${_lista}`, _elPidioSede);
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
                 "Pidió la sede sin listarlas.").catch(() => {});
@@ -15555,6 +15561,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = conEmojiMinimo(salida, ctx, _min);
       }
       const handoff = await emitIaText(db, run, salida, ctx);
+      // 🖼️ La FICHA de la sede, detrás del mensaje que la nombra. La marca la pone el
+      // extractor cuando la sede queda firme (ver `_ficha_ahora`). Va acá, después de
+      // emitIaText, para que la imagen llegue DEBAJO del texto y no al revés. Si por lo
+      // que sea no sale, `_ficha_sede` sigue en pie y `crearPedido` la manda igual.
+      if (!handoff && (run.vars as any)?._ficha_ahora && String(ctx.zona_entrega ?? "") === "provincia") {
+        const _slugA = String((run.vars as any)._ficha_ahora);
+        delete (run.vars as any)._ficha_ahora;
+        try {
+          const { data: _fa } = await db.from("sede_imagenes").select("url").eq("slug", _slugA).maybeSingle();
+          if (_fa?.url) {
+            await emit(db, run, {
+              media_url: _fa.url, media_kind: "image",
+              caption: "📍 Esta es la sede donde lo recoges.", _noTpl: true,
+            }, ctx);
+            delete (run.vars as any)._ficha_sede;   // ya salió: que no se repita al crear el pedido
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🖼️ Ficha de la sede enviada",
+              "Al quedar firme la sede, no al crear el pedido").catch(() => {});
+          }
+        } catch { /* sin ficha → el resumen del pedido igual le dice la sede */ }
+      }
       // 🖼️ La ficha de la agencia NO se manda desde acá. Se intentó —detrás del mensaje
       // que la nombra, esperando hasta 3 turnos— y el resultado era impredecible: dependía
       // de si la IA mencionaba la agencia en ESE mensaje, y varias veces le cayó la foto
