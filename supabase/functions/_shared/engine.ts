@@ -3964,30 +3964,32 @@ function sinPresentacionRepetida(texto: string, producto: string): string {
   const t = String(texto ?? "").trim();
   const prod = String(producto ?? "").trim();
   if (!t || prod.length < 4) return t;
-  // Se prueba primero por PÁRRAFOS y, si el modelo escribió todo de corrido, por ORACIONES.
-  // Cortar por oración completa no parte nada —se quita una unidad entera, con su punto—, que
-  // es distinto de lo que salió mal con las muletillas: aquello recortaba a media frase.
+  // Se prueba por PÁRRAFOS y, si el modelo escribió todo de corrido, por ORACIONES. Cortar
+  // oraciones completas —con su punto— no parte nada, que es lo que sí salió mal con las
+  // muletillas (aquello cortaba a media frase y al cliente le llegó «Dios.»).
   const porParrafos = t.split(/\n{2,}/);
   const porFrases = t.split(/(?<=[.!?…])\s+/);
   const partes = porParrafos.length >= 2 ? porParrafos : porFrases;
   if (partes.length < 2) return t;
-  const primera = partes[0] ?? "";
-  if (primera.length <= 100) return t;
+  // 🔴 El PREFIJO entero, no solo la primera. La presentación suele ocupar dos oraciones y
+  // quitando una quedaba huérfana la otra: «Es portátil y fácil de usar para trabajos en casa
+  // o taller. ¿De qué ciudad me escribes?» — medido en vivo. Se toman todas las de arranque
+  // que NO tocan el hilo de la conversación y se van juntas; la primera que hable de su
+  // ciudad, la sede, el envío, el precio o sus datos corta el prefijo ahí mismo.
+  const hilo = /\b(sede|sedes|agencia|env[ií]o|env[ií]os|adelanto|saldo|precio|precios|unidad|unidades|datos|nombre|dni|celular|direcci[oó]n|ciudad|distrito|pedido|clave|recog|recoj)/i;
+  let n = 0;
+  while (n < partes.length - 1 && !hilo.test(partes[n])) n++;
+  if (n === 0) return t;
+  const prefijo = partes.slice(0, n).join(" ");
+  if (prefijo.length <= 100) return t;
   // Lo que protege un acuse es una cifra de PLATA o de CANTIDAD («Perfecto, 2 unidades por
   // *S/ 109*»), no cualquier número: una descripción trae medidas («hasta 1.5 mm»).
-  if (/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(primera)) return t;
-  // ¿Nombra el producto? Basta con las dos primeras palabras del nombre.
+  if (/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(prefijo)) return t;
   const clave = normalize(prod).split(/\s+/).slice(0, 2).join(" ");
-  const nombraProducto = !!clave && normalize(primera).includes(clave);
-  // …o, aunque no lo nombre, HABLA DE OTRA COSA: en un turno de dato, lo primero legítimo
-  // acusa lo que el cliente dio o encara el siguiente paso, así que toca alguna de estas.
-  const hilo = /\b(sede|sedes|agencia|env[ií]o|env[ií]os|adelanto|saldo|precio|precios|unidad|unidades|datos|nombre|dni|celular|direcci[oó]n|ciudad|distrito|pedido|clave|recog|recoj)/i;
-  if (!nombraProducto && hilo.test(primera)) return t;
-  if (!nombraProducto && primera.length <= 140) return t;
-  const resto = partes.slice(1).join(porParrafos.length >= 2 ? "\n\n" : " ").trim();
+  const nombraProducto = !!clave && normalize(prefijo).includes(clave);
+  if (!nombraProducto && prefijo.length <= 140) return t;
+  const resto = partes.slice(n).join(porParrafos.length >= 2 ? "\n\n" : " ").trim();
   if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
-  // Lo que queda arranca en minúscula si el modelo encadenó las frases: se le devuelve la
-  // mayúscula, saltando el signo de apertura.
   const i = resto.search(/[\p{L}\p{N}]/u);
   return i < 0 ? resto : resto.slice(0, i) + resto[i].toUpperCase() + resto.slice(i + 1);
 }
