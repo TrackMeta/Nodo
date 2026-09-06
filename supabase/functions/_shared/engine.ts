@@ -4104,6 +4104,11 @@ const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   // ⚠️ El SUSTANTIVO va primero: si el verbo se evalúa antes, «el despacho» pasa por
   // «despacho» y queda «el te lo mando».
   [/\bel\s+despacho(?![\p{L}\p{N}])/giu, "el envío"],
+  // ⚠️ El SUSTANTIVO con preposición, que faltaba y salió a un cliente: «Lo dejo preparado
+  // para despacho» pasó por la regla del VERBO de abajo («lo despacho» → «te lo mando») y
+  // quedó «Lo dejo preparado para te lo mando». Van antes que ella a propósito.
+  [/\bde\s+(?:el\s+|su\s+|tu\s+)?despacho(?![\p{L}\p{N}])/giu, "del envío"],
+  [/\b(para|en|tras|sin|con|al)\s+(?:el\s+|su\s+|tu\s+)?despacho(?![\p{L}\p{N}])/giu, "$1 el envío"],
   // «desde que lo despacho.» — con punto detrás, el patrón viejo no casaba porque exigía un
   // espacio y una palabra de tiempo. Se cubre el verbo suelto, que es como sale de verdad.
   [/\b(?:lo\s+|la\s+)?despacho(?![\p{L}\p{N}])/giu, "te lo mando"],
