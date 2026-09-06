@@ -4012,6 +4012,18 @@ function pistaAgencia(a: { ref?: string; dir?: string }): string {
 function bonito(txt: string, frase = false): string {
   let t = String(txt ?? "").trim();
   if (!t) return "";
+  // 🧹 Basura del volcado de Shalom, limpiada SOLO al mostrar. Ocho oficinas llevan
+  // «(POR DEFINIR)» pegado al nombre —el provisional es el NOMBRE, no el local: todas tienen
+  // dirección y referencia reales— y una se llama «aperopuerto TRUJILLO». Al cliente le
+  // llegaba «Huancavelica Jr. Oropeza (POR DEFINIR)», que se lee como que la agencia no
+  // existe.
+  // ⚠️ NO se corrige en los datos a propósito: ese nombre es el que viaja al Excel del
+  // courier, y ya se comprobó con una carga REAL que Shalom acepta estos. Cambiarlo ahí
+  // arreglaría el mensaje y rompería el despacho, que es mucho peor.
+  t = t.replace(/\s*\(\s*POR\s+DEFINIR\s*\)\s*/gi, " ")
+       .replace(/\baperopuerto\b/gi, "AEROPUERTO")
+       .replace(/\s{2,}/g, " ").trim();
+  if (!t) return "";
   // Si ya viene en minúsculas o mezclado, alguien lo escribió a mano: no se toca.
   if (t !== t.toUpperCase()) return t;
   // "AEROPUERTOCHICLAYO" → "AEROPUERTO CHICLAYO".
@@ -4579,7 +4591,13 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string
     // lo único que puede haber acá es la del modelo.
     const _vineta = /^\s*[-•·]\s*\S/.test(l);
     const _comoElMotor = /^\s*\*[^*\n]{2,40}\*\s*[–—-]\s*\S/.test(l);
-    if (!_vineta && !_comoElMotor) return true;
+    // 🔴 Tercera forma: 📍 *Nombre* a secas, sin referencia detrás. Es el formato de la lista
+    // de DISTRITOS que se estrenó hoy, y el modelo ya lo copia igual de bien que los otros
+    // dos: en Trujillo, Huancayo y Cañete escribió su propia lista de distritos y el motor
+    // pegó la suya debajo — el mismo bloque dos veces en un mensaje. Va quedando claro que
+    // cualquier formato que el motor use, el modelo lo imita al turno siguiente.
+    const _pinNegrita = /^\s*📍\s*\*[^*\n]{2,40}\*\s*$/.test(l);
+    if (!_vineta && !_comoElMotor && !_pinNegrita) return true;
     // ⛔ Nunca una línea de PRECIOS: «*2 unidades* — S/ 109 · doble herramienta» tiene la
     // misma forma y llevársela dejaría al cliente eligiendo cantidad sin ver los precios.
     if (/(S\/|\$)\s*[0-9]|[0-9]+\s*(unidad|unidades|frascos?|packs?|cajas?)/i.test(l)) return true;
