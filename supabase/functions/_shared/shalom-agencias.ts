@@ -702,6 +702,43 @@ export function agenciasDeCiudad(ciudad: string): Agencia[] {
   return agenciasQueSuenanA(ciudad);
 }
 
+// 🏙️ LAS QUE SE LE OFRECEN, que NO son las mismas que las que resuelven su sede.
+//
+// `agenciasDeCiudad` corta en el primer nivel que da resultado: si el DISTRITO se llama como
+// lo que dijo, devuelve solo esas y no mira la provincia. Para resolver está bien —"una sola
+// oficina" tiene que seguir queriendo decir una sola—, pero para OFRECER es un desastre:
+//   · provincia de Chiclayo: 14 oficinas
+//   · distrito  de Chiclayo:  4  ← era lo único que se le mostraba
+// Las 10 escondidas incluyen AV BALTA CDRA. 36 y CALLE TAHUANTINSUYO (distrito José Leonardo
+// Ortiz) y AV VICTOR R. HAYA (distrito La Victoria), que no son pueblos lejanos: son la propia
+// ciudad de Chiclayo. Un cliente de José Leonardo Ortiz recibía cuatro oficinas y ninguna suya.
+//
+// Y ese hueco explica lo que parecía otra cosa: el bot nombraba «José Leonardo Ortiz, La
+// Victoria, Pimentel, Monsefú, Pátapo, Pomalca, Reque, Tumán» y lo di por inventado. Las ocho
+// tienen oficina real: estaba tapando de memoria un hueco que le hicimos nosotros.
+//
+// Acá se devuelven las del distrito PRIMERO (son las suyas) y detrás el resto de su provincia
+// ORDENADAS POR CERCANÍA — nunca alfabéticamente, que fue lo que mandó a una clienta de
+// Pucusana a Ancón, a 88 km. El que llama recorta a las que quepan.
+export function agenciasParaOfrecer(ciudad: string): Agencia[] {
+  const base = agenciasDeCiudad(ciudad);
+  // ⚠️ Con UNA sola no se amplía: esa es la suya. Mazuko tiene la oficina al costado de su
+  // terminal; sumarle las de Puerto Maldonado —misma provincia, 200 km— sería darle a elegir
+  // entre la de su pueblo y un viaje. Ampliar sirve cuando ya hay varias y falta el resto.
+  if (base.length < 2) return base;
+  const prov = _n(base[0].p), dep = _n(base[0].d);
+  if (!prov) return base;
+  const yaEsta = new Set(base.map((a) => _n(a.l)));
+  const resto = AGENCIAS.filter((a) =>
+    _n(a.p) === prov && _n(a.d) === dep && !yaEsta.has(_n(a.l)) && _ofrecible(a));
+  if (!resto.length) return base;
+  // El punto de referencia: el de su distrito si el padrón lo tiene y, si no, el de la
+  // primera oficina que sí calzó con lo que dijo.
+  const p = puntoDeDistrito(_sinRuido(ciudad) || _n(ciudad), base[0].p);
+  const y = p?.y ?? base[0].y, x = p?.x ?? base[0].x;
+  return (y != null && x != null) ? [...base, ...porCercania(resto, y, x)] : [...base, ...resto];
+}
+
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?
 // Devuelve null si es segura, o el motivo para que un humano la coordine.
 //

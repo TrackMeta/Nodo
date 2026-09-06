@@ -16,7 +16,7 @@ import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, send
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   esSoloDepartamento, capitalizaNombresPropios,
-  agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
+  agenciasCercanasAlDistrito, agenciaExacta, slugAgencia, agenciasParaOfrecer,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
@@ -3707,7 +3707,10 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
   // verbos en futuro, y el modelo lo dijo de otra forma — «en breve te llega el MENSAJE con
   // el adelanto de S/ 20 para que puedas confirmar el envío». Mismo anuncio, otra palabra.
   // Se cubren el presente («te llega») y las formas en que se nombra lo que va a llegar.
-  /[^.!?…\n]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n]*\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/gi;
+  // 🔴 Tercera pasada. «En breve te llegará EL ADELANTO de S/ 20 para que confirmes»: sin
+  // ninguna de las palabras del medio (datos/mensaje/número), porque nombra directamente lo
+  // que va a llegar. Se permite que el medio no esté cuando el objeto ya es el pago mismo.
+  /[^.!?…\n]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/gi;
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
@@ -4093,6 +4096,10 @@ const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   // simulaciones. El reemplazo ya trae su propio «lo», así que hay que comerse el del texto.
   [/\b(?:te\s+)?(?:lo|la|los|las)\s+despachamos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
   [/\bdespachamos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
+  // «para que confirmes y DESPACHEMOS» — el subjuntivo, que faltaba. Van ya cuatro
+  // conjugaciones de este verbo cazadas de a una; se cubre también el imperativo.
+  [/\b(?:lo\s+|la\s+|te\s+lo\s+)?despachemos(?![\p{L}\p{N}])/giu, "te lo mandemos"],
+  [/\bdesp[aá]chalo(?![\p{L}\p{N}])/giu, "mándaselo"],
   [/\bdespacharemos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
   // ⚠️ El SUSTANTIVO va primero: si el verbo se evalúa antes, «el despacho» pasa por
   // «despacho» y queda «el te lo mando».
@@ -4460,6 +4467,35 @@ function preciosEnLineas(texto: string, sym: string): string {
 // Desde que la lista la escribe el MOTOR, la IA solo anuncia (Â«en tu ciudad tenemos estasÂ»)
 // y esa frase no siempre calza con RE_PIDE_SEDE; si el cliente PREGUNTÃ por las sedes, la
 // lista tiene que salir igual â quedarse sin ella es dejarlo sin lo que pidiÃ³.
+// 📋 LA LISTA DE OFICINAS LA ESCRIBE EL MOTOR — y si la IA escribió la suya, se la quita.
+// Medido: a «¿qué sedes de Shalom hay en Chiclayo?» el bot contestó con su propia lista:
+// «- Pimentel: Malecón Grau · - Monsefú: Mercado Monsefú · - Pomalca: Frente a la
+// municipalidad». Los distritos eran CORRECTOS —ahí sí hay oficina— pero las REFERENCIAS
+// estaban inventadas: la de Pimentel no está en el Malecón Grau. El cliente va a la esquina
+// equivocada de la ciudad correcta, que es casi peor que no decirle nada.
+// Y lo que lo dejaba pasar es el guard anti-duplicado de `conAgencias`: como la lista falsa
+// SÍ contenía nombres reales (Chongoyape, Monsefú), el motor dio por hecho que la lista ya
+// estaba puesta y se calló. La lista mala tapaba a la buena.
+// Se quitan solo las VIÑETAS (así las escribe el modelo; el motor usa «*Nombre* — ref») y
+// nunca una que traiga precio, para no llevarse por delante una lista de presentaciones.
+function sinListaDeSedesDeLaIA(texto: string): { texto: string; habia: boolean } {
+  const t = String(texto ?? "");
+  if (!RE_HABLA_DE_SEDE.test(sinFormato(t))) return { texto: t, habia: false };
+  let quitadas = 0;
+  const lineas = t.split("\n").filter((l) => {
+    if (!/^\s*[-•·]\s*\S/.test(l)) return true;
+    if (/(S\/|\$)\s*[0-9]|[0-9]+\s*(unidad|unidades|frascos?|packs?)/i.test(l)) return true;
+    quitadas++;
+    return false;
+  });
+  if (quitadas < 2) return { texto: t, habia: false };
+  const limpio = lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  // Si al quitarla no queda mensaje, se deja como estaba: la lista del motor se pega igual
+  // debajo y es preferible una repetición a una burbuja vacía.
+  return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20
+    ? { texto: limpio, habia: true } : { texto: t, habia: false };
+}
+
 function conAgencias(texto: string, lista: string, forzar = false): string {
   const t = String(texto ?? "");
   if (!lista || !(forzar || RE_PIDE_SEDE.test(t))) return t;
@@ -13987,7 +14023,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el bot no se lo dijo — se perdió el mejor argumento que tenía en ese momento.
         const _unicaEnSuCiudad = !_esDepto && agenciasDeCiudad(String(ctx.ciudad ?? "")).length === 1;
         if (!_esDepto && (_yaEligio || _preguntaSede || _unicaEnSuCiudad)) try {
-          const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          const _ags = agenciasParaOfrecer(String(ctx.ciudad ?? ""));
           if (_ags.length) {
             // Los aeropuertos y terminales al final: son agencias de verdad, pero casi nadie
             // recoge un paquete ahí, y de primeras en la lista solo estorban.
@@ -15595,7 +15631,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
           && RE_NO_SABE_SEDE.test(String(ctx.last_input ?? "")) && !/📍|👇/.test(salida)) {
         try {
-          const _agsN = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          const _agsN = agenciasParaOfrecer(String(ctx.ciudad ?? ""));
           if (_agsN.length > 1) {
             const _rz = (z: { l: string }) => /AEROPUERTO|TERMINAL/i.test(z.l) ? 1 : 0;
             const _lst = [..._agsN].sort((a, b) => _rz(a) - _rz(b)).slice(0, 8)
@@ -15722,7 +15758,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
           // su PROVINCIA y el encabezado tiene que decirlo: pegarlas bajo "En JEQUETEPEQUE
           // tenemos estas" sería mandarlo a buscar en su pueblo algo que está a un viaje.
-          const _prop = agenciasDeCiudad(String(ctx.ciudad ?? ""));
+          const _prop = agenciasParaOfrecer(String(ctx.ciudad ?? ""));
           const _cer = _prop.length ? null : agenciasCercanasAlDistrito(String(ctx.ciudad ?? ""));
           // 🏙️ Provincia grande (Lima tiene ~100 oficinas): pegar "las 8 primeras" es pegar las
           // primeras del ABECEDARIO, no las que le quedan cerca. Medido con un cliente de
@@ -15739,8 +15775,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
             const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
               `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
+            // 📋 Primero fuera la lista que se escribió la IA (con sus referencias
+            // inventadas); si la había, la del motor se pega SÍ o SÍ, sin pedirle permiso al
+            // anti-duplicado, que es justo lo que esa lista falsa venía burlando.
+            const _sinIA = sinListaDeSedesDeLaIA(salida);
+            if (_sinIA.habia) {
+              salida = _sinIA.texto;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le quitó su lista de sedes",
+                "La escribió la IA con referencias inventadas; va la del motor").catch(() => {});
+            }
             const _antes = salida;
-            salida = conAgencias(salida, `${_cab}\n${_lista}`, _elPidioSede);
+            salida = conAgencias(salida, `${_cab}\n${_lista}`, _elPidioSede || _sinIA.habia);
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
                 "Pidió la sede sin listarlas.").catch(() => {});
