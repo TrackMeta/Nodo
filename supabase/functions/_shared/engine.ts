@@ -4600,7 +4600,13 @@ function conAgencias(texto: string, lista: string, forzar = false): string {
     .map((l) => (/^[\s📍•·-]*\*([^*\n]{4,60})\*/.exec(l)?.[1] ?? "").trim())
     .filter((x) => x.length > 3);
   const sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (nombres.some((n) => sinT(t).includes(sinT(n)))) return t;
+  // \u26a0\ufe0f \u2026pero NO cuando el bloque de arriba ya decidi\u00f3 que la lista va (`forzar`). Ah\u00ed el
+  // anti-duplicado sobra y encima estorba: al afinar la extracci\u00f3n de nombres empez\u00f3 a sacar
+  // bien \u00abTrujillo\u00bb de la lista de DISTRITOS, y como la IA abre con \u00abEn Trujillo tenemos
+  // varias sedes\u00bb, daba la lista por puesta y no pegaba nada. El nombre de su ciudad aparece
+  // en casi cualquier mensaje; usarlo como prueba de que la lista ya est\u00e1 es garantizar que
+  // no salga nunca en las ciudades cuyo distrito se llama igual que ellas.
+  if (!forzar && nombres.some((n) => sinT(t).includes(sinT(n)))) return t;
   return t.trimEnd() + "\n\n" + lista;
 }
 
