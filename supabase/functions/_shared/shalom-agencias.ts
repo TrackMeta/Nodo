@@ -745,9 +745,28 @@ export function agenciasParaOfrecer(ciudad: string): Agencia[] {
   if (!resto.length) return base;
   // El punto de referencia: el de su distrito si el padrón lo tiene y, si no, el de la
   // primera oficina que sí calzó con lo que dijo.
+  // 🔴 El punto de referencia se toma de la primera oficina QUE TENGA COORDENADA, no de la
+  // primera a secas. 20 de las 552 no las traen —entre ellas los aeropuertos— y el de Puerto
+  // Maldonado es justo la primera de su lista: sin esto, `y` salía indefinido, el filtro de
+  // distancia se rendía y devolvía la provincia ENTERA. Así se le seguía ofreciendo el
+  // distrito de Inambari (o sea Mazuko, a 130 km) a un cliente de Puerto Maldonado, con el
+  // arreglo de la distancia ya escrito y desplegado. Un dato faltante desactivaba el guard.
+  const _conPunto = base.find((a) => a.y != null && a.x != null);
   const p = puntoDeDistrito(_sinRuido(ciudad) || _n(ciudad), base[0].p);
-  const y = p?.y ?? base[0].y, x = p?.x ?? base[0].x;
-  return (y != null && x != null) ? [...base, ...porCercania(resto, y, x)] : [...base, ...resto];
+  const y = p?.y ?? _conPunto?.y, x = p?.x ?? _conPunto?.x;
+  if (y == null || x == null) return [...base, ...resto];
+  // 🔴 Y con un TECHO DE DISTANCIA, porque "misma provincia" no quiere decir "misma ciudad".
+  // En Chiclayo la provincia es prácticamente la zona urbana y ampliar acierta; en TAMBOPATA
+  // la provincia mide 200 km, así que al cliente de Puerto Maldonado se le ofrecieron los
+  // distritos «Tambopata · Las Piedras · Inambari» — e Inambari es MAZUKO, a 200 km de su
+  // casa. Lo que hace vecina a una oficina no es el papel, es la distancia; para eso están
+  // las coordenadas. A 30 km entran los distritos de una misma ciudad (Chiclayo llega hasta
+  // Pátapo, 24 km) y se caen los que son otro viaje (Chongoyape 53 km, Mazuko 200).
+  // Al que de verdad vive lejos no se le esconde nada: nombra su distrito y se resuelve solo.
+  const CERCA_KM = 30;
+  const _vecinas = resto.filter((a) =>
+    a.y != null && a.x != null && kmEntre(y, x, a.y, a.x) <= CERCA_KM);
+  return [...base, ...porCercania(_vecinas, y, x)];
 }
 
 // 🗺️ PREGUNTARLE EL DISTRITO EN VEZ DE VOLCARLE LAS OFICINAS. Idea de Rodrigo, y los números

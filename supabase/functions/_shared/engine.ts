@@ -4176,7 +4176,7 @@ function fichaSinPresentacion(ficha: string): string {
   return salida.replace(/[\s#]/g, "").length < 40 ? t : salida;
 }
 
-function sinPresentacionRepetida(texto: string, producto: string): string {
+function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = false): string {
   const t = String(texto ?? "").trim();
   const prod = String(producto ?? "").trim();
   if (!t || prod.length < 4) return t;
@@ -4197,7 +4197,14 @@ function sinPresentacionRepetida(texto: string, producto: string): string {
   while (n < partes.length - 1 && !hilo.test(partes[n])) n++;
   if (n === 0) return t;
   const prefijo = partes.slice(0, n).join(" ");
-  if (prefijo.length <= 100) return t;
+  // 🔴 El piso baja a 60 en los turnos que NO son de venta. Medido: el cliente contestó «Para
+  // Madre de Dios» —un dato, no una pregunta— y el mensaje abrió con «Perfecto, funciona con
+  // taladros compatibles que permitan poner este tipo de adaptador» (85 caracteres) antes de
+  // repreguntarle la ciudad. Rodrigo: «esto no va». El modelo estaba contestando la pregunta
+  // que había hecho EL BOT en el rotador («¿ya tienes un taladro?»), que el cliente ignoró —
+  // así que no es que se ponga a explicar por su cuenta: se contesta a sí mismo. Con el piso
+  // en 100 se colaba por 15 caracteres.
+  if (prefijo.length <= (ventaAhora ? 100 : 60)) return t;
   // Lo que protege un acuse es una cifra de PLATA o de CANTIDAD («Perfecto, 2 unidades por
   // *S/ 109*»), no cualquier número: una descripción trae medidas («hasta 1.5 mm»).
   if (/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(prefijo)) return t;
@@ -4493,8 +4500,18 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string
   if (!yaSeSabe && !RE_HABLA_DE_SEDE.test(sinFormato(t))) return { texto: t, habia: false };
   let quitadas = 0;
   const lineas = t.split("\n").filter((l) => {
-    if (!/^\s*[-•·]\s*\S/.test(l)) return true;
-    if (/(S\/|\$)\s*[0-9]|[0-9]+\s*(unidad|unidades|frascos?|packs?)/i.test(l)) return true;
+    // 🔴 Dos formas, porque el modelo aprendió a IMITAR la del motor. Al principio escribía
+    // viñetas («- Pimentel: Malecón Grau») y con eso bastaba; ahora escribe
+    // «*Wanchaq* — cerca al grifo Wanchaq», idéntica a la que pega el motor, y su lista
+    // pasaba entera con las referencias inventadas dentro. Da igual el formato: la lista de
+    // oficinas la escribe el MOTOR, y esta función corre ANTES de que él la pegue, así que
+    // lo único que puede haber acá es la del modelo.
+    const _vineta = /^\s*[-•·]\s*\S/.test(l);
+    const _comoElMotor = /^\s*\*[^*\n]{2,40}\*\s*[–—-]\s*\S/.test(l);
+    if (!_vineta && !_comoElMotor) return true;
+    // ⛔ Nunca una línea de PRECIOS: «*2 unidades* — S/ 109 · doble herramienta» tiene la
+    // misma forma y llevársela dejaría al cliente eligiendo cantidad sin ver los precios.
+    if (/(S\/|\$)\s*[0-9]|[0-9]+\s*(unidad|unidades|frascos?|packs?|cajas?)/i.test(l)) return true;
     quitadas++;
     return false;
   });
@@ -15644,7 +15661,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // un solo párrafo, no hay nada que recortar y no se toca.
       if (op === "generar_texto" && !_turnoDeVenta) {
         const _antesPres = salida;
-        salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""));
+        salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), _turnoDeVenta);
         if (salida !== _antesPres) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
             "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
@@ -15859,7 +15876,28 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 `${_ofsD.length} en ${bonito(_od.t)}`).catch(() => {});
             }
           }
-          const _porDistrito = !_od?.l?.length && _dts.length >= 2 && _dts.length <= 12;
+          // 🎁 POCAS OFICINAS → TODAS DE GOLPE, con su referencia. Decisión de Rodrigo: «si la
+          // provincia tiene menos de 8 agencias, nombrarlas todas con sus referencias para no
+          // estar desviando la conversación». Y resuelve de paso el problema de nombres que
+          // tenía el paso por distrito: al de Puerto Maldonado no hay que decirle «Tambopata»
+          // —que es su distrito pero nadie lo llama así—, se le muestra «AV 15 de Agosto — a
+          // media cdra. del mercado» y él reconoce cuál es la suya. La referencia ubica mejor
+          // que cualquier nombre administrativo.
+          const _pocas = !_od?.l?.length && _ags.length > 0 && _ags.length < 8;
+          if (_pocas) {
+            const _rezP = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
+            const _lstP = [..._ags].sort((x, y) => _rezP(x) - _rezP(y))
+              .map((x) => `📍 *${bonito(x.l)}*${pistaAgencia(x)}`).join("\n");
+            const _sinIAp = sinListaDeSedesDeLaIA(salida, true);
+            if (_sinIAp.habia) salida = _sinIAp.texto;
+            const _antesP = salida;
+            salida = conAgencias(salida, `${_cab}\n${_lstP}\n\n¿Cuál te queda más cerca?`, true);
+            if (salida !== _antesP) {
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Se le pasaron todas",
+                `${_ags.length} agencias en ${ctx.ciudad ?? ""} — pocas, van todas con su referencia`).catch(() => {});
+            }
+          }
+          const _porDistrito = !_pocas && !_od?.l?.length && _dts.length >= 2 && _dts.length <= 12;
           // 🔁 Y UNA sola vez. Medido en Trujillo: la lista de distritos se pegó en tres
           // mensajes seguidos —incluso debajo de «pásame tus datos»—, que es exactamente el
           // machaque que ya nos costó con la pregunta de la cantidad. Se repite solo si es ÉL
@@ -15877,7 +15915,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Se le preguntó el distrito",
                 `${_dts.length} distritos con oficina en ${ctx.ciudad ?? ""}`).catch(() => {});
             }
-          } else if (_dts.length > 12 && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
+          } else if (!_pocas && _dts.length > 12 && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
             // 🏙️ B · DEMASIADOS DISTRITOS para listarlos: Lima tiene 35 y Arequipa 13, así que
             // el listado sería tan largo como el de oficinas y no ahorra nada. Pero la
             // pregunta sigue sirviendo, porque él SÍ sabe su distrito de memoria: se la hace
@@ -15894,7 +15932,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Se le preguntó el distrito (sin lista)",
                 `${_dts.length} distritos con oficina en ${ctx.ciudad ?? ""} — demasiados para listarlos`).catch(() => {});
             }
-          } else if (_ags.length) {
+          } else if (!_pocas && _ags.length) {
             const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
             const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
               `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
