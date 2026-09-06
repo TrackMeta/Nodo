@@ -3825,58 +3825,6 @@ const RE_PIDE_ELEGIR_SEDE =
   // «queda más cerca» sin el «te»: medido, «Solo faltaría la agencia Shalom de Tarapoto queda
   // más cerca» se colaba entera porque la lista solo tenía la forma con pronombre.
   /(cu[aá]l|d[ií]me|ind[ií]came|elige|escoge|eliges|elijas|prefieres|me confirmas|queda m[aá]s cerca|queda mejor|faltar[ií]a (?:saber )?(?:la|el|cu[aá]l))/i;
-// 🏷️ LAS SEDES INVENTADAS. El defecto más caro de toda la tanda: el bot escribe nombres de
-// oficinas Shalom que NO EXISTEN. En Cusco listó «Santiago, Wanchaq, San Sebastián, San
-// Jerónimo» —distritos, no agencias— y en Chiclayo «Chiclayo Centro, José Leonardo Ortiz, La
-// Victoria, Pimentel…». El cliente viaja a una agencia que no existe con un paquete esperando
-// en otra. Y lo destapó un arreglo mío: al dejar de pegar la lista REAL en ese turno, el
-// modelo llenó el hueco con nombres inventados — la lista del motor era el antídoto.
-// Regla: los nombres de agencias los escribe el MOTOR. Si vienen en viñetas (que es como los
-// escribe el modelo; el motor usa otro formato) y no calzan con una oficina real de su
-// ciudad, se caen.
-function sinSedesInventadas(texto: string, ciudad: string): { texto: string; quitadas: string[] } {
-  const t = String(texto ?? "");
-  const quitadas: string[] = [];
-  if (!RE_HABLA_DE_SEDE.test(sinFormato(t))) return { texto, quitadas };
-  // 🔴 La referencia es su DEPARTAMENTO, no su ciudad. `agenciasDeCiudad("Chiclayo")` devuelve
-  // solo las 4 del DISTRITO —nunca llega a las de la provincia—, así que comparar contra eso
-  // habría borrado Chongoyape, Monsefú, Pátapo, Pimentel, Pomalca, Reque y Tumán, que son
-  // oficinas REALES de su provincia. Casi cambio "el bot nombra alguna oficina que no existe"
-  // por "el bot le esconde siete que sí existen", que es bastante peor.
-  // Y se aceptan también los nombres de DISTRITO con oficina: el modelo nombra distritos
-  // («Morales», «La Banda», «José Leonardo Ortiz») y ahí sí hay dónde recoger, aunque el
-  // mostrador se llame de otra forma. Lo que se corta es lo que no existe ni como oficina ni
-  // como distrito con oficina en su departamento: «Wanchaq», «Nuevo Tarapoto», «San Juan».
-  let reales: string[] = [];
-  try {
-    const _base = agenciasDeCiudad(String(ciudad ?? ""));
-    const _depto = _base[0]?.d ?? "";
-    const _todas = _depto ? agenciasDeCiudad(_depto) : _base;
-    reales = [...new Set([..._base, ..._todas]
-      .flatMap((a) => [limpiaZona(a.l), limpiaZona(a.t)]))].filter((x) => x && x.length >= 3);
-  } catch (_) { /* sin padrón legible → no se toca nada */ }
-  if (!reales.length) return { texto, quitadas };
-  const lineas = t.split("\n").filter((l) => {
-    const m = /^\s*[-•·]\s*\*?\s*(?:shalom\s+)?([^\n:*–—]{2,40}?)\s*\*?\s*$/i.exec(l);
-    if (!m) return true;
-    const n = limpiaZona(m[1]);
-    if (!n || n.length < 3) return true;
-    // Por PALABRA COMPLETA, no por subcadena: si no, cualquier «centro» calzaría con
-    // «Moyobamba Centro» y pasaría un nombre que no lleva a ninguna puerta concreta.
-    const enc = (a: string, b: string) => ` ${a} `.includes(` ${b} `);
-    const _GENERICO = /^(centro|principal|sede|oficina|agencia|shalom|norte|sur|este|oeste)$/;
-    const ok = reales.some((r) => r === n ||
-      (!_GENERICO.test(n) && (enc(r, n) || enc(n, r))));
-    if (!ok) quitadas.push(m[1].trim());
-    return ok;
-  });
-  if (!quitadas.length) return { texto, quitadas };
-  const limpio = lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  // Si al quitarlas no queda mensaje, se deja el original: que un humano lo vea en la Bandeja
-  // es mejor que mandar una burbuja vacía.
-  return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20
-    ? { texto: limpio, quitadas } : { texto, quitadas: [] };
-}
 
 function sinPreguntarLaSede(texto: string, nombre = ""): string {
   const t = String(texto ?? "");
@@ -14183,8 +14131,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Pedir la sede nombrando la ciudad: "Av. España" a secas no sirve para
         // despachar (¿la de Trujillo o la de Lima?), y el cliente responde mejor
         // si le preguntas por SU ciudad.
-        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido, y **a qué sede de Shalom${_sedeCiudad ? " de " + _sedeCiudad : ""}** lo va a recoger. ` +
-          `Pregúntale la oficina de Shalom de su ciudad, no en abstracto. 🔑 Si el cliente NO sabe la oficina exacta, NO lo bloquees, NO insistas y NO le hagas notar que falta ese dato: acepta lo que diga (aunque sea solo su ciudad) y SIGUE NORMAL con el pedido y el adelanto, como si estuviera completo. NO le prometas "coordinar" ni "confirmar" la oficina, NO le anuncies que la afinas después, y NO lo derives a nadie: simplemente continúa con naturalidad (la sede exacta se resuelve por dentro, sin comentárselo).`);
+        // 🔴 REGRESIÓN DE UNA DECISIÓN YA TOMADA (commit 84d8f53). Rodrigo cerró esto: «con
+        // solo la ciudad basta para vender», la bandera se levanta EN SILENCIO y él confirma
+        // la oficina a mano en Pedidos. La nota de entonces decía «ahora ni se pide».
+        // Pero este bloque seguía diciendo «para despachar NECESITAS … a qué sede lo va a
+        // recoger. Pregúntale la oficina de Shalom de su ciudad» — o sea, la ponía como
+        // requisito y ordenaba preguntarla. El «no insistas» venía después y perdía: el
+        // imperativo va primero. Otro par de reglas del prompt peleándose entre ellas.
+        // Medido en 6 de 10 simulaciones: la IA cerraba preguntando la sede y el flujo le
+        // mandaba el adelanto encima 5 segundos después, con la pregunta sin contestar.
+        L.push(`Para despachar necesitas: su **DNI**, nombre y apellido. ` +
+          `⛔ La oficina de Shalom NO se la preguntas: con su ciudad basta para vender, y la oficina exacta ` +
+          `se resuelve por dentro. Si ÉL la nombra por su cuenta, la tomas y sigues. Si no, no la menciones: ` +
+          `NO le prometas "coordinar" ni "confirmar" la oficina, NO le anuncies que la afinas después y NO lo ` +
+          `derives a nadie. Simplemente continúa con el pedido y el adelanto como si estuviera completo.`);
         // 🧍 «Lo va a recoger mi esposo / mi mamá / mi hermano». Pasa todo el tiempo en
         // provincia (la clienta trabaja, la agencia queda lejos) y el bot lo ignoraba: le
         // repetía el bloque de envío y le pedía SU nombre. En Shalom el paquete se entrega
@@ -15841,16 +15801,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 🗣️ Y fuera la prueba social que el negocio no tiene («muchos clientes en Chiclayo ya
         // lo usan y quedan satisfechos»). Si la ficha SÍ la trae, se respeta.
         salida = sinPruebaSocialInventada(salida, String(ctx.contexto_producto ?? ""));
-        // 🏷️ Y fuera las sedes que no existen. Va SIEMPRE, no solo al cerrar el pedido: el
-        // cliente que viaja a una agencia inventada pierde el día en cualquier turno.
-        if (String(ctx.zona_entrega ?? "") === "provincia") {
-          const _inv = sinSedesInventadas(salida, String(ctx.ciudad ?? ""));
-          if (_inv.quitadas.length) {
-            salida = _inv.texto;
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Nombró oficinas que no existen",
-              `Sin oficina en su departamento: ${_inv.quitadas.join(", ")}`.slice(0, 140)).catch(() => {});
-          }
-        }
+        // 🏷️ (Acá vivía un guard que BORRABA los nombres de oficina que no estaban en la
+        // lista. Se quitó: `shalom-agencias.ts` es un volcado PARCIAL de la columna DESTINO
+        // del Excel de carga, y la regla de Rodrigo —que ya me corrigió una vez por esto— es
+        // que la lista se usa en UNA sola dirección: sirve para CONFIRMAR, nunca para deducir
+        // ni descartar. Que «Wanchaq» no esté en la lista no prueba que Shalom no tenga ahí
+        // una oficina; prueba que la lista no la conoce. Borrarla sería esconderle al cliente
+        // una opción buena. El problema de fondo —que la IA se ponga a nombrar oficinas— se
+        // ataca donde nace: no pidiéndole la sede (ver el bloque del prompt, decisión 84d8f53).
+        // 🔴 PENDIENTE de Rodrigo: qué contestar a «¿qué sedes hay en Chiclayo?» — las tres
+        // opciones están en la memoria `sede-shalom-no-confirmada` y él aún no eligió.)
         // 📍 Y fuera la pregunta por la sede cuando el pedido se cierra en este mismo turno:
         // el flujo manda el adelanto encima y la pregunta queda huérfana. Solo si la sede no
         // está resuelta de verdad; si él ya eligió una oficina real, no hay nada que quitar.
