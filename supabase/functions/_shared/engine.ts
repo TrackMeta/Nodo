@@ -3990,6 +3990,23 @@ function conAgenciaNombrada(texto: string, courier: string): string {
   // para no repetirlo en cada línea.
   return t.replace(/\bagencia\b/i, `agencia ${nom}`);
 }
+// 🏷️ «OFICINA» → «SEDE». Rodrigo: «no sería oficina, sería Sede». Es la palabra del negocio
+// —el campo del producto se llama «Sede de la agencia»— y la que usa el cliente de Shalom.
+// Solo se cambia cuando el mensaje habla de la agencia o del recojo: si el bot dice «ideal
+// para tu oficina» hablando del taladro, ahí «oficina» es el lugar de trabajo y se queda.
+function conSede(texto: string, courier: string): string {
+  const t = String(texto ?? "");
+  const nom = String(courier ?? "").trim().toLowerCase();
+  const hayContexto = /\bagencia|\brecog|\brecoj|\bsede/i.test(t) || (!!nom && t.toLowerCase().includes(nom));
+  if (!hayContexto || !/\boficina/i.test(t)) return t;
+  return t
+    .replace(/\boficinas\b/gi, "sedes")
+    .replace(/\boficina\b/gi, "sede")
+    // «la sede» femenino ya calza; lo que hay que corregir son los artículos y adjetivos que
+    // acompañaban a «oficina» y quedaron igual (misma palabra, mismo género) — no hay nada
+    // que ajustar. Sí queda feo el duplicado «sede de la agencia Shalom sede»: se limpia.
+    .replace(/\bsedes?\s+de\s+la\s+agencia\s+sede\b/gi, "sede de la agencia");
+}
 // 🧹 MULETILLAS DE ARRANQUE. Rodrigo, leyendo sus chats: «quita esas muletillas de arranque».
 // Son las frases con las que el modelo entra en calor antes de decir lo que importa —«Antes de
 // avanzar, ¿cuántas unidades quieres?», «Para ayudarte mejor, ¿de qué distrito me escribes?»—
@@ -4057,7 +4074,7 @@ function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: 
   // para contestar «hace envios». Dice lo mismo en dos líneas.
   const _pista = sede ? String(sede.ref || sede.dir || "").trim() : "";
   const _donde = sede
-    ? `a la oficina *${bonito(sede.l)}* de *${quien}*${_pista ? `\n_${bonito(_pista, true)}_` : ""}`
+    ? `a la sede *${bonito(sede.l)}* de *${quien}*${_pista ? `\n_${bonito(_pista, true)}_` : ""}`
     : `a tu ciudad por *agencia ${quien}*`;
   return `📦 Te llega ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.\n\n` + t;
 }
@@ -13466,7 +13483,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               (_ags.length === 1
                 // El mensaje va escrito tal como se le manda al cliente: si acá se pone
                 // "UNA" en mayúscula para enfatizar, el bot la copia y le llega gritada.
-                ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos una sola oficina 👇\n${_lista}\n\n` +
+                ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos una sola sede 👇\n${_lista}\n\n` +
                   `Como es la única, NO le preguntes cuál prefiere, ni si la quiere, ni le pidas otra zona. ` +
                   // 📍 Pero SÍ decirle cuál es. Medido: cliente de Mazamari, una sola oficina, el motor
                   // la selló solo… y el cliente terminó la conversación entera sin enterarse de a dónde
@@ -15176,11 +15193,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
         // 🏷️ Y que la agencia salga CON NOMBRE, y que lo que se confirme sea la oficina.
-        if (/\bagencia/i.test(salida)) {
+        if (/\bagencia|\boficina/i.test(salida)) {
           try {
             const _entA = await loadEntregas(db, run);
             const _cA = Object.keys((((_entA as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
-            salida = conAgenciaNombrada(salida, _cA ? _cA.charAt(0).toUpperCase() + _cA.slice(1) : "");
+            const _nomA = _cA ? _cA.charAt(0).toUpperCase() + _cA.slice(1) : "";
+            salida = conAgenciaNombrada(salida, _nomA);
+            salida = conSede(salida, _nomA);
           } catch (_) { /* sin courier configurado → se envía tal cual */ }
         }
         // ✂️ Y si este turno no era para vender, fuera la presentación repetida del producto
@@ -15439,9 +15458,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _ciu = normalize(String(ctx.ciudad ?? ""));
               const _yaLaNombra = _et && normalize(_limpio).includes(_et);
               salida = _yaLaNombra ? _limpio : _limpio +
-                `\n\n📍 Te lo dejo en *${bonito(_enCiudad[0].l)}*, que es la única oficina que hay ` +
+                `\n\n📍 Te lo dejo en *${bonito(_enCiudad[0].l)}*, que es la única sede que hay ` +
                 (_et === _ciu ? "ahí." : `en ${bonito(String(ctx.ciudad))}.`);
-              await logEvent(db, run.channel_id, run.contact_id, "nota", "🏢 Una sola oficina",
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🏢 Una sola sede",
                 "Se le quitó la pregunta de qué sede: no hay otra" + (_yaLaNombra ? " (ya la nombraba)" : "")).catch(() => {});
             }
           }
