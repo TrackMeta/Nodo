@@ -13596,8 +13596,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `PROHIBIDO decirle que "no hacemos entrega en tu zona" o dar a entender que no cubrimos su distrito: sí lo cubrimos. ` +
             `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
       } else {
-        L.push(`El cliente es de **${ctx.ciudad || "provincia"}** → NO es nuestra zona de reparto: el envío va **por agencia**.`);
-        L.push("Mencionamos **Shalom** como nuestra agencia; solo ofrece otra si el cliente la pide.");
+        // 🔴 Escrito como INSTRUCCIÓN, no como una frase que se pueda copiar. La versión
+        // anterior decía «El cliente es de X → NO es nuestra zona de reparto: el envío va por
+        // agencia», y el modelo se la leyó al cliente casi textual: «Madre de Dios no es zona
+        // de reparto, por envío va por agencia Shalom». Le sonó a rechazo, y encima mal
+        // escrito. Es la tercera vez que una nota mía termina en el chat del cliente: lo que
+        // se escribe acá tiene que estar redactado como si lo fuera a leer él.
+        L.push(`A ${ctx.ciudad || "su ciudad"} no llega nuestro reparto propio, así que el pedido va por ` +
+          "agencia. ⛔ Eso NUNCA se lo dices en negativo: nada de «no es zona de reparto», «no llegamos " +
+          "ahí», «no cubrimos esa zona». Para él es un hecho normal y así se dice: «te llega por agencia " +
+          "Shalom». Decirle lo que NO hacemos le hace pensar que su ciudad es un problema.");
+        L.push("La agencia es **Shalom** y es siempre la misma; solo ofrece otra si el cliente la pide.");
         const _modoEnv = modoEnvio(ctx);
         // Las oficinas REALES de su ciudad, con dirección. Sin esto la IA inventaba:
         // medido, a "¿qué sedes de Shalom hay en Chiclayo?" contestó "tenemos varias"
