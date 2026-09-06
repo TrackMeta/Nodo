@@ -726,6 +726,19 @@ async function runEngineInner(
     if (decision.tier === "ia" || decision.tier === "fallback") {
       await logEvent(db, channelId, contactId, "nota", "🧭 Ruteo por IA", decision.reason ?? "").catch(() => {});
     }
+    // 🔑 A partir de acá, el mensaje va SIN la palabra clave. Ya cumplió su trabajo —eligió
+    // este flujo— y todo lo que sigue (extractores de zona y de oficina, captura de datos y
+    // la IA) debe leer solo lo que el cliente escribió DE SU PUÑO. Ver `sinLaPalabraClave`.
+    // ⚠️ Va después de decidir la reinyección, que mira el mensaje entero a propósito, y no
+    // toca `contacts.last_input`: en la Bandeja se sigue viendo lo que él mandó de verdad.
+    if (event.type === "message" && decision.keyword) {
+      const _sinKw = sinLaPalabraClave(event.text, decision.keyword);
+      if (_sinKw !== String(event.text ?? "")) {
+        event = { ...event, text: _sinKw };
+        await logEvent(db, channelId, contactId, "nota", "🔑 La palabra clave solo enruta",
+          _sinKw ? `Queda lo suyo: "${_sinKw.slice(0, 90)}"` : "No escribió nada más").catch(() => {});
+      }
+    }
     run = await startRun(db, channelId, contactId, flow);
     if (!run) {
       // Perdió la carrera del lock (dos webhooks casi simultáneos): otro run
@@ -1802,6 +1815,36 @@ function traePregunta(text?: string | null): boolean {
 // Si además de la clave escribió algo suyo («…y me llega a Puno?», «¿sirve para lámina
 // galvanizada?»), eso sí lo atiende la IA en el mismo turno — que es para lo que existe
 // la reinyección.
+// 🔑 EL TEXTO SIN LA PALABRA CLAVE. Decisión de Rodrigo: «del primer mensaje solo enrute».
+// La clave NO la redactó el cliente: es texto NUESTRO que Meta deja escrito en el anuncio y
+// que él reenvía tal cual («Hola. ¿Puedo obtener más información sobre el ADAPTADOR PRO PARA
+// CORTAR LAMINAS?»). Leerla como si fuera su manera de hablar es lo que hizo que «ADAPTADOR
+// PRO» le sellara la agencia PRO de Los Olivos a un cliente de Cusco. Una vez que cumplió su
+// único trabajo —elegir el flujo— se descuenta, y lo que queda es lo que él SÍ escribió.
+// Se quita la FRASE completa, no sus palabras sueltas: si se borraran palabra por palabra,
+// un «¿sirve para cortar láminas gruesas?» escrito junto a la clave perdería justo lo que
+// pregunta, porque "cortar" y "láminas" están en el nombre del producto.
+function sinLaPalabraClave(text?: string | null, keyword?: string | null): string {
+  const t = String(text ?? "");
+  const _p = (s: string) => normalize(s).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  const kw = _p(keyword ?? "").split(/\s+/).filter(Boolean);
+  if (!kw.length || !t.trim()) return t;
+  const piezas = t.split(/(\s+)/);           // conserva los espacios para no pegar palabras
+  const pal = piezas.map(_p);
+  const out = [...piezas];
+  for (let i = 0; i < piezas.length; i++) {
+    if (!pal[i]) continue;
+    let j = i, k = 0;
+    while (j < piezas.length && k < kw.length) {
+      if (!pal[j]) { j++; continue; }         // espacios y signos sueltos
+      if (pal[j] !== kw[k]) break;
+      j++; k++;
+    }
+    if (k === kw.length) { for (let z = i; z < j; z++) out[z] = ""; i = j - 1; }
+  }
+  return out.join("").replace(/\s{2,}/g, " ").trim();
+}
+
 function soloLaPalabraClave(text?: string | null, keyword?: string | null): boolean {
   const kw = normalize(keyword ?? "");
   if (!kw) return false;             // sin keyword no hay nada que descontar
@@ -4516,6 +4559,19 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string
     return false;
   });
   if (quitadas < 2) return { texto: t, habia: false };
+  // 🧹 Y con la lista se va su ENCABEZADO y su pregunta de cierre. Medido: al quitarle las
+  // líneas quedaba «En *Cusco* tenemos estas 👇» seguido de un hueco y «¿Cuál te queda
+  // mejor?», y debajo el motor pegaba su bloque completo — encabezado repetido, con un vacío
+  // en medio. Quitar la lista y dejar lo que la anunciaba es peor que no quitar nada.
+  const _presenta = /(tenemos|hay|estas|estos|lista|sedes|oficinas|agencias)/i;
+  const _cierra = /(cu[aá]l|elige|escoge|prefieres|te queda|te va mejor|te sirve)/i;
+  for (let i = lineas.length - 1; i >= 0; i--) {
+    const l = lineas[i].trim();
+    if (!l) continue;
+    const _esCab = /[👇:]\s*$/.test(l) && _presenta.test(sinFormato(l));
+    const _esPreg = /[?¿]/.test(l) && _cierra.test(sinFormato(l)) && l.length <= 90;
+    if (_esCab || _esPreg) lineas[i] = "";
+  }
   const limpio = lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   // Si al quitarla no queda mensaje, se deja como estaba: la lista del motor se pega igual
   // debajo y es preferible una repetición a una burbuja vacía.
