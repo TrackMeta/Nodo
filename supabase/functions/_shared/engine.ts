@@ -13507,9 +13507,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           L.push(`🗺️ Ojo: *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* es el DEPARTAMENTO, no su ciudad, ` +
             "y las sedes de un mismo departamento pueden estar a horas unas de otras. ⛔ NO le listes ninguna " +
             "todavía, NO le nombres provincias y NO le confirmes una sede: lo único que necesitas es su " +
-            "CIUDAD o distrito. Pregúntaselo en una línea, sin dramatizar, y sigue con el pedido.\n" +
-            "🏷️ Nombra la agencia (es SIEMPRE la misma) y habla de la SEDE, no de «la agencia»: «¿de qué " +
-            "ciudad eres? Así te digo qué sede de Shalom te queda más cerca».\n" +
+            "CIUDAD o distrito.\n" +
+            // 🔴 El ejemplo IMPORTA más que la instrucción: el modelo lo copia tal cual. El
+            // primero que puse era «¿de qué ciudad eres? Así te digo qué sede de Shalom te queda
+            // más cerca» y salió literal —con la coletilla del "para qué te lo pido" que está
+            // prohibida tres bloques más arriba, y encima deformada: «¿En qué ciudad o distrito
+            // recoges por la agencia Shalom?». Ahora el ejemplo es lo que de verdad queremos leer.
+            "Pregúntaselo en UNA línea y a secas, sin explicarle para qué lo necesitas y sin nombrar la " +
+            `agencia todavía: «¿de qué ciudad de ${bonito(String(ctx.ciudad ?? ""))} eres?» o «¿de qué ciudad ` +
+            "o distrito me escribes?». Nada más. Con eso sigue el pedido.\n" +
             "⛔ Y cuando te diga su ciudad, JAMÁS la corrijas ni la clasifiques. Nada de «eso es un barrio», " +
             "«eso no es una sede», «ahí no llegamos» ni «no existe». Medido: contestó «Mazuko» y le dijeron " +
             "«Mazuko es un barrio, no una sede de Shalom» — le discutieron su propio pueblo. Si no reconoces " +
