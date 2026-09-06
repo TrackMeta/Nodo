@@ -750,6 +750,39 @@ export function agenciasParaOfrecer(ciudad: string): Agencia[] {
   return (y != null && x != null) ? [...base, ...porCercania(resto, y, x)] : [...base, ...resto];
 }
 
+// 🗺️ PREGUNTARLE EL DISTRITO EN VEZ DE VOLCARLE LAS OFICINAS. Idea de Rodrigo, y los números
+// la respaldan: de los 221 distritos con oficina en las 61 provincias que tienen más de una,
+// **125 tienen UNA sola** — o sea que en más de la mitad de los casos, con solo contestar el
+// distrito la sede queda resuelta y se le puede mandar su ficha. Y el mensaje pasa de ~700
+// caracteres (14 oficinas con referencia) a ~120 (10 nombres de distrito sueltos).
+// Devuelve los distritos en el mismo orden que `agenciasParaOfrecer`: el suyo primero y el
+// resto por cercanía. `n` dice cuántas oficinas tiene cada uno, para saber si contestar el
+// distrito alcanza para sellar o todavía hay que elegir entre dos o tres.
+export function distritosConOficina(ciudad: string): { t: string; n: number }[] {
+  const ags = agenciasParaOfrecer(ciudad);
+  if (ags.length < 2) return [];
+  const m = new Map<string, { t: string; n: number }>();
+  for (const a of ags) {
+    const k = _n(a.t);
+    const cur = m.get(k);
+    if (cur) cur.n++;
+    else m.set(k, { t: a.t, n: 1 });
+  }
+  return [...m.values()];
+}
+
+// Las oficinas de UN distrito, acotadas a la provincia de la ciudad que YA conocemos.
+// ⚠️ Sin acotar se mezclan: hay una "La Victoria" en Lima y otra en Chiclayo, y un "Santiago"
+// en Ica y otro en Cusco. El cliente contesta el nombre a secas, así que el contexto de su
+// provincia es lo único que los distingue.
+export function agenciasDeDistritoEn(distrito: string, ciudadRef: string): Agencia[] {
+  const base = agenciasDeCiudad(ciudadRef);
+  const t = _n(distrito);
+  if (!base.length || !t) return [];
+  const p = _n(base[0].p), d = _n(base[0].d);
+  return AGENCIAS.filter((a) => _n(a.t) === t && _n(a.p) === p && _n(a.d) === d && _ofrecible(a));
+}
+
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?
 // Devuelve null si es segura, o el motivo para que un humano la coordine.
 //
