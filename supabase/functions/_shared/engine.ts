@@ -3822,7 +3822,9 @@ const RE_HABLA_DE_SEDE = /\b(sede|oficina|agencia)s?\b/i;
 // («el paquete suele estar en la agencia de Cusco 1 a 2 días desde que sale») contara como
 // una que pregunta, y se cortaba la respuesta. Solo formas que de verdad piden elegir.
 const RE_PIDE_ELEGIR_SEDE =
-  /(cu[aá]l|d[ií]me|ind[ií]came|elige|escoge|eliges|elijas|prefieres|me confirmas|te queda m[aá]s cerca|te queda mejor|cu[aá]l te queda)/i;
+  // «queda más cerca» sin el «te»: medido, «Solo faltaría la agencia Shalom de Tarapoto queda
+  // más cerca» se colaba entera porque la lista solo tenía la forma con pronombre.
+  /(cu[aá]l|d[ií]me|ind[ií]came|elige|escoge|eliges|elijas|prefieres|me confirmas|queda m[aá]s cerca|queda mejor|faltar[ií]a (?:saber )?(?:la|el|cu[aá]l))/i;
 // 🏷️ LAS SEDES INVENTADAS. El defecto más caro de toda la tanda: el bot escribe nombres de
 // oficinas Shalom que NO EXISTEN. En Cusco listó «Santiago, Wanchaq, San Sebastián, San
 // Jerónimo» —distritos, no agencias— y en Chiclayo «Chiclayo Centro, José Leonardo Ortiz, La
@@ -4288,7 +4290,7 @@ const RE_MULETILLA_FIJA =
 // solo admitía espacios y marcas de cita, así que cualquier muletilla detrás de un emoji
 // —que es como escribe este modelo— no se tocaba nunca.
 const RE_MULETILLA_COLA =
-  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)|entiendo que (?:eres|est[aá]s|vienes)|seg[uú]n veo|(?:me\s+)?(?:dices|dijiste|comentas|comentaste|mencionas|mencionaste|indicas|indicaste) que (?:eres|est[aá]s|vienes|me escribes|nos escribes))[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?veo que|entiendo que|seg[uú]n veo|(?:que\s+)?(?:me\s+)?(?:dices|digas|dijiste|comentas|comentaste|mencionas|mencionaste|indicas|indicaste) que)\s+(?:eres|est[aá]s|vienes|escribes|nos escribes|me escribes|quieres|necesitas|buscas|llevas|prefieres|te interesa|vas a)[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
