@@ -3723,6 +3723,48 @@ function sinAnuncioDePago(texto: string): string {
   return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? limpio : texto;
 }
 
+// 🗣️ LA PRUEBA SOCIAL INVENTADA. Medido: el cliente preguntó «¿y el producto es bueno?» y el
+// bot contestó «Muchos clientes en *Chiclayo* ya lo usan y quedan satisfechos». La ficha no
+// menciona clientes, ni reseñas, ni satisfacción — y la ciudad la sacó de la conversación,
+// así que le da forma de dato local verificable a algo que no existe. Es lo peor de las
+// preguntas fuera de ficha: no niega ni deja de vender, pero se lo INVENTA, y una reseña
+// falsa dicha a un cliente es un problema del negocio, no del bot.
+// ✅ Si el negocio SÍ tiene prueba social en la ficha (reseñas, "más vendido", testimonios),
+// la frase se respeta: entonces no la está inventando, la está usando.
+const RE_PRUEBA_SOCIAL =
+  /[^.!?…\n]*\b(?:(?:much[oa]s|vari[oa]s|cientos|miles|otr[oa]s|nuestr[oa]s|un mont[oó]n)\s+(?:de\s+)?(?:clientes?|compradores?|usuarios?|personas)|(?:el|la)\s+m[aá]s\s+vendid[oa]|best\s?seller|todos\s+(?:quedan|est[aá]n)\s+(?:satisfech|content|encantad))\b[^.!?…\n]*[.!?…]?/gi;
+// Lo que, si está en la ficha, convierte la frase en un dato del negocio y no en un invento.
+const RE_FICHA_TRAE_PRUEBA = /(clientes?|compradores?|rese[nñ]as?|testimoni|valoraci|calificaci|m[aá]s vendid|satisfech|estrellas)/i;
+function sinPruebaSocialInventada(texto: string, ficha: string): string {
+  const t = String(texto ?? "");
+  if (RE_FICHA_TRAE_PRUEBA.test(String(ficha ?? ""))) return texto;
+  RE_PRUEBA_SOCIAL.lastIndex = 0;
+  if (!RE_PRUEBA_SOCIAL.test(t)) return texto;
+  RE_PRUEBA_SOCIAL.lastIndex = 0;
+  const limpio = t.replace(RE_PRUEBA_SOCIAL, " ")
+    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  // Si al quitarla el mensaje se queda en nada, se deja como estaba: una respuesta vacía a
+  // «¿es bueno?» es peor que una de más. El bloque del prompt ya empuja a vender con lo real.
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
+}
+
+// 👉 CONTESTÓ BIEN, PERO NO PIDIÓ NADA. Rodrigo, leyendo la corrida: «respondió bien, pero
+// cuando tenga un pendiente —como el adelanto, o los datos o lo que sea— incentivar a hacer».
+// Medido: con el pedido ya creado y el adelanto sin pagar, el cliente preguntó «¿y el producto
+// es bueno?» y el bot cerró con una explicación y nada más. La conversación se queda ahí: el
+// que preguntaba estaba a un paso de pagar y nadie le dijo cuál era el paso.
+// ⛔ No se suma si el mensaje YA pide algo (trae una pregunta) ni si ya nombra el pendiente:
+// dos pedidos en un mensaje es justo lo que hace que no cumpla ninguno.
+function conCierrePendiente(texto: string, cta: string, yaLoNombra: RegExp): string {
+  const t = String(texto ?? "").trimEnd();
+  if (!t || !cta) return texto;
+  if (/[?¿]/.test(t)) return texto;          // ya le pidió algo
+  if (yaLoNombra.test(sinFormato(t))) return texto;  // ya habla del pendiente
+  return t + "\n\n" + cta;
+}
+const RE_YA_PIDE_ADELANTO = /(adelanto|captura|comprobante|yape|plin|voucher|dep[oó]sito)/i;
+const RE_YA_PIDE_DATOS = /(nombre|apellido|celular|\bdni\b|datos)/i;
+
 // 🧾 El trámite inventado. En una venta digital no hay nada que pedirle —ni dirección, ni
 // DNI, ni talla—, pero el modelo, entrenado para cerrar pidiendo algo, se inventa el dato
 // que falta: «Con ese último dato te lo dejo cerrado 🙂» (el cliente contestó "¿cómo?") y
@@ -3915,7 +3957,13 @@ const CAMBIOS_PAGO_AGENCIA: Array<[RegExp, string]> = [
 // clave, así que el paquete se queda en la agencia. En Lima sí es «pagas cuando lo recibes»,
 // por eso estos dos solo corren con zona de provincia.
 const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
-  [/\bcuando\s+(?:lo\s+|la\s+)?(?:recibas|te\s+llegue|lo\s+tengas|lo\s+recibas)(?:\s+el\s+(?:paquete|pedido|producto))?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  // 🔴 En INDICATIVO también. Medido: «con un adelanto de *S/ 20* para mandártelo y el resto
+  // cuando lo RECOGES» — la lista tenía «recojas» y «recibas», o sea el subjuntivo, que es
+  // como se escribe redactando y no como sale de verdad. Una conjugación de diferencia y la
+  // regla que más ha repetido Rodrigo se cae entera. Se cubren los dos modos y los verbos que
+  // nombran el mismo momento (recibir, recoger, retirar, tener).
+  // El lookahead evita el «cuando llegue a la agencia a la agencia» al reescribirse a sí mismo.
+  [/\bcuando\s+(?:lo\s+|la\s+|te\s+)?(?:recibas|recibes|recojas|recoges|retires|retiras|llegue|tengas|tienes)(?:\s+(?:el|tu|la)\s+(?:paquete|pedido|producto|encomienda))?(?!\s+a\s+la\s+agencia)(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   [/\bal\s+recibir(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   // «y el resto cuando recojas el paquete» — misma idea, otra forma. Se generaliza: cualquier
   // «cuando recojas…» en provincia habla del MOMENTO en que él va por el paquete, y el saldo
@@ -15585,6 +15633,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // `salida` —lo que ve el cliente— y NUNCA sobre `result`, que es el texto con el que
         // `maybeDatosPago` decide si los manda.
         salida = sinAnuncioDePago(salida);
+        // 🗣️ Y fuera la prueba social que el negocio no tiene («muchos clientes en Chiclayo ya
+        // lo usan y quedan satisfechos»). Si la ficha SÍ la trae, se respeta.
+        salida = sinPruebaSocialInventada(salida, String(ctx.contexto_producto ?? ""));
         // ✅ Y si acaba de decir su departamento y se le está repreguntando la ciudad, primero
         // se le confirma que sí le llega, con la agencia nombrada.
         if (String(ctx.zona_entrega ?? "") === "provincia" && (run as any)?._zonaRecienTurno) {
@@ -15889,6 +15940,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (_emOn) {
         const _min = Math.max(1, Number(_est.emoji_min) || 1);
         salida = conEmojiMinimo(salida, ctx, _min);
+      }
+      // 👉 Y de ÚLTIMO, el empujón: si hay algo pendiente y el mensaje no pide nada, se cierra
+      // con el paso concreto. Va acá, después de todo, para que ninguna otra red se lo lleve.
+      if (op === "generar_texto") {
+        try {
+          const _oid = (run.vars as any)?._order_id;
+          let _estadoPed = "";
+          if (_oid) {
+            const { data: _op } = await db.from("orders").select("status").eq("id", _oid).maybeSingle();
+            _estadoPed = String((_op as any)?.status ?? "");
+          }
+          const _sym = simboloMoneda(ctx.moneda as string);
+          const _adel = Number(ctx.adelanto);
+          if (_estadoPed === "esperando_adelanto" && Number.isFinite(_adel) && _adel > 0) {
+            // Las palabras son las de Rodrigo: la foto, el monto, y para QUÉ sirve mandarla.
+            salida = conCierrePendiente(salida,
+              `Envíame la foto del adelanto de *${_sym} ${_adel}* para alistar tu pedido 📷`,
+              RE_YA_PIDE_ADELANTO);
+          } else if (!_oid && String(ctx.opcion_id ?? "").trim() && String(ctx.datos_completos ?? "") !== "si") {
+            salida = conCierrePendiente(salida,
+              String(ctx.zona_entrega ?? "") === "provincia"
+                ? "Pásame tu *nombre, celular y DNI* y te lo dejo listo 👇"
+                : "Pásame tus datos y te lo dejo listo 👇",
+              RE_YA_PIDE_DATOS);
+          }
+        } catch (_) { /* sin pedido legible → el mensaje sale igual */ }
       }
       // 📦 Cómo le llega, en su propia burbuja y ANTES del mensaje: primero cómo le llega,
       // después lo que se le pide. Va por `emit` y no pegado al texto para que WhatsApp las
