@@ -10954,7 +10954,20 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // (Angamos, Grau, Arequipa, Universitaria, La Marina…), así que esto le pasaba a
     // cualquiera que diera su calle. Si de verdad nombró la AGENCIA, la guarda 1b de arriba
     // ya anuló `z` (pide las palabras "shalom/agencia/oficina/sede") y esto sigue corriendo.
-    let _unica = (z && z.cubro !== false) ? null : (oficinaDeTexto(lugar) ?? oficinaDeTexto(texto));
+    // 🔴 El mismo par de agujeros que en el bloque de la sede (ver «EL NOMBRE DEL PRODUCTO NO
+    // ES UNA OFICINA»): las palabras del producto se descuentan del texto —«ADAPTADOR PRO»
+    // hacía aparecer la agencia PRO de Los Olivos— y sin ciudad conocida no se acepta una
+    // oficina salvo que él nombre la agencia, porque el guard de más abajo se salta entero
+    // cuando la ciudad está vacía, que es justo lo que pasa en el primer mensaje.
+    const _textoSinProd = (() => {
+      const _pn = limpiaZona(String(ctx.producto_nombre ?? ctx.producto ?? ""));
+      const _pal = new Set(_pn.split(/\s+/).filter((w) => w.length >= 3));
+      if (!_pal.size) return texto;
+      return texto.split(/(\s+)/).map((w) => (_pal.has(limpiaZona(w)) ? " " : w)).join("");
+    })();
+    const _sabeDonde = !!String(ctx.ciudad ?? "").trim() || AGENCIA_KW.test(limpiaZona(texto));
+    let _unica = (z && z.cubro !== false) || !_sabeDonde
+      ? null : (oficinaDeTexto(lugar) ?? oficinaDeTexto(_textoSinProd));
     // ⛔ Y la oficina NO puede mudarlo de ciudad. Medido: un cliente dijo "soy de arequipa"
     // y después "av ejercito" —que en Arequipa no existe pero en TACNA sí— y el pedido se
     // fue a Tacna, a 400 km de donde vive. Si ya sabemos su ciudad y la oficina no es de
@@ -14626,8 +14639,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // una agencia de recojo pegada.
       // Al de Lima que sí pide recoger (raro, pero pasa) se le respeta: para eso tiene que
       // nombrar la agencia, no solo su distrito.
-      const _txtOfi = String(ctx.last_input ?? "");
-      const _puedeSede = String(ctx.zona_entrega ?? "") !== "lima" || AGENCIA_KW.test(limpiaZona(_txtOfi));
+      // 🔴 EL NOMBRE DEL PRODUCTO NO ES UNA OFICINA. Medido en Probar flujos, y de las peores:
+      // el cliente escribió «para cusco hacen envios» y le llegó la ficha de *PRO*, una
+      // agencia de LOS OLIVOS, Lima. Vino del PRIMER mensaje —el de la palabra clave— que dice
+      // «ADAPTADOR **PRO** PARA CORTAR LAMINAS»: hay una oficina Shalom llamada PRO y ahí
+      // "PRO" es una palabra suelta, así que pasó el filtro de palabra completa que se puso
+      // justo para esto. Se le quitan al texto las palabras del nombre del producto antes de
+      // buscar oficinas: el producto se llama como se llama, y eso no es una dirección.
+      const _txtOfi0 = String(ctx.last_input ?? "");
+      let _txtOfi = _txtOfi0;
+      {
+        const _pn = limpiaZona(String(ctx.producto_nombre ?? ctx.producto ?? ""));
+        const _pal = new Set(_pn.split(/\s+/).filter((w) => w.length >= 3));
+        if (_pal.size) {
+          _txtOfi = _txtOfi0.split(/(\s+)/)
+            .map((w) => (_pal.has(limpiaZona(w)) ? " " : w)).join("");
+        }
+      }
+      // 🔴 Y SIN CIUDAD no se sella ninguna oficina. Una sede sin ciudad no quiere decir nada
+      // —hay una "La Victoria" en Lima y otra en Chiclayo— y el guard de «no puede mudarlo de
+      // ciudad», que es el que debía frenar esto, se salta entero cuando la ciudad está vacía:
+      // `if (_ciu && …)`. En el primer turno la ciudad SIEMPRE está vacía, o sea que el
+      // mensaje más temprano de la conversación era justo el menos protegido.
+      // Se permite igual si él NOMBRA la agencia («recojo en el Shalom de Atahualpa»): ahí
+      // está hablando de oficinas de verdad, no de casualidades del texto.
+      const _nombraAgencia = AGENCIA_KW.test(limpiaZona(_txtOfi));
+      const _puedeSede = (String(ctx.zona_entrega ?? "") !== "lima" || _nombraAgencia)
+        && (!!String(ctx.ciudad ?? "").trim() || _nombraAgencia);
       let _ofi = _puedeSede ? oficinaDeTexto(_txtOfi) : null;
       // ⛔ Y la oficina NO puede mudarlo de ciudad, igual que en la detección de zona
       // (:9797). Acá faltaba: medido, un cliente de Arequipa quedó con la sede "PRO" de
