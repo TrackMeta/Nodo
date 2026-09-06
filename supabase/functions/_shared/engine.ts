@@ -12489,10 +12489,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "contacta», «te van a llamar»: acá no hay nadie más, y el cliente se queda esperando a alguien que " +
       "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
       "datos», «te escribo apenas llegue».");
-    parts.push("## Escribe CORTO\n" +
-      "Esto es WhatsApp, no un correo. Tu parte del mensaje son DOS o TRES líneas: le contestas lo que " +
-      "preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
-      "datos que faltan, las oficinas) van aparte y no cuentan para ese largo.\n" +
+    parts.push("## Escribe CORTO — máximo 300 caracteres\n" +
+      "Esto es WhatsApp, no un correo. TU parte del mensaje no pasa de **300 caracteres**: le contestas lo " +
+      "que preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
+      "datos que faltan, las oficinas) van aparte y NO cuentan para ese tope.\n" +
+      "Antes de mandar, cuéntalo: si te pasas, sobra algo — y casi siempre es la frase con la que abriste.\n" +
       "⛔ No expliques lo que no te preguntó, no adornes cada respuesta con beneficios, y no cierres " +
       "resumiendo lo que acabas de decir. Si tu mensaje tiene tres frases seguidas y él preguntó una " +
       "sola cosa, sobran dos.\n" +
@@ -12502,7 +12503,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "conviene», «y seguimos con el pedido»). Pedirlo a secas es más corto y suena menos a trámite.\n" +
       "✅ Pero si te vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo " +
       "sentir mal — corto y directo. Dejarlo sin respuesta porque «ya se lo dijiste» es lo peor que " +
-      "puedes hacer: él no lo tiene claro, y por eso preguntó.");
+      "puedes hacer: él no lo tiene claro, y por eso preguntó.\n" +
+      "⛔ Y si NO te preguntó por el producto, no se lo describas. Los mensajes iniciales ya le contaron " +
+      "qué es y para qué sirve. Medido: escribió «Para Madre de Dios» —o sea, de dónde es— y recibió un " +
+      "párrafo entero sobre cortar láminas de 1.5 mm que no venía a cuento. Contesta lo que dijo ÉL.");
     parts.push("## El precio se da, no se ofrece\n" +
       "⛔ Nunca le pidas permiso para decírselo: «¿quieres que te cuente las opciones y precios?», " +
       "«¿te menciono los precios?», «así te doy el precio exacto». Eso gasta un turno entero para no " +
@@ -14908,7 +14912,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch (_) { /* sin lista → se envía tal cual */ }
       }      // Provincia: explicarle la modalidad de envío ANTES de pedirle sus datos.
+      // 🕒 …pero NO antes de que elija cuántas unidades lleva, por la misma razón que la sede:
+      // es logística de un pedido que todavía no existe. Y encima se disparaba sobre un texto
+      // que ni siquiera iba a salir: el guard de la cantidad (más abajo) le quita a la IA la
+      // petición de datos y la cambia por «¿cuántas unidades?», pero para entonces la
+      // explicación del envío ya se había pegado arriba. Medido con «Para madre de dios»: un
+      // mensaje de 675 caracteres —bloque de entrega + párrafo del producto + el envío otra
+      // vez en palabras de la IA + la lista de precios— para contestar de dónde escribe.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && String(ctx.opcion_id ?? "").trim()
           && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
           const _ent = await loadEntregas(db, run);
