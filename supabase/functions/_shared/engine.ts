@@ -3692,6 +3692,31 @@ function sinPedirPermisoPago(texto: string): string {
   return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
 }
 
+// 📣 EL ANUNCIO DE LO QUE EL MOTOR YA VA A MANDAR. La IA acusa el pedido y cierra con
+// «Ahora te llegarán los datos para el adelanto de *S/ 20* y la forma de pago» — y acto
+// seguido el nodo "Pedir el adelanto" los manda. El cliente lee dos burbujas para una sola
+// cosa: el aviso, y el aviso cumplido tres segundos después. Rodrigo: «que mande solo los
+// datos». Es la misma familia de siempre: si lo hace el motor, la IA no lo anuncia.
+// ⚠️ Solo se borra la frase que ANUNCIA. Si trae un número largo o un link, esa frase SON
+// los datos de verdad y se respeta entera.
+// ⚠️ Y se aplica sobre lo que VE el cliente, nunca sobre el texto que se le pasa a
+// `maybeDatosPago`: esa función usa justo esta frase como señal para mandar los datos, y
+// recortársela dejaría al cliente sin número al que pagar (ya pasó con RE_PERMISO_PAGO).
+const RE_ANUNCIA_DATOS_QUE_SIGUEN =
+  /[^.!?…\n]*\bte\s+(?:llegar[aá]n?|llegan|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta)\b[^.!?…\n]*\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/gi;
+function sinAnuncioDePago(texto: string): string {
+  const t = String(texto ?? "");
+  RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
+  if (!RE_ANUNCIA_DATOS_QUE_SIGUEN.test(t)) return texto;
+  RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
+  const limpio = t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
+    // Solo espacios y tabs: \s se come los saltos de línea y pega la lista de datos en un
+    // renglón (ya pasó con sinDespachar).
+    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una vacía.
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 15 ? limpio : texto;
+}
+
 // 🧾 El trámite inventado. En una venta digital no hay nada que pedirle —ni dirección, ni
 // DNI, ni talla—, pero el modelo, entrenado para cerrar pidiendo algo, se inventa el dato
 // que falta: «Con ese último dato te lo dejo cerrado 🙂» (el cliente contestó "¿cómo?") y
@@ -4128,6 +4153,26 @@ function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: 
     ? `a la sede *${bonito(sede.l)}* de *${quien}*${_pista ? `\n_${bonito(_pista, true)}_` : ""}`
     : `a tu ciudad por *agencia ${quien}*`;
   return `📦 Te llega ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.\n\n` + t;
+}
+// ✅ SÍ LLEGAMOS. Cuando el cliente dice su departamento y todavía falta su ciudad, el bot
+// contestaba solo con la repregunta: «😊🔧 Dime, ¿de qué ciudad o distrito de Madre de Dios
+// me escribes?». Rodrigo: «lo siento un poco flojo». Y tiene razón — el cliente acaba de
+// preguntar, sin decirlo, si le llega a su tierra, y esa respuesta no se la da: lo manda a
+// contestar otra pregunta sin haberle confirmado nada. Primero se le dice que sí, con la
+// agencia nombrada, y recién después se le repregunta.
+// Va por código y no por prompt por lo de siempre: el mensaje de este turno ya arrastra el
+// bloque de "no expliques", el tope de 300 y la regla de una sola pregunta — una línea más
+// pedida por prompt es justo la que el modelo sacrifica.
+const RE_YA_CONFIRMO_COBERTURA = /(s[ií],?\s+(?:hacemos|llegamos|enviamos|te\s+lleg)|s[ií]\s+llega|llegamos\s+a|hacemos\s+env[ií]os?\s+a|enviamos\s+a|te\s+llega\s+por|s[ií]\s+enviamos)/i;
+const RE_PREGUNTA_LA_CIUDAD = /(qu[eé]\s+(ciudad|distrito|provincia)|de\s+qu[eé]\s+(ciudad|distrito)|ciudad\s+o\s+distrito|de\s+d[oó]nde\s+(me\s+)?(escribes|eres))/i;
+function conCoberturaConfirmada(texto: string, depto: string, courier: string): string {
+  const t = String(texto ?? "").trimStart();
+  const zona = String(depto ?? "").trim();
+  if (!t || !zona) return texto;
+  // Solo cuando el mensaje es la repregunta por la ciudad y todavía no le confirmó nada.
+  if (!RE_PREGUNTA_LA_CIUDAD.test(sinFormato(t)) || RE_YA_CONFIRMO_COBERTURA.test(sinFormato(t))) return texto;
+  const quien = String(courier ?? "").trim();
+  return `Sí hacemos envíos a *${bonito(zona)}*${quien ? ` con la agencia *${quien}*` : ""} 📦\n` + t;
 }
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
 // gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
@@ -12838,10 +12883,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // puede decir cómo le llega, y NO se vuelve a tocar. Antes salía de cuatro sitios
     // distintos y el cliente la leía en cada mensaje.
     if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()) {
-      const _tocaPreguntarCant = !!(run.vars as any)?._zona_recien;
+      // 🕒 …pero "saber su ubicación" no es saber su DEPARTAMENTO. Medido: dijo «Para Madre de
+      // Dios», la zona se resolvió a provincia y la marca se gastó en un turno cuyo único
+      // trabajo era repreguntarle la ciudad — así que la cantidad se dio por preguntada sin
+      // haberla preguntado nunca, y al turno siguiente se selló "1 unidad por defecto".
+      // Rodrigo: «nunca le pregunto las unidades». Si todavía falta su ciudad, la marca NO se
+      // consume: espera al turno en que su ubicación queda de verdad resuelta.
+      const _faltaSuCiudad = String(ctx.zona_entrega ?? "") === "provincia" &&
+        (!String(ctx.ciudad ?? "").trim() || esSoloDepartamento(String(ctx.ciudad ?? "")));
+      const _tocaPreguntarCant = !!(run.vars as any)?._zona_recien && !_faltaSuCiudad;
       // La marca se consume acÃ¡: la pregunta sale en ESTE mensaje y en el siguiente turno
       // ya no toca â si no eligiÃ³, se sella la primera (ver arriba) y el tema se cierra.
       if (_tocaPreguntarCant) { delete (run.vars as any)._zona_recien; (run.vars as any)._cant_preguntada = 1; }
+      // 🔴 El post-proceso también mira `_zona_recien` (`conEnvioExplicado`), pero corre
+      // DESPUÉS de este `delete`: esa mitad de la condición nunca llegaba a ser cierta. La
+      // señal del turno se guarda en el `run`, que no se persiste.
+      (run as any)._zonaRecienTurno = _tocaPreguntarCant || !!(run.vars as any)?._zona_recien;
+      (run as any)._tocaCantidad = _tocaPreguntarCant;
       parts.push(_tocaPreguntarCant
         ? "## Este mensaje lleva DOS cosas, y solo dos\nAcaba de decirte de dónde escribe, así que:\n" +
           "  1️⃣ Dile CÓMO le llega, en una línea. Si es provincia: que va por agencia y lleva un " +
@@ -15331,7 +15389,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // mensaje de 675 caracteres —bloque de entrega + párrafo del producto + el envío otra
       // vez en palabras de la IA + la lista de precios— para contestar de dónde escribe.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
-          && (String(ctx.opcion_id ?? "").trim() || (run.vars as any)?._zona_recien)
+          && (String(ctx.opcion_id ?? "").trim() || (run as any)?._zonaRecienTurno)
           && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
           const _ent = await loadEntregas(db, run);
@@ -15355,6 +15413,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // puede salir sin una cifra. Se arma con la MISMA forma que usa la IA (negrita y una
       // por línea), no con la lista de viñetas vieja: si el motor tiene que completar, que
       // no se note el remiendo.
+      // 🔢 Y si este era EL turno de preguntar la cantidad y la IA no la preguntó, la pregunta
+      // la escribe el motor. El bloque del prompt («este mensaje lleva DOS cosas») se lo pide,
+      // pero compite con el tope de 300, con «no expliques» y con «una sola pregunta por
+      // mensaje», y el modelo sacrifica justo esta: medido, salió solo la repregunta por la
+      // ciudad. Es la regla de siempre — lo que se cae dos veces deja de ser regla del prompt
+      // y pasa a ser función. Va ANTES del bloque de precios a propósito: así la lista se pega
+      // sola debajo (`_sinCifrasDebiendo` la detecta) y elige viendo los precios.
+      if (op === "generar_texto" && (run as any)?._tocaCantidad
+          && !String(ctx.opcion_id ?? "").trim()
+          && !RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida))) {
+        salida = salida.trimEnd() + "\n\n¿Cuántas unidades quieres?";
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 La cantidad la preguntó el motor",
+          "Era el turno de preguntarla y la IA no lo hizo").catch(() => {});
+      }
       const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
       // …y el tercer disparador: le pide ELEGIR CANTIDAD y en el mensaje no hay una sola cifra.
       // ⛔ «Una cifra» tiene que ser un PRECIO SUYO, no cualquier número con S/ delante. Medido
@@ -15472,6 +15544,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         salida = sinDespachar(salida);
         salida = sinPagarEnLaAgencia(salida, String(ctx.zona_entrega ?? "") === "provincia");
+        // 📣 Y fuera el anuncio de los datos de pago: los manda el motor tres segundos
+        // después, así que anunciarlos son dos burbujas para una sola cosa. Se corta sobre
+        // `salida` —lo que ve el cliente— y NUNCA sobre `result`, que es el texto con el que
+        // `maybeDatosPago` decide si los manda.
+        salida = sinAnuncioDePago(salida);
+        // ✅ Y si acaba de decir su departamento y se le está repreguntando la ciudad, primero
+        // se le confirma que sí le llega, con la agencia nombrada.
+        if (String(ctx.zona_entrega ?? "") === "provincia" && (run as any)?._zonaRecienTurno) {
+          try {
+            const _entC = await loadEntregas(db, run);
+            const _cC = Object.keys((((_entC as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
+            // El primero NO vacío: `zona_nombre` viene "" (cadena vacía, no null) muy seguido,
+            // así que con `??` ganaba la vacía y el nombre del departamento se perdía. En este
+            // turno el departamento vive en `ciudad` — es lo que él contestó.
+            const _zonaTxt = [ctx.zona_nombre, (ctx as any).departamento, ctx.ciudad]
+              .map((x) => String(x ?? "").trim()).find(Boolean) ?? "";
+            salida = conCoberturaConfirmada(salida, _zonaTxt,
+              _cC ? _cC.charAt(0).toUpperCase() + _cC.slice(1) : "");
+          } catch (_) { /* sin courier configurado → se envía tal cual */ }
+        }
         // 💰 Y si nombró el adelanto sin decir cuánto, se le pone la cifra (ver arriba).
         {
           let _ad = Number(ctx.adelanto);
