@@ -4219,6 +4219,24 @@ function fichaSinPresentacion(ficha: string): string {
   return salida.replace(/[\s#]/g, "").length < 40 ? t : salida;
 }
 
+// 🪞 EL BOT CONTESTÁNDOSE SOLO. El rotador cierra preguntando «¿ya tienes un taladro?», el
+// cliente lo ignora y contesta «soy de Cerro de Pasco», y el bot arranca con «**Buena
+// pregunta** 🙌 El adaptador funciona con taladros compatibles…». Rodrigo: «parece que el bot
+// se responde solo». Y es literal: la única pregunta sobre la mesa la hizo él mismo, así que
+// se felicita por ella y se la contesta, mientras lo que el cliente SÍ dijo —su ciudad— queda
+// en segundo plano. Se corta el arranque solo cuando el cliente no preguntó nada.
+const RE_SE_CONTESTA_SOLO =
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:muy\s+)?(?:buena|excelente|buenísima)\s+pregunta[^.!?\n]{0,30}[.!?]?\s+/iu;
+function sinContestarseSolo(texto: string, ventaAhora: boolean): string {
+  if (ventaAhora) return texto;          // si preguntó de verdad, la frase es legítima
+  const t = String(texto ?? "");
+  const limpio = t.replace(RE_SE_CONTESTA_SOLO, "");
+  if (limpio === t) return texto;
+  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length < 20) return texto;
+  const i = limpio.search(/[\p{L}\p{N}]/u);
+  return i < 0 ? limpio : limpio.slice(0, i) + limpio[i].toUpperCase() + limpio.slice(i + 1);
+}
+
 function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = false): string {
   const t = String(texto ?? "").trim();
   const prod = String(producto ?? "").trim();
@@ -4402,8 +4420,12 @@ function conCoberturaConfirmada(texto: string, depto: string, courier: string): 
   const t = String(texto ?? "").trimStart();
   const zona = String(depto ?? "").trim();
   if (!t || !zona) return texto;
-  // Solo cuando el mensaje es la repregunta por la ciudad y todavía no le confirmó nada.
-  if (!RE_PREGUNTA_LA_CIUDAD.test(sinFormato(t)) || RE_YA_CONFIRMO_COBERTURA.test(sinFormato(t))) return texto;
+  // 🔴 Antes solo se ponía si el mensaje repreguntaba la ciudad. Rodrigo lo abrió: «cuando el
+  // cliente te dice su provincia o ciudad o distrito, si es de provincia SÍ dile hacemos
+  // envíos con Shalom». Y encaja con lo otro que pidió el mismo día —quitar el adelanto de ese
+  // turno—: si se le saca lo que tiene que PAGAR, hay que dejarle lo que tiene que SABER.
+  // Lo único que lo frena es que el propio mensaje ya lo diga, para no repetirlo.
+  if (RE_YA_CONFIRMO_COBERTURA.test(sinFormato(t))) return texto;
   const quien = String(courier ?? "").trim();
   return `Sí hacemos envíos a *${bonito(zona)}*${quien ? ` con la agencia *${quien}*` : ""} 📦\n` + t;
 }
@@ -10985,6 +11007,24 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     if (lugar && ES_NO_LUGAR_NEUTRO.test(String(lugar))) { lugar = null; z = null; continue; }
     if (lugar) { texto = t; break; }
   }
+  // 🗺️ RED DETERMINISTA: el extractor de IA no reconoció el lugar, pero el PADRÓN sí.
+  // Medido en la tanda de las 116 provincias: «soy de Jazan» —distrito real de Bongará,
+  // Amazonas, con su oficina Shalom— no devolvió ningún lugar, la zona quedó sin resolver y
+  // el bot improvisó «Jazán está lejos, dime tu celular y nombre para coordinar el envío»:
+  // un juicio sobre nuestra cobertura que nadie le autorizó a hacer. Los distritos chicos son
+  // justo los que el modelo no conoce, y son los que más necesitan que esto funcione: el de
+  // Lima siempre se salva, el de Jazán no. Si el padrón lo tiene, es un lugar y punto.
+  if (!lugar) {
+    for (const t of textos) {
+      const _pad = ciudadEnTexto(t);
+      if (_pad) {
+        lugar = enTitulo(_pad); texto = t;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🗺️ Lugar hallado en el padrón",
+          `La IA no lo reconoció; "${_pad}" sí está en el padrón INEI`).catch(() => {});
+        break;
+      }
+    }
+  }
   // Si no mencionó NINGÚN lugar, no se toca nada. Antes cualquier mensaje sin
   // lugar ("hola") lo marcaba como provincia, y la IA le hablaba de agencias a
   // alguien que todavía no había dicho de dónde era.
@@ -12882,22 +12922,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // cada mensaje. Con la opción sellada, todo el aparato que la pregunta deja de aplicar y
     // el tema desaparece solo. Si después dice «mejor 2», detectarOpcion lo reescribe: el
     // total y el saldo se recalculan.
-    if ((run.vars as any)?._cant_preguntada && !String(ctx.opcion_id ?? "").trim() && ctx._product_id) {
-      try {
-        const _ops1 = await loadOpciones(db, run, String(ctx._product_id));
-        if (_ops1.length > 1) {
-          const _o1 = _ops1[0];
-          run.vars.opcion_id = _o1.id; ctx.opcion_id = _o1.id;
-          ctx.opcion = _o1.nombre; ctx.cantidad = _o1.cantidad ?? 1; (ctx as any)._opcion = _o1;
-          await setField(db, run.channel_id, run.contact_id, "opcion_id", _o1.id);
-          await setField(db, run.channel_id, run.contact_id, "opcion_elegida", _o1.nombre);
-          const { monto: _m1 } = await precioEsperado(db, run, ctx);
-          if (_m1 != null) { ctx.precio = _m1; ctx.precio_esperado = _m1; }
-          await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación por defecto",
-            `${_o1.nombre} — se le preguntó al saber su zona y no eligió; puede subirla cuando quiera`).catch(() => {});
-        }
-      } catch (_) { /* sin opciones legibles → se sigue sin sellar */ }
-    }
+    // 🔢 (Acá se sellaba "1 unidad por defecto" cuando se le preguntaba la cantidad y no
+    // contestaba. Rodrigo lo quitó: «sí quiero que el cliente confirme cuántas unidades quiere,
+    // no quiero que si no responde le asumas solo 1». Asumir la más barata cierra la venta por
+    // él, y encima por el monto más bajo. Sin respuesta, la presentación queda sin elegir.)
   }
 
   // Físico: ¿mencionó a dónde lo quiere? Resuelve la zona contra la lista del
@@ -13328,8 +13356,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       (run as any)._tocaCantidad = _tocaPreguntarCant;
       parts.push(_tocaPreguntarCant
         ? "## Este mensaje lleva DOS cosas, y solo dos\nAcaba de decirte de dónde escribe, así que:\n" +
-          "  1️⃣ Dile CÓMO le llega, en una línea. Si es provincia: que va por agencia y lleva un " +
-          "adelanto para mandárselo. Si es Lima: que paga al recibirlo.\n" +
+          // 🔴 SIN el adelanto. Rodrigo, dos veces seguidas: «ataca muy fuerte lo del adelanto
+          // de S/ 20», «qué feo cómo ataca». Y tiene razón: el cliente acaba de decir de dónde
+          // es —ni siquiera dijo cuántas quiere— y lo primero que lee es que tiene que
+          // adelantar plata. El monto tiene su momento y ya tiene su mensaje propio, cuando el
+          // pedido se está cerrando. Acá solo toca decirle CÓMO le llega.
+          "  1️⃣ Dile CÓMO le llega, en una línea. Si es provincia: que va por agencia. Si es " +
+          "Lima: que paga al recibirlo. ⛔ NO menciones el adelanto ni su monto en este mensaje: " +
+          "todavía no eligió nada y hablarle de plata por adelantado suena a cobro, no a venta. " +
+          "El adelanto se le pide después, en su propio mensaje, cuando ya está cerrando.\n" +
           "  2️⃣ Y pregúntale cuántas unidades quiere. Una línea también.\n" +
           "La lista con los precios se pega sola debajo; tú NO la escribas. Nada más en este mensaje."
         : "## NO le preguntes la cantidad en este mensaje\nTodavía no eligió cuántas unidades, y está bien: " +
@@ -15798,6 +15833,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // un solo párrafo, no hay nada que recortar y no se toca.
       if (op === "generar_texto" && !_turnoDeVenta) {
         const _antesPres = salida;
+        // 🪞 Primero el «Buena pregunta» a una pregunta que hizo él mismo, y después el
+        // recorte de la presentación: si no, el arranque falso cuenta como parte del prefijo
+        // y puede hacer que el recorte se lleve también lo que sí valía.
+        {
+          const _antesSolo = salida;
+          salida = sinContestarseSolo(salida, _turnoDeVenta);
+          if (salida !== _antesSolo) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🪞 Se contestaba solo",
+              "Abrió con «buena pregunta» y el cliente no había preguntado nada").catch(() => {});
+          }
+        }
         salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), _turnoDeVenta);
         if (salida !== _antesPres) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
@@ -15959,9 +16005,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // sigue al adelanto sin esperar, así que pegarle la lista de oficinas es darle a elegir
       // algo que nadie va a leer. Salió en 6 de 10 simulaciones (ver sinPreguntarLaSede).
       const _cerrandoPedido = String(ctx.datos_completos ?? "") === "si";
+      // 🗺️ Con que sepamos su CIUDAD alcanza para ayudarlo a ubicar su agencia. Antes había
+      // que esperar a que eligiera cantidad (`_yaEligioOp`) o preguntara por la oficina, y con
+      // eso el cliente que decía «soy de Tingo María» se quedaba sin saber a dónde va su
+      // paquete. Rodrigo: «no lo dejes en el aire si el cliente te ha dicho su provincia».
+      // Y pesa más ahora que ya no se sella «1 unidad por defecto»: sin esto, el que no
+      // contesta la cantidad no vería jamás sus oficinas.
+      const _sabemosCiudad = !!String(ctx.ciudad ?? "").trim() &&
+        !esSoloDepartamento(String(ctx.ciudad ?? ""));
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
           && !_cerrandoPedido
-          && (_yaEligioOp || _elPidioSede)
+          && (_yaEligioOp || _elPidioSede || _sabemosCiudad)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
           // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
@@ -16026,7 +16080,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // —que es su distrito pero nadie lo llama así—, se le muestra «AV 15 de Agosto — a
           // media cdra. del mercado» y él reconoce cuál es la suya. La referencia ubica mejor
           // que cualquier nombre administrativo.
-          const _pocas = !_yaPegue && _ags.length > 0 && _ags.length < 8;
+          // 🛫 El umbral cuenta MOSTRADORES, no entradas de la lista: el aeropuerto y los
+          // terminales ya se mandan al final porque casi nadie recoge ahí, así que tampoco
+          // deben empujar una ciudad por encima del límite. Medido: Pucallpa tiene 8 —una es
+          // el Aeropuerto—, caía justo en el borde y se llevaba un paso extra teniendo solo
+          // 7 oficinas de calle. Rodrigo: «Pucallpa tiene menos de 8 sedes creo». Tenía razón
+          // en lo que importa, aunque en la lista figuren 8.
+          const _rezagada = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l);
+          const _mostradores = _ags.filter((x) => !_rezagada(x)).length;
+          const _pocas = !_yaPegue && _ags.length > 0 && _mostradores < 8;
           if (_pocas) {
             const _rezP = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
             const _lstP = [..._ags].sort((x, y) => _rezP(x) - _rezP(y))
@@ -16498,9 +16560,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // dirección. Se lo pedí por prompt y no lo hizo —el patrón de siempre—, así que lo
       // pone el motor: es UNA línea y evita mandar un motorizado a 1000 km. Se pega una
       // sola vez (al pegarla se borra la marca) y solo si él no lo dijo ya.
+      // 🔴 …y NO solo cuando le pide la dirección. Medido en la tanda de las 116 provincias:
+      // «soy de San Miguel» (el de CAJAMARCA) se resolvió a Lima —está en la lista de
+      // cobertura— y el bot le contestó «en San Miguel te lo llevo a tu casa mañana y pagas al
+      // recibir», sin nombrar Lima. La bandera SÍ estaba levantada, pero la confirmación
+      // esperaba al turno de la dirección, y para entonces ya le habíamos prometido una
+      // entrega imposible a 900 km. Lo caro no es pedirle la dirección: es PROMETERLE la
+      // entrega. Así que también se confirma en cuanto el mensaje promete llevárselo.
+      const _prometeEntrega = /\b(te lo llev|te lo entreg|a tu casa|a tu direcci|contra ?entrega|pagas al recibir|llega (hoy|ma[ñn]ana)|motorizado)\b/i
+        .test(sinFormato(salida));
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "lima"
           && String(ctx.distrito_ambiguo ?? "").trim() && !String(ctx.direccion ?? "").trim()
-          && /direcci[oó]n/i.test(salida) && !/de lima/i.test(salida)) {
+          && (/direcci[oó]n/i.test(salida) || _prometeEntrega) && !/de lima/i.test(salida)) {
         const _d = bonito(String(ctx.distrito_ambiguo));
         salida = salida.trimEnd() + `\n\nAh, y confírmame que es *${_d}* de Lima 🙂`;
         await setField(db, run.channel_id, run.contact_id, "distrito_ambiguo", "").catch(() => {});
