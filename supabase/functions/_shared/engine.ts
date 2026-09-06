@@ -3838,16 +3838,35 @@ function sinSedesInventadas(texto: string, ciudad: string): { texto: string; qui
   const t = String(texto ?? "");
   const quitadas: string[] = [];
   if (!RE_HABLA_DE_SEDE.test(sinFormato(t))) return { texto, quitadas };
+  // 🔴 La referencia es su DEPARTAMENTO, no su ciudad. `agenciasDeCiudad("Chiclayo")` devuelve
+  // solo las 4 del DISTRITO —nunca llega a las de la provincia—, así que comparar contra eso
+  // habría borrado Chongoyape, Monsefú, Pátapo, Pimentel, Pomalca, Reque y Tumán, que son
+  // oficinas REALES de su provincia. Casi cambio "el bot nombra alguna oficina que no existe"
+  // por "el bot le esconde siete que sí existen", que es bastante peor.
+  // Y se aceptan también los nombres de DISTRITO con oficina: el modelo nombra distritos
+  // («Morales», «La Banda», «José Leonardo Ortiz») y ahí sí hay dónde recoger, aunque el
+  // mostrador se llame de otra forma. Lo que se corta es lo que no existe ni como oficina ni
+  // como distrito con oficina en su departamento: «Wanchaq», «Nuevo Tarapoto», «San Juan».
   let reales: string[] = [];
-  try { reales = agenciasDeCiudad(String(ciudad ?? "")).map((a) => limpiaZona(a.l)).filter(Boolean); }
-  catch (_) { /* sin padrón legible → no se toca nada */ }
+  try {
+    const _base = agenciasDeCiudad(String(ciudad ?? ""));
+    const _depto = _base[0]?.d ?? "";
+    const _todas = _depto ? agenciasDeCiudad(_depto) : _base;
+    reales = [...new Set([..._base, ..._todas]
+      .flatMap((a) => [limpiaZona(a.l), limpiaZona(a.t)]))].filter((x) => x && x.length >= 3);
+  } catch (_) { /* sin padrón legible → no se toca nada */ }
   if (!reales.length) return { texto, quitadas };
   const lineas = t.split("\n").filter((l) => {
     const m = /^\s*[-•·]\s*\*?\s*(?:shalom\s+)?([^\n:*–—]{2,40}?)\s*\*?\s*$/i.exec(l);
     if (!m) return true;
     const n = limpiaZona(m[1]);
-    if (!n) return true;
-    const ok = reales.some((r) => r === n || r.includes(n) || n.includes(r));
+    if (!n || n.length < 3) return true;
+    // Por PALABRA COMPLETA, no por subcadena: si no, cualquier «centro» calzaría con
+    // «Moyobamba Centro» y pasaría un nombre que no lleva a ninguna puerta concreta.
+    const enc = (a: string, b: string) => ` ${a} `.includes(` ${b} `);
+    const _GENERICO = /^(centro|principal|sede|oficina|agencia|shalom|norte|sur|este|oeste)$/;
+    const ok = reales.some((r) => r === n ||
+      (!_GENERICO.test(n) && (enc(r, n) || enc(n, r))));
     if (!ok) quitadas.push(m[1].trim());
     return ok;
   });
@@ -15828,8 +15847,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _inv = sinSedesInventadas(salida, String(ctx.ciudad ?? ""));
           if (_inv.quitadas.length) {
             salida = _inv.texto;
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Se inventó sedes de Shalom",
-              `No existen en ${ctx.ciudad ?? "su ciudad"}: ${_inv.quitadas.join(", ")}`.slice(0, 140)).catch(() => {});
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Nombró oficinas que no existen",
+              `Sin oficina en su departamento: ${_inv.quitadas.join(", ")}`.slice(0, 140)).catch(() => {});
           }
         }
         // 📍 Y fuera la pregunta por la sede cuando el pedido se cierra en este mismo turno:
