@@ -15,7 +15,7 @@ import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
-  esSoloDepartamento,
+  esSoloDepartamento, capitalizaNombresPropios,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
@@ -3807,7 +3807,9 @@ function bonito(txt: string, frase = false): string {
     return solo && CON_TILDE[solo] ? w.replace(solo, CON_TILDE[solo]) : w;
   }).join("");
   // Una FRASE («a espaldas del supermercado makro») lleva mayúscula solo al empezar.
-  if (frase) return bajo.charAt(0).toUpperCase() + bajo.slice(1);
+  // Una FRASE (Â«a espaldas del supermercado makroÂ») lleva mayÃºscula al empezarâ¦ y los
+  // nombres de sitio recuperados (ver capitalizaNombresPropios): Â«de mazukoÂ» -> Â«de MazukoÂ».
+  if (frase) { const _f = capitalizaNombresPropios(bajo); return _f.charAt(0).toUpperCase() + _f.slice(1); }
   // Un NOMBRE («Av Las Américas») lleva cada palabra capitalizada, salvo las
   // abreviaturas de dirección, que se leen mejor cortas y en mayúscula.
   return bajo.split(/(\s+)/).map((w) => {
@@ -3967,7 +3969,17 @@ function sinPresentacionRepetida(texto: string, producto: string): string {
   // ¿Nombra el producto? Se compara sin negritas ni tildes, y basta con las dos primeras
   // palabras del nombre («Adaptador Pro» dentro de «Adaptador PRO para Taladro — Cortador…»).
   const clave = normalize(prod).split(/\s+/).slice(0, 2).join(" ");
-  if (!clave || !normalize(primera).includes(clave)) return t;
+  const nombraProducto = !!clave && normalize(primera).includes(clave);
+  // …o, aunque no lo nombre, HABLA DE OTRA COSA. En un turno de dato, el primer párrafo
+  // legítimo acusa lo que el cliente dio o encara el siguiente paso, así que menciona algo
+  // del hilo: su ciudad, la sede, el envío, el precio, los datos, la cantidad. Si no
+  // menciona NADA de eso y es largo, es la presentación del producto otra vez — con o sin
+  // el nombre. Medido: «Claro, este adaptador es original y diseñado para usarse con
+  // taladros compatibles…» a alguien que solo dijo de dónde era; no dice «Adaptador Pro»,
+  // así que el guard del nombre no lo veía.
+  const hilo = /\b(sede|sedes|agencia|env[ií]o|env[ií]os|adelanto|saldo|precio|precios|unidad|unidades|datos|nombre|dni|celular|direcci[oó]n|ciudad|distrito|pedido|clave|recog|recoj)/i;
+  if (!nombraProducto && hilo.test(primera)) return t;
+  if (!nombraProducto && primera.length <= 140) return t;
   const resto = partes.slice(1).join("\n\n").trim();
   if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
   return resto;

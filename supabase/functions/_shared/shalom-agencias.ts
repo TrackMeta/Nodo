@@ -795,6 +795,44 @@ function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a
 // Solo cuenta si el nombre es ÚNICAMENTE departamento. «Cusco», «Tacna» o «Ayacucho» se
 // llaman igual el departamento, la provincia y la ciudad: ahí el cliente está diciendo su
 // ciudad y hay que tratarlo como siempre.
+// 🔠 Los nombres propios DENTRO de una referencia. Las referencias del volcado vienen en
+// MAYÚSCULAS y se pasan a minúscula para que no se lean gritadas, pero eso se lleva por
+// delante los nombres de sitio: «al costado del terminal terrestre de mazuko / al pie de la
+// carretera al rio inambari». Queda raro justo debajo del nombre de la sede, que sí va bien
+// escrito. Se recuperan comparando contra los nombres que YA tenemos —sede, distrito,
+// provincia y departamento de las 552 agencias—, que es la lista de sitios del Perú donde
+// operamos. Los sustantivos genéricos que también aparecen en esos nombres (terminal,
+// mercado, avenida…) se dejan en minúscula: no son el nombre, son el tipo de lugar.
+const _GENERICOS = new Set([
+  "terminal", "terrestre", "aeropuerto", "mercado", "grifo", "plaza", "parque", "hospital",
+  "colegio", "universidad", "estadio", "centro", "avenida", "jiron", "calle", "carretera",
+  "ovalo", "puente", "esquina", "costado", "espalda", "frente", "cuadra", "cuadras", "cdra",
+  "cdras", "sector", "urbanizacion", "barrio", "pueblo", "ciudad", "distrito", "provincia",
+  "agencia", "oficina", "sede", "local", "tienda", "banco", "iglesia", "comisaria", "cerca",
+  "nuevo", "nueva", "viejo", "vieja", "alto", "bajo", "norte", "chico", "grande",
+]);
+let _PROPIOS: Set<string> | null = null;
+function _setPropios(): Set<string> {
+  if (_PROPIOS) return _PROPIOS;
+  const s = new Set<string>();
+  for (const a of AGENCIAS) {
+    for (const campo of [a.l, a.t, a.p, a.d]) {
+      for (const w of String(campo ?? "").split(/[^\p{L}\p{N}]+/u)) {
+        const n = _n(w);
+        if (n.length >= 4 && !_GENERICOS.has(n)) s.add(n);
+      }
+    }
+  }
+  _PROPIOS = s;
+  return s;
+}
+export function capitalizaNombresPropios(frase: string): string {
+  const P = _setPropios();
+  return String(frase ?? "").replace(/\p{L}[\p{L}\p{N}]*/gu, (w) =>
+    P.has(_n(w)) ? w.charAt(0).toUpperCase() + w.slice(1) : w
+  );
+}
+
 export function esSoloDepartamento(nombre: string): boolean {
   const c = _n(nombre);
   if (!c) return false;
