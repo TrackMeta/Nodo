@@ -3960,6 +3960,27 @@ function conAdelantoConcreto(texto: string, monto: number, sym: string): string 
 //     acuse («Perfecto, 2 unidades del *Adaptador Pro* por *S/ 109*» tiene cifras y se queda),
 //   · y detrás queda mensaje de verdad.
 // Con cualquiera que falte, no se toca nada: un mensaje mutilado es peor que uno largo.
+// 📄 LA FICHA, SIN EL PITCH. Rodrigo: «¿por qué recortar? ¿por qué no simplemente el bot
+// debería dejar de decirlo?». Tiene razón, y la causa estaba a la vista: la ficha del
+// producto —3.325 caracteres— se le inyecta ENTERA en cada turno, con su «## Resumen» y su
+// «## Descripción / detalle», que son literalmente el texto que después recita. Prohibírselo
+// cinco veces por prompt y recortarle la salida era pelear contra lo que yo mismo le acababa
+// de dar de comer. Si en un turno no toca vender, esas dos secciones no se mandan y no hay
+// nada que recitar.
+// Se quedan SIEMPRE las que sirven para contestar: objeciones, FAQ, reglas, límites y cómo
+// vender. Lo único que sale es la presentación.
+const SECCIONES_PITCH = /^(resumen del producto|descripci[oó]n\s*\/?\s*detalle|descripci[oó]n)/i;
+function fichaSinPresentacion(ficha: string): string {
+  const t = String(ficha ?? "");
+  if (!t.includes("## ")) return t;
+  // Se parte por encabezado y se descartan solo los dos de presentación.
+  const bloques = t.split(/\n(?=## )/);
+  const quedan = bloques.filter((b) => !SECCIONES_PITCH.test(b.replace(/^##\s*/, "").trim()));
+  const salida = quedan.join("\n").trim();
+  // Si al quitarlas no queda ficha, se manda la original: quedarse sin contexto es peor.
+  return salida.replace(/[\s#]/g, "").length < 40 ? t : salida;
+}
+
 function sinPresentacionRepetida(texto: string, producto: string): string {
   const t = String(texto ?? "").trim();
   const prod = String(producto ?? "").trim();
@@ -12927,7 +12948,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "la entrega es el sistema, no tú.",
       );
     }
-    if (ctx.contexto_producto) parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
+    // 📄 La ficha va SIN la presentación cuando el turno no es de venta (ver
+    // fichaSinPresentacion): si no se la damos, no la puede recitar. Es el arreglo de raíz
+    // del «explica mucho»; el recorte de la salida queda como red, no como el remedio.
+    if (ctx.contexto_producto) {
+      const _fichaTxt = resolve(String(ctx.contexto_producto), ctx);
+      parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` +
+        (_turnoDeVenta ? _fichaTxt : fichaSinPresentacion(_fichaTxt)));
+    }
     // 🧾 Ya eligió: no se le vuelve a leer la carta. Medido — una clienta abrió con
     // «quiero el dermachem, los 2 frascos» y el mensaje siguiente le listaba otra vez
     // las tres presentaciones con sus precios. El pedido salió bien (la opción estaba
