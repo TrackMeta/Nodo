@@ -77,25 +77,19 @@ function curar(arr: unknown): string[] {
   return out;
 }
 
-// 🛡️ GUARDA 1 · "el ejemplo del prompt pesa más que la instrucción".
-// El SYSTEM_EXTRACT enseña el formato con frases de ejemplo, y el modelo BARATO a veces
-// las devuelve como si fueran hechos de ESTE cliente. Pasado en vivo: con un hilo de 10
-// mensajes donde el cliente solo dijo "Para Madre de Dios" y "Mazuko", guardó
+// 🛡️ EL PERFIL NO SE INVENTA · "el ejemplo del prompt pesa más que la instrucción".
+// El SYSTEM_EXTRACT enseña el formato con frases de ejemplo, y el modelo BARATO a veces las
+// devuelve como si fueran hechos de ESTE cliente. Pasado en vivo (2026-09-06): con un hilo de
+// 10 mensajes donde el cliente solo dijo "Para Madre de Dios" y "Mazuko", la ficha quedó con
 // «Compra para su madre» (el ejemplo dice "su mamá"; "madre" salió de Madre de Dios) y
-// «Prefiere que le escriban en la tarde» (la palabra "tarde" NO aparecía en todo el chat).
-// Eso queda en la ficha del cliente, lo ve el equipo y se re-inyecta al prompt de ventas.
-// Los ejemplos siguen en el prompt porque enseñan la FORMA; lo que se corta es que
-// vuelvan como DATO. Se compara por palabras, no literal, para atrapar las mutaciones.
-const EJEMPLOS_PROMPT = [
-  "Compra para su mamá", "Es enfermera", "Prefiere que le escriban en la tarde",
-  "Quiere bajar barriga", "Busca ganar masa", "Lo quiere para su rutina de la mañana",
-  "Tiene 55 años", "Nunca ha entrenado", "Entrena en casa sin equipo",
-  "Tiene poco tiempo entre semana", "Ya probó otros programas",
-  "Tiene 55 años y empieza de cero", "Busca algo suave para empezar",
-  "Decide rápido", "Regatea", "Trato cercano",
-  "Entrena en casa sin llenarte de máquinas",
-  "Buscador de resultados", "Cliente potencial", "Quiere mejorar",
-];
+// «Prefiere que le escriban en la tarde», con la palabra "tarde" ausente de todo el chat.
+// Eso lo ve el equipo en la ficha y además se re-inyecta al prompt de ventas.
+//
+// La guarda NO es una lista negra de los ejemplos: los de "cómo tratarlo" ("Decide rápido",
+// "Regatea", "Trato cercano") son justo el vocabulario correcto, y prohibirlos dejaría la capa
+// muerta. La guarda es la definición misma de la capa: "quien_es" es lo que el cliente CONTÓ,
+// así que tiene que estar en lo que el cliente escribió. "como_tratar" es comportamiento
+// DEDUCIDO y no se le exige nada.
 
 // Sin tildes, minúsculas, sin puntuación: "Compra para su mamá" → "compra para su mama".
 function _norm(s: string): string {
@@ -110,32 +104,34 @@ function _palabras(s: string): string[] {
   return _norm(s).split(" ").filter((w) => w && !_VACIAS.has(w) && (w.length >= 4 || /^[0-9]+$/.test(w)));
 }
 
-// ¿Es esta frase una copia —aunque venga deformada— de un ejemplo del prompt?
-function esCopiaDeEjemplo(frase: string): boolean {
-  const a = _palabras(frase);
-  if (!a.length) return false;
-  for (const ej of EJEMPLOS_PROMPT) {
-    const b = new Set(_palabras(ej));
-    if (!b.size) continue;
-    const comunes = a.filter((w) => b.has(w)).length;
-    // Comparte la mayoría de sus palabras con carga → no es un hecho, es el ejemplo.
-    if (comunes / Math.max(a.length, b.size) >= 0.6) return true;
+// Los 25 departamentos. Un nombre de lugar NO es prueba de un hecho personal: el cliente
+// escribió "Para Madre de Dios" y de ahí salió «Compra para su madre». Se descuentan del
+// texto ANTES de comprobar el respaldo — y de paso no se pierde nada, porque dónde vive se
+// guarda aparte (el SYSTEM_EXTRACT lo prohíbe explícitamente en el perfil).
+const _DEPARTAMENTOS = ["amazonas", "ancash", "apurimac", "arequipa", "ayacucho", "cajamarca",
+  "callao", "cusco", "cuzco", "huancavelica", "huanuco", "ica", "junin", "la libertad",
+  "lambayeque", "lima", "loreto", "madre de dios", "moquegua", "pasco", "piura", "puno",
+  "san martin", "tacna", "tumbes", "ucayali"];
+
+// Lo que el CLIENTE escribió (las líneas "Cliente:" del hilo), sin nombres de lugar: los
+// departamentos y, además, los que ya sabemos de él (su ciudad, su sede) — que el motor
+// pasa en `lugares`, porque un pueblo como "Mazuko" no está en ninguna lista fija.
+export function loQueDijoElCliente(thread: string, lugares: string[] = []): string {
+  let t = _norm(String(thread ?? "").split("\n")
+    .filter((l) => /^cliente\s*:/i.test(l.trim())).join(" "));
+  for (const l of [..._DEPARTAMENTOS, ...lugares.map((x) => _norm(String(x ?? "")))]) {
+    if (l && l.length >= 3) t = t.split(l).join(" ");
   }
-  return false;
+  return t.replace(/\s+/g, " ").trim();
 }
 
-// 🛡️ GUARDA 2 · "quien_es" es, por definición, lo que el cliente CONTÓ: si ninguna de sus
-// palabras con carga aparece en lo que el cliente escribió, no lo contó — lo puso el modelo.
-// (No aplica a "como_tratar": eso es comportamiento DEDUCIDO, no tiene por qué estar escrito.)
+// ¿Hay rastro de esta frase en lo que el cliente escribió? Basta UNA palabra con carga.
 // Solo se le exige a las frases NUEVAS: el hilo son los últimos 12 mensajes, y un dato
 // legítimo de hace tres conversaciones ya no tiene respaldo ahí — pedírselo lo borraría solo.
-export function loQueDijoElCliente(thread: string): string {
-  return _norm(String(thread ?? "").split("\n").filter((l) => /^cliente\s*:/i.test(l.trim())).join(" "));
-}
 function tieneRespaldo(frase: string, dicho: string): boolean {
   if (!dicho) return true;   // sin hilo con el que comparar, no se castiga
   const palabras = ` ${dicho} `;
-  // Basta UNA palabra con carga (o su raíz de 5 letras, para "entrenado" vs "entrenar").
+  // La raíz de 5 letras cubre la flexión: el cliente dice "entrenar", el modelo "entrenado".
   return _palabras(frase).some((w) =>
     palabras.includes(` ${w} `) || (w.length >= 6 && dicho.includes(w.slice(0, 5))));
 }
@@ -143,12 +139,11 @@ function tieneRespaldo(frase: string, dicho: string): boolean {
 // Filtro de la salida CRUDA del modelo. NO se aplica a lo ya guardado (`leerMemoria`):
 // lo que el operador escribió a mano en el panel no se toca.
 function filtrarInventado(
-  frases: string[], previas: string[], dicho: string, exigirRespaldo: boolean,
+  frases: string[], previas: string[], dicho: string,
 ): { limpias: string[]; descartadas: string[] } {
   const limpias: string[] = [], descartadas: string[] = [];
   for (const f of frases) {
-    if (esCopiaDeEjemplo(f)) { descartadas.push(f); continue; }
-    if (exigirRespaldo && !previas.includes(f) && !tieneRespaldo(f, dicho)) { descartadas.push(f); continue; }
+    if (!previas.includes(f) && !tieneRespaldo(f, dicho)) { descartadas.push(f); continue; }
     limpias.push(f);
   }
   return { limpias, descartadas };
@@ -215,7 +210,11 @@ const SYSTEM_EXTRACT = [
 // ── Lado ESCRITURA: extrae/actualiza la memoria desde el hilo. NUNCA lanza.
 export async function actualizarMemoriaIA(
   db: SupabaseClient,
-  opts: { channelId: string; contactId: string; provider: Provider; apiKey: string; thread: string },
+  // `lugares`: lo que ya sabemos de DÓNDE es (ciudad, sede, zona). No son datos del perfil
+  // —se guardan aparte—, pero hacen falta acá para no tomarlos como prueba de un hecho
+  // personal: "Para Madre de Dios" no dice nada sobre la madre de nadie.
+  opts: { channelId: string; contactId: string; provider: Provider; apiKey: string; thread: string;
+          lugares?: string[] },
 ): Promise<void> {
   try {
     const { channelId, contactId, provider, apiKey, thread } = opts;
@@ -272,13 +271,12 @@ export async function actualizarMemoriaIA(
     let parsed: any; try { parsed = JSON.parse(m[0]); } catch (_) { await bumpLast(); return; }
     const crudoQ = curar(parsed.quien_es);
     const crudoC = curar(parsed.como_tratar);
-    // 🛡️ Fuera lo INVENTADO antes de decidir nada: los ejemplos del propio prompt devueltos
-    // como hechos, y los "hechos" de los que no hay ni rastro en lo que el cliente escribió.
-    const dicho = loQueDijoElCliente(thread);
-    const fQ = filtrarInventado(crudoQ, actual.quien_es ?? [], dicho, true);
-    const fC = filtrarInventado(crudoC, actual.como_tratar ?? [], dicho, false);
-    const quien_es = fQ.limpias, como_tratar = fC.limpias;
-    const tirado = [...fQ.descartadas, ...fC.descartadas];
+    // 🛡️ Fuera lo INVENTADO: un "hecho" de "quien_es" del que no hay rastro en lo que el
+    // cliente escribió (descontando los nombres de lugar) no lo contó él, lo puso el modelo.
+    const dicho = loQueDijoElCliente(thread, opts.lugares ?? []);
+    const fQ = filtrarInventado(crudoQ, actual.quien_es ?? [], dicho);
+    const quien_es = fQ.limpias, como_tratar = crudoC;
+    const tirado = fQ.descartadas;
     if (tirado.length) { try { console.log("[memoria-ia] inventado, no se guarda:", tirado.join(" · ")); } catch (_) { /* noop */ } }
     // 🛡️ Anti-borrado POR CAPA: el modelo barato a veces re-emite UNA capa y olvida la
     // otra. Si una capa nueva viene VACÍA pero antes tenía contenido, se conserva la vieja

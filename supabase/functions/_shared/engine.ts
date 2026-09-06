@@ -14892,6 +14892,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       await actualizarMemoriaIA(db, {
         channelId: run.channel_id, contactId: run.contact_id,
         provider, apiKey: ai.api_key, thread: await historial(db, run),
+        // Dónde vive NO va al perfil, pero sí hay que pasarlo: si no, el nombre de su tierra
+        // pasa por "algo que contó de sí mismo". Medido: dijo "Para Madre de Dios" y la ficha
+        // quedó con «Compra para su madre».
+        lugares: [ctx.ciudad, ctx.sede, ctx.zona_nombre, ctx.distrito, ctx.departamento]
+          .map((x) => String(x ?? "").trim()).filter(Boolean),
       }).catch(() => {});
     }
     // El OCR YA LEE el banco, la operación y el monto — pero se perdían: el
