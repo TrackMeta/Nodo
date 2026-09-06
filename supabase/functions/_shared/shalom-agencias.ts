@@ -785,6 +785,33 @@ function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a
 // que le sirven… salvo que viva en Pimentel o Pomalca, que son provincia de
 // Chiclayo y tienen la suya propia a la vuelta de la esquina. Con esto el bot
 // puede ofrecérselas en vez de mandarlo al centro.
+// 🗺️ ¿Lo que dijo es el DEPARTAMENTO y nada más? En Perú se contesta «soy de Madre de Dios»
+// o «de Loreto» tanto como se contesta con la ciudad, y un departamento no ubica una oficina:
+// Madre de Dios tiene 7, seis alrededor de Puerto Maldonado y una en Iberia, a cuatro horas
+// de ahí. Listárselas todas bajo «En MADRE DE DIOS tenemos estas» le ofrece una oficina que
+// le queda a medio día de viaje. El guard para provincias GRANDES ya existía (Lima); este
+// faltaba, porque nadie había probado escribiendo el nombre de una región entera.
+//
+// Solo cuenta si el nombre es ÚNICAMENTE departamento. «Cusco», «Tacna» o «Ayacucho» se
+// llaman igual el departamento, la provincia y la ciudad: ahí el cliente está diciendo su
+// ciudad y hay que tratarlo como siempre.
+export function esSoloDepartamento(nombre: string): boolean {
+  const c = _n(nombre);
+  if (!c) return false;
+  if (AGENCIAS.some((a) => _n(a.t) === c || _n(a.p) === c)) return false;
+  return AGENCIAS.some((a) => _n(a.d) === c);
+}
+
+// Las provincias de ese departamento donde SÍ hay oficina, para preguntarle por cuál le
+// queda cerca en vez de dejarlo adivinando.
+export function provinciasDeDepartamento(nombre: string): string[] {
+  const c = _n(nombre);
+  if (!c) return [];
+  const out = new Set<string>();
+  for (const a of AGENCIAS) if (_n(a.d) === c && _ofrecible(a)) out.add(a.p);
+  return [...out];
+}
+
 export function otrosDistritosConAgencia(ciudad: string): string[] {
   const c = _sinRuido(ciudad) || _n(ciudad);
   if (!c) return [];

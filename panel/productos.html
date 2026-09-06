@@ -2287,7 +2287,7 @@ async function renderInicio(){
       const active=(st.versions||[]).filter(v=>v.activo!==false); const priced=active.filter(v=>Number(v.precio)>0); const prices=priced.map(v=>Number(v.precio));
       const $s=curSym(st.prod&&st.prod.config); let msg; if(!priced.length) msg="Falta ponerle precio"; else if(active.length===1) msg=`${$s} ${prices[0]} · 1 presentación`; else msg=`${active.length} presentaciones · desde ${$s} ${Math.min(...prices)}`;
       return {ok:priced.length>0,msg}; }
-    if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se despacha (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
+    if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se envía (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
     if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
@@ -2684,10 +2684,10 @@ async function generarFlujoFisico(flowId, N, E){
            "CÓMO VENDER (aplícalo con tacto, la venta manda):\n"+
            "· Habla en BENEFICIOS, no en características ('no te van a doler los pies' > 'suela de EVA').\n"+
            "· Ante una objeción ('está caro', 'lo pienso', 'no confío', '¿es original?'), NO te rindas ni discutas: reconoce, rebate con valor/garantía/prueba y reencamina al cierre. Si el producto tiene una sección de objeciones o FAQ, úsala.\n"+
-           "· CIERRE ASUMIDO: en vez de '¿lo quieres?', avanza dando por hecha la compra ('¿te lo mando hoy o mañana?', '¿a qué dirección te lo despacho?').\n"+
+           "· CIERRE ASUMIDO: en vez de '¿lo quieres?', avanza dando por hecha la compra ('¿te lo mando hoy o mañana?', '¿a qué dirección te lo mando?').\n"+
            "· UNA sola cosa a la vez: un mensaje corto, una pregunta. Nada de listas largas ni interrogatorios.\n"+
            "· Usa la prueba social, la urgencia real (stock, regalo, envío incluido) y la multimedia SOLO si el conocimiento del producto te la dio. NUNCA inventes datos, precios, reseñas ni escasez.\n"+
-           "Pregúntale a dónde se lo enviamos para saber cómo despacharlo. Pide los datos que falten de a uno, "+
+           "Pregúntale a dónde se lo enviamos para saber cómo mandárselo. Pide los datos que falten de a uno, "+
            "sin sonar a formulario. No prometas fechas ni coberturas que el sistema no te haya confirmado.\n"+
            // El adelanto lo fija el negocio y lo pide un mensaje FIJO del flujo,
            // con el monto exacto. Sin esto la IA preguntaba "¿con cuánto te
@@ -2797,7 +2797,7 @@ async function generarFlujoFisico(flowId, N, E){
              condiciones:[{ op:"campo_igual", campo:"adelanto_prepagado", valor:"si" }] }],
   },false,1520,500);
   const nYaPago=await N("mensaje","Ya pagó — verificando",{
-    bubbles:[{ text:"¡Recibí tu pago y tus datos! ✅ Estoy verificando tu adelanto y en un momento te confirmo el despacho. 🙌" }],
+    bubbles:[{ text:"¡Recibí tu pago y tus datos! ✅ Estoy verificando tu adelanto y en un momento te confirmo el envío. 🙌" }],
   },false,1800,500);
 
   // ORDEN CRÍTICO: se escucha → la IA extrae → RECIÉN AHÍ se evalúa si están

@@ -15,6 +15,7 @@ import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
+  esSoloDepartamento, provinciasDeDepartamento,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
@@ -3881,8 +3882,14 @@ const CAMBIOS_PAGO_AGENCIA: Array<[RegExp, string]> = [
 // clave, así que el paquete se queda en la agencia. En Lima sí es «pagas cuando lo recibes»,
 // por eso estos dos solo corren con zona de provincia.
 const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
-  [/\bcuando\s+(?:lo\s+|la\s+)?(?:recibas|te\s+llegue|lo\s+tengas|lo\s+recibas)(?:\s+el\s+(?:paquete|pedido|producto))?\b/gi, "cuando llegue a la agencia"],
-  [/\bal\s+recibir(?:lo|la)?\b/gi, "cuando llegue a la agencia"],
+  [/\bcuando\s+(?:lo\s+|la\s+)?(?:recibas|te\s+llegue|lo\s+tengas|lo\s+recibas)(?:\s+el\s+(?:paquete|pedido|producto))?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  [/\bal\s+recibir(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  // «y el resto cuando recojas el paquete» — misma idea, otra forma. Se generaliza: cualquier
+  // «cuando recojas…» en provincia habla del MOMENTO en que él va por el paquete, y el saldo
+  // se paga antes de eso. La variante con lugar («recojas allá») ya estaba arriba.
+  [/\bcuando\s+(?:lo\s+|la\s+)?recojas(?:\s+(?:el|tu)\s+(?:paquete|pedido|producto))?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  [/\bal\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  [/\bal\s+momento\s+de\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
 ];
 function sinPagarEnLaAgencia(texto: string, provincia = false): string {
   let t = String(texto ?? "");
@@ -3930,6 +3937,40 @@ function conAdelantoConcreto(texto: string, monto: number, sym: string): string 
     puesto = true;
     return `${m} de *${sym} ${monto}*`;
   });
+}
+// ✂️ EL PÁRRAFO DE PRODUCTO QUE NADIE PIDIÓ. Rodrigo lo marcó cuatro veces («explica mucho…
+// muy largo») y se intentó CINCO veces por prompt: escribe corto, no describas si no te
+// preguntó, una sola pregunta, tope de 300 caracteres, y hasta moverlo al final del prompt
+// para que pesara más. Las cinco perdieron contra las instrucciones de venta del propio
+// flujo («explica el valor», «habla en BENEFICIOS»), que son el TRABAJO del modelo. Cuando
+// una regla no se sostiene en cinco intentos, deja de ser un problema de prompt.
+//
+// Se corta la PRIMERA oración y solo con las cuatro condiciones juntas:
+//   · el turno no era para vender (él solo dio un dato: su ciudad, su nombre, la cantidad),
+//   · esa oración nombra el producto —o sea, lo está presentando otra vez—,
+//   · es LARGA (>100) y no trae ninguna cifra, que es lo que distingue una descripción de un
+//     acuse («Perfecto, 2 unidades del *Adaptador Pro* por *S/ 109*» tiene cifras y se queda),
+//   · y detrás queda mensaje de verdad.
+// Con cualquiera que falte, no se toca nada: un mensaje mutilado es peor que uno largo.
+function sinPresentacionRepetida(texto: string, producto: string): string {
+  const t = String(texto ?? "").trim();
+  const prod = String(producto ?? "").trim();
+  if (!t || prod.length < 4) return t;
+  const partes = t.split(/\n{2,}/);
+  const primera = partes[0] ?? "";
+  if (partes.length < 2) return t;
+  if (primera.length <= 100) return t;
+  // Lo que protege un acuse es una cifra de PLATA o de CANTIDAD («Perfecto, 2 unidades por
+  // *S/ 109*»), no cualquier número: una descripción trae medidas («hasta 1.5 mm») y con el
+  // guard viejo eso bastaba para salvarla. Medido: el párrafo siguió saliendo por el «1.5».
+  if (/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(primera)) return t;
+  // ¿Nombra el producto? Se compara sin negritas ni tildes, y basta con las dos primeras
+  // palabras del nombre («Adaptador Pro» dentro de «Adaptador PRO para Taladro — Cortador…»).
+  const clave = normalize(prod).split(/\s+/).slice(0, 2).join(" ");
+  if (!clave || !normalize(primera).includes(clave)) return t;
+  const resto = partes.slice(1).join("\n\n").trim();
+  if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
+  return resto;
 }
 // 🧹 MULETILLAS DE ARRANQUE. Rodrigo, leyendo sus chats: «quita esas muletillas de arranque».
 // Son las frases con las que el modelo entra en calor antes de decir lo que importa —«Antes de
@@ -12243,6 +12284,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const op = cfg.operacion ?? "generar_texto";
   const maxTokens = cfg.max_tokens ? Number(cfg.max_tokens) : undefined;
   const prompt = resolve(String(cfg.prompt ?? ""), ctx);
+  // ¿Este turno era para vender o el cliente solo estaba dando un dato? Lo decide el bloque
+  // del turno (más abajo) y lo usa el recorte de la presentación repetida, ya fuera de ese
+  // bloque — por eso vive acá: declarada adentro daba «_turnoDeVenta is not defined» y el nodo
+  // se caía entero (el cliente terminó escalado a un humano). Por defecto true: sin señal, no se recorta.
+  let _turnoDeVenta = true;
   const info = await channelIaInfo(db, run);
   // Las perillas de estilo del dueño (IA → Vendedor IA). Acá arriba porque la lista de
   // precios de más abajo se arma con ellas, no solo el bloque de formato.
@@ -12489,6 +12535,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "contacta», «te van a llamar»: acá no hay nadie más, y el cliente se queda esperando a alguien que " +
       "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
       "datos», «te escribo apenas llegue».");
+    let _bloqueTurno = "";
+    // ✂️ CUÁNDO DESARROLLAR Y CUÁNDO NO. Rodrigo, cuatro veces: «explica mucho… muy largo».
+    // Cuatro reglas de brevedad seguidas no lo movieron, y la razón estaba a la vista: el
+    // prompt le pide las dos cosas a la vez. El del propio flujo dice «explica el valor»,
+    // «habla en BENEFICIOS»; el motor dice «responder en una línea suelta no da razones para
+    // comprar». Cuando "vende" y "sé breve" compiten, gana vender: vender es el TRABAJO y ser
+    // breve es una restricción.
+    //
+    // Así que no se agrega una quinta regla: se manda UNA sola, la que toca en este turno.
+    // Si el cliente está decidiendo (objeción, «¿me sirve para…?», dudando entre packs) se le
+    // deja desarrollar. Si solo está dando un dato —su ciudad, su nombre, cuántas unidades—
+    // se le prohíbe expresamente, incluso contra lo que diga el prompt del flujo. Medido:
+    // escribió «Para madre de dios» y recibió un párrafo sobre cortar láminas de 1.5 mm.
+    {
+      const _li = String(ctx.last_input ?? "");
+      const _hayQueVender = traePregunta(_li) || RE_TRAE_OBJECION.test(_li) || RE_CONDICION.test(_li) ||
+        RE_CLIENTE_PIDE_PRECIO.test(_li) || /\b(sirve|funciona|vale la pena|conviene|diferencia|por qu[eé])\b/i.test(_li);
+      // 🔚 Se guarda para el FINAL: el prompt del propio flujo —el que dice «explica el valor»
+      // y «habla en BENEFICIOS»— entra al final del system, y en un prompt lo ÚLTIMO pesa.
+      // Puesta acá, noventa bloques antes, esta regla perdía siempre. Misma lección que el estilo.
+      _turnoDeVenta = _hayQueVender;
+      _bloqueTurno = (_hayQueVender
+        ? "## Este turno SÍ es para vender\nTe preguntó algo o puso un pero: acá sí desarrollas — el beneficio " +
+          "que le toca a ÉL por lo que acaba de decir, con lo que tienes en la ficha. Igual, corto: lo que " +
+          "responde su duda y nada más."
+        : "## Este turno NO es para explicar el producto\nNo te preguntó nada: solo te está dando un dato " +
+          "(su ciudad, su nombre, cuántas unidades). ⛔ Para ESTE mensaje ignora cualquier instrucción de " +
+          "«explicar el valor» o «hablar en beneficios» —no toca ahora—, y NO describas el producto: los " +
+          "mensajes iniciales ya se lo contaron. Acusas lo que te dio, contestas si preguntó algo y das el " +
+          "siguiente paso. Dos líneas.");
+    }
     parts.push("## Escribe CORTO — máximo 300 caracteres\n" +
       "Esto es WhatsApp, no un correo. TU parte del mensaje no pasa de **300 caracteres**: le contestas lo " +
       "que preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
@@ -13307,7 +13384,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "cuántas unidades lleva. Elegir agencia es logística de un pedido que aún no existe. " +
             "Si te pregunta él por las oficinas, ahí sí se lo contestas.");
         }
-        if (_yaEligio || _preguntaSede) try {
+        // 🗺️ Dijo el DEPARTAMENTO, no su ciudad. No se le lista nada: un departamento no ubica
+        // una oficina (ver esSoloDepartamento). Se le pregunta de qué ciudad es, nombrándole las
+        // provincias donde SÍ hay, que es lo único que le acorta la búsqueda.
+        const _esDepto = esSoloDepartamento(String(ctx.ciudad ?? ""));
+        if (_esDepto) {
+          const _provs = provinciasDeDepartamento(String(ctx.ciudad ?? "")).map((p) => bonito(p));
+          _sedeCiudad = "";
+          L.push(`🗺️ Ojo: *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* es el DEPARTAMENTO, no su ciudad, ` +
+            "y las oficinas de un departamento pueden estar a horas unas de otras. ⛔ NO le listes ninguna " +
+            "todavía ni le confirmes una sede. Pregúntale de qué CIUDAD o distrito es" +
+            (_provs.length ? `; ahí tenemos oficinas por ${_provs.slice(0, 4).join(" y ")}` : "") +
+            ". Una línea, sin dramatizar, y sigue con el pedido: esto no lo detiene.");
+        }
+        if (!_esDepto && (_yaEligio || _preguntaSede)) try {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           if (_ags.length) {
             // Los aeropuertos y terminales al final: son agencias de verdad, pero casi nadie
@@ -14346,6 +14436,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 🎨 El estilo, DE ÚLTIMO. Es una regla de forma que se aplica a cada frase que escribe,
     // así que tiene que ser lo último que lee — enterrada arriba, los mensajes del medio de
     // la conversación salían planos aunque las perillas pidieran negritas y 2-3 emojis.
+    // 🔚 El bloque del TURNO va acá, pegado al final, para que pese más que el «explica el
+    // valor» del prompt del flujo (que entra justo arriba). Antes del estilo, que es forma.
+    if (_bloqueTurno) parts.push(_bloqueTurno);
     if (_bloqueEstilo) parts.push(_bloqueEstilo);
     if (parts.length) system = parts.join("\n\n");
   }
@@ -15049,6 +15142,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
+        // ✂️ Y si este turno no era para vender, fuera la presentación repetida del producto
+        // (ver sinPresentacionRepetida: cinco reglas de prompt no lo lograron).
+        if (!_turnoDeVenta) {
+          const _antesPres = salida;
+          salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""));
+          if (salida !== _antesPres) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
+              "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
+          }
+        }
         salida = sinDespachar(salida);
         salida = sinPagarEnLaAgencia(salida, String(ctx.zona_entrega ?? "") === "provincia");
         // 💰 Y si nombró el adelanto sin decir cuánto, se le pone la cifra (ver arriba).
