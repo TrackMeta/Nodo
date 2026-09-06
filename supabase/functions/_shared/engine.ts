@@ -3873,6 +3873,119 @@ const RE_PIDE_ELEGIR_SEDE =
   // más cerca» se colaba entera porque la lista solo tenía la forma con pronombre.
   /(cu[aá]l|d[ií]me|ind[ií]came|elige|escoge|eliges|elijas|prefieres|me confirmas|queda m[aá]s cerca|queda mejor|faltar[ií]a (?:saber )?(?:la|el|cu[aá]l))/i;
 
+// ═══════════════════════════════════════════════════════════════════
+// 📍 QUÉ OFICINAS SE LE MUESTRAN, Y CÓMO. Un solo sitio.
+//
+// Antes esto vivía en CINCO bloques distintos del post-proceso —"no sabe cuál sede", "las de
+// su distrito", "pocas: todas", "pregúntale el distrito", "la lista de siempre"—, cada uno
+// con su propio criterio de cuándo actuar, su propio formato y su propio anti-duplicado. De
+// los fallos de una sola jornada, CINCO salieron de ahí: el guard que borraba la lista, el
+// encabezado huérfano con un hueco, dos listas en el mismo mensaje, Trujillo quedándose mudo
+// y el plural que no casaba. Ninguno era un fallo distinto: era el mismo, entrando por cinco
+// puertas. Arreglar una movía las otras.
+//
+// Acá se decide UNA cosa entre cuatro, en orden de lo más resuelto a lo más abierto:
+//   1. Ya eligió distrito y ahí hay varias → esas.
+//   2. Son pocas (contando MOSTRADORES, no el aeropuerto) → todas con su referencia.
+//   3. Están repartidas en varios distritos → se le pregunta el distrito (una sola vez).
+//   4. Todas en el mismo distrito y son muchas → las 8 más cercanas.
+// Y devuelve el texto ya armado: quien llama solo lo pega. Un formato, un anti-duplicado.
+const _rezagadaAg = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
+function listaSedes(cab: string, ags: { l: string; ref?: string; dir?: string }[], tope: number, cierre: string): string {
+  const cuerpo = [...ags].sort((a, b) => _rezagadaAg(a) - _rezagadaAg(b)).slice(0, tope)
+    .map((x) => `📍 *${bonito(x.l)}*${pistaAgencia(x)}`).join("\n");
+  return cierre ? `${cab}\n${cuerpo}\n\n${cierre}` : `${cab}\n${cuerpo}`;
+}
+// `auto`: la rama 4 es la única que no se pega a ciegas — lleva la lista para desenrollar
+// las que la IA haya escrito de corrido. Ver dónde se llama.
+type BloqueSedes = { texto: string; cat: "campo" | "nota"; ev: string; det: string; auto?: { l: string }[] };
+function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
+  const ciudad = String(ctx.ciudad ?? "").trim();
+  if (!ciudad) return null;
+  const CAB = `En *${bonito(ciudad.toUpperCase())}*`;
+
+  // 1) Contestó el distrito y ahí hay varias: se le muestran ESAS, no las de la ciudad.
+  //    Va primero porque a esta altura ya no queda nada que preguntarle: solo que elija
+  //    entre dos o tres de su propia zona.
+  const _od = (run.vars as any)?._ofsDistrito as { t: string; l: string[] } | undefined;
+  if (_od?.l?.length) {
+    delete (run.vars as any)._ofsDistrito;
+    const _ofs = agenciasDeDistritoEn(_od.t, ciudad);
+    if (_ofs.length > 1) {
+      return { texto: listaSedes(`En *${bonito(_od.t)}* tenemos estas 👇`, _ofs, 6, "¿Cuál te queda mejor?"),
+        cat: "campo", ev: "📍 Las de su distrito", det: `${_ofs.length} en ${bonito(_od.t)}` };
+    }
+  }
+
+  // Su distrito puede no tener oficina (Jequetepeque): las que valen son las de su PROVINCIA,
+  // y el encabezado tiene que decirlo, o lo mandamos a buscar en su pueblo algo que está lejos.
+  const _prop = agenciasParaOfrecer(ciudad);
+  const _cer = _prop.length ? null : agenciasCercanasAlDistrito(ciudad);
+  // 🏙️ Provincia grande sin orden por cercanía: pegar "las 8 primeras" es pegar las primeras
+  // del ABECEDARIO. Medido con un cliente de Pucusana (extremo sur de Lima): le llegaron
+  // "01 De Mayo, Almacenes Bsf, Ancón…", y Ancón está en el extremo NORTE. En ese caso el
+  // bloque del prompt ya le pregunta qué zona le queda fácil; acá solo hay que no pisarlo.
+  const _grande = !_prop.length && (_cer?.agencias.length ?? 0) > 12 && !_cer?.ordenadas;
+  const _ags = _grande ? [] : (_prop.length ? _prop : (_cer?.agencias ?? []));
+  if (!_ags.length) return null;
+  const _cab = _prop.length
+    ? `${CAB} tenemos estas 👇`
+    : `${CAB} no hay oficina; las más cercanas están en *${bonito(String(_cer?.prov ?? "").toUpperCase())}* 👇`;
+
+  // 2) POCAS → TODAS DE GOLPE, con su referencia. Decisión de Rodrigo: «si la provincia tiene
+  //    menos de 8 agencias, nombrarlas todas con sus referencias para no estar desviando la
+  //    conversación». Y de paso resuelve el problema de nombres que tenía preguntar por el
+  //    distrito: al de Puerto Maldonado no hay que decirle «Tambopata» —que es su distrito
+  //    pero nadie lo llama así—, se le muestra «AV 15 de Agosto — a media cdra. del mercado»
+  //    y él reconoce cuál es la suya. La referencia ubica mejor que el nombre administrativo.
+  // 🛫 El umbral cuenta MOSTRADORES, no entradas de la lista: el aeropuerto y los terminales
+  //    ya van al final porque casi nadie recoge ahí, así que tampoco deben empujar una ciudad
+  //    por encima del límite. Pucallpa tiene 8 —una es el Aeropuerto—, caía justo en el borde
+  //    y se llevaba un paso extra teniendo 7 oficinas de calle. Rodrigo: «Pucallpa tiene menos
+  //    de 8 sedes creo». Tenía razón en lo que importa, aunque en la lista figuren 8.
+  if (_ags.filter((a) => !_rezagadaAg(a)).length < 8) {
+    return { texto: listaSedes(_cab, _ags, 99, "¿Cuál te queda más cerca?"), cat: "campo",
+      ev: "📍 Se le pasaron todas", det: `${_ags.length} agencias en ${ciudad} — pocas, van todas con su referencia` };
+  }
+
+  // 3) Repartidas en varios distritos → se le pregunta el DISTRITO. Idea de Rodrigo, y los
+  //    números la respaldan: de los 221 distritos con oficina en las 61 provincias que tienen
+  //    más de una, 125 tienen UNA sola, o sea que en más de la mitad de los casos contestar el
+  //    distrito deja la sede resuelta. Y el mensaje pasa de ~700 caracteres a ~120.
+  // ⛔ NUNCA sobre un DEPARTAMENTO: con «Para Madre de Dios» le preguntó entre Iberia,
+  //    Tambopata, Las Piedras e Inambari, que están a 200 km unos de otros. Primero la ciudad.
+  // 🔁 Y UNA sola vez: en Trujillo la lista de distritos se pegó en tres mensajes seguidos,
+  //    incluso debajo de «pásame tus datos». Si el que vuelve a preguntar es ÉL, se repite.
+  const _dts = (_prop.length && !esSoloDepartamento(ciudad)) ? distritosConOficina(ciudad) : [];
+  const _elPidioSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+  if (_dts.length >= 2 && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
+    (run.vars as any)._distrito_preguntado = 1;
+    // Con más de 12 distritos (Lima 35, Arequipa 13) listarlos es tan largo como listar las
+    // oficinas y no ahorra nada; pero la pregunta sigue sirviendo, porque él SÍ sabe su
+    // distrito de memoria. Se la hace abierta, y su respuesta vuelve por el camino (1).
+    if (_dts.length > 12) {
+      return { texto: `¿En qué distrito de *${bonito(ciudad.toUpperCase())}* estás? ` +
+          `Así te digo la oficina que te queda más cerca 📍`, cat: "campo",
+        ev: "🗺️ Se le preguntó el distrito (sin lista)",
+        det: `${_dts.length} distritos con oficina en ${ciudad} — demasiados para listarlos` };
+    }
+    // 🎨 Uno por línea, con su pin y en negrita. Rodrigo: «tienen que estar de manera más
+    // bonita y ordenada y con negritas». De corrido separados por «·» se leen como un párrafo
+    // y el pulgar no los distingue; apilados se escanean.
+    return { texto: `${CAB} tenemos oficinas en estos distritos 👇\n\n` +
+        `${_dts.map((d) => `📍 *${bonito(d.t)}*`).join("\n")}\n\n¿En cuál estás? Así te digo la que te queda.`,
+      cat: "campo", ev: "🗺️ Se le preguntó el distrito", det: `${_dts.length} distritos con oficina en ${ciudad}` };
+  }
+
+  // 4) Todas en el mismo distrito (Juliaca tiene 9 en el suyo, donde preguntarlo no
+  //    desambigua nada), o ya se le preguntó y no contestó: van las 8 más cercanas.
+  //    Única rama que no se pega a ciegas — ver `auto` donde se llama.
+  //    Cierra con la misma pregunta que las otras tres: era la única que terminaba en seco
+  //    después de ocho direcciones, y se leía como si el mensaje se hubiera cortado.
+  return { texto: listaSedes(_cab, _ags, 8, "¿Cuál te queda más cerca?"), cat: "nota", auto: _ags,
+    ev: "📍 Se le pegó la lista de agencias", det: "Pidió la sede sin listarlas." };
+}
+
 function sinPreguntarLaSede(texto: string, nombre = ""): string {
   const t = String(texto ?? "");
   // ⚠️ Sin exigir signo de pregunta: el modelo lo pide en imperativo («Ahora dime cuál sede de
@@ -4077,8 +4190,6 @@ function repreguntaExtra(texto: string): string {
 // física (ver la regla de tercera persona).
 const RE_PREGUNTA_DONDE_PAGAR =
   /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero)|n[uú]mero de yape|cu[eé]nta para)\b/i;
-const RE_NO_SABE_SEDE =
-  /\b(no s[eé]|no sabr[ií]a|ni idea|cu[aá]l(es)? hay|qu[eé] (sedes|oficinas|agencias)|no conozco|desconozco)\b/i;
 // Pedirle el DNI y la sede a alguien a quien nadie le explicó cómo le va a llegar el
 // paquete: para el cliente de provincia, ese formulario aparece de la nada. La modalidad
 // (va por agencia, la recoge él, con una clave) es justo lo que le da confianza para
@@ -4590,7 +4701,9 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string
     // oficinas la escribe el MOTOR, y esta función corre ANTES de que él la pegue, así que
     // lo único que puede haber acá es la del modelo.
     const _vineta = /^\s*[-•·]\s*\S/.test(l);
-    const _comoElMotor = /^\s*\*[^*\n]{2,40}\*\s*[–—-]\s*\S/.test(l);
+    // El pin es opcional porque el motor abre sus líneas con 📍 y el modelo copia lo que ve:
+    // sin admitirlo acá, su imitación —referencias inventadas incluidas— pasaba entera.
+    const _comoElMotor = /^\s*(?:📍\s*)?\*[^*\n]{2,40}\*\s*[–—-]\s*\S/.test(l);
     // 🔴 Tercera forma: 📍 *Nombre* a secas, sin referencia detrás. Es el formato de la lista
     // de DISTRITOS que se estrenó hoy, y el modelo ya lo copia igual de bien que los otros
     // dos: en Trujillo, Huancayo y Cañete escribió su propia lista de distritos y el motor
@@ -15900,20 +16013,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "la rama era para repreguntar; se cambió por la pregunta").catch(() => {});
           }
         }
-      }      // No sabe a qué oficina: se le manda la lista, no la oferta de mandársela.
-      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
-          && RE_NO_SABE_SEDE.test(String(ctx.last_input ?? "")) && !/📍|👇/.test(salida)) {
-        try {
-          const _agsN = agenciasParaOfrecer(String(ctx.ciudad ?? ""));
-          if (_agsN.length > 1) {
-            const _rz = (z: { l: string }) => /AEROPUERTO|TERMINAL/i.test(z.l) ? 1 : 0;
-            const _lst = [..._agsN].sort((a, b) => _rz(a) - _rz(b)).slice(0, 8)
-              .map((z) => `*${bonito(z.l)}*` + (z.ref ? ` — ${bonito(z.ref, true)}` : z.dir ? ` — ${bonito(z.dir, true)}` : ""))
-              .join("\n");
-            salida = salida.trimEnd() +
-              `\n\nEn *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇\n${_lst}\n\n¿Cuál te queda más cerca?`;
-          }
-        } catch (_) { /* sin lista → se envía tal cual */ }
       }      // Provincia: explicarle la modalidad de envío ANTES de pedirle sus datos.
       // 🕒 …pero NO antes de que elija cuántas unidades lleva, por la misma razón que la sede:
       // es logística de un pedido que todavía no existe. Y encima se disparaba sobre un texto
@@ -16036,162 +16135,39 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && (_yaEligioOp || _elPidioSede || _sabemosCiudad)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
-          // Su distrito puede no tener oficina (Jequetepeque). Ahí las que valen son las de
-          // su PROVINCIA y el encabezado tiene que decirlo: pegarlas bajo "En JEQUETEPEQUE
-          // tenemos estas" sería mandarlo a buscar en su pueblo algo que está a un viaje.
-          const _prop = agenciasParaOfrecer(String(ctx.ciudad ?? ""));
-          const _cer = _prop.length ? null : agenciasCercanasAlDistrito(String(ctx.ciudad ?? ""));
-          // 🏙️ Provincia grande (Lima tiene ~100 oficinas): pegar "las 8 primeras" es pegar las
-          // primeras del ABECEDARIO, no las que le quedan cerca. Medido con un cliente de
-          // Pucusana (extremo sur de Lima): le llegaron "01 De Mayo, Almacenes Bsf, Ancón…" —
-          // Ancón está en el extremo NORTE. El bloque del prompt ya le dice a la IA que en ese
-          // caso pregunte por qué zona le queda fácil; acá solo hay que no pisarlo con la lista.
-          const _provGrande = !_prop.length && (_cer?.agencias.length ?? 0) > 12 && !_cer?.ordenadas;
-          const _ags = _provGrande ? [] : (_prop.length ? _prop : (_cer?.agencias ?? []));
-          const _cab = _prop.length
-            ? `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos estas 👇`
-            : `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* no hay oficina; las más cercanas están en ` +
-              `*${bonito(String(_cer?.prov ?? "").toUpperCase())}* 👇`;
-          // 🗺️ ¿Se le pregunta el DISTRITO en vez de volcarle las oficinas? Idea de Rodrigo, y
-          // los números la respaldan: de los 221 distritos con oficina en las 61 provincias
-          // que tienen más de una, 125 tienen UNA sola — o sea que en más de la mitad de los
-          // casos, contestar el distrito deja la sede resuelta y se le puede mandar su ficha.
-          // Y el mensaje pasa de ~700 caracteres (14 oficinas con referencia) a ~120.
-          // ⛔ NO cuando todas están en el mismo distrito (Juliaca tiene 9 en el suyo): ahí
-          // preguntarlo no desambigua nada. Ni con más de 12 distritos (Lima tiene 35,
-          // Arequipa 13): listarlos sería tan largo como listar las oficinas.
-          // ⛔ Y NUNCA sobre un DEPARTAMENTO. Medido: con «Para Madre de Dios» —que todavía no
-          // es una ciudad— le preguntó «¿en cuál estás?: Iberia · Tambopata · Las Piedras ·
-          // Inambari», que son distritos a 200 km unos de otros. Primero se le pregunta la
-          // ciudad (eso ya funciona); el distrito recién tiene sentido dentro de una ciudad.
-          const _dts = (_prop.length && !esSoloDepartamento(String(ctx.ciudad ?? "")))
-            ? distritosConOficina(String(ctx.ciudad ?? "")) : [];
-          // 🗺️ Ya eligió su distrito y ahí hay varias: se le listan ESAS, con su referencia.
-          // Es el cierre natural de la pregunta por distrito y va ANTES de todo lo demás,
-          // porque a esta altura ya no hay nada que preguntarle: solo que elija entre dos o
-          // tres de su propia zona.
-          // ⚠️ Esto es el PRIMER eslabón de una cadena de excluyentes: en un turno se pega UNA
-          // lista y nada más. Estaba escrito como un `if` suelto antes de la cadena, así que
-          // pegaba la suya y después la cadena pegaba OTRA — al cliente de Cusco le llegó el
-          // encabezado dos veces, la primera con un hueco debajo.
-          const _od = (run.vars as any)?._ofsDistrito as { t: string; l: string[] } | undefined;
-          let _yaPegue = false;
-          if (_od?.l?.length) {
-            delete (run.vars as any)._ofsDistrito;
-            const _ofsD = agenciasDeDistritoEn(_od.t, String(ctx.ciudad ?? ""));
-            if (_ofsD.length > 1) {
-              _yaPegue = true;
-              const _rezD = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
-              const _lstD = [..._ofsD].sort((x, y) => _rezD(x) - _rezD(y)).slice(0, 6)
-                .map((x) => `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
-              const _sinIAd = sinListaDeSedesDeLaIA(salida, true);
-              if (_sinIAd.habia) salida = _sinIAd.texto;
-              salida = conAgencias(salida, `En *${bonito(_od.t)}* tenemos estas 👇\n${_lstD}\n\n¿Cuál te queda mejor?`, true);
-              await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Las de su distrito",
-                `${_ofsD.length} en ${bonito(_od.t)}`).catch(() => {});
-            }
-          }
-          // 🎁 POCAS OFICINAS → TODAS DE GOLPE, con su referencia. Decisión de Rodrigo: «si la
-          // provincia tiene menos de 8 agencias, nombrarlas todas con sus referencias para no
-          // estar desviando la conversación». Y resuelve de paso el problema de nombres que
-          // tenía el paso por distrito: al de Puerto Maldonado no hay que decirle «Tambopata»
-          // —que es su distrito pero nadie lo llama así—, se le muestra «AV 15 de Agosto — a
-          // media cdra. del mercado» y él reconoce cuál es la suya. La referencia ubica mejor
-          // que cualquier nombre administrativo.
-          // 🛫 El umbral cuenta MOSTRADORES, no entradas de la lista: el aeropuerto y los
-          // terminales ya se mandan al final porque casi nadie recoge ahí, así que tampoco
-          // deben empujar una ciudad por encima del límite. Medido: Pucallpa tiene 8 —una es
-          // el Aeropuerto—, caía justo en el borde y se llevaba un paso extra teniendo solo
-          // 7 oficinas de calle. Rodrigo: «Pucallpa tiene menos de 8 sedes creo». Tenía razón
-          // en lo que importa, aunque en la lista figuren 8.
-          const _rezagada = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l);
-          const _mostradores = _ags.filter((x) => !_rezagada(x)).length;
-          const _pocas = !_yaPegue && _ags.length > 0 && _mostradores < 8;
-          if (_pocas) {
-            const _rezP = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
-            const _lstP = [..._ags].sort((x, y) => _rezP(x) - _rezP(y))
-              .map((x) => `📍 *${bonito(x.l)}*${pistaAgencia(x)}`).join("\n");
-            const _sinIAp = sinListaDeSedesDeLaIA(salida, true);
-            if (_sinIAp.habia) salida = _sinIAp.texto;
-            const _antesP = salida;
-            salida = conAgencias(salida, `${_cab}\n${_lstP}\n\n¿Cuál te queda más cerca?`, true);
-            if (salida !== _antesP) {
-              await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Se le pasaron todas",
-                `${_ags.length} agencias en ${ctx.ciudad ?? ""} — pocas, van todas con su referencia`).catch(() => {});
-            }
-          }
-          const _porDistrito = !_yaPegue && !_pocas && _dts.length >= 2 && _dts.length <= 12;
-          // 🔁 Y UNA sola vez. Medido en Trujillo: la lista de distritos se pegó en tres
-          // mensajes seguidos —incluso debajo de «pásame tus datos»—, que es exactamente el
-          // machaque que ya nos costó con la pregunta de la cantidad. Se repite solo si es ÉL
-          // quien vuelve a preguntar por las oficinas.
-          if (_porDistrito && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
-            // 🎨 Uno por línea, con su pin y en negrita. Rodrigo: «tienen que estar de manera
-            // más bonita y ordenada y con negritas». En una sola línea separados por «·» se
-            // leen como un párrafo y el pulgar no los distingue; apilados se escanean. Van en
-            // el mismo orden que la lista de oficinas —el suyo primero y el resto por
-            // cercanía— y con el mismo 📍 que el resto de los bloques de sedes.
-            const _preg = `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos oficinas en estos distritos 👇\n\n` +
-              `${_dts.map((d) => `📍 *${bonito(d.t)}*`).join("\n")}\n\n¿En cuál estás? Así te digo la que te queda.`;
-            const _antesD = salida;
-            // `true`: acá ya sabemos que se habla de oficinas, aunque el texto no diga la palabra.
-            const _sinIA0 = sinListaDeSedesDeLaIA(salida, true);
-            if (_sinIA0.habia) salida = _sinIA0.texto;
-            salida = conAgencias(salida, _preg, true);
-            (run.vars as any)._distrito_preguntado = 1;
-            if (salida !== _antesD) {
-              await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Se le preguntó el distrito",
-                `${_dts.length} distritos con oficina en ${ctx.ciudad ?? ""}`).catch(() => {});
-            }
-          } else if (!_yaPegue && !_pocas && _dts.length > 12 && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
-            // 🏙️ B · DEMASIADOS DISTRITOS para listarlos: Lima tiene 35 y Arequipa 13, así que
-            // el listado sería tan largo como el de oficinas y no ahorra nada. Pero la
-            // pregunta sigue sirviendo, porque él SÍ sabe su distrito de memoria: se la hace
-            // abierta, sin lista. Su respuesta la resuelve el mismo camino de siempre
-            // (📍 Sede por su distrito), que busca entre los distritos de SU provincia.
-            const _antesB = salida;
-            const _sinIAb = sinListaDeSedesDeLaIA(salida, true);
-            if (_sinIAb.habia) salida = _sinIAb.texto;
-            salida = conAgencias(salida,
-              `¿En qué distrito de *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* estás? ` +
-              `Así te digo la oficina que te queda más cerca 📍`, true);
-            if (salida !== _antesB) {
-              (run.vars as any)._distrito_preguntado = 1;
-              await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Se le preguntó el distrito (sin lista)",
-                `${_dts.length} distritos con oficina en ${ctx.ciudad ?? ""} — demasiados para listarlos`).catch(() => {});
-            }
-          } else if (!_yaPegue && !_pocas && _ags.length) {
-            const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
-            const _lista = [..._ags].sort((x, y) => _rez(x) - _rez(y)).slice(0, 8).map((x) =>
-              `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
-            // 📋 Primero fuera la lista que se escribió la IA (con sus referencias
-            // inventadas); si la había, la del motor se pega SÍ o SÍ, sin pedirle permiso al
-            // anti-duplicado, que es justo lo que esa lista falsa venía burlando.
-            const _sinIA = sinListaDeSedesDeLaIA(salida);
+          const _bl = bloqueDeSedes(ctx, run);
+          if (_bl) {
+            // 📋 Primero fuera la lista que se escribió la IA, con sus referencias inventadas;
+            // si la había, la del motor se pega SÍ o SÍ, sin pedirle permiso al anti-duplicado,
+            // que es justo lo que esa lista falsa venía burlando.
+            // `!_bl.auto`: en las ramas decididas ya sabemos que se habla de oficinas, aunque el
+            // texto no use la palabra; en la rama abierta se le exige que la use.
+            const _sinIA = sinListaDeSedesDeLaIA(salida, !_bl.auto);
             if (_sinIA.habia) {
               salida = _sinIA.texto;
-              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le quitó su lista de sedes",
-                "La escribió la IA con referencias inventadas; va la del motor").catch(() => {});
+              if (_bl.auto) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le quitó su lista de sedes",
+                  "La escribió la IA con referencias inventadas; va la del motor").catch(() => {});
+              }
             }
+            // Se fuerza también cuando el mensaje HABLA de sedes y pregunta algo: a esta altura
+            // ya se decidió que tiene que elegir, así que hacer depender la lista de que el
+            // modelo use una palabra concreta es dejar la decisión en su redacción.
             const _antes = salida;
-            // Y se fuerza también cuando el mensaje HABLA de sedes y pregunta algo: a esta
-            // altura ya se decidió que tiene que elegir (el bloque solo corre si eligió
-            // presentación o preguntó por la oficina), así que hacer depender la lista de que
-            // el modelo use una palabra concreta es dejar la decisión en manos de su redacción.
-            salida = conAgencias(salida, `${_cab}\n${_lista}`,
-              _elPidioSede || _sinIA.habia ||
+            salida = conAgencias(salida, _bl.texto, !_bl.auto || _elPidioSede || _sinIA.habia ||
               (RE_HABLA_DE_SEDE.test(sinFormato(salida)) && /[?¿]/.test(salida)));
             if (salida !== _antes) {
-              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
-                "Pidió la sede sin listarlas.").catch(() => {});
+              await logEvent(db, run.channel_id, run.contact_id, _bl.cat, _bl.ev, _bl.det).catch(() => {});
             }
-            // Las que él mismo escribió apiladas en una línea. Va DESPUÉS de conAgencias
-            // para que la lista recién pegada —que ya viene una por línea— no se toque.
-            const _corrido = salida;
-            salida = sedesEnLineas(salida, _ags);
-            if (salida !== _corrido) {
-              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Sedes puestas en líneas",
-                "Las había nombrado de corrido en una sola línea.").catch(() => {});
+            // Las que él mismo escribió apiladas en una línea. Va DESPUÉS de conAgencias para
+            // que la lista recién pegada —que ya viene una por línea— no se toque.
+            if (_bl.auto) {
+              const _corrido = salida;
+              salida = sedesEnLineas(salida, _bl.auto);
+              if (salida !== _corrido) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Sedes puestas en líneas",
+                  "Las había nombrado de corrido en una sola línea.").catch(() => {});
+              }
             }
           }
         } catch (_) { /* sin agencias legibles → se envía tal cual */ }
