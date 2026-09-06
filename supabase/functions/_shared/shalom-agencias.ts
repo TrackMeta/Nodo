@@ -783,6 +783,43 @@ export function agenciasDeDistritoEn(distrito: string, ciudadRef: string): Agenc
   return AGENCIAS.filter((a) => _n(a.t) === t && _n(a.p) === p && _n(a.d) === d && _ofrecible(a));
 }
 
+// 🧭 LA OFICINA POR SU REFERENCIA. Para las ciudades donde preguntar el distrito no sirve
+// —Juliaca tiene sus 9 oficinas en el mismo distrito, igual Puno y Moquegua— lo único que
+// distingue una de otra es DÓNDE queda: "a 3 cdras. del hospital Carlos Monge", "al frente
+// del grifo León Service". Y da la casualidad de que es justo como habla el cliente: no dice
+// "AV. Huancané cdra. 9", dice "cerca del hospital". El 88% de las agencias trae referencia.
+//
+// Se cuentan las palabras con carga que comparte lo que él escribió con la referencia y la
+// dirección de cada oficina, y solo se resuelve si UNA gana sola. Empatar es no saber.
+const _RUIDO_DIR = new Set(["avenida", "calle", "jiron", "jr", "av", "cdra", "cuadra", "cuadras",
+  "cdras", "frente", "costado", "cerca", "espaldas", "media", "entre", "altura", "lado", "por",
+  "del", "de", "la", "el", "los", "las", "con", "sin", "para", "urb", "mz", "lt", "nro", "n",
+  "zona", "distrito", "sede", "oficina", "agencia", "shalom", "estoy", "vivo", "queda", "cerca"]);
+export function agenciaPorReferencia(texto: string, ciudad: string): Agencia | null {
+  const ags = agenciasParaOfrecer(ciudad);
+  if (ags.length < 2) return null;
+  // 🔴 Se busca SOLO en la referencia y la dirección, NUNCA en el nombre de la oficina, y se
+  // descartan las palabras de su propia ciudad/provincia/departamento. Las dos cosas por el
+  // mismo motivo, medido y caro: con «soy de Juliaca», la palabra "juliaca" la lleva en el
+  // NOMBRE una sola oficina —AEROPUERTO JULIACA— así que ganaba sola y el motor se la sellaba
+  // al cliente con su ficha. Todas las oficinas de la lista están en su ciudad: nombrarla no
+  // distingue ninguna, es ruido. Lo que distingue es dónde queda cada una.
+  const _suyo = new Set([ciudad, ags[0].t, ags[0].p, ags[0].d]
+    .flatMap((x) => _n(String(x ?? "")).split(/\s+/)).filter(Boolean));
+  const pal = _n(texto).split(/\s+/)
+    .filter((w) => w.length >= 4 && !_RUIDO_DIR.has(w) && !_suyo.has(w));
+  if (!pal.length) return null;
+  let mejor: Agencia | null = null, max = 0, empate = false;
+  for (const a of ags) {
+    const heno = _n(`${a.ref ?? ""} ${a.dir ?? ""}`);
+    let n = 0;
+    for (const w of pal) if (` ${heno} `.includes(` ${w} `)) n++;
+    if (n > max) { max = n; mejor = a; empate = false; }
+    else if (n === max && n > 0) empate = true;
+  }
+  return (!empate && max > 0) ? mejor : null;
+}
+
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?
 // Devuelve null si es segura, o el motivo para que un humano la coordine.
 //

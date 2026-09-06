@@ -17,7 +17,7 @@ import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   esSoloDepartamento, capitalizaNombresPropios,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia, agenciasParaOfrecer,
-  distritosConOficina, agenciasDeDistritoEn,
+  distritosConOficina, agenciasDeDistritoEn, agenciaPorReferencia,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
@@ -12921,16 +12921,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // la victoria" sí, pero "reque" no puede colarse dentro de otra palabra.
         const _cabe = (n: string) => ` ${_dicho} `.includes(` ${limpiaZona(n)} `);
         const _hit = _dd.filter((d) => _cabe(d.t)).sort((a, b) => b.t.length - a.t.length)[0];
+        let _sella: { l: string } | null = null, _porQue = "";
         if (_hit) {
           const _ofs = agenciasDeDistritoEn(_hit.t, String(ctx.ciudad ?? ""));
-          if (_ofs.length === 1) {
-            run.vars.sede = _ofs[0].l; ctx.sede = _ofs[0].l;
-            await setField(db, run.channel_id, run.contact_id, "sede", _ofs[0].l);
-            (run.vars as any)._ficha_sede = slugAgencia(_ofs[0]);
-            (run.vars as any)._ficha_ahora = slugAgencia(_ofs[0]);
-            await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede por su distrito",
-              `Dijo ${bonito(_hit.t)} y ahí solo está ${_ofs[0].l}`).catch(() => {});
-          }
+          if (_ofs.length === 1) { _sella = _ofs[0]; _porQue = `Dijo ${bonito(_hit.t)} y ahí solo está ${_ofs[0].l}`; }
+          // 🗺️ Y si en su distrito hay VARIAS, se anota para listarle ESAS —no las de toda la
+          // ciudad— en el mismo turno. Sin esto el bot le contestaba «en Cerro Colorado
+          // tenemos varias sedes» y ahí se quedaba: le dijo que hay varias y no cuáles, que es
+          // dejarlo en el mismo sitio donde estaba pero con un paso más gastado.
+          else if (_ofs.length > 1) (run.vars as any)._ofsDistrito = { t: _hit.t, l: _ofs.map((o) => o.l) };
+        }
+        // 🧭 C · Y si no nombró un distrito, puede haber dado una REFERENCIA. Es lo único que
+        // distingue las oficinas donde el distrito no ayuda: Juliaca tiene sus 9 en el mismo.
+        // «cerca del hospital Carlos Monge» apunta a una sola, y es como habla la gente —nadie
+        // dice «AV. Huancané cdra. 9». Solo resuelve si UNA gana sola: empatar es no saber.
+        // ⛔ Tampoco sobre un departamento: sus oficinas están a cientos de km, así que una
+        // referencia suelta no puede elegir entre ellas.
+        if (!_sella && !esSoloDepartamento(String(ctx.ciudad ?? ""))) {
+          const _porRef = agenciaPorReferencia(String(ctx.last_input ?? ""), String(ctx.ciudad ?? ""));
+          if (_porRef) { _sella = _porRef; _porQue = `Por lo que describió: ${_porRef.ref || _porRef.dir || _porRef.l}`; }
+        }
+        if (_sella) {
+          run.vars.sede = _sella.l; ctx.sede = _sella.l;
+          await setField(db, run.channel_id, run.contact_id, "sede", _sella.l);
+          (run.vars as any)._ficha_sede = slugAgencia(_sella as any);
+          (run.vars as any)._ficha_ahora = slugAgencia(_sella as any);
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede resuelta",
+            _porQue.slice(0, 140)).catch(() => {});
         }
       } catch (_) { /* sin padrón legible → se sigue sin sellar */ }
     }
@@ -15817,8 +15834,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // ⛔ NO cuando todas están en el mismo distrito (Juliaca tiene 9 en el suyo): ahí
           // preguntarlo no desambigua nada. Ni con más de 12 distritos (Lima tiene 35,
           // Arequipa 13): listarlos sería tan largo como listar las oficinas.
-          const _dts = _prop.length ? distritosConOficina(String(ctx.ciudad ?? "")) : [];
-          const _porDistrito = _dts.length >= 2 && _dts.length <= 12;
+          // ⛔ Y NUNCA sobre un DEPARTAMENTO. Medido: con «Para Madre de Dios» —que todavía no
+          // es una ciudad— le preguntó «¿en cuál estás?: Iberia · Tambopata · Las Piedras ·
+          // Inambari», que son distritos a 200 km unos de otros. Primero se le pregunta la
+          // ciudad (eso ya funciona); el distrito recién tiene sentido dentro de una ciudad.
+          const _dts = (_prop.length && !esSoloDepartamento(String(ctx.ciudad ?? "")))
+            ? distritosConOficina(String(ctx.ciudad ?? "")) : [];
+          // 🗺️ Ya eligió su distrito y ahí hay varias: se le listan ESAS, con su referencia.
+          // Es el cierre natural de la pregunta por distrito y va ANTES de todo lo demás,
+          // porque a esta altura ya no hay nada que preguntarle: solo que elija entre dos o
+          // tres de su propia zona.
+          const _od = (run.vars as any)?._ofsDistrito as { t: string; l: string[] } | undefined;
+          if (_od?.l?.length) {
+            delete (run.vars as any)._ofsDistrito;
+            const _ofsD = agenciasDeDistritoEn(_od.t, String(ctx.ciudad ?? ""));
+            if (_ofsD.length > 1) {
+              const _rezD = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
+              const _lstD = [..._ofsD].sort((x, y) => _rezD(x) - _rezD(y)).slice(0, 6)
+                .map((x) => `*${bonito(x.l)}*` + pistaAgencia(x)).join("\n");
+              const _sinIAd = sinListaDeSedesDeLaIA(salida, true);
+              if (_sinIAd.habia) salida = _sinIAd.texto;
+              salida = conAgencias(salida, `En *${bonito(_od.t)}* tenemos estas 👇\n${_lstD}\n\n¿Cuál te queda mejor?`, true);
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Las de su distrito",
+                `${_ofsD.length} en ${bonito(_od.t)}`).catch(() => {});
+            }
+          }
+          const _porDistrito = !_od?.l?.length && _dts.length >= 2 && _dts.length <= 12;
           // 🔁 Y UNA sola vez. Medido en Trujillo: la lista de distritos se pegó en tres
           // mensajes seguidos —incluso debajo de «pásame tus datos»—, que es exactamente el
           // machaque que ya nos costó con la pregunta de la cantidad. Se repite solo si es ÉL
@@ -15835,6 +15876,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (salida !== _antesD) {
               await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Se le preguntó el distrito",
                 `${_dts.length} distritos con oficina en ${ctx.ciudad ?? ""}`).catch(() => {});
+            }
+          } else if (_dts.length > 12 && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
+            // 🏙️ B · DEMASIADOS DISTRITOS para listarlos: Lima tiene 35 y Arequipa 13, así que
+            // el listado sería tan largo como el de oficinas y no ahorra nada. Pero la
+            // pregunta sigue sirviendo, porque él SÍ sabe su distrito de memoria: se la hace
+            // abierta, sin lista. Su respuesta la resuelve el mismo camino de siempre
+            // (📍 Sede por su distrito), que busca entre los distritos de SU provincia.
+            const _antesB = salida;
+            const _sinIAb = sinListaDeSedesDeLaIA(salida, true);
+            if (_sinIAb.habia) salida = _sinIAb.texto;
+            salida = conAgencias(salida,
+              `¿En qué distrito de *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* estás? ` +
+              `Así te digo la oficina que te queda más cerca 📍`, true);
+            if (salida !== _antesB) {
+              (run.vars as any)._distrito_preguntado = 1;
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Se le preguntó el distrito (sin lista)",
+                `${_dts.length} distritos con oficina en ${ctx.ciudad ?? ""} — demasiados para listarlos`).catch(() => {});
             }
           } else if (_ags.length) {
             const _rez = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
