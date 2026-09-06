@@ -823,7 +823,13 @@ export function agenciaPorReferencia(texto: string, ciudad: string): Agencia | n
   // NOMBRE una sola oficina —AEROPUERTO JULIACA— así que ganaba sola y el motor se la sellaba
   // al cliente con su ficha. Todas las oficinas de la lista están en su ciudad: nombrarla no
   // distingue ninguna, es ruido. Lo que distingue es dónde queda cada una.
-  const _suyo = new Set([ciudad, ags[0].t, ags[0].p, ags[0].d]
+  // Ruido: su ciudad y TODOS los nombres administrativos del conjunto que se le ofrece
+  // —distrito, provincia y departamento de cada oficina—. Medido: dijo «santiago cusco» y
+  // ganó AV ANTONIO LORENA porque la palabra "santiago" está en su DIRECCIÓN; pero en el
+  // distrito de Santiago hay TRES oficinas, así que nombrarlo no elige ninguna: había que
+  // listarle las tres. Es lo mismo que ya pasó con "juliaca" y el aeropuerto — un nombre
+  // administrativo no distingue entre oficinas que están todas en ese mismo sitio.
+  const _suyo = new Set([ciudad, ...ags.flatMap((a) => [a.t, a.p, a.d])]
     .flatMap((x) => _n(String(x ?? "")).split(/\s+/)).filter(Boolean));
   const pal = _n(texto).split(/\s+/)
     .filter((w) => w.length >= 4 && !_RUIDO_DIR.has(w) && !_suyo.has(w));
