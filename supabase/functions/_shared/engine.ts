@@ -3703,7 +3703,11 @@ function sinPedirPermisoPago(texto: string): string {
 // `maybeDatosPago`: esa función usa justo esta frase como señal para mandar los datos, y
 // recortársela dejaría al cliente sin número al que pagar (ya pasó con RE_PERMISO_PAGO).
 const RE_ANUNCIA_DATOS_QUE_SIGUEN =
-  /[^.!?…\n]*\bte\s+(?:llegar[aá]n?|llegan|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta)\b[^.!?…\n]*\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/gi;
+  // 🔴 Segunda pasada: la primera versión pedía «datos/métodos/número» en el medio y los
+  // verbos en futuro, y el modelo lo dijo de otra forma — «en breve te llega el MENSAJE con
+  // el adelanto de S/ 20 para que puedas confirmar el envío». Mismo anuncio, otra palabra.
+  // Se cubren el presente («te llega») y las formas en que se nombra lo que va a llegar.
+  /[^.!?…\n]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n]*\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/gi;
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
@@ -3713,8 +3717,10 @@ function sinAnuncioDePago(texto: string): string {
     // Solo espacios y tabs: \s se come los saltos de línea y pega la lista de datos en un
     // renglón (ya pasó con sinDespachar).
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una vacía.
-  return limpio.replace(/[\s\p{P}]/gu, "").length >= 15 ? limpio : texto;
+  // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una
+  // vacía. El piso es bajo a propósito: lo que suele quedar es el acuse («¡Listo, Bertha!»),
+  // que es un mensaje perfectamente válido porque los datos vienen en la burbuja siguiente.
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? limpio : texto;
 }
 
 // 🧾 El trámite inventado. En una venta digital no hay nada que pedirle —ni dirección, ni
@@ -4092,9 +4098,15 @@ function conSede(texto: string, courier: string): string {
 // es el peor recorte posible: «Veo que eres de Madre de Dios. ¿Cuántas unidades…?» le llegó
 // al cliente como «Dios. ¿Cuántas unidades…?».
 const RE_MULETILLA_FIJA =
-  /^[\s>*_]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme)[,;:]?\s+/i;
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme)[,;:]?\s+/iu;
+// 🔴 Dos arreglos de la misma corrida: «🔧⚙️ Me dices que eres de Madre de Dios, ¿de qué
+// ciudad me escribes?» — la muletilla que Rodrigo ya había rechazado («no me gusta que le
+// diga "veo que eres de"»), dicha de otra manera y encima repitiendo el departamento que la
+// línea de arriba acababa de decir. Y el emoji del arranque la salvaba igual: el prefijo
+// solo admitía espacios y marcas de cita, así que cualquier muletilla detrás de un emoji
+// —que es como escribe este modelo— no se tocaba nunca.
 const RE_MULETILLA_COLA =
-  /^[\s>*_]*(?:(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)|entiendo que (?:eres|est[aá]s|vienes)|seg[uú]n veo)[^,.;:!?\n]{0,40}[,;:.]\s+/i;
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)|entiendo que (?:eres|est[aá]s|vienes)|seg[uú]n veo|(?:me\s+)?(?:dices|comentas|mencionas|indicas) que (?:eres|est[aá]s|vienes|me escribes|nos escribes))[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
