@@ -10677,8 +10677,13 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
       // mensaje, así que "soy de arequipa" y "arequipa av ejercito" llegan juntos y cuando
       // se mira la oficina la ciudad aún está vacía.
       const _prev = String(ctx.ciudad ?? "").trim() || (ciudadEnTexto(texto) ?? "");
-      const _suya = (a: { t: string; p: string; d: string }) =>
-        [a.t, a.p, a.d].some((x) => limpiaZona(x) === limpiaZona(_prev));
+      // Se compara contra distrito/provincia/departamento Y contra el NOMBRE de la oficina.
+      // Lo último faltaba: hay pueblos que se llaman igual que su agencia pero que NO son el
+      // distrito. Medido: el cliente es de Mazuko (un centro poblado del distrito de
+      // INAMBARI, Madre de Dios) y la oficina se llama MAZUKO; como ninguno de los tres
+      // campos decía "Mazuko", este guard la descartaba por "de otra ciudad" — la suya.
+      const _suya = (a: { l: string; t: string; p: string; d: string }) =>
+        [a.l, a.t, a.p, a.d].some((x) => limpiaZona(x) === limpiaZona(_prev));
       if (_unica && _prev && !_suya(_unica)) {
         await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
           `Dijo "${_unica.l}" (${_unica.t}) pero es de ${_prev} — se conserva su ciudad`).catch(() => {});
@@ -11361,6 +11366,21 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 await setField(db, run.channel_id, run.contact_id, "sede", "");
                 await logEvent(db, run.channel_id, run.contact_id, "campo", "Era su ciudad, no una sede",
                   `Antes había dado el departamento; "${String(val).slice(0, 40)}" se guardó como ciudad`).catch(() => {});
+                // 📍 …y con la ciudad ya puesta, se le resuelve la sede EN ESTE MISMO TURNO si
+                // solo hay una. Faltaba, y se notaba: el camino gemelo (`Ciudad guardada como
+                // la escribió`) sí lo hacía, este se iba con `continue`. Medido — dijo
+                // "Mazuko", que tiene UNA sola oficina, y el bot le contestó «¿en qué sede de
+                // Shalom lo recogerías?», o sea le preguntó cuál de una. Dos caminos para lo
+                // mismo comportándose distinto, otra vez.
+                const _agsU = agenciasDeCiudad(val);
+                if (_agsU.length === 1) {
+                  run.vars.sede = _agsU[0].l; ctx.sede = _agsU[0].l;
+                  await setField(db, run.channel_id, run.contact_id, "sede", _agsU[0].l);
+                  (run.vars as any)._ficha_sede = slugAgencia(_agsU[0]);
+                  (run.vars as any)._ficha_ahora = slugAgencia(_agsU[0]);
+                  await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
+                    `${_agsU[0].l}: es la única que hay en ${val}`).catch(() => {});
+                }
                 continue;
               }
               const _ag = agenciaExacta(val, String(ctx.ciudad ?? ""));
@@ -14226,7 +14246,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Lima. Si ya sabemos de dónde es y la oficina no es de ahí, no se toca.
       if (_ofi) {
         const _ciu = limpiaZona(String(ctx.ciudad ?? ""));
-        if (_ciu && ![_ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
+        // Incluye el NOMBRE de la oficina, no solo su distrito/provincia/departamento: el
+        // pueblo del cliente puede llamarse igual que la agencia sin ser el distrito (Mazuko
+        // está en INAMBARI). Ver la misma corrección en la detección de zona.
+        if (_ciu && ![_ofi.l, _ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
             `Sonó "${_ofi.l}" (${_ofi.t}) pero es de ${ctx.ciudad} — no se cambia la sede`).catch(() => {});
           _ofi = null;

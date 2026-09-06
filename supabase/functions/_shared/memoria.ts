@@ -77,6 +77,83 @@ function curar(arr: unknown): string[] {
   return out;
 }
 
+// 🛡️ GUARDA 1 · "el ejemplo del prompt pesa más que la instrucción".
+// El SYSTEM_EXTRACT enseña el formato con frases de ejemplo, y el modelo BARATO a veces
+// las devuelve como si fueran hechos de ESTE cliente. Pasado en vivo: con un hilo de 10
+// mensajes donde el cliente solo dijo "Para Madre de Dios" y "Mazuko", guardó
+// «Compra para su madre» (el ejemplo dice "su mamá"; "madre" salió de Madre de Dios) y
+// «Prefiere que le escriban en la tarde» (la palabra "tarde" NO aparecía en todo el chat).
+// Eso queda en la ficha del cliente, lo ve el equipo y se re-inyecta al prompt de ventas.
+// Los ejemplos siguen en el prompt porque enseñan la FORMA; lo que se corta es que
+// vuelvan como DATO. Se compara por palabras, no literal, para atrapar las mutaciones.
+const EJEMPLOS_PROMPT = [
+  "Compra para su mamá", "Es enfermera", "Prefiere que le escriban en la tarde",
+  "Quiere bajar barriga", "Busca ganar masa", "Lo quiere para su rutina de la mañana",
+  "Tiene 55 años", "Nunca ha entrenado", "Entrena en casa sin equipo",
+  "Tiene poco tiempo entre semana", "Ya probó otros programas",
+  "Tiene 55 años y empieza de cero", "Busca algo suave para empezar",
+  "Decide rápido", "Regatea", "Trato cercano",
+  "Entrena en casa sin llenarte de máquinas",
+  "Buscador de resultados", "Cliente potencial", "Quiere mejorar",
+];
+
+// Sin tildes, minúsculas, sin puntuación: "Compra para su mamá" → "compra para su mama".
+function _norm(s: string): string {
+  return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+const _VACIAS = new Set(["que", "de", "del", "la", "el", "los", "las", "un", "una", "y", "o",
+  "en", "su", "sus", "mi", "le", "lo", "se", "es", "para", "por", "con", "sin", "al", "a",
+  "ha", "he", "muy", "mas", "ya", "no", "si", "me", "te", "nos"]);
+// Palabras con carga (≥ 4 letras, o un número). El resto no distingue una frase de otra.
+function _palabras(s: string): string[] {
+  return _norm(s).split(" ").filter((w) => w && !_VACIAS.has(w) && (w.length >= 4 || /^[0-9]+$/.test(w)));
+}
+
+// ¿Es esta frase una copia —aunque venga deformada— de un ejemplo del prompt?
+function esCopiaDeEjemplo(frase: string): boolean {
+  const a = _palabras(frase);
+  if (!a.length) return false;
+  for (const ej of EJEMPLOS_PROMPT) {
+    const b = new Set(_palabras(ej));
+    if (!b.size) continue;
+    const comunes = a.filter((w) => b.has(w)).length;
+    // Comparte la mayoría de sus palabras con carga → no es un hecho, es el ejemplo.
+    if (comunes / Math.max(a.length, b.size) >= 0.6) return true;
+  }
+  return false;
+}
+
+// 🛡️ GUARDA 2 · "quien_es" es, por definición, lo que el cliente CONTÓ: si ninguna de sus
+// palabras con carga aparece en lo que el cliente escribió, no lo contó — lo puso el modelo.
+// (No aplica a "como_tratar": eso es comportamiento DEDUCIDO, no tiene por qué estar escrito.)
+// Solo se le exige a las frases NUEVAS: el hilo son los últimos 12 mensajes, y un dato
+// legítimo de hace tres conversaciones ya no tiene respaldo ahí — pedírselo lo borraría solo.
+export function loQueDijoElCliente(thread: string): string {
+  return _norm(String(thread ?? "").split("\n").filter((l) => /^cliente\s*:/i.test(l.trim())).join(" "));
+}
+function tieneRespaldo(frase: string, dicho: string): boolean {
+  if (!dicho) return true;   // sin hilo con el que comparar, no se castiga
+  const palabras = ` ${dicho} `;
+  // Basta UNA palabra con carga (o su raíz de 5 letras, para "entrenado" vs "entrenar").
+  return _palabras(frase).some((w) =>
+    palabras.includes(` ${w} `) || (w.length >= 6 && dicho.includes(w.slice(0, 5))));
+}
+
+// Filtro de la salida CRUDA del modelo. NO se aplica a lo ya guardado (`leerMemoria`):
+// lo que el operador escribió a mano en el panel no se toca.
+function filtrarInventado(
+  frases: string[], previas: string[], dicho: string, exigirRespaldo: boolean,
+): { limpias: string[]; descartadas: string[] } {
+  const limpias: string[] = [], descartadas: string[] = [];
+  for (const f of frases) {
+    if (esCopiaDeEjemplo(f)) { descartadas.push(f); continue; }
+    if (exigirRespaldo && !previas.includes(f) && !tieneRespaldo(f, dicho)) { descartadas.push(f); continue; }
+    limpias.push(f);
+  }
+  return { limpias, descartadas };
+}
+
 // Lee la memoria actual del contacto (defensivo: si falta columna → vacío).
 export async function leerMemoria(db: SupabaseClient, contactId: string): Promise<MemoriaAI> {
   try {
@@ -193,13 +270,23 @@ export async function actualizarMemoriaIA(
     const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
     if (!m) { await bumpLast(); return; }
     let parsed: any; try { parsed = JSON.parse(m[0]); } catch (_) { await bumpLast(); return; }
-    const quien_es = curar(parsed.quien_es);
-    const como_tratar = curar(parsed.como_tratar);
+    const crudoQ = curar(parsed.quien_es);
+    const crudoC = curar(parsed.como_tratar);
+    // 🛡️ Fuera lo INVENTADO antes de decidir nada: los ejemplos del propio prompt devueltos
+    // como hechos, y los "hechos" de los que no hay ni rastro en lo que el cliente escribió.
+    const dicho = loQueDijoElCliente(thread);
+    const fQ = filtrarInventado(crudoQ, actual.quien_es ?? [], dicho, true);
+    const fC = filtrarInventado(crudoC, actual.como_tratar ?? [], dicho, false);
+    const quien_es = fQ.limpias, como_tratar = fC.limpias;
+    const tirado = [...fQ.descartadas, ...fC.descartadas];
+    if (tirado.length) { try { console.log("[memoria-ia] inventado, no se guarda:", tirado.join(" · ")); } catch (_) { /* noop */ } }
     // 🛡️ Anti-borrado POR CAPA: el modelo barato a veces re-emite UNA capa y olvida la
     // otra. Si una capa nueva viene VACÍA pero antes tenía contenido, se conserva la vieja
     // (antes solo se protegía el vaciado TOTAL de ambas → una capa se borraba sola).
-    const finalQ = (quien_es.length === 0 && (actual.quien_es?.length || 0) > 0) ? actual.quien_es : quien_es;
-    const finalC = (como_tratar.length === 0 && (actual.como_tratar?.length || 0) > 0) ? actual.como_tratar : como_tratar;
+    // Se mira el CRUDO, no lo filtrado: si el modelo sí respondió la capa y el filtro la
+    // vació entera, queda vacía a propósito — así se limpia solo un perfil ya contaminado.
+    const finalQ = (crudoQ.length === 0 && (actual.quien_es?.length || 0) > 0) ? actual.quien_es : quien_es;
+    const finalC = (crudoC.length === 0 && (actual.como_tratar?.length || 0) > 0) ? actual.como_tratar : como_tratar;
     // Sin cambio de contenido → no reescribe el perfil, pero SÍ bumpea el throttle.
     const igual = JSON.stringify({ q: finalQ, c: finalC }) ===
       JSON.stringify({ q: actual.quien_es, c: actual.como_tratar });
