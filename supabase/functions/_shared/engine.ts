@@ -3762,8 +3762,85 @@ function conCierrePendiente(texto: string, cta: string, yaLoNombra: RegExp): str
   if (yaLoNombra.test(sinFormato(t))) return texto;  // ya habla del pendiente
   return t + "\n\n" + cta;
 }
+// 🎈 LA PREGUNTA DE RELLENO. Con el adelanto pendiente, el cliente preguntó «¿y es bueno el
+// producto?» y el bot cerró con «¿Quieres que te cuente cómo aprovecharlo mejor?». No pide
+// nada, no avanza nada, y encima bloqueaba el empujón del pendiente —que se salta si el
+// mensaje ya trae una pregunta— con una pregunta que no era la que había que hacer. Se quita
+// para que en su lugar entre la que sí mueve la venta.
+const RE_PREGUNTA_RELLENO =
+  /\s*[¿]?\s*(?:te\s+)?(?:quieres|deseas|gustar[ií]a|te\s+gustar[ií]a|quieres\s+que)\b[^?¡!\n]{0,70}\b(?:cuente|cuento|explique|explico|mande|mando|env[ií]e|env[ií]o|comparta|comparto|d[ée]|doy|diga|digo|muestre|muestro)\b[^?\n]{0,40}\?/gi;
+function sinPreguntaDeRelleno(texto: string): string {
+  const t = String(texto ?? "");
+  RE_PREGUNTA_RELLENO.lastIndex = 0;
+  if (!RE_PREGUNTA_RELLENO.test(t)) return texto;
+  RE_PREGUNTA_RELLENO.lastIndex = 0;
+  const limpio = t.replace(RE_PREGUNTA_RELLENO, " ").replace(/[ \t]{2,}/g, " ").trim();
+  return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20 ? limpio : texto;
+}
+
+// 🪞 EL ECO. «🔧⚙️ Vivo en Tarapoto, perfecto para provincia: tu pedido llega por agencia
+// Shalom…» — el bot abrió repitiendo, en primera persona, la frase que acababa de escribir el
+// cliente. Queda como si hablara de sí mismo. Se corta cuando la primera frase del mensaje
+// está contenida, tal cual, en lo último que escribió el cliente.
+function sinEcoDelCliente(texto: string, lastInput: string): string {
+  const t = String(texto ?? "").trimStart();
+  const dijo = normalize(String(lastInput ?? ""));
+  if (!t || dijo.length < 10) return texto;
+  const partes = t.split(/(?<=[.!?…,:])\s+|\n+/).filter((p) => p.trim());
+  if (partes.length < 2) return texto;
+  // Sin emojis ni signos: se compara lo que se DICE, no cómo se adorna.
+  const cabeza = normalize(partes[0].replace(/[\p{S}\p{P}]/gu, " "));
+  // Piso de 10 letras: sin él, un «Hola» del bot contra un «hola» del cliente se borraría.
+  if (cabeza.replace(/\s/g, "").length < 10 || !dijo.includes(cabeza)) return texto;
+  const queda = partes.slice(1).join(" ").trim();
+  return queda.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20 ? queda : texto;
+}
 const RE_YA_PIDE_ADELANTO = /(adelanto|captura|comprobante|yape|plin|voucher|dep[oó]sito)/i;
 const RE_YA_PIDE_DATOS = /(nombre|apellido|celular|\bdni\b|datos)/i;
+
+// 📍 LA PREGUNTA QUE NADIE VA A ESPERAR. Salió en 6 de 10 simulaciones, siempre igual: el
+// cliente da su nombre, celular y DNI; la IA cierra con «¿cuál sede de Shalom te queda más
+// cerca?» y una lista de oficinas… y el flujo, que ya tiene todo lo que necesita, le manda
+// encima el mensaje del adelanto. La pregunta queda huérfana y el cliente lee dos cosas que
+// se pisan: elige una sede / paga ahora.
+// No es que el flujo esté mal: la decisión de Rodrigo es que con la CIUDAD basta, se marca la
+// sede para que un humano la confirme (`sede_por_confirmar`, que sí se está guardando bien) y
+// se sigue al adelanto. Lo que está mal es preguntar algo que ya se decidió no esperar. Misma
+// regla de siempre: si el motor decide NO hacer algo, la IA no lo promete ni lo pregunta.
+// Se corta desde la pregunta hasta el final; si con eso el mensaje se queda en nada, se
+// reemplaza por el acuse, porque lo que sigue —el adelanto— continúa la conversación igual.
+const RE_HABLA_DE_SEDE = /\b(sede|oficina|agencia)s?\b/i;
+const RE_PIDE_ELEGIR_SEDE =
+  /(cu[aá]l|qu[eé]|d[ií]nde|dime|ind[ií]came|elige|escoge|prefieres|te queda|m[aá]s cerca|eliges|elijas)/i;
+function sinPreguntarLaSede(texto: string, nombre = ""): string {
+  const t = String(texto ?? "");
+  if (!RE_HABLA_DE_SEDE.test(sinFormato(t)) || !/[?¿]/.test(t)) return texto;
+  const partes = t.split(/(?<=[.!?…])\s+|\n+/).filter((p) => p.trim());
+  // Desde dónde se corta: la primera parte que nombra la sede y suena a pedirle que elija.
+  let i = partes.findIndex((p) => {
+    const s = sinFormato(p);
+    return RE_HABLA_DE_SEDE.test(s) && RE_PIDE_ELEGIR_SEDE.test(s);
+  });
+  // Puede venir partida en dos frases («…tenemos varias sedes. ¿Cuál te queda más cerca?»):
+  // se corta desde la que nombra la sede, pero SOLO si la siguiente es la que pide elegir.
+  // 🔴 Antes se cortaba desde CUALQUIER frase que nombrara la sede, y eso se comió una
+  // respuesta legítima: al cliente que preguntó «¿a qué hora llega?» con el pedido ya creado
+  // le borró la respuesta entera y le contestó con el acuse. Cortar por nombrar algo, sin
+  // mirar si de verdad está preguntando, es cortar a ciegas.
+  if (i < 0) {
+    i = partes.findIndex((p, k) => RE_HABLA_DE_SEDE.test(sinFormato(p)) &&
+      k + 1 < partes.length && /[?¿]/.test(partes[k + 1]) &&
+      RE_PIDE_ELEGIR_SEDE.test(sinFormato(partes[k + 1])));
+  }
+  if (i < 0) return texto;
+  const queda = partes.slice(0, i).join(" ").trim();
+  const letras = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length;
+  if (letras(queda) >= 8) return queda;
+  // No quedó nada: el mensaje ENTERO era la pregunta. Se cambia por el acuse honesto —
+  // sus datos ya están, que es lo único que hay que confirmarle antes de pedirle el adelanto.
+  const _n = String(nombre ?? "").trim().split(/\s+/)[0] ?? "";
+  return `Listo${_n ? `, ${enTitulo(_n)}` : ""} ✅ Ya tengo tus datos.`;
+}
 
 // 🧾 El trámite inventado. En una venta digital no hay nada que pedirle —ni dirección, ni
 // DNI, ni talla—, pero el modelo, entrenado para cerrar pidiendo algo, se inventa el dato
@@ -3989,6 +4066,10 @@ const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   [/\bpara\s+despachar\s+(?:tu|el)\s+(pedido|paquete)(?![\p{L}\p{N}])/giu, "para mandarte el $1"],
   [/\bpara\s+despachar(?:lo|la|te)?(?![\p{L}\p{N}])/giu, "para mandártelo"],
   [/\bantes\s+de\s+despachar(?:lo|la)?(?![\p{L}\p{N}])/giu, "antes de mandártelo"],
+  // ⚠️ El PRONOMBRE va antes que el verbo suelto: «con un adelanto de S/ 20 lo despachamos»
+  // se convertía en «lo TE LO mandamos», que es lo que le llegó a un cliente en la tanda de
+  // simulaciones. El reemplazo ya trae su propio «lo», así que hay que comerse el del texto.
+  [/\b(?:te\s+)?(?:lo|la|los|las)\s+despachamos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
   [/\bdespachamos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
   [/\bdespacharemos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
   // ⚠️ El SUSTANTIVO va primero: si el verbo se evalúa antes, «el despacho» pasa por
@@ -4154,7 +4235,7 @@ const RE_MULETILLA_FIJA =
 // solo admitía espacios y marcas de cita, así que cualquier muletilla detrás de un emoji
 // —que es como escribe este modelo— no se tocaba nunca.
 const RE_MULETILLA_COLA =
-  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)|entiendo que (?:eres|est[aá]s|vienes)|seg[uú]n veo|(?:me\s+)?(?:dices|comentas|mencionas|indicas) que (?:eres|est[aá]s|vienes|me escribes|nos escribes))[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)|entiendo que (?:eres|est[aá]s|vienes)|seg[uú]n veo|(?:me\s+)?(?:dices|dijiste|comentas|comentaste|mencionas|mencionaste|indicas|indicaste) que (?:eres|est[aá]s|vienes|me escribes|nos escribes))[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
@@ -12726,6 +12807,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       } catch (_) { /* mejor no guardarla que guardar cualquier cosa */ }
     }
+    // 🗺️ NOMBRÓ UNA CIUDAD DE SU MISMO DEPARTAMENTO: esa manda. Medido en las simulaciones —
+    // preguntó «¿hacen envíos a Puno?» (se guardó ciudad = Puno) y al turno siguiente contestó
+    // «Juliaca». La ciudad NO se movió, porque «no se pisa lo ya capturado» y porque Puno
+    // tampoco es "solo un departamento": es departamento Y ciudad con oficinas propias, así
+    // que `esSoloDepartamento` decía false y el camino de rescate no corría. Resultado: el
+    // cliente pidió Juliaca y el pedido apuntaba a Puno, a 45 km, con la lista de oficinas de
+    // Puno debajo de un texto que decía «en Juliaca».
+    // Solo se pisa cuando el departamento de la ciudad NUEVA es exactamente la ciudad
+    // guardada: entonces lo viejo era el departamento, se llame como se llame. Un «mi hermano
+    // vive en Lima» no puede colarse por acá.
+    if (String(ctx.zona_entrega ?? "") === "provincia" && !String(ctx.pedido_creado ?? "").trim()) {
+      try {
+        const _ciuAnt = String(ctx.ciudad ?? "").trim();
+        const _cand = ciudadEnTexto(String(ctx.last_input ?? "")) ?? "";
+        if (_ciuAnt && _cand && limpiaZona(_cand) !== limpiaZona(_ciuAnt)) {
+          const _agsN2 = agenciasDeCiudad(_cand);
+          const _mismoDepto = _agsN2.some((a) => limpiaZona(a.d) === limpiaZona(_ciuAnt));
+          if (_agsN2.length && _mismoDepto) {
+            run.vars.ciudad = enTitulo(_cand); ctx.ciudad = enTitulo(_cand);
+            await setField(db, run.channel_id, run.contact_id, "ciudad", enTitulo(_cand));
+            // La sede vieja era el nombre del departamento; ya no vale para esta ciudad.
+            if (!agenciaExacta(String(ctx.sede ?? ""), enTitulo(_cand))) {
+              delete run.vars.sede; delete ctx.sede;
+              await setField(db, run.channel_id, run.contact_id, "sede", "");
+            }
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "🗺️ Precisó su ciudad",
+              `Tenía "${_ciuAnt}" (su departamento) y nombró "${enTitulo(_cand)}"`).catch(() => {});
+          }
+        }
+      } catch (_) { /* sin padrón legible → se queda la ciudad que había */ }
+    }
     // 🗑️ ¿Se arrepintió del extra justo al pedirle la talla? Quitarlo ANTES de reconciliar,
     // para no descontarle stock (ni cobrarle) algo que acaba de rechazar.
     await descartarExtraSiSeArrepiente(db, run, ctx).catch(() => null);
@@ -15564,7 +15676,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // pasó al taparlas de a una. Si el que pregunta por las oficinas es ÉL, van igual.
       const _yaEligioOp = !!String(ctx.opcion_id ?? "").trim();
       const _elPidioSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+      // 📍 …y NUNCA en el turno en que se crea el pedido: con los datos completos el flujo
+      // sigue al adelanto sin esperar, así que pegarle la lista de oficinas es darle a elegir
+      // algo que nadie va a leer. Salió en 6 de 10 simulaciones (ver sinPreguntarLaSede).
+      const _cerrandoPedido = String(ctx.datos_completos ?? "") === "si";
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
+          && !_cerrandoPedido
           && (_yaEligioOp || _elPidioSede)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
@@ -15616,6 +15733,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
+        // 🪞 Y fuera el eco: abrir repitiendo la frase del cliente («Vivo en Tarapoto…»).
+        salida = sinEcoDelCliente(salida, String(ctx.last_input ?? ""));
+        // 🎈 Y la pregunta de relleno, que no pide nada y le quitaba el sitio a la que sí.
+        salida = sinPreguntaDeRelleno(salida);
         // 🏷️ Y que la agencia salga CON NOMBRE, y que lo que se confirme sea la oficina.
         if (/\bagencia|\boficina/i.test(salida)) {
           try {
@@ -15636,6 +15757,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 🗣️ Y fuera la prueba social que el negocio no tiene («muchos clientes en Chiclayo ya
         // lo usan y quedan satisfechos»). Si la ficha SÍ la trae, se respeta.
         salida = sinPruebaSocialInventada(salida, String(ctx.contexto_producto ?? ""));
+        // 📍 Y fuera la pregunta por la sede cuando el pedido se cierra en este mismo turno:
+        // el flujo manda el adelanto encima y la pregunta queda huérfana. Solo si la sede no
+        // está resuelta de verdad; si él ya eligió una oficina real, no hay nada que quitar.
+        // ⚠️ Y SOLO en el turno en que el pedido se crea. Con el pedido ya creado el flujo no
+        // vuelve a mandar el mensaje del adelanto encima, así que ahí no hay nada que se pise
+        // y quitarle la sede al mensaje es puro destrozo: medido, al cliente que preguntó «¿a
+        // qué hora llega?» le borró la respuesta y le repitió «ya tengo tus datos».
+        if (String(ctx.datos_completos ?? "") === "si" && String(ctx.zona_entrega ?? "") === "provincia"
+            && String(ctx.pedido_creado ?? "") !== "si" && !(run.vars as any)?._order_id
+            && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
+          const _antesSede = salida;
+          salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""));
+          if (salida !== _antesSede) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se quitó la pregunta por la sede",
+              "El pedido se cierra en este turno y el flujo no iba a esperar la respuesta").catch(() => {});
+          }
+        }
         // ✅ Y si acaba de decir su departamento y se le está repreguntando la ciudad, primero
         // se le confirma que sí le llega, con la agencia nombrada.
         if (String(ctx.zona_entrega ?? "") === "provincia" && (run as any)?._zonaRecienTurno) {
@@ -15948,8 +16086,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _oid = (run.vars as any)?._order_id;
           let _estadoPed = "";
           if (_oid) {
-            const { data: _op } = await db.from("orders").select("status").eq("id", _oid).maybeSingle();
-            _estadoPed = String((_op as any)?.status ?? "");
+            // ⚠️ La columna es `estado`, NO `status`. Escrito mal, la consulta devolvía error,
+            // el try/catch se lo tragaba y el empujón del pendiente NO salía NUNCA. Lo cazó la
+            // tanda de simulaciones: con el adelanto pendiente, «¿a qué hora llega?» se
+            // contestó sin pedir nada, que es justo lo que este bloque venía a evitar.
+            const { data: _op } = await db.from("orders").select("estado").eq("id", _oid).maybeSingle();
+            _estadoPed = String((_op as any)?.estado ?? "");
           }
           const _sym = simboloMoneda(ctx.moneda as string);
           const _adel = Number(ctx.adelanto);
