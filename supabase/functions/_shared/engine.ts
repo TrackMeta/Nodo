@@ -6886,7 +6886,13 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
   const saldo = s.saldo != null && s.saldo !== "" ? Number(s.saldo) : null;
   if (total != null) {
     if (String(s.zona || "") !== "lima" && Number.isFinite(adel) && adel > 0 && saldo != null && saldo > 0) {
-      L.push(`💰 Total *${sym} ${total}* — adelanto ${sym} ${adel} · falta *${sym} ${saldo}* al recogerlo`);
+      // 🔴 «al recogerlo» NO. Nombra el momento del recojo y deja el pago DESPUÉS de recoger,
+      // que es justo el orden invertido: el saldo se paga a nosotros cuando el paquete llega
+      // a la agencia, y recién con ese pago se le pasa la clave. Y lo peor es dónde estaba:
+      // `sinPagarEnLaAgencia` corrige esta misma frase cuando la escribe la IA — pero el
+      // resumen lo escribe el MOTOR y no pasaba por ahí. La regla que más ha repetido Rodrigo,
+      // rota por el único texto que no se revisaba a sí mismo.
+      L.push(`💰 Total *${sym} ${total}* — adelanto ${sym} ${adel} · falta *${sym} ${saldo}* cuando llegue a la agencia`);
     } else {
       L.push(`💰 Total *${sym} ${total}*`);
     }
@@ -6898,7 +6904,11 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
   // Es de lo primero que el cliente quiere saber al cerrar, y no tenerlo le hace preguntar.
   const _cuando = String(cuando ?? "").trim();
   if (_cuando) L.push(`📅 Te llega *${_cuando}*`);
-  return L.join("\n");
+  // 🛡️ Y el resumen se somete a la MISMA red que el texto de la IA. No porque quede algo por
+  // corregir hoy —la línea del saldo ya se arregló arriba—, sino porque tener la regla del
+  // saldo solo en el camino de la IA es lo que dejó salir «al recogerlo» durante meses: dos
+  // caminos para lo mismo, y el que nadie revisaba era el del propio motor.
+  return sinPagarEnLaAgencia(L.join("\n"), String(s.zona || "") !== "lima");
 }
 export function mensajeEstadoDefault(
   estado: string, shipping: Record<string, any> | null, amount?: number | null, moneda?: string | null,
