@@ -687,7 +687,10 @@ function _deCiudadEstricto(ciudad: string): Agencia[] {
 // reparto propio) la lista de oficinas le salió "01 De Mayo, Almacenes Bsf, Ancón, Area
 // Shalom Empresas…". Se ocultan solo al OFRECER: si el cliente nombra una —porque Shalom se
 // la indicó— `sedeReconocida`/`candidatasAgencia` la siguen reconociendo igual.
-const NO_OFRECER = new Set(["area shalom empresas", "almacenes bsf"]);
+// «Caja Distribución Lima» salió ofrecida como sede de recojo a un cliente de Tingo María.
+// Es el centro de distribución, no un mostrador: nadie va ahí a recoger un paquete. Faltaba
+// en la lista desde el principio; se vio al auditar las ventas de los 25 departamentos.
+const NO_OFRECER = new Set(["area shalom empresas", "almacenes bsf", "caja distribucion lima"]);
 const _ofrecible = (a: Agencia) => !NO_OFRECER.has(_n(a.l));
 
 export function agenciasDeCiudad(ciudad: string): Agencia[] {
@@ -705,9 +708,23 @@ export function agenciasDeCiudad(ciudad: string): Agencia[] {
     // AEROPUERTO. El motor lo vio como sede única, la selló sola y le mandó la ficha del
     // aeropuerto, con tres oficinas de calle en su misma ciudad.
     // Se amplía al DISTRITO de las que calzaron, que es la ciudad de la que está hablando.
-    const _z = new Set(porNombre.map((a) => `${_n(a.t)}|${_n(a.p)}`));
-    const _ampl = AGENCIAS.filter((a) => _z.has(`${_n(a.t)}|${_n(a.p)}`) && _ofrecible(a));
-    return _ampl.length > porNombre.length ? _ampl : porNombre;
+    // ⚠️ Se amplía al distrito de UN solo grupo: el que más coincidencias tenga. Medido y
+    // caro: «Tingo María» calza dentro de TRES nombres —los dos de Tingo María y «LIMA AV
+    // TINGO MARÍA», una oficina limeña en una avenida que se llama así—, y ampliar a los
+    // distritos de las tres arrastraba medio Lima: al cliente de Huánuco se le ofrecieron
+    // siete oficinas, CINCO de ellas en Lima. El nombre de una calle no es una ciudad.
+    // Si hay empate no se amplía: entre dos sitios distintos, adivinar es mandarlo lejos.
+    const _grupos = new Map<string, Agencia[]>();
+    for (const a of porNombre) {
+      const k = `${_n(a.t)}|${_n(a.p)}|${_n(a.d)}`;
+      _grupos.set(k, [...(_grupos.get(k) ?? []), a]);
+    }
+    const _ord = [..._grupos.entries()].sort((x, y) => y[1].length - x[1].length);
+    if (_ord.length > 1 && _ord[0][1].length === _ord[1][1].length) return porNombre;
+    const [_t, _p, _d] = _ord[0][0].split("|");
+    const _ampl = AGENCIAS.filter((a) =>
+      _n(a.t) === _t && _n(a.p) === _p && _n(a.d) === _d && _ofrecible(a));
+    return _ampl.length > _ord[0][1].length ? _ampl : _ord[0][1];
   }
   // Y por ÚLTIMO, como SUENA: «mazuco» → MAZUKO (ver agenciasQueSuenanA).
   return agenciasQueSuenanA(ciudad);

@@ -14837,7 +14837,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const pendSede2 = (faltan as any[]).find((c: any) => String(c?.validar ?? "") === "sede");
       if (pendSede2 && String(ctx.ciudad ?? "").trim()) {
         const ciudadTxt = String(ctx.ciudad).trim();
-        const ags = [...new Set(candidatasAgencia(ciudadTxt))].slice(0, 8);
+        // 🔴 `candidatasAgencia` busca el nombre de la ciudad DENTRO del nombre de la oficina,
+        // sin mirar dónde queda: para «Tingo María» devolvía también «LIMA AV TINGO MARÍA»
+        // —una oficina limeña en una avenida que se llama así— y la IA se la ofrecía a un
+        // cliente de Huánuco. Se usa la misma función que pega el motor, que ya resuelve la
+        // ciudad de verdad y acota por cercanía.
+        const ags = [...new Set(agenciasParaOfrecer(ciudadTxt).map((a) => a.l))].slice(0, 8);
         if (ags.length) {
           L.push(`Oficinas Shalom en ${ciudadTxt} (lista real del courier): ${ags.join(" · ")}. ` +
             "Ofrécele ESAS para que elija una; nunca le pidas la dirección de la oficina —esa la sabemos " +
@@ -16020,8 +16025,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // machaque que ya nos costó con la pregunta de la cantidad. Se repite solo si es ÉL
           // quien vuelve a preguntar por las oficinas.
           if (_porDistrito && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
-            const _preg = `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos oficinas en varios distritos 👇\n` +
-              `${_dts.map((d) => bonito(d.t)).join(" · ")}\n\n¿En cuál estás? Así te digo la que te queda.`;
+            // 🎨 Uno por línea, con su pin y en negrita. Rodrigo: «tienen que estar de manera
+            // más bonita y ordenada y con negritas». En una sola línea separados por «·» se
+            // leen como un párrafo y el pulgar no los distingue; apilados se escanean. Van en
+            // el mismo orden que la lista de oficinas —el suyo primero y el resto por
+            // cercanía— y con el mismo 📍 que el resto de los bloques de sedes.
+            const _preg = `En *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* tenemos oficinas en estos distritos 👇\n\n` +
+              `${_dts.map((d) => `📍 *${bonito(d.t)}*`).join("\n")}\n\n¿En cuál estás? Así te digo la que te queda.`;
             const _antesD = salida;
             // `true`: acá ya sabemos que se habla de oficinas, aunque el texto no diga la palabra.
             const _sinIA0 = sinListaDeSedesDeLaIA(salida, true);
