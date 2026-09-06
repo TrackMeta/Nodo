@@ -12460,6 +12460,46 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }));
     const campos = [...(Array.isArray(cfg.campos) ? cfg.campos : []), ...attrCampos];
     if (campos.length) await extraerDatos(db, run, { ...cfg, campos }, ctx).catch(() => null);
+    // 🗺️ CONTESTÓ LA CIUDAD Y NO LA RECONOCIMOS: no se pierde. Medido en vivo — el bot le
+    // preguntó «¿de qué ciudad de Madre de Dios eres?», él contestó «mazuco» (con C, como
+    // suena) y el motor no reconoció nada: la ciudad se quedó en «Madre de Dios», o sea el
+    // departamento, y para el bot fue como si no hubiera contestado. Eso es lo más caro que
+    // puede pasar acá: el cliente hizo su parte y se la tiramos.
+    // Se guarda tal cual lo escribió. No reconocerlo no lo hace menos cierto: es su pueblo, y
+    // con eso el operador ya puede ubicarlo aunque el volcado de Shalom no lo tenga.
+    // Acotado a que la pregunta anterior FUERA por la ciudad y a que lo que dio parezca un
+    // nombre de sitio (corto, sin números, sin signos de pregunta).
+    if (String(ctx.zona_entrega ?? "") === "provincia" && esSoloDepartamento(String(ctx.ciudad ?? ""))) {
+      try {
+        const _li = String(ctx.last_input ?? "").trim();
+        const _pinta = _li.length >= 3 && _li.length <= 40 && !/[0-9?¿]/.test(_li) &&
+          _li.split(/\s+/).length <= 4;
+        if (_pinta) {
+          const { data: _ult } = await db.from("messages").select("content")
+            .eq("contact_id", run.contact_id).eq("direction", "out")
+            .order("ts", { ascending: false }).limit(1);
+          const _preg = String((_ult ?? [])[0]?.content?.text ?? "");
+          if (/\b(ciudad|distrito|pueblo)\b/i.test(_preg)) {
+            run.vars.ciudad = _li; ctx.ciudad = _li;
+            await setField(db, run.channel_id, run.contact_id, "ciudad", _li);
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "Ciudad guardada como la escribió",
+              `"${_li}" — no está en el volcado de Shalom, pero es lo que contestó`).catch(() => {});
+            // 🔤 Y con la ciudad ya puesta, se le busca la sede AHORA — incluido «como suena»
+            // («mazuco» → MAZUKO, ver agenciasQueSuenanA). Si se deja para el turno siguiente,
+            // el cliente contesta su pueblo y el bot le habla como si no supiera dónde está.
+            const _agsC = agenciasDeCiudad(_li);
+            if (_agsC.length === 1) {
+              run.vars.sede = _agsC[0].l; ctx.sede = _agsC[0].l;
+              await setField(db, run.channel_id, run.contact_id, "sede", _agsC[0].l);
+              (run.vars as any)._ficha_sede = slugAgencia(_agsC[0]);
+              (run.vars as any)._ficha_ahora = slugAgencia(_agsC[0]);
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
+                `${_agsC[0].l}: es la única que hay en ${_li}`).catch(() => {});
+            }
+          }
+        }
+      } catch (_) { /* mejor no guardarla que guardar cualquier cosa */ }
+    }
     // 🗑️ ¿Se arrepintió del extra justo al pedirle la talla? Quitarlo ANTES de reconciliar,
     // para no descontarle stock (ni cobrarle) algo que acaba de rechazar.
     await descartarExtraSiSeArrepiente(db, run, ctx).catch(() => null);
@@ -15065,6 +15105,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
         ? sinPreguntaFinal(String(result))
         : String(result);
+      // ✂️ El recorte de la PRESENTACIÓN REPETIDA va acá, sobre el texto TAL CUAL lo escribió
+      // el modelo — antes de que el motor le pegue la lista de precios, la de sedes o el
+      // bloque de entrega. Puesto más abajo miraba «párrafos» que en realidad eran bloques
+      // míos: medido en vivo, se llevó el único párrafo que había escrito la IA y al cliente
+      // le llegó una lista de precios pelada, sin una sola frase. Acá, si el modelo escribió
+      // un solo párrafo, no hay nada que recortar y no se toca.
+      if (op === "generar_texto" && !_turnoDeVenta) {
+        const _antesPres = salida;
+        salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""));
+        if (salida !== _antesPres) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
+            "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
+        }
+      }
       // El recorte de "¿te paso el Yape?" SOLO cuando los datos van a salir de verdad
       // (el cliente ya mostró intención). Sin intención, borrar la pregunta y no mandar
       // nada deja el mensaje colgado: mejor que la pregunta se quede y él conteste.
@@ -15258,16 +15312,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             salida = conAgenciaNombrada(salida, _nomA);
             salida = conSede(salida, _nomA);
           } catch (_) { /* sin courier configurado → se envía tal cual */ }
-        }
-        // ✂️ Y si este turno no era para vender, fuera la presentación repetida del producto
-        // (ver sinPresentacionRepetida: cinco reglas de prompt no lo lograron).
-        if (!_turnoDeVenta) {
-          const _antesPres = salida;
-          salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""));
-          if (salida !== _antesPres) {
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
-              "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
-          }
         }
         salida = sinDespachar(salida);
         salida = sinPagarEnLaAgencia(salida, String(ctx.zona_entrega ?? "") === "provincia");

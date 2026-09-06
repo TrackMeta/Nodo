@@ -696,7 +696,10 @@ export function agenciasDeCiudad(ciudad: string): Agencia[] {
   // Último intento: que la ciudad aparezca dentro del nombre de la agencia
   // ("HUANCAYO" → "HUANCAYO CO", "AEROPUERTO HUANCAYO").
   const c = _n(ciudad);
-  return c ? AGENCIAS.filter((a) => _n(a.l).includes(c) && _ofrecible(a)) : [];
+  const porNombre = c ? AGENCIAS.filter((a) => _n(a.l).includes(c) && _ofrecible(a)) : [];
+  if (porNombre.length) return porNombre;
+  // Y por ÚLTIMO, como SUENA: «mazuco» → MAZUKO (ver agenciasQueSuenanA).
+  return agenciasQueSuenanA(ciudad);
 }
 
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?
@@ -840,6 +843,30 @@ export function capitalizaNombresPropios(frase: string): string {
   return String(frase ?? "").replace(/\p{L}[\p{L}\p{N}]*/gu, (w) =>
     P.has(_n(w)) ? w.charAt(0).toUpperCase() + w.slice(1) : w
   );
+}
+
+// 🔤 CÓMO SE ESCRIBE vs CÓMO SUENA. La gente escribe el nombre de su pueblo como le suena:
+// «mazuco» por MAZUKO, «huaycan»/«guaycan», «pucalpa» por PUCALLPA. Medido en vivo: contestó
+// «mazuco» y el motor no reconoció NADA — ni la ciudad ni la sede—, así que perdió entero el
+// dato que acababa de dar. Perder lo que el cliente escribió es lo más caro que puede pasar
+// acá: contestó, y para el bot es como si no hubiera contestado.
+// Se comparan las confusiones reales del castellano peruano: c/k/qu, s/z/c, b/v, ll/y, la h
+// muda y las dobles. Es un ÚLTIMO recurso: primero se busca por el nombre exacto.
+function _fon(s: string): string {
+  return _n(s)
+    .replace(/[^A-Z0-9 ]+/g, "")
+    .replace(/QU/g, "K").replace(/C([EI])/g, "S$1").replace(/[CK]/g, "K")
+    .replace(/Z/g, "S").replace(/V/g, "B").replace(/LL/g, "Y").replace(/H/g, "")
+    .replace(/([A-Z])\1+/g, "$1")
+    .replace(/\s+/g, " ").trim();
+}
+// Las agencias cuyo NOMBRE suena como el texto. Solo se usa cuando la búsqueda exacta no
+// encontró nada, y solo con nombres de 4 letras o más: con menos, cualquier cosa "suena".
+export function agenciasQueSuenanA(texto: string): Agencia[] {
+  const f = _fon(texto);
+  if (f.replace(/[^A-Z0-9]/g, "").length < 4) return [];
+  return AGENCIAS.filter((a) => _ofrecible(a) &&
+    (_fon(a.l) === f || _fon(a.t) === f || _fon(a.p) === f));
 }
 
 export function esSoloDepartamento(nombre: string): boolean {
