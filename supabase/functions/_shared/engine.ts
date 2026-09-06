@@ -4290,7 +4290,7 @@ const RE_MULETILLA_FIJA =
 // solo admitía espacios y marcas de cita, así que cualquier muletilla detrás de un emoji
 // —que es como escribe este modelo— no se tocaba nunca.
 const RE_MULETILLA_COLA =
-  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?veo que|entiendo que|seg[uú]n veo|(?:que\s+)?(?:me\s+)?(?:dices|digas|dijiste|comentas|comentaste|mencionas|mencionaste|indicas|indicaste) que)\s+(?:eres|est[aá]s|vienes|escribes|nos escribes|me escribes|quieres|necesitas|buscas|llevas|prefieres|te interesa|vas a)[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?(?:veo|vi|not[oé]|veia|ve[ií]a) que|entiendo que|seg[uú]n veo|(?:que\s+)?(?:me\s+)?(?:dices|digas|dijiste|comentas|comentaste|mencionas|mencionaste|indicas|indicaste) que)\s+(?:eres|est[aá]s|vienes|escribes|nos escribes|me escribes|quieres|necesitas|buscas|llevas|prefieres|te interesa|vas a)[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
