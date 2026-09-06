@@ -4125,9 +4125,14 @@ function sinTerceraPersona(texto: string): string {
   for (const [re, a] of CAMBIOS_TERCERA) t = t.replace(re, a);
   return t;
 }
-function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null): string {
+// 💬 Devuelve el BLOQUE suelto, no el mensaje con el bloque encima. Rodrigo, leyendo la
+// corrida: «me parece que esto puede ir en otra burbuja». Y es que son dos cosas distintas
+// —cómo le llega, y lo que se le pide— pegadas en un solo párrafo: el que ya sabe cómo le
+// llega tiene que leerlo otra vez para encontrar qué le están pidiendo. Sale como burbuja
+// propia, delante del mensaje. Devuelve "" si no toca (o si el texto ya lo explica).
+function bloqueEnvioExplicado(texto: string, courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null): string {
   const t = String(texto ?? "").trimStart();
-  if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return texto;
+  if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return "";
   const quien = String(courier ?? "").trim() || "la agencia";
   // Quién paga el flete va acá, ANTES de que dé sus datos y de que mande el adelanto.
   // Es el momento honesto para decirlo: después ya es una sorpresa en el mostrador.
@@ -4135,7 +4140,9 @@ function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: 
     ? ", y el envío lo pagas ahí mismo al recogerlo"
     : modo === "suma"
     ? " — el envío ya va incluido en tu total"
-    : " — el envío corre por nuestra cuenta";
+    // Rodrigo: «se podría decir envío gratis». Es lo mismo dicho como se vende: «corre por
+    // nuestra cuenta» explica quién paga, «envío gratis» le dice lo que gana él.
+    : " — envío gratis";
   // 📍 «a tu ciudad» no le dice a dónde ir. Rodrigo, leyendo un chat suyo: «el cliente le dijo
   // a mazamari pero nunca le ayudó a ubicar su agencia». Cuando su ciudad tiene UNA sola
   // oficina el motor la sella solo y nadie se la nombra nunca — el cliente termina de dar sus
@@ -4152,7 +4159,7 @@ function conEnvioExplicado(texto: string, courier: string, modo: string, sede?: 
   const _donde = sede
     ? `a la sede *${bonito(sede.l)}* de *${quien}*${_pista ? `\n_${bonito(_pista, true)}_` : ""}`
     : `a tu ciudad por *agencia ${quien}*`;
-  return `📦 Te llega ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.\n\n` + t;
+  return `📦 Te llega ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.`;
 }
 // ✅ SÍ LLEGAMOS. Cuando el cliente dice su departamento y todavía falta su ciudad, el bot
 // contestaba solo con la repregunta: «😊🔧 Dime, ¿de qué ciudad o distrito de Madre de Dios
@@ -12905,7 +12912,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // La marca se consume acÃ¡: la pregunta sale en ESTE mensaje y en el siguiente turno
       // ya no toca â si no eligiÃ³, se sella la primera (ver arriba) y el tema se cierra.
       if (_tocaPreguntarCant) { delete (run.vars as any)._zona_recien; (run.vars as any)._cant_preguntada = 1; }
-      // 🔴 El post-proceso también mira `_zona_recien` (`conEnvioExplicado`), pero corre
+      // 🔴 El post-proceso también mira `_zona_recien` (`bloqueEnvioExplicado`), pero corre
       // DESPUÉS de este `delete`: esa mitad de la condición nunca llegaba a ser cierta. La
       // señal del turno se guarda en el `run`, que no se persiste.
       (run as any)._zonaRecienTurno = _tocaPreguntarCant || !!(run.vars as any)?._zona_recien;
@@ -15325,6 +15332,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // esta condición seguía activo DESPUÉS, y se comió la pregunta de la talla del extra
       // ("Perfecto, ¿qué talla prefieres, S o M?" quedó en un "Perfecto," suelto): ahí
       // preguntar es justo lo que toca, y el cliente recibió una frase cortada.
+      // 💬 La explicación del envío, si toca, va como burbuja SUYA delante del mensaje.
+      let _burbujaEnvio = "";
       let salida = (op === "generar_texto" && ctx.datos_completos === "si"
         && String(ctx.pedido_creado ?? "") !== "si"
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
@@ -15405,7 +15414,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _ent = await loadEntregas(db, run);
           const _cour = Object.keys((((_ent as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
           const _nom = _cour ? _cour.charAt(0).toUpperCase() + _cour.slice(1) : "";
-          const _antes = salida;
           // La oficina, si ya está resuelta: la que él eligió, o la única que hay en su
           // ciudad (que el motor sella solo y hasta ahora no le nombraba nadie).
           let _ofi = agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
@@ -15413,8 +15421,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _unicas = agenciasDeCiudad(String(ctx.ciudad ?? ""));
             if (_unicas.length === 1) _ofi = _unicas[0];
           }
-          salida = conEnvioExplicado(salida, _nom, modoEnvio(ctx), _ofi as any);
-          if (salida !== _antes) run.vars._envio_explicado = 1;
+          // No se pega arriba del mensaje: se guarda y sale como BURBUJA propia justo antes
+          // (ver `_burbujaEnvio`). Se pasa por las mismas dos redes que el texto de la IA
+          // —el saldo y «despachar»— porque al salir por su cuenta ya no las cruza.
+          const _bl = bloqueEnvioExplicado(salida, _nom, modoEnvio(ctx), _ofi as any);
+          if (_bl) {
+            _burbujaEnvio = sinDespachar(sinPagarEnLaAgencia(_bl, String(ctx.zona_entrega ?? "") === "provincia"));
+            run.vars._envio_explicado = 1;
+          }
         } catch (_) { /* sin config de courier → se envía tal cual */ }
       }
       // Prometió decir los precios y no dijo ninguno: se los pega el motor, con las cifras
@@ -15863,6 +15877,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (_emOn) {
         const _min = Math.max(1, Number(_est.emoji_min) || 1);
         salida = conEmojiMinimo(salida, ctx, _min);
+      }
+      // 📦 Cómo le llega, en su propia burbuja y ANTES del mensaje: primero cómo le llega,
+      // después lo que se le pide. Va por `emit` y no pegado al texto para que WhatsApp las
+      // muestre como dos mensajes, que es lo que pidió Rodrigo.
+      if (_burbujaEnvio) {
+        await emit(db, run, { text: _burbujaEnvio, _noTpl: true }, ctx).catch(() => {});
       }
       const handoff = await emitIaText(db, run, salida, ctx);
       // 🖼️ La FICHA de la sede, detrás del mensaje que la nombra. La marca la pone el
