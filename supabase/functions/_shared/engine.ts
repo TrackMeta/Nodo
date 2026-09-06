@@ -3964,31 +3964,32 @@ function sinPresentacionRepetida(texto: string, producto: string): string {
   const t = String(texto ?? "").trim();
   const prod = String(producto ?? "").trim();
   if (!t || prod.length < 4) return t;
-  const partes = t.split(/\n{2,}/);
-  const primera = partes[0] ?? "";
+  // Se prueba primero por PÁRRAFOS y, si el modelo escribió todo de corrido, por ORACIONES.
+  // Cortar por oración completa no parte nada —se quita una unidad entera, con su punto—, que
+  // es distinto de lo que salió mal con las muletillas: aquello recortaba a media frase.
+  const porParrafos = t.split(/\n{2,}/);
+  const porFrases = t.split(/(?<=[.!?…])\s+/);
+  const partes = porParrafos.length >= 2 ? porParrafos : porFrases;
   if (partes.length < 2) return t;
+  const primera = partes[0] ?? "";
   if (primera.length <= 100) return t;
   // Lo que protege un acuse es una cifra de PLATA o de CANTIDAD («Perfecto, 2 unidades por
-  // *S/ 109*»), no cualquier número: una descripción trae medidas («hasta 1.5 mm») y con el
-  // guard viejo eso bastaba para salvarla. Medido: el párrafo siguió saliendo por el «1.5».
+  // *S/ 109*»), no cualquier número: una descripción trae medidas («hasta 1.5 mm»).
   if (/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(primera)) return t;
-  // ¿Nombra el producto? Se compara sin negritas ni tildes, y basta con las dos primeras
-  // palabras del nombre («Adaptador Pro» dentro de «Adaptador PRO para Taladro — Cortador…»).
+  // ¿Nombra el producto? Basta con las dos primeras palabras del nombre.
   const clave = normalize(prod).split(/\s+/).slice(0, 2).join(" ");
   const nombraProducto = !!clave && normalize(primera).includes(clave);
-  // …o, aunque no lo nombre, HABLA DE OTRA COSA. En un turno de dato, el primer párrafo
-  // legítimo acusa lo que el cliente dio o encara el siguiente paso, así que menciona algo
-  // del hilo: su ciudad, la sede, el envío, el precio, los datos, la cantidad. Si no
-  // menciona NADA de eso y es largo, es la presentación del producto otra vez — con o sin
-  // el nombre. Medido: «Claro, este adaptador es original y diseñado para usarse con
-  // taladros compatibles…» a alguien que solo dijo de dónde era; no dice «Adaptador Pro»,
-  // así que el guard del nombre no lo veía.
+  // …o, aunque no lo nombre, HABLA DE OTRA COSA: en un turno de dato, lo primero legítimo
+  // acusa lo que el cliente dio o encara el siguiente paso, así que toca alguna de estas.
   const hilo = /\b(sede|sedes|agencia|env[ií]o|env[ií]os|adelanto|saldo|precio|precios|unidad|unidades|datos|nombre|dni|celular|direcci[oó]n|ciudad|distrito|pedido|clave|recog|recoj)/i;
   if (!nombraProducto && hilo.test(primera)) return t;
   if (!nombraProducto && primera.length <= 140) return t;
-  const resto = partes.slice(1).join("\n\n").trim();
+  const resto = partes.slice(1).join(porParrafos.length >= 2 ? "\n\n" : " ").trim();
   if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
-  return resto;
+  // Lo que queda arranca en minúscula si el modelo encadenó las frases: se le devuelve la
+  // mayúscula, saltando el signo de apertura.
+  const i = resto.search(/[\p{L}\p{N}]/u);
+  return i < 0 ? resto : resto.slice(0, i) + resto[i].toUpperCase() + resto.slice(i + 1);
 }
 // 🏷️ «LA AGENCIA» A SECAS, Y «TE CONFIRMO LA AGENCIA». Rodrigo: «en ningún momento mencionas
 // Shalom y el cliente se puede confundir; y no le digas te confirmo la agencia porque puede
