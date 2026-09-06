@@ -930,6 +930,17 @@ function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a
     return _no(`en ${_sinRuido(s) || s} hay ${_ciudadDicha.length} oficinas Shalom — confirma con él a cuál va`);
   }
   // Su texto apunta a una sola.
+  // ⛔ SI LO QUE DIO ES SU CIUDAD, una oficina que la lleve en el nombre NO la resuelve.
+  // Tercera vez que la misma trampa muerde por un camino distinto: el cliente dice «Puerto
+  // Maldonado» —su ciudad, no una oficina—, la única agencia con esas palabras en el nombre es
+  // AEROPUERTO PUERTO MALDONADO, y esta función la devolvía como "la que eligió". Con eso el
+  // motor daba la sede por resuelta, le mandaba la ficha del AEROPUERTO y encima se saltaba la
+  // lista, dejándolo sin ver sus tres oficinas de calle.
+  // `_ciudadDicha` ya cubre el caso legítimo: si su ciudad tiene UNA sola oficina, arriba se
+  // resolvió. Si llegó hasta acá diciendo su ciudad, es que hay varias o ninguna clara.
+  if (_n(s) === _n(ciudad) && !_ciudadDicha.length) {
+    return _no(`dijo su ciudad ("${s}"), no una oficina — confirma con él a cuál va`);
+  }
   if (cs.length === 1) return _si(deLaZona[0]);
   if (cs.length > 1) {
     return _no(`hay ${cs.length} oficinas Shalom que calzan con "${s}" — confirma la exacta`);

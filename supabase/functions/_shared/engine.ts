@@ -4457,7 +4457,13 @@ const RE_CLIENTE_PIDE_PRECIO =
 // te queda mejor?» — el cliente no vio ninguna. Las de arriba no lo pescaban porque miden
 // la distancia entre las palabras y ahí hay medio paréntesis en medio.
 const RE_PIDE_SEDE =
-  /\b(qu[eé]|cu[aá]l|cual)\b[^.!?\n]{0,40}\b(sede|oficina|agencia)\b|\b(sede|oficina)\b[^.!?\n]{0,30}\b(prefieres|eliges|recoges|recojes|te queda|vas a recoger|quieres)\b|\bme falta[^.!?\n]{0,30}\b(sede|agencia)\b|\b(sede|oficina)\b[^\n]{0,90}[?¿]|\b(sede|oficina) de (la|tu) agencia\b/i;
+  // 🔴 EL PLURAL. Buscaba `\bsede\b` y el modelo escribe «tienes varias SEDES»: con la "s" el
+  // límite de palabra falla y el patrón no casa. Consecuencia medida en la auditoría de los 25
+  // departamentos: en Juliaca, Tarapoto y Moquegua el bot dijo «tienes varias sedes, ¿cuál te
+  // queda más cerca?» y NO le mostró ninguna — le pidió elegir entre opciones invisibles, que
+  // es la peor forma de fallar. Es la misma piedra de siempre: escribí la forma que usaría yo
+  // (singular, formal) y el modelo usa la de verdad.
+  /\b(qu[eé]|cu[aá]l|cual)\b[^.!?\n]{0,40}\b(sedes?|oficinas?|agencias?)\b|\b(sedes?|oficinas?)\b[^.!?\n]{0,30}\b(prefieres|eliges|recoges|recojes|te queda|vas a recoger|quieres)\b|\bme falta[^.!?\n]{0,30}\b(sedes?|agencias?)\b|\b(sedes?|oficinas?)\b[^\n]{0,90}[?¿]|\b(sedes?|oficinas?) de (la|tu) agencia\b/i;
 
 // 😊 Garantiza que el mensaje no salga PELADO cuando el dueño pidió emojis. La regla del
 // prompt falló dos veces —moverla al final del prompt y repetir el conteo no alcanzó: los
@@ -4583,7 +4589,16 @@ function conAgencias(texto: string, lista: string, forzar = false): string {
   const t = String(texto ?? "");
   if (!lista || !(forzar || RE_PIDE_SEDE.test(t))) return t;
   // Si YA nombró alguna de las oficinas, la lista está puesta (o eligió una): no se duplica.
-  const nombres = lista.split("\n").map((l) => l.replace(/^\*|\*.*$/g, "").trim()).filter((x) => x.length > 3);
+  // 🔴 Solo las líneas que SON una oficina: las que abren con el nombre en negrita (con o sin
+  // 📍 delante). Antes se troceaban TODAS las líneas del bloque, así que el encabezado y —lo
+  // grave— la pregunta de cierre «¿Cuál te queda más cerca?» entraban como si fueran nombres
+  // de agencia. Y como la IA suele cerrar con esa misma frase, el guard la encontraba en el
+  // texto, daba por hecho que la lista ya estaba puesta y NO pegaba nada: al cliente de
+  // Ayacucho se le pidió elegir entre cinco sedes que nunca vio. Lo destapó un diagnóstico
+  // temporal, después de dos hipótesis mías que no cuadraban.
+  const nombres = lista.split("\n")
+    .map((l) => (/^[\s📍•·-]*\*([^*\n]{4,60})\*/.exec(l)?.[1] ?? "").trim())
+    .filter((x) => x.length > 3);
   const sinT = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (nombres.some((n) => sinT(t).includes(sinT(n)))) return t;
   return t.trimEnd() + "\n\n" + lista;
@@ -16073,7 +16088,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 "La escribió la IA con referencias inventadas; va la del motor").catch(() => {});
             }
             const _antes = salida;
-            salida = conAgencias(salida, `${_cab}\n${_lista}`, _elPidioSede || _sinIA.habia);
+            // Y se fuerza también cuando el mensaje HABLA de sedes y pregunta algo: a esta
+            // altura ya se decidió que tiene que elegir (el bloque solo corre si eligió
+            // presentación o preguntó por la oficina), así que hacer depender la lista de que
+            // el modelo use una palabra concreta es dejar la decisión en manos de su redacción.
+            salida = conAgencias(salida, `${_cab}\n${_lista}`,
+              _elPidioSede || _sinIA.habia ||
+              (RE_HABLA_DE_SEDE.test(sinFormato(salida)) && /[?¿]/.test(salida)));
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se le pegó la lista de agencias",
                 "Pidió la sede sin listarlas.").catch(() => {});
@@ -16157,6 +16178,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // una pregunta. Primero la plata; la sede la coordina un humano con la bandera que ya
         // se guarda. Con el corte afinado, la respuesta que venía antes de la pregunta se
         // conserva: se quita lo que pide elegir, no lo que contesta.
+        // 📍 Y al revés: si la sede YA está resuelta, la pregunta sobra. Medido en
+        // Huancavelica — el motor sello la oficina y le mando su ficha, y en la misma burbuja
+        // la IA dijo «tenemos varias sedes, ¿cuál te queda más cerca?». El cliente ve la foto
+        // de una sede y a la vez que le preguntan cuál quiere. Es la regla de siempre: lo que
+        // el motor ya decidió, la IA no lo pregunta.
+        if (String(ctx.zona_entrega ?? "") === "provincia"
+            && agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
+          const _antesYa = salida;
+          salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""));
+          if (salida !== _antesYa) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Preguntaba una sede ya resuelta",
+              `Ya estaba sellada: ${ctx.sede ?? ""}`).catch(() => {});
+          }
+        }
         const _pendAdel = String((run as any)?._estadoPedTurno ?? "") === "esperando_adelanto";
         if (String(ctx.zona_entrega ?? "") === "provincia"
             && (_pendAdel || (String(ctx.datos_completos ?? "") === "si"
