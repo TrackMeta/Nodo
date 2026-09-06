@@ -15,7 +15,7 @@ import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
-  esSoloDepartamento, provinciasDeDepartamento,
+  esSoloDepartamento,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
@@ -11287,6 +11287,25 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // (ver `_ficha_sede`). Acá solo se anota cuál es; la manda `crearPedido`, que es
             // el único sitio donde la sede ya quedó firme.
             if (c.clave === "sede") {
+              // 🗺️ …salvo que lo que dio sea su CIUDAD, no una sede. Pasa siempre que antes
+              // dijo el DEPARTAMENTO: el bot le pregunta «¿de qué ciudad eres?», él contesta
+              // «Mazuko», y como el campo pendiente era la sede, ahí se guardaba. Medido, y el
+              // encadenamiento fue feo: la ciudad seguía siendo «Madre de Dios», así que el bot
+              // volvió a ofrecerle provincias, y sobre una sede inexistente improvisó «Mazuko
+              // es un barrio, no una sede de Shalom» — le inventó una categoría a su propio
+              // pueblo y encima lo contradijo. Si la ciudad guardada es solo un departamento y
+              // lo que dio no es ninguna sede real, se mueve a `ciudad` y se vuelve a empezar.
+              const _esCiudadNoSede = esSoloDepartamento(String(ctx.ciudad ?? "")) &&
+                !agenciaExacta(val, String(ctx.ciudad ?? ""));
+              if (_esCiudadNoSede) {
+                run.vars.ciudad = val; ctx.ciudad = val;
+                delete run.vars.sede; delete ctx.sede;
+                await setField(db, run.channel_id, run.contact_id, "ciudad", val);
+                await setField(db, run.channel_id, run.contact_id, "sede", "");
+                await logEvent(db, run.channel_id, run.contact_id, "campo", "Era su ciudad, no una sede",
+                  `Antes había dado el departamento; "${String(val).slice(0, 40)}" se guardó como ciudad`).catch(() => {});
+                continue;
+              }
               const _ag = agenciaExacta(val, String(ctx.ciudad ?? ""));
               if (_ag) (run.vars as any)._ficha_sede = slugAgencia(_ag);
             }
@@ -13436,18 +13455,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // provincias donde SÍ hay, que es lo único que le acorta la búsqueda.
         const _esDepto = esSoloDepartamento(String(ctx.ciudad ?? ""));
         if (_esDepto) {
-          const _provs = provinciasDeDepartamento(String(ctx.ciudad ?? "")).map((p) => bonito(p));
           _sedeCiudad = "";
           L.push(`🗺️ Ojo: *${bonito(String(ctx.ciudad ?? "").toUpperCase())}* es el DEPARTAMENTO, no su ciudad, ` +
-            "y las oficinas de un mismo departamento pueden estar a horas unas de otras. ⛔ NO le listes ninguna " +
-            "todavía ni le confirmes una sede. Pregúntale de qué CIUDAD o distrito es" +
-            (_provs.length ? `; ahí tenemos oficinas por ${_provs.slice(0, 4).join(" y ")}` : "") +
-            ". Una línea, sin dramatizar, y sigue con el pedido: esto no lo detiene.\n" +
-            "🏷️ Al decírselo, nombra la agencia (es SIEMPRE la misma) y habla de la OFICINA, no de «la " +
-            "agencia»: «¿de qué ciudad eres? Así te digo qué oficina de Shalom te queda más cerca». Decirle " +
-            "«te confirmo la agencia» le hace pensar que trabajamos con varias y que todavía no sabemos con cuál.");
+            "y las sedes de un mismo departamento pueden estar a horas unas de otras. ⛔ NO le listes ninguna " +
+            "todavía, NO le nombres provincias y NO le confirmes una sede: lo único que necesitas es su " +
+            "CIUDAD o distrito. Pregúntaselo en una línea, sin dramatizar, y sigue con el pedido.\n" +
+            "🏷️ Nombra la agencia (es SIEMPRE la misma) y habla de la SEDE, no de «la agencia»: «¿de qué " +
+            "ciudad eres? Así te digo qué sede de Shalom te queda más cerca».\n" +
+            "⛔ Y cuando te diga su ciudad, JAMÁS la corrijas ni la clasifiques. Nada de «eso es un barrio», " +
+            "«eso no es una sede», «ahí no llegamos» ni «no existe». Medido: contestó «Mazuko» y le dijeron " +
+            "«Mazuko es un barrio, no una sede de Shalom» — le discutieron su propio pueblo. Si no reconoces " +
+            "el sitio, se lo dices así: que no tienes sede ahí mismo y le buscas la más cercana; si ni eso, " +
+            "que se la confirmas antes de mandárselo. Nunca lo hagas sentir que se equivocó.");
         }
-        if (!_esDepto && (_yaEligio || _preguntaSede)) try {
+        // 🏢 Excepción: si en su ciudad hay UNA SOLA sede, se le confirma aunque todavía no
+        // haya elegido cantidad. La regla de arriba existe para no hacerle ELEGIR sede antes
+        // de tiempo; confirmarle que sí tenemos sede en su pueblo no es un trámite, es la
+        // respuesta a «¿me llega?». Medido con Mazuko: hay sede al costado de su terminal y
+        // el bot no se lo dijo — se perdió el mejor argumento que tenía en ese momento.
+        const _unicaEnSuCiudad = !_esDepto && agenciasDeCiudad(String(ctx.ciudad ?? "")).length === 1;
+        if (!_esDepto && (_yaEligio || _preguntaSede || _unicaEnSuCiudad)) try {
           const _ags = agenciasDeCiudad(String(ctx.ciudad ?? ""));
           if (_ags.length) {
             // Los aeropuertos y terminales al final: son agencias de verdad, pero casi nadie
