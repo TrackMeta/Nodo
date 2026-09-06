@@ -3782,18 +3782,26 @@ function sinPreguntaDeRelleno(texto: string): string {
 // Shalom…» — el bot abrió repitiendo, en primera persona, la frase que acababa de escribir el
 // cliente. Queda como si hablara de sí mismo. Se corta cuando la primera frase del mensaje
 // está contenida, tal cual, en lo último que escribió el cliente.
+// ⚠️ Se corta POR POSICIÓN, no partiendo y volviendo a unir el mensaje: la primera versión
+// hacía split/join y le comía los saltos de línea a la lista de precios que el motor pega
+// debajo — el cliente recibió las tres presentaciones apelmazadas en un renglón. Es el mismo
+// error que ya cometí con `\s` en sinDespachar: lo que toca una frase no puede reescribir
+// todo el mensaje.
 function sinEcoDelCliente(texto: string, lastInput: string): string {
-  const t = String(texto ?? "").trimStart();
+  const t = String(texto ?? "");
   const dijo = normalize(String(lastInput ?? ""));
-  if (!t || dijo.length < 10) return texto;
-  const partes = t.split(/(?<=[.!?…,:])\s+|\n+/).filter((p) => p.trim());
-  if (partes.length < 2) return texto;
+  if (!t.trim() || dijo.length < 10) return texto;
+  const m = /^[\s\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*[^.!?…,:\n]{1,80}[.!?…,:]\s+/u.exec(t);
+  if (!m) return texto;
   // Sin emojis ni signos: se compara lo que se DICE, no cómo se adorna.
-  const cabeza = normalize(partes[0].replace(/[\p{S}\p{P}]/gu, " "));
+  const cabeza = normalize(m[0].replace(/[\p{S}\p{P}]/gu, " "));
   // Piso de 10 letras: sin él, un «Hola» del bot contra un «hola» del cliente se borraría.
   if (cabeza.replace(/\s/g, "").length < 10 || !dijo.includes(cabeza)) return texto;
-  const queda = partes.slice(1).join(" ").trim();
-  return queda.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20 ? queda : texto;
+  const queda = t.slice(m[0].length);
+  if (queda.replace(/[\s\p{P}\p{S}]/gu, "").length < 20) return texto;
+  // Lo que queda arranca en minúscula («te llega por agencia Shalom»): mayúscula de vuelta.
+  const i = queda.search(/[\p{L}\p{N}]/u);
+  return i < 0 ? queda : queda.slice(0, i) + queda[i].toUpperCase() + queda.slice(i + 1);
 }
 const RE_YA_PIDE_ADELANTO = /(adelanto|captura|comprobante|yape|plin|voucher|dep[oó]sito)/i;
 const RE_YA_PIDE_DATOS = /(nombre|apellido|celular|\bdni\b|datos)/i;
@@ -3810,11 +3818,51 @@ const RE_YA_PIDE_DATOS = /(nombre|apellido|celular|\bdni\b|datos)/i;
 // Se corta desde la pregunta hasta el final; si con eso el mensaje se queda en nada, se
 // reemplaza por el acuse, porque lo que sigue —el adelanto— continúa la conversación igual.
 const RE_HABLA_DE_SEDE = /\b(sede|oficina|agencia)s?\b/i;
+// ⚠️ Nada de «qué» ni «dónde» sueltos: «desde QUE sale» hacía que una frase que RESPONDÍA
+// («el paquete suele estar en la agencia de Cusco 1 a 2 días desde que sale») contara como
+// una que pregunta, y se cortaba la respuesta. Solo formas que de verdad piden elegir.
 const RE_PIDE_ELEGIR_SEDE =
-  /(cu[aá]l|qu[eé]|d[ií]nde|dime|ind[ií]came|elige|escoge|prefieres|te queda|m[aá]s cerca|eliges|elijas)/i;
+  /(cu[aá]l|d[ií]me|ind[ií]came|elige|escoge|eliges|elijas|prefieres|me confirmas|te queda m[aá]s cerca|te queda mejor|cu[aá]l te queda)/i;
+// 🏷️ LAS SEDES INVENTADAS. El defecto más caro de toda la tanda: el bot escribe nombres de
+// oficinas Shalom que NO EXISTEN. En Cusco listó «Santiago, Wanchaq, San Sebastián, San
+// Jerónimo» —distritos, no agencias— y en Chiclayo «Chiclayo Centro, José Leonardo Ortiz, La
+// Victoria, Pimentel…». El cliente viaja a una agencia que no existe con un paquete esperando
+// en otra. Y lo destapó un arreglo mío: al dejar de pegar la lista REAL en ese turno, el
+// modelo llenó el hueco con nombres inventados — la lista del motor era el antídoto.
+// Regla: los nombres de agencias los escribe el MOTOR. Si vienen en viñetas (que es como los
+// escribe el modelo; el motor usa otro formato) y no calzan con una oficina real de su
+// ciudad, se caen.
+function sinSedesInventadas(texto: string, ciudad: string): { texto: string; quitadas: string[] } {
+  const t = String(texto ?? "");
+  const quitadas: string[] = [];
+  if (!RE_HABLA_DE_SEDE.test(sinFormato(t))) return { texto, quitadas };
+  let reales: string[] = [];
+  try { reales = agenciasDeCiudad(String(ciudad ?? "")).map((a) => limpiaZona(a.l)).filter(Boolean); }
+  catch (_) { /* sin padrón legible → no se toca nada */ }
+  if (!reales.length) return { texto, quitadas };
+  const lineas = t.split("\n").filter((l) => {
+    const m = /^\s*[-•·]\s*\*?\s*(?:shalom\s+)?([^\n:*–—]{2,40}?)\s*\*?\s*$/i.exec(l);
+    if (!m) return true;
+    const n = limpiaZona(m[1]);
+    if (!n) return true;
+    const ok = reales.some((r) => r === n || r.includes(n) || n.includes(r));
+    if (!ok) quitadas.push(m[1].trim());
+    return ok;
+  });
+  if (!quitadas.length) return { texto, quitadas };
+  const limpio = lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  // Si al quitarlas no queda mensaje, se deja el original: que un humano lo vea en la Bandeja
+  // es mejor que mandar una burbuja vacía.
+  return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20
+    ? { texto: limpio, quitadas } : { texto, quitadas: [] };
+}
+
 function sinPreguntarLaSede(texto: string, nombre = ""): string {
   const t = String(texto ?? "");
-  if (!RE_HABLA_DE_SEDE.test(sinFormato(t)) || !/[?¿]/.test(t)) return texto;
+  // ⚠️ Sin exigir signo de pregunta: el modelo lo pide en imperativo («Ahora dime cuál sede de
+  // Shalom te queda más cerca»), sin «?», y así se colaba entero con su lista inventada
+  // debajo. Lo que identifica la pregunta es nombrar la sede Y pedir que elija, no el signo.
+  if (!RE_HABLA_DE_SEDE.test(sinFormato(t))) return texto;
   const partes = t.split(/(?<=[.!?…])\s+|\n+/).filter((p) => p.trim());
   // Desde dónde se corta: la primera parte que nombra la sede y suena a pedirle que elija.
   let i = partes.findIndex((p) => {
@@ -4066,6 +4114,11 @@ const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   [/\bpara\s+despachar\s+(?:tu|el)\s+(pedido|paquete)(?![\p{L}\p{N}])/giu, "para mandarte el $1"],
   [/\bpara\s+despachar(?:lo|la|te)?(?![\p{L}\p{N}])/giu, "para mandártelo"],
   [/\bantes\s+de\s+despachar(?:lo|la)?(?![\p{L}\p{N}])/giu, "antes de mandártelo"],
+  // «a 2 días después de DESPACHARLO» — la lista tenía «para despacharlo» y «antes de
+  // despacharlo», o sea las dos preposiciones que a uno se le ocurren redactando. Cualquier
+  // otra («después de», «al», «tras») dejaba pasar la palabra. El infinitivo suelto, al final
+  // de la lista para que las formas con preposición sigan ganando su redacción propia.
+  [/\bdespachar(?:lo|la|te|se)?(?![\p{L}\p{N}])/giu, "mandártelo"],
   // ⚠️ El PRONOMBRE va antes que el verbo suelto: «con un adelanto de S/ 20 lo despachamos»
   // se convertía en «lo TE LO mandamos», que es lo que le llegó a un cliente en la tanda de
   // simulaciones. El reemplazo ya trae su propio «lo», así que hay que comerse el del texto.
@@ -15725,6 +15778,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 🎨 Dos retoques de forma sobre lo que ya quedó escrito, los dos por reglas de prompt
       // que el modelo cumple a veces (ver cada función): las etiquetas de los 📌 con su
       // mayúscula, y las presentaciones desenrolladas si las encadenó en una sola línea.
+      // 📋 El estado del pedido, leído UNA vez y compartido: lo miran el recorte de la sede
+      // (más abajo) y el empujón del pendiente (al final). Se guarda en el `run`, que no se
+      // persiste, para no consultar dos veces lo mismo en el mismo turno.
+      if (op === "generar_texto" && (run.vars as any)?._order_id) {
+        try {
+          const { data: _opT } = await db.from("orders").select("estado")
+            .eq("id", (run.vars as any)._order_id).maybeSingle();
+          (run as any)._estadoPedTurno = String((_opT as any)?.estado ?? "");
+        } catch (_) { /* sin pedido legible → se sigue sin su estado */ }
+      }
       if (op === "generar_texto") {
         const _formAntes = salida;
         salida = pinesConMayuscula(salida);
@@ -15757,6 +15820,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 🗣️ Y fuera la prueba social que el negocio no tiene («muchos clientes en Chiclayo ya
         // lo usan y quedan satisfechos»). Si la ficha SÍ la trae, se respeta.
         salida = sinPruebaSocialInventada(salida, String(ctx.contexto_producto ?? ""));
+        // 🏷️ Y fuera las sedes que no existen. Va SIEMPRE, no solo al cerrar el pedido: el
+        // cliente que viaja a una agencia inventada pierde el día en cualquier turno.
+        if (String(ctx.zona_entrega ?? "") === "provincia") {
+          const _inv = sinSedesInventadas(salida, String(ctx.ciudad ?? ""));
+          if (_inv.quitadas.length) {
+            salida = _inv.texto;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Se inventó sedes de Shalom",
+              `No existen en ${ctx.ciudad ?? "su ciudad"}: ${_inv.quitadas.join(", ")}`.slice(0, 140)).catch(() => {});
+          }
+        }
         // 📍 Y fuera la pregunta por la sede cuando el pedido se cierra en este mismo turno:
         // el flujo manda el adelanto encima y la pregunta queda huérfana. Solo si la sede no
         // está resuelta de verdad; si él ya eligió una oficina real, no hay nada que quitar.
@@ -15764,8 +15837,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // vuelve a mandar el mensaje del adelanto encima, así que ahí no hay nada que se pise
         // y quitarle la sede al mensaje es puro destrozo: medido, al cliente que preguntó «¿a
         // qué hora llega?» le borró la respuesta y le repitió «ya tengo tus datos».
-        if (String(ctx.datos_completos ?? "") === "si" && String(ctx.zona_entrega ?? "") === "provincia"
-            && String(ctx.pedido_creado ?? "") !== "si" && !(run.vars as any)?._order_id
+        // Y también con el pedido YA creado y el adelanto sin pagar: ahí el bot se quedaba
+        // repreguntando la sede en cada mensaje —tres veces en una misma conversación— y con
+        // eso le quitaba el sitio al empujón del adelanto, que se salta si el mensaje ya trae
+        // una pregunta. Primero la plata; la sede la coordina un humano con la bandera que ya
+        // se guarda. Con el corte afinado, la respuesta que venía antes de la pregunta se
+        // conserva: se quita lo que pide elegir, no lo que contesta.
+        const _pendAdel = String((run as any)?._estadoPedTurno ?? "") === "esperando_adelanto";
+        if (String(ctx.zona_entrega ?? "") === "provincia"
+            && (_pendAdel || (String(ctx.datos_completos ?? "") === "si"
+                && String(ctx.pedido_creado ?? "") !== "si" && !(run.vars as any)?._order_id))
             && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
           const _antesSede = salida;
           salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""));
@@ -16084,15 +16165,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto") {
         try {
           const _oid = (run.vars as any)?._order_id;
-          let _estadoPed = "";
-          if (_oid) {
-            // ⚠️ La columna es `estado`, NO `status`. Escrito mal, la consulta devolvía error,
-            // el try/catch se lo tragaba y el empujón del pendiente NO salía NUNCA. Lo cazó la
-            // tanda de simulaciones: con el adelanto pendiente, «¿a qué hora llega?» se
-            // contestó sin pedir nada, que es justo lo que este bloque venía a evitar.
-            const { data: _op } = await db.from("orders").select("estado").eq("id", _oid).maybeSingle();
-            _estadoPed = String((_op as any)?.estado ?? "");
-          }
+          // Ya se leyó arriba, una sola vez por turno (`_estadoPedTurno`).
+          // ⚠️ La columna es `estado`, NO `status`. Escrito mal, la consulta devolvía error,
+          // el try/catch se lo tragaba y el empujón del pendiente NO salía NUNCA. Lo cazó la
+          // tanda de simulaciones: con el adelanto pendiente, «¿a qué hora llega?» se
+          // contestó sin pedir nada, que es justo lo que este bloque venía a evitar.
+          const _estadoPed = String((run as any)?._estadoPedTurno ?? "");
           const _sym = simboloMoneda(ctx.moneda as string);
           const _adel = Number(ctx.adelanto);
           if (_estadoPed === "esperando_adelanto" && Number.isFinite(_adel) && _adel > 0) {
