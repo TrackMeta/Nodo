@@ -697,7 +697,18 @@ export function agenciasDeCiudad(ciudad: string): Agencia[] {
   // ("HUANCAYO" → "HUANCAYO CO", "AEROPUERTO HUANCAYO").
   const c = _n(ciudad);
   const porNombre = c ? AGENCIAS.filter((a) => _n(a.l).includes(c) && _ofrecible(a)) : [];
-  if (porNombre.length) return porNombre;
+  if (porNombre.length) {
+    // 🛫 …pero si la ciudad solo aparece DENTRO del nombre de una oficina, esa oficina no es
+    // "la única de su ciudad": es la que lleva su nombre. Medido y de las caras: el cliente
+    // dijo «Puerto Maldonado» —cuyo distrito se llama TAMBOPATA, así que no calzaba por
+    // distrito ni provincia— y la única oficina con "Puerto Maldonado" en el nombre es el
+    // AEROPUERTO. El motor lo vio como sede única, la selló sola y le mandó la ficha del
+    // aeropuerto, con tres oficinas de calle en su misma ciudad.
+    // Se amplía al DISTRITO de las que calzaron, que es la ciudad de la que está hablando.
+    const _z = new Set(porNombre.map((a) => `${_n(a.t)}|${_n(a.p)}`));
+    const _ampl = AGENCIAS.filter((a) => _z.has(`${_n(a.t)}|${_n(a.p)}`) && _ofrecible(a));
+    return _ampl.length > porNombre.length ? _ampl : porNombre;
+  }
   // Y por ÚLTIMO, como SUENA: «mazuco» → MAZUKO (ver agenciasQueSuenanA).
   return agenciasQueSuenanA(ciudad);
 }
