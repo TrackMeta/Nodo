@@ -4029,14 +4029,20 @@ function conSede(texto: string, courier: string): string {
 // ⚠️ Solo al PRINCIPIO de una línea y solo la lista de abajo. «Antes de anotarte, ¿cuántos
 // llevas?» NO entra: esa la escribe el motor (preguntaCuantos) y ahí el "antes de anotarte"
 // sí dice algo — que lo va a apuntar.
-// 🔁 «Veo que eres de Madre de Dios, ¿en qué ciudad estás?» — Rodrigo: «no me gusta que le
-// diga "veo que eres de"». Es el mismo tic: repetirle lo que él acaba de escribir para
-// arrancar. Ya sabe de dónde es; lo que espera es la pregunta.
-const RE_MULETILLA =
-  /^[\s>*_]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme|(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)[^,.;:!?\n]{0,40}|entiendo que (?:eres|est[aá]s|vienes)[^,.;:!?\n]{0,40}|seg[uú]n veo[^,.;:!?\n]{0,40})[,;:]?\s+/i;
+//
+// 🔴 DOS familias, y la diferencia importa. Las FIJAS son literales y pueden cerrar en
+// cualquier espacio. Las que arrastran COLA LIBRE («veo que eres de Madre de Dios») tienen
+// que cerrar en un signo de puntuación SÍ O SÍ: con `[,;:]?\s+` el motor de regex retrocedía
+// hasta el último espacio que le calzara y partía la frase por la mitad. Medido en vivo, y
+// es el peor recorte posible: «Veo que eres de Madre de Dios. ¿Cuántas unidades…?» le llegó
+// al cliente como «Dios. ¿Cuántas unidades…?».
+const RE_MULETILLA_FIJA =
+  /^[\s>*_]*(?:antes de (?:avanzar|seguir|continuar|nada|proceder)|para (?:ayudarte|orientarte|asesorarte|atenderte|servirte|guiarte) mejor|para poder (?:ayudarte|orientarte|asesorarte)|para darte (?:la mejor|una mejor) (?:opci[oó]n|recomendaci[oó]n|alternativa)|para brindarte (?:la mejor|una mejor) (?:atenci[oó]n|experiencia)|con (?:mucho )?gusto te (?:cuento|explico|comento)|para no equivocarme)[,;:]?\s+/i;
+const RE_MULETILLA_COLA =
+  /^[\s>*_]*(?:(?:ya\s+)?veo que (?:eres|est[aá]s|vienes|escribes|nos escribes)|entiendo que (?:eres|est[aá]s|vienes)|seg[uú]n veo)[^,.;:!?\n]{0,40}[,;:.]\s+/i;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
-    const limpio = l.replace(RE_MULETILLA, "");
+    const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
     if (limpio === l) return l;
     // Lo que queda arranca en minúscula («¿cuántas unidades…»): se le devuelve la mayúscula,
     // saltando el signo de apertura. Y si al quitarla no queda nada, se deja la línea como
