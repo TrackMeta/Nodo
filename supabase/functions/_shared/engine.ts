@@ -3912,10 +3912,16 @@ const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   [/\bantes\s+de\s+despachar(?:lo|la)?(?![\p{L}\p{N}])/giu, "antes de mandártelo"],
   [/\bdespachamos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
   [/\bdespacharemos(?![\p{L}\p{N}])/giu, "te lo mandamos"],
-  [/\b(?:lo\s+)?despacho\s+(?:hoy|mañana)?\s*(?![\p{L}\p{N}])/giu, "te lo mando "],
+  // ⚠️ El SUSTANTIVO va primero: si el verbo se evalúa antes, «el despacho» pasa por
+  // «despacho» y queda «el te lo mando».
   [/\bel\s+despacho(?![\p{L}\p{N}])/giu, "el envío"],
+  // «desde que lo despacho.» — con punto detrás, el patrón viejo no casaba porque exigía un
+  // espacio y una palabra de tiempo. Se cubre el verbo suelto, que es como sale de verdad.
+  [/\b(?:lo\s+|la\s+)?despacho(?![\p{L}\p{N}])/giu, "te lo mando"],
   [/\bse\s+despacha(?![\p{L}\p{N}])/giu, "sale"],
 ];
+
+
 function sinDespachar(texto: string): string {
   let t = String(texto ?? "");
   for (const [re, a] of CAMBIOS_DESPACHO) t = t.replace(re, a);
@@ -11977,10 +11983,12 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       detalle: o.descripcion,
     })),
   });
-  if (!cls) return null;
+  // OJO: sin `cls` NO se sale â la red determinista de abajo tiene que correr igual.
+  // Si la llamada al clasificador falla (proveedor caÃ­do, sin crÃ©dito), un Â«quiero 2
+  // unidadesÂ» no puede quedar sin sellar: el cliente ya eligiÃ³.
   // Solo fijamos con confianza suficiente. Si duda, quien llama debe CONFIRMAR
   // con una pregunta: nunca adivinamos cuando hay dinero de por medio.
-  if (cls.clave && cls.confianza >= 0.7) {
+  if (cls && cls.clave && cls.confianza >= 0.7) {
     const op = list.find((o) => o.id === cls.clave);
     // Y que haya nombrado UNA sola. Medido: "¿cuál es la diferencia entre básica y
     // premium?" sellaba la Básica —el texto la menciona, así que el guard de abajo la
@@ -12014,6 +12022,29 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     await logEvent(db, run.channel_id, run.contact_id, "campo",
       cls.intencion === "cambiando" ? "Cambió de opción" : "Opción elegida",
       `${op?.nombre ?? cls.clave} (${Math.round(cls.confianza * 100)}%)`);
+  }
+  // 🔒 RED DETERMINISTA. Si el clasificador no sella —duda, o su llamada falló— pero el
+  // cliente nombró UNA sola presentación de forma inequívoca («quiero 2 unidades»), se sella
+  // igual. Medido: escribió exactamente eso y quedó `opcion_elegida` null; el bot le contestó
+  // «dime cuál prefieres», o sea le repreguntó lo que acababa de decir, que es de lo que más
+  // molesta. Un mensaje así no puede depender de que una llamada a la IA salga bien.
+  if (!String(ctx.opcion_id ?? "").trim()) {
+    const _fuertes = list.filter((o) => mencionaFuerte(texto2, o, list));
+    if (_fuertes.length === 1) {
+      const op2 = _fuertes[0];
+      run.vars.opcion_id = op2.id;
+      ctx.opcion_id = op2.id;
+      await setField(db, run.channel_id, run.contact_id, "opcion_id", op2.id);
+      await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op2.nombre);
+      ctx.opcion = op2.nombre;
+      ctx.cantidad = op2.cantidad ?? 1;
+      (ctx as any)._opcion = op2;
+      const { monto: _m2 } = await precioEsperado(db, run, ctx);
+      if (_m2 != null) { ctx.precio = _m2; ctx.precio_esperado = _m2; }
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "Opción sellada sin la IA",
+        `${op2.nombre} — la nombró él y el clasificador no la fijó`).catch(() => {});
+      return { ...(cls ?? {} as Clasificacion), clave: op2.id, confianza: 1, intencion: "eligiendo" };
+    }
   }
   return cls;
 }
@@ -12423,13 +12454,42 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // esto no fija nada. Refresca {{precio}} en el acto si eligió o cambió.
   if (op === "generar_texto" && ctx.last_input && cfg.detectar_opcion !== false) {
     await detectarOpcion(db, run, ctx, String(ctx.last_input)).catch(() => null);
+    // 🔢 Se le preguntó la cantidad en el turno de su ubicación y no la contestó: se sella la
+    // primera y se sigue. Regla de Rodrigo: si escribió, quiere el producto — por lo menos
+    // uno—, así que la cantidad no puede quedar como una pregunta abierta que reaparece en
+    // cada mensaje. Con la opción sellada, todo el aparato que la pregunta deja de aplicar y
+    // el tema desaparece solo. Si después dice «mejor 2», detectarOpcion lo reescribe: el
+    // total y el saldo se recalculan.
+    if ((run.vars as any)?._cant_preguntada && !String(ctx.opcion_id ?? "").trim() && ctx._product_id) {
+      try {
+        const _ops1 = await loadOpciones(db, run, String(ctx._product_id));
+        if (_ops1.length > 1) {
+          const _o1 = _ops1[0];
+          run.vars.opcion_id = _o1.id; ctx.opcion_id = _o1.id;
+          ctx.opcion = _o1.nombre; ctx.cantidad = _o1.cantidad ?? 1; (ctx as any)._opcion = _o1;
+          await setField(db, run.channel_id, run.contact_id, "opcion_id", _o1.id);
+          await setField(db, run.channel_id, run.contact_id, "opcion_elegida", _o1.nombre);
+          const { monto: _m1 } = await precioEsperado(db, run, ctx);
+          if (_m1 != null) { ctx.precio = _m1; ctx.precio_esperado = _m1; }
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación por defecto",
+            `${_o1.nombre} — se le preguntó al saber su zona y no eligió; puede subirla cuando quiera`).catch(() => {});
+        }
+      } catch (_) { /* sin opciones legibles → se sigue sin sellar */ }
+    }
   }
 
   // Físico: ¿mencionó a dónde lo quiere? Resuelve la zona contra la lista del
   // negocio y deja el veredicto (cubrimos / llega hoy / va por agencia) listo
   // para inyectárselo a la IA. La IA NO decide nada de esto: solo lo comunica.
   if (op === "generar_texto" && ctx.last_input && cfg.detectar_zona) {
+    // 🕒 ¿La zona se resolvió en ESTE turno? Es el momento —y el único— en que toca
+    // preguntarle la cantidad: ya sabemos cómo procede (provincia lleva adelanto, Lima es
+    // contraentrega) y él acaba de decirnos de dónde es. Regla de Rodrigo: «se le puede
+    // preguntar al momento de saber la ubicación, no tan tarde tampoco».
+    const _zonaAntes = String(ctx.zona_entrega ?? "").trim();
     await resolverZonaAccion(db, run, {}, ctx).catch(() => null);
+    const _zonaAhora = String(ctx.zona_entrega ?? "").trim();
+    if (_zonaAhora && _zonaAhora !== _zonaAntes) (run.vars as any)._zona_recien = 1;
   }
 
   // Vende Y recolecta a la vez: pesca del mensaje los datos que hagan falta,
@@ -12706,11 +12766,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const _hayQueVender = !_esLogistica &&
         (traePregunta(_li) || RE_TRAE_OBJECION.test(_li) || RE_CONDICION.test(_li) ||
         RE_CLIENTE_PIDE_PRECIO.test(_li) || /\b(sirve|funciona|vale la pena|conviene|diferencia|por qu[eé])\b/i.test(_li));
+      // 🛒 Y el que DICE QUE QUIERE COMPRAR es el turno más de venta que hay — por encima de
+      // todo lo anterior, incluso si suena a logística. Medido: escribió «quiero 2 unidades»
+      // y el motor lo clasificó como "solo está dando un dato", le recortó el mensaje y le
+      // contestó «dime cuál prefieres» — le repreguntó lo que acababa de decir, y encima al
+      // cliente más caliente de todos.
+      const _quiereComprar = RE_QUIERE_COMPRAR.test(_li) || RE_ANUNCIA_PAGO.test(_li);
       // 🔚 Se guarda para el FINAL: el prompt del propio flujo —el que dice «explica el valor»
       // y «habla en BENEFICIOS»— entra al final del system, y en un prompt lo ÚLTIMO pesa.
       // Puesta acá, noventa bloques antes, esta regla perdía siempre. Misma lección que el estilo.
-      _turnoDeVenta = _hayQueVender;
-      _bloqueTurno = (_hayQueVender
+      _turnoDeVenta = _hayQueVender || _quiereComprar;
+      _bloqueTurno = ((_hayQueVender || _quiereComprar)
         ? "## Este turno SÍ es para vender\nTe preguntó algo o puso un pero: acá sí desarrollas — el beneficio " +
           "que le toca a ÉL por lo que acaba de decir, con lo que tienes en la ficha. Igual, corto: lo que " +
           "responde su duda y nada más."
@@ -12719,6 +12785,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "«explicar el valor» o «hablar en beneficios» —no toca ahora—, y NO describas el producto: los " +
           "mensajes iniciales ya se lo contaron. Acusas lo que te dio, contestas si preguntó algo y das el " +
           "siguiente paso. Dos líneas.");
+    }
+    // 🔢 LA CANTIDAD SE PREGUNTA UNA VEZ, Y ES ACÁ. Regla de Rodrigo: lo que decide cómo
+    // procede la venta es la ZONA, no la cantidad — provincia lleva adelanto (S/ 20 del
+    // negocio, que no depende del pack) y Lima es contraentrega. Y si el cliente escribió,
+    // quiere el producto: por lo menos uno. Así que la cantidad deja de ser un peaje.
+    // Se le pregunta en el turno en que se resuelve su ubicación, que es cuando ya se le
+    // puede decir cómo le llega, y NO se vuelve a tocar. Antes salía de cuatro sitios
+    // distintos y el cliente la leía en cada mensaje.
+    if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()) {
+      const _tocaPreguntarCant = !!(run.vars as any)?._zona_recien;
+      // La marca se consume acÃ¡: la pregunta sale en ESTE mensaje y en el siguiente turno
+      // ya no toca â si no eligiÃ³, se sella la primera (ver arriba) y el tema se cierra.
+      if (_tocaPreguntarCant) { delete (run.vars as any)._zona_recien; (run.vars as any)._cant_preguntada = 1; }
+      parts.push(_tocaPreguntarCant
+        ? "## Este mensaje lleva DOS cosas, y solo dos\nAcaba de decirte de dónde escribe, así que:\n" +
+          "  1️⃣ Dile CÓMO le llega, en una línea. Si es provincia: que va por agencia y lleva un " +
+          "adelanto para mandárselo. Si es Lima: que paga al recibirlo.\n" +
+          "  2️⃣ Y pregúntale cuántas unidades quiere. Una línea también.\n" +
+          "La lista con los precios se pega sola debajo; tú NO la escribas. Nada más en este mensaje."
+        : "## NO le preguntes la cantidad en este mensaje\nTodavía no eligió cuántas unidades, y está bien: " +
+          "no es un peaje. ⛔ No se lo preguntes ahora ni cierres con «¿cuántas unidades?» — ya se le " +
+          "preguntó o se le va a preguntar en el momento que toca. Sigue con lo que estabas: contestarle, " +
+          "pedirle lo que falte, avanzar. Si él dice una cantidad por su cuenta, la tomas y listo.");
     }
     parts.push("## Escribe CORTO — máximo 300 caracteres\n" +
       "Esto es WhatsApp, no un correo. TU parte del mensaje no pasa de **300 caracteres**: le contestas lo " +
@@ -15174,7 +15263,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // mensaje de 675 caracteres —bloque de entrega + párrafo del producto + el envío otra
       // vez en palabras de la IA + la lista de precios— para contestar de dónde escribe.
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
-          && String(ctx.opcion_id ?? "").trim()
+          && (String(ctx.opcion_id ?? "").trim() || (run.vars as any)?._zona_recien)
           && !run.vars._envio_explicado && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
           const _ent = await loadEntregas(db, run);
@@ -15360,24 +15449,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               ctx.cantidad = oq.cantidad ?? 1; (ctx as any)._opcion = oq;
               await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación sellada por su mensaje",
                 oq.nombre + " (ya la había dicho: \"" + String(ctx.last_input ?? "").slice(0, 40) + "\")").catch(() => {});
-            } else if (!run.vars._preg_pres) {
-              run.vars._preg_pres = 1;
-              // Lo que la IA escribió ANTES de ponerse a pedir datos es la respuesta a lo que
-              // el cliente preguntó, y se perdía ENTERA: la lista de opciones reemplazaba el
-              // mensaje completo. Medido: escribió «A. Mazamari» / «Ase. Envios» —o sea, si
-              // le llega a Mazamari— y lo único que recibió fue la lista de precios.
-              // Se conserva solo la parte informativa (sin signo de pregunta): así no salen
-              // dos preguntas distintas en la misma burbuja.
-              const _lin = salida.split("\n");
-              const _cor = _lin.findIndex((l) => RE_PIDE_SUS_DATOS.test(sinFormato(l)));
-              const _resp = (_cor > 0 ? _lin.slice(0, _cor).join("\n") : "").trim();
-              const _guardo = _resp && !_resp.includes("?") ? _resp : "";
-              if (_resp && !_guardo) {
-                await logEvent(db, run.channel_id, run.contact_id, "nota", "🗑️ Se descartó lo que había escrito",
-                  "Iba a pedir datos sin saber la cantidad; su respuesta traía otra pregunta y no se pudo conservar.").catch(() => {});
-              }
-              salida = (_guardo ? _guardo + "\n\n" : "") + preguntaCuantos(opsPend, ctx, _negOn);
             } else {
+              // 🔓 YA NO SE LE CORTA EL MENSAJE. Antes, si la IA pasaba a pedirle sus datos
+              // sin cantidad, el motor le reemplazaba el mensaje entero por la lista de
+              // presentaciones: un peaje. Regla de Rodrigo: si escribió, quiere el producto —
+              // por lo menos uno—, así que se sella la primera y la venta sigue. La cantidad
+              // ya se le preguntó en su momento (al resolverse la zona) y él puede subirla
+              // cuando quiera: decir «mejor 2» reescribe el pedido, el total y el saldo.
               const op0 = opsPend[0];
               await setField(db, run.channel_id, run.contact_id, "opcion_id", op0.id);
               await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op0.nombre);
