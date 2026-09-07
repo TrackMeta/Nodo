@@ -3903,6 +3903,14 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   const ciudad = String(ctx.ciudad ?? "").trim();
   if (!ciudad) return null;
   const CAB = `En *${bonito(ciudad.toUpperCase())}*`;
+  const _pidio = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+  // 🔁 La lista de oficinas va UNA vez. Medido en una conversación de cuatro turnos: las 7 de
+  // Tarapoto se pegaron en tres mensajes seguidos —incluso debajo de «pásame tus datos»—,
+  // que es exactamente el machaque que ya nos costó con la pregunta del distrito. Aquella
+  // tenía freno (`_distrito_preguntado`) y esta no: con dos turnos por caso, la tanda de las
+  // 116 provincias no podía verlo. La lista sirve para ELEGIR; repetirla en cada mensaje es
+  // ruido que además empuja hacia abajo lo que sí hay que leer. Si vuelve a preguntar ÉL, va.
+  const _yaSeLasPase = !!(run.vars as any)?._sedes_mostradas;
 
   // 1) Contestó el distrito y ahí hay varias: se le muestran ESAS, no las de la ciudad.
   //    Va primero porque a esta altura ya no queda nada que preguntarle: solo que elija
@@ -3944,6 +3952,8 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   //    y se llevaba un paso extra teniendo 7 oficinas de calle. Rodrigo: «Pucallpa tiene menos
   //    de 8 sedes creo». Tenía razón en lo que importa, aunque en la lista figuren 8.
   if (_ags.filter((a) => !_rezagadaAg(a)).length < 8) {
+    if (_yaSeLasPase && !_pidio) return null;
+    (run.vars as any)._sedes_mostradas = 1;
     return { texto: listaSedes(_cab, _ags, 99, "¿Cuál te queda más cerca?"), cat: "campo",
       ev: "📍 Se le pasaron todas", det: `${_ags.length} agencias en ${ciudad} — pocas, van todas con su referencia` };
   }
@@ -3957,8 +3967,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   // 🔁 Y UNA sola vez: en Trujillo la lista de distritos se pegó en tres mensajes seguidos,
   //    incluso debajo de «pásame tus datos». Si el que vuelve a preguntar es ÉL, se repite.
   const _dts = (_prop.length && !esSoloDepartamento(ciudad)) ? distritosConOficina(ciudad) : [];
-  const _elPidioSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
-  if (_dts.length >= 2 && (_elPidioSede || !(run.vars as any)?._distrito_preguntado)) {
+  if (_dts.length >= 2 && (_pidio || !(run.vars as any)?._distrito_preguntado)) {
     (run.vars as any)._distrito_preguntado = 1;
     // Con más de 12 distritos (Lima 35, Arequipa 13) listarlos es tan largo como listar las
     // oficinas y no ahorra nada; pero la pregunta sigue sirviendo, porque él SÍ sabe su
@@ -3982,11 +3991,31 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   //    Única rama que no se pega a ciegas — ver `auto` donde se llama.
   //    Cierra con la misma pregunta que las otras tres: era la única que terminaba en seco
   //    después de ocho direcciones, y se leía como si el mensaje se hubiera cortado.
+  if (_yaSeLasPase && !_pidio) return null;
+  (run.vars as any)._sedes_mostradas = 1;
   return { texto: listaSedes(_cab, _ags, 8, "¿Cuál te queda más cerca?"), cat: "nota", auto: _ags,
     ev: "📍 Se le pegó la lista de agencias", det: "Pidió la sede sin listarlas." };
 }
 
-function sinPreguntarLaSede(texto: string, nombre = ""): string {
+// 🔢 Le quita a la IA la petición de datos, sin llevarse el resto del mensaje. Se usa cuando
+// pasa a pedirlos sin que el cliente haya dicho cuántas unidades lleva: lo que corresponde
+// ahí es preguntarle la cantidad, no anotarlo. Corta por frases —igual que sinPreguntarLaSede,
+// que es el mismo problema— para no dejar media oración colgando ni borrar la parte del
+// mensaje que sí vendía. Si lo que queda no llega a frase, se devuelve vacío y el llamador
+// se queda solo con la pregunta.
+function sinPedirLosDatos(texto: string): string {
+  const t = String(texto ?? "");
+  if (!RE_PIDE_SUS_DATOS.test(sinFormato(t))) return t;
+  const partes = t.split(/(?<=[.!?…])\s+|\n+/).filter((p) => p.trim());
+  const i = partes.findIndex((p) => RE_PIDE_SUS_DATOS.test(sinFormato(p)));
+  if (i < 0) return t;
+  const queda = partes.slice(0, i).join(" ").trim();
+  // El mismo umbral que usa el guard de la sede: por debajo de 8 letras no es una frase,
+  // es un resto ("Perfecto,") que se lee peor que no poner nada.
+  return queda.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8 ? queda : "";
+}
+
+function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): string {
   const t = String(texto ?? "");
   // ⚠️ Sin exigir signo de pregunta: el modelo lo pide en imperativo («Ahora dime cuál sede de
   // Shalom te queda más cerca»), sin «?», y así se colaba entero con su lista inventada
@@ -4013,10 +4042,18 @@ function sinPreguntarLaSede(texto: string, nombre = ""): string {
   const queda = partes.slice(0, i).join(" ").trim();
   const letras = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length;
   if (letras(queda) >= 8) return queda;
-  // No quedó nada: el mensaje ENTERO era la pregunta. Se cambia por el acuse honesto —
-  // sus datos ya están, que es lo único que hay que confirmarle antes de pedirle el adelanto.
+  // No quedó nada: el mensaje ENTERO era la pregunta, así que hay que escribir el reemplazo.
+  // 🔴 Y NO se le puede decir «ya tengo tus datos» a quien no ha dado ninguno. Medido en la
+  // auditoría de las 116 provincias: un cliente que solo había dicho de dónde era —sin
+  // nombre, sin DNI, sin celular, datos_completos="no"— recibió «Listo ✅ Ya tengo tus
+  // datos». Es la misma familia que el motor calla y la IA promete, pero acá el que promete
+  // es el motor: la frase estaba escrita para el caso en que los datos SÍ están, que es el
+  // único que se tuvo en la cabeza al escribirla. Si no están, se le piden.
   const _n = String(nombre ?? "").trim().split(/\s+/)[0] ?? "";
-  return `Listo${_n ? `, ${enTitulo(_n)}` : ""} ✅ Ya tengo tus datos.`;
+  const _hola = `Listo${_n ? `, ${enTitulo(_n)}` : ""}`;
+  return tieneDatos
+    ? `${_hola} ✅ Ya tengo tus datos.`
+    : `${_hola} ✅ Para dejarlo listo, pásame tu *nombre completo*, tu *DNI* y tu *celular* 📝`;
 }
 
 // 🧾 El trámite inventado. En una venta digital no hay nada que pedirle —ni dirección, ni
@@ -16248,7 +16285,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (String(ctx.zona_entrega ?? "") === "provincia"
             && agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
           const _antesYa = salida;
-          salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""));
+          salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""), String(ctx.datos_completos ?? "") === "si");
           if (salida !== _antesYa) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Preguntaba una sede ya resuelta",
               `Ya estaba sellada: ${ctx.sede ?? ""}`).catch(() => {});
@@ -16260,7 +16297,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 && String(ctx.pedido_creado ?? "") !== "si" && !(run.vars as any)?._order_id))
             && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
           const _antesSede = salida;
-          salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""));
+          salida = sinPreguntarLaSede(salida, String(ctx.nombre_completo ?? ctx.cliente ?? ""), String(ctx.datos_completos ?? "") === "si");
           if (salida !== _antesSede) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se quitó la pregunta por la sede",
               "El pedido se cierra en este turno y el flujo no iba a esperar la respuesta").catch(() => {});
@@ -16327,20 +16364,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación sellada por su mensaje",
                 oq.nombre + " (ya la había dicho: \"" + String(ctx.last_input ?? "").slice(0, 40) + "\")").catch(() => {});
             } else {
-              // 🔓 YA NO SE LE CORTA EL MENSAJE. Antes, si la IA pasaba a pedirle sus datos
-              // sin cantidad, el motor le reemplazaba el mensaje entero por la lista de
-              // presentaciones: un peaje. Regla de Rodrigo: si escribió, quiere el producto —
-              // por lo menos uno—, así que se sella la primera y la venta sigue. La cantidad
-              // ya se le preguntó en su momento (al resolverse la zona) y él puede subirla
-              // cuando quiera: decir «mejor 2» reescribe el pedido, el total y el saldo.
-              const op0 = opsPend[0];
-              await setField(db, run.channel_id, run.contact_id, "opcion_id", op0.id);
-              await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op0.nombre);
-              run.vars.opcion_id = op0.id;
-              ctx.opcion_id = op0.id; ctx.opcion = op0.nombre;
-              ctx.cantidad = op0.cantidad ?? 1; (ctx as any)._opcion = op0;
-              await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación por defecto",
-                `${op0.nombre} (no eligió tras preguntarle)`).catch(() => {});
+              // 🔴 ACÁ NO SE SELLA NADA. Este era el SEGUNDO sitio que asumía «1 unidad» cuando
+              // el cliente no contestaba la cantidad; el otro (en detectarOpcion) se quitó
+              // hace días y este sobrevivió con una regla vieja escrita en el comentario. Es
+              // el mismo patrón de siempre —dos caminos para lo mismo, se arregla uno y el
+              // otro sigue—, y salió en la auditoría de las 116 provincias, no en una prueba
+              // suelta. Regla de Rodrigo, dicha dos veces: «si quiero que el cliente confirme
+              // cuántas unidades quiere, no quiero que si no responde le asumas solo 1».
+              // Asumir la más barata cierra la venta por él, y encima por el monto más bajo.
+              //
+              // Lo que corresponde es preguntarle la cantidad en vez de anotarlo. Se le quita
+              // SOLO la petición de datos —no el mensaje entero, que eso ya se probó y era un
+              // peaje— y debajo va la pregunta con sus presentaciones.
+              const _antesQ = salida;
+              const _resto = sinPedirLosDatos(salida);
+              // `_negOn`: la perilla de negritas del dueño, ya leída arriba de este mismo
+              // nodo. Volver a sacarla de `cfg` sería una segunda fuente para lo mismo, que
+              // es como las negritas dejaron de salir la vez pasada (form vs compilado).
+              const _preg = preguntaCuantos(opsPend, ctx, _negOn);
+              salida = _resto ? `${_resto.trimEnd()}\n\n${_preg}` : _preg;
+              if (salida !== _antesQ) {
+                await logEvent(db, run.channel_id, run.contact_id, "campo", "Pidió datos sin saber la cantidad",
+                  "Se cambió por la pregunta de la cantidad; no se asume ninguna presentación").catch(() => {});
+              }
             }
           }
         } catch (_) { /* si no se pueden leer las opciones, se envía tal cual */ }

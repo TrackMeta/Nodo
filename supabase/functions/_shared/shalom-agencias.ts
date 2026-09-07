@@ -628,6 +628,21 @@ const _n = (s: string) =>
   String(s ?? "").toUpperCase().normalize("NFD")
     .replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9]+/g, " ").trim();
 
+// 🗺️ Shalom escribe el alias del distrito entre paréntesis —«YAURI ( ESPINAR )»— porque el
+// pueblo se conoce por los dos nombres. Normalizado queda "YAURI ESPINAR", que no casa con
+// ninguno de los dos sueltos: el cliente que escribe «soy de Yauri» se quedaba sin que le
+// nombraran su oficina (medido en la auditoría de las 116 provincias; la pasada anterior no
+// lo vio porque el banco de pruebas usaba «Espinar», el nombre que sí funcionaba). Cada
+// nombre —el de fuera y el de dentro del paréntesis— vale por sí solo.
+// Se usa donde se compara contra lo que ESCRIBIÓ EL CLIENTE, no donde se agrupa por distrito:
+// ahí la clave tiene que seguir siendo una sola o los grupos se parten.
+const _dists = (t: string): string[] => {
+  const m = String(t ?? "").match(/^([^(]+)\(([^)]*)\)\s*$/);
+  if (!m) return [_n(t)];
+  return [...new Set([_n(t), _n(m[1]), _n(m[2])])].filter(Boolean);
+};
+const _esDist = (a: { t: string }, c: string) => _dists(a.t).includes(c);
+
 // Las agencias que el texto puede estar nombrando. Compara contra el NOMBRE de
 // la agencia, no contra su ciudad: "miraflores chiclayo" identifica una oficina,
 // "chiclayo" no (ver agenciasDeCiudad).
@@ -656,6 +671,26 @@ const RUIDO_UBIC =
   /\b(LA|EL|LOS|LAS|UN|UNA|DE|DEL|EN|QUE|ESTA|QUEDA|POR|AHI|ALLA|MI|SU|NOMAS|SEDE|SEDES|OFICINA|OFICINAS|AGENCIA|AGENCIAS|SHALOM|SUCURSAL|LOCAL|TIENDA|PUNTO|CIUDAD)\b/g;
 const _sinRuido = (s: string) => _n(s).replace(RUIDO_UBIC, " ").replace(/\s+/g, " ").trim();
 
+// 🔤 «de» es RUIDO en «la agencia de Chiclayo» y es PARTE DEL NOMBRE en «San Vicente de
+// Cañete». _sinRuido lo borra siempre, así que al padrón —que guarda el nombre completo— se
+// le preguntaba por «SAN VICENTE CANETE» y no encontraba nada: el cliente se quedaba sin que
+// le nombraran una sola oficina. Son 198 de los 1733 distritos del Perú, uno de cada nueve.
+// El `|| _n(ciudad)` que había parecía cubrirlo, pero solo salta cuando la limpieza deja la
+// cadena VACÍA —o sea nunca en este caso—: es un respaldo que no respalda. Hay que preguntar
+// por las DOS formas, la cruda primero, que es la que el padrón guarda.
+const _formasDe = (s: string): string[] => {
+  const crudo = _n(s), limpio = _sinRuido(s);
+  return [...new Set([crudo, limpio])].filter(Boolean);
+};
+const _provsDe = (ciudad: string) => {
+  for (const f of _formasDe(ciudad)) { const r = provinciasDeDistrito(f); if (r.length) return r; }
+  return [];
+};
+const _puntoDe = (ciudad: string, prov: string) => {
+  for (const f of _formasDe(ciudad)) { const p = puntoDeDistrito(f, prov); if (p) return p; }
+  return null;
+};
+
 // Las oficinas que hay en una ciudad. Lo que el cliente llama "mi ciudad" puede
 // ser su distrito ("Pomalca"), su provincia ("Chiclayo") o su departamento
 // ("Lambayeque"), así que se busca en los tres y se devuelve el corte MÁS FINO
@@ -674,7 +709,7 @@ function _deCiudadEstricto(ciudad: string): Agencia[] {
     const porLimpio = _deCiudadEstricto(limpio);
     if (porLimpio.length) return porLimpio;
   }
-  const porDist = AGENCIAS.filter((a) => _n(a.t) === c);
+  const porDist = AGENCIAS.filter((a) => _esDist(a, c));
   if (porDist.length) return porDist;
   const porProv = AGENCIAS.filter((a) => _n(a.p) === c);
   if (porProv.length) return porProv;
@@ -769,7 +804,7 @@ export function agenciasParaOfrecer(ciudad: string): Agencia[] {
   // distrito de Inambari (o sea Mazuko, a 130 km) a un cliente de Puerto Maldonado, con el
   // arreglo de la distancia ya escrito y desplegado. Un dato faltante desactivaba el guard.
   const _conPunto = base.find((a) => a.y != null && a.x != null);
-  const p = puntoDeDistrito(_sinRuido(ciudad) || _n(ciudad), base[0].p);
+  const p = _puntoDe(ciudad, base[0].p);
   const y = p?.y ?? _conPunto?.y, x = p?.x ?? _conPunto?.x;
   if (y == null || x == null) return [...base, ...resto];
   // 🔴 Y con un TECHO DE DISTANCIA, porque "misma provincia" no quiere decir "misma ciudad".
@@ -905,7 +940,7 @@ function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a
   const enSuZona = (a: Agencia) => {
     const c = _sinRuido(ciudad) || _n(ciudad);
     if (!c) return true;                       // sin ciudad no hay con qué filtrar
-    return _n(a.t) === c || _n(a.p) === c || _n(a.d) === c || _n(a.l).includes(c);
+    return _esDist(a, c) || _n(a.p) === c || _n(a.d) === c || _n(a.l).includes(c);
   };
   const todas = candidatasAgencia(s);
   const deLaZona = AGENCIAS.filter((a) => todas.includes(a.l) && enSuZona(a));
@@ -1043,7 +1078,7 @@ export function agenciasQueSuenanA(texto: string): Agencia[] {
 export function esSoloDepartamento(nombre: string): boolean {
   const c = _n(nombre);
   if (!c) return false;
-  if (AGENCIAS.some((a) => _n(a.t) === c || _n(a.p) === c)) return false;
+  if (AGENCIAS.some((a) => _esDist(a, c) || _n(a.p) === c)) return false;
   return AGENCIAS.some((a) => _n(a.d) === c);
 }
 
@@ -1060,11 +1095,11 @@ export function provinciasDeDepartamento(nombre: string): string[] {
 export function otrosDistritosConAgencia(ciudad: string): string[] {
   const c = _sinRuido(ciudad) || _n(ciudad);
   if (!c) return [];
-  const enDist = AGENCIAS.filter((a) => _n(a.t) === c);
+  const enDist = AGENCIAS.filter((a) => _esDist(a, c));
   if (!enDist.length) return [];   // no nombró un distrito → no hay "otros" que ofrecer
   const prov = _n(enDist[0].p);
   return [...new Set(
-    AGENCIAS.filter((a) => _n(a.p) === prov && _n(a.t) !== c).map((a) => a.t),
+    AGENCIAS.filter((a) => _n(a.p) === prov && !_esDist(a, c)).map((a) => a.t),
   )];
 }
 
@@ -1083,7 +1118,7 @@ export function otrosDistritosConAgencia(ciudad: string): string[] {
 export function agenciasCercanasAlDistrito(
   ciudad: string,
 ): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean } | null {
-  const cands = provinciasDeDistrito(_sinRuido(ciudad) || _n(ciudad));
+  const cands = _provsDe(ciudad);
   if (!cands.length) return null;
   const conAgencia = cands
     // `_ofrecible`: acá también se están OFRECIENDO oficinas, así que el área corporativa y
@@ -1096,7 +1131,7 @@ export function agenciasCercanasAlDistrito(
   // a 88 km, teniendo Punta Hermosa a 17. Con el punto del distrito (distritos-geo) y el de
   // cada oficina (y/x) el orden es el correcto. Si no se puede ubicar el distrito —19 sin
   // coordenada en el padrón— se devuelven como antes.
-  const p = puntoDeDistrito(_sinRuido(ciudad) || _n(ciudad), conAgencia[0].prov);
+  const p = _puntoDe(ciudad, conAgencia[0].prov);
   if (p) return { ...conAgencia[0], agencias: porCercania(conAgencia[0].agencias, p.y, p.x), ordenadas: true };
   return { ...conAgencia[0], ordenadas: false };
 }
