@@ -884,7 +884,9 @@ export function agenciaPorReferencia(texto: string, ciudad: string): Agencia | n
   const _suyo = new Set([ciudad, ...ags.flatMap((a) => [a.t, a.p, a.d])]
     .flatMap((x) => _n(String(x ?? "")).split(/\s+/)).filter(Boolean));
   const pal = _n(texto).split(/\s+/)
-    .filter((w) => w.length >= 4 && !_RUIDO_DIR.has(w) && !_suyo.has(w));
+    // Y NUNCA por cifras: el DNI y el celular del cliente son ocho y nueve dígitos que pueden
+    // calzar con la numeración de una calle. No describen nada.
+    .filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !_RUIDO_DIR.has(w) && !_suyo.has(w));
   if (!pal.length) return null;
   let mejor: Agencia | null = null, max = 0, empate = false;
   for (const a of ags) {
@@ -894,7 +896,15 @@ export function agenciaPorReferencia(texto: string, ciudad: string): Agencia | n
     if (n > max) { max = n; mejor = a; empate = false; }
     else if (n === max && n > 0) empate = true;
   }
-  return (!empate && max > 0) ? mejor : null;
+  // 🔴 Hacen falta DOS palabras. Con una sola bastaba, y una sola palabra no describe un
+  // sitio: describe una coincidencia. Medido — un cliente de Arequipa mandó sus datos, «Jose
+  // Diaz, 40556677, 955112233», y "jose" calzó con el nombre de una calle en la dirección de
+  // AV CHARCANI: sede sellada y ficha enviada sobre un mensaje que no hablaba de ubicaciones.
+  // Es la misma trampa de la auditoría de las 116, donde 6 de 9 marcas eran nombres de calle
+  // que parecen personas ("Mariano Melgar", "Pedro Ruiz Gallo", "Santa Rosa"). Una referencia
+  // de verdad trae varias: «cerca del hospital Carlos Monge», «frente al grifo León Service».
+  // Con una sola no se sabe, y no saber se resuelve preguntando, no adivinando.
+  return (!empate && max >= 2) ? mejor : null;
 }
 
 // ¿La oficina que dijo el cliente alcanza para despachar, o hay que confirmársela?
@@ -1115,17 +1125,48 @@ export function otrosDistritosConAgencia(ciudad: string): string[] {
 // `ordenadas` dice si de verdad se pudieron ordenar por cercanía. Si es false, la lista
 // viene en el orden del volcado (alfabético) y el llamador NO debería mostrar "las 6
 // primeras" como si fueran las más cercanas: ahí es mejor preguntarle al cliente.
+// Las provincias donde ese nombre existe Y hay oficina. `_ofrecible`: se están OFRECIENDO
+// oficinas, así que el área corporativa y el almacén quedan fuera, igual que en agenciasDeCiudad.
+function _provsConAgencia(ciudad: string) {
+  return _provsDe(ciudad)
+    .map((c) => ({ ...c, agencias: AGENCIAS.filter((a) => _n(a.p) === _n(c.prov) && _ofrecible(a)) }))
+    .filter((c) => c.agencias.length);
+}
+
+// 🧭 ¿Ese nombre puede mandar el paquete a DOS departamentos distintos? Lo que importa no es
+// que el nombre se repita —102 se repiten, y da igual— sino que haya oficina en más de uno:
+// «Barranca» está en Lima y en Loreto, pero Shalom solo tiene local en la de Lima, así que
+// deducirla no arriesga nada y el cliente recibe su ficha en el acto. «San Juan Bautista»
+// tiene oficina en Ayacucho Y en Iquitos: ahí adivinar manda el paquete a 1000 km.
+// La distinción es de Rodrigo, mirando un chat de Barranca: «me parece que está bien, pero
+// ¿pasa lo mismo con otros lugares?». Sin ella, el guard contra el caso malo se llevaba por
+// delante 20 pueblos donde deducir era correcto.
+// 🔁 ¿Esta oficina está en la MISMA provincia que la que ya tiene (o que su ciudad)? Sirve
+// para dejarlo CAMBIAR de agencia. El guard de «la oficina no puede mudarlo de ciudad»
+// comparaba contra su ciudad guardada, que al elegir la primera oficina se afina a su
+// DISTRITO — y a partir de ahí cualquier cambio a otra oficina de su propia provincia se
+// rechazaba por «de otra ciudad». Medido en 2 de 3 pruebas de cambio: el de Tarapoto pidió
+// «mejor mándamelo a La Banda de Shilcayo» y el pedido salió con la agencia vieja; la de
+// Ayacucho lo pidió DESPUÉS de dar sus datos y se despachó igual a Carmen Alto.
+// Las oficinas de su provincia son justo las que se le ofrecieron: elegir otra es legítimo.
+// Lo que sigue prohibido es saltar de provincia (Arequipa → Tacna, Cusco → Los Olivos).
+export function mismaProvinciaQue(a: Agencia, sede: string, ciudad: string): boolean {
+  const zonas = new Set<string>();
+  const act = agenciaExacta(sede, ciudad);
+  if (act) zonas.add(`${_n(act.p)}|${_n(act.d)}`);
+  for (const x of agenciasDeCiudad(ciudad)) zonas.add(`${_n(x.p)}|${_n(x.d)}`);
+  return zonas.has(`${_n(a.p)}|${_n(a.d)}`);
+}
+
+export function nombreDeVariasProvincias(ciudad: string): boolean {
+  return _provsConAgencia(ciudad).length > 1;
+}
+
 export function agenciasCercanasAlDistrito(
   ciudad: string,
 ): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean } | null {
-  const cands = _provsDe(ciudad);
-  if (!cands.length) return null;
-  const conAgencia = cands
-    // `_ofrecible`: acá también se están OFRECIENDO oficinas, así que el área corporativa y
-    // el almacén quedan fuera igual que en `agenciasDeCiudad`.
-    .map((c) => ({ ...c, agencias: AGENCIAS.filter((a) => _n(a.p) === _n(c.prov) && _ofrecible(a)) }))
-    .filter((c) => c.agencias.length);
-  if (conAgencia.length !== 1) return null;
+  const conAgencia = _provsConAgencia(ciudad);
+  if (!conAgencia.length || conAgencia.length !== 1) return null;
   // 📍 ORDENADAS POR CERCANÍA al distrito del cliente. Antes salían en el orden del volcado
   // (alfabético): a una clienta de Pucusana, la primera de "las de tu provincia" era Ancón,
   // a 88 km, teniendo Punta Hermosa a 17. Con el punto del distrito (distritos-geo) y el de

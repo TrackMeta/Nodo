@@ -17,7 +17,8 @@ import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   esSoloDepartamento, capitalizaNombresPropios,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia, agenciasParaOfrecer,
-  distritosConOficina, agenciasDeDistritoEn, agenciaPorReferencia,
+  distritosConOficina, agenciasDeDistritoEn, agenciaPorReferencia, nombreDeVariasProvincias,
+  mismaProvinciaQue,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
@@ -3936,8 +3937,15 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   const _grande = !_prop.length && (_cer?.agencias.length ?? 0) > 12 && !_cer?.ordenadas;
   const _ags = _grande ? [] : (_prop.length ? _prop : (_cer?.agencias ?? []));
   if (!_ags.length) return null;
+  // 🧭 Si el nombre es de varios departamentos (San Juan Bautista está en Iquitos y en
+  // Ayacucho; Bellavista en cinco sitios), se le dice CUÁL estamos tomando. Es lo mismo que
+  // ya se hace con los distritos de Lima —«Bellavista está en Lima»—: no se le pregunta un
+  // paso extra, se nombra en voz alta y el que no sea de ahí lo corrige en el acto. Callarlo
+  // es cómo un cliente de Iquitos terminaba con la ficha de una agencia de Ayacucho.
+  const _dep = _prop.length && nombreDeVariasProvincias(ciudad)
+    ? ` (${bonito(String(_ags[0]?.d ?? ""))})` : "";
   const _cab = _prop.length
-    ? `${CAB} tenemos estas 👇`
+    ? `${CAB}${_dep} tenemos estas 👇`
     : `${CAB} no hay oficina; las más cercanas están en *${bonito(String(_cer?.prov ?? "").toUpperCase())}* 👇`;
 
   // 2) POCAS → TODAS DE GOLPE, con su referencia. Decisión de Rodrigo: «si la provincia tiene
@@ -4006,12 +4014,25 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
 function sinPedirLosDatos(texto: string): string {
   const t = String(texto ?? "");
   if (!RE_PIDE_SUS_DATOS.test(sinFormato(t))) return t;
-  const partes = t.split(/(?<=[.!?…])\s+|\n+/).filter((p) => p.trim());
-  const i = partes.findIndex((p) => RE_PIDE_SUS_DATOS.test(sinFormato(p)));
-  if (i < 0) return t;
-  const queda = partes.slice(0, i).join(" ").trim();
-  // El mismo umbral que usa el guard de la sede: por debajo de 8 letras no es una frase,
-  // es un resto ("Perfecto,") que se lee peor que no poner nada.
+  // 🔴 Se quita la PETICIÓN y sus renglones de campos, y NADA MÁS. Cortar desde ahí hasta el
+  // final —como hace el guard de la sede— acá está mal: este guard corre DESPUÉS del bloque
+  // de oficinas, así que lo que viene detrás del «pásame tus datos» es la lista que el motor
+  // acababa de pegar, y se la llevaba entera. Medido en un chat de Chiclayo: el cliente
+  // contestó «José Leonardo Ortiz», el motor le pegó las 2 oficinas de su distrito y el
+  // mensaje salió sin ellas. Un guard no puede borrar lo que puso otro guard tres líneas antes.
+  const _esCampo = (l: string) => /^\s*(📌|•|[-–—])\s*\S/.test(l) && l.trim().length <= 60;
+  const out: string[] = [];
+  let cortando = false;
+  for (const l of t.split("\n")) {
+    if (RE_PIDE_SUS_DATOS.test(sinFormato(l))) { cortando = true; continue; }
+    // Tras la petición vienen sus campos («📌 *Nombre y apellidos*») y las líneas en blanco
+    // que los separan: son parte de lo mismo. En cuanto aparece otra cosa, se deja de cortar.
+    if (cortando && (!l.trim() || _esCampo(l))) continue;
+    cortando = false;
+    out.push(l);
+  }
+  const queda = out.join("\n").trim();
+  // Por debajo de 8 letras no es una frase, es un resto ("Perfecto,") que se lee peor que nada.
   return queda.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8 ? queda : "";
 }
 
@@ -4726,7 +4747,7 @@ function preciosEnLineas(texto: string, sym: string): string {
 // el texto lo diga. Sin esto se escapaba la lista más peligrosa: «En *Trujillo* tenemos
 // VARIAS, te las listo…» seguida de seis oficinas inventadas con sus referencias. Ni "sede",
 // ni "oficina", ni "agencia" en todo el mensaje — el sustantivo estaba sobreentendido.
-function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string; habia: boolean } {
+function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false, sePegaSeguro = false): { texto: string; habia: boolean } {
   const t = String(texto ?? "");
   if (!yaSeSabe && !RE_HABLA_DE_SEDE.test(sinFormato(t))) return { texto: t, habia: false };
   let quitadas = 0;
@@ -4737,17 +4758,16 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string
     // pasaba entera con las referencias inventadas dentro. Da igual el formato: la lista de
     // oficinas la escribe el MOTOR, y esta función corre ANTES de que él la pegue, así que
     // lo único que puede haber acá es la del modelo.
-    const _vineta = /^\s*[-•·]\s*\S/.test(l);
-    // El pin es opcional porque el motor abre sus líneas con 📍 y el modelo copia lo que ve:
-    // sin admitirlo acá, su imitación —referencias inventadas incluidas— pasaba entera.
-    const _comoElMotor = /^\s*(?:📍\s*)?\*[^*\n]{2,40}\*\s*[–—-]\s*\S/.test(l);
-    // 🔴 Tercera forma: 📍 *Nombre* a secas, sin referencia detrás. Es el formato de la lista
-    // de DISTRITOS que se estrenó hoy, y el modelo ya lo copia igual de bien que los otros
-    // dos: en Trujillo, Huancayo y Cañete escribió su propia lista de distritos y el motor
-    // pegó la suya debajo — el mismo bloque dos veces en un mensaje. Va quedando claro que
-    // cualquier formato que el motor use, el modelo lo imita al turno siguiente.
-    const _pinNegrita = /^\s*📍\s*\*[^*\n]{2,40}\*\s*$/.test(l);
-    if (!_vineta && !_comoElMotor && !_pinNegrita) return true;
+    // 🔴 SE DEJÓ DE ENUMERAR FORMATOS. Iban cinco en dos días —viñeta, «*X* — ref», «📍 *X*»,
+    // «📍 X» sin negrita y «📍 *X* (ref inventada)»— y cada uno se arregló por separado,
+    // desplegando y volviendo a mirar, mientras el modelo estrenaba el siguiente. Perseguir
+    // la forma es perder: él copia lo que VE, y lo que ve cambia cada vez que el motor toca
+    // su propio formato. Lo que identifica su lista no es el adorno: es un RENGLÓN CORTO que
+    // abre con pin o viñeta, repetido. Eso es lo que se mira ahora, y las cinco caen solas.
+    const _esItem = /^\s*(📍|[-•·])\s*\S/.test(l) && l.trim().length <= 90;
+    // Y la otra forma que usa el motor: «*Nombre* — referencia», sin pin delante.
+    const _conRaya = /^\s*\*[^*\n]{2,60}\*\s*[–—-]\s*\S/.test(l);
+    if (!_esItem && !_conRaya) return true;
     // ⛔ Nunca una línea de PRECIOS: «*2 unidades* — S/ 109 · doble herramienta» tiene la
     // misma forma y llevársela dejaría al cliente eligiendo cantidad sin ver los precios.
     if (/(S\/|\$)\s*[0-9]|[0-9]+\s*(unidad|unidades|frascos?|packs?|cajas?)/i.test(l)) return true;
@@ -4769,8 +4789,16 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false): { texto: string
     if (_esCab || _esPreg) lineas[i] = "";
   }
   const limpio = lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  // Si al quitarla no queda mensaje, se deja como estaba: la lista del motor se pega igual
-  // debajo y es preferible una repetición a una burbuja vacía.
+  // Si al quitarla no queda mensaje, se devolvía el texto ENTERO —lista incluida— para no
+  // mandar una burbuja vacía. 🔴 Y ese era el bug que Rodrigo veía: cuando el mensaje de la
+  // IA es SOLO su lista (que es el caso normal al preguntar «¿qué sedes hay?»), no queda
+  // nada, se restauraba su copia y el motor pegaba la suya debajo — el mismo bloque dos
+  // veces. Reproducido en Huancayo y Trujillo. El guard hacía bien su trabajo y lo deshacía
+  // en la última línea.
+  // `sePegaSeguro` lo dice quien llama: si el bloque del motor va sí o sí, la burbuja NO
+  // queda vacía —queda con la lista buena—, así que no hay nada que restaurar. Solo cuando
+  // el pegado es condicional se conserva el piso.
+  if (sePegaSeguro) return { texto: limpio, habia: true };
   return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20
     ? { texto: limpio, habia: true } : { texto: t, habia: false };
 }
@@ -4886,7 +4914,22 @@ function conPrecios(texto: string, lista: string, preguntoElCliente = false): st
 // MOTOR, así que se había quedado con el formato viejo —«• 1 frasco — S/ 79», sin
 // negrita y con un «¿cuál te preparo?» que suena a formulario— justo el que Rodrigo
 // pidió cambiar. Convivían dos presentaciones de precio y esta era la fea.
-function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true): string {
+// ¿El valor que extrajo la IA tiene respaldo en lo que escribió el cliente? No se compara
+// literal —el extractor normaliza, y está bien que lo haga: de «shalom real 500 huancayo»
+// saca «Real 500»— sino por palabras con contenido. Se descartan las que no distinguen nada
+// (shalom, agencia, av, jr…): con esas, cualquier oficina "coincidiría" con cualquier mensaje.
+const _RUIDO_SEDE = new Set(["shalom", "agencia", "agencias", "sede", "sedes", "oficina", "oficinas",
+  "av", "avenida", "jr", "jiron", "calle", "co", "de", "del", "la", "el", "los", "las", "san", "santa"]);
+function loDijoElCliente(val: string, dicho: string): boolean {
+  const _n = (s: string) => String(s ?? "").toLowerCase().normalize("NFD")
+    .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const d = ` ${_n(dicho)} `;
+  const palabras = _n(val).split(" ").filter((w) => w.length >= 3 && !_RUIDO_SEDE.has(w));
+  if (!palabras.length) return true;   // solo ruido → no hay con qué juzgar, pasa
+  return palabras.some((w) => d.includes(` ${w} `));
+}
+
+function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = false): string {
   const sym = simboloMoneda(ctx.moneda as string);
   const pz = (v: unknown) => (negritas ? `*${sym} ${v}*` : `${sym} ${v}`);
   const conPrecio = ops.filter((o) => o.precio != null && Number(o.precio) > 0);
@@ -4902,9 +4945,14 @@ function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true): string {
     return `Antes de anotarte, ¿cuántos llevas? ${a.nombre} sale ${pz(a.precio)} y ${b.nombre} ` +
       `te queda en ${pz(b.precio)}` + (ahorro > 0 ? ` — ahorras ${pz(ahorro)}` : "") + " 🙌";
   }
+  // Si el mensaje YA trae las presentaciones —la IA casi siempre las escribe— se pega solo la
+  // pregunta. Volcarlas otra vez deja la misma lista de precios dos veces en una burbuja;
+  // medido en Tarapoto. La pregunta es la misma en los dos casos, escrita en un solo sitio.
+  const _cierre = "¿Cuántas unidades o qué oferta te preparo?";
+  if (yaListadas) return _cierre;
   return "Estas son las opciones 👇\n" +
     lista.map((o) => `${o.nombre}${o.precio != null ? ` — ${pz(o.precio)}` : ""}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n") +
-    "\n\n¿Cuántas unidades o qué oferta te preparo?";
+    `\n\n${_cierre}`;
 }
 
 // ⛔ «…, sin adelantos» / «…, sin riesgo» / «…, no pagas nada por adelantado». La coletilla
@@ -11427,7 +11475,23 @@ async function sellaSedeUnica(
 ) {
   try {
     if (String(run.vars?.sede ?? ctx?.sede ?? "").trim()) return;
-    const ags = agenciasDeCiudad(String(run.vars?.ciudad ?? ctx?.ciudad ?? ""));
+    const _ciu = String(run.vars?.ciudad ?? ctx?.ciudad ?? "");
+    // ⛔ NO se sella un nombre que existe en VARIOS departamentos. «San Juan Bautista» es un
+    // distrito de Iquitos y otro de Ayacucho; en el padrón Shalom el de Iquitos está escrito
+    // compuesto («IQUITOS SAN JUAN BAUTISTA»), así que la búsqueda devolvía UNA sola oficina
+    // —la de Ayacucho— y esto la daba por buena: sede sellada y ficha enviada, sin decirle en
+    // ningún momento de qué ciudad era. El cliente de Iquitos recibía la tarjeta de una
+    // agencia a 1000 km sin una sola pista de que estaba mal.
+    // La regla ya estaba escrita en agenciasCercanasAlDistrito —«mandar un paquete a otro
+    // departamento por adivinar es peor que preguntarle a qué ciudad suele ir»— pero solo
+    // regía en ese camino. Acá se aplica igual: si el nombre es de varios sitios, no se
+    // deduce nada y el bloque de oficinas se lo pregunta nombrándole el departamento.
+    if (nombreDeVariasProvincias(_ciu)) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Nombre de varios departamentos",
+        `"${_ciu}" existe en más de una provincia — no se deduce la sede`).catch(() => {});
+      return;
+    }
+    const ags = agenciasDeCiudad(_ciu);
     if (ags.length !== 1) return;
     await set("sede", ags[0].l);
     // Y la FICHA de esa oficina, igual que cuando la nombra el cliente. Sin esto, al
@@ -11924,6 +11988,19 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // la hoja del courier. El repartidor pregunta por una persona, no por un
             // parentesco, y en la agencia lo entregan contra un DNI que nunca va a decir
             // eso. Se descarta y se sigue pidiendo el nombre de verdad.
+            // 📍 La SEDE tiene que estar en lo que escribió EL CLIENTE. El prompt de acá
+            // arriba ya se lo prohíbe con todas las letras —«NUNCA saques datos de esa
+            // pregunta: el vendedor repite lo que ya sabe»— y aun así el modelo copió la
+            // PRIMERA oficina de la lista que el bot acababa de mandar. Medido en Tarapoto:
+            // se le pasaron las 7 agencias, el cliente contestó «ya mandamelo» —sin nombrar
+            // ninguna— y el pedido quedó con la sede JR Leoncio Prado sellada y su ficha
+            // enviada. Elegirle la agencia es exactamente lo mismo que elegirle la cantidad,
+            // y eso ya está prohibido. Una regla de prompt que se cae se convierte en función.
+            if (c.clave === "sede" && !loDijoElCliente(val, fuente)) {
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Sede que él no dijo",
+                `"${String(val).slice(0, 40)}" no aparece en sus mensajes — se descarta`).catch(() => {});
+              continue;
+            }
             if (/nombre|cliente|destinatario/i.test(c.clave) && esParentesco(val)) {
               await logEvent(db, run.channel_id, run.contact_id, "campo", "Nombre descartado",
                 `"${String(val).slice(0, 40)}" es un parentesco, no un nombre`).catch(() => {});
@@ -14973,7 +15050,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Incluye el NOMBRE de la oficina, no solo su distrito/provincia/departamento: el
         // pueblo del cliente puede llamarse igual que la agencia sin ser el distrito (Mazuko
         // está en INAMBARI). Ver la misma corrección en la detección de zona.
-        if (_ciu && ![_ofi.l, _ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
+        // …pero cambiar a otra oficina de SU MISMA PROVINCIA sí vale: son las que se le
+        // ofrecieron. Ver mismaProvinciaQue — sin esto, en cuanto elegía la primera su
+        // ciudad se afinaba al distrito y ya no podía cambiarse a ninguna otra.
+        if (_ciu && !mismaProvinciaQue(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? "")) &&
+            ![_ofi.l, _ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
             `Sonó "${_ofi.l}" (${_ofi.t}) pero es de ${ctx.ciudad} — no se cambia la sede`).catch(() => {});
           _ofi = null;
@@ -14985,6 +15066,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         await setField(db, run.channel_id, run.contact_id, "sede", _ofi.l);
         (run.vars as any)._ficha_sede = slugAgencia(_ofi);
         (run.vars as any)._ficha_ahora = slugAgencia(_ofi);
+        // 🔴 Y si el PEDIDO ya existe, hay que cambiárselo también. Sin esto el cambio se
+        // quedaba en el flujo y la fila del pedido conservaba la agencia vieja: el bot le
+        // decía «listo, ahora recoges en San Juan Bautista» y la guía —y el Excel del
+        // courier— salían a Carmen Alto. Medido: la clienta pidió el cambio DESPUÉS de dar
+        // sus datos, que es cuando más pasa, porque hasta ese momento no le urge mirarlo.
+        // Patch atómico (0068), no un write completo: no puede pisar la dirección que se
+        // esté editando en paralelo desde el panel.
+        const _oid = (run.vars as any)?._order_id;
+        if (_oid) {
+          try { await db.rpc("order_patch_shipping", { p_order_id: _oid, p_patch: { sede: _ofi.l } }); }
+          catch (_) { /* sin RPC → el panel lo corrige a mano; el evento queda abajo */ }
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "📦 Sede del pedido actualizada",
+            `El pedido ya existía: ahora sale a ${_ofi.l}`).catch(() => {});
+        }
         await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Cambió de oficina",
           `Ahora recoge en ${_ofi.l} (${_ofi.t})`).catch(() => {});
       }
@@ -16179,7 +16274,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // que es justo lo que esa lista falsa venía burlando.
             // `!_bl.auto`: en las ramas decididas ya sabemos que se habla de oficinas, aunque el
             // texto no use la palabra; en la rama abierta se le exige que la use.
-            const _sinIA = sinListaDeSedesDeLaIA(salida, !_bl.auto);
+            // ¿El bloque del motor se pega SÍ o SÍ? Se decide UNA vez, ANTES de tocar el
+            // texto, y sirve para las dos cosas que dependían de ello por separado: quitarle
+            // su lista sin miedo a dejar la burbuja vacía, y saltarse el anti-duplicado.
+            // Se fuerza también cuando el mensaje HABLA de sedes y pregunta algo: a esta
+            // altura ya se decidió que tiene que elegir, así que hacer depender la lista de
+            // que el modelo use una palabra concreta es dejar la decisión en su redacción.
+            const _seguro = !_bl.auto || _elPidioSede ||
+              (RE_HABLA_DE_SEDE.test(sinFormato(salida)) && /[?¿]/.test(salida));
+            const _sinIA = sinListaDeSedesDeLaIA(salida, !_bl.auto, _seguro);
             if (_sinIA.habia) {
               salida = _sinIA.texto;
               if (_bl.auto) {
@@ -16187,12 +16290,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   "La escribió la IA con referencias inventadas; va la del motor").catch(() => {});
               }
             }
-            // Se fuerza también cuando el mensaje HABLA de sedes y pregunta algo: a esta altura
-            // ya se decidió que tiene que elegir, así que hacer depender la lista de que el
-            // modelo use una palabra concreta es dejar la decisión en su redacción.
             const _antes = salida;
-            salida = conAgencias(salida, _bl.texto, !_bl.auto || _elPidioSede || _sinIA.habia ||
-              (RE_HABLA_DE_SEDE.test(sinFormato(salida)) && /[?¿]/.test(salida)));
+            salida = conAgencias(salida, _bl.texto, _seguro || _sinIA.habia);
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, _bl.cat, _bl.ev, _bl.det).catch(() => {});
             }
@@ -16378,11 +16477,28 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // peaje— y debajo va la pregunta con sus presentaciones.
               const _antesQ = salida;
               const _resto = sinPedirLosDatos(salida);
+              // ⛔ Si el mensaje YA le pregunta la cantidad, solo se le quita la petición de
+              // datos y punto. Pegar la pregunta del motor encima la deja dos veces con su
+              // lista de precios repetida — medido en Chiclayo: «¿Y cuántas unidades te
+              // llevo?» + precios, y debajo «Estas son las opciones 👇» + los mismos precios.
+              // El guard existe para que no se salte la pregunta, no para hacerla dos veces.
+              // ⚠️ Sin exigir el signo: el modelo lo pide en imperativo («dime cuántas llevas»),
+              // que es la forma coloquial y la que más se le escapa a las regex escritas
+              // redactando. Ver la regla de la forma coloquial.
+              const _yaPregunta = /\bcu[aá]nt[ao]s?\b|qu[eé]\s+(oferta|presentaci[oó]n|opci[oó]n)\b/i
+                .test(sinFormato(_resto));
               // `_negOn`: la perilla de negritas del dueño, ya leída arriba de este mismo
               // nodo. Volver a sacarla de `cfg` sería una segunda fuente para lo mismo, que
               // es como las negritas dejaron de salir la vez pasada (form vs compilado).
-              const _preg = preguntaCuantos(opsPend, ctx, _negOn);
-              salida = _resto ? `${_resto.trimEnd()}\n\n${_preg}` : _preg;
+              // ¿Ya están las presentaciones en el mensaje? Se cuentan las que aparecen por
+              // NOMBRE («2 unidades»), que es lo que la IA escribe; con dos ya es su lista.
+              const _rr = sinFormato(_resto).toLowerCase();
+              const _yaListadas = opsPend.filter((o) =>
+                _rr.includes(String(o.nombre ?? "").toLowerCase())).length >= 2;
+              const _preg = _yaPregunta ? "" : preguntaCuantos(opsPend, ctx, _negOn, _yaListadas);
+              salida = _resto
+                ? (_preg ? `${_resto.trimEnd()}\n\n${_preg}` : _resto)
+                : (_preg || salida);
               if (salida !== _antesQ) {
                 await logEvent(db, run.channel_id, run.contact_id, "campo", "Pidió datos sin saber la cantidad",
                   "Se cambió por la pregunta de la cantidad; no se asume ninguna presentación").catch(() => {});
@@ -16527,7 +16643,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // último dato te lo dejo cerrado. 🙂", que no venía a cuento.
         const _hayQuePedir = !!((ctx as any)._pack_mixto || (ctx as any)._falta_variante ||
           (ctx as any)._falta_opcion || _falta1);
-        if (_hayQuePedir && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+        // ⛔ Y NO cuando el propio mensaje acaba de decirle que el producto puede NO servirle.
+        // Medido leyendo chats: preguntó «¿sirve para lámina de 2mm?», el bot contestó bien
+        // —«está diseñado para hasta 1.5 mm, para 2 mm puede que no funcione»— y el motor le
+        // pegó detrás «Dime cuál prefieres y te lo dejo cerrado 🙂». Empujar el cierre encima
+        // de una advertencia honesta la desmiente y suena a que no lo escuchó. Ahí la
+        // respuesta ES el mensaje: si él sigue interesado, lo dirá.
+        const _leAdvirtio = /\b(no (te |le )?(sirve|funciona|va a funcionar|funcionar[ií]a)|puede que no (funcione|sirva|rinda)|no est[aá] (dise[ñn]ado|pensado|hecho|indicado) para|no (te )?(lo )?recomiendo para|no alcanza para|no es (el |la )?(adecuad|indicad)[oa] para|se queda corto)\b/i
+          .test(sinFormato(salida));
+        if (_hayQuePedir && !_leAdvirtio && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
           salida = conPeticionFinal(salida, cierreHonesto, _lblTal);
         }
       }
