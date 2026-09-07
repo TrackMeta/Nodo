@@ -18,6 +18,7 @@ import {
   esSoloDepartamento, capitalizaNombresPropios,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia, agenciasParaOfrecer,
   distritosConOficina, agenciasDeDistritoEn, agenciaPorReferencia, nombreDeVariasProvincias,
+  nombraUnaOficinaDe,
   mismaProvinciaQue,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
@@ -11686,14 +11687,20 @@ function valorLibreEnMensaje(val: string, fuente: string): boolean {
 // de correcciones: así la llamada extra a la IA solo se hace en un turno donde el
 // cliente de verdad menciona una talla/color/DNI (no en "sí confirmo" / "no gracias" /
 // la dirección) — sin esto, re-extraer cada turno agrega latencia a TODA venta.
-function mensajeTieneValorDe(c: any, texto: string): boolean {
+function mensajeTieneValorDe(c: any, texto: string, ctx?: any): boolean {
   if (c.validar === "dni") return /\b\d{7,9}\b/.test(texto);
   // Teléfono: lo corrige mandando otro número, y suele escribirlo con espacios o guiones.
   if (c.validar === "telefono") return /\d{6,15}/.test(String(texto).replace(/[\s()+-]/g, ""));
   // Sede: el cliente la CAMBIA nombrando una agencia/oficina ("mejor en el Shalom
   // Cerro Colorado"). Si el mensaje trae una palabra de agencia, vale re-extraerla
   // (el pre-filtro barato antes de gastar una llamada a la IA).
-  if (c.validar === "sede") return AGENCIA_KW.test(texto.toLowerCase()); // AGENCIA_KW sin flag i
+  // ⚠️ …o NOMBRA una oficina de su ciudad sin usar ninguna de esas palabras, que es como
+  // contesta la gente cuando le acabas de mandar la lista: «la de AV Pachacutec», «Punta
+  // Hermosa». Exigir «agencia/Shalom/oficina» era pedirle que hablara como se redacta.
+  if (c.validar === "sede") {
+    return AGENCIA_KW.test(texto.toLowerCase()) ||   // AGENCIA_KW sin flag i
+      nombraUnaOficinaDe(texto, String(ctx?.ciudad ?? ""));
+  }
   const vals = parseValores(c.valores);
   return vals.some((v) => valorEnMensaje(v, texto));
 }
@@ -11827,7 +11834,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // guard (valorEnMensaje) evita pisar el valor bueno cuando el mensaje no trae uno.
   const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni" || c.validar === "sede" || c.validar === "telefono";
   const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim()
-    && mensajeTieneValorDe(c, texto));   // solo si el último msg realmente trae un valor de ESTE campo
+    && mensajeTieneValorDe(c, texto, ctx));   // solo si el último msg realmente trae un valor de ESTE campo
   const desdeUltimo = [...soloUlt, ...correcciones];
   if (faltanHist.length || desdeUltimo.length) {
     try {

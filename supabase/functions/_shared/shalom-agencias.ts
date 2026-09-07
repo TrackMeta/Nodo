@@ -1158,6 +1158,36 @@ export function mismaProvinciaQue(a: Agencia, sede: string, ciudad: string): boo
   return zonas.has(`${_n(a.p)}|${_n(a.d)}`);
 }
 
+// 🗣️ ¿Este mensaje NOMBRA una de las oficinas que se le ofrecieron? Se le acaba de mandar la
+// lista y contesta como contesta la gente: «la de AV Pachacutec», «Punta Hermosa», sin decir
+// «agencia» ni «Shalom» por ningún lado. El pre-filtro que decidía si valía la pena re-leer
+// la sede exigía justamente esas palabras —la forma en que uno REDACTA, no en la que se
+// habla— y por eso, con la sede ya puesta con el nombre de su ciudad, elegir una oficina de
+// la lista no cambiaba nada: el bot contestaba «queda anotada la agencia de AV Pachacutec» y
+// el pedido salía a «Cusco, sede por confirmar». Ver la regla de la forma coloquial.
+// Se pide que estén TODAS las palabras distintivas del nombre, no una: una sola es lo que
+// selló AV Charcani con un «Jose» (ver agenciaPorReferencia).
+const _RUIDO_NOMBRE = new Set(["av", "avenida", "jr", "jiron", "calle", "co", "de", "del",
+  "la", "el", "los", "las", "cdra", "mz", "lt", "nro", "shalom", "agencia", "oficina", "sede"]);
+export function nombraUnaOficinaDe(texto: string, ciudad: string): boolean {
+  const t = ` ${_n(texto)} `;
+  const c = _n(ciudad);
+  if (!t.trim() || !c) return false;
+  // Las MISMAS oficinas que se le ofrecieron, ni una más: si su distrito no tiene (Pucusana,
+  // Jequetepeque) la lista vino de su provincia, y elegir una de ahí es igual de válido.
+  // Mirando solo las de su ciudad, el de Pucusana pedía «la de Punta Hermosa» y su pedido
+  // salía a «PUCUSANA» — la lista decía una cosa y lo que se podía elegir era otra.
+  const ofrecidas = agenciasParaOfrecer(ciudad);
+  const lista = ofrecidas.length ? ofrecidas : (agenciasCercanasAlDistrito(ciudad)?.agencias ?? []);
+  return lista.some((a) => {
+    // La oficina que se llama IGUAL que su ciudad no distingue nada: es justo el caso
+    // «sede = mi ciudad» que ya se marca por confirmar.
+    if (_n(a.l) === c) return false;
+    const pal = _n(a.l).split(" ").filter((w) => w.length >= 3 && !_RUIDO_NOMBRE.has(w));
+    return pal.length > 0 && pal.every((w) => t.includes(` ${w} `));
+  });
+}
+
 export function nombreDeVariasProvincias(ciudad: string): boolean {
   return _provsConAgencia(ciudad).length > 1;
 }
