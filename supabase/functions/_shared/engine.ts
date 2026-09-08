@@ -3837,6 +3837,13 @@ function conCierrePendiente(texto: string, cta: string, yaLoNombra: RegExp): str
   const t = String(texto ?? "").trimEnd();
   if (!t || !cta) return texto;
   if (/[?¿]/.test(t)) return texto;          // ya le pidió algo
+  // …y sin signo también: el modelo pide en IMPERATIVO («Dime en qué distrito estás»), que es
+  // como se habla, y ahí este empujón le encimaba una segunda petición en el mismo mensaje.
+  // Medido en Huancayo: «Dime en qué distrito o zona estás para elegir la sede» + «Pásame tu
+  // nombre, celular y DNI» — dos cosas distintas pedidas a la vez, contra la regla de una sola
+  // pregunta por mensaje. Es la forma coloquial otra vez: mirar el «?» no es mirar si pregunta.
+  // `conPeticionFinal` ya usaba RE_YA_PIDE para exactamente esto; su gemelo no.
+  if (RE_YA_PIDE.test(sinFormato(t))) return texto;
   if (yaLoNombra.test(sinFormato(t))) return texto;  // ya habla del pendiente
   return t + "\n\n" + cta;
 }
@@ -13003,6 +13010,50 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
         `${op2.nombre} — la nombró él y el clasificador no la fijó`).catch(() => {});
       return { ...(cls ?? {} as Clasificacion), clave: op2.id, confianza: 1, intencion: "eligiendo" };
     }
+  }
+  // 🔢 CONTESTÓ LA PREGUNTA QUE LE HICIMOS. El motor le pregunta «¿cuántas unidades o qué
+  // oferta te preparo?» y nadie contesta eso repitiendo la unidad: contesta el número solo,
+  // con la coletilla de siempre — «1 nomas», «2 porfa», «uno nada más». `mencionaFuerte`
+  // exige el número PEGADO a lo que se vende («2 unidades») o al verbo con que lo pide
+  // («quiero 2»), o sea las dos formas en que se habla cuando NADIE te ha preguntado. La
+  // forma coloquial otra vez, y acá es la respuesta a nuestra propia pregunta.
+  // Medido en Huancayo: «1 nomas» no selló nada; el bot volvió a preguntar la cantidad y le
+  // pegó la lista de precios en los DOS turnos siguientes — tres veces lo mismo, y la opción
+  // recién quedó sellada cuando la clienta mandó su nombre y su DNI.
+  if (!String(ctx.opcion_id ?? "").trim()) {
+    try {
+      const _pelado = sinTildes(String(texto ?? ""))
+        .replace(/[.!¡?¿,;:]/g, " ")
+        .replace(/\b(nomas|no\s*mas|nada\s*mas|porfa|por\s*favor|solito|solamente|please|plis|ok|oki|ya|listo|gracias|pe|pues)\b/g, " ")
+        .replace(/\s+/g, " ").trim();
+      const _n = /^\d{1,2}$/.test(_pelado) ? Number(_pelado) : (NUM_PALABRA[_pelado] ?? null);
+      if (_n != null && _n > 0) {
+        // …pero SOLO si veníamos de preguntárselo. Un «2» suelto en cualquier otro momento
+        // puede ser cualquier cosa (el número de su calle, la talla), y elegir por él lo que
+        // no dijo es justo lo que no se hace.
+        const { data: ultOut } = await db.from("messages").select("content")
+          .eq("contact_id", run.contact_id).eq("direction", "out")
+          .order("ts", { ascending: false }).limit(3);
+        const _preguntado = (ultOut ?? []).some((mm: any) =>
+          RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(String(mm?.content?.text ?? ""))));
+        const _calza = list.filter((o) => Number(o.cantidad ?? 0) === _n);
+        if (_preguntado && _calza.length === 1) {
+          const op3 = _calza[0];
+          run.vars.opcion_id = op3.id;
+          ctx.opcion_id = op3.id;
+          await setField(db, run.channel_id, run.contact_id, "opcion_id", op3.id);
+          await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op3.nombre);
+          ctx.opcion = op3.nombre;
+          ctx.cantidad = op3.cantidad ?? 1;
+          (ctx as any)._opcion = op3;
+          const { monto: _m3 } = await precioEsperado(db, run, ctx);
+          if (_m3 != null) { ctx.precio = _m3; ctx.precio_esperado = _m3; }
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "Opción sellada por su respuesta",
+            `${op3.nombre} — contestó "${String(texto ?? "").trim().slice(0, 30)}" a la pregunta de la cantidad`).catch(() => {});
+          return { ...(cls ?? {} as Clasificacion), clave: op3.id, confianza: 1, intencion: "eligiendo" };
+        }
+      }
+    } catch (_) { /* sin historial → se sigue como antes */ }
   }
   return cls;
 }
