@@ -275,7 +275,15 @@ async function runEngineInner(
   // 🇵🇪 "Cancelar" en sentido de PAGAR ("quiero cancelar el adelanto", "puedo cancelar
   // en efectivo"): no se toca el pedido y se le responde CÓMO pagar. Sin esto la IA
   // improvisaba un "déjame revisarlo y te confirmo" que no cierra la venta.
-  if (event.type === "message" && pideCancelar(event.text) && cancelarSignificaPagar(event.text)) {
+  // ⚠️ No hace falta que la frase esté en la lista de CANCELACIÓN para preguntar cómo pagar:
+  // basta con que use el verbo y hable de plata. «¿Cómo cancelo el saldo?» no figura en la
+  // lista —tiene "quiero/puedo/necesito cancelar", no "cómo cancelo"— así que no entraba acá
+  // y la IA improvisó: «el saldo no se cancela ni pagas antes, solo cancelas el pedido
+  // completo». Falso y contradice cómo funciona el negocio (el saldo se paga a NOSOTROS). Es
+  // el patrón de siempre: si el motor no contesta, la IA inventa. `cancelarSignificaPagar`
+  // ya exige un objeto de pago detrás, así que abrir la puerta no arrastra las bajas reales.
+  const _dicecancelar = /\bcancel\w*/i.test(String(event.text ?? ""));
+  if (event.type === "message" && (pideCancelar(event.text) || _dicecancelar) && cancelarSignificaPagar(event.text)) {
     const ordP = await tienePedidoVivo(db, contactId);
     if (ordP && await responderComoPagar(db, channelId, contactId, ordP)) return;
     // Sin pedido o sin métodos configurados: sigue la conversación normal.
@@ -341,7 +349,13 @@ async function runEngineInner(
       const ESPERA_PLATA = new Set(["esperando_adelanto", "pendiente", "en_agencia", "adelanto_validado"]);
       const desempata = /\b(pedido|orden|compra|envio|env[ií]o|arrepent|ya no (lo |la )?(quiero|voy)|anula|devolver)\b/i
         .test(String(event.text ?? ""));
-      if (!desempata && ESPERA_PLATA.has(String(ord.estado ?? ""))) {
+      // ⛔ …y solo si usó la palabra CANCELAR, que es la única ambigua. «Dalo de baja»,
+      // «déjalo sin efecto», «anúlalo», «me arrepentí» no tienen lectura de pago: nadie dice
+      // «dalo de baja» queriendo pagar. Medido en los 25 departamentos: a tres que fueron
+      // clarísimos se les repreguntó «¿anular o pagar?», que es un paso de más encima de
+      // alguien que ya se explicó. La ambigüedad es de una palabra, no de la intención.
+      const _usoCancelar = /\bcancel\w*/i.test(String(event.text ?? ""));
+      if (_usoCancelar && !desempata && ESPERA_PLATA.has(String(ord.estado ?? ""))) {
         await deliverMessage(db, channelId, contactId,
           "Para no equivocarme 🙂 ¿quieres *anular* tu pedido, o *cancelar el pago* (osea pagarlo)? Dime cuál y lo hacemos al toque.")
           .catch(() => {});
