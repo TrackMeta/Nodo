@@ -1141,21 +1141,37 @@ function _provsConAgencia(ciudad: string) {
 // La distinción es de Rodrigo, mirando un chat de Barranca: «me parece que está bien, pero
 // ¿pasa lo mismo con otros lugares?». Sin ella, el guard contra el caso malo se llevaba por
 // delante 20 pueblos donde deducir era correcto.
-// 🔁 ¿Esta oficina está en la MISMA provincia que la que ya tiene (o que su ciudad)? Sirve
-// para dejarlo CAMBIAR de agencia. El guard de «la oficina no puede mudarlo de ciudad»
+// 🔁 Dejarlo CAMBIAR de agencia. El guard de «la oficina no puede mudarlo de ciudad»
 // comparaba contra su ciudad guardada, que al elegir la primera oficina se afina a su
-// DISTRITO — y a partir de ahí cualquier cambio a otra oficina de su propia provincia se
-// rechazaba por «de otra ciudad». Medido en 2 de 3 pruebas de cambio: el de Tarapoto pidió
-// «mejor mándamelo a La Banda de Shilcayo» y el pedido salió con la agencia vieja; la de
-// Ayacucho lo pidió DESPUÉS de dar sus datos y se despachó igual a Carmen Alto.
-// Las oficinas de su provincia son justo las que se le ofrecieron: elegir otra es legítimo.
-// Lo que sigue prohibido es saltar de provincia (Arequipa → Tacna, Cusco → Los Olivos).
-export function mismaProvinciaQue(a: Agencia, sede: string, ciudad: string): boolean {
-  const zonas = new Set<string>();
+// DISTRITO — y desde ahí cualquier otra oficina suya era «de otra ciudad». Falló en 2 de 3
+// pruebas: el de Tarapoto pidió «mejor a La Banda de Shilcayo» y el pedido salió con la
+// vieja; la de Ayacucho lo pidió DESPUÉS de dar sus datos y se despachó igual a Carmen Alto.
+//
+// 🛡️ El corte va por DEPARTAMENTO, no por provincia. Se probó por provincia y resultó un mal
+// sustituto de la distancia: bloqueaba Abancay → Andahuaylas (51 km) y dejaba pasar El
+// Triunfo → Mazuko (142 km), medido sobre las coordenadas del padrón. El daño real de los
+// dos incidentes que motivaron el guard fue cruzar de departamento —«soy de Arequipa» + una
+// dirección con «av ejército» mandó el pedido a TACNA (231 km), y la palabra «PRO» del
+// nombre del producto selló la agencia PRO de LOS OLIVOS a un cliente de Cusco (581 km)—, y
+// en ninguno de los dos el cliente pidió cambiar: la agencia salió de un texto suelto.
+// Los saltos largos DENTRO de su departamento (hasta 363 km en Cusco) no se niegan: se le
+// AVISAN nombrándole el distrito, que es lo que ya funciona con «Bellavista está en Lima».
+export function mismoDepartamentoQue(a: Agencia, sede: string, ciudad: string): boolean {
+  const deps = new Set<string>();
   const act = agenciaExacta(sede, ciudad);
-  if (act) zonas.add(`${_n(act.p)}|${_n(act.d)}`);
-  for (const x of agenciasDeCiudad(ciudad)) zonas.add(`${_n(x.p)}|${_n(x.d)}`);
-  return zonas.has(`${_n(a.p)}|${_n(a.d)}`);
+  if (act) deps.add(_n(act.d));
+  for (const x of agenciasDeCiudad(ciudad)) deps.add(_n(x.d));
+  return deps.has(_n(a.d));
+}
+
+// Cuánto se mueve con el cambio, para poder avisárselo cuando es mucho. Se mide desde la
+// oficina que ya tenía; si no tenía, desde la primera de su ciudad. Sin coordenadas (20 de
+// 552) devuelve null y no se avisa nada — no se inventa una distancia.
+export function kmDesdeSuSede(a: Agencia, sede: string, ciudad: string): number | null {
+  const act = agenciaExacta(sede, ciudad) ??
+    agenciasDeCiudad(ciudad).find((x) => x.y != null && x.x != null);
+  if (!act || act.y == null || act.x == null || a.y == null || a.x == null) return null;
+  return Math.round(kmEntre(act.y, act.x, a.y, a.x));
 }
 
 // 🗣️ ¿Este mensaje NOMBRA una de las oficinas que se le ofrecieron? Se le acaba de mandar la
@@ -1169,6 +1185,40 @@ export function mismaProvinciaQue(a: Agencia, sede: string, ciudad: string): boo
 // selló AV Charcani con un «Jose» (ver agenciaPorReferencia).
 const _RUIDO_NOMBRE = new Set(["av", "avenida", "jr", "jiron", "calle", "co", "de", "del",
   "la", "el", "los", "las", "cdra", "mz", "lt", "nro", "shalom", "agencia", "oficina", "sede"]);
+// 🏢 La oficina que ESTE texto nombra, devuelta tal como está en el padrón. Se devuelve la
+// agencia entera y no un booleano porque quien la guarda tiene que escribir el nombre del
+// PADRÓN, no el del cliente ni el que reescriba la IA: `l` es lo que viaja al Excel del
+// courier. Medido — el cliente pidió «Tambopata AV Circunvalacion» y se guardó «AV
+// Circunvalacion, Tambopata», que Shalom no tiene por qué reconocer.
+// El alcance incluye su PROVINCIA, no solo su ciudad: al elegir la primera oficina la ciudad
+// se afina al distrito («Carmen Alto») y desde ahí «Jesús Nazareno» —la de al lado, 2 km—
+// quedaba fuera de lo que se podía nombrar.
+export function oficinaNombradaEn(texto: string, ciudad: string, sede = ""): Agencia | null {
+  const t = ` ${_n(texto)} `;
+  if (!t.trim()) return null;
+  const c = _n(ciudad);
+  const ofrecidas = agenciasParaOfrecer(ciudad);
+  const cand = ofrecidas.length ? [...ofrecidas] : [...(agenciasCercanasAlDistrito(ciudad)?.agencias ?? [])];
+  const act = agenciaExacta(sede, ciudad);
+  const prov = act ? `${_n(act.p)}|${_n(act.d)}` : (cand[0] ? `${_n(cand[0].p)}|${_n(cand[0].d)}` : "");
+  if (prov) {
+    const yaEsta = new Set(cand.map((a) => _n(a.l)));
+    for (const a of AGENCIAS) {
+      if (`${_n(a.p)}|${_n(a.d)}` === prov && !yaEsta.has(_n(a.l)) && _ofrecible(a)) cand.push(a);
+    }
+  }
+  // Gana la que tenga MÁS palabras distintivas dentro del texto, y todas presentes: así
+  // «Chachapoyas CO Dos De Mayo» elige esa y no la que solo aporta «Chachapoyas».
+  let mejor: Agencia | null = null, max = 0;
+  for (const a of cand) {
+    if (_n(a.l) === c) continue;   // la que se llama igual que su ciudad no distingue nada
+    const pal = _n(a.l).split(" ").filter((w) => w.length >= 3 && !_RUIDO_NOMBRE.has(w));
+    if (!pal.length || !pal.every((w) => t.includes(` ${w} `))) continue;
+    if (pal.length > max) { max = pal.length; mejor = a; }
+  }
+  return mejor;
+}
+
 export function nombraUnaOficinaDe(texto: string, ciudad: string): boolean {
   const t = ` ${_n(texto)} `;
   const c = _n(ciudad);

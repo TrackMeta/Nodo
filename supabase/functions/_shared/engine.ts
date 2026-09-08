@@ -18,8 +18,8 @@ import {
   esSoloDepartamento, capitalizaNombresPropios,
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia, agenciasParaOfrecer,
   distritosConOficina, agenciasDeDistritoEn, agenciaPorReferencia, nombreDeVariasProvincias,
-  nombraUnaOficinaDe,
-  mismaProvinciaQue,
+  mismoDepartamentoQue, kmDesdeSuSede, oficinaNombradaEn,
+  nombraUnaOficinaDe, agenciasQueSuenanA,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
@@ -8117,6 +8117,11 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
 // siempre trae una calle/avenida/jirón, así que no se pierde detección. (Si el mensaje
 // trae OTRA señal —DNI/nombre/tel— la IA igual extrae la dirección si la hay.)
 const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|direccion|domicilio)/i;
+// «mejor mándamelo a la de…», «cámbialo a…», «en vez de esa…»: el cliente está moviendo el
+// destino aunque no diga ni «agencia» ni «sede». Sirve solo como SEÑAL barata para mirar el
+// mensaje; quién decide después es el clasificador y el padrón de agencias.
+const RE_CAMBIA_DESTINO =
+  /\b(mejor|en vez|en lugar|c[aá]mbi(a|ala|alo|elo|ela)|prefiero|puedes? mandarl[oa]|m[aá]ndamel[oa]|env[ií]amel[oa]|recojo en|voy a recoger)\b/i;
 // Señal barata de "cambio de destinatario" (nombre de quien recoge/recibe) y de
 // "cambio de teléfono de contacto". Ambos son datos de despacho que el cliente
 // corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
@@ -8134,7 +8139,9 @@ const RE_DIR_NO_ES_DIR =
 async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   if (event.type !== "message" || event.msgType === "image" || !event.text) return false;
   const txt = event.text; const low = txt.toLowerCase();
-  const sigSede = AGENCIA_KW.test(low);          // AGENCIA_KW no tiene flag i → normalizar
+  // AGENCIA_KW no tiene flag i → normalizar. Y la señal no puede depender de que diga
+  // «agencia»: al elegir de la lista contesta «la de AV Tacna» y punto (ver más abajo).
+  const sigSede = AGENCIA_KW.test(low) || RE_CAMBIA_DESTINO.test(low);
   const sigDni = /\b\d{7,9}\b/.test(txt);
   const sigDir = DIRECCION_KW.test(low);
   const sigNombre = NOMBRE_KW.test(low);
@@ -8184,13 +8191,80 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
   let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
   const cambios: string[] = [];
+  // 🏢 Una AGENCIA que se llama como una calle NO es una dirección. Medido en 9 de 25
+  // departamentos: «mejor mandamelo a la de AV Tacna» se guardó como cambio de DIRECCIÓN y
+  // la sede se quedó con la vieja. Dos cosas a la vez: DIRECCION_KW salta con «av» y
+  // AGENCIA_KW no encuentra «shalom/agencia/oficina/sede» en esa frase —la forma en que uno
+  // redacta, no en la que se habla—, así que el clasificador lo mandó a `direccion`. Y el
+  // cliente de PROVINCIA no tiene dirección de entrega: recoge en la agencia. Si lo que
+  // clasificó como dirección nombra una de SUS oficinas, es la sede.
+  // Se mira el MENSAJE ENTERO, no los pedazos que devolvió el clasificador: parte el nombre
+  // («Chachapoyas» a sede y «CO Dos De Mayo» a dirección) o lo reescribe («Tambopata AV
+  // Circunvalacion» → «AV Circunvalacion, Tambopata»). Y lo que se guarda es el nombre del
+  // PADRÓN, que es el que entiende el courier.
+  {
+    const _ofiMsg = oficinaNombradaEn(txt, String(sh.ciudad ?? ""), String(sh.sede ?? ""));
+    if (_ofiMsg && limpiaZona(_ofiMsg.l) !== limpiaZona(String(sh.sede ?? ""))) {
+      const _antes = `${p.sede ?? ""}${p.direccion ? ` / ${p.direccion}` : ""}`;
+      p.sede = _ofiMsg.l; p.direccion = "";
+      await logEvent(db, channelId, contactId, "nota", "🏢 Nombró una agencia, no una dirección",
+        `"${_antes.slice(0, 45)}" → ${_ofiMsg.l} (${_ofiMsg.t})`).catch(() => {});
+    }
+  }
   // SEDE (texto libre): guard por solape de palabras + re-evalúa sede_por_confirmar.
   const nSede = String(p.sede ?? "").trim();
-  if (nSede && valorLibreEnMensaje(nSede, txt) && String(sh.sede ?? "") !== nSede) {
+  // ⛔ Y NO puede mudarlo de departamento. Este camino aceptaba la sede del clasificador con
+  // solo mirar que las palabras estuvieran en el mensaje: un cliente de Arequipa diciendo
+  // «mándamelo a la de Miraflores» se llevaba esa sede sin un solo chequeo de zona. El guard
+  // vive en el otro camino (el del flujo) y acá no había ninguno — el mismo agujero de
+  // siempre, dos caminos y solo uno protegido. Se comprueba contra el padrón, y si el nombre
+  // no resuelve a ninguna oficina se deja pasar como antes: puede ser una sede que Shalom
+  // abrió y nuestro padrón todavía no tiene, y ahí manda el cliente (queda por confirmar).
+  const _ofiSede = agenciasQueSuenanA(nSede)[0] ?? null;
+  if (nSede && _ofiSede && !mismoDepartamentoQue(_ofiSede, String(sh.sede ?? ""), String(sh.ciudad ?? ""))) {
+    await logEvent(db, channelId, contactId, "nota", "🛡️ Sede de otro departamento",
+      `"${nSede}" es de ${_ofiSede.d} y él es de ${sh.ciudad ?? "?"} — no se cambia`).catch(() => {});
+  } else if (nSede && valorLibreEnMensaje(nSede, txt) && String(sh.sede ?? "") !== nSede) {
+    // 📏 ¿Se movió mucho? No se le niega —lo pidió él— pero se le nombra, que dentro de un
+    // departamento hay saltos de 363 km. El aviso estaba escrito en el otro camino y ahí NO
+    // corre nunca: los cambios de agencia entran por acá. Un guard en el camino equivocado
+    // es un guard que no existe.
+    if (_ofiSede) {
+      const _km = kmDesdeSuSede(_ofiSede, String(sh.sede ?? ""), String(sh.ciudad ?? ""));
+      if (_km != null && _km > 100) {
+        cambios.push(`📍 ${bonito(_ofiSede.l)} queda en ${bonito(_ofiSede.t)}, a unos ${_km} km de la anterior`);
+        await logEvent(db, channelId, contactId, "nota", "📏 Cambió a una oficina lejos",
+          `${_ofiSede.l} está a ${_km} km de la anterior — se le nombra el distrito`).catch(() => {});
+      }
+    }
     sh.sede = nSede; sh.destino = nSede;
     const motivo = sedeImprecisa(nSede, String(sh.ciudad ?? ""));
     if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;
     if (!yaSalio) await setField(db, channelId, contactId, "sede", nSede).catch(() => {});
+    // 🔴 Y en el FLUJO, que es de donde lee el motor en el turno siguiente. `setField` escribe
+    // en los campos del contacto y el pedido se parchea acá al lado, pero `flow_runs.vars`
+    // se quedaba con la sede vieja: el pedido decía una agencia y la conversación otra, y al
+    // turno siguiente el motor volvía a hablar de la vieja. Medido en 23 de 25 departamentos.
+    // Es el mismo pecado de siempre —dos caminos que cambian la sede y cada uno escribe en su
+    // sitio— y por eso los tres sitios se tocan juntos: campo, pedido y flujo.
+    try {
+      // ⚠️ "activo" NO es el estado del run parqueado esperando al cliente: es "esperando",
+      // que es justo el único momento en que este camino corre. Filtrar por "activo" no
+      // casaba con nada y la escritura no pasaba NUNCA, en silencio. Por eso se listan los
+      // dos y por eso, si no se actualizó ninguno, queda anotado en la Timeline en vez de
+      // desaparecer: un guard que no dispara y no avisa es peor que no tenerlo.
+      const { data: _rv } = await db.from("flow_runs").select("id, vars")
+        .eq("contact_id", contactId).in("estado", ["activo", "esperando"])
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (_rv?.id) {
+        await db.from("flow_runs")
+          .update({ vars: { ...((_rv as any).vars ?? {}), sede: nSede } })
+          .eq("id", (_rv as any).id);
+      } else {
+        await logEvent(db, channelId, contactId, "nota", "⚠️ Sede cambiada solo en el pedido",
+          "No había flujo abierto donde escribirla — revisar si la conversación sigue").catch(() => {});
+      }
+    } catch (_) { /* el campo y el pedido ya quedaron bien */ }
     cambios.push("sede: " + nSede);
   }
   // TELÉFONO de contacto (celular peruano: 9 dígitos que empiezan en 9). Se extrae
@@ -8226,7 +8300,17 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   // Medido en la simulacion de recompra del 2026-08-27.
   const esReferencia = esAnafora(nDir) ||
     RE_DIR_NO_ES_DIR.test(nDir.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
-  if (nDir && !esReferencia && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
+  // ⛔ Y el de PROVINCIA no tiene dirección de entrega: recoge en la agencia. Si lo que el
+  // clasificador llamó dirección es el nombre de una OFICINA —y encima de otro departamento,
+  // como «AV Ejercito» que está en Tacna— guardarlo es meter basura en el pedido y en el
+  // rótulo. Medido: un cliente de Arequipa pidió esa agencia, la sede (bien) no se movió, y
+  // el nombre acabó igual en su dirección.
+  const _dirEsAgencia = String(sh.zona ?? "").toLowerCase() === "provincia" &&
+    !!nDir && agenciasQueSuenanA(nDir).length > 0;
+  if (_dirEsAgencia) {
+    await logEvent(db, channelId, contactId, "nota", "🏢 Eso es una agencia, no su dirección",
+      `"${nDir.slice(0, 40)}" — recoge en agencia, no se guarda como dirección`).catch(() => {});
+  } else if (nDir && !esReferencia && valorLibreEnMensaje(nDir, txt) && String(sh.direccion ?? "") !== nDir) {
     sh.direccion = nDir;
     if (!yaSalio) await setField(db, channelId, contactId, "direccion", nDir).catch(() => {});
     cambios.push("dirección: " + nDir);
@@ -15057,10 +15141,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Incluye el NOMBRE de la oficina, no solo su distrito/provincia/departamento: el
         // pueblo del cliente puede llamarse igual que la agencia sin ser el distrito (Mazuko
         // está en INAMBARI). Ver la misma corrección en la detección de zona.
-        // …pero cambiar a otra oficina de SU MISMA PROVINCIA sí vale: son las que se le
-        // ofrecieron. Ver mismaProvinciaQue — sin esto, en cuanto elegía la primera su
-        // ciudad se afinaba al distrito y ya no podía cambiarse a ninguna otra.
-        if (_ciu && !mismaProvinciaQue(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? "")) &&
+        // …pero cambiar a otra oficina de SU DEPARTAMENTO sí vale. Se probó primero por
+        // PROVINCIA y resultó un mal sustituto de la distancia: bloqueaba Abancay →
+        // Andahuaylas (51 km) y dejaba pasar El Triunfo → Mazuko (142 km). El daño real
+        // estaba en cruzar de departamento (Tacna 231 km, Los Olivos 581 km), así que el
+        // corte va ahí; los saltos largos DENTRO del departamento no se niegan, se avisan
+        // (más abajo). Negarle un cambio que pidió a 51 km es decidir por él otra vez.
+        if (_ciu && !mismoDepartamentoQue(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? "")) &&
             ![_ofi.l, _ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
             `Sonó "${_ofi.l}" (${_ofi.t}) pero es de ${ctx.ciudad} — no se cambia la sede`).catch(() => {});
@@ -15068,6 +15155,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       }
       if (_ofi && limpiaZona(_ofi.l) !== limpiaZona(String(ctx.sede ?? ""))) {
+        // 📏 ¿Cuánto se mueve con el cambio? Se mide ANTES de pisar la sede, que si no ya no
+        // hay desde dónde medir. Si es mucho, no se le niega —lo pidió él— pero se le NOMBRA
+        // el distrito para que un error se vea en el acto, igual que con «Bellavista está en
+        // Lima». Callarlo es cómo un cliente terminaba con la ficha de otra ciudad.
+        const _kmSalto = kmDesdeSuSede(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
         run.vars.sede = _ofi.l;
         ctx.sede = _ofi.l;
         await setField(db, run.channel_id, run.contact_id, "sede", _ofi.l);
@@ -15086,6 +15178,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           catch (_) { /* sin RPC → el panel lo corrige a mano; el evento queda abajo */ }
           await logEvent(db, run.channel_id, run.contact_id, "campo", "📦 Sede del pedido actualizada",
             `El pedido ya existía: ahora sale a ${_ofi.l}`).catch(() => {});
+        }
+        if (_kmSalto != null && _kmSalto > 100) {
+          (run.vars as any)._sede_lejos = `${bonito(_ofi.l)}|${bonito(_ofi.t)}|${_kmSalto}`;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📏 Cambió a una oficina lejos",
+            `${_ofi.l} está a ${_kmSalto} km de la anterior — se le nombra el distrito`).catch(() => {});
         }
         await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Cambió de oficina",
           `Ahora recoge en ${_ofi.l} (${_ofi.t})`).catch(() => {});
@@ -16274,6 +16371,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && (_yaEligioOp || _elPidioSede || _sabemosCiudad)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
+          // 📏 Se cambió a una oficina LEJOS dentro de su departamento. Lo escribe el MOTOR,
+          // no la IA: pedírselo por prompt es justo lo que ya falló cuatro veces, y acá el
+          // dato —los km y el distrito— la IA no lo tiene. Va antes del bloque de sedes
+          // porque este turno ya resolvió su sede: no hay lista que ofrecerle.
+          const _lejos = String((run.vars as any)?._sede_lejos ?? "");
+          if (_lejos) {
+            delete (run.vars as any)._sede_lejos;
+            const [_l, _t, _k] = _lejos.split("|");
+            salida = `${salida.trimEnd()}\n\n📍 Te lo mando a *${_l}*, que queda en *${_t}* ` +
+              `— a unos ${_k} km de la que tenías. Si no era esa, dime y la cambio 👍`;
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Se le nombró la oficina lejana",
+              `${_l} (${_t}), ${_k} km`).catch(() => {});
+          }
           const _bl = bloqueDeSedes(ctx, run);
           if (_bl) {
             // 📋 Primero fuera la lista que se escribió la IA, con sus referencias inventadas;
