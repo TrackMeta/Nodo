@@ -2050,6 +2050,18 @@ async function cancelarPedidoDelCliente(
       .update({ estado: "cancelado", updated_at: new Date().toISOString() }).eq("id", ord.id);
     if (error) throw new Error(error.message);
     await recomputeStageOnLoss(db, channelId, contactId).catch(() => {});
+    // 🔕 Y se le corta el remarketing que existe SOLO por este pedido. La secuencia
+    // "provincia sin adelanto" está para rescatar un pedido sin pagar; si el cliente lo dio
+    // de baja, ese pedido ya no existe y sus mensajes pasan a ser falsos: medido, a uno que
+    // escribió «ya no lo quiero, cancela mi pedido» le quedaba programado «tu pedido sigue
+    // reservado, con el adelanto de S/20 lo despacho hoy». El scheduler no lo frena porque
+    // su veto mira pedidos FIRMES (`ESTADOS_FIRMES`) y "cancelado" no es uno: es una pérdida,
+    // no una compra. ⛔ Solo se corta ESE segmento — las secuencias generales siguen, que
+    // haber cancelado un pedido no es haber pedido que no le escriban (ver el opt-out).
+    await db.from("sequence_subscriptions")
+      .update({ estado: "cancelada", updated_at: new Date().toISOString() })
+      .eq("contact_id", contactId).eq("estado", "activa").eq("segmento", "provincia_sin_adelanto")
+      .then(() => {}, () => {});
     await logEvent(db, channelId, contactId, "nota", "🚫 Pedido cancelado por el cliente",
       `${ord.estado}${ord.amount ? ` · S/ ${ord.amount}` : ""} — “${String(texto ?? "").slice(0, 90)}”`).catch(() => {});
     return true;
