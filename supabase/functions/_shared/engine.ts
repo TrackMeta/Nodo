@@ -7930,6 +7930,14 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       await logEvent(db, channelId, contactId, "nota", "💸 Pagó por adelantado un pedido de Lima",
         `${_monto != null ? "Monto leído: " + _monto + ". " : ""}Por cobrar en la puerta: ${_porCobrar}. ` +
         `Queda por validar: si está bien, el motorizado NO debe cobrar.`).catch(() => {});
+      // 🔔 Y se te avisa. Este bloque decía en su comentario «se avisa al dueño» y no avisaba
+      // a nadie: el dato quedaba solo en la Timeline, que nadie mira a tiempo. Mientras
+      // tanto el bot ya le había dicho al cliente cuánto le quedaba por pagar, así que el
+      // pedido y la conversación decían cosas distintas y la diferencia la pagaba él, dos
+      // veces. Va con la foto del comprobante, como los demás avisos de pago por validar.
+      await avisar(db, channelId, contactId, "pago_adelantado_lima", {
+        monto_leido: _monto ?? "?", por_cobrar: _porCobrar, operacion: _oper || "—",
+      }, { foto: url }).catch(() => {});
       const _sym2 = simboloMoneda((ordLima as any).currency);
       // 💰 Y CUÁNTO pagó. La primera versión de este bloque le decía «cuando llegue el
       // motorizado ya no pagas nada» a cualquiera: probado con un abono de S/50 sobre un
