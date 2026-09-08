@@ -302,7 +302,7 @@ function previsualizar(plantilla, a){
   if(a.clave==="pago_digital_validar"||a.clave==="pago_extra_validar") botones.unshift("✅ Aprobar y entregar");
   // Los avisos "por validar" ya adjuntan la foto por código; los de venta
   // confirmada, solo si el operador prendió "Adjuntar comprobante".
-  const llevaFoto = ["adelanto_validar","saldo_validar","pago_digital_validar","pago_extra_validar","pago_adelantado_lima"].includes(a.clave) || conFoto(a);
+  const llevaFoto = ["adelanto_validar","saldo_validar","pago_digital_validar","pago_extra_validar"].includes(a.clave) || conFoto(a);
   const foto = llevaFoto ? `<div style="background:#0d1620;border:1px dashed #33465a;border-radius:8px;padding:14px;text-align:center;color:#6f8398;font-size:12px;margin-bottom:8px">🧾 Comprobante de pago (foto)</div>` : "";
   return `<b>[Prime Digital]</b>\n`+foto+html+botones.map(t=>`<div class="tgbtn">${t}</div>`).join("");
 }

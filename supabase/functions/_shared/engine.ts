@@ -2221,7 +2221,9 @@ function horarioAtencion(hcfg: any, tz: string): { dentro: boolean; proxima: str
 //   false/omitido → no manda nada (el caller ya avisó por su cuenta).
 async function pasarAHumano(
   db: SupabaseClient, channelId: string, contactId: string, motivo: string,
-  opts?: { aviso?: boolean | "fuera"; molesto?: boolean },
+  // `foto`: la captura que motivó la escalada (un comprobante de pago). Va adjunta al aviso
+  // para poder validarlo desde el propio Telegram, sin abrir el chat.
+  opts?: { aviso?: boolean | "fuera"; molesto?: boolean; foto?: string },
 ) {
   try {
     await db.from("contacts").update({ bot_activo: false }).eq("id", contactId);
@@ -2261,7 +2263,8 @@ async function pasarAHumano(
     const nota = !chequeoHorario ? "" : dentro
       ? "\n🟢 En horario de atención."
       : `\n🔴 Fuera de horario${proxima ? ` — al cliente le dijimos que respondes ${proxima}` : ""}.`;
-    await avisar(db, channelId, contactId, "pide_humano", { cliente: quien, motivo, horario: nota });
+    await avisar(db, channelId, contactId, "pide_humano", { cliente: quien, motivo, horario: nota },
+      opts?.foto ? { foto: opts.foto } : {});
   } catch (e) { console.error("[pasarAHumano]", (e as any)?.message ?? e); }
 }
 
@@ -7247,7 +7250,18 @@ async function avisar(
     const { data: channel } = await db.from("channels")
       .select("telegram_chat_ids, nombre, telegram_avisos, timezone").eq("id", channelId).maybeSingle();
     const chatIds = (channel as any)?.telegram_chat_ids ?? [];
-    if (!chatIds.length) return;
+    // 🔕 Un aviso que no sale NO puede irse en silencio. Se apagan por tres motivos
+    // legítimos —sin Telegram conectado, apagado desde el panel, sin token— y hasta ahora
+    // los tres devolvían sin dejar rastro: si algo no te llegaba, no había forma de saber si
+    // no se disparó, si se apagó o si se perdió en el camino. Es la lección del día repetida
+    // tres veces (el auditor que pasaba en falso, el `||` que no respaldaba, el filtro por
+    // "activo" que no casaba con nada): lo que no dispara tiene que decirlo.
+    // Solo se anota cuando NO sale — anotar cada aviso enviado llenaría la Timeline de ruido.
+    const _noSale = async (motivo: string) => {
+      if (!contactId) return;
+      await logEvent(db, channelId, contactId, "nota", "🔕 Aviso no enviado", `${clave}: ${motivo}`).catch(() => {});
+    };
+    if (!chatIds.length) { await _noSale("el canal no tiene Telegram conectado"); return; }
 
     // Contacto de PRUEBA (panel "Probar"): NO disparar avisos reales al Telegram del dueño.
     // Probar una venta no debe spamear el grupo ni, peor, crear botones (pago por validar /
@@ -7262,11 +7276,11 @@ async function avisar(
     // (pide_humano) o "no le llegó algo que pagó" (envio_fallido/entrega_fallida). El
     // bot igual pausó/cerró la venta; apagar la alerta dejaría al cliente fantasmeado
     // sin que nadie se entere. El resto (marketing, confirmaciones) sí respeta el toggle.
-    if (!AVISOS_CRITICOS.has(clave) && !avisoActivo(cfg, clave)) return;   // lo apagó desde el panel
+    if (!AVISOS_CRITICOS.has(clave) && !avisoActivo(cfg, clave)) { await _noSale("lo apagaste en Canales → Avisos"); return; }
 
     const secrets = await getChannelSecrets(db, channelId);
     const token = secrets?.telegram_bot_token;
-    if (!token) { console.warn("[avisar] canal sin telegram_bot_token"); return; }
+    if (!token) { console.warn("[avisar] canal sin telegram_bot_token"); await _noSale("el canal no tiene token de Telegram"); return; }
 
     if (contactId && (datos.cliente == null || datos.telefono == null)) {
       // Trae telefono/user_id si la 0062 está; si no, cae al select básico.
@@ -7930,14 +7944,6 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       await logEvent(db, channelId, contactId, "nota", "💸 Pagó por adelantado un pedido de Lima",
         `${_monto != null ? "Monto leído: " + _monto + ". " : ""}Por cobrar en la puerta: ${_porCobrar}. ` +
         `Queda por validar: si está bien, el motorizado NO debe cobrar.`).catch(() => {});
-      // 🔔 Y se te avisa. Este bloque decía en su comentario «se avisa al dueño» y no avisaba
-      // a nadie: el dato quedaba solo en la Timeline, que nadie mira a tiempo. Mientras
-      // tanto el bot ya le había dicho al cliente cuánto le quedaba por pagar, así que el
-      // pedido y la conversación decían cosas distintas y la diferencia la pagaba él, dos
-      // veces. Va con la foto del comprobante, como los demás avisos de pago por validar.
-      await avisar(db, channelId, contactId, "pago_adelantado_lima", {
-        monto_leido: _monto ?? "?", por_cobrar: _porCobrar, operacion: _oper || "—",
-      }, { foto: url }).catch(() => {});
       const _sym2 = simboloMoneda((ordLima as any).currency);
       // 💰 Y CUÁNTO pagó. La primera versión de este bloque le decía «cuando llegue el
       // motorizado ya no pagas nada» a cualquiera: probado con un abono de S/50 sobre un
@@ -7957,7 +7963,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       await pasarAHumano(db, channelId, contactId,
         `💸 Pagó POR ADELANTADO un pedido de Lima (contraentrega)${_monto != null ? `: ${_monto}` : ""}` +
         `${_oper ? ` · op ${_oper}` : ""}. Por cobrar en la puerta: ${_porCobrar}. ` +
-        `Valida el comprobante y avísale al motorizado que NO cobre.`, { aviso: false }).catch(() => {});
+        `Valida el comprobante y avísale al motorizado que NO cobre.`, { aviso: false, foto: url }).catch(() => {});
       return true;
     }
   }

@@ -107,26 +107,6 @@ export const AVISOS: AvisoDef[] = [
       "⚠️ {{motivo}}",
   },
   {
-    // 🔴 El pedido de Lima/Callao se cobra en la puerta, así que un cliente que paga ANTES
-    // no encaja en ningún estado: el motor le guarda el comprobante y NO lo acredita solo
-    // (una captura se edita en un minuto). Hasta acá bien — pero el dato se escribía y no lo
-    // leía nadie: ni aviso, ni la tarjeta del pedido, ni el Excel del courier. Medido en la
-    // tanda de los 25 departamentos: al cliente se le dijo «te quedan S/89 por pagar» y el
-    // pedido seguía con saldo S/109, o sea que el motorizado le cobraba los S/20 otra vez.
-    // Sin este aviso nadie se entera a tiempo de que hay algo que validar.
-    clave: "pago_adelantado_lima", grupo: "pagos",
-    titulo: "Pagó por adelantado (Lima)",
-    desc: "Un cliente de Lima/Callao pagó antes de recibirlo. Valídalo o el motorizado le cobrará de más.",
-    vars: ["cliente", "telefono", "monto_leido", "por_cobrar", "operacion"],
-    texto:
-      "💸 *PAGÓ POR ADELANTADO — LIMA*\n" +
-      "\n" +
-      "👤 {{cliente}}\n" +
-      "💵 Mandó: *S/ {{monto_leido}}* · a cobrar en la puerta: S/ {{por_cobrar}}\n" +
-      "🧾 Operación: {{operacion}}\n" +
-      "⚠️ Si el pago está bien, el motorizado *NO* debe cobrar ese monto.",
-  },
-  {
     clave: "adelanto_auto", grupo: "pagos",
     titulo: "Adelanto aprobado solo",
     desc: "El bot validó el adelanto sin consultarte. Es solo para que estés al tanto — apágalo si te llena el chat.",
