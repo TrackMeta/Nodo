@@ -13044,8 +13044,19 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
         const { data: ultOut } = await db.from("messages").select("content")
           .eq("contact_id", run.contact_id).eq("direction", "out")
           .order("ts", { ascending: false }).limit(3);
-        const _preguntado = (ultOut ?? []).some((mm: any) =>
-          RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(String(mm?.content?.text ?? ""))));
+        const _dichoOut = (ultOut ?? [])
+          .map((mm: any) => sinFormato(String(mm?.content?.text ?? ""))).join("\n");
+        // 🔴 Y «preguntárselo» no es solo hacerle la pregunta: es haberle puesto las
+        // presentaciones delante. Medido en Huancayo — la IA cerró preguntándole la CIUDAD y
+        // debajo iba la lista de precios; él contestó «1 nomas», que responde a la LISTA, no a
+        // la pregunta. Como el mensaje anterior no decía «¿cuántas?», la red no disparó, el
+        // clasificador tampoco selló, y el bot le repreguntó la cantidad DOS veces más con la
+        // lista de precios encima cada vez. Tres veces lo mismo por contestar bien.
+        // Después de ver los precios, un número solo es la cantidad: en esa conversación no
+        // hay otra cosa numerada del 1 al 3. Es la misma puerta de antes, por el otro lado.
+        const _leListamos = list.filter((o) =>
+          o.precio != null && _dichoOut.includes(String(o.precio))).length >= 2;
+        const _preguntado = RE_PIDE_ELEGIR_CANTIDAD.test(_dichoOut) || _leListamos;
         const _calza = list.filter((o) => Number(o.cantidad ?? 0) === _n);
         if (_preguntado && _calza.length === 1) {
           const op3 = _calza[0];
@@ -16671,6 +16682,59 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // que el modelo use una palabra concreta es dejar la decisión en su redacción.
             const _seguro = !_bl.auto || _elPidioSede ||
               (RE_HABLA_DE_SEDE.test(sinFormato(salida)) && /[?¿]/.test(salida));
+            // 📏 LA FRASE ES SUYA, LOS DATOS SON DEL MOTOR. En este turno el motor pega su
+            // encabezado, su lista y su pregunta de cierre: lo único que le toca a la IA es la
+            // línea de entrada — que es exactamente lo que el prompt ya le pide («Dile en UNA
+            // línea que en su ciudad tenemos varias»). Así que se conserva hasta el primer
+            // salto de línea y lo de ahí para abajo se descarta.
+            //
+            // 🔴 Por qué así y no persiguiendo el formato. Iban SEIS formas de lista inventada
+            // —viñeta, «*X* — ref», «📍 *X*», «📍 X», «📍 *X* (ref inventada)» y NUMERADA
+            // («1. Mercado Central / 2. Óvalo Grau / 3. Grifo El Gallo / 4. Plaza de Armas»:
+            // cuatro oficinas que no existen en Trujillo)— y cada una se tapó por separado
+            // mientras el modelo estrenaba la siguiente. La causa no es que imite: es que NO
+            // TIENE los nombres (el prompt le da solo el número, a propósito), así que cuando
+            // la conversación le pide nombrar oficinas, rellena el hueco. Contra eso no hay
+            // patrón que valga. Pero una lista NECESITA saltos de línea para ser una lista, y
+            // cortando ahí caen las seis y la séptima, sin adivinar ninguna.
+            //
+            // ⚠️ Solo cuando el bloque del motor va SÍ o SÍ (`_seguro`): si no, el recorte
+            // podría dejar la burbuja sin la lista y sin lo que ella había escrito.
+            // ⚠️ Y con piso: si la primera línea no llega a ser un mensaje (un «¡Claro! 😊»
+            // suelto), no se corta nada y el trabajo queda para el colador de formato de abajo.
+            // El costo, asumido: si en ese mismo turno contestó OTRA cosa debajo de un salto
+            // de línea, se pierde. En lo medido —cuatro ciudades— su mensaje era una sola línea.
+            if (_seguro) {
+              let _entrada = salida.split("\n")[0].trim();
+              // 🧹 Y sin el ANUNCIO HUÉRFANO. La línea que se conserva a veces termina
+              // anunciando lo que venía debajo («…para dejarlo listo, pásame estos datos 👇»,
+              // «…aquí te lo listan:») y lo de debajo es justo lo que se acaba de quitar: queda
+              // un 👇 apuntando a la lista del motor y prometiendo unos datos que ya nadie pide.
+              // Medido en Chilca. Se le quita esa última frase, no la línea entera — y solo si
+              // lo que sobra sigue siendo un mensaje.
+              // ⚠️ El corte NO se ancla solo en la puntuación: el modelo separa sus frases con
+              // EMOJI y no con punto —«…Chilca te queda cerca 🔩😊 Ahora para dejarlo listo,
+              // pásame estos datos 👇»—, así que anclado en «.» no había dónde cortar y el
+              // anuncio se quedaba igual. Misma regla de la forma coloquial que ya mordió en
+              // las regex de la sede y de la cantidad. Se busca el ÚLTIMO corte —punto o
+              // emoji— que deje un mensaje en pie.
+              if (/[👇:]\s*$/.test(_entrada)) {
+                const _cuerpo = _entrada.replace(/[👇:\s]+$/u, "");
+                const _hay = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20;
+                let _mejor = "";
+                for (const m of _cuerpo.matchAll(/[.!?…]|\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)) {
+                  const _cab = _cuerpo.slice(0, (m.index ?? 0) + m[0].length).trim();
+                  if (_hay(_cab)) _mejor = _cab;
+                }
+                if (_mejor && _mejor.length < _cuerpo.trim().length) _entrada = _mejor;
+              }
+              if (_entrada && _entrada !== salida.trim() &&
+                  _entrada.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20) {
+                salida = _entrada;
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se recortó a su frase de entrada",
+                  "El encabezado, la lista y la pregunta los pega el motor; lo de abajo lo escribía ella").catch(() => {});
+              }
+            }
             const _sinIA = sinListaDeSedesDeLaIA(salida, !_bl.auto, _seguro);
             if (_sinIA.habia) {
               salida = _sinIA.texto;
