@@ -16605,17 +16605,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // sigue al adelanto sin esperar, así que pegarle la lista de oficinas es darle a elegir
       // algo que nadie va a leer. Salió en 6 de 10 simulaciones (ver sinPreguntarLaSede).
       const _cerrandoPedido = String(ctx.datos_completos ?? "") === "si";
-      // 🗺️ Con que sepamos su CIUDAD alcanza para ayudarlo a ubicar su agencia. Antes había
-      // que esperar a que eligiera cantidad (`_yaEligioOp`) o preguntara por la oficina, y con
-      // eso el cliente que decía «soy de Tingo María» se quedaba sin saber a dónde va su
-      // paquete. Rodrigo: «no lo dejes en el aire si el cliente te ha dicho su provincia».
-      // Y pesa más ahora que ya no se sella «1 unidad por defecto»: sin esto, el que no
-      // contesta la cantidad no vería jamás sus oficinas.
-      const _sabemosCiudad = !!String(ctx.ciudad ?? "").trim() &&
-        !esSoloDepartamento(String(ctx.ciudad ?? ""));
+      // 🗺️ Saber su CIUDAD no basta para sacarle la lista. Este bloque la abría solo con eso
+      // —para no dejar en el aire al que decía «soy de Tingo María»— y quedó desalineado con
+      // el bloque del prompt de arriba, que sí espera a la cantidad («🕒 Todavía NO le pidas
+      // la sede»). Medido en Trujillo: «llega a trujillo?» y en UNA burbuja le llegaron los
+      // precios, «¿cuántas unidades quieres?», los seis distritos con oficina y «¿en cuál
+      // estás?» — dos preguntas distintas a la vez, contra la regla de una por mensaje.
+      // Rodrigo, 2026-09-08: «que la lista de oficinas espere a que elija cuántas lleva».
+      // ⚠️ Y NO lo deja en el aire: el «en Trujillo te llega por agencia Shalom» lo sigue
+      // diciendo el turno de la zona (`_zonaRecienTurno`). Lo que se aplaza es el ELEGIR
+      // oficina, que es logística de un pedido que todavía no existe.
+      // 🏢 Excepción, la misma que ya tenía el prompt: si en su ciudad hay UNA SOLA oficina,
+      // nombrársela no es hacerle elegir, es contestarle «¿me llega?».
+      const _unicaEnSuCiudad = !!String(ctx.ciudad ?? "").trim() &&
+        !esSoloDepartamento(String(ctx.ciudad ?? "")) &&
+        agenciasDeCiudad(String(ctx.ciudad ?? "")).length === 1;
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
           && !_cerrandoPedido
-          && (_yaEligioOp || _elPidioSede || _sabemosCiudad)
+          && (_yaEligioOp || _elPidioSede || _unicaEnSuCiudad)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
           // 📏 Se cambió a una oficina LEJOS dentro de su departamento. Lo escribe el MOTOR,
