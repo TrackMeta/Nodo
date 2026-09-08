@@ -12949,7 +12949,11 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       if (lineas.length > 1) texto2 = lineas.join("\n");
     } catch (_) { /* sin historial, se sigue con el último mensaje */ }
   }
-  const cls = await classify(db, run.channel_id, {
+  // ⚠️ Con `.catch`: el comentario de abajo promete que la red determinista corre igual «si la
+  // llamada al clasificador falla», y eso solo era cierto si `classify` devolvía null. Si
+  // LANZA —que es lo que hace un proveedor caído— la excepción se llevaba la función entera y
+  // con ella el respaldo. Una promesa escrita en un comentario no la cumple el comentario.
+  let cls = await classify(db, run.channel_id, {
     texto: texto2,
     que: "compra disponibles",
     candidatos: list.map((o) => ({
@@ -12957,30 +12961,66 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       label: `${o.nombre}${o.precio != null ? ` (S/ ${o.precio})` : ""}`,
       detalle: o.descripcion,
     })),
+  }).catch(async (e) => {
+    console.error("[detectarOpcion/classify]", (e as any)?.message ?? e);
+    await logEvent(db, run.channel_id, run.contact_id, "error", "🧩 No pude clasificar qué presentación quiere",
+      String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
+    return null;
   });
   // OJO: sin `cls` NO se sale â la red determinista de abajo tiene que correr igual.
   // Si la llamada al clasificador falla (proveedor caÃ­do, sin crÃ©dito), un Â«quiero 2
   // unidadesÂ» no puede quedar sin sellar: el cliente ya eligiÃ³.
   // Solo fijamos con confianza suficiente. Si duda, quien llama debe CONFIRMAR
   // con una pregunta: nunca adivinamos cuando hay dinero de por medio.
+  // 🔴 …y los dos guards de abajo tampoco pueden SALIRSE. Decían «no selles ESTA» y de paso
+  // cancelaban la red determinista, que es la que sabe cuál era la buena. Medido con el curso
+  // digital: el cliente escribió «el pack con plantillas» —inequívoco—, el clasificador eligió
+  // la OTRA con confianza alta, el guard hizo bien su trabajo y no la selló… y con eso murió
+  // también el respaldo, que sí tenía «Pack con plantillas» como única mención fuerte. Nada
+  // quedó sellado: el bot le repitió el precio del pack que él acababa de pedir y le preguntó
+  // DOS veces más cuál quería. La venta solo se cerró porque el OCR dedujo la presentación por
+  // el monto pagado — o sea, por el último respaldo de todos.
+  // El comentario de arriba ya decía que la red tiene que correr igual si el clasificador
+  // falla; faltaba que corriera igual cuando el clasificador ACIERTA el turno pero yerra la
+  // opción. Ahora se marca «no sellar» y se sigue; la red decide.
+  let _noSellar = false;
   if (cls && cls.clave && cls.confianza >= 0.7) {
     const op = list.find((o) => o.id === cls.clave);
     // Y que haya nombrado UNA sola. Medido: "¿cuál es la diferencia entre básica y
     // premium?" sellaba la Básica —el texto la menciona, así que el guard de abajo la
     // daba por buena— y con el plan sellado el motor le mandó los datos de pago a alguien
     // que solo estaba comparando. Nombrar dos es comparar, no elegir.
-    const _mencionadas = list.filter((o) => mencionaLaOpcion(texto2, o, list));
+    // 🔴 Sobre lo que dijo AHORA (`texto`), no sobre el historial pegado (`texto2`). Nombrar
+    // dos en UN mensaje es comparar; nombrar una hoy y otra ayer es haber comparado y después
+    // haber elegido. Medido con el curso: preguntó «¿cuál es la diferencia entre la única y el
+    // pack?» y al turno siguiente contestó «el pack con plantillas» — inequívoco. Como el
+    // historial pegado seguía teniendo las dos, el guard lo leyó como que SEGUÍA comparando y
+    // no selló nada; el bot le repreguntó cuál quería dos veces más. El historial está ahí
+    // para rescatar lo que se dijo y nadie procesó, no para juzgar lo que está diciendo hoy.
+    const _mencionadas = list.filter((o) => mencionaLaOpcion(texto, o, list));
     if (_mencionadas.length > 1) {
       // Salvo que UNA sola esté nombrada de verdad y sea justo la que eligió la IA:
       // entonces las otras las trajo el nombre o la dirección del cliente, no él.
-      const _fuertes = _mencionadas.filter((o) => mencionaFuerte(texto2, o, list));
+      const _fuertes = _mencionadas.filter((o) => mencionaFuerte(texto, o, list));
       if (!(_fuertes.length === 1 && _fuertes[0].id === cls.clave)) {
+        // 🔴 Acá SÍ se sale, y la red determinista tampoco corre. Nombró DOS: está comparando,
+        // y entonces no hay ninguna que sellar — ni la del clasificador ni la del respaldo.
+        // Medido al soltar este return por error: «¿cuál es la diferencia entre 1 y 2
+        // unidades?» selló «2 unidades», porque para la red «2 unidades» es una mención
+        // fuerte y no sabe que la frase las está CONTRASTANDO. Este return hacía dos trabajos
+        // —no selles ESTA / no selles NINGUNA— y solo se veía el primero.
         return { ...cls, intencion: "comparando", clave: null };
       }
     }
     // Y que la haya NOMBRADO. Sin esto, un "quiero comprarlo" sellaba la más
     // barata: el cliente no elegía nada y el bot ya no le ofrecía el pack.
-    if (op && !mencionaLaOpcion(texto2, op, list)) return { ...cls, intencion: "preguntando", clave: null };
+    if (!_noSellar && op && !mencionaLaOpcion(texto2, op, list)) {
+      cls = { ...cls, intencion: "preguntando", clave: null };
+      _noSellar = true;
+    }
+  }
+  if (cls && cls.clave && cls.confianza >= 0.7 && !_noSellar) {
+    const op = list.find((o) => o.id === cls.clave);
     run.vars.opcion_id = cls.clave;
     ctx.opcion_id = cls.clave;
     await setField(db, run.channel_id, run.contact_id, "opcion_id", cls.clave);
@@ -13004,8 +13044,19 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // «dime cuál prefieres», o sea le repreguntó lo que acababa de decir, que es de lo que más
   // molesta. Un mensaje así no puede depender de que una llamada a la IA salga bien.
   if (!String(ctx.opcion_id ?? "").trim()) {
-    const _fuertes = list.filter((o) => mencionaFuerte(texto2, o, list));
-    if (_fuertes.length === 1) {
+    // Lo que dijo AHORA manda; el historial pegado es solo el respaldo para el mensaje que
+    // nadie procesó. Si en su último mensaje nombró UNA sola, esa es — aunque en el historial
+    // aparezcan las dos porque antes las estuvo comparando.
+    const _ahora = list.filter((o) => mencionaFuerte(texto, o, list));
+    const _fuertes = _ahora.length === 1 ? _ahora : list.filter((o) => mencionaFuerte(texto2, o, list));
+    // 🔴 …y con el MISMO freno que el camino del clasificador: si en este mensaje nombró más de
+    // una, está comparando y no se sella nada. La red no lo tenía —el freno vivía solo arriba—
+    // y por eso «¿cuál es la diferencia entre 1 y 2 unidades?» sellaba «2 unidades»: para la
+    // red es la única mención FUERTE («2» pegado a «unidades»), mientras que el «1» va suelto
+    // entre palabras. Sellar ahí le manda los datos de pago a alguien que está preguntando.
+    // Dos caminos para lo mismo y el freno en uno solo: la familia de siempre.
+    const _nombradasAhora = list.filter((o) => mencionaLaOpcion(texto, o, list));
+    if (_fuertes.length === 1 && _nombradasAhora.length <= 1) {
       const op2 = _fuertes[0];
       run.vars.opcion_id = op2.id;
       ctx.opcion_id = op2.id;
@@ -13483,7 +13534,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // dependemos de que toque un botón). Preguntar no es elegir: si solo compara,
   // esto no fija nada. Refresca {{precio}} en el acto si eligió o cambió.
   if (op === "generar_texto" && ctx.last_input && cfg.detectar_opcion !== false) {
-    await detectarOpcion(db, run, ctx, String(ctx.last_input)).catch(() => null);
+    // 🔴 Este catch se tragaba TODO en silencio. Es la misma lección que ya costó una vez en
+    // `extraerDatos`: un error invisible sobre los datos de una venta es una venta que se traba
+    // sin que nadie sepa por qué — acá, sin presentación sellada, no hay precio ni pedido.
+    // Que falle sigue sin cortar el turno; lo que cambia es que queda escrito en la Timeline.
+    await detectarOpcion(db, run, ctx, String(ctx.last_input)).catch(async (e) => {
+      console.error("[detectarOpcion]", (e as any)?.message ?? e);
+      await logEvent(db, run.channel_id, run.contact_id, "error", "🧩 No pude leer qué presentación eligió",
+        String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
+      return null;
+    });
     // 🔢 Se le preguntó la cantidad en el turno de su ubicación y no la contestó: se sella la
     // primera y se sigue. Regla de Rodrigo: si escribió, quiere el producto — por lo menos
     // uno—, así que la cantidad no puede quedar como una pregunta abierta que reaparece en
