@@ -3903,6 +3903,11 @@ const RE_YA_PIDE_DATOS = /(nombre|apellido|celular|\bdni\b|datos)/i;
 // Se corta desde la pregunta hasta el final; si con eso el mensaje se queda en nada, se
 // reemplaza por el acuse, porque lo que sigue —el adelanto— continúa la conversación igual.
 const RE_HABLA_DE_SEDE = /\b(sede|oficina|agencia)s?\b/i;
+// 🗣️ ¿El tema de las oficinas lo sacó ÉL? La misma pregunta se hacía en CUATRO sitios con
+// cuatro copias de la misma regex (el bloque del prompt, el que decide la lista, bloqueDeSedes
+// y ahora el de la cantidad). Cuatro copias es como se desincronizan: se toca una y las otras
+// siguen con el criterio viejo — el patrón que ya costó cinco fallos en un día acá mismo.
+const preguntaPorLaSede = (t: unknown) => RE_HABLA_DE_SEDE.test(normalize(String(t ?? "")));
 // ⚠️ Nada de «qué» ni «dónde» sueltos: «desde QUE sale» hacía que una frase que RESPONDÍA
 // («el paquete suele estar en la agencia de Cusco 1 a 2 días desde que sale») contara como
 // una que pregunta, y se cortaba la respuesta. Solo formas que de verdad piden elegir.
@@ -3941,7 +3946,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   const ciudad = String(ctx.ciudad ?? "").trim();
   if (!ciudad) return null;
   const CAB = `En *${bonito(ciudad.toUpperCase())}*`;
-  const _pidio = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+  const _pidio = preguntaPorLaSede(ctx.last_input);
   // 🔁 La lista de oficinas va UNA vez. Medido en una conversación de cuatro turnos: las 7 de
   // Tarapoto se pegaron en tres mensajes seguidos —incluso debajo de «pásame tus datos»—,
   // que es exactamente el machaque que ya nos costó con la pregunta del distrito. Aquella
@@ -4811,7 +4816,12 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false, sePegaSeguro = f
     // la forma es perder: él copia lo que VE, y lo que ve cambia cada vez que el motor toca
     // su propio formato. Lo que identifica su lista no es el adorno: es un RENGLÓN CORTO que
     // abre con pin o viñeta, repetido. Eso es lo que se mira ahora, y las cinco caen solas.
-    const _esItem = /^\s*(📍|[-•·])\s*\S/.test(l) && l.trim().length <= 90;
+    // 🔴 …y aun así quedaba una forma fuera: la lista NUMERADA. «1. Mercado Central / 2. Óvalo
+    // Grau / 3. Grifo El Gallo / 4. Plaza de Armas» —cuatro oficinas inventadas para Trujillo—
+    // pasó entera. La generalización de arriba había generalizado el ADORNO pero seguía
+    // enumerando cuáles adornos valen: pin y viñeta. Un número con punto es un marcador de
+    // lista igual que un guion, así que entra en la misma clase.
+    const _esItem = /^\s*(📍|[-•·]|\d{1,2}\s*[.)\-])\s*\S/.test(l) && l.trim().length <= 90;
     // Y la otra forma que usa el motor: «*Nombre* — referencia», sin pin delante.
     const _conRaya = /^\s*\*[^*\n]{2,60}\*\s*[–—-]\s*\S/.test(l);
     if (!_esItem && !_conRaya) return true;
@@ -13918,7 +13928,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // consume: espera al turno en que su ubicación queda de verdad resuelta.
       const _faltaSuCiudad = String(ctx.zona_entrega ?? "") === "provincia" &&
         (!String(ctx.ciudad ?? "").trim() || esSoloDepartamento(String(ctx.ciudad ?? "")));
-      const _tocaPreguntarCant = !!(run.vars as any)?._zona_recien && !_faltaSuCiudad;
+      // 🗣️ …y tampoco es el turno si el cliente PREGUNTÓ por las oficinas. Ese turno es suyo:
+      // se le contesta lo que preguntó y nada más. Medido en Trujillo — «¿qué sedes tienen en
+      // trujillo?» y le llegó, en una burbuja, la respuesta + «¿cuántas unidades quieres?» +
+      // las tres presentaciones con sus precios + los seis distritos + «¿en cuál estás?».
+      // Cuatro cosas para una pregunta. La marca NO se consume, así que la cantidad se le
+      // pregunta en el turno siguiente, que es cuando toca. Rodrigo: «que conteste solo lo
+      // que preguntó».
+      const _tocaPreguntarCant = !!(run.vars as any)?._zona_recien && !_faltaSuCiudad &&
+        !preguntaPorLaSede(ctx.last_input);
       // La marca se consume acÃ¡: la pregunta sale en ESTE mensaje y en el siguiente turno
       // ya no toca â si no eligiÃ³, se sella la primera (ver arriba) y el tema se cierra.
       if (_tocaPreguntarCant) { delete (run.vars as any)._zona_recien; (run.vars as any)._cant_preguntada = 1; }
@@ -14783,7 +14801,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // que es lo que se probó primero y se llevaba por delante la respuesta del envío.
         // Si el que saca el tema es ÉL, la lista va igual: eso es contestarle, no cerrarle.
         const _yaEligio = !!String(ctx.opcion_id ?? "").trim();
-        const _preguntaSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+        const _preguntaSede = preguntaPorLaSede(ctx.last_input);
         if (!_yaEligio && !_preguntaSede) {
           L.push("🕒 Todavía NO le pidas la sede ni le hables de oficinas: primero tiene que decirte " +
             "cuántas unidades lleva. Elegir agencia es logística de un pedido que aún no existe. " +
@@ -16600,7 +16618,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // arreglo dura hasta que el modelo entre por otra puerta — que es exactamente lo que
       // pasó al taparlas de a una. Si el que pregunta por las oficinas es ÉL, van igual.
       const _yaEligioOp = !!String(ctx.opcion_id ?? "").trim();
-      const _elPidioSede = /\b(sede|oficina|agencia)s?\b/.test(normalize(String(ctx.last_input ?? "")));
+      const _elPidioSede = preguntaPorLaSede(ctx.last_input);
       // 📍 …y NUNCA en el turno en que se crea el pedido: con los datos completos el flujo
       // sigue al adelanto sin esperar, así que pegarle la lista de oficinas es darle a elegir
       // algo que nadie va a leer. Salió en 6 de 10 simulaciones (ver sinPreguntarLaSede).
