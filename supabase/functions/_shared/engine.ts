@@ -4283,6 +4283,16 @@ const RE_PREGUNTA_DONDE_PAGAR =
 // (va por agencia, la recoge él, con una clave) es justo lo que le da confianza para
 // soltar sus datos, así que va ANTES y una sola vez, no cuando ya los dio.
 const RE_YA_EXPLICO_ENVIO = /(agencia shalom|por shalom|clave de recojo|clave para recoger|lo recoges)/i;
+// 📦❓ «¿Me lo mandan a mi casa?» en una venta DIGITAL. Es una pregunta legítima —el cliente
+// no sabe que es un curso descargable— y quedó SIN CONTESTAR dos veces seguidas: el mensaje
+// salió con la lista de precios y nada más. La instrucción está en el prompt («si ÉL pregunta
+// cómo le llega, se lo CONTESTAS») y no alcanzó, compitiendo con el ⛔ de no hablar de envíos.
+// Regla de siempre: lo que se cae dos veces deja de ser regla del prompt y pasa a ser función.
+const RE_PREGUNTA_COMO_LLEGA =
+  /(me\s+lo\s+(mandan|manda|env[ií]an|env[ií]a|traen|entregan)|lo\s+(mandan|env[ií]an)\s+a|hacen\s+(env[ií]os?|delivery)|tienen\s+delivery|llega\s+(hasta|a)\s+\w|c[oó]mo\s+(me\s+)?(llega|lo\s+recibo|me\s+lo\s+dan|lo\s+env[ií]an)|a\s+mi\s+casa|env[ií]o\s+a\s+domicilio|cu[aá]nto\s+(demora|tarda)\s+(en\s+)?llegar)/i;
+// Y cómo se reconoce que el mensaje YA lo explicó (para no decírselo dos veces).
+const RE_YA_DIJO_DIGITAL =
+  /(digital|por\s+link|el\s+link|enlace|descarg|no\s+se\s+env[ií]a|no\s+hay\s+env[ií]o|al\s+instante|acceso\s+(inmediato|de\s+por\s+vida)|drive|correo)/i;
 
 // 🏪 «PAGAS EN LA AGENCIA». Regla de Rodrigo, repetida cuatro veces: «el saldo siempre se
 // paga a nosotros, en la agencia no pagas nada». El saldo va a la MISMA cuenta cuando el
@@ -4959,6 +4969,14 @@ function loDijoElCliente(val: string, dicho: string): boolean {
   return palabras.some((w) => d.includes(` ${w} `));
 }
 
+// 💻 Venta DIGITAL. Un curso o un acceso no tiene "unidades": el link es el mismo y se
+// entrega una vez. Toda la maquinaria de la cantidad —la pregunta que escribe el motor, la
+// que le pide el prompt, el cierre— está escrita para el producto FÍSICO y se le aplicaba
+// igual al digital. Medido con un curso de dos presentaciones: el bot preguntó «¿Cuántas
+// unidades o qué oferta quieres?», el cliente contestó «quiero 3» y le cotizó «*S/ 49* cada
+// una, total *S/ 147*» por el MISMO link. En digital lo que se elige es la presentación.
+const esDigital = (ctx: any) => String(ctx?._tipo ?? "") === "digital";
+
 function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = false): string {
   const sym = simboloMoneda(ctx.moneda as string);
   const pz = (v: unknown) => (negritas ? `*${sym} ${v}*` : `${sym} ${v}`);
@@ -4967,7 +4985,9 @@ function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = 
   const cants = lista.map((o) => Number(o.cantidad ?? 0));
   const porCantidad = cants.every((c) => c > 0) && new Set(cants).size === lista.length;
   const a = lista[0], b = lista[1];
-  if (porCantidad && lista.length === 2 && a?.precio != null && b?.precio != null) {
+  // «¿cuántos llevas?» tampoco: en digital las dos presentaciones no son 1 y 2 unidades,
+  // son dos paquetes distintos del mismo acceso.
+  if (!esDigital(ctx) && porCantidad && lista.length === 2 && a?.precio != null && b?.precio != null) {
     const unitario = Number(a.precio) / Math.max(1, Number(a.cantidad));
     const ahorro = Math.round((unitario * Number(b.cantidad) - Number(b.precio)) * 100) / 100;
     // Una sola pregunta: "¿cuántos llevas?" y "¿cuál te preparo?" juntas se leen
@@ -4978,7 +4998,9 @@ function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = 
   // Si el mensaje YA trae las presentaciones —la IA casi siempre las escribe— se pega solo la
   // pregunta. Volcarlas otra vez deja la misma lista de precios dos veces en una burbuja;
   // medido en Tarapoto. La pregunta es la misma en los dos casos, escrita en un solo sitio.
-  const _cierre = "¿Cuántas unidades o qué oferta te preparo?";
+  const _cierre = esDigital(ctx)
+    ? (lista.length === 2 ? "¿Cuál de las dos te preparo?" : "¿Cuál te preparo?")
+    : "¿Cuántas unidades o qué oferta te preparo?";
   if (yaListadas) return _cierre;
   return "Estas son las opciones 👇\n" +
     lista.map((o) => `${o.nombre}${o.precio != null ? ` — ${pz(o.precio)}` : ""}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n") +
@@ -5014,6 +5036,53 @@ function sinDatoInventado(texto: string, cierre: string): string {
   const limpio = t.replace(RE_DATO_INVENTADO, " ").replace(/\s{2,}/g, " ").trim();
   if (limpio.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length >= 25) return limpio;
   return cierre;
+}
+
+// 🔢 El precio de un digital MULTIPLICADO por una cantidad. La regla ya estaba escrita en el
+// prompt («NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación»)
+// y cayó igual: a «quiero 3» le contestó «Para 3 unidades tienes solo la opción individual:
+// *S/ 49* cada una, total *S/ 147*» — tres veces el precio del mismo link. Lo que se cae dos
+// veces deja de ser regla del prompt y pasa a ser función.
+// ⚠️ Los anclajes son estrechos a propósito: «12 clases en total» o «cada clase» son frases
+// legítimas de un curso. Solo cuenta lo que ata un NÚMERO DE UNIDADES o un PRECIO POR UNIDAD.
+// Lenguaje de unidades: en un digital sin packs SIEMPRE está mal, diga el precio que diga.
+const RE_UNIDADES_DIGITAL =
+  /[^.!?\n]*(?:\b(?:[2-9]|\d{2,})\s*(?:unidades?|copias?|licencias?)\b|\bcada\s+un[ao]\b|\bc\s*\/\s*u\b)[^.!?\n]*[.!?]?/gi;
+// El TOTAL es distinto: «El total es S/ 79» está PERFECTO cuando 79 es el precio de una
+// presentación. Solo es invento cuando la cifra no existe en la ficha (el S/ 147 de
+// multiplicar por 3). Por eso este se juzga contra los precios reales y no por su forma:
+// buscar la palabra no es buscar el comportamiento.
+const RE_TOTAL_DIGITAL = /[^.!?\n]*\btotal\b[^\n]{0,14}?[A-Za-z]?\/\s*([\d.,]+)[^.!?\n]*[.!?]?/gi;
+function sinCantidadEnDigital(texto: string, precios: number[] = []): { texto: string; habia: boolean } {
+  const t = String(texto ?? "");
+  const validos = new Set(precios.filter((n) => Number.isFinite(n)).map((n) => +Number(n).toFixed(2)));
+  const _num = (s: string) => {
+    // "1,234.50" y "1.234,50" son el mismo número escrito de dos maneras.
+    const limpio = /,\d{1,2}$/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+    return +Number(limpio).toFixed(2);
+  };
+  let habia = false;
+  RE_UNIDADES_DIGITAL.lastIndex = 0;
+  let out = t;
+  if (RE_UNIDADES_DIGITAL.test(out)) {
+    habia = true;
+    RE_UNIDADES_DIGITAL.lastIndex = 0;
+    out = out.replace(RE_UNIDADES_DIGITAL, " ");
+  }
+  RE_TOTAL_DIGITAL.lastIndex = 0;
+  out = out.replace(RE_TOTAL_DIGITAL, (frase, cifra) => {
+    if (validos.has(_num(String(cifra)))) return frase;   // el total real: se respeta
+    habia = true;
+    return " ";
+  });
+  if (!habia) return { texto: t, habia: false };
+  const limpio = out.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
+    .replace(/^[\s,;:]+/, "").trim()
+    .replace(/^(\p{Ll})/u, (m) => m.toUpperCase());
+  // El motor no calla: si se le quita la frase, dice ÉL la verdad. Callar acá dejaría al
+  // cliente sin respuesta a un «quiero 3» que él sí escribió.
+  const honesto = "El acceso es uno solo y te queda de por vida, así que con una vez te alcanza 🙌";
+  return { texto: limpio ? `${limpio}\n\n${honesto}` : honesto, habia: true };
 }
 
 // 💳 Los datos de pago, siempre con el mismo formato. Se le pidió por prompt TRES veces
@@ -9559,6 +9628,7 @@ const RE_PROMETE_PAGO =
 async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
   yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string },
+  digital?: { monto?: number | null; sym?: string; pedirElegir?: string },
 ): Promise<void> {
   try {
     // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
@@ -9642,6 +9712,31 @@ async function maybeDatosPago(
     // pedido si ya existe y, si no, del que tenga puesto el negocio (Negocio → Entrega), que
     // es el mismo que usa el interceptor del prepago para no contradecirse.
     let _cab = "";
+    // 💰 En la DIGITAL tampoco se manda el número sin decirle CUÁNTO. La regla ya existía
+    // acá abajo para la física («pedirle plata sin decirle cuánta es el mismo agujero») y la
+    // digital se quedó fuera porque el monto se daba por sabido. No lo está cuando hay dos
+    // presentaciones y todavía no eligió: medido con un curso de S/49 y S/79 — el cliente
+    // escribió «soy de Cusco» y le llegaron el Yape y la cuenta del BCP, sin un solo monto y
+    // sin haber elegido nada. El guard `_digitalElegido` existía justo para eso, pero la
+    // promesa de la IA lo saltaba por el costado. Es la familia de siempre: dos caminos para
+    // lo mismo, uno con guard y el otro sin él.
+    if (_esDigital) {
+      const _m = Number(digital?.monto);
+      if (!Number.isFinite(_m) || _m <= 0) {
+        // 🔇 Y NO se calla: si el motor decide no mandar el número, lo dice ÉL. Medido —
+        // «ya, dame el completo» (no calzaba con ninguna presentación), el guard bloqueó los
+        // datos y el mensaje terminó en «el pack con plantillas cuesta *S/ 79*. 💰», sin
+        // pedirle nada. La venta se quedó ahí. Es la regla de siempre: el motor que calla
+        // deja al cliente sin siguiente paso.
+        const _preg = String(digital?.pedirElegir ?? "").trim();
+        if (_preg) await deliverMessage(db, channelId, contactId, _preg).catch(() => {});
+        await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO enviados",
+          "Todavía no hay presentación elegida: mandarle el número sin decirle cuánto es lo deja pagando a ciegas" +
+          (_preg ? " — se le pidió elegir" : "")).catch(() => {});
+        return;
+      }
+      _cab = `Son *${digital?.sym ?? "S/"} ${_m}* 👇\n\n`;
+    }
     if (!_esDigital) {
       let _ade = Number(fisico?.adelanto);
       if (!Number.isFinite(_ade) || _ade <= 0) {
@@ -10268,6 +10363,31 @@ function normalizarDraftProducto(d: any): any {
   const t = String(d.tipo ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   if (t.startsWith("dig")) d.tipo = "digital";
   else if (t.startsWith("fis") || t.startsWith("phys")) d.tipo = "fisico";
+  // 🔢 El precio POR UNIDAD solo existe si la presentación trae VARIAS unidades. El prompt lo
+  // dice ("OBLIGATORIO cuando las presentaciones son CANTIDADES del mismo producto") y el
+  // modelo lo aplica igual donde no toca: medido armando un curso digital, el pack de S/ 79
+  // —un curso más plantillas, cantidad 1— salió con «te sale S/ 39.50 por curso». Dividió
+  // entre 2 lo que no eran dos. Es un precio FALSO metido en la ficha, y de ahí lo repite el
+  // bot como si fuera del dueño. Con cantidad ≤ 1 no hay unidad entre la que dividir, así
+  // que la frase se corta y queda la parte que sí es cierta.
+  if (Array.isArray(d.presentaciones)) {
+    for (const p of d.presentaciones) {
+      const n = Number(p?.cantidad ?? 1);
+      const desc = String(p?.descripcion ?? "");
+      if (n > 1 || !desc) continue;
+      // ⚠️ Lo que identifica el invento es la CIFRA con un «cada uno / por curso / c/u»
+      // detrás, no el verbo que la introduce. La primera versión de esto listaba los verbos
+      // («te sale», «queda en») y el modelo escribió «Incluye plantillas imprimibles *por*
+      // S/ 39 cada uno» — mismo invento, otra redacción, y pasó entero. Es la regla de la
+      // forma coloquial otra vez: se ancla en el dato (S/ + número + unidad), no en el giro.
+      const limpio = desc
+        .replace(/\s*[-—–·,(]?\s*(?:te sale|sale a|queda en|te queda en|por|a|de)?\s*s\s*\/\s*[\d.,]+\s*(?:cada\s+\w+|por\s+\w+|c\s*\/\s*u|la\s+unidad)\)?\.?/gi, "")
+        // Y la puntuación que sostenía la frase borrada, delante y detrás: sin esto quedaba
+        // «, doble herramienta» — se nota más el recorte que lo que se quitó.
+        .replace(/\s{2,}/g, " ").replace(/^\s*[-—–·,]\s*/, "").replace(/\s*[-—–·,]\s*$/, "").trim();
+      if (limpio !== desc) p.descripcion = limpio;
+    }
+  }
   // atributos: objeto {talla:[...],color:[...]} → array [{nombre, valores}].
   if (d.atributos && !Array.isArray(d.atributos) && typeof d.atributos === "object") {
     d.atributos = Object.entries(d.atributos).map(([nombre, vals]) => ({
@@ -13712,7 +13832,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Se le pregunta en el turno en que se resuelve su ubicación, que es cuando ya se le
     // puede decir cómo le llega, y NO se vuelve a tocar. Antes salía de cuatro sitios
     // distintos y el cliente la leía en cada mensaje.
-    if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()) {
+    if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim() && esDigital(ctx)) {
+      // 💻 En digital este bloque entero no aplica: no hay unidades que contar ni logística que
+      // explicar. Medido con un curso — el cliente escribió «soy de Cusco» y le llegó «¿Cuántas
+      // unidades o qué oferta quieres?»; al que contestó «quiero 3» le cotizaron tres cursos.
+      // El bloque físico se le pegaba igual porque nadie preguntaba de qué tipo era la venta.
+      (run as any)._tocaCantidad = false;
+      // 🚧 Y queda marcado que FALTA elegir. Esa marca la pone `extraerDatos`, que solo corre
+      // si el flujo tiene campos que pedir… y un flujo digital no tiene ninguno, así que en
+      // digital NO se ponía nunca. Sin ella no entra el bloque «## Falta elegir la opción» ni
+      // el cierre honesto («Dime cuál prefieres y te lo dejo cerrado 🙂»), y el mensaje se
+      // queda sin siguiente paso: medido, «ya, dame el completo» → «Perfecto, el pack con
+      // plantillas cuesta *S/ 79*. 📲» y ahí murió la venta, sin pregunta y sin pedido.
+      try {
+        const _opsFalta = await loadOpciones(db, run, String(ctx._product_id));
+        if (_opsFalta.filter((o) => Number(o.precio) > 0).length >= 2) (ctx as any)._falta_opcion = true;
+      } catch (_) { /* sin catálogo → no se bloquea */ }
+      parts.push("## Acá no hay unidades que contar\n" +
+        "Esta venta es DIGITAL: lo que tiene que elegir es CUÁL presentación quiere, no cuántas. " +
+        "⛔ Nunca le preguntes «¿cuántas unidades?» ni le hables de cantidades, packs de varias ni totales.\n" +
+        "⛔ Y si él pide varias («quiero 3»), NO multipliques el precio ni le des un total: el acceso es uno " +
+        "solo y le queda de por vida. Díselo así, con calidez, y pregúntale cuál de las opciones prefiere.\n" +
+        "⛔ Tampoco saques TÚ el tema del envío ni le preguntes de dónde es: no hay agencia, ni dirección, " +
+        "ni adelanto. Si él te dice de dónde escribe, se lo acusas en media línea y sigues.\n" +
+        "✅ Pero si ÉL pregunta si se lo mandan a su casa, a su ciudad o cómo le llega, se lo CONTESTAS: es " +
+        "digital, le llega por link apenas paga, lo abre desde donde esté y no hay envío que esperar. " +
+        "Dejarlo sin respuesta porque «acá no se habla de envíos» es peor que hablar de envíos.");
+    } else if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()) {
       // 🕒 …pero "saber su ubicación" no es saber su DEPARTAMENTO. Medido: dijo «Para Madre de
       // Dios», la zona se resolvió a provincia y la marca se gastó en un turno cuyo único
       // trabajo era repreguntarle la ciudad — así que la cantidad se dio por preguntada sin
@@ -13770,8 +13916,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "⛔ Nunca le pidas permiso para decírselo: «¿quieres que te cuente las opciones y precios?», " +
       "«¿te menciono los precios?», «así te doy el precio exacto». Eso gasta un turno entero para no " +
       "decir nada, y el que está comparando ya se fue a otro chat. Si toca hablar de precio, lo pones: " +
-      "cada presentación en su línea, con su cifra, y cierras preguntándole cuántas unidades o qué " +
-      "oferta le preparas.\n" +
+      "cada presentación en su línea, con su cifra, y cierras preguntándole " +
+      (esDigital(ctx) ? "CUÁL de las opciones quiere — en digital no hay unidades que contar." : "cuántas unidades o qué oferta le preparas.") + "\n" +
       "⛔ Y nada de palabras enteras en mayúsculas para enfatizar («¿CUÁNTAS unidades quieres?»): en " +
       "WhatsApp eso se lee como un grito. Lo que quieras resaltar va en *negrita*. Las mayúsculas que " +
       "sí van son las de siempre: siglas (DNI, BCP) y nombres propios.");
@@ -14105,18 +14251,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
               ". El ahorro solo si sale de restar los precios de arriba — nunca inventes un descuento ni un precio tachado. " +
               "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y cierras " +
-              "preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
-              "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata.") +
+              (esDigital(ctx)
+                ? "preguntándole CUÁL de las dos quiere. ⛔ Nunca «¿cuántas unidades?»: esto es digital y no hay unidades. No des por elegida la más barata."
+                : "preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
+                  "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata.")) +
           // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
           // el modelo les pone delante: con una presentación llamada "Básica" salía "La
           // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
           "\n\n✍️ Nómbralas TAL CUAL están escritas arriba. Si al anteponerles una palabra tuya " +
           "(«el plan», «el pack», «la opción») el artículo deja de concordar —«la plan Básica»—, " +
           "usa el nombre solo: «la Básica cuesta S/…».\n" +
-          "\n🔢 CANTIDAD: se vende SOLO por estas presentaciones (cada una ya trae su número de unidades). " +
-          "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
-          "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
-          "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.");
+          (esDigital(ctx)
+            ? "\n🔢 CANTIDAD: acá NO hay cantidad. Es un producto digital: se entrega por link, una vez, y sirve " +
+              "de por vida. Si el cliente pide varias («quiero 3»), ⛔ NO multipliques el precio, NO le des un " +
+              "total y NO le confirmes esa cantidad — dile con calidez que el acceso es uno solo y le queda para " +
+              "siempre, y llévalo a elegir cuál de las presentaciones prefiere."
+            : "\n🔢 CANTIDAD: se vende SOLO por estas presentaciones (cada una ya trae su número de unidades). " +
+              "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
+              "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
+              "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación."));
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
@@ -14124,7 +14277,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // precio real, pero al cliente hay que decirle el monto correcto.
         const p = ctx.precio != null ? ctx.precio : (ops[0] as any)?.precio;
         if (p != null && String(p) !== "") {
-          parts.push(`## Precio\nEste producto cuesta **${simboloMoneda(ctx.moneda as string)} ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad, y si quiere varias tranquilízalo en PRIMERA PERSONA (como si TÚ mismo lo coordinaras: "te lo dejo anotado y coordino tu pedido de X unidades"). ⛔ NUNCA lo derives a "un asesor" ni a "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. NUNCA cierres un pedido por una cantidad mayor a 1.`);
+          const _cabPrecio = `## Precio\nEste producto cuesta **${simboloMoneda(ctx.moneda as string)} ${p}** (precio único y definitivo). Cuando el cliente vaya a comprar, dile EXACTAMENTE ese monto; NUNCA lo cambies ni inventes otro.\n\n`;
+          parts.push(_cabPrecio + (esDigital(ctx)
+            ? `🔢 CANTIDAD: acá NO hay cantidad. Es digital: se entrega por link, una vez, y le sirve de por vida. Si pide varias (ej. 2 o 3), ⛔ NO multipliques el precio, NO le des un total y NO le confirmes esa cantidad — dile con calidez que el acceso es uno solo y le queda para siempre.`
+            : `🔢 CANTIDAD: se vende POR UNIDAD a este precio (no hay pack de varias unidades). Si el cliente pide varias (ej. 2 o 3), NO le confirmes esa cantidad ni multipliques el precio por tu cuenta: dile con calidez que por ahora es por unidad, y si quiere varias tranquilízalo en PRIMERA PERSONA (como si TÚ mismo lo coordinaras: "te lo dejo anotado y coordino tu pedido de X unidades"). ⛔ NUNCA lo derives a "un asesor" ni a "otra persona": el cliente debe sentir que lo atiende una persona real, no un robot. NUNCA cierres un pedido por una cantidad mayor a 1.`));
         }
       }
     }
@@ -16337,7 +16493,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && (run as any)?._tocaCantidad
           && !String(ctx.opcion_id ?? "").trim()
           && !RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida))) {
-        salida = salida.trimEnd() + "\n\n¿Cuántas unidades quieres?";
+        salida = salida.trimEnd() + (esDigital(ctx) ? "\n\n¿Cuál de las opciones quieres?" : "\n\n¿Cuántas unidades quieres?");
         await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 La cantidad la preguntó el motor",
           "Era el turno de preguntarla y la IA no lo hizo").catch(() => {});
       }
@@ -16680,12 +16836,52 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         } catch (_) { /* sin historial → se envía tal cual */ }
       }
       // En digital no hay dato que pedir: si se lo inventó, se le quita antes de enviarlo.
-      if (op === "generar_texto" && String(ctx._tipo ?? "") === "digital") {
+      if (op === "generar_texto" && esDigital(ctx)) {
+        // 📦❓ Y si preguntó CÓMO le llega, se le contesta. Va primero: es lo que preguntó ÉL,
+        // y el resto del mensaje (precios, cierre) es lo que queremos decirle nosotros.
+        if (RE_PREGUNTA_COMO_LLEGA.test(String(ctx.last_input ?? "")) &&
+            !RE_YA_DIJO_DIGITAL.test(sinFormato(salida))) {
+          salida = "Es 100% digital, no se envía nada físico: apenas confirmo tu pago te llega el " +
+            "acceso por link y lo abres desde donde estés 📲\n\n" + salida.trimStart();
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "📦 Preguntó cómo le llega y no se le contestó",
+            "Venta digital: lo contestó el motor (no hay envío, le llega por link)").catch(() => {});
+        }
         const _precioTxt = ctx.precio != null && String(ctx.precio) !== ""
           ? `${simboloMoneda(ctx.moneda as string)} ${ctx.precio}` : "";
         salida = sinDatoInventado(salida, _precioTxt
           ? `Son ${_precioTxt}. ¿Te paso los datos para que lo tengas ya?`
           : "¿Te paso los datos para que lo tengas ya?");
+        // 🔢 Y tampoco hay unidades que multiplicar… salvo que el dueño SÍ haya armado un
+        // paquete de varias (una presentación con cantidad > 1): ahí la cantidad es un dato
+        // real del producto y no se toca. Es el mismo criterio de siempre: se respeta lo que
+        // está en la ficha, se corta lo que se inventa.
+        try {
+          const _opsDig = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
+          if (!_opsDig.some((o) => Number(o.cantidad ?? 0) > 1)) {
+            const _preciosDig = _opsDig.map((o) => Number(o.precio)).filter((n) => Number.isFinite(n) && n > 0);
+            if (Number.isFinite(Number(ctx.precio))) _preciosDig.push(Number(ctx.precio));
+            const _sc = sinCantidadEnDigital(salida, _preciosDig);
+            if (_sc.habia) {
+              salida = _sc.texto;
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 Multiplicó el precio de un digital",
+                "Se cortó la cotización por unidades: el acceso es uno solo y el link se entrega una vez").catch(() => {});
+            }
+          }
+        } catch (_) { /* sin opciones → se envía tal cual */ }
+        // 🧾 Y tampoco hay datos que pedirle. El prompt lo dice con todas las letras («## No
+        // hay ningún dato pendiente… NO necesitas dirección, DNI, talla ni nada suyo») y salió
+        // igual, pegado al bloque de pago: «Pásame tus datos y te lo dejo listo 👇». El cliente
+        // se queda esperando a que le digan QUÉ datos, cuando lo único que falta es que pague.
+        // Tercera vez que una regla de prompt no alcanza en la venta digital → va a código.
+        if (!((ctx as any)._datos_faltan ?? []).length) {
+          const _sd = sinPedirLosDatos(salida);
+          if (_sd !== salida) {
+            salida = _sd.trim() ||
+              "Cuando lo hagas mándame la captura y te paso el acceso al toque 😊";
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "🧾 Pidió datos en una venta digital",
+              "Se le quitó la petición: acá no hay dirección, DNI ni talla que pedir").catch(() => {});
+          }
+        }
       }
       // ⛔ La coletilla del riesgo, por CÓDIGO. Es decisión de Rodrigo que no se diga («del
       // pago se dice el hecho, no el discurso»), está en el prompt con todas las letras y
@@ -16707,7 +16903,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const tits = ((info.ocr?.metodos ?? []) as any[]).map((mm) => String(mm?.titular ?? "").trim()).filter(Boolean);
             // Se le pasa lo que el cliente acaba de escribir: si el numero salio de SU
             // mensaje, la IA lo esta repitiendo y no hay que pegarle el bloque de pago.
+            const _antesDP = salida;
             salida = conDatosDePago(salida, dpTxt, nums, tits, String(ctx.last_input ?? ""));
+            // 💰 Un número de cuenta sin monto es plata a ciegas. La regla ya estaba en la
+            // venta física («sin monto no se manda nada») y `maybeDatosPago` ya la aplica en
+            // la digital… pero el bloque entra por DOS caminos: ese, y este, que lo formatea
+            // sobre el número que escribió la IA. Tapar uno solo es la familia de bugs de
+            // siempre. Medido con un curso de S/49 y S/79: el cliente preguntó «¿a qué número
+            // te yapeo?» sin haber elegido nada y le llegó «💻⚡» + las dos cuentas. Sin monto,
+            // sin saber qué compraba. Acá el mensaje se cambia por la pregunta que faltaba.
+            if (esDigital(ctx) && salida !== _antesDP) {
+              try {
+                const _opsPago = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
+                const _montoPago = (await precioEsperado(db, run, ctx)).monto;
+                if (_opsPago.length > 1 && !(Number(_montoPago) > 0)) {
+                  salida = "Antes de pasarte el número, dime cuál quieres 👇\n\n" +
+                    preguntaCuantos(_opsPago, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "");
+                  (run as any)._pidioElegirTurno = true;   // que maybeDatosPago no lo repita
+                  await logEvent(db, run.channel_id, run.contact_id, "campo", "💳 Número de cuenta sin monto",
+                    "Todavía no eligió presentación: se le pidió elegir antes de pasarle los datos").catch(() => {});
+                } else if (Number(_montoPago) > 0) {
+                  const _symP = simboloMoneda(ctx.moneda as string);
+                  const _yaDiceMonto = new RegExp(`(?:^|[^\\d])${String(_montoPago).replace(".", "\\.")}(?:[^\\d]|$)`)
+                    .test(sinFormato(salida));
+                  if (!_yaDiceMonto) salida = `Son *${_symP} ${_montoPago}* 👇\n\n${salida}`;
+                }
+              } catch (_) { /* sin opciones → se envía tal cual */ }
+            }
           }
         } catch (_) { /* sin datos de pago → se envía tal cual */ }
       }
@@ -16749,10 +16971,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // El cierre depende de lo que le toca hacer al cliente: en digital paga y recibe
           // el link; en un físico de Lima no hay "datos que pasar" —paga al recibir—, así
           // que ofrecerle el Yape sería confundirlo.
-          const _esDigital = String(ctx._tipo ?? "") === "digital";
+          const _esDigital = esDigital(ctx);
+          // …y si los datos de pago YA salieron, ofrecérselos otra vez es no estar escuchando.
+          // Medido: el cliente escribió «ya te yapeo» —o sea, ya los tenía y estaba pagando—
+          // y el mensaje cerró con «¿Te paso los datos para que lo tengas ya?». Lo que falta
+          // ahí es la captura, no el número.
+          const _yaTieneDonde = /yape|plin|\bbcp\b|\bcci\b|interbank|scotiabank|bbva/i.test(dicho);
           const cierre = ofertas >= 2
             ? (PREGUNTAS_DESCUBRIR.find((q) => !dicho.includes(q.toLowerCase().slice(1, 20))) ?? "")
-            : (_esDigital ? "¿Te paso los datos para que lo tengas ya?" : "¿Lo confirmo y te lo mando?");
+            : (_esDigital
+              ? (_yaTieneDonde ? "" : "¿Te paso los datos para que lo tengas ya?")
+              : "¿Lo confirmo y te lo mando?");
           if (cierre) salida = conCierre(salida, cierre);
         } catch (_) { /* sin historial → se envía tal cual */ }
       }
@@ -16925,6 +17154,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             salida = conCierrePendiente(salida,
               `Envíame la foto del adelanto de *${_sym} ${_adel}* para alistar tu pedido 📷`,
               RE_YA_PIDE_ADELANTO);
+          } else if (!_oid && esDigital(ctx) && String(ctx.opcion_id ?? "").trim()) {
+            // 💻 En digital NO hay datos que pedirle. Este empujón está escrito para el
+            // físico —donde falta nombre, DNI y dirección— y salía igual en la venta de un
+            // curso: medido, «la opción Única cuesta *S/ 49*. 📲⚡ … Pásame tus datos y te lo
+            // dejo listo 👇», cuando lo único que falta es que pague. `datos_completos` nunca
+            // llega a "si" en un flujo digital (no tiene campos que completar), así que la
+            // condición se cumplía SIEMPRE desde que elegía presentación.
+            // 🔴 Y explica por qué el recorte que puse arriba —«no pidas datos en digital»—
+            // no lo veía: esa frase no la escribe la IA, la escribe el MOTOR, cuarenta líneas
+            // después del recorte. Buscar la frase en el prompt no es buscar quién la escribe.
+            // Lo que sí toca pedirle es la captura, y solo si ya sabe a dónde pagar.
+            const { data: outsDig } = await db.from("messages").select("content")
+              .eq("contact_id", run.contact_id).eq("direction", "out")
+              .order("ts", { ascending: false }).limit(10);
+            const _yaSabeDonde = (outsDig ?? []).some((mm: any) =>
+              /yape|plin|\bbcp\b|\bcci\b|interbank|scotiabank|bbva/i.test(String(mm?.content?.text ?? "")));
+            if (_yaSabeDonde) {
+              salida = conCierrePendiente(salida,
+                "Cuando lo tengas, mándame la captura y te paso el acceso al toque 📷",
+                RE_YA_PIDE_ADELANTO);
+            }
           } else if (!_oid && String(ctx.opcion_id ?? "").trim() && String(ctx.datos_completos ?? "") !== "si") {
             salida = conCierrePendiente(salida,
               String(ctx.zona_entrega ?? "") === "provincia"
@@ -16987,11 +17237,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _digitalElegido = String((ctx as any)._tipo ?? "") === "digital"
           && _opsProd.length > 1
           && !!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
+        // Y lo que necesita la digital: CUÁNTO tiene que pagar. Sale de la presentación
+        // elegida (o de la única que hay); si todavía no hay ninguna resuelta viene null y
+        // los datos no salen — primero elige, después paga.
+        const _montoDig = _opsProd.length
+          ? (await precioEsperado(db, run, ctx)).monto
+          : (Number.isFinite(Number(ctx.precio)) ? Number(ctx.precio) : null);
         await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
           String(result), _digitalElegido,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
-          { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string) });
+          { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string) },
+          {
+            monto: _montoDig, sym: simboloMoneda(ctx.moneda as string),
+            // Si no hay monto resuelto, lo que le toca es elegir: esa pregunta va en vez del
+            // número. Vacía si el propio mensaje ya se la hizo (no se repite en dos burbujas).
+            pedirElegir: (!(Number(_montoDig) > 0) && _opsProd.length > 1 && !(run as any)._pidioElegirTurno)
+              ? "Antes de pasarte el número, dime cuál quieres 👇\n\n" +
+                preguntaCuantos(_opsProd, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "")
+              : "",
+          });
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
