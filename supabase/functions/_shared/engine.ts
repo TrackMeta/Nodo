@@ -4759,6 +4759,51 @@ function pinesConMayuscula(texto: string): string {
   return String(texto ?? "").replace(/(📌\s*\*?\s*)(\p{Ll})/gu, (_m, pre, letra) => pre + letra.toLocaleUpperCase("es"));
 }
 
+// 📌 Y LA ETIQUETA DE UN DATO ES DATO: no puede llevar la errata del modelo. Medido en Sullana,
+// en la auditoría de las 116 provincias: «📌 *DISTRITITO O CIUDAD*». El 📌 es el formato con el
+// que el MOTOR lista los datos pendientes; el modelo lo imita —eso está bien y es lo que
+// queremos—, pero al reescribir la etiqueta a mano se le cuela la errata, y el cliente la lee
+// como si la hubiera escrito el negocio. Se le encaja a la etiqueta más parecida de las que el
+// motor SÍ conoce (los campos de la ficha + la del distrito, que la IA pide por su cuenta).
+// ⛔ Si no se parece a ninguna, se deja tal cual: puede estar pidiendo algo legítimo que no
+// está en la ficha, y corregir a ciegas sería inventar.
+const _NORM_ET = (s: string) =>
+  String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+// Distancia de edición con corte temprano: pasado el tope no interesa cuánto más lejos está.
+function _distEdicion(a: string, b: string, tope: number): number {
+  if (Math.abs(a.length - b.length) > tope) return tope + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const fila = [i];
+    let mejor = i;
+    for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      fila[j] = Math.min(prev[j] + 1, fila[j - 1] + 1, prev[j - 1] + c);
+      if (fila[j] < mejor) mejor = fila[j];
+    }
+    if (mejor > tope) return tope + 1;
+    prev = fila;
+  }
+  return prev[b.length];
+}
+function pinesConEtiquetaBuena(texto: string, etiquetas: string[]): string {
+  const buenas = [...new Set(etiquetas.map((e) => String(e ?? "").trim()).filter((e) => e.length >= 4))];
+  if (!buenas.length) return String(texto ?? "");
+  return String(texto ?? "").replace(/(📌\s*)\*([^*\n]{4,45})\*/gu, (m, pre, et) => {
+    const n = _NORM_ET(et);
+    if (!n || buenas.some((b) => _NORM_ET(b) === n)) return m;   // ya está bien escrita
+    // Tope 2: alcanza para una letra de más, una de menos o una cambiada. Con 3 empezarían a
+    // confundirse etiquetas cortas distintas entre sí ("Nombre" / "Sede").
+    let mejor = ""; let dist = 3;
+    for (const b of buenas) {
+      const d = _distEdicion(n, _NORM_ET(b), 2);
+      if (d < dist) { dist = d; mejor = b; }
+    }
+    return dist <= 2 && mejor ? `${pre}*${mejor}*` : m;
+  });
+}
+
 // 💰 Las presentaciones escritas DE CORRIDO —«el frasco cuesta *S/ 79* · 2 frascos *S/ 119* ·
 // 3 frascos *S/ 149*»— obligan a releer para comparar, y comparar es justo lo que lleva al
 // pack grande. El prompt ya pide una por línea (con su molde y todo) y el modelo lo cumple a
@@ -16788,6 +16833,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 }
                 if (_mejor && _mejor.length < _cuerpo.trim().length) _entrada = _mejor;
               }
+              // 🗣️ Y UNA sola pregunta. El bloque del motor cierra preguntándole en cuál está,
+              // así que la pregunta de la IA es la MISMA hecha dos veces en la misma burbuja:
+              // «…¿Cuál te queda más cerca?» arriba y «¿En cuál estás? Así te digo la que te
+              // queda» abajo. Salía así en TODOS los mensajes de oficinas. Se le quita la
+              // última frase con signo — y solo eso: acá dentro, con el bloque de sedes a
+              // punto de pegarse, una pregunta suya no puede ser de otra cosa.
+              // ⚠️ Y el «¿» cuenta como corte por sí solo: la pregunta viene pegada con COMA la
+              // mitad de las veces («…para que recojas tu pedido, ¿cuál te queda más cerca?»),
+              // y buscando solo puntos y emojis no había dónde cortar.
+              if (/[?¿]/.test(_entrada)) {
+                const _hay = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20;
+                const _puntos: number[] = [];
+                for (const m of _entrada.matchAll(/[.!?…]|\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)) {
+                  _puntos.push((m.index ?? 0) + m[0].length);
+                }
+                for (const m of _entrada.matchAll(/¿/g)) _puntos.push(m.index ?? 0);
+                let _corte = "";
+                for (const p of _puntos.sort((a, b) => a - b)) {
+                  const _cab = _entrada.slice(0, p).replace(/[\s,;:]+$/u, "").trim();
+                  const _cola = _entrada.slice(p).trim();
+                  if (_hay(_cab) && _cola && /[?¿]/.test(_cola)) { _corte = _cab; break; }
+                }
+                if (_corte) _entrada = _corte;
+              }
               if (_entrada && _entrada !== salida.trim() &&
                   _entrada.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20) {
                 salida = _entrada;
@@ -16837,6 +16906,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto") {
         const _formAntes = salida;
         salida = pinesConMayuscula(salida);
+        // Las etiquetas que el motor SÍ conoce: los campos de la ficha de este flujo, más la
+        // del distrito —que no es un campo, la pide la IA por su cuenta, y es justo donde salió
+        // la errata («DISTRITITO O CIUDAD»)—.
+        salida = pinesConEtiquetaBuena(salida, [
+          ...(Array.isArray((cfg as any)?.campos) ? (cfg as any).campos : [])
+            .map((c: any) => String(c?.label ?? "")).filter(Boolean),
+          "Distrito o ciudad",
+        ]);
         salida = preciosEnLineas(salida, simboloMoneda(ctx.moneda as string));
         // 🗣️ Y fuera la tercera persona: «solo te piden un adelanto de S/20» apareció en
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
