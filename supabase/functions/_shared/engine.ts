@@ -14961,11 +14961,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "1. Si ya tienes todos los datos, CIERRA afirmando (\"listo, queda confirmado\"). NO preguntes " +
       "\"¿confirmo?\" ni \"¿te lo dejo listo?\": el pedido se confirma en ese mismo momento, y si preguntas, " +
       "la respuesta del cliente llega cuando ya estás en otra cosa y se malinterpreta.\n" +
-      "2. NUNCA anuncies que va a llegar otro mensaje. Los del sistema (datos de pago, adelanto, guía, clave de " +
-      "recojo, instrucciones de entrega) salen solos y al instante. Da igual cómo lo digas — \"en breve\", \"ahora\", " +
+      // 💻 Los EJEMPLOS cambian según el tipo de venta, no solo por ahorrar: el ejemplo que
+      // escribes en un prompt sale por la boca del bot. Hablarle de guía, clave de recojo y
+      // adelanto a quien compra un PDF es invitarlo a mencionar cosas que no existen en su
+      // compra. Misma lección que ya costó cuatro veces en este archivo.
+      "2. NUNCA anuncies que va a llegar otro mensaje. Los del sistema (" +
+      (esDigital(ctx) ? "los datos de pago y el link de acceso" :
+        "datos de pago, adelanto, guía, clave de recojo, instrucciones de entrega") +
+      ") salen solos y al instante. Da igual cómo lo digas — \"en breve\", \"ahora\", " +
       "\"enseguida\", \"te va a llegar\", \"recibirás\" —: está prohibido en cualquier forma. Termina tu mensaje y ya.\n" +
-      "   MAL: \"Queda confirmado. En breve te llegará el monto del adelanto y los datos de pago.\"\n" +
-      "   MAL: \"Listo. Ahora recibirás un mensaje con los datos para el adelanto.\"\n" +
+      (esDigital(ctx)
+        ? "   MAL: \"Listo. En breve te llegará el link de acceso.\"\n"
+        : "   MAL: \"Queda confirmado. En breve te llegará el monto del adelanto y los datos de pago.\"\n" +
+          "   MAL: \"Listo. Ahora recibirás un mensaje con los datos para el adelanto.\"\n") +
       // Tampoco PEDIR PERMISO para mandarlos: medido en digital, "¿Te paso los datos para que
       // puedas hacer el pago?" y el motor mandaba el Yape en la misma burbuja siguiente. La
       // pregunta queda de adorno (nadie esperó la respuesta) y encima suena a que el bot duda.
@@ -14992,15 +15000,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "   MAL: \"Perfecto, el plan Básica cuesta S/ 99. ¿Quieres que te envíe los datos de pago?\"\n" +
       "   MAL: \"El Premium es S/ 199. ¿Te paso los datos para que puedas hacer el pago?\"\n" +
       "   BIEN: \"¡Perfecto! Te confirmo el plan Básica por S/ 99.\" (y cortas ahí — los datos de pago salen solos)\n" +
-      "8. NUNCA des por confirmado un pedido si te falta ALGÚN dato obligatorio: ni del producto (talla, color, " +
-      "presentación) ni de la entrega (nombre, DNI, dirección, sede, celular). Mientras falte uno, el pedido NO se " +
+      // 💻 La lista de datos y los ejemplos, según el tipo de venta. En digital no hay talla,
+      // ni DNI, ni sede, ni recojo — y dejarle esos ejemplos delante es lo que hace que un
+      // bot de PDFs mencione tallas. Ver la regla de que el ejemplo del prompt pesa más.
+      "8. NUNCA des por confirmado un pedido si te falta ALGÚN dato obligatorio: " +
+      (esDigital(ctx)
+        ? "ni la presentación que eligió ni sus datos de contacto. "
+        : "ni del producto (talla, color, presentación) ni de la entrega (nombre, DNI, dirección, sede, celular). ") +
+      "Mientras falte uno, el pedido NO se " +
       "crea, y si igual dices \"queda confirmado\" el cliente se queda esperando algo que nunca se registró. Pide lo " +
       "que falta sin afirmar que ya está cerrado: confirmas DESPUÉS, cuando lo tengas todo.\n" +
-      "   MAL: \"Listo, queda confirmado tu pedido talla 41.\" (cuando solo manejas 38, 39 y 40)\n" +
-      "   MAL: \"Queda confirmado tu pedido, talla 39 negras con recojo en Trujillo. ¿Me pasas tu celular?\" " +
-      "(si le falta el celular, NO está confirmado: lo confirmas cuando te lo dé)\n" +
-      "   BIEN: \"En la 41 no la tengo — manejo 38, 39 y 40. ¿Cuál te va?\"\n" +
-      "   BIEN: \"Perfecto, talla 39 negras con recojo en Trujillo. Pásame tu celular y te lo dejo listo.\"\n" +
+      (esDigital(ctx)
+        ? "   MAL: \"Queda confirmado tu acceso. ¿Me pasas tu correo?\" (si falta el correo, NO está confirmado)\n" +
+          "   BIEN: \"Perfecto, la Básica. Pásame tu correo y te lo dejo listo.\"\n"
+        : "   MAL: \"Listo, queda confirmado tu pedido talla 41.\" (cuando solo manejas 38, 39 y 40)\n" +
+          "   MAL: \"Queda confirmado tu pedido, talla 39 negras con recojo en Trujillo. ¿Me pasas tu celular?\" " +
+          "(si le falta el celular, NO está confirmado: lo confirmas cuando te lo dé)\n" +
+          "   BIEN: \"En la 41 no la tengo — manejo 38, 39 y 40. ¿Cuál te va?\"\n" +
+          "   BIEN: \"Perfecto, talla 39 negras con recojo en Trujillo. Pásame tu celular y te lo dejo listo.\"\n") +
       "9. NO puedes CANCELAR ni ANULAR un pedido: no tienes esa herramienta. Si dices \"cancelado\", el pedido " +
       "sigue vivo en el tablero y se despacha igual — el negocio paga el envío y el cliente rechaza el paquete. " +
       "Cuando te pidan cancelar, dile la verdad: que lo estás viendo y le confirmas. Nunca lo des por hecho.\n" +
@@ -15011,10 +15028,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "una cosa no vale para la otra. Si te preguntan por algo que no está escrito acá, dilo con naturalidad y " +
       "ofrece confirmarlo — el negocio queda OBLIGADO a cumplir lo que tú prometas, y una devolución que nadie " +
       "autorizó la paga él.\n" +
-      "   MAL: \"Si no te queda la talla la cambias dentro de los 30 días\" (la ficha solo dice \"garantía 30 días " +
-      "por defecto de fábrica\": eso cubre fallas, no que le quede grande)\n" +
-      "   BIEN: \"Tienes 30 días de garantía por defecto de fábrica. Sobre cambio por talla, déjame confirmártelo " +
-      "y te aviso.\" (y elige bien la talla con él para que no pase)\n" +
+      // 🔴 El BIEN de acá decía «déjame confirmártelo y te aviso» — exactamente la promesa que
+      // el motor le BORRA de la salida (ver sinPromesaDeAviso). Un prompt que enseña lo que el
+      // código después quita es peor que no enseñar nada: el modelo lo escribe, se lo cortan, y
+      // el mensaje sale raro. Reescrito para que el ejemplo calce con lo que sí puede decir.
+      // Y los ejemplos de TALLA solo en venta física: no hay tallas en un PDF.
+      (esDigital(ctx)
+        ? "   MAL: \"Si no te gusta te devuelvo el dinero\" (si la ficha no dice eso, lo acabas de prometer tú)\n" +
+          "   BIEN: \"Lo que sí te puedo asegurar es que el acceso es inmediato y no caduca.\" (y sigues con la venta)\n"
+        : "   MAL: \"Si no te queda la talla la cambias dentro de los 30 días\" (la ficha solo dice \"garantía 30 días " +
+          "por defecto de fábrica\": eso cubre fallas, no que le quede grande)\n" +
+          "   BIEN: \"Tienes 30 días de garantía por defecto de fábrica.\" (y eliges bien la talla con él para que " +
+          "no haga falta nada más — ⛔ sin prometerle que lo averiguas y le avisas)\n") +
       "   Y vale para las dos direcciones: que la ficha no lo mencione NO significa que no exista. Tampoco lo NIEGUES. " +
       "Medido: a \"¿el curso tiene certificado?\" —algo que la ficha ni nombra— contestó \"el curso no incluye " +
       "certificado\", y con eso le tumbó la venta a un interesado por un dato que nadie verificó.\n" +
