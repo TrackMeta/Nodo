@@ -19,7 +19,7 @@ import {
   agenciasCercanasAlDistrito, agenciaExacta, slugAgencia, agenciasParaOfrecer,
   distritosConOficina, agenciasDeDistritoEn, agenciaPorReferencia, nombreDeVariasProvincias,
   mismoDepartamentoQue, kmDesdeSuSede, oficinaNombradaEn,
-  nombraUnaOficinaDe, agenciasQueSuenanA,
+  nombraUnaOficinaDe, agenciasQueSuenanA, lugarQueDesambigua,
 } from "./shalom-agencias.ts";
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
@@ -11762,6 +11762,19 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     const _pelado = String(lugar).replace(RUIDO_CIUDAD, " ").replace(/\s+/g, " ").trim();
     if (_pelado && _pelado.length >= 3 && agenciasDeCiudad(_pelado).length) _ciudad = _pelado;
   }
+  // 🧭 Nombró su pueblo Y su ciudad en la misma frase: «soy de San Juan Bautista, Iquitos».
+  // Ese pueblo existe en Ayacucho, Ica y Maynas; quedándonos con el nombre pelado le
+  // ofrecíamos la agencia del San Juan Bautista de AYACUCHO —a 1000 km— a alguien que
+  // acababa de decir de dónde era. El dato para no equivocarse ya estaba en su mensaje.
+  // Va ACÁ y no en cada bloque que lee la ciudad: es el único sitio donde se escribe.
+  if (nombreDeVariasProvincias(_ciudad)) {
+    const _des = lugarQueDesambigua(_ciudad, texto);
+    if (_des) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Lo desambiguó él mismo",
+        `"${_ciudad}" existe en varios departamentos; en su frase nombró ${enTitulo(_des)}`).catch(() => {});
+      _ciudad = _des;
+    }
+  }
   await set("ciudad", enTitulo(_ciudad));
   await set("zona_distrito_incierto", "");
   await set("entrega_hoy", "no");
@@ -15528,8 +15541,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // estaba en cruzar de departamento (Tacna 231 km, Los Olivos 581 km), así que el
         // corte va ahí; los saltos largos DENTRO del departamento no se niegan, se avisan
         // (más abajo). Negarle un cambio que pidió a 51 km es decidir por él otra vez.
-        if (_ciu && !mismoDepartamentoQue(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? "")) &&
-            ![_ofi.l, _ofi.t, _ofi.p, _ofi.d].some((x) => limpiaZona(String(x ?? "")) === _ciu)) {
+        // 🧭 LA OFICINA QUE SOLO CALZA POR EL NOMBRE DE UN PUEBLO AMBIGUO NO VALE. «San Juan
+        // Bautista» es distrito en Huamanga (Ayacucho), Ica y Maynas (Loreto), y hay oficina
+        // en las tres: que la agencia se llame igual que su pueblo no prueba de cuál habla —
+        // es la misma moneda al aire que `sellaSedeUnica` se niega a lanzar.
+        // 🔴 Medido: «soy de San Juan Bautista, IQUITOS» quedó con la sede de AYACUCHO, a
+        // 1000 km, y le salió su ficha. Y en el MISMO chat, un renglón antes, el otro guard
+        // ya había escrito «no se deduce la sede»: el freno estaba puesto en un camino y este
+        // lo esquivaba. Dos caminos para lo mismo, uno con guard — la familia de siempre.
+        // ⚠️ Va ANTES del corte por departamento y no dentro: ese corte pregunta «¿es de su
+        // departamento?», y con un nombre ambiguo la respuesta es que SÍ —resuelve el pueblo
+        // a uno solo de los tres— así que daba por buena justo la que había que dudar. Un
+        // guard que consulta un dato ambiguo hereda la ambigüedad.
+        // ✅ Solo cae la que calza POR EL NOMBRE del pueblo. Si él nombró la agencia («recojo
+        // en Ctra Iquitos Nauta») no es este caso y pasa igual; y con Mazuko —nombre de un
+        // solo sitio— se sigue deduciendo, que es para lo que se escribió el escape.
+        const _soloPorNombre = [_ofi.l, _ofi.t, _ofi.p, _ofi.d]
+          .some((x) => limpiaZona(String(x ?? "")) === _ciu);
+        if (_ciu && _soloPorNombre && nombreDeVariasProvincias(String(ctx.ciudad ?? ""))) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Nombre de varios departamentos",
+            `"${ctx.ciudad}" existe en varios departamentos con oficina — no se sella por el nombre`).catch(() => {});
+          _ofi = null;
+        }
+        if (_ofi && _ciu && !mismoDepartamentoQue(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? "")) &&
+            !_soloPorNombre) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
             `Sonó "${_ofi.l}" (${_ofi.t}) pero es de ${ctx.ciudad} — no se cambia la sede`).catch(() => {});
           _ofi = null;
@@ -17472,6 +17507,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // extractor cuando la sede queda firme (ver `_ficha_ahora`). Va acá, después de
       // emitIaText, para que la imagen llegue DEBAJO del texto y no al revés. Si por lo
       // que sea no sale, `_ficha_sede` sigue en pie y `crearPedido` la manda igual.
+      // 🧭 …salvo que la "sede" no sea más que su PUEBLO y ese pueblo exista en varios
+      // departamentos con oficina. Mandarle entonces la foto de una agencia concreta es
+      // afirmarle cuál es sin saberlo — y una foto se cree más que una frase: el cliente de
+      // Iquitos recibía la tarjeta de la agencia de Ayacucho, a 1000 km, sin una sola pista
+      // de que estaba mal. Medido con «soy de San Juan Bautista» (Huamanga, Ica y Maynas).
+      // ⚠️ El corte va ACÁ, en la ficha, y no en cada sitio que sella: la sede se escribe
+      // desde NUEVE lugares distintos y ya perseguí cuatro hoy. La foto, en cambio, sale por
+      // un solo sitio — es el punto donde el error se vuelve visible para el cliente.
+      // ✅ Si la sede es una oficina de verdad y no el nombre del pueblo («Ctra Iquitos
+      // Nauta»), la ficha sale igual: ahí él nombró la agencia y no hay nada que adivinar.
+      const _sedeEsSuPueblo = limpiaZona(String(ctx.sede ?? "")) === limpiaZona(String(ctx.ciudad ?? ""));
+      if (!handoff && (run.vars as any)?._ficha_ahora && String(ctx.zona_entrega ?? "") === "provincia"
+          && _sedeEsSuPueblo && nombreDeVariasProvincias(String(ctx.ciudad ?? ""))) {
+        delete (run.vars as any)._ficha_ahora;
+        delete (run.vars as any)._ficha_sede;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Ficha no enviada",
+          `"${ctx.ciudad}" existe en varios departamentos — mandarle la foto de una agencia sería elegir por él`).catch(() => {});
+      }
       if (!handoff && (run.vars as any)?._ficha_ahora && String(ctx.zona_entrega ?? "") === "provincia") {
         const _slugA = String((run.vars as any)._ficha_ahora);
         delete (run.vars as any)._ficha_ahora;

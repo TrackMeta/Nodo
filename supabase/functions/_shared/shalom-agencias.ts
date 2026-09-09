@@ -1242,6 +1242,44 @@ export function nombreDeVariasProvincias(ciudad: string): boolean {
   return _provsConAgencia(ciudad).length > 1;
 }
 
+// 🧭 Él YA dijo de cuál es, en la misma frase. «Soy de San Juan Bautista, Iquitos»: el nombre
+// del pueblo existe en Ayacucho, en Ica y en Maynas, y el motor se quedaba con el primero del
+// padrón — le ofrecía la única agencia del San Juan Bautista de AYACUCHO a un cliente de
+// Loreto, a 1000 km. El dato que desambigua venía en su propio mensaje y se estaba tirando.
+// Se busca por PROVINCIA, por DEPARTAMENTO y por el DISTRITO de cada oficina, porque el
+// cliente nombra lo que conoce: nadie de Iquitos dice «Maynas».
+// Devuelve el nombre que él escribió (no el administrativo) para que el resto del motor le
+// siga hablando con su palabra. Si el texto nombra DOS candidatas —o ninguna— devuelve null y
+// todo sigue como antes: acá solo se aprovecha una certeza suya, no se adivina.
+export function lugarQueDesambigua(ciudad: string, texto: string): string | null {
+  const cands = _provsConAgencia(ciudad);
+  if (cands.length < 2) return null;
+  const t = ` ${_n(texto)} `;
+  const c = _n(ciudad);
+  if (!c || !t.trim()) return null;
+  const calza = (s: string): string | null => {
+    const k = _n(s);
+    // ⚠️ Nada que sea el mismo nombre a medias: «San Juan» dentro de «San Juan Bautista» no
+    // desambigua nada, y si la otra provincia tuviera un distrito así lo elegiría al revés.
+    if (!k || k.length < 4 || k === c || c.includes(k) || k.includes(c)) return null;
+    return t.includes(` ${k} `) ? k : null;
+  };
+  // Del corte MÁS FINO al más grueso: distrito, provincia, departamento. Si dijo «Iquitos»
+  // nos quedamos con Iquitos y no con «Loreto», que son 6 provincias y un río de distancia.
+  const nombradas = cands.map((x) => {
+    for (const grupo of [x.agencias.map((a) => a.t), [x.prov], [x.dep]]) {
+      let mejor: string | null = null;
+      for (const o of grupo) {
+        const k = calza(o);
+        if (k && (!mejor || k.length > mejor.length)) mejor = k;
+      }
+      if (mejor) return mejor;
+    }
+    return null;
+  }).filter((x): x is string => !!x);
+  return nombradas.length === 1 ? nombradas[0] : null;
+}
+
 export function agenciasCercanasAlDistrito(
   ciudad: string,
 ): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean } | null {
