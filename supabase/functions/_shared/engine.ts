@@ -11578,7 +11578,32 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // NO es Lima, no para poner un destino. Se guarda la zona y la ciudad queda pendiente.
   let soloCategoria = false;
   let texto = textos[0];
-  for (const t of textos) {
+  // ⚡ Las extracciones de lugar, EN PARALELO a partir de la segunda. Este bucle mira hasta 7
+  // mensajes suyos y por cada uno le preguntaba a la IA «¿qué lugar nombra acá?», una detrás
+  // de otra: mientras el cliente todavía no dice de dónde es, eran 7 llamadas EN FILA y ~7
+  // segundos de espera por una sola respuesta. Medido: 424 llamadas de extracción para 40
+  // mensajes, ~10 por mensaje, y este bucle es de dónde salen.
+  // El más nuevo se sigue pidiendo SOLO —es el que acierta casi siempre, así que el caso
+  // normal cuesta exactamente lo mismo que antes: UNA llamada—; si ese no da lugar, los
+  // demás salen todos juntos y la espera pasa de siete turnos a dos.
+  // ⚠️ El orden de preferencia NO cambia: se recorren igual, del más nuevo al más viejo, y
+  // gana el primero que dé un lugar. Lo único que se movió es cuándo se PIDEN, no cuándo se
+  // leen — paralelizar no puede cambiar quién gana.
+  const _extEnVuelo: (Promise<string | null> | undefined)[] = [];
+  const _extDe = (i: number): Promise<string | null> => {
+    if (!_extEnVuelo[i]) {
+      // Del segundo en adelante se lanzan TODOS de golpe: si el más nuevo no nombró su
+      // ciudad, lo más probable es que haya que mirarlos todos igual.
+      for (let k = (i === 0 ? 0 : i); k < textos.length; k++) {
+        if (!_extEnVuelo[k]) {
+          _extEnVuelo[k] = extraerLugar(db, run.channel_id, textos[k]).catch(() => null);
+        }
+      }
+    }
+    return _extEnVuelo[i]!;
+  };
+  for (let _i = 0; _i < textos.length; _i++) {
+    const t = textos[_i];
     // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
     // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
     z = matchZona(zonas, t);
@@ -11593,7 +11618,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // 2) Sin match directo: la IA extrae el lugar del texto libre, y reintentamos
     // el match determinista sobre ese lugar (puede venir deletreado distinto).
     if (!z) {
-      const ext = await extraerLugar(db, run.channel_id, t);
+      const ext = await _extDe(_i);
       if (ext) { lugar = ext; z = matchZona(zonas, ext); if (z) lugar = z.nombre; }
     }
     // ⛔ "Provincia" NO es un lugar: es la categoría contraria a Lima. El extractor la
@@ -16182,6 +16207,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // valor» del prompt del flujo (que entra justo arriba). Antes del estilo, que es forma.
     if (_bloqueTurno) parts.push(_bloqueTurno);
     if (_bloqueEstilo) parts.push(_bloqueEstilo);
+    // 🧪 Se probó mover el conocimiento (negocio + objeciones + ficha) al PRINCIPIO para que
+    // fuera el prefijo estable del caché de OpenAI, y se REVIRTIÓ: la premisa era falsa.
+    // Yo daba por hecho que ahí estaban los ~8.000 tokens que se repiten en cada respuesta;
+    // al medirlos resultaron ser 1.365 caracteres de negocio + 757 de objeciones ≈ 550
+    // tokens. El grueso del prompt son los bloques que escribe ESTE archivo (unos 60 «## …»),
+    // y ahí está el verdadero margen — no en mover 550 tokens de sitio.
+    // El experimento no mostró mejora (24% de caché contra 39% de referencia, muestra chica)
+    // y sí traía riesgo de comportamiento, así que no se queda. Si algún día se retoma: hay
+    // que separar los bloques INCONDICIONALES de los condicionales, no el conocimiento.
     if (parts.length) system = parts.join("\n\n");
   }
   // OCR: inyecta el "Validador de comprobantes" del canal (métodos válidos +
