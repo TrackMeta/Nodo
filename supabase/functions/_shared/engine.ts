@@ -14232,18 +14232,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "preguntó o se le va a preguntar en el momento que toca. Sigue con lo que estabas: contestarle, " +
           "pedirle lo que falte, avanzar. Si él dice una cantidad por su cuenta, la tomas y listo.");
     }
-    fijos.push("## Escribe CORTO — máximo 300 caracteres\n" +
-      "Esto es WhatsApp, no un correo. TU parte del mensaje no pasa de **300 caracteres**: le contestas lo " +
-      "que preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
-      "datos que faltan, las oficinas) van aparte y NO cuentan para ese tope.\n" +
+    // 🔗 UN SOLO bloque de largo. Antes eran dos —«Escribe CORTO» (384 tok) y «Largo del
+    // mensaje» (157 tok)— y los dos salían SIEMPRE, uno a noventa bloques del otro. No solo
+    // costaba doble: **decían el tope distinto** («máximo 300 caracteres» contra «2 o 3
+    // frases») y repetían la excepción de las listas. Dos redacciones de la misma regla es
+    // peor que una repetida: el modelo elige a cuál hacerle caso, y al elegir sacrifica otra.
+    // Es la misma lección del tope de negritas comiéndose los precios — una regla general sin
+    // su excepción escrita se come a la específica. Acá van las dos formas juntas (que se
+    // refuerzan: 2-3 frases SON unos 300 caracteres) y cada sub-regla una sola vez.
+    fijos.push("## Escribe CORTO — 2 o 3 frases, máximo 300 caracteres\n" +
+      "Esto es WhatsApp, no un correo ni un folleto. TU parte del mensaje son **2 o 3 frases, máximo 300 " +
+      "caracteres**: le contestas lo que preguntó y le das el siguiente paso. Nada más. Solo te extiendes " +
+      "si él pidió una explicación.\n" +
+      "Las listas que arma el sistema (los precios, los datos que faltan, las oficinas) van aparte y NO " +
+      "cuentan para ese tope: van en líneas sueltas aunque pasen de tres, porque leerlas de un vistazo es " +
+      "justo lo que las hace cortas.\n" +
       "Antes de mandar, cuéntalo: si te pasas, sobra algo — y casi siempre es la frase con la que abriste.\n" +
       "⛔ No expliques lo que no te preguntó, no adornes cada respuesta con beneficios, y no cierres " +
       "resumiendo lo que acabas de decir. Si tu mensaje tiene tres frases seguidas y él preguntó una " +
       "sola cosa, sobran dos.\n" +
       "⛔ UNA sola pregunta por mensaje. Nada de preguntar lo mismo dos veces con otras palabras " +
       "(«me confirmas cuántas unidades quieres… ¿cuántas te llevo?»): se pregunta una vez y se espera.\n" +
+      "⛔ UN solo argumento por mensaje: el que hace falta AHORA. No cierres cada burbuja recordándole el " +
+      "regalo, la contraentrega, el envío y las bondades del producto todos juntos — cada cosa se dice una " +
+      "vez, cuando suma, y no se repite.\n" +
       "⛔ Y no expliques PARA QUÉ le pides el dato («para darte el precio exacto», «así te digo cuál te " +
-      "conviene», «y seguimos con el pedido»). Pedirlo a secas es más corto y suena menos a trámite.\n" +
+      "conviene», «y seguimos con el pedido»). Pedirlo a secas es más corto y suena menos a trámite: la " +
+      "pregunta va sola y al final, sin párrafo de venta detrás.\n" +
       "✅ Pero si te vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo " +
       "sentir mal — corto y directo. Dejarlo sin respuesta porque «ya se lo dijiste» es lo peor que " +
       "puedes hacer: él no lo tiene claro, y por eso preguntó.\n" +
@@ -14756,20 +14771,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // beneficio aéreo, el ángulo del anuncio…) y ninguno sabe de los demás, así que sumados
     // producían párrafos: una pregunta de seis palabras envuelta en cuatro líneas de folleto.
     // En WhatsApp eso se lee como publicidad, no como alguien atendiendo.
-    fijos.push(
-      "## Largo del mensaje\n" +
-      "Esto es WhatsApp, no un folleto: **2 o 3 frases y punto**. Solo te extiendes si el cliente " +
-      "pidió una explicación.\n" +
-      // Las LISTAS no son "extenderse": son lo contrario. Este tope peleaba con los dos sitios
-      // donde el motor pide explícitamente una lista —los precios y los datos del pedido—, y el
-      // modelo tenía que elegir a cuál hacerle caso. Igual que el tope de negritas comiéndose
-      // los precios: una regla general sin su excepción escrita se come a la específica.
-      "Las LISTAS no cuentan acá: la de precios y la de datos que le pides van en líneas sueltas " +
-      "aunque pasen de tres — leerlas de un vistazo es justo lo que las hace cortas.\n" +
-      "UN argumento por mensaje: el que hace falta AHORA. No cierres cada burbuja recordándole el " +
-      "regalo, la contraentrega, el envío y las bondades del producto todos juntos — cada cosa se " +
-      "dice una vez, cuando suma, y no se repite.\n" +
-      "Y cuando le pides un dato, la pregunta va sola y al final: sin párrafo de venta detrás.");
+    // 🔗 «## Largo del mensaje» vivía acá y se fusionó con «## Escribe CORTO» (arriba del
+    // todo): eran dos bloques fijos diciendo la misma regla con topes distintos. Sus reglas
+    // propias —un argumento por mensaje, la pregunta sola al final, la excepción de las
+    // listas— se conservan enteras allá. No se perdió ninguna.
     // Al que dice que lo va a pensar, no se le empuja. Medido: "ah ya, lo voy a pensar,
     // gracias" y el bot contestó recordándole el regalo y cerrando con "¿En qué talla te las
     // mando?" — insistir ahí no convence a nadie y sí quema el chat. La venta no se pierde:
