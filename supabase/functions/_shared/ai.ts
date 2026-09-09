@@ -48,22 +48,27 @@ export interface AiCall {
 // sirve para que el dueño vea el orden de magnitud en su panel sin salir de Nodo. El
 // número exacto siempre manda el del proveedor. Un modelo que no esté acá se registra
 // igual (los tokens son el hecho) con costo 0, para no inventar una cifra.
-const TARIFAS: Record<string, { in: number; out: number }> = {
-  "gpt-4.1-mini": { in: 0.40, out: 1.60 },
-  "gpt-4.1-nano": { in: 0.10, out: 0.40 },
-  "gpt-4.1": { in: 2.00, out: 8.00 },
-  "gpt-4o-mini": { in: 0.15, out: 0.60 },
-  "gpt-4o": { in: 2.50, out: 10.00 },
-  "claude-3-5-haiku": { in: 0.80, out: 4.00 },
-  "claude-3-5-sonnet": { in: 3.00, out: 15.00 },
-  "claude-sonnet-4": { in: 3.00, out: 15.00 },
-  "claude-opus-4": { in: 15.00, out: 75.00 },
+// 💾 `cache`: los proveedores cachean el PREFIJO repetido del prompt y lo facturan mucho
+// más barato. Sin este campo, el panel cobraba a precio lleno tokens que el proveedor cobró
+// al 25% — y como el 96% del gasto de una venta es entrada, ese era el error de todo el
+// módulo. Se pone SOLO donde se conoce la tarifa publicada; si falta, el token cacheado se
+// cobra como entrada normal: preferimos quedarnos cortos en el ahorro antes que inventarlo.
+const TARIFAS: Record<string, { in: number; out: number; cache?: number }> = {
+  "gpt-4.1-mini": { in: 0.40, out: 1.60, cache: 0.10 },
+  "gpt-4.1-nano": { in: 0.10, out: 0.40, cache: 0.025 },
+  "gpt-4.1": { in: 2.00, out: 8.00, cache: 0.50 },
+  "gpt-4o-mini": { in: 0.15, out: 0.60, cache: 0.075 },
+  "gpt-4o": { in: 2.50, out: 10.00, cache: 1.25 },
+  "claude-3-5-haiku": { in: 0.80, out: 4.00, cache: 0.08 },
+  "claude-3-5-sonnet": { in: 3.00, out: 15.00, cache: 0.30 },
+  "claude-sonnet-4": { in: 3.00, out: 15.00, cache: 0.30 },
+  "claude-opus-4": { in: 15.00, out: 75.00, cache: 1.50 },
 };
-function tarifaDe(model: string): { in: number; out: number } | null {
+function tarifaDe(model: string): { in: number; out: number; cache?: number } | null {
   const m = String(model || "").toLowerCase();
   if (TARIFAS[m]) return TARIFAS[m];
   // Los modelos traen fecha pegada ("gpt-4.1-mini-2025-04-14"): vale el prefijo más largo.
-  let mejor: { in: number; out: number } | null = null, largo = 0;
+  let mejor: { in: number; out: number; cache?: number } | null = null, largo = 0;
   for (const [k, v] of Object.entries(TARIFAS)) {
     if (m.startsWith(k) && k.length > largo) { mejor = v; largo = k.length; }
   }
@@ -72,24 +77,35 @@ function tarifaDe(model: string): { in: number; out: number } | null {
 
 // Suma esta llamada al acumulado del día. Best-effort de verdad: si falla, se traga el
 // error. Ninguna venta se puede caer porque no se pudo anotar un contador.
+// `tokCache`: cuántos de los tokens de ENTRADA vinieron del caché del proveedor. Viene
+// DENTRO de `tokIn` (no se suma aparte): el proveedor reporta el total y detalla cuánto de
+// ese total fue cacheado, así que acá se cobran los cacheados a su tarifa y el resto a la
+// de entrada. Guardarlo aparte también nos deja ver el % de acierto del caché, que es lo
+// que dice si conviene reordenar el prompt.
 async function registraUso(
-  call: AiCall, model: string, tokIn: number, tokOut: number,
+  call: AiCall, model: string, tokIn: number, tokOut: number, tokCache = 0,
 ): Promise<void> {
   try {
     if (!call.db || !call.channelId) return;
     if (!Number.isFinite(tokIn) && !Number.isFinite(tokOut)) return;
     const t = tarifaDe(model);
+    const _in = Math.max(0, Math.round(tokIn || 0));
+    const _out = Math.max(0, Math.round(tokOut || 0));
+    // Nunca más caché que entrada: si el proveedor devolviera algo raro, el exceso se cobra
+    // como entrada normal (que es lo caro) en vez de regalar tokens que sí se pagaron.
+    const _cache = Math.min(Math.max(0, Math.round(tokCache || 0)), _in);
     const costo = t
-      ? +(((tokIn || 0) * t.in + (tokOut || 0) * t.out) / 1_000_000).toFixed(6)
+      ? +((((_in - _cache) * t.in + _cache * (t.cache ?? t.in) + _out * t.out)) / 1_000_000).toFixed(6)
       : 0;
     await call.db.rpc("ai_usage_add", {
       p_channel_id: call.channelId,
       p_provider: call.provider,
       p_model: model,
       p_origen: call.origen || "otro",
-      p_in: Math.max(0, Math.round(tokIn || 0)),
-      p_out: Math.max(0, Math.round(tokOut || 0)),
+      p_in: _in,
+      p_out: _out,
       p_costo: costo,
+      p_cache: _cache,
     });
   } catch (_) { /* el contador nunca tumba una llamada */ }
 }
@@ -177,7 +193,15 @@ async function callAnthropic(call: AiCall): Promise<string> {
     throw new AiError({ provider: "anthropic", type: "refusal", message: "el modelo rechazó la solicitud" });
   }
   // Claude llama distinto a los mismos números: input_tokens / output_tokens.
-  await registraUso(call, String(body.model ?? ""), data.usage?.input_tokens ?? 0, data.usage?.output_tokens ?? 0);
+  // 💾 Anthropic reporta el caché aparte: `cache_read_input_tokens` NO viene dentro de
+  // `input_tokens`, así que acá sí se suman para tener el total de entrada. Hoy da 0 —el
+  // caché de Anthropic exige marcar los bloques con `cache_control` y no se está usando—,
+  // pero se cuenta igual para que el número no mienta el día que se active.
+  const _cacheAnt = data.usage?.cache_read_input_tokens ?? 0;
+  await registraUso(
+    call, String(body.model ?? ""),
+    (data.usage?.input_tokens ?? 0) + _cacheAnt, data.usage?.output_tokens ?? 0, _cacheAnt,
+  );
   return (data.content ?? [])
     .filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim();
 }
@@ -237,7 +261,15 @@ async function callOpenAI(call: AiCall): Promise<string> {
     throw new AiError({ provider: "openai", type: e.type, message: e.message || raw.slice(0, 200), status: res.status });
   }
   // 📊 El conteo exacto de tokens viene en la propia respuesta y hasta ahora se tiraba.
-  await registraUso(call, String(body.model ?? ""), data.usage?.prompt_tokens ?? 0, data.usage?.completion_tokens ?? 0);
+  // 💾 `prompt_tokens` es el TOTAL de entrada e incluye lo que salió del caché;
+  // `prompt_tokens_details.cached_tokens` dice cuánto de eso fue cacheado, y eso OpenAI lo
+  // factura al 25% (gpt-4.1-mini: 0.10 contra 0.40 por millón). Se estaba tirando, así que
+  // el panel cobraba a precio lleno tokens que la factura cobró al cuarto.
+  await registraUso(
+    call, String(body.model ?? ""),
+    data.usage?.prompt_tokens ?? 0, data.usage?.completion_tokens ?? 0,
+    data.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+  );
   return (data.choices?.[0]?.message?.content ?? "").trim();
 }
 
