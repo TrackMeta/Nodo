@@ -14073,10 +14073,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   let preguntaColgada = "";
   if (op === "generar_texto" && cfg.usar_conocimiento !== false) {
     const parts: string[] = [];
-    parts.push(REGLA_TUTEO);
-    parts.push(REGLA_SIN_DISCURSO_RIESGO);
-    parts.push(REGLA_NO_DAR_POR_HECHO);
-    parts.push(REGLA_PAGO_NO_CONFIRMADO);
+    // 💾 LOS BLOQUES QUE SALEN SIEMPRE, APARTE — y al PRINCIPIO del prompt.
+    //
+    // OpenAI cobra al 25% la parte del prompt que sea IDÉNTICA a la llamada anterior, pero
+    // contando desde el principio y cortando en la primera diferencia. De los 68 bloques que
+    // arma este nodo, 16 salen SIEMPRE (4.430 tokens) y 52 solo a veces (6.953). Estaban
+    // mezclados: bastaba que un condicional entrara o saliera —y entran y salen en cada
+    // turno— para cortar el descuento ahí y volver a pagar entero todo lo que venía detrás.
+    // Medido: el vendedor cacheaba al 39% siendo el que más se repite de todos.
+    // Verificado antes de tocar: los seis fijos más grandes no tienen NI UNA interpolación
+    // (`${...}`), así que son idénticos byte a byte en cada llamada. El prefijo estable es
+    // real, no una suposición — y se comprueba solo, mirando `cached_tokens`.
+    // ⚠️ Lo que NO entra acá: el ESTILO y el bloque del TURNO (siguen últimos, porque en un
+    // prompt lo último pesa y son órdenes de comportamiento), y las REGLAS DE SEGURIDAD
+    // anti-inyección (también últimas: una defensa contra texto del cliente funciona mejor
+    // cerca del final, y ahorrar 121 tokens no vale debilitarla).
+    const fijos: string[] = [];
+    fijos.push(REGLA_TUTEO);
+    fijos.push(REGLA_SIN_DISCURSO_RIESGO);
+    fijos.push(REGLA_NO_DAR_POR_HECHO);
+    fijos.push(REGLA_PAGO_NO_CONFIRMADO);
     // ✂️ MENSAJES CORTOS. Rodrigo, leyendo un chat suyo: «yo siento que explica mucho… me
     // refiero a muy largo». Medido ahí mismo: mensajes del bot de 300-400 caracteres para
     // contestar «hace envios» — la respuesta, más el modelo de entrega, más los beneficios,
@@ -14085,13 +14101,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // la frenó en el acto: «si el cliente pregunta otra vez, ¿qué pasa, no le vuelve a
     // explicar?». Tenía razón — dejar una pregunta sin contestar por haberla contestado antes
     // es peor que ser repetitivo. El problema nunca fue repetir: era el largo.
-    parts.push("## La agencia tiene nombre, y lo que se confirma es la OFICINA\n" +
+    fijos.push("## La agencia tiene nombre, y lo que se confirma es la OFICINA\n" +
       "La agencia es SIEMPRE la misma —la del negocio— así que nómbrala: «por agencia Shalom», no «por " +
       "agencia» a secas. Que sepa a qué empresa va.\n" +
       "⛔ Y nunca «te confirmo la agencia» ni «qué agencia prefieres»: eso le hace pensar que trabajamos con " +
       "varias y que todavía no sabemos con cuál. Lo que se elige y se confirma es la OFICINA (la sede): " +
       "«te digo qué oficina te queda más cerca», «¿en cuál oficina lo recoges?».");
-    parts.push("## Hablas en PRIMERA persona\n" +
+    fijos.push("## Hablas en PRIMERA persona\n" +
       "El negocio eres tú. Nunca digas «te piden un adelanto», «ya te envían los datos», «el equipo te " +
       "contacta», «te van a llamar»: acá no hay nadie más, y el cliente se queda esperando a alguien que " +
       "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
@@ -14216,7 +14232,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "preguntó o se le va a preguntar en el momento que toca. Sigue con lo que estabas: contestarle, " +
           "pedirle lo que falte, avanzar. Si él dice una cantidad por su cuenta, la tomas y listo.");
     }
-    parts.push("## Escribe CORTO — máximo 300 caracteres\n" +
+    fijos.push("## Escribe CORTO — máximo 300 caracteres\n" +
       "Esto es WhatsApp, no un correo. TU parte del mensaje no pasa de **300 caracteres**: le contestas lo " +
       "que preguntó y le das el siguiente paso. Nada más. Las listas que arma el sistema (los precios, los " +
       "datos que faltan, las oficinas) van aparte y NO cuentan para ese tope.\n" +
@@ -14234,7 +14250,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "⛔ Y si NO te preguntó por el producto, no se lo describas. Los mensajes iniciales ya le contaron " +
       "qué es y para qué sirve. Medido: escribió «Para Madre de Dios» —o sea, de dónde es— y recibió un " +
       "párrafo entero sobre cortar láminas de 1.5 mm que no venía a cuento. Contesta lo que dijo ÉL.");
-    parts.push("## El precio se da, no se ofrece\n" +
+    fijos.push("## El precio se da, no se ofrece\n" +
       "⛔ Nunca le pidas permiso para decírselo: «¿quieres que te cuente las opciones y precios?», " +
       "«¿te menciono los precios?», «así te doy el precio exacto». Eso gasta un turno entero para no " +
       "decir nada, y el que está comparando ya se fue a otro chat. Si toca hablar de precio, lo pones: " +
@@ -14356,7 +14372,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // con la ficha diciendo un mes por frasco, del pack de 3 dijo "el mes y medio que
     // dura". Eso vuelve como reclamo cuando al cliente se le acaba antes de lo prometido,
     // y encima le quita al pack grande su mejor argumento.
-    parts.push("## ⏳ Cuánto dura, si lo dices, sale de la ficha\n" +
+    fijos.push("## ⏳ Cuánto dura, si lo dices, sale de la ficha\n" +
       "Si hablas de cuánto le rinde o cuánto le dura, multiplica lo que dice la ficha por UNIDAD por las " +
       "unidades del pack, y nada más. No lo estimes ni lo redondees por tu cuenta. Si la ficha no dice cuánto " +
       "rinde una unidad, NO inventes una duración: habla del beneficio sin poner plazos.");
@@ -14740,7 +14756,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // beneficio aéreo, el ángulo del anuncio…) y ninguno sabe de los demás, así que sumados
     // producían párrafos: una pregunta de seis palabras envuelta en cuatro líneas de folleto.
     // En WhatsApp eso se lee como publicidad, no como alguien atendiendo.
-    parts.push(
+    fijos.push(
       "## Largo del mensaje\n" +
       "Esto es WhatsApp, no un folleto: **2 o 3 frases y punto**. Solo te extiendes si el cliente " +
       "pidió una explicación.\n" +
@@ -14758,14 +14774,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // gracias" y el bot contestó recordándole el regalo y cerrando con "¿En qué talla te las
     // mando?" — insistir ahí no convence a nadie y sí quema el chat. La venta no se pierde:
     // el remarketing lo retoma después, y si él vuelve la conversación sigue viva.
-    parts.push(
+    fijos.push(
       "## Si te dice que lo va a pensar\n" +
       "«lo voy a pensar», «luego te escribo», «lo consulto con mi esposa»: respétalo. UNA línea " +
       "cálida y corta, dejando la puerta abierta («cualquier cosa acá estoy»), y listo. ⛔ NO le " +
       "repitas la pregunta de cierre («¿en qué talla te las mando?»), NO le recuerdes el regalo " +
       "ni la promoción para retenerlo, y NO le preguntes por qué lo duda. Presionar ahí no " +
       "convence: solo hace que no vuelva a escribir. Si él retoma, sigues vendiendo normal.");
-    parts.push(
+    fijos.push(
       "## Cómo cerrar (evita pisarte con el sistema)\n" +
       "1. Si ya tienes todos los datos, CIERRA afirmando (\"listo, queda confirmado\"). NO preguntes " +
       "\"¿confirmo?\" ni \"¿te lo dejo listo?\": el pedido se confirma en ese mismo momento, y si preguntas, " +
@@ -15907,7 +15923,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // real de punta a punta, y los tres se pagan en ventas: contestar sin cerrar deja al
     // cliente sin siguiente paso, responder en una línea suelta no da razones para comprar,
     // y arrancar siempre igual ("Además…", "Claro que sí…") delata al robot.
-    parts.push(
+    fijos.push(
       "## Cuando te cuenta algo suyo\n" +
       "A veces no te pregunta: se abre. «Soy gordito», «nunca he entrenado», «lo necesito para mi mamá», " +
       "«no tengo tiempo». Eso te lo dice porque quiere saber si ESTO le sirve A ÉL, y muchas veces le cuesta " +
@@ -15958,7 +15974,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // para ARGUMENTAR. Medido: el cliente contó que tiene 55 años y que nunca entrenó, y la
     // respuesta siguió siendo el folleto de siempre — el mismo párrafo que le tocaría a un
     // chico de 20 que entrena hace años. Con el dato delante, el argumento se vuelve suyo.
-    parts.push(
+    fijos.push(
       "## Usa lo que ya sabes de él\n" +
       "Si más arriba tienes datos suyos (su edad, que empieza de cero, dónde entrena, cuánto tiempo tiene, " +
       "para quién lo compra), ARMA EL ARGUMENTO CON ESO en vez de repetir el folleto. A alguien que dijo que " +
@@ -16181,7 +16197,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (ped) parts.push(ped);
     // Pedir ayuda. Se le dice con precisión cuándo, porque escalar de más
     // molesta al operador tanto como no escalar molesta al cliente.
-    parts.push(
+    fijos.push(
       "## Cuando necesites a una persona\n" +
       "Si de verdad no puedes resolverlo tú, escribe el marcador `[[humano]]` en tu respuesta " +
       "(el cliente NO lo ve) y dile con calidez que lo pasas con alguien del equipo. " +
@@ -16207,16 +16223,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // valor» del prompt del flujo (que entra justo arriba). Antes del estilo, que es forma.
     if (_bloqueTurno) parts.push(_bloqueTurno);
     if (_bloqueEstilo) parts.push(_bloqueEstilo);
-    // 🧪 Se probó mover el conocimiento (negocio + objeciones + ficha) al PRINCIPIO para que
-    // fuera el prefijo estable del caché de OpenAI, y se REVIRTIÓ: la premisa era falsa.
-    // Yo daba por hecho que ahí estaban los ~8.000 tokens que se repiten en cada respuesta;
-    // al medirlos resultaron ser 1.365 caracteres de negocio + 757 de objeciones ≈ 550
-    // tokens. El grueso del prompt son los bloques que escribe ESTE archivo (unos 60 «## …»),
-    // y ahí está el verdadero margen — no en mover 550 tokens de sitio.
-    // El experimento no mostró mejora (24% de caché contra 39% de referencia, muestra chica)
-    // y sí traía riesgo de comportamiento, así que no se queda. Si algún día se retoma: hay
-    // que separar los bloques INCONDICIONALES de los condicionales, no el conocimiento.
-    if (parts.length) system = parts.join("\n\n");
+    // 🧪 Antes se probó mover EL CONOCIMIENTO (negocio + objeciones + ficha) al principio, y
+    // se revirtió: la premisa era falsa. Yo daba por hecho que ahí estaban los ~8.000 tokens
+    // que se repiten en cada respuesta; medidos son 1.365 de negocio + 3.325 de ficha + 1.571
+    // de objeciones ≈ 1.570 tokens, el 16% del prompt. El grueso lo escribe ESTE archivo.
+    // Aquel intento no mostró mejora (24% de caché contra 39% de referencia). El bueno es el
+    // de abajo: separar por CONDICIONALIDAD, no por origen del texto.
+    // 💾 Los fijos primero (el prefijo que se cachea), lo del turno después. Ver el
+    // comentario largo donde se declara `fijos`.
+    if (fijos.length || parts.length) system = [...fijos, ...parts].join("\n\n");
   }
   // OCR: inyecta el "Validador de comprobantes" del canal (métodos válidos +
   // reglas anti-fraude) para que la IA reconozca pagos con criterio de negocio.
