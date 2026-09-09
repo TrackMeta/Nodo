@@ -16235,7 +16235,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (op === "generar_texto" && (run as any)._memNivel !== "off") {
       await actualizarMemoriaIA(db, {
         channelId: run.channel_id, contactId: run.contact_id,
-        provider, apiKey: ai.api_key, thread: await historial(db, run),
+        provider, apiKey: ai.api_key, model: ai.model || undefined, thread: await historial(db, run),
         // Dónde vive NO va al perfil, pero sí hay que pasarlo: si no, el nombre de su tierra
         // pasa por "algo que contó de sí mismo". Medido: dijo "Para Madre de Dios" y la ficha
         // quedó con «Compra para su madre».

@@ -31,7 +31,11 @@ const MAX_LEN = 60;       // cada hecho, corto
 const THROTTLE_MIN = 15;  // 1 análisis cada 15 min por contacto (control de costo)
 const EXTRACT_MAX_TOKENS = 300;
 
-// Modelo barato por proveedor (la capa "cómo tratar" no necesita el modelo caro).
+// Modelo barato por proveedor. 🔻 Es solo el RESPALDO: si el canal tiene modelo configurado,
+// manda ése. Antes esto era fijo y la Memoria IA era la ÚNICA pieza que ignoraba la perilla
+// del panel — el dueño elegía un modelo en Configuraciones y este camino seguía con
+// `gpt-4o-mini` calladito. Una perilla que no llega a todos lados es peor que no tenerla:
+// se confía en ella. Ver la auditoría de perillas muertas.
 function modeloBarato(provider: Provider): string {
   return provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001";
 }
@@ -214,7 +218,7 @@ export async function actualizarMemoriaIA(
   // —se guardan aparte—, pero hacen falta acá para no tomarlos como prueba de un hecho
   // personal: "Para Madre de Dios" no dice nada sobre la madre de nadie.
   opts: { channelId: string; contactId: string; provider: Provider; apiKey: string; thread: string;
-          lugares?: string[] },
+          lugares?: string[]; model?: string },
 ): Promise<void> {
   try {
     const { channelId, contactId, provider, apiKey, thread } = opts;
@@ -260,7 +264,7 @@ export async function actualizarMemoriaIA(
     // tener memoria del cliente, que es una perilla que el dueño puede apagar.
     const raw = await runAI({
       db, channelId, origen: "memoria",
-      provider, apiKey, model: modeloBarato(provider),
+      provider, apiKey, model: String(opts.model ?? "").trim() || modeloBarato(provider),
       system: SYSTEM_EXTRACT, content: prompt, maxTokens: EXTRACT_MAX_TOKENS,
       jsonSchema: SCHEMA as unknown as Record<string, unknown>,
     });
