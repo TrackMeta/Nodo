@@ -11589,15 +11589,38 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // ⚠️ El orden de preferencia NO cambia: se recorren igual, del más nuevo al más viejo, y
   // gana el primero que dé un lugar. Lo único que se movió es cuándo se PIDEN, no cuándo se
   // leen — paralelizar no puede cambiar quién gana.
+  // 💾 Y NO SE LE PREGUNTA DOS VECES POR EL MISMO MENSAJE. Este bloque corre en cada turno
+  // mientras la zona siga sin resolverse, y cada vez vuelve a barrer los mensajes VIEJOS: el
+  // turno 2 pregunta por los mensajes 1-2, el turno 3 por los 1-3, el turno 4 por los 1-4…
+  // El mensaje «hola, ¿cuánto cuesta?» se manda a la IA una y otra vez para que conteste lo
+  // mismo —que no nombra ningún lugar— y se paga entero cada vez. Medido: 424 llamadas de
+  // extracción para 40 mensajes de cliente, unas 10 por mensaje.
+  // La respuesta a «¿qué lugar nombra este texto?» no cambia nunca, así que se guarda en las
+  // vars del run (que sobreviven al turno) y el barrido de los viejos pasa a ser gratis.
+  // No cambia ninguna respuesta: el veredicto por mensaje es el mismo, solo se pide una vez.
+  const _memoLugar = ((run.vars as any)._lugarDe ??= {}) as Record<string, string>;
+  const _clave = (s: string) => {
+    // Clave corta y estable del texto: largo + los primeros y últimos caracteres normalizados.
+    // No hace falta un hash criptográfico —solo distinguir mensajes de una misma charla— y
+    // así las vars no engordan con el texto completo de cada mensaje.
+    const n = normalize(s).replace(/\s+/g, " ").trim();
+    return `${n.length}:${n.slice(0, 24)}|${n.slice(-12)}`;
+  };
   const _extEnVuelo: (Promise<string | null> | undefined)[] = [];
   const _extDe = (i: number): Promise<string | null> => {
     if (!_extEnVuelo[i]) {
       // Del segundo en adelante se lanzan TODOS de golpe: si el más nuevo no nombró su
       // ciudad, lo más probable es que haya que mirarlos todos igual.
       for (let k = (i === 0 ? 0 : i); k < textos.length; k++) {
-        if (!_extEnVuelo[k]) {
-          _extEnVuelo[k] = extraerLugar(db, run.channel_id, textos[k]).catch(() => null);
+        if (_extEnVuelo[k]) continue;
+        const kk = _clave(textos[k]);
+        if (kk in _memoLugar) {                       // ya se preguntó en un turno anterior
+          _extEnVuelo[k] = Promise.resolve(_memoLugar[kk] || null);
+          continue;
         }
+        _extEnVuelo[k] = extraerLugar(db, run.channel_id, textos[k])
+          .catch(() => null)
+          .then((r) => { _memoLugar[kk] = r ?? ""; return r; });
       }
     }
     return _extEnVuelo[i]!;
@@ -11618,7 +11641,43 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // 2) Sin match directo: la IA extrae el lugar del texto libre, y reintentamos
     // el match determinista sobre ese lugar (puede venir deletreado distinto).
     if (!z) {
-      const ext = await _extDe(_i);
+      let ext = await _extDe(_i);
+      // 🔢 «3 MEJOR» NO ES UNA CIUDAD. Medido en una tanda: el cliente contestó «3 mejor» a
+      // la pregunta de la cantidad y el extractor devolvió «3 mejor» como LUGAR. La zona se
+      // selló ahí —«3 mejor → provincia», sede «3 Mejor»— y como la zona ya no se re-evalúa,
+      // su «soy de chanchamayo» del mensaje siguiente NO se llegó a mirar nunca: el pedido
+      // se iba a despachar a una ciudad que no existe.
+      // El corte: si el supuesto lugar TRAE UN NÚMERO y no lo conoce nadie —ni las zonas del
+      // negocio, ni el padrón de distritos, ni las agencias Shalom— no es un lugar. Los
+      // pueblos peruanos con número en el nombre («9 de Julio», en Concepción) sí están en el
+      // padrón, así que pasan; «3 mejor», «2 porfa» y «1 nomas» no.
+      // ⚠️ Se miran también las PARTES: el cliente escribe «9 de Julio, Junín» —su distrito y
+      // su departamento— y el nombre entero no está en ningún padrón, pero «9 de Julio» sí.
+      // Medido: sin esto, el freno le tumbaba el distrito a un pueblo que existe de verdad.
+      // 🔢➡️🔤 Y el cliente escribe «9 de julio», el padrón guarda «NUEVE DE JULIO». En el
+      // padrón NO hay un solo distrito escrito con dígito —lo verifiqué, son cero— así que
+      // sin esta traducción el freno le tumbaba su distrito al que lo escribe con número.
+      // Son cuatro en todo el Perú, así que van a mano y sin inventar reglas generales.
+      const _conLetra = (s: string) => s
+        .replace(/\b9\s+de\s+julio\b/gi, "nueve de julio")
+        .replace(/\b3\s+de\s+diciembre\b/gi, "tres de diciembre")
+        .replace(/\b26\s+de\s+octubre\b/gi, "veintiseis de octubre")
+        .replace(/\b27\s+de\s+noviembre\b/gi, "veintisiete de noviembre");
+      const _loConoce = (s0: string) => {
+        const s = _conLetra(s0);
+        return !!matchZona(zonas, s) ||
+          provinciasDeDistrito(limpiaZona(s)).length > 0 || agenciasDeCiudad(s).length > 0;
+      };
+      // Si lo que lo salva es la forma deletreada, se GUARDA deletreada: el resto del motor
+      // busca en el padrón y en las agencias con esta cadena, y «9 de julio» no calza con
+      // nada. Aceptarlo tal cual sería dejar pasar un dato que después no sirve.
+      if (ext && _conLetra(ext) !== ext && _loConoce(ext)) ext = _conLetra(ext);
+      const _trozos = ext ? [ext, ...String(ext).split(/[,;/]+/)].map((x) => x.trim()).filter(Boolean) : [];
+      if (ext && /\d/.test(ext) && !_trozos.some(_loConoce)) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🔢 Eso no era una ciudad",
+          `El extractor devolvió "${ext}" como lugar — lleva número y no lo conoce ni el padrón ni Shalom`).catch(() => {});
+        ext = null;
+      }
       if (ext) { lugar = ext; z = matchZona(zonas, ext); if (z) lugar = z.nombre; }
     }
     // ⛔ "Provincia" NO es un lugar: es la categoría contraria a Lima. El extractor la
@@ -14322,7 +14381,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "equipo lo contacta para ver cómo hacérselo llegar. Nada de prometer fechas ni cobros.");
     }
 
-    if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
+    // 💾 Al PREFIJO FIJO: el conocimiento del negocio es una cadena del canal, sin variables
+    // ni nada que dependa del turno — idéntica en cada llamada. Estaba entre los condicionales,
+    // o sea del lado equivocado del corte del caché, pagándose entera todas las veces.
+    if (info.negocio) fijos.push("## Sobre el negocio\n" + info.negocio);
     // Formas de pago (fuente única = Validador de comprobantes): la IA sabe
     // responder "¿cómo pago?" sin repetir los datos en el Conocimiento.
     // 🔒 EXCEPTO en Lima contraentrega: ahí el cliente paga TODO al recibir, no por
@@ -16019,7 +16081,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "cuánto hoy, cuánto después y que el resto va por acá. Nada de párrafos.",
       );
     }
-    if (ctx.faq) parts.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
+    // 💾 Al PREFIJO FIJO igual que el negocio: las objeciones son del producto, no del turno,
+    // y se verifico que no traen variables, asi que resolve las devuelve identicas siempre.
+    if (ctx.faq) fijos.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
     // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
     // ofrécele confirmarlo") no basta: medido, a "¿el curso tiene certificado?" —palabra
     // que la ficha ni nombra— contestó "el curso no incluye certificado" y le tumbó la
