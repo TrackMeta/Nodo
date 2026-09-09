@@ -5170,6 +5170,48 @@ function sinColetillaRiesgo(texto: string): string {
   return limpio.replace(/^(\p{Ll})/u, (m) => m.toUpperCase());
 }
 
+// ⛔ «DÉJAME CONFIRMARLO Y TE AVISO». La promesa de un seguimiento que NO existe: nadie vuelve
+// después con esa respuesta, la conversación sigue y el cliente se queda esperando un aviso
+// que no llega. Es peor que no contestar, porque además promete.
+// El prompt ya lo prohíbe en mayúsculas y con los ejemplos exactos… y el modelo lo dijo IGUAL
+// en 2 de 3 oportunidades (medido en el chat de prueba de Rodrigo: «déjame confirmarlo
+// internamente para darte la info exacta» sobre la boleta, y «déjame confirmarte el proceso»
+// sobre un producto defectuoso). Con sesenta bloques compitiendo, un «NUNCA» enterrado no
+// alcanza: lo que se cae dos veces deja de ser regla del prompt y pasa a ser función.
+// Se borra la FRASE ENTERA, no un fragmento: «Sobre la factura, déjame confirmarlo» sin la
+// promesa no deja nada en pie. Lo que la rodea —el puente a la ficha y la pregunta de la
+// venta— sí se queda, que es lo que hace avanzar la conversación.
+// ⚠️ OJO CON LO QUE **SÍ** SE PUEDE PROMETER. «Te aviso apenas llegue a la agencia» NO es una
+// promesa vacía: el sistema manda ese aviso solo cuando el paquete llega. Mi primera versión
+// de esta regex cazaba «te aviso apenas…» y le habría borrado al cliente justo lo que necesita
+// oír. Por eso acá NO va la rama suelta de «te aviso / te confirmo»: solo las formas donde el
+// bot dice que va a IR A AVERIGUAR algo —que es lo que nadie va a hacer— y la compuesta
+// «te confirmo y te aviso», que es inequívoca.
+const RE_PROMESA_AVISO =
+  /(?:d[ée]jame\s+(?:confirmar|verificar|revisar|chequear|averiguar|consultar)|(?:lo\s+)?(?:voy\s+a\s+)?(?:confirmar|verificar|consultar|averiguar)lo\b|lo\s+(?:confirmo|verifico|reviso|consulto|averiguo)\b|voy\s+a\s+(?:confirmar|verificar|consultar|averiguar)\b|lo\s+estoy\s+(?:confirmando|verificando|consultando)\b|te\s+(?:lo\s+)?(?:confirmo|averiguo|consulto)\s+y\s+te\s+(?:aviso|digo|escribo)\b)/i;
+function sinPromesaDeAviso(texto: string): string {
+  const t = String(texto ?? "");
+  if (!RE_PROMESA_AVISO.test(sinFormato(t))) return t;
+  // Frase por frase, respetando los saltos de línea (las listas del motor van así).
+  const fuera = t.split("\n").map((linea) => {
+    if (!RE_PROMESA_AVISO.test(sinFormato(linea))) return linea;
+    return linea.split(/(?<=[.!?…])\s+/)
+      .filter((f) => f.trim() && !RE_PROMESA_AVISO.test(sinFormato(f)))
+      .join(" ");
+  }).join("\n");
+  // El conector que queda huérfano al irse la frase que lo justificaba: «Mientras, ¿cuántas
+  // unidades?» colgando de un «déjame confirmarlo» que ya no está.
+  const limpio = fuera
+    // También a mitad de renglón: al irse la frase de arriba, la siguiente arranca con el
+    // conector colgando («Mientras, cuéntame de dónde eres»). Medido en la tanda de prueba.
+    .replace(/(^|\n|(?<=[.!?…]\s))\s*(mientras(\s+tanto)?|por\s+ahora|entre\s+tanto|en\s+lo\s+que\s+tanto)\s*,\s*/gi, "$1")
+    .replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
+  // Suelo: si al quitarla no queda una frase de verdad, se prefiere el mensaje original —
+  // dejarlo mudo es peor que la promesa. Ver la regla de que el motor no calla y la IA promete.
+  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length < 25) return t;
+  return limpio.replace(/^(\p{Ll})/u, (m) => m.toUpperCase());
+}
+
 function sinDatoInventado(texto: string, cierre: string): string {
   const t = String(texto ?? "");
   RE_DATO_INVENTADO.lastIndex = 0;
@@ -17436,6 +17478,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // entera: «pagas al recibir el pedido, sin adelantos» tiene que seguir diciendo
       // «pagas al recibir el pedido», que es el hecho y sí se dice.
       if (op === "generar_texto") salida = sinColetillaRiesgo(salida);
+      // ⛔ Y la promesa de volver con una respuesta que nadie va a traer. Ver sinPromesaDeAviso.
+      if (op === "generar_texto") {
+        const _antesProm = salida;
+        salida = sinPromesaDeAviso(salida);
+        if (salida !== _antesProm) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "⛔ Prometía avisarle después",
+            "Se le quitó la promesa de confirmar y volver — nadie iba a volver con ese dato").catch(() => {});
+        }
+      }
       // Los datos de pago que la IA haya escrito a su manera, con el formato bueno.
       if (op === "generar_texto") {
         try {
