@@ -248,7 +248,18 @@ export async function actualizarMemoriaIA(
       thread.slice(-4000),
     ].join("\n");
 
+    // 📊 `db` + `channelId` + `origen`: sin los tres, `registraUso` sale por la puerta de
+    // atrás (`if (!call.db || !call.channelId) return`) y esta llamada NO se contabiliza.
+    // Estaba así desde que se escribió: la Memoria IA corría, se pagaba, y no aparecía ni
+    // en `ai_usage` ni en el panel — el dueño veía menos gasto del que le facturaban.
+    // Es el error espejo del caché (que lo hacía ver de MÁS): los dos hacen que el número
+    // del panel no sea el de la factura. Los dos van con db y channelId a la vista, así que
+    // no faltaba el dato: faltaba pasarlo.
+    // `memoria` como origen propio y no "extraer": el panel separa por para-qué, y meter
+    // esto dentro de otro origen esconde justo lo que se quiere poder mirar — cuánto cuesta
+    // tener memoria del cliente, que es una perilla que el dueño puede apagar.
     const raw = await runAI({
+      db, channelId, origen: "memoria",
       provider, apiKey, model: modeloBarato(provider),
       system: SYSTEM_EXTRACT, content: prompt, maxTokens: EXTRACT_MAX_TOKENS,
       jsonSchema: SCHEMA as unknown as Record<string, unknown>,

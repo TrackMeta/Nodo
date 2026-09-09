@@ -82,7 +82,11 @@ Deno.serve(async (req) => {
         const ai = Array.isArray(rows) ? rows[0] : rows;
         if (!ai?.api_key) return json({ ok: false, error: "sin_config" }, 200);
         try {
+          // 📊 También se cuenta. Son ocho tokens por clic, pero un camino que gasta y no se
+          // anota es justo lo que hace que el panel deje de cuadrar con la factura — que es
+          // todo el punto de este módulo. `origen: otro` porque no es tráfico del bot.
           const out = await runAI({
+            db, channelId: channel_id, origen: "otro",
             provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined,
             content: "Responde solo con: OK", maxTokens: 8,
           });
