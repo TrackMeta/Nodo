@@ -11844,12 +11844,13 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
         await set("zona_entrega", "provincia");
         await set("zona_nombre", "");
         await set("ciudad", enTitulo(_unica.t));
-        await set("sede", _unica.l);
         await set("zona_distrito_incierto", "");
         await set("entrega_hoy", "no");
         await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
-        (run.vars as any)._ficha_sede = slugAgencia(_unica);
-        (run.vars as any)._ficha_ahora = slugAgencia(_unica);   // la ficha sale este mismo turno
+        // 📍 Por la puerta única (escribe el campo, pone las marcas de la ficha y valida el
+        // nombre ambiguo). `forzar`: acá el cliente nombró LA OFICINA, no su pueblo — es él
+        // quien eligió y no hay nada que adivinar.
+        await sellarSede(db, run, ctx, _unica, "", "", { forzar: true });
         await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
           `nombró una oficina, no una ciudad → ${_unica.t} (sede ${_unica.l})`);
         return;
@@ -11992,6 +11993,66 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
 // 🏢 Si en su ciudad hay UNA sola oficina, la sede queda sellada acá y nadie se la pregunta.
 // Va apenas se resuelve la zona —no al crear el pedido— porque en el medio está la lista de
 // datos que faltan: con la sede vacía el bot la pedía igual ("me falta un dato: sede de la
+// 📍 EL ÚNICO SITIO QUE SELLA UNA SEDE.
+//
+// Antes esto vivía repartido en NUEVE lugares de este archivo, y cuatro de ellos eran
+// literalmente el mismo bloque copiado: escribir vars+ctx, escribir el campo, poner las dos
+// marcas de la ficha y registrar el evento. Los comentarios del propio código ya lo decían
+// («dos caminos para lo mismo comportándose distinto, otra vez»).
+//
+// 🔴 Y no era solo repetición: era el guard que falta en tres de las copias. El corte contra
+// el nombre que existe en VARIOS departamentos —el que hizo que un cliente de Iquitos
+// recibiera la ficha de la agencia de Ayacucho, a 1000 km— vivía SOLO en `sellaSedeUnica` y
+// en el bloque de cambio de oficina. Los otros tres caminos sellaban igual de una sola
+// coincidencia, sin mirar si el nombre era ambiguo. Es exactamente la familia de siempre:
+// dos caminos para lo mismo, uno con freno y el otro sin él.
+//
+// Acá el freno es del sitio, no de quien llama. Todo el que quiera sellar pasa por esta
+// puerta y se lleva las validaciones puestas.
+//
+// `motivo` es lo que se le muestra a Rodrigo en el historial del contacto: por qué el motor
+// creyó que ESA era la agencia. Vale la pena escribirlo bien; es lo que se lee cuando un
+// pedido sale a la sede equivocada.
+async function sellarSede(
+  db: SupabaseClient,
+  run: Run,
+  ctx: any,
+  ag: { l: string; d?: string; p?: string; t?: string },
+  titulo: string,
+  motivo: string,
+  opts?: { forzar?: boolean },
+): Promise<boolean> {
+  try {
+    if (!ag?.l) return false;
+    const _ciu = String(run.vars?.ciudad ?? ctx?.ciudad ?? "");
+    // ⛔ El nombre que es de varios departamentos NO sella por sí solo. `forzar` lo salta
+    // porque hay dos casos donde el cliente YA eligió y no hay nada que adivinar: cuando
+    // nombra la oficina con su nombre y cuando pide cambiarse a otra.
+    if (!opts?.forzar && _ciu && nombreDeVariasProvincias(_ciu) &&
+        limpiaZona(ag.l) === limpiaZona(_ciu)) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Nombre de varios departamentos",
+        `"${_ciu}" existe en más de un departamento con oficina — no se sella por el nombre`).catch(() => {});
+      return false;
+    }
+    run.vars.sede = ag.l;
+    ctx.sede = ag.l;
+    await setField(db, run.channel_id, run.contact_id, "sede", ag.l);
+    // Las dos marcas de la FICHA (la foto de la agencia). `_ficha_ahora` la manda este mismo
+    // turno; `_ficha_sede` queda de respaldo para cuando se crea el pedido.
+    (run.vars as any)._ficha_sede = slugAgencia(ag as any);
+    (run.vars as any)._ficha_ahora = slugAgencia(ag as any);
+    // `titulo` vacío = quien llama ya registra su propio evento (el bloque de cambio de
+    // oficina lo hace, y con más detalle: el salto en km y el parche al pedido).
+    if (titulo) {
+      await logEvent(db, run.channel_id, run.contact_id, "campo", titulo, motivo.slice(0, 160)).catch(() => {});
+    }
+    return true;
+  } catch (e) {
+    console.error("[sellarSede]", (e as any)?.message ?? e);
+    return false;
+  }
+}
+
 // agencia"), justo lo que queríamos evitar. Un dato que sabemos con certeza no se pregunta.
 async function sellaSedeUnica(
   db: SupabaseClient,
@@ -12012,6 +12073,9 @@ async function sellaSedeUnica(
     // departamento por adivinar es peor que preguntarle a qué ciudad suele ir»— pero solo
     // regía en ese camino. Acá se aplica igual: si el nombre es de varios sitios, no se
     // deduce nada y el bloque de oficinas se lo pregunta nombrándole el departamento.
+    // ⚠️ Este corte NO se borró al mover el freno a `sellarSede` aunque parezca repetido: acá
+    // corta ANTES de buscar agencias, así que el evento explica que no se dedujo nada. Allá el
+    // freno es más fino (solo si la oficina se llama igual que el pueblo). Los dos hacen falta.
     if (nombreDeVariasProvincias(_ciu)) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Nombre de varios departamentos",
         `"${_ciu}" existe en más de una provincia — no se deduce la sede`).catch(() => {});
@@ -12019,15 +12083,11 @@ async function sellaSedeUnica(
     }
     const ags = agenciasDeCiudad(_ciu);
     if (ags.length !== 1) return;
-    await set("sede", ags[0].l);
-    // Y la FICHA de esa oficina, igual que cuando la nombra el cliente. Sin esto, al
-    // dejar de preguntarle la sede también dejaba de llegarle la tarjeta con la dirección
-    // — justo al cliente de pueblo chico, que es el que más la necesita. La marca la
-    // manda `crearPedido`, que es donde la sede queda firme (ver `_ficha_sede`).
-    (run.vars as any)._ficha_sede = slugAgencia(ags[0]);
-    (run.vars as any)._ficha_ahora = slugAgencia(ags[0]);
-    await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
-      `${run.vars?.ciudad ?? ctx?.ciudad}: es la única oficina que hay ahí`).catch(() => {});
+    // 📍 Por la puerta única: escribe el campo, pone las dos marcas de la FICHA (sin ellas, al
+    // dejar de preguntarle la sede también dejaba de llegarle la tarjeta con la dirección —
+    // justo al cliente de pueblo chico, que es el que más la necesita) y registra el evento.
+    await sellarSede(db, run, ctx, ags[0], "📍 Sede deducida",
+      `${run.vars?.ciudad ?? ctx?.ciudad}: es la única oficina que hay ahí`);
   } catch { /* sin ciudad legible → se le pregunta como siempre */ }
 }
 
@@ -12569,12 +12629,8 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 // mismo comportándose distinto, otra vez.
                 const _agsU = agenciasDeCiudad(val);
                 if (_agsU.length === 1) {
-                  run.vars.sede = _agsU[0].l; ctx.sede = _agsU[0].l;
-                  await setField(db, run.channel_id, run.contact_id, "sede", _agsU[0].l);
-                  (run.vars as any)._ficha_sede = slugAgencia(_agsU[0]);
-                  (run.vars as any)._ficha_ahora = slugAgencia(_agsU[0]);
-                  await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
-                    `${_agsU[0].l}: es la única que hay en ${val}`).catch(() => {});
+                  await sellarSede(db, run, ctx, _agsU[0], "📍 Sede deducida",
+                    `${_agsU[0].l}: es la única que hay en ${val}`);
                 }
                 continue;
               }
@@ -13910,12 +13966,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // el cliente contesta su pueblo y el bot le habla como si no supiera dónde está.
             const _agsC = agenciasDeCiudad(_li);
             if (_agsC.length === 1) {
-              run.vars.sede = _agsC[0].l; ctx.sede = _agsC[0].l;
-              await setField(db, run.channel_id, run.contact_id, "sede", _agsC[0].l);
-              (run.vars as any)._ficha_sede = slugAgencia(_agsC[0]);
-              (run.vars as any)._ficha_ahora = slugAgencia(_agsC[0]);
-              await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede deducida",
-                `${_agsC[0].l}: es la única que hay en ${_li}`).catch(() => {});
+              await sellarSede(db, run, ctx, _agsC[0], "📍 Sede deducida",
+                `${_agsC[0].l}: es la única que hay en ${_li}`);
             }
           }
         }
@@ -14004,14 +14056,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _porRef = agenciaPorReferencia(String(ctx.last_input ?? ""), String(ctx.ciudad ?? ""));
           if (_porRef) { _sella = _porRef; _porQue = `Por lo que describió: ${_porRef.ref || _porRef.dir || _porRef.l}`; }
         }
-        if (_sella) {
-          run.vars.sede = _sella.l; ctx.sede = _sella.l;
-          await setField(db, run.channel_id, run.contact_id, "sede", _sella.l);
-          (run.vars as any)._ficha_sede = slugAgencia(_sella as any);
-          (run.vars as any)._ficha_ahora = slugAgencia(_sella as any);
-          await logEvent(db, run.channel_id, run.contact_id, "campo", "📍 Sede resuelta",
-            _porQue.slice(0, 140)).catch(() => {});
-        }
+        if (_sella) await sellarSede(db, run, ctx, _sella, "📍 Sede resuelta", _porQue);
       } catch (_) { /* sin padrón legible → se sigue sin sellar */ }
     }
     // 🗑️ ¿Se arrepintió del extra justo al pedirle la talla? Quitarlo ANTES de reconciliar,
@@ -15825,11 +15870,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el distrito para que un error se vea en el acto, igual que con «Bellavista está en
         // Lima». Callarlo es cómo un cliente terminaba con la ficha de otra ciudad.
         const _kmSalto = kmDesdeSuSede(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
-        run.vars.sede = _ofi.l;
-        ctx.sede = _ofi.l;
-        await setField(db, run.channel_id, run.contact_id, "sede", _ofi.l);
-        (run.vars as any)._ficha_sede = slugAgencia(_ofi);
-        (run.vars as any)._ficha_ahora = slugAgencia(_ofi);
+        // `forzar`: acá el cliente PIDIÓ el cambio nombrando la oficina, y este bloque ya
+        // corrió sus propias validaciones más arriba (nombre ambiguo y salto de departamento).
+        // Sin esto, el freno del nombre ambiguo se aplicaría dos veces sobre un caso que ya
+        // pasó por él — y le negaría al cliente una oficina que él mismo eligió.
+        // Sin título: este bloque registra su propio evento más abajo, con el salto en km.
+        await sellarSede(db, run, ctx, _ofi, "", "", { forzar: true });
         // 🔴 Y si el PEDIDO ya existe, hay que cambiárselo también. Sin esto el cambio se
         // quedaba en el flujo y la fila del pedido conservaba la agencia vieja: el bot le
         // decía «listo, ahora recoges en San Juan Bautista» y la guía —y el Excel del
