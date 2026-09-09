@@ -14247,7 +14247,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // la frenó en el acto: «si el cliente pregunta otra vez, ¿qué pasa, no le vuelve a
     // explicar?». Tenía razón — dejar una pregunta sin contestar por haberla contestado antes
     // es peor que ser repetitivo. El problema nunca fue repetir: era el largo.
-    fijos.push("## La agencia tiene nombre, y lo que se confirma es la OFICINA\n" +
+    // 💻 En una venta DIGITAL no hay agencia, ni oficina, ni nada que recoger: son 475
+    // caracteres de logística física que le llegaban al que compra un PDF, en cada respuesta.
+    // Medido con la radiografía del prompt: salía SIEMPRE, también en el digital.
+    if (!esDigital(ctx)) fijos.push("## La agencia tiene nombre, y lo que se confirma es la OFICINA\n" +
       "La agencia es SIEMPRE la misma —la del negocio— así que nómbrala: «por agencia Shalom», no «por " +
       "agencia» a secas. Que sepa a qué empresa va.\n" +
       "⛔ Y nunca «te confirmo la agencia» ni «qué agencia prefieres»: eso le hace pensar que trabajamos con " +
@@ -14928,6 +14931,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // gracias" y el bot contestó recordándole el regalo y cerrando con "¿En qué talla te las
     // mando?" — insistir ahí no convence a nadie y sí quema el chat. La venta no se pierde:
     // el remarketing lo retoma después, y si él vuelve la conversación sigue viva.
+    // 💻 SOLO EN VENTAS FÍSICAS. Salió de la regla 5 de «Cómo cerrar», que iba entera a todos:
+    // franjas de reparto, el motorizado que va por ruta, apartar una talla. En una venta
+    // digital no hay nada de eso —se entrega por link— y era ~900 caracteres por respuesta
+    // hablándole de repartos a alguien que compra un PDF.
+    if (!esDigital(ctx)) {
+      fijos.push(
+        "## Lo que no controlas del envío\n" +
+        "⛔ No ofrezcas horarios ni franjas de entrega («¿en la mañana o en la tarde?»), ni RESERVAR o " +
+        "apartar stock («¿te reservo una talla?»). No existe el apartado: lo único que aparta unidades es " +
+        "un pedido creado.\n" +
+        "⛔ Y vale para AFIRMAR una hora, no solo para preguntarla. Si el negocio te dio una franja de " +
+        "reparto, esa franja se dice entera y tal cual; lo que NO puedes es acomodarla a lo que al cliente " +
+        "le conviene. Medido: alguien avisó que trabaja hasta las 6 y se le contestó «entregamos de 09:00 " +
+        "a 19:00, así que te lo hacemos llegar después de las 6» — el motorizado va por RUTA y no elige el " +
+        "orden, así que eso es un rechazo en la puerta. Y el horario de ATENCIÓN del negocio (cuándo " +
+        "respondemos mensajes) NO es una ventana de entrega: nunca lo uses para decirle entre qué horas " +
+        "le llega.");
+    }
     fijos.push(
       "## Si te dice que lo va a pensar\n" +
       "«lo voy a pensar», «luego te escribo», «lo consulto con mi esposa»: respétalo. UNA línea " +
@@ -14957,15 +14978,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "no lo niegues ni lo inventes — dile que lo confirmas y sigue con la venta, o pásalo a una persona.\n" +
       "4. Si le pasas datos de pago, di SIEMPRE el monto exacto en el MISMO mensaje. Nunca lo invites a pagar sin " +
       "decirle cuánto: termina pagando de más o de menos y hay que devolvérselo.\n" +
-      "5. No ofrezcas nada que el negocio no controla: horarios o franjas de entrega (\"¿en la mañana o en la tarde?\"), " +
-      "días exactos que no te dieron, descuentos, ni RESERVAR o apartar stock (\"¿te reservo una talla?\"). No existe " +
-      "apartado: lo único que aparta unidades es un pedido creado. Tampoco metas presión con escasez inventada.\n" +
-      "   ⛔ Esto vale para AFIRMAR una hora, no solo para preguntarla. Si el negocio te dio una franja de " +
-      "reparto, esa franja se dice entera y tal cual; lo que NO puedes es acomodarla a lo que al cliente le " +
-      "conviene. Medido: alguien avisó que trabaja hasta las 6 y se le contestó «entregamos de 09:00 a 19:00, " +
-      "así que te lo hacemos llegar después de las 6» — el motorizado va por RUTA y no elige el orden, así que " +
-      "eso es un rechazo en la puerta. Y el horario de ATENCIÓN del negocio (cuándo respondemos mensajes) NO es " +
-      "una ventana de entrega: nunca lo uses para decirle entre qué horas le llega.\n" +
+      // 💻 La parte de ENTREGA de esta regla —franjas, motorizado, apartar tallas— se movió a
+      // su propio bloque, que solo sale en ventas físicas (ver «Lo que no controlas del
+      // envío»). Acá queda lo que vale para cualquier venta: no inventar descuentos ni presión.
+      "5. No ofrezcas nada que el negocio no controla: días exactos que no te dieron ni descuentos. " +
+      "Tampoco metas presión con escasez inventada.\n" +
       "6. Si el cliente hizo una pregunta y quedó sin responder —típico con su PRIMER mensaje, que lo contesta un saludo " +
       "automático— respóndela ahora, antes de seguir vendiendo. Revisa la conversación: si preguntó por garantía, " +
       "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.\n" +
@@ -16389,6 +16406,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 💾 Los fijos primero (el prefijo que se cachea), lo del turno después. Ver el
     // comentario largo donde se declara `fijos`.
     if (fijos.length || parts.length) system = [...fijos, ...parts].join("\n\n");
+    // 🔬 Radiografía del prompt: qué bloques recibe ESTE turno y cuánto pesa cada uno.
+    // Apagada por defecto — se enciende con `_rxPrompt` en las vars del run cuando hay que
+    // medir. Vale la pena dejarla: con ella se vio en un minuto que el guion físico dentro de
+    // una venta digital eran 1.164 caracteres, no los ~7.000 que yo había estimado a ojo.
+    if ((run.vars as any)?._rxPrompt) {
+      try {
+        const _rx = [...fijos, ...parts].map((b) =>
+          `${(b.split("\n")[0] || "").replace(/^#+\s*/, "").slice(0, 44)} (${b.length})`).join(" · ");
+        await logEvent(db, run.channel_id, run.contact_id, "nota",
+          `🔬 Prompt ${String(system ?? "").length}c`, _rx.slice(0, 4000)).catch(() => {});
+      } catch (_) { /* medición, nunca rompe */ }
+    }
   }
   // OCR: inyecta el "Validador de comprobantes" del canal (métodos válidos +
   // reglas anti-fraude) para que la IA reconozca pagos con criterio de negocio.
