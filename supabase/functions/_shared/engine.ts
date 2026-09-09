@@ -695,6 +695,43 @@ async function runEngineInner(
         }
       } catch (e) { console.error("[ruteo/remarketing]", (e as any)?.message ?? e); }
     }
+    // 🙋 VUELVE DESPUÉS DE HABLAR CON UNA PERSONA. Escalar a un humano CIERRA el run
+    // (`estado = completado`), y con razón: dejarlo abierto soltaba burbujas automáticas de
+    // los nodos siguientes encima del asesor, justo tras decirle «te paso con una persona».
+    // Pero al cerrarlo no quedaba ninguna nota de por dónde iba, así que al reactivar el bot
+    // el cliente —que ya dio sus datos y ya habló por teléfono— recibía la bienvenida entera
+    // otra vez («el Adaptador Pro es un accesorio que se acopla a tu taladro…»), como si
+    // fuera la primera vez, y perdía su lugar en la venta.
+    // Se retoma por el flujo de VENTA con su mensaje reinyectado, exactamente igual que el
+    // remarketing de arriba: mismo problema, misma solución ya probada.
+    // Acotado a 72h. Y si el ruteo SÍ encontró una palabra clave suya (o viene de un anuncio),
+    // manda lo que él dijo: puede estar preguntando por otro producto y eso no se le pisa.
+    const _routeExplicita = decision.tier === "keyword" || decision.tier === "referral" ||
+      decision.tier === "anuncio";
+    if (!_routeExplicita) {
+      try {
+        const { data: esc } = await db.from("contact_events").select("created_at")
+          .eq("contact_id", contactId).eq("tipo", "humano")
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const _cuando = (esc as any)?.created_at;
+        if (_cuando && (Date.now() - new Date(_cuando).getTime()) < 72 * 3600 * 1000) {
+          const { data: ct2 } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+          const pid2 = (ct2 as any)?.product_id;
+          if (pid2) {
+            const { data: fls2 } = await db.from("flows")
+              .select("id, nombre, role").eq("channel_id", channelId).eq("product_id", pid2)
+              .eq("estado", "activo").eq("role", "venta").order("id");
+            const vta = ((fls2 ?? []) as any[])[0];
+            if (vta && vta.id !== flow?.id) {
+              flow = { id: vta.id, nombre: vta.nombre };
+              reinyectarTrasArranque = true;
+              await logEvent(db, channelId, contactId, "nota", "🙋 Vuelve tras hablar con una persona",
+                "Retoma la venta donde quedó — no se le repite la bienvenida").catch(() => {});
+            }
+          }
+        }
+      } catch (e) { console.error("[ruteo/handoff]", (e as any)?.message ?? e); }
+    }
     if (!flow) {
       // Sin producto claro (hola / anuncio sin banco / mensaje vago): la RECEPCIÓN
       // con IA lo recibe y lo encamina a un producto. Si está apagada o no hay IA,
@@ -4063,13 +4100,31 @@ function sinPedirLosDatos(texto: string): string {
   // contestó «José Leonardo Ortiz», el motor le pegó las 2 oficinas de su distrito y el
   // mensaje salió sin ellas. Un guard no puede borrar lo que puso otro guard tres líneas antes.
   const _esCampo = (l: string) => /^\s*(📌|•|[-–—])\s*\S/.test(l) && l.trim().length <= 60;
+  // 🧹 El resto COLGADO. La IA parte la petición en dos renglones («Necesito tus datos para
+  // dejarlo listo.» / «¿Me los pasas?»): se cortaba el primero y el segundo quedaba solo,
+  // colgando de un «los» que ya no señala a nada. Medido en el chat de prueba: al cliente que
+  // preguntó si le cobran por rechazar el paquete le llegó «¿Me los pasas?» y debajo la lista
+  // de precios. Es el mismo huérfano que ya se limpió en el bloque de oficinas.
+  const _restoColgado = (l: string) =>
+    /^[¡¿\s]*(me|nos)\s+(los|las|lo|la)\s+[a-záéíóúñ]+\s*[?!.…]*$/i.test(sinFormato(l).trim());
   const out: string[] = [];
   let cortando = false;
   for (const l of t.split("\n")) {
-    if (RE_PIDE_SUS_DATOS.test(sinFormato(l))) { cortando = true; continue; }
+    if (RE_PIDE_SUS_DATOS.test(sinFormato(l))) {
+      // ✂️ Por FRASE, no por renglón. La petición viene pegada a la respuesta en la misma
+      // línea («Sí, te damos boleta. Pásame tus datos 👇»), y borrar el renglón entero se
+      // llevaba la respuesta a lo que el cliente acababa de preguntar. Medido: preguntó por
+      // la boleta y le llegó SOLO la lista de precios, sin una palabra sobre su pregunta.
+      // Tres preguntas seguidas se quedaron sin contestar en la misma conversación.
+      const _sobra = l.split(/(?<=[.!?…])\s+/)
+        .filter((f) => f.trim() && !RE_PIDE_SUS_DATOS.test(sinFormato(f)));
+      if (_sobra.length) out.push(_sobra.join(" "));
+      cortando = true;   // los campos 📌 que vienen debajo son parte de lo mismo
+      continue;
+    }
     // Tras la petición vienen sus campos («📌 *Nombre y apellidos*») y las líneas en blanco
     // que los separan: son parte de lo mismo. En cuanto aparece otra cosa, se deja de cortar.
-    if (cortando && (!l.trim() || _esCampo(l))) continue;
+    if (cortando && (!l.trim() || _esCampo(l) || _restoColgado(l))) continue;
     cortando = false;
     out.push(l);
   }
@@ -5067,6 +5122,31 @@ function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = 
   return "Estas son las opciones 👇\n" +
     lista.map((o) => `${o.nombre}${o.precio != null ? ` — ${pz(o.precio)}` : ""}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n") +
     `\n\n${_cierre}`;
+}
+
+// 🔁 ¿Ya le pegamos la lista de precios hace un momento? Se miran sus últimos DOS mensajes
+// salientes y se cuentan las cifras REALES de sus presentaciones: dos o más es que era la
+// lista. Medido en el chat de prueba de Rodrigo: la lista salió en CUATRO burbujas seguidas,
+// debajo de respuestas que no tenían nada que ver —la boleta, el rechazo del paquete, el pago
+// con tarjeta—. Es el mismo machaque que ya se frenó con la lista de oficinas: la lista sirve
+// para ELEGIR, y repetirla en cada burbuja es ruido que empuja abajo lo que sí hay que leer.
+// ⚠️ Vive acá, en UNA función, porque la lista se pega desde DOS sitios del post-proceso y
+// poner el freno en uno solo es exactamente como se escapó en la primera pasada: arreglé el
+// guard de los datos, volví a medir, y la lista seguía saliendo por el bloque de precios.
+async function yaLeListamosPrecios(db: SupabaseClient, run: Run, ops: Opcion[]): Promise<boolean> {
+  if (ops.length < 2) return false;
+  try {
+    const { data } = await db.from("messages").select("content")
+      .eq("contact_id", run.contact_id).eq("direction", "out")
+      // 4 y no 2: medido, con dos se le escapaba. Le listamos los precios, después contestó
+      // tres preguntas suyas seguidas —boleta, rechazo, tarjeta— y en la tercera la lista ya
+      // había salido de la ventana y se la volvió a pegar. Cuatro cubre una tanda normal de
+      // preguntas sin que se pierda de vista lo que ya le mostramos. Y si él los vuelve a
+      // pedir, `RE_CLIENTE_PIDE_PRECIO` manda y la lista sale entera igual.
+      .order("ts", { ascending: false }).limit(4);
+    const txt = (data ?? []).map((m: any) => sinFormato(String(m?.content?.text ?? ""))).join("\n");
+    return ops.filter((o) => o.precio != null && txt.includes(String(o.precio))).length >= 2;
+  } catch (_) { return false; }
 }
 
 // ⛔ «…, sin adelantos» / «…, sin riesgo» / «…, no pagas nada por adelantado». La coletilla
@@ -12877,12 +12957,28 @@ const UNIDAD_AJENA =
 // ¿Ese número está hablando del producto? Se acepta si aparece suelto y lo que sigue
 // NO es una unidad ajena. Se recorren TODAS sus apariciones: basta con que una valga
 // ("dos años… y llevo dos frascos" tiene que sellar).
+// 🇪🇸 «un» y «una» son ARTÍCULO antes que número, y con un sustantivo GENÉRICO detrás no
+// nombran cantidad ninguna: «¿qué pasa si recibo UN PRODUCTO diferente o defectuoso?» es una
+// pregunta por la garantía, no la compra de 1 unidad. Medido en el chat de prueba de Rodrigo:
+// esa frase sellaba «1 unidad», le pedía nombre/celular/DNI y le pegaba la lista de agencias
+// — a alguien que no había dicho jamás cuántas quería. Es la regla de no elegir por el
+// cliente, rota por la palabra más común del español.
+// Con una presentación REAL detrás sí nombra cantidad («una unidad», «un frasco», «un pack»)
+// y eso se respeta; y el dígito «1» y el pronombre «uno» no son artículo, así que van solos.
+// ⚠️ El corte va acá, en un helper compartido: la comprobación vive en DOS sitios
+// (`numeroDelProducto` y `mencionaFuerte`) y arreglar uno solo es como se escapó la primera
+// vez — sellé por la red determinista y el bug volvió a entrar por el guard de los datos.
+const GENERICO_TRAS_ARTICULO = /^(producto|articulo|item|pedido|paquete|envio|encargo)s?\b/;
+const articuloVago = (pat: string, resto: string) =>
+  (pat === "un" || pat === "una") && GENERICO_TRAS_ARTICULO.test(resto);
+
 function numeroDelProducto(t: string, cant: number): boolean {
   const vale = (pat: string) => {
     const g = new RegExp("(?:^|[^a-z0-9])" + pat + "(?![a-z0-9])", "g");
     let m: RegExpExecArray | null;
     while ((m = g.exec(t)) !== null) {
       const resto = t.slice(m.index + m[0].length).replace(/^[\s.,;:!?¡¿()-]+/, "");
+      if (articuloVago(pat, resto)) continue;
       if (!UNIDAD_AJENA.test(resto)) return true;
     }
     return false;
@@ -12932,6 +13028,9 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
     let m: RegExpExecArray | null;
     while ((m = g.exec(t)) !== null) {
       const resto = t.slice(m.index + m[0].length).replace(/^[\s.,;:!?¡¿()-]+/, "");
+      // 🇪🇸 «un producto» es artículo, no cantidad — ver articuloVago. La rama del verbo de
+      // compra sigue abajo: «quiero un producto» sí lo es, porque ahí lo está pidiendo.
+      if (articuloVago(pat, resto)) continue;
       if (UNIDAD_VENTA.test(resto)) return true;
       if (propias.some((w) => resto.startsWith(w))) return true;
       const antes = t.slice(0, m.index).replace(/[^a-z0-9]+$/, "");
@@ -16739,7 +16838,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // las contrabarras al pasar por el editor y dejaba un patrón que no casaba nada.
         : sinFormato(salida).split(_symP).slice(1).some((p) => /^ *[0-9]/.test(p));
       const _faltaElegir = !String(ctx.opcion_id ?? "").trim();
-      const _sinCifrasDebiendo = !_traeCifra && _faltaElegir &&
+      // 🔁 …salvo que se los acabemos de listar. Este es el SEGUNDO sitio que pega la lista, y
+      // sin el freno acá la seguía machacando aunque el otro ya lo tuviera. Si el cliente
+      // vuelve a pedir el precio (`_pidioPrecio`) o la IA lo prometió, va entera igual.
+      const _yaLosVio = !_pidioPrecio && await yaLeListamosPrecios(db, run, _opsPre);
+      const _sinCifrasDebiendo = !_traeCifra && _faltaElegir && !_yaLosVio &&
         (RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida)) || RE_HABLA_DE_PRECIOS.test(sinFormato(salida)));
       if (op === "generar_texto" && ctx._product_id
           && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _sinCifrasDebiendo)) {
@@ -17118,8 +17221,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // ¿Ya están las presentaciones en el mensaje? Se cuentan las que aparecen por
               // NOMBRE («2 unidades»), que es lo que la IA escribe; con dos ya es su lista.
               const _rr = sinFormato(_resto).toLowerCase();
-              const _yaListadas = opsPend.filter((o) =>
+              let _yaListadas = opsPend.filter((o) =>
                 _rr.includes(String(o.nombre ?? "").toLowerCase())).length >= 2;
+              // 🔁 …y tampoco se repiten si se las acabamos de pegar en el mensaje ANTERIOR.
+              // Medido en el chat de prueba: la lista de precios salió en CUATRO mensajes
+              // seguidos, debajo de respuestas que no tenían nada que ver —la boleta, el
+              // rechazo del paquete, el pago con tarjeta—. Es el mismo machaque que ya
+              // frenamos con la lista de oficinas: la lista sirve para ELEGIR, y repetirla en
+              // cada burbuja es ruido que además empuja hacia abajo lo que sí hay que leer.
+              // La pregunta sigue yendo; lo que no se repite es el volcado de precios.
+              // Si el que vuelve a preguntar por los precios es ÉL, va entera otra vez.
+              if (!_yaListadas && !RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""))) {
+                _yaListadas = await yaLeListamosPrecios(db, run, opsPend);
+              }
               const _preg = _yaPregunta ? "" : preguntaCuantos(opsPend, ctx, _negOn, _yaListadas);
               salida = _resto
                 ? (_preg ? `${_resto.trimEnd()}\n\n${_preg}` : _resto)
