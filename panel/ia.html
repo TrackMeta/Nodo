@@ -160,11 +160,16 @@ const MODELS = {
     { id:"claude-sonnet-4-6", nm:"Claude Sonnet 4.6", tag:"" },
     { id:"claude-fable-5",    nm:"Claude Fable 5",    tag:"El más potente (premium)" },
   ],
+  // ⚠️ El orden y las etiquetas IMPORTAN: el de arriba con "recomendado" es el que la gente
+  // elige. Decía "GPT-4o · Multimodal · recomendado" cuando el bot corre en gpt-4.1-mini,
+  // que ve imágenes IGUAL y cuesta SEIS veces menos (0.40 la entrada contra 2.50). O sea que
+  // el panel empujaba a encarecer la factura por seis para no ganar nada.
   openai: [
-    { id:"gpt-4o",       nm:"GPT-4o",       tag:"Multimodal · recomendado" },
-    { id:"gpt-4o-mini",  nm:"GPT-4o mini",  tag:"Rápido y económico" },
-    { id:"gpt-4.1",      nm:"GPT-4.1",      tag:"" },
-    { id:"gpt-4.1-mini", nm:"GPT-4.1 mini", tag:"" },
+    { id:"gpt-4.1-mini", nm:"GPT-4.1 mini", tag:"Equilibrado · recomendado para el bot" },
+    { id:"gpt-4.1",      nm:"GPT-4.1",      tag:"El más capaz · ideal para leer comprobantes" },
+    { id:"gpt-4.1-nano", nm:"GPT-4.1 nano", tag:"El más barato · solo tareas simples" },
+    { id:"gpt-4o",       nm:"GPT-4o",       tag:"Generación anterior · más caro" },
+    { id:"gpt-4o-mini",  nm:"GPT-4o mini",  tag:"Generación anterior · económico" },
     { id:"gpt-4-turbo",  nm:"GPT-4 Turbo",  tag:"" },
   ],
 };

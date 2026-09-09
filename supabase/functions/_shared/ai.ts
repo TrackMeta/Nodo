@@ -6,12 +6,19 @@
 // ═══════════════════════════════════════════════════════════════════
 
 // ── Endpoints y modelos por defecto de cada proveedor ──────────────
+// 💸 "Sin configurar" tiene que significar BARATO, no caro. Estos defaults solo entran
+// cuando no hay modelo en el nodo, ni en el perfil de rol, ni en la perilla del canal —
+// o sea, cuando alguien vació la configuración sin querer. Antes eran los modelos tope de
+// gama: `gpt-4o` cuesta 2.50 la entrada contra 0.40 de `gpt-4.1-mini`, y `claude-opus`
+// cuesta 15.00 contra 3.00 de sonnet. Un descuido de configuración multiplicaba la factura
+// por SEIS (o por CINCO) sin un solo aviso, y el dueño lo iba a descubrir a fin de mes.
+// El default es una red de seguridad: tiene que atajar barato.
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const ANTHROPIC_DEFAULT = "claude-opus-4-8";
+const ANTHROPIC_DEFAULT = "claude-sonnet-4";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_DEFAULT = "gpt-4o";
+const OPENAI_DEFAULT = "gpt-4.1-mini";
 
 export type Provider = "anthropic" | "openai";
 
