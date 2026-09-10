@@ -14311,6 +14311,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Se le pregunta en el turno en que se resuelve su ubicación, que es cuando ya se le
     // puede decir cómo le llega, y NO se vuelve a tocar. Antes salía de cuatro sitios
     // distintos y el cliente la leía en cada mensaje.
+    // 💻 EN UNA VENTA DIGITAL NO HAY ENVÍO — y esto vale en TODOS los turnos, no solo mientras
+    // le falte elegir. Vivía dentro del bloque de abajo, que se apaga en cuanto el cliente
+    // elige… o sea que el freno desaparecía justo en el turno donde el modelo empieza a pensar
+    // en «el siguiente paso». Medido: el cliente dijo «la basica» y le contestó «Perfecto, la
+    // Basica… ¿desde qué ciudad lo vas a descargar?» — la pregunta que este mismo texto
+    // prohíbe, hecha en el turno en que el texto ya no estaba.
+    // Es la familia de siempre: un guard condicionado a «todavía falta X» deja de proteger
+    // cuando X llega, que suele ser el momento que más importa.
+    if (op === "generar_texto" && esDigital(ctx)) {
+      parts.push("## Acá no hay envío\n" +
+        "⛔ NO saques tú el tema del envío ni le preguntes de dónde es, ni su ciudad, ni su distrito: no hay " +
+        "agencia, ni dirección, ni adelanto, ni nada que despachar. Si él te dice de dónde escribe, se lo " +
+        "acusas en media línea y sigues.\n" +
+        "✅ Pero si ÉL pregunta si se lo mandan a su casa, a su ciudad o cómo le llega, se lo CONTESTAS: es " +
+        "digital, le llega por link apenas paga, lo abre desde donde esté y no hay envío que esperar. " +
+        "Dejarlo sin respuesta porque «acá no se habla de envíos» es peor que hablar de envíos.");
+    }
     if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim() && esDigital(ctx)) {
       // 💻 En digital este bloque entero no aplica: no hay unidades que contar ni logística que
       // explicar. Medido con un curso — el cliente escribió «soy de Cusco» y le llegó «¿Cuántas
@@ -14331,12 +14348,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "Esta venta es DIGITAL: lo que tiene que elegir es CUÁL presentación quiere, no cuántas. " +
         "⛔ Nunca le preguntes «¿cuántas unidades?» ni le hables de cantidades, packs de varias ni totales.\n" +
         "⛔ Y si él pide varias («quiero 3»), NO multipliques el precio ni le des un total: el acceso es uno " +
-        "solo y le queda de por vida. Díselo así, con calidez, y pregúntale cuál de las opciones prefiere.\n" +
-        "⛔ Tampoco saques TÚ el tema del envío ni le preguntes de dónde es: no hay agencia, ni dirección, " +
-        "ni adelanto. Si él te dice de dónde escribe, se lo acusas en media línea y sigues.\n" +
-        "✅ Pero si ÉL pregunta si se lo mandan a su casa, a su ciudad o cómo le llega, se lo CONTESTAS: es " +
-        "digital, le llega por link apenas paga, lo abre desde donde esté y no hay envío que esperar. " +
-        "Dejarlo sin respuesta porque «acá no se habla de envíos» es peor que hablar de envíos.");
+        "solo y le queda de por vida. Díselo así, con calidez, y pregúntale cuál de las opciones prefiere.");
     } else if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()) {
       // 🕒 …pero "saber su ubicación" no es saber su DEPARTAMENTO. Medido: dijo «Para Madre de
       // Dios», la zona se resolvió a provincia y la marca se gastó en un turno cuyo único
@@ -14494,7 +14506,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "más arriba en esta misma conversación: copiarlos dentro de una frase le quita al cliente lo " +
         "único que necesita hacer, que es copiar el número de un toque. Di que se los pasas (o que van " +
         "enseguida) y sigue: el sistema se los manda completos justo después de tu mensaje. Y no le " +
-        "expliques qué es Yape o Plin: los conoce mejor que tú.");
+        "expliques qué es Yape o Plin: los conoce mejor que tú.\n" +
+        // 🔴 EL TITULAR DE LA CUENTA NO ES EL CLIENTE. Medido en una venta digital sin campo de
+        // nombre: el modelo se quedó sin ningún nombre del cliente en el contexto, agarró el
+        // único que había —el del titular de la cuenta— y le contestó «¡Gracias, Percy! Lo dejo
+        // listo para ti» a una clienta que se llamaba de otra forma. Llamar al cliente por el
+        // nombre del dueño del negocio es de las cosas que más delatan que hay un robot suelto.
+        "⛔ Y el nombre del TITULAR de esa cuenta es el del negocio, NO el del cliente: jamás " +
+        "lo uses para dirigirte a él. Si no sabes su nombre, no lo saludes por nombre — se puede " +
+        "conversar perfectamente sin usarlo.");
     }
     // 🔒 El dinero lo confirma el CÓDIGO, no la IA. "Ya te yapeo" es una intención, no
     // un pago: la IA respondía "Gracias por el pago, ya lo recibí, te envío el acceso"
