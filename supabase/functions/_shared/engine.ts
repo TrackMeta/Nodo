@@ -5114,7 +5114,11 @@ const esDigital = (ctx: any) => String(ctx?._tipo ?? "") === "digital";
 // Lo que no lleva marca ninguna vale para los dos y se queda.
 function negocioSegunTipo(txt: string, digital: boolean): string {
   const quiero = digital ? "digital" : "fisico";
-  const RE_MARCA = /^\s*(f[ií]sicos?|digitales?)\s*:\s*/i;
+  // La marca se admite despues de una viñeta o de un «P:» / «R:», porque asi es como el dueño
+  // escribe de verdad la ficha. Sin esto no habia donde ponerla en «- P: ¿Hacen envios...?» ni
+  // en «- [[media:prueba_envios]] ...», que son justo las lineas fisicas que se filtraban al
+  // digital. Se conserva el prefijo (la viñeta) y se borra solo la marca.
+  const RE_MARCA = /^(\s*(?:[-*•]\s*)?(?:[PR]\s*:\s*)?)(f[ií]sicos?|digitales?)\s*:\s*/i;
   let marca = "";
   const out: string[] = [];
   for (const linea of String(txt ?? "").split("\n")) {
@@ -5122,8 +5126,8 @@ function negocioSegunTipo(txt: string, digital: boolean): string {
     const queda: string[] = [];
     for (const frase of linea.split(/(?<=[.;])\s+/)) {
       const m = RE_MARCA.exec(frase);
-      if (m) marca = /^f/i.test(m[1].trim()) ? "fisico" : "digital";
-      if (!marca || marca === quiero) queda.push(m ? frase.replace(RE_MARCA, "") : frase);
+      if (m) marca = /^f/i.test(m[2].trim()) ? "fisico" : "digital";
+      if (!marca || marca === quiero) queda.push(m ? frase.replace(RE_MARCA, "$1") : frase);
     }
     if (queda.length) out.push(queda.join(" "));
   }
