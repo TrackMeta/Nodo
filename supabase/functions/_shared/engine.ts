@@ -3607,6 +3607,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
       direction: "out", type: mediaKind,
       content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "" },
       status, wamid: wamid || null, error, sent_by: "bot",
+      ventana: await ventanaDeCobro(db, run.contact_id),
     });
     return status !== "failed";   // false = no salió → el caller no debe darlo por entregado
   }
@@ -3711,6 +3712,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     channel_id: run.channel_id, contact_id: run.contact_id,
     direction: "out", type: isInteractive ? "interactive" : "text",
     content, status, wamid: wamid || null, error, sent_by: "bot",
+    ventana: await ventanaDeCobro(db, run.contact_id),
   });
   return status !== "failed";   // false = no salió → el caller no debe darlo por entregado
 }
@@ -5843,6 +5845,32 @@ export async function ventana24hAbierta(db: SupabaseClient, contactId: string): 
     const t = (data as any)?.ultimo_mensaje_cliente_at ? new Date((data as any).ultimo_mensaje_cliente_at).getTime() : 0;
     return t > 0 && (Date.now() - t) < 24 * 3600 * 1000;
   } catch (_) { return false; }
+}
+
+// 💵 BAJO QUÉ VENTANA SALE ESTE MENSAJE — para saber si Meta lo cobra.
+//
+// Desde el 1 de octubre de 2026 Meta cobra por MENSAJE los de servicio (las respuestas
+// libres dentro de las 24h, o sea todo lo que escribe el bot vendiendo) y las plantillas de
+// utilidad dentro de esa ventana. Lo que sigue gratis es lo que cae dentro de las 72h del
+// anuncio (Free Entry Point). O sea: el lead que vino por anuncio viaja gratis y el ORGÁNICO
+// se paga por burbuja.
+//
+// 📌 Se sella AL ENVIAR y no se deduce después, porque `fep_hasta` lo reescribe cada clic
+// nuevo en un anuncio: mirar hoy si un mensaje de la semana pasada iba dentro de la ventana
+// devuelve una respuesta inventada. Acá el dato es exacto.
+//
+// ⚠ Ojo con la confusión de siempre (ya costó dos veces, ver ventana24hAbierta): el FEP es
+// sobre el COBRO, no da texto libre. Esta función NO decide si se PUEDE enviar —eso lo
+// decide la ventana de 24h— solo con qué etiqueta se registra lo que ya se envió.
+async function ventanaDeCobro(
+  db: SupabaseClient, contactId: string, esPlantilla = false,
+): Promise<"fep" | "servicio" | "plantilla"> {
+  try {
+    const { data } = await db.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
+    const fep = (data as any)?.fep_hasta ? new Date((data as any).fep_hasta).getTime() : 0;
+    if (fep > Date.now()) return "fep";     // dentro de las 72h del anuncio → Meta no cobra
+  } catch (_) { /* si no se puede leer, se etiqueta por lo que sí sabemos */ }
+  return esPlantilla ? "plantilla" : "servicio";
 }
 
 // Guard SSRF: solo http(s) hacia un host que NO sea loopback / red privada / link-local

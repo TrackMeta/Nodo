@@ -15,6 +15,21 @@ import { pageAll } from "./paginar.ts";
 // minuto"): si estuviera escrito también allá, cambiar el ritmo acá haría que el aviso
 // empezara a mentir sin que nadie se entere.
 export const BATCH = 25;
+
+// 💵 Bajo qué ventana de cobro sale esta plantilla. Desde el 01/10/2026 Meta cobra las
+// plantillas de utilidad dentro de la ventana de servicio; lo que cae dentro de las 72h del
+// anuncio (Free Entry Point) sigue gratis. Se sella AL ENVIAR porque `fep_hasta` lo reescribe
+// cada clic nuevo en un anuncio — deducirlo después da una respuesta inventada.
+// Copia local a propósito: importar el motor desde acá sería una dependencia circular (el
+// motor ya importa campaigns para los avisos de pedido). Son cuatro líneas.
+async function ventanaDeCobro(db: SupabaseClient, contactId: string): Promise<"fep" | "plantilla"> {
+  try {
+    const { data } = await db.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
+    const fep = (data as any)?.fep_hasta ? new Date((data as any).fep_hasta).getTime() : 0;
+    if (fep > Date.now()) return "fep";
+  } catch (_) { /* sin lectura, se etiqueta como plantilla: es lo que sí sabemos */ }
+  return "plantilla";
+}
 // Campañas que envían a la vez. Los envíos DENTRO de una campaña siguen espaciados uno a uno
 // (el retraso anti-baneo no se toca); en paralelo van campañas distintas, normalmente de
 // números de WhatsApp distintos.
@@ -301,7 +316,7 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
       await db.from("messages").insert({
         channel_id: c.channel_id, contact_id: s.contact_id, direction: "out",
         type: "template", content: { template: (tpl as any).name, params: bodyParams }, wamid: wamid || null, status: "sent",
-        sent_by: "bot",
+        sent_by: "bot", ventana: await ventanaDeCobro(db, s.contact_id),
       });
       // Anti-spam: una campaña (deliberada) no se frena, pero marca el "último
       // toque de marketing" del contacto para que el scheduler NO le encime hoy
@@ -426,6 +441,7 @@ export async function sendTemplateToContact(
     channel_id: channelId, contact_id: contactId, direction: "out",
     type: "template", content: { template: tpl.name, params: bodyParams }, wamid: wamid || null, status,
     sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null,
+    ventana: await ventanaDeCobro(db, contactId),
   });
   return wamid;
 }
