@@ -4186,6 +4186,12 @@ function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): str
 // tanda de dos productos digitales: «Mándame la captura para validar… ¿Qué es lo que más te
 // frena para empezar?». Nada lo frena: acaba de pagar. Es la misma familia —cerrar pidiendo
 // algo cuando no hay nada que pedir— así que va en la MISMA regex, no en un guard nuevo.
+//
+// ⚠️ Lo de «con ese último dato» ya estaba acá de antes y NO es lo que cortaba esa frase
+// cuando salía al cerrar: ésa la escribe el MOTOR mucho después (ver el `cierreHonesto` de
+// sinFalsoCierre). Esta regex solo alcanza a la IA. Se deja porque sí atrapa el caso en que
+// la IA la escribe por su cuenta, pero no confundir una cosa con la otra: buscar la frase
+// en el texto de la IA no es buscar quién la escribe.
 const RE_DATO_INVENTADO =
   /[^.!?…]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato|qu[eé] es lo que m[aá]s te frena)\b[^.!?…]*[.!?…]?/gi;
 // Pedir el nombre/DNI/dirección ES pasar a cerrar: si a esa altura el cliente
@@ -18210,6 +18216,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ? "¿Lo confirmo y te lo mando? 🙂"
           : _lbl
           ? `Me falta un dato: ${_lblTal}. ¿Me lo pasas? 🙂`
+          // 🔴 En DIGITAL no hay ningún dato pendiente —no hay campos que completar— así que
+          // este remate hablaba de "ese último dato" que no existe. Medido: 5 de 12 ventas
+          // digitales cerraron así, y 4 de las 5 en el producto de PRECIO ÚNICO (sin opción
+          // que elegir, `_falta_opcion` vacío → cae siempre al último caso).
+          //
+          // 🔴 Y es la TERCERA vez que esta frase me engaña. Está anotado en memoria: «la
+          // escribe el MOTOR, no la IA». Aun así la busqué otra vez en el prompt, le escribí
+          // un guard nuevo sobre el texto de la IA y hasta amplié RE_DATO_INVENTADO — todo
+          // 200 líneas ANTES de donde nace. El comentario de abajo ya avisaba de este mismo
+          // caso, pero el arreglo se aplicó solo al OTRO uso de la frase (pegarla como
+          // petición), no a este. Un arreglo a medias deja el bug vivo y el comentario
+          // mintiendo. Acá lo único que falta es el pago, así que eso es lo que se pide.
+          : esDigital(ctx)
+          ? "Mándame la captura del pago y te paso el acceso al toque 📷"
           : "Con ese último dato te lo dejo cerrado. 🙂";
         salida = sinFalsoCierre(salida, cierreHonesto);
         // Y si encima no pide nada (ni una pregunta en todo el mensaje), se le pega la
