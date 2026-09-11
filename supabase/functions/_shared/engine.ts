@@ -9909,7 +9909,19 @@ async function maybeDatosPago(
     const { data: f } = await db.from("custom_fields").select("valor")
       .eq("channel_id", channelId).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
     const dp = String((f as any)?.valor ?? "").trim();
-    if (!dp) return;
+    // 🔴 Sin datos de pago configurados esto se iba en SILENCIO, y es el peor sitio para
+    // callarse: la IA acaba de prometer «te paso los datos» y el cliente —que ya dijo que
+    // quiere pagar— se queda esperando un mensaje que nunca sale. Medido en un canal nuevo:
+    // «¿Te paso los datos?» · «sí, pásame los datos» · «👍 Ya te lo envío.» y nada más.
+    // Ni un evento en la Timeline: desde el panel se veía como si el bot simplemente
+    // hubiera dejado de contestar. Es [[patron-motor-calla-ia-promete]] en su forma más cara.
+    // No se le escribe nada al cliente (no hay qué decirle), pero el dueño tiene que verlo.
+    if (!dp) {
+      await logEvent(db, channelId, contactId, "error", "💳 No hay datos de pago configurados",
+        "El cliente pidió los datos para pagar y este canal no tiene el campo `datos_pago`. " +
+        "Se configura en Campos → datos_pago (modo fijo). La venta está frenada acá.").catch(() => {});
+      return;
+    }
     const nums = dp.match(/\d{6,}/g) ?? [];
     const { data: outs } = await db.from("messages").select("content")
       .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
