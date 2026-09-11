@@ -2728,9 +2728,14 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // producto probablemente TIENE, y de paso dejó por escrito que vende sin registro.
   ["el registro sanitario", /\b(registro sanitario|digemid|digesa|senasa|notificaci[oó]n sanitaria|permiso sanitario)\b/,
     /\b(registro sanitario|digemid|digesa|senasa|notificaci[oó]n sanitaria)\b/, "producto"],
-  ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(factura|boleta|ruc)/, "negocio"],
+  // ⚠️ La ficha «cubre» factura solo si habla de FACTURA: «no hace facturación» (un límite
+  // de la plantilla de presupuestos) casaba con `\bfactura` y el bot contestó de memoria
+  // «no emitimos factura». Cierre de palabra en la ficha.
+  ["factura o boleta", /\b(factura|boleta|ruc|comprobante de pago electr)/, /\b(facturas?|boletas?|ruc)\b/, "negocio"],
   ["garantía", /garant[ií]a/, /garant[ií]a/, "producto"],
-  ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|cambio)/, "negocio"],
+  // «¿Me devuelven la plata?» no calzaba con `devolver` (devuelv- ≠ devolv-) y el bot
+  // inventó «no hay devoluciones» 4 de 4 veces sin que el hueco quedara registrado.
+  ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|devuelv|devolv|reembols|(plata|dinero) de vuelta|me regresan (la|mi) (plata|dinero)|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|reembols|cambio)/, "negocio"],
   ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
   ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
   // ⏳ Cuánto tiempo le guarda el paquete la AGENCIA. Medido: «no puedo ir hasta el sábado,
