@@ -4180,8 +4180,12 @@ function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): str
 // «solo dime el monto exacto», pidiéndole el precio que él mismo acababa de decir. Se
 // prohibió por prompt y volvió a salir, así que se corta por código: fuera la frase, y si
 // era el mensaje entero, se reemplaza por el cierre honesto que toca.
+// 🔴 Y la pregunta de OBJECIÓN disparada después de que dijo que ya pagó. Medido en la
+// tanda de dos productos digitales: «Mándame la captura para validar… ¿Qué es lo que más te
+// frena para empezar?». Nada lo frena: acaba de pagar. Es la misma familia —cerrar pidiendo
+// algo cuando no hay nada que pedir— así que va en la MISMA regex, no en un guard nuevo.
 const RE_DATO_INVENTADO =
-  /[^.!?…]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato)\b[^.!?…]*[.!?…]?/gi;
+  /[^.!?…]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato|qu[eé] es lo que m[aá]s te frena)\b[^.!?…]*[.!?…]?/gi;
 // Pedir el nombre/DNI/dirección ES pasar a cerrar: si a esa altura el cliente
 // todavía no dijo cuántas unidades lleva, la venta se cierra por la más barata
 // sin que él se entere de que había un pack.
@@ -17984,9 +17988,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         const _precioTxt = ctx.precio != null && String(ctx.precio) !== ""
           ? `${simboloMoneda(ctx.moneda as string)} ${ctx.precio}` : "";
+        // 🔴 El texto de repuesto PEDÍA PERMISO —«¿Te paso los datos para que lo tengas
+        // ya?»— que es justo lo que el prompt digital prohíbe («cierra afirmando, no
+        // preguntando: elegir una presentación YA es decidir comprar»). Y como lo escribe el
+        // MOTOR, el guard que borra esa pregunta en el texto de la IA no lo veía nunca: en la
+        // tanda de prueba salió tres veces seguidas y yo lo estaba buscando en el prompt.
+        // Ahora afirma, que además es lo que el sistema hace un segundo después (los datos de
+        // pago salen solos).
+        // 🔬 Deja rastro cuando corta. Medido: de 10 conversaciones, 9 salieron limpias y
+        // UNA cerró igual con «Con ese último dato te lo dejo cerrado» — la regex sí casa con
+        // ese texto (probado aparte), así que o el guard no llegó a correr en ese turno o el
+        // texto llegó por otro camino. Sin este evento no hay forma de distinguirlo leyendo
+        // la conversación: el síntoma es idéntico. Es barato y contesta la pregunta sola.
+        const _antesDI = salida;
         salida = sinDatoInventado(salida, _precioTxt
-          ? `Son ${_precioTxt}. ¿Te paso los datos para que lo tengas ya?`
-          : "¿Te paso los datos para que lo tengas ya?");
+          ? `Son ${_precioTxt} 👇`
+          : "Te paso los datos 👇");
+        if (salida !== _antesDI) {
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "🧾 Inventó un trámite que no existe",
+            "Venta digital sin datos que pedir: se le quitó el «último dato» / el monto que él mismo dijo").catch(() => {});
+        }
         // 🔢 Y tampoco hay unidades que multiplicar… salvo que el dueño SÍ haya armado un
         // paquete de varias (una presentación con cantidad > 1): ahí la cantidad es un dato
         // real del producto y no se toca. Es el mismo criterio de siempre: se respeta lo que
