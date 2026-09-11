@@ -5444,7 +5444,13 @@ function conDatosDePago(texto: string, dp: string, nums: string[], titulares: st
   };
   const out: string[] = [];
   let puesto = false;
+  // Las ETIQUETAS del bloque («✅ *Yape* o *Plin*», «✅ *BCP*») que la IA copió sueltas, sin
+  // número, sobran cuando el bloque real se inserta entero: quedaban dobles («✅ Yape o Plin»
+  // dos veces y un «✅ BCP» colgando al final). Medido al cambiar de Básica a Premium.
+  const _limpia = (x: string) => x.replace(/[*_~✅•·-]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const etiquetas = new Set(dp.split(/\n\s*\n/).map((b) => _limpia(b.split("\n")[0] ?? "")).filter((e) => e.length >= 3));
   for (const linea of t.split("\n")) {
+    if (etiquetas.has(_limpia(linea))) continue;
     if (esDato(linea)) {
       // Se salvan las frases de esa línea que NO llevan el dato ("Perfecto, el costo es S/ 10.")
       const resto = linea.split(/(?<=[.!?…])\s+/).filter((o) => !esDato(o)).join(" ").trim();
@@ -12305,6 +12311,8 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
   si trae certificado, si se puede imprimir. Si no está escrito arriba, no lo afirmes ni lo
   niegues — aunque suene obvio, aunque el cliente lo dé por hecho en su pregunta. Las que SÍ
   están: exactas, sin ampliarlas — el negocio queda OBLIGADO a cumplir lo que prometas.
+  ✅ Si la ficha trae una sección «Límites», eso SÍ lo sabes: es lo que NO incluye ni hace.
+  Dilo de frente y sin vueltas ("No, no entrega certificado 🙂") y sigue vendiendo.
   MAL: "Sí, viene en inglés y español."   (la ficha no habla del idioma)
   MAL: "Del idioma te confirmo y te aviso."   (nadie va a volver — ver abajo)
   BIEN: "Del idioma no tengo el dato acá 🤔 Lo que sí te digo es que…"  (y sigues vendiendo)
@@ -18419,6 +18427,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               : "¿Lo confirmo y te lo mando?");
           if (cierre) salida = conCierre(salida, cierre);
         } catch (_) { /* sin historial → se envía tal cual */ }
+      }
+      // 🤫 Al que dijo que lo va a pensar no se le ofrece el número. La regla está en el
+      // prompt y el modelo la rompió igual (medido: «lo voy a pensar» → «¿Te paso los datos
+      // cuando estés listo? 🙌»). Se quita la oferta; si no queda nada, una línea cálida.
+      if (op === "generar_texto" && RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+        const _antesP = salida;
+        let _sinOferta = sinPedirPermisoPago(salida);
+        RE_PERMISO_PAGO.lastIndex = 0;
+        if (_sinOferta === salida && RE_PERMISO_PAGO.test(salida)) _sinOferta = "";
+        RE_PERMISO_PAGO.lastIndex = 0;
+        if (_sinOferta !== salida) {
+          salida = _sinOferta.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12
+            ? _sinOferta : "Claro, tómate tu tiempo 🙂 Cualquier cosa, acá estoy.";
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🤫 Insistía al que lo va a pensar",
+            `Se quitó la oferta del número: «${_antesP.slice(0, 120)}»`).catch(() => {});
+        }
       }
       // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
       if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
