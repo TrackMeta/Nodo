@@ -4759,6 +4759,14 @@ const RE_MULETILLA_FIJA =
 // —que es como escribe este modelo— no se tocaba nunca.
 const RE_MULETILLA_COLA =
   /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:(?:ya\s+)?(?:veo|vi|not[oé]|veia|ve[ií]a) que|entiendo que|seg[uú]n veo|(?:que\s+)?(?:me\s+)?(?:dices|digas|dijiste|comentas|comentaste|mencionas|mencionaste|indicas|indicaste) que)\s+(?:eres|est[aá]s|vienes|escribes|nos escribes|me escribes|quieres|necesitas|buscas|llevas|prefieres|te interesa|vas a)[^,.;:!?\n]{0,40}[,;:.]\s+/iu;
+// 🔴 LA CONCESIÓN NO ES MULETILLA. «Entiendo que buscas un mejor precio, PERO el adaptador ya
+// viene con una oferta especial»: el «entiendo que…» calzaba con la cola libre, se cortaba
+// hasta la coma y al cliente le llegó «Pero el *Adaptador Pro…* ya viene con una oferta
+// especial», arrancando por el conector. Medido en la regresión física (H-descuento-1) y
+// reproducido aparte con la regex tal cual. Cuando lo que queda empieza con un conector, la
+// primera mitad no era relleno: era la mitad de un «pero», y la frase se respeta entera.
+const RE_ARRANCA_CON_CONECTOR =
+  /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:pero|aunque|sin\s+embargo|no\s+obstante|igual(?:mente)?|as[ií]\s+que|por\s+eso|entonces|es\s+decir|o\s+sea|y|e|o|ni)(?![\p{L}\p{N}])/iu;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
@@ -4767,6 +4775,7 @@ function sinMuletillaDeArranque(texto: string): string {
     // saltando el signo de apertura. Y si al quitarla no queda nada, se deja la línea como
     // estaba: un renglón vacío en medio del mensaje se ve peor que la muletilla.
     if (!limpio.trim()) return l;
+    if (RE_ARRANCA_CON_CONECTOR.test(limpio)) return l;
     const i = limpio.search(/[\p{L}\p{N}]/u);
     return i < 0 ? limpio : limpio.slice(0, i) + limpio[i].toUpperCase() + limpio.slice(i + 1);
   }).join("\n");
@@ -5325,8 +5334,16 @@ async function yaLeListamosPrecios(db: SupabaseClient, run: Run, ops: Opcion[]):
 // que Rodrigo prohibió y que el modelo vuelve a colar parafraseada. Se le quita del texto ya
 // escrito: se borra el fragmento que va tras la última coma (o el final de la oración), y
 // solo eso — el hecho («pagas al recibir el pedido») se queda, que es lo que sí se dice.
+// 🔴 La cola del «ni …» tiene que FRENAR en el signo de apertura y en el emoji, no solo en
+// el punto. Este modelo separa oraciones con un emoji («…pagas al recibir sin adelantos ni
+// pagos adelantados 🙌 ¿Cuántas unidades quieres llevar?») y la cola, que solo paraba en
+// `,.!?`, se comía el emoji, el «¿Cuántas unidades» y retrocedía hasta la primera frontera
+// de palabra que le calzara. Medido en la regresión física (H-lima-1): al cliente le llegó
+// «pagas al recibirquieres llevar?». Reproducido aparte con la regex tal cual: el mismo
+// texto sale idéntico. Con `¿¡…` y los pictogramas fuera de la clase, la cola muere donde
+// muere la coletilla.
 const RE_COLETILLA_RIESGO =
-  /[,;]?\s*(?:y\s+|as[ií]\s+que\s+)?(?:completamente\s+|totalmente\s+|absolutamente\s+)?(?:sin\s+(?:ning[uú]n\s+)?(?:riesgos?|adelantos?|pagos?\s+(?:antes|por\s+adelantado)|pagar\s+nada\s+(?:antes|por\s+adelantado)|compromisos?)|cero\s+riesgos?|no\s+(?:pagas|pagás|paga)\s+nada\s+(?:por\s+)?(?:adelantado|antes)|nada\s+por\s+adelantado|no\s+arriesgas\s+nada)(?:\s+ni\s+[^,.!?\n]{0,40})?\b/gi;
+  /[,;]?\s*(?:y\s+|as[ií]\s+que\s+)?(?:completamente\s+|totalmente\s+|absolutamente\s+)?(?:sin\s+(?:ning[uú]n\s+)?(?:riesgos?|adelantos?|pagos?\s+(?:antes|por\s+adelantado)|pagar\s+nada\s+(?:antes|por\s+adelantado)|compromisos?)|cero\s+riesgos?|no\s+(?:pagas|pagás|paga)\s+nada\s+(?:por\s+)?(?:adelantado|antes)|nada\s+por\s+adelantado|no\s+arriesgas\s+nada)(?:\s+ni\s+[^,.;:!?¿¡…\n\p{Extended_Pictographic}]{0,40})?\b/giu;
 function sinColetillaRiesgo(texto: string): string {
   const t = String(texto ?? "");
   RE_COLETILLA_RIESGO.lastIndex = 0;
@@ -18796,6 +18813,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // muestre como dos mensajes, que es lo que pidió Rodrigo.
       if (_burbujaEnvio) {
         await emit(db, run, { text: _burbujaEnvio, _noTpl: true }, ctx).catch(() => {});
+      }
+      // 🔬 RASTRO DEL RETOQUE. Cuando lo que sale NO contiene tal cual lo que escribió la IA
+      // —o sea, algún guard reescribió o recortó, no solo pegó una lista debajo— el texto
+      // crudo queda en la Timeline. Sin esto, un empalme como «pagas al recibirquieres
+      // llevar?» (medido en la regresión física: la coletilla «sin adelantos ni…» se comía
+      // media pregunta) no se puede explicar leyendo el chat: son veinte guards y ninguno
+      // deja el original a la vista. Es un evento por turno retocado, y solo cuando de
+      // verdad cambió el texto — pegar precios u oficinas no lo dispara.
+      if (op === "generar_texto") {
+        const _crudo = String(result ?? "").trim();
+        if (_crudo && String(salida ?? "").trim() !== _crudo && !String(salida ?? "").includes(_crudo)) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🔬 Lo que escribió la IA antes de los retoques",
+            `«${_crudo.slice(0, 400)}»`).catch(() => {});
+        }
       }
       const handoff = await emitIaText(db, run, salida, ctx);
       // 🖼️ La FICHA de la sede, detrás del mensaje que la nombra. La marca la pone el
