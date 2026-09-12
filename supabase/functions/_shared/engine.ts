@@ -10032,13 +10032,20 @@ const RE_AFIRMA_CORTO =
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
 const RE_OFRECIO_DATOS =
   /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo/i;
+// …y el «sí» después de un mensaje que dio el PRECIO también: «cuesta S/19» → «sí» no puede
+// querer decir otra cosa. Medido: sin esto, «sí» → «cuando me mandes la captura te dejo el
+// acceso» y ningún número al que pagar (la oferta ya no está, la quitó sinPromesaDeDatosColgada).
+const RE_DIJO_PRECIO = /\bS\/\s?\d|\d+\s?soles\b/i;
 async function respondeSiALosDatos(db: SupabaseClient, contactId: string, texto: string): Promise<boolean> {
   if (!RE_AFIRMA_CORTO.test(String(texto ?? ""))) return false;
   try {
     const { data: outs } = await db.from("messages").select("content")
       .eq("contact_id", contactId).eq("direction", "out")
       .order("ts", { ascending: false }).limit(2);
-    return (outs ?? []).some((m: any) => RE_OFRECIO_DATOS.test(String(m.content?.text ?? "")));
+    return (outs ?? []).some((m: any) => {
+      const t = String(m.content?.text ?? "");
+      return RE_OFRECIO_DATOS.test(t) || RE_DIJO_PRECIO.test(t);
+    });
   } catch (_) { return false; }
 }
 async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
