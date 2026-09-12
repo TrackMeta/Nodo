@@ -4274,7 +4274,19 @@ function sinPedirLosDatos(texto: string): string {
       let _quitada = false;
       for (const f of _partes) {
         if (RE_PIDE_SUS_DATOS.test(sinFormato(f))) {
+          // 🔪 Si la petición va en la MISMA oración que la respuesta, pegada con una coma
+          // («En Lima coordinamos las entregas según el día, déjame tu distrito para ver si
+          // te programo en la tarde»), se queda la respuesta y se va solo la petición. Medido
+          // en M-horario-2: «¿pueden entregar en la tarde?» se contestó con «¿Cuántas
+          // unidades o qué oferta te preparo?» y nada más — la respuesta se fue con la coma.
+          let _pref = "";
+          for (let i = f.indexOf(","); i > 0; i = f.indexOf(",", i + 1)) {
+            const a = f.slice(0, i), b = f.slice(i + 1);
+            if (RE_PIDE_SUS_DATOS.test(sinFormato(a))) break;
+            if (RE_PIDE_SUS_DATOS.test(sinFormato(b)) && a.replace(/[\s\p{P}\p{S}]/gu, "").length >= 25) { _pref = a.trim(); break; }
+          }
           _quitada = true;
+          if (_pref) { _sobra.push(/[.!?…]$/.test(_pref) ? _pref : _pref + "."); continue; }
           if (_sobra.length) _sobra[_sobra.length - 1] = _sobra[_sobra.length - 1]
             .replace(/[\s]*(?:,|;|:|—|-|\by\b|\be\b|\bo\b|\bpero\b|\bentonces\b|\badem[aá]s\b)\s*$/i, "").trimEnd();
           continue;
@@ -18956,7 +18968,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       // 👉 Y de ÚLTIMO, el empujón: si hay algo pendiente y el mensaje no pide nada, se cierra
       // con el paso concreto. Va acá, después de todo, para que ninguna otra red se lo lleve.
-      if (op === "generar_texto") {
+      // 🤫 …salvo al que acaba de decir que lo va a pensar: ahí el empujón es la insistencia
+      // que apaga el chat. El cierre de arriba ya lo respetaba (`_saltarCierre`) y este no —
+      // medido en M-pensar-3: «Claro, toma tu tiempo para pensarlo 😊 … Pásame tus datos y te
+      // lo dejo listo 👇». De retomarlo se encarga el remarketing.
+      if (op === "generar_texto" && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
         try {
           const _oid = (run.vars as any)?._order_id;
           // Ya se leyó arriba, una sola vez por turno (`_estadoPedTurno`).
