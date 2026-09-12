@@ -3980,8 +3980,15 @@ function conCierrePendiente(texto: string, cta: string, yaLoNombra: RegExp): str
 // nada, no avanza nada, y encima bloqueaba el empujón del pendiente —que se salta si el
 // mensaje ya trae una pregunta— con una pregunta que no era la que había que hacer. Se quita
 // para que en su lugar entre la que sí mueve la venta.
+// 🔴 Dos agujeros medidos en la ronda N (prompt viejo, mismo motor): (1) `d[ée]` casaba la
+// preposición «de» —la palabra más común del idioma— y «¿Cuántas unidades quieres para
+// facilitarte esos cortes sin preocuparme DE la herramienta?» salió como «¿Cuántas unidades
+// ⚙️✅»; (2) la cola `[^?¡!\n]{0,70}` cruzaba el punto y el «¿» de la oración siguiente, así
+// que «quieres una unidad para usar con tu taladro. ¿En qué distrito de Lima te lo envío?» se
+// fue entero y quedó «Entonces, 📍🔧». Ahora solo «dé» con tilde (sin `\b` detrás, que no
+// existe tras una vocal acentuada) y las colas frenan en `. ¿ …`.
 const RE_PREGUNTA_RELLENO =
-  /\s*[¿]?\s*(?:te\s+)?(?:quieres|deseas|gustar[ií]a|te\s+gustar[ií]a|quieres\s+que)\b[^?¡!\n]{0,70}\b(?:cuente|cuento|explique|explico|mande|mando|env[ií]e|env[ií]o|comparta|comparto|d[ée]|doy|diga|digo|muestre|muestro)\b[^?\n]{0,40}\?/gi;
+  /\s*[¿]?\s*(?:te\s+)?(?:quieres|deseas|gustar[ií]a|te\s+gustar[ií]a|quieres\s+que)\b[^?¡!.¿…\n]{0,70}\b(?:(?:cuente|cuento|explique|explico|mande|mando|env[ií]e|env[ií]o|comparta|comparto|doy|diga|digo|muestre|muestro)\b|dé(?=\s|$))[^?.¿…\n]{0,40}\?/gi;
 function sinPreguntaDeRelleno(texto: string): string {
   const t = String(texto ?? "");
   RE_PREGUNTA_RELLENO.lastIndex = 0;
@@ -4258,8 +4265,25 @@ function sinPedirLosDatos(texto: string): string {
       // llevaba la respuesta a lo que el cliente acababa de preguntar. Medido: preguntó por
       // la boleta y le llegó SOLO la lista de precios, sin una palabra sobre su pregunta.
       // Tres preguntas seguidas se quedaron sin contestar en la misma conversación.
-      const _sobra = l.split(/(?<=[.!?…])\s+/)
-        .filter((f) => f.trim() && !RE_PIDE_SUS_DATOS.test(sinFormato(f)));
+      // 🧹 Y sin dejar cabos: la oración de antes no puede terminar en «y» ni en coma («tienes
+      // un taladro y» — medido en N-color-2: «tienes un taladro y Así te digo cómo te llega»),
+      // la de después no arranca con el conector que colgaba de la que se fue («Entonces,»),
+      // y un trozo sin letras («📍🔧») no es una frase.
+      const _partes = l.split(/(?<=[.!?…])\s+/).filter((f) => f.trim());
+      const _sobra: string[] = [];
+      let _quitada = false;
+      for (const f of _partes) {
+        if (RE_PIDE_SUS_DATOS.test(sinFormato(f))) {
+          _quitada = true;
+          if (_sobra.length) _sobra[_sobra.length - 1] = _sobra[_sobra.length - 1]
+            .replace(/[\s]*(?:,|;|:|—|-|\by\b|\be\b|\bo\b|\bpero\b|\bentonces\b|\badem[aá]s\b)\s*$/i, "").trimEnd();
+          continue;
+        }
+        if (_quitada && !/[\p{L}\p{N}]/u.test(f)) continue;
+        if (_quitada && RE_CONECTOR_COLGADO.test(f) && !/[?¿]/.test(f) && !/(?:S\/|\$)\s*[0-9]/.test(f)) continue;
+        _quitada = false;
+        _sobra.push(f);
+      }
       if (_sobra.length) out.push(_sobra.join(" "));
       cortando = true;   // los campos 📌 que vienen debajo son parte de lo mismo
       continue;
@@ -4711,7 +4735,10 @@ function sinPitchDelProducto(texto: string, producto: string): string {
       const esPitch = normalize(f).includes(clave) && f.length > 70 && !/[?¿]/.test(f)
         && !/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(f);
       if (esPitch) { quitada = true; cambiado = true; continue; }
-      // El conector que quedó colgando de la oración que se fue («Así ahorras tiempo»).
+      // El conector que quedó colgando de la oración que se fue («Así ahorras tiempo»), y el
+      // trozo sin una sola letra que era su adorno («🔧⚙️» solo en su renglón — medido en la
+      // ronda N-descuento: el mensaje arrancaba con una línea de emojis).
+      if (quitada && !/[\p{L}\p{N}]/u.test(f)) continue;
       if (quitada && RE_CONECTOR_COLGADO.test(f) && !/[?¿]/.test(f) && !/(?:S\/|\$)\s*[0-9]/.test(f)) continue;
       quitada = false;
       out.push(f);
