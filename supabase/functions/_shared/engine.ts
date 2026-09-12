@@ -4285,6 +4285,11 @@ function sinPedirLosDatos(texto: string): string {
             if (RE_PIDE_SUS_DATOS.test(sinFormato(a))) break;
             if (RE_PIDE_SUS_DATOS.test(sinFormato(b)) && a.replace(/[\s\p{P}\p{S}]/gu, "").length >= 25) { _pref = a.trim(); break; }
           }
+          // La muletilla que introducía la petición («Para avanzar», «Antes de seguir») se va
+          // con ella: medido en R-yapeo-1, quedó «Gracias por la intención del pago 😊 Para
+          // avanzar.» — y si sin la muletilla no queda frase, no queda nada.
+          _pref = _pref.replace(/[\s,;:—-]*(?:para (?:avanzar|seguir|continuar|cerrar|dejarlo listo|coordinar|terminar|anotarte)|antes de (?:seguir|avanzar|nada|anotarte)|ahora|entonces|as[ií] que)\s*$/i, "").trim();
+          if (_pref.replace(/[\s\p{P}\p{S}]/gu, "").length < 25) _pref = "";
           _quitada = true;
           if (_pref) { _sobra.push(/[.!?…]$/.test(_pref) ? _pref : _pref + "."); continue; }
           if (_sobra.length) _sobra[_sobra.length - 1] = _sobra[_sobra.length - 1]
@@ -5723,7 +5728,10 @@ function sinFalsoCierre(texto: string, cierre: string): string {
 
 function sinPreguntaFinal(texto: string): string {
   const t = String(texto ?? "").trimEnd();
-  if (!t || !t.endsWith("?")) return texto;
+  // 🔴 Con el emoji detrás del signo («¿…mientras tanto? ⚙️📦») el texto no «terminaba en ?»
+  // y la pregunta se quedaba: medido en R-pensar-1, al que dijo «lo voy a pensar» le llegó
+  // «¿Quieres que te recuerde los precios y beneficios?» con la lista pegada debajo.
+  if (!t || !t.replace(/[\s\p{Extended_Pictographic}️]+$/u, "").endsWith("?")) return texto;
   const lineas = t.split("\n");
   let i = lineas.length - 1;
   while (i >= 0 && !lineas[i].trim()) i--;
@@ -18052,6 +18060,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // sola debajo (`_sinCifrasDebiendo` la detecta) y elige viendo los precios.
       if (op === "generar_texto" && (run as any)?._tocaCantidad
           && !String(ctx.opcion_id ?? "").trim()
+          && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))   // al que lo va a pensar no se le pregunta nada
           && !RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida))) {
         salida = salida.trimEnd() + (esDigital(ctx) ? "\n\n¿Cuál de las opciones quieres?" : "\n\n¿Cuántas unidades quieres?");
         await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 La cantidad la preguntó el motor",
@@ -18094,7 +18103,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const _yaLosVio = !_pidioPrecio && await yaLeListamosPrecios(db, run, _opsPre);
       const _sinCifrasDebiendo = !_traeCifra && _faltaElegir && !_yaLosVio &&
         (RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida)) || RE_HABLA_DE_PRECIOS.test(sinFormato(salida)));
-      if (op === "generar_texto" && ctx._product_id
+      // 🤫 …y nunca al que acaba de decir que lo va a pensar: pegarle la lista de precios es
+      // la insistencia que apaga el chat (medido en R-pensar-1).
+      if (op === "generar_texto" && ctx._product_id && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))
           && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _sinCifrasDebiendo)) {
         if (_opsPre.length) {
           const sym = simboloMoneda(ctx.moneda as string);
