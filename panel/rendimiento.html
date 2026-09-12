@@ -64,6 +64,19 @@
   .kpi .kd{width:8px;height:8px;border-radius:2px}
   .kpi .v{font-size:22px;font-weight:800;letter-spacing:-.5px;margin-top:5px}
   .kpi .s{font-size:11px;color:var(--faint);margin-top:2px}
+  /* 💸 Mensajes que Meta cobra: encabezado + tarifa a la derecha + tabla corta */
+  .vent{padding:14px 16px 6px}
+  .vh{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+  .vh h3{margin:0 0 3px;font-size:15px;font-weight:650;letter-spacing:-.2px}
+  .vh p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5;max-width:640px}
+  .vt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .vt label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+  .vt input{width:150px;padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+  .vt button{padding:7px 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+  .vent .scroll{margin:0 -16px}
+  .vent tbody td:first-child,.vent thead th:first-child,.vent tfoot td:first-child{text-align:left}
+  .vn{margin:10px 0 6px;font-size:12px;color:var(--faint);line-height:1.5}
+  .ml{color:var(--faint);font-size:11px;margin-left:4px;font-weight:400}
 
   /* Table */
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
@@ -176,6 +189,18 @@ async function loadData(){
   // porque ads_insights.fecha es columna `date` (sin hora, por día calendario).
   const ordDesde=startOfDayLima(r.from).toISOString(); // inicio del día en hora de Lima (UTC-5), no del navegador
   const ordHasta=endOfDayLima(r.to).toISOString();     // fin del día de Lima (inclusive .999) → se usa con .lte
+  // 💸 Mensajes que Meta cobra (desde el 1-oct-2026), por origen del contacto. Va aparte y
+  // best-effort: no depende de Meta (mide lo que manda el bot) y si falta la migración 0092
+  // no debe tumbar la carga del gasto. La tarifa se lee directo de channels (grant 0093).
+  st.ventana=null; st.tarifaMsg=null;
+  try{
+    const [{data:vr,error:ve},{data:ch}]=await Promise.all([
+      supa.rpc("gasto_meta_por_origen",{ p_channel_id:cid, p_desde:from, p_hasta:to }),
+      supa.from("channels").select("tarifa_msg_usd").eq("id",cid).maybeSingle(),
+    ]);
+    if(!ve) st.ventana=vr||[];
+    st.tarifaMsg=ch&&Number(ch.tarifa_msg_usd)>0?Number(ch.tarifa_msg_usd):null;
+  }catch(_){ st.ventana=null; }
   let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
   try{ [insR,metaR,ordR]=await Promise.all([
     // Las tres van PAGINADAS: PostgREST corta en 1000 filas por pedido y esta pantalla es la
@@ -391,9 +416,50 @@ function render(){
   // conectar la página se apagaría entera y esta vista no se vería nunca.
   if(st.vista==="copy"){ renderCopys(); return; }
   if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }
-  if(!st.rows.length){ $("content").innerHTML=emptyStateHtml(); return; }
-  $("content").innerHTML=`<div class="kpis" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;
-  renderKpis(); renderTable();
+  // La tarjeta de mensajes cobrables va ARRIBA y en las tres vistas de anuncios, con o sin
+  // Meta conectada: mide lo que manda el bot, no lo que gasta Meta.
+  if(!st.rows.length){ $("content").innerHTML=ventanaHtml()+emptyStateHtml(); wireVentana(); return; }
+  $("content").innerHTML=ventanaHtml()+`<div class="kpis" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;
+  renderKpis(); renderTable(); wireVentana();
+}
+// 💸 MENSAJES QUE META COBRA. Desde el 1-oct-2026 Meta cobra por mensaje lo que hoy es gratis:
+// todo lo que escribe el bot vendiendo, salvo lo que cae dentro de las 72 h de un clic en el
+// anuncio (Free Entry Point). `gasto_meta_por_origen` (migración 0092) cuenta por origen del
+// contacto —vino por anuncio u orgánico— las conversaciones, los mensajes gratis y los
+// cobrables, y el costo SOLO si el canal tiene tarifa: sin tarifa no se inventa un número.
+// Rodrigo no eligió entre tarjeta propia o integrada; va integrada arriba de la tabla, que es
+// donde ya mira la plata de Meta, y sale aunque Meta no esté conectada.
+function ventanaHtml(){
+  const v=st.ventana; if(!v) return "";   // sin migración 0092 → no se pinta nada
+  const row=(o)=>v.find(x=>x.origen===o)||{conversaciones:0,msgs_gratis:0,msgs_cobrables:0,costo_usd:null};
+  const an=row("anuncio"), or=row("organico");
+  const tot={ conversaciones:(+an.conversaciones||0)+(+or.conversaciones||0), msgs_gratis:(+an.msgs_gratis||0)+(+or.msgs_gratis||0),
+    msgs_cobrables:(+an.msgs_cobrables||0)+(+or.msgs_cobrables||0), costo_usd:(an.costo_usd==null&&or.costo_usd==null)?null:(+an.costo_usd||0)+(+or.costo_usd||0) };
+  const tarifa=st.tarifaMsg;
+  // El costo sale en dólares (la tarifa de Meta es en USD); si el negocio cobra en otra moneda
+  // y hay tipo de cambio, se muestra también convertido. Sin tasa no se inventa.
+  const usd=(x)=> x==null ? "—" : "US$ "+nf(x,2)+(CUR!=="USD"&&USD_RATE>0?` <span class="ml">≈ ${money(Number(x)*USD_RATE)}</span>`:"");
+  const fila=(l,r)=>`<tr><td>${l}</td><td class="num">${nf(r.conversaciones)}</td><td class="num">${nf(r.msgs_gratis)}</td><td class="num">${nf(r.msgs_cobrables)}</td><td class="num">${usd(r.costo_usd)}</td></tr>`;
+  return `<div class="panel" style="margin-bottom:18px"><div class="vent">
+    <div class="vh"><div><h3>${icon("message")} Mensajes que Meta cobra</h3>
+      <p>Desde el <b>1 de octubre de 2026</b> Meta cobra cada mensaje del bot, salvo los que caen dentro de las 72 h de un clic en tu anuncio. Se cuenta desde el 11 de septiembre de 2026 · ${esc(rangeLabel(st.range))}.</p></div>
+      <div class="vt"><label for="tarifaMsg">Tarifa por mensaje (US$)</label><input id="tarifaMsg" type="number" step="0.0001" min="0" placeholder="Meta aún no publica la de Perú" value="${tarifa??""}"><button id="tarifaSave">Guardar</button></div></div>
+    <div class="scroll"><table><thead><tr><th>Origen</th><th>Conversaciones</th><th>Gratis (72 h del anuncio)</th><th>Cobrables</th><th>Costo estimado</th></tr></thead>
+    <tbody>${fila("Vinieron por anuncio",an)}${fila("Orgánicos",or)}</tbody>
+    <tfoot><tr><td>Total</td><td class="num">${nf(tot.conversaciones)}</td><td class="num">${nf(tot.msgs_gratis)}</td><td class="num">${nf(tot.msgs_cobrables)}</td><td class="num">${usd(tot.costo_usd)}</td></tr></tfoot></table></div>
+    ${tarifa?"":`<p class="vn">Sin tarifa no se estima el costo: por ahora solo los conteos. Cuando Meta publique la tarifa de tu país, ponla arriba y el costo aparece solo.</p>`}
+  </div></div>`;
+}
+function wireVentana(){
+  const b=$("tarifaSave"); if(!b) return;
+  b.onclick=async()=>{
+    const v=Number($("tarifaMsg").value); const val=v>0?+v.toFixed(6):null;
+    b.disabled=true;
+    const {error}=await supa.from("channels").update({ tarifa_msg_usd:val }).eq("id",st.channelId);
+    b.disabled=false;
+    if(error){ toast(/tarifa_msg_usd/.test(error.message)?"Falta aplicar la migración 0092 (tarifa por mensaje)":error.message,true); return; }
+    st.tarifaMsg=val; toast(val?"Tarifa guardada":"Tarifa borrada: solo conteos"); await reload();
+  };
 }
 function renderKpis(){
   const m=metrics(sumAds(visibleRows()));

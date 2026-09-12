@@ -15202,6 +15202,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "⛔ No expliques lo que no te preguntó, no adornes cada respuesta con beneficios, y no cierres " +
       "resumiendo lo que acabas de decir. Si tu mensaje tiene tres frases seguidas y él preguntó una " +
       "sola cosa, sobran dos.\n" +
+      "⛔ Si lo que preguntó NO es sobre el producto —si eres un bot, un descuento, cuántas lleva—, " +
+      "contesta eso y da el siguiente paso: nada de explicar qué es ni qué hace el producto.\n" +
       "⛔ UNA sola pregunta por mensaje. Nada de preguntar lo mismo dos veces con otras palabras " +
       "(«me confirmas cuántas unidades quieres… ¿cuántas te llevo?»): se pregunta una vez y se espera.\n" +
       "⛔ UN solo argumento por mensaje: el que hace falta AHORA. No cierres cada burbuja recordándole el " +
@@ -15330,10 +15332,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 📄 La ficha va SIN la presentación cuando el turno no es de venta (ver
     // fichaSinPresentacion): si no se la damos, no la puede recitar. Es el arreglo de raíz
     // del «explica mucho»; el recorte de la salida queda como red, no como el remedio.
+    // 🧾 …y tampoco cuando lo que preguntó NO es sobre el producto: «¿eres un bot?», «¿me lo
+    // dejas en 50?», «quiero 2». Son turnos de venta —hay que contestar y avanzar— pero la
+    // presentación no contesta nada de eso, y es justo lo que el modelo recita cuando la tiene
+    // delante. Medido en la ronda K (Prime Digital): 635, 528 y 498 caracteres, los tres con el
+    // mismo párrafo de «convierte tu taladro en…» en medio de una respuesta que no lo pedía.
+    // Las objeciones, la FAQ, los precios y los límites se quedan: con eso se contesta.
+    const _noPreguntaPorElProducto =
+      /\b(bot|robot|persona|humano|m[aá]quina|autom[aá]tic[oa]|descuento|rebaja|d[eé]jalo|me lo dejas|dejas en|m[aá]s barato|quiero \d|llevo \d|dame \d|\d+ unidades)\b/i
+        .test(String(ctx.last_input ?? ""));
     if (ctx.contexto_producto) {
       const _fichaTxt = resolve(String(ctx.contexto_producto), ctx);
       parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` +
-        (_turnoDeVenta ? _fichaTxt : fichaSinPresentacion(_fichaTxt)));
+        (_turnoDeVenta && !_noPreguntaPorElProducto ? _fichaTxt : fichaSinPresentacion(_fichaTxt)));
     }
     // 🧾 Ya eligió: no se le vuelve a leer la carta. Medido — una clienta abrió con
     // «quiero el dermachem, los 2 frascos» y el mensaje siguiente le listaba otra vez
@@ -18401,6 +18412,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
           }
         } catch (_) { /* si no se pueden leer las opciones, se envía tal cual */ }
+      }
+      // 💸 «YA TE YAPEÉ» SIN CAPTURA (físico, fuera de Lima). El cliente dice que pagó antes de
+      // elegir cuántas lleva: la IA le pedía nombre, celular y DNI —saltándose la REGLA DURA
+      // de pagos, que le manda pedir la captura—, el guard de la cantidad le quitaba esa
+      // petición y la cambiaba por «dime cuál prefieres», y el pago que él dice haber hecho
+      // se quedaba sin acuse ni captura pedida. Medido 2 de 3 (ronda L-yapeo) con el texto
+      // crudo del evento 🔬. Regla de siempre: lo que el prompt pide y el modelo salta dos
+      // veces, lo pone el código. Si dice que pagó y lo que sale no le pide la captura, se le
+      // pide delante de lo que haya quedado; en Lima no aplica (paga al recibir).
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") !== "lima"
+          && RE_DICE_QUE_PAGO.test(normalize(String(ctx.last_input ?? "")))
+          && !/captura|comprobante|constancia|pantallazo|voucher|foto del (pago|yape)/i.test(salida)) {
+        salida = "Mándame la captura del pago para validarlo 📷\n\n" + salida.trimStart();
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "💸 Dijo que pagó y nadie le pedía la captura",
+          "Se le pidió delante del mensaje: sin captura no hay pago que validar").catch(() => {});
       }
       // ¿Ya le ofreció cerrar dos veces y sigue sin decir que sí? Se corta la tercera.
       if (op === "generar_texto") {
