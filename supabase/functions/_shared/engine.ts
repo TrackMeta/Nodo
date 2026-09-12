@@ -19745,11 +19745,11 @@ async function handoffAlVender(db: SupabaseClient, channelId: string, contactId:
   // con su propio mensaje → sin el aviso el bot se pausaba en SILENCIO y el cliente que acaba
   // de pagar y escribe "¿cuándo llega?" caía en dead-air (peor fuera de horario). Todas las
   // demás llamadas a pasarAHumano ya pasan aviso; esta era la única sin él.
-  // 🤫 Sin aviso al cliente. Rodrigo (2026-09-12): ya recibió su acceso o su pedido quedó
-  // confirmado; un «en un momento te atiende un asesor» detrás promete algo que nadie tiene
-  // por qué cumplir en ese instante. El bot entrega y se calla; el equipo lo ve en la Bandeja
-  // y por Telegram. Los demás traspasos (reclamo, cancelación, pedido explícito) sí avisan.
-  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: false });
+  // 💬 Con aviso al cliente: el «Mensaje al pasar a un asesor» del panel (IA → Atención al
+  // cliente), o el texto por defecto si está vacío. Va DESPUÉS del acceso en digital (ver
+  // entregarOpcion). Lo apagué un rato por un malentendido con Rodrigo (2026-09-12): él
+  // pedía quitar «(en horario)» de la ETIQUETA del panel, no el mensaje.
+  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: true });
 }
 
 // Al ANULAR / perder un pedido, recalcula la etapa del contacto desde los
