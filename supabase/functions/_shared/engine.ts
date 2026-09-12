@@ -3989,6 +3989,11 @@ function sinPreguntaDeRelleno(texto: string): string {
 // 💸 «Ya te yapeé», «acabo de pagar», «ya le hice la transferencia»: dice que la plata YA
 // salió. Es distinto de RE_ANUNCIA_PAGO (que también cubre «voy a yapear» y «¿cómo te pago?»,
 // o sea gente que todavía necesita el número): a este lo que le falta es mandar la captura.
+// ⛔ La frase que da un pago por RECIBIDO sin comprobante (ver el guard en generar_texto).
+// ⚠️ Sin `\b` detrás de «recibí»: la frontera ASCII no existe después de una vocal con tilde
+// (medido: «lo recibí.» no casaba). Se cierra con lookahead unicode y la bandera `u`.
+const RE_PAGO_DADO_POR_RECIBIDO =
+  /[^.!?…\n]*\b(?:(?:ya\s+)?(?:lo|la|los)\s+recib[ií](?![\p{L}\p{N}])|recib[ií]\s+(?:tu|el|la|su)\s+(?:pago|adelanto|yape|plin|transferencia|dep[oó]sito)|(?:pago|adelanto|yape|plin)\s+(?:recibido|confirmado|validado|verificado)|ya\s+(?:me\s+)?lleg[oó]\s+(?:tu|el)\s+(?:pago|yape|plin|adelanto)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:confirmado|validado|registrado|verificado))(?![\p{L}\p{N}])[^.!?…\n]*[.!?…]?/giu;
 const RE_DICE_QUE_PAGO =
   /\b(ya (te |le |les )?(yape[eéo]|yapi[eé]|plin[eé]e?|plineo|deposit[eéo]|transfer[ií]|transfiero|pagu[eé]|pague|hice (el|la|mi) (yape|pago|dep[oó]sito|transferencia|plin))|(acabo|acabamos) de (yapear|pagar|depositar|transferir|plinear|hacer (el|la) (yape|pago|transferencia|dep[oó]sito))|reci[eé]n (te )?(yape[eé]|pagu[eé]|deposit[eé]|transfer[ií])|ya (te |le )?(mand[eé]|hice) (el|la|mi) (yape|pago|transferencia|dep[oó]sito)|ya est[aá] (pagado|yapeado|depositado|transferido)|ya (lo |la )?pagu[eé])\b/i;
 
@@ -4673,6 +4678,47 @@ function sinContestarseSolo(texto: string, ventaAhora: boolean): string {
   return i < 0 ? limpio : limpio.slice(0, i) + limpio[i].toUpperCase() + limpio.slice(i + 1);
 }
 
+// 🧹 EL PITCH EN MEDIO DE UNA RESPUESTA QUE NO LO PEDÍA. A «¿eres un bot?», «¿me lo dejas en
+// 50?» y «quiero 2» el modelo contesta y ADEMÁS mete el párrafo del producto —«El *Adaptador
+// Pro…* permite cortar láminas metálicas delgadas, hasta 1.5 mm, sin comprar equipos
+// pesados»— antes, después o en medio de la respuesta. Quitarle la presentación de la ficha
+// en esos turnos no alcanzó: la recita del historial (medido en la ronda P-, con la ficha ya
+// sin pitch: 822 y 647 caracteres). Son turnos de venta, así que sinPresentacionRepetida no
+// corre, y su corte por PREFIJO tampoco serviría: en «¿eres un bot?» la respuesta va primero
+// («Soy el asistente…») y el pitch detrás.
+// Se quitan SOLO las oraciones que nombran el producto sin una cifra de plata y sin preguntar
+// nada, y el conector que quede colgando detrás («Así ahorras tiempo…»). La respuesta de
+// verdad no nombra el producto y se queda entera.
+// …y la oración descriptiva que venía pegada al pitch sin nombrarlo («Es práctico y fácil de
+// usar, ideal para trabajos en casa o taller»): sin su sujeto se lee suelta. Solo si sigue a
+// una oración quitada, no trae cifra y no pregunta nada.
+const RE_CONECTOR_COLGADO =
+  /^[\s\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:as[ií]|adem[aá]s|por eso|y|e|tambi[eé]n|es decir|o sea|con [eé]l|con eso|eso|es|est[aá]|tiene|viene|incluye|sirve|permite|ideal)(?![\p{L}\p{N}])/iu;
+function sinPitchDelProducto(texto: string, producto: string): string {
+  const t = String(texto ?? "");
+  const clave = normalize(String(producto ?? "")).split(/\s+/).slice(0, 2).join(" ");
+  if (clave.length < 4) return t;
+  let cambiado = false;
+  const lineas = t.split("\n").map((l) => {
+    const out: string[] = [];
+    let quitada = false;
+    for (const f of l.split(/(?<=[.!?…])\s+/)) {
+      const esPitch = normalize(f).includes(clave) && f.length > 70 && !/[?¿]/.test(f)
+        && !/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(f);
+      if (esPitch) { quitada = true; cambiado = true; continue; }
+      // El conector que quedó colgando de la oración que se fue («Así ahorras tiempo»).
+      if (quitada && RE_CONECTOR_COLGADO.test(f) && !/[?¿]/.test(f) && !/(?:S\/|\$)\s*[0-9]/.test(f)) continue;
+      quitada = false;
+      out.push(f);
+    }
+    return out.join(" ");
+  });
+  if (!cambiado) return t;
+  const limpio = lineas.join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (limpio.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
+  const k = limpio.search(/[\p{L}\p{N}]/u);
+  return k < 0 ? limpio : limpio.slice(0, k) + limpio[k].toUpperCase() + limpio.slice(k + 1);
+}
 function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = false): string {
   const t = String(texto ?? "").trim();
   const prod = String(producto ?? "").trim();
@@ -15341,6 +15387,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const _noPreguntaPorElProducto =
       /\b(bot|robot|persona|humano|m[aá]quina|autom[aá]tic[oa]|descuento|rebaja|d[eé]jalo|me lo dejas|dejas en|m[aá]s barato|quiero \d|llevo \d|dame \d|\d+ unidades)\b/i
         .test(String(ctx.last_input ?? ""));
+    (run as any)._sinPitchTurno = _noPreguntaPorElProducto;   // lo usa sinPitchDelProducto al salir
     if (ctx.contexto_producto) {
       const _fichaTxt = resolve(String(ctx.contexto_producto), ctx);
       parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` +
@@ -17870,6 +17917,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
         }
       }
+      // 🧹 Y el pitch metido en una respuesta que no lo pedía («¿eres un bot?», «¿me lo dejas
+      // en 50?», «quiero 2»): son turnos de venta, así que el recorte de arriba no corre, y
+      // quitarle la presentación de la ficha no alcanzó — la recita del historial. Medido con
+      // la ficha ya sin pitch: 822 y 647 caracteres. Ver sinPitchDelProducto.
+      if (op === "generar_texto" && (run as any)?._sinPitchTurno) {
+        const _antesPitch = salida;
+        salida = sinPitchDelProducto(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""));
+        if (salida !== _antesPitch) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó el pitch de una respuesta que no lo pedía",
+            "Preguntó por el bot, un descuento o dijo cuántas lleva; el párrafo del producto sobraba").catch(() => {});
+        }
+      }
       // El recorte de "¿te paso el Yape?" SOLO cuando los datos van a salir de verdad
       // (el cliente ya mostró intención). Sin intención, borrar la pregunta y no mandar
       // nada deja el mensaje colgado: mejor que la pregunta se quede y él conteste.
@@ -18427,6 +18486,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = "Mándame la captura del pago para validarlo 📷\n\n" + salida.trimStart();
         await logEvent(db, run.channel_id, run.contact_id, "campo", "💸 Dijo que pagó y nadie le pedía la captura",
           "Se le pidió delante del mensaje: sin captura no hay pago que validar").catch(() => {});
+      }
+      // ⛔ «GRACIAS POR EL ADELANTO DE S/ 20, LO RECIBÍ» — sin haber visto nada. El cliente
+      // escribió «ya te yapeé» (texto, no captura) y la IA dio el pago por recibido, contra la
+      // REGLA DURA de pagos que tiene delante. Medido 1 de 3 en la ronda P-yapeo. Un pago dado
+      // por bueno sin comprobante es el error más caro del chat: el cliente deja de mandar la
+      // captura y el pedido se despacha sin plata. Cuando lo que llegó es un texto que dice que
+      // pagó, ninguna frase de «lo recibí» puede salir: la validación la hace el OCR sobre la
+      // imagen, nunca este turno.
+      if (op === "generar_texto" && RE_DICE_QUE_PAGO.test(normalize(String(ctx.last_input ?? "")))) {
+        RE_PAGO_DADO_POR_RECIBIDO.lastIndex = 0;
+        if (RE_PAGO_DADO_POR_RECIBIDO.test(salida)) {
+          RE_PAGO_DADO_POR_RECIBIDO.lastIndex = 0;
+          const _sinRecibo = salida.replace(RE_PAGO_DADO_POR_RECIBIDO, " ")
+            .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          salida = _sinRecibo.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length >= 12
+            ? _sinRecibo : "Apenas la valide te confirmo por acá 🙌";
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "⛔ Dio por recibido un pago que no ha visto",
+            "Solo escribió que pagó; se quitó la frase del «lo recibí»").catch(() => {});
+        }
       }
       // ¿Ya le ofreció cerrar dos veces y sigue sin decir que sí? Se corta la tercera.
       if (op === "generar_texto") {
