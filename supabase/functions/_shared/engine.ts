@@ -10025,8 +10025,10 @@ async function sinKeywordsDelCanal(db: SupabaseClient, channelId: string, texto:
 }
 // «¿Te paso los datos?» → «sí». Un «sí» solo no dice nada; con la oferta delante lo dice todo.
 // Sin esto, el que contestaba «ya» o «dale» a la oferta del número se quedaba sin número.
+// Una o varias afirmaciones seguidas, con coma o sin ella: «sí», «ya, dale», «ok listo»,
+// «sí por favor». Medido: «ya, dale» no contaba por la coma y el cliente se quedó sin número.
 const RE_AFIRMA_CORTO =
-  /^[\s¡!.]*(s[ií]+|ya|dale|ok(ey|a)?|claro|listo|bueno|va|perfecto|genial|de una|ya pues|dale pues|s[ií] por ?fa(vor)?|por ?fa(vor)?|s[ií] dale|s[ií] claro|claro que s[ií]|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|ok dale)[\s!.😊🙌👍]*$/iu;
+  /^[\s¡!.]*(?:(?:s[ií]+|ya|dale|ok(?:ey|a)?|claro|listo|bueno|va|vamos|perfecto|genial|de una|pues|por ?fa(?:vor)?|claro que s[ií]|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|anda|ahi va|ah[ií] va)[\s,;!.]*){1,4}[\s!.😊🙌👍]*$/iu;
 // …y también la pregunta de DECISIÓN («¿La quieres?», «¿te la dejo lista?», «¿vamos con la
 // Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
