@@ -10539,7 +10539,7 @@ async function reengancharExtra(
 async function maybePostventa(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   // 1) ¿Es comprador? Su último pedido está en un estado de compra concretada.
   const { data: order } = await db.from("orders")
-    .select("id, estado, product_id, order_bumps, product:product_id(nombre)")
+    .select("id, estado, product_id, version_id, order_bumps, product:product_id(nombre)")
     .eq("channel_id", channelId).eq("contact_id", contactId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order || !COMPRADO_STATES.has(String((order as any).estado))) return false;
@@ -10550,6 +10550,44 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   if (pv.activo === false) return false;
   const estado = String((order as any).estado);
   const esperandoSaldo = SALDO_PENDIENTE.has(estado);
+
+  // 🔁 OTRA PRESENTACIÓN DEL MISMO PRODUCTO (digital): «ya compré la básica, ahora quiero la
+  // premium». Iba a soporte y contestaba el precio sin mandar el número (medido 4 de 4). Se
+  // sella la presentación nueva, se relanza el flujo de venta con ella puesta —así la captura
+  // que venga se valida contra su precio y crea un pedido aparte— y salen los datos con el
+  // monto nuevo. Solo digital, solo con verbo de elección y sin signo de pregunta.
+  if (!esperandoSaldo && (order as any).product_id && RE_VERBO_ELIGE.test(event.text ?? "") && !/[?¿]/.test(event.text ?? "")) {
+    try {
+      const _pidU = String((order as any).product_id);
+      const { data: _pU } = await db.from("products").select("tipo").eq("id", _pidU).maybeSingle();
+      if (String((_pU as any)?.tipo ?? "") === "digital") {
+        const _opsU = await loadOpciones(db, { vars: {} } as any, _pidU);
+        const _txtU = String(event.text ?? "");
+        const _nombradas = _opsU.filter((o) => mencionaLaOpcion(_txtU, o, _opsU));
+        const _otra = _nombradas.length === 1 ? _nombradas[0] : (_nombradas.length === 0 ? eligePorAtributo(_txtU, _opsU) : null);
+        if (_otra && String(_otra.id) !== String((order as any).version_id ?? "")) {
+          const { data: _fv } = await db.from("flows").select("id").eq("channel_id", channelId)
+            .eq("product_id", _pidU).eq("role", "venta").eq("estado", "activo").limit(1).maybeSingle();
+          if ((_fv as any)?.id) {
+            await limpiarCandadosVenta(db, contactId);
+            await resetItemFields(db, channelId, contactId, _pidU);
+            const ok = await startFlowRun(db, channelId, contactId, String((_fv as any).id), { force: true, vars: { opcion_id: _otra.id } });
+            if (ok) {
+              await setField(db, channelId, contactId, "opcion_id", String(_otra.id));
+              await setField(db, channelId, contactId, "opcion_elegida", String(_otra.nombre ?? ""));
+              const { data: _chM } = await db.from("channels").select("moneda").eq("id", channelId).maybeSingle();
+              const _sym = simboloMoneda((_chM as any)?.moneda);
+              await deliverMessage(db, channelId, contactId, `¡De una! La *${_otra.nombre}* cuesta *${_sym} ${_otra.precio}* 🙌`).catch(() => {});
+              await maybeDatosPago(db, channelId, contactId, _txtU, "", true, undefined, { monto: Number(_otra.precio), sym: _sym, unico: false });
+              await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → otra presentación",
+                `${_otra.nombre}: “${_txtU.slice(0, 80)}”`).catch(() => {});
+              return true;
+            }
+          }
+        }
+      }
+    } catch (e) { console.error("[postventa/otra presentación]", (e as any)?.message ?? e); }
+  }
 
   // 2b) Recompra CLARA (determinista): relanza la venta directo, sin gastar un
   // turno de IA. Dispara si pide recompra del MISMO o nombra por keyword OTRO
@@ -13894,6 +13932,12 @@ function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
 // calce con palabras que las demás no tienen.
 const RE_ELIGE_POR_ATRIBUTO =
   /\b(quiero|dame|prefiero|me llevo|me quedo con|voy con|vamos con|me interesa|la que|el que|la de|el de|esa que|ese que|la con|el con)\b/i;
+// ❓ PREGUNTAR NO ES ELEGIR. «¿Cuánto dura la premium?» nombra la Premium y la red la sellaba
+// («la nombró él») → datos de pago de S/79 a alguien que solo preguntó. Medido 2 de 2.
+// Decisión de Rodrigo (2026-09-12): una pregunta sin verbo de elección no sella, ni por el
+// clasificador ni por la red. «¿Me das la premium?» sí sella: trae el verbo.
+const RE_VERBO_ELIGE =
+  /\b(quiero|quisiera|dame|me das|me la das|me lo das|prefiero|me llevo|me quedo con|voy con|vamos con|elijo|escojo|la que|el que|me interesa (la|el)|ser[ií]a (la|el)|p[aá]same (la|el)|m[aá]ndame (la|el))\b/i;
 const RE_ARRANCA_COMO_PREGUNTA =
   /^\s*(cu[aá]l(es)?|cu[aá]nt[ao]s?|qu[eé]|c[oó]mo|d[oó]nde|cu[aá]ndo|por qu[eé]|acaso|trae|tiene|incluye|viene|hay|es|son|quiero (saber|preguntar|consultar|ver si|entender))\b/i;
 function palabrasDeAtributo(s: string): string[] {
@@ -13975,6 +14019,13 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // falla; faltaba que corriera igual cuando el clasificador ACIERTA el turno pero yerra la
   // opción. Ahora se marca «no sellar» y se sigue; la red decide.
   let _noSellar = false;
+  // ❓ Una pregunta sin verbo de elección no sella (ver RE_VERBO_ELIGE): frena al clasificador
+  // acá y a la red determinista más abajo.
+  const _preguntaSinElegir = /[?¿]/.test(String(texto ?? "")) && !RE_VERBO_ELIGE.test(String(texto ?? ""));
+  if (_preguntaSinElegir && cls && cls.clave) {
+    cls = { ...cls, intencion: "preguntando", clave: null };
+    _noSellar = true;
+  }
   if (cls && cls.clave && cls.confianza >= 0.7) {
     const op = list.find((o) => o.id === cls.clave);
     // Y que haya nombrado UNA sola. Medido: "¿cuál es la diferencia entre básica y
@@ -14034,7 +14085,7 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // igual. Medido: escribió exactamente eso y quedó `opcion_elegida` null; el bot le contestó
   // «dime cuál prefieres», o sea le repreguntó lo que acababa de decir, que es de lo que más
   // molesta. Un mensaje así no puede depender de que una llamada a la IA salga bien.
-  if (!String(ctx.opcion_id ?? "").trim()) {
+  if (!String(ctx.opcion_id ?? "").trim() && !_preguntaSinElegir) {
     // Lo que dijo AHORA manda; el historial pegado es solo el respaldo para el mensaje que
     // nadie procesó. Si en su último mensaje nombró UNA sola, esa es — aunque en el historial
     // aparezcan las dos porque antes las estuvo comparando.
