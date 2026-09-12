@@ -6690,6 +6690,9 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     if (bufferUsado.length) vars._entrega_buffer = [];
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Producto entregado",
       `${opcion?.nombre ?? ""} · ${all.length} ${all.length === 1 ? "elemento" : "elementos"}`);
+    // 🤝 Perilla «pasar a un asesor cuando se concreta la venta»: en digital se aplica ACÁ,
+    // con el acceso ya en el chat (ver el cambio de etapa a «comprado»). Idempotente.
+    await handoffAlVender(db, run.channel_id, run.contact_id).catch(() => {});
   } else {
     // Meta rechazó parte del envío: NO se vacía el buffer (queda para el reintento "no me
     // llegó") y NO se miente "entregado". emit ya avisó por Telegram (avisarEnvioFallido);
@@ -19710,9 +19713,24 @@ export async function moverEtapa(db: SupabaseClient, channelId: string, contactI
     // pagado) le cede el chat a una persona, si el canal activó la opción. Una
     // sola vez (si el bot ya está pausado/en humano, no re-hace ni re-avisa).
     if ((target === "confirmado" || target === "comprado") && channelId) {
-      await handoffAlVender(db, channelId, contactId).catch(() => {});
+      // 💻 En DIGITAL el traspaso espera a que salga el link. «comprado» se pone dentro de
+      // «Registrar la venta», ANTES de «Entregar el producto»: hecho acá, el cliente leía
+      // «en un momento te atiende un asesor» y acto seguido el bot que "ya no atiende" le
+      // mandaba el acceso. Medido en la prueba de la perilla. Lo hace entregarOpcion al
+      // terminar de entregar (misma función, idempotente).
+      const _digitalPendiente = target === "comprado" && await productoDelContactoEsDigital(db, contactId);
+      if (!_digitalPendiente) await handoffAlVender(db, channelId, contactId).catch(() => {});
     }
   } catch (_) { /* la columna puede faltar; no romper la venta */ }
+}
+async function productoDelContactoEsDigital(db: SupabaseClient, contactId: string): Promise<boolean> {
+  try {
+    const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+    const pid = (c as any)?.product_id;
+    if (!pid) return false;
+    const { data: p } = await db.from("products").select("tipo").eq("id", pid).maybeSingle();
+    return String((p as any)?.tipo ?? "") === "digital";
+  } catch (_) { return false; }
 }
 
 // Cede el chat a un humano al concretar la venta, SOLO si el canal encendió la
