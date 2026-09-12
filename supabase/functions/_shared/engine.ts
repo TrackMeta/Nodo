@@ -12394,6 +12394,9 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
   están: exactas, sin ampliarlas — el negocio queda OBLIGADO a cumplir lo que prometas.
   ✅ Si la ficha trae una sección «Límites», eso SÍ lo sabes: es lo que NO incluye ni hace.
   Dilo de frente y sin vueltas ("No, no entrega certificado 🙂") y sigue vendiendo.
+  ⛔ Tampoco SUMES ni calcules lo que la ficha no da: si dice "8 videos, 2 horas" para una
+  presentación y nada de las clases extra de la otra, la otra no "dura unas 4 horas". Di lo
+  que hay ("los 8 videos suman 2 horas; de las clases extra no tengo la duración").
   MAL: "Sí, viene en inglés y español."   (la ficha no habla del idioma)
   MAL: "Del idioma te confirmo y te aviso."   (nadie va a volver — ver abajo)
   BIEN: "Del idioma no tengo el dato acá 🤔 Lo que sí te digo es que…"  (y sigues vendiendo)
