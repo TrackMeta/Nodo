@@ -3876,12 +3876,22 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
   // ninguna de las palabras del medio (datos/mensaje/número), porque nombra directamente lo
   // que va a llegar. Se permite que el medio no esté cuando el objeto ya es el pago mismo.
   /[^.!?…\n]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/gi;
+// 🔴 «Te llega a domicilio en Lima, pagas al recibir y puedes revisar antes de pagar» NO es
+// un anuncio de datos: es la explicación de la contraentrega, justo lo que el cliente de Lima
+// necesita oír. «Te llega» es también el verbo de la ENTREGA, y con «pagar» en la misma
+// oración la red lo tomaba por «te llegan los datos para el pago». Medido en la ronda J-
+// (3 de 6 chats de Lima se quedaron solo con «¿Cuántas unidades quieres llevar?»), con el
+// texto crudo a la vista gracias al evento 🔬. Si la oración cuenta cómo le llega el paquete,
+// se respeta entera. Solo vocabulario de contraentrega: en provincia «al recibir» ya llega
+// reescrito como «cuando llegue a la agencia» (sinPagarEnLaAgencia corre antes).
+const RE_ORACION_DE_ENTREGA =
+  /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery)\b/i;
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
   if (!RE_ANUNCIA_DATOS_QUE_SIGUEN.test(t)) return texto;
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
-  const limpio = t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
+  const limpio = t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) || RE_ORACION_DE_ENTREGA.test(m) ? m : " "))
     // Solo espacios y tabs: \s se come los saltos de línea y pega la lista de datos en un
     // renglón (ya pasó con sinDespachar).
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -4322,8 +4332,14 @@ const RE_DATO_INVENTADO =
 // puedo dejar listo tu pedido», sin que él hubiera elegido presentación y sin que la guarda
 // se enterara. La lista tenía «tu nombre» y «nombre completo», o sea las dos maneras
 // FORMALES de pedirlo, justo las que un vendedor por WhatsApp no usa.
+// 🔴 «Te llega contra entrega EN tu dirección» no pide la dirección: la nombra para contar
+// cómo llega. Con la palabra suelta, el guard de la cantidad tomó esa oración por la petición
+// de datos y la borró entera — y como la pregunta de la cantidad iba pegada en la misma
+// oración, el cliente de Lima recibió solo la pregunta del motor. Medido en la ronda J-
+// (J-lima-3) con el texto crudo del evento 🔬. Con preposición delante («en/a/hasta tu
+// dirección», «a tu distrito») es entrega, no pedido; «¿me pasas tu dirección?» sigue casando.
 const RE_PIDE_SUS_DATOS =
-  /(nombre completo|tu nombre|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|tu direcci[oó]n|tu distrito|tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
+  /(nombre completo|tu nombre|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu direcci[oó]n|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu distrito|tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
 // 🔤 Los marcadores de WhatsApp (*negrita*, _cursiva_, ~tachado~) ROMPEN cualquier regex que
 // busque dos palabras seguidas: la IA escribe «¿me pasas tu *nombre*, *celular* y
 // *dirección*?» y «tu nombre» ya no calza porque en el medio hay un asterisco. Medido en una
@@ -5178,6 +5194,39 @@ function sedesEnLineas(texto: string, agencias: { l: string }[]): string {
 // `preguntoElCliente`: además de la promesa incumplida, cubre el caso de que él lo haya
 // PEDIDO y la respuesta no traiga ninguna cifra. Consultar su caso está bien; dejar la
 // pregunta del precio sin contestar, no — es la pregunta que más se hace y la que decide.
+// 💰 EL PRECIO VA PRIMERO. A «¿cuánto cuesta?» el modelo abre con la descripción del producto
+// —«El *Adaptador Pro…* convierte tu taladro en una herramienta práctica para cortar láminas
+// metálicas delgadas, hasta 1.5 mm, con mucha facilidad. Así ahorras tiempo…»— y recién
+// después los precios. Medido en la ronda J-: las 4 respuestas al precio pasaban de 500
+// caracteres, y en todas el párrafo de arriba era el mismo pitch que Rodrigo marcó cuatro
+// veces como «muy largo». El que pregunta el precio quiere la cifra: se quita lo que va ANTES
+// de la lista, y solo cuando es un pitch —nombra el producto o es largo, sin una cifra de
+// plata y sin contestar ni preguntar nada—; la lista, su encabezado y la pregunta se quedan.
+// Va por código porque el tope de 300 del prompt lleva cinco intentos sin sostenerse.
+function precioPrimero(texto: string, producto: string, sym: string): string {
+  const t = String(texto ?? "");
+  const lineas = t.split("\n");
+  const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rxPrecio = new RegExp(`${esc}\\s*\\d`);
+  let i = lineas.findIndex((l) => rxPrecio.test(l));
+  if (i <= 0) return t;
+  // El encabezado de la lista («Sobre el precio:», «💰 Precios:») y los renglones en blanco
+  // son parte de la lista: el corte va antes de ellos.
+  while (i > 0 && (!lineas[i - 1].trim() ||
+    (lineas[i - 1].trim().length <= 45 && /precio|opcion|present|tarifa|costo|:\s*$/i.test(lineas[i - 1])))) i--;
+  if (i <= 0) return t;
+  const prefijo = lineas.slice(0, i).join(" ").trim();
+  if (!prefijo || /[?¿]/.test(prefijo)) return t;              // contesta o pregunta algo: se queda
+  // Una cifra de PLATA o de CANTIDAD lo salva («Son *S/ 69* la unidad…»); «hasta 1.5 mm» no.
+  if (/(?:S\/|\$)\s*[0-9]|\b[0-9]+\s*(?:unidades?|frascos?|packs?|cajas?)\b/i.test(prefijo)) return t;
+  const clave = normalize(String(producto ?? "")).split(/\s+/).slice(0, 2).join(" ");
+  const nombraProducto = clave.length >= 4 && normalize(prefijo).includes(clave);
+  if (!nombraProducto && prefijo.length <= 120) return t;
+  const resto = lineas.slice(i).join("\n").trim();
+  if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
+  const k = resto.search(/[\p{L}\p{N}]/u);
+  return k < 0 ? resto : resto.slice(0, k) + resto[k].toUpperCase() + resto.slice(k + 1);
+}
 function conPrecios(texto: string, lista: string, preguntoElCliente = false): string {
   const t = String(texto ?? "");
   // `preguntoElCliente` también entra por «le pidió elegir cantidad sin cifras» (ver el
@@ -17895,6 +17944,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "Era el turno de preguntarla y la IA no lo hizo").catch(() => {});
       }
       const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
+      // 💰 Preguntó cuánto cuesta: el precio va primero, sin el pitch encima (ver precioPrimero).
+      if (op === "generar_texto" && _pidioPrecio && !esDigital(ctx)) {
+        const _antesPP = salida;
+        salida = precioPrimero(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), simboloMoneda(ctx.moneda as string));
+        if (salida !== _antesPP) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 El precio va primero",
+            "Preguntó cuánto cuesta y el mensaje abría describiendo el producto: se quitó ese párrafo").catch(() => {});
+        }
+      }
       // …y el tercer disparador: le pide ELEGIR CANTIDAD y en el mensaje no hay una sola cifra.
       // ⛔ «Una cifra» tiene que ser un PRECIO SUYO, no cualquier número con S/ delante. Medido
       // en Puno: «…el adelanto es de *S/ 20*… ¿cuántas unidades quieres llevar?» — el 20 del
