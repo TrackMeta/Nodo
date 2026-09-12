@@ -3896,15 +3896,20 @@ function sinAnuncioDePago(texto: string): string {
 // preguntó el precio: maybeDatosPago, con razón, no manda el número sin intención. Una
 // promesa colgada es peor que la pregunta que quitamos. Se borra la frase que promete y se
 // respeta todo lo demás; si no queda nada, una pregunta de decisión honesta.
+// ⚠️ Se corta desde «te paso» hasta el fin de la frase, NUNCA lo de antes: la primera versión
+// arrancaba en `[^.!?]*` y, como el modelo escribe «El precio es *S/19* 💰 Te paso los datos
+// 👇» sin punto en medio, se llevaba el precio y al cliente le llegó solo «¿La quieres?».
 const RE_FRASE_PROMETE_DATOS =
-  /[^.!?…\n]*\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n]*[.!?…]?[ \t]*👇?/gi;
+  /(?:\b(?:perfecto|listo|claro|dale|genial|ya|bueno)[,!]?\s+)?\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n]*[.!?…]?[ \t]*👇?/gi;
 function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
   const t = String(texto ?? "");
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
   if (!RE_FRASE_PROMETE_DATOS.test(t)) return texto;
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
   const limpio = t.replace(RE_FRASE_PROMETE_DATOS, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
-    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
+    // La coma o la «y» que quedaron colgando delante de lo que se quitó.
+    .replace(/[,;:]\s*(?=\n|$)/g, "").replace(/\s+y\s*(?=\n|$)/g, "").trim();
   if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
@@ -10022,8 +10027,11 @@ async function sinKeywordsDelCanal(db: SupabaseClient, channelId: string, texto:
 // Sin esto, el que contestaba «ya» o «dale» a la oferta del número se quedaba sin número.
 const RE_AFIRMA_CORTO =
   /^[\s¡!.]*(s[ií]+|ya|dale|ok(ey|a)?|claro|listo|bueno|va|perfecto|genial|de una|ya pues|dale pues|s[ií] por ?fa(vor)?|por ?fa(vor)?|s[ií] dale|s[ií] claro|claro que s[ií]|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|ok dale)[\s!.😊🙌👍]*$/iu;
+// …y también la pregunta de DECISIÓN («¿La quieres?», «¿te la dejo lista?», «¿vamos con la
+// Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
+// quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
 const RE_OFRECIO_DATOS =
-  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list/i;
+  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo/i;
 async function respondeSiALosDatos(db: SupabaseClient, contactId: string, texto: string): Promise<boolean> {
   if (!RE_AFIRMA_CORTO.test(String(texto ?? ""))) return false;
   try {
