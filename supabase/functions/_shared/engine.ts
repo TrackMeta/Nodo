@@ -4288,7 +4288,7 @@ function sinPedirLosDatos(texto: string): string {
           // La muletilla que introducía la petición («Para avanzar», «Antes de seguir») se va
           // con ella: medido en R-yapeo-1, quedó «Gracias por la intención del pago 😊 Para
           // avanzar.» — y si sin la muletilla no queda frase, no queda nada.
-          _pref = _pref.replace(/[\s,;:—-]*(?:para (?:avanzar|seguir|continuar|cerrar|dejarlo listo|coordinar|terminar|anotarte)|antes de (?:seguir|avanzar|nada|anotarte)|ahora|entonces|as[ií] que)\s*$/i, "").trim();
+          _pref = _pref.replace(/[\s,;:—-]*(?:para (?:avanzar|seguir|continuar|cerrar|dejar(?:lo|te)?(?: todo)? listo|coordinar|terminar|anotarte|confirmar)|antes de (?:seguir|avanzar|nada|anotarte)|ahora|entonces|as[ií] que)\s*$/i, "").trim();
           if (_pref.replace(/[\s\p{P}\p{S}]/gu, "").length < 25) _pref = "";
           _quitada = true;
           if (_pref) { _sobra.push(/[.!?…]$/.test(_pref) ? _pref : _pref + "."); continue; }
@@ -4390,7 +4390,10 @@ const RE_DATO_INVENTADO =
 // (J-lima-3) con el texto crudo del evento 🔬. Con preposición delante («en/a/hasta tu
 // dirección», «a tu distrito») es entrega, no pedido; «¿me pasas tu dirección?» sigue casando.
 const RE_PIDE_SUS_DATOS =
-  /(nombre completo|tu nombre|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu direcci[oó]n|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu distrito|tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,12}datos|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
+  // 🔴 «Pásame la siguiente INFO… 📌 Nombre y apellidos 📌 Celular» pasó de largo: ni «datos»
+  // ni «tu nombre». Medido en S-yapeo-2, pidiendo los datos antes de la cantidad. Entran
+  // «info/información» tras «pásame» y la etiqueta «nombre y apellidos» tal como la escribe.
+  /(nombre completo|tu nombre|nombre y apellidos?|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu direcci[oó]n|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu distrito|tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|tus datos|pasarme.{0,12}datos|p[aá]same.{0,20}(?:datos|info|informaci[oó]n)|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
 // 🔤 Los marcadores de WhatsApp (*negrita*, _cursiva_, ~tachado~) ROMPEN cualquier regex que
 // busque dos palabras seguidas: la IA escribe «¿me pasas tu *nombre*, *celular* y
 // *dirección*?» y «tu nombre» ya no calza porque en el medio hay un asterisco. Medido en una
