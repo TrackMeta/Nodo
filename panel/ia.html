@@ -316,7 +316,7 @@ function renderAtencion(b){
 
       <div id="huVentaRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Pasar a un asesor cuando se concreta la venta</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apenas el bot cierra la venta (pedido confirmado en un físico, o pago validado en un digital) deja de responder y te cede el chat, para que tú hagas el cierre/seguimiento a mano. El soporte post-venta automático no corre en ese contacto. Apagado = el bot sigue atendiendo (soporte).</div></span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apenas el bot cierra la venta (pedido confirmado en un físico, o pago validado en un digital) deja de responder (sin mandarle ningún aviso: ya tiene su acceso o su pedido confirmado) y te cede el chat, para que tú hagas el cierre/seguimiento a mano. El soporte post-venta automático no corre en ese contacto. Apagado = el bot sigue atendiendo (soporte).</div></span>
         <span class="sw ${p.humano.al_vender?'on':''}" id="huVentaSw" style="flex:none"></span>
       </div>
 
