@@ -3891,6 +3891,24 @@ function sinAnuncioDePago(texto: string): string {
   return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? limpio : texto;
 }
 
+// 🫥 LA PROMESA COLGADA. «El precio es S/19 💰 Te paso los datos para el pago 👇» — y debajo,
+// nada. Pasa cuando la IA cierra en afirmativo (como se le pide) pero el cliente solo
+// preguntó el precio: maybeDatosPago, con razón, no manda el número sin intención. Una
+// promesa colgada es peor que la pregunta que quitamos. Se borra la frase que promete y se
+// respeta todo lo demás; si no queda nada, una pregunta de decisión honesta.
+const RE_FRASE_PROMETE_DATOS =
+  /[^.!?…\n]*\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n]*[.!?…]?[ \t]*👇?/gi;
+function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
+  const t = String(texto ?? "");
+  RE_FRASE_PROMETE_DATOS.lastIndex = 0;
+  if (!RE_FRASE_PROMETE_DATOS.test(t)) return texto;
+  RE_FRASE_PROMETE_DATOS.lastIndex = 0;
+  const limpio = t.replace(RE_FRASE_PROMETE_DATOS, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
+    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
+  return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
+}
+
 // 🗣️ LA PRUEBA SOCIAL INVENTADA. Medido: el cliente preguntó «¿y el producto es bueno?» y el
 // bot contestó «Muchos clientes en *Chiclayo* ya lo usan y quedan satisfechos». La ficha no
 // menciona clientes, ni reseñas, ni satisfacción — y la ciudad la sacó de la conversación,
@@ -18255,6 +18273,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 📦 El emoji del paquete es del envío físico: en 18 de 96 chats digitales cerraba con
         // «te llega el acceso al toque 📦». Fuera, y el camión con él.
         salida = salida.replace(/[ \t]*(?:📦|🚚)️?/gu, "");
+        // 🫥 La promesa colgada («Te paso los datos 👇» sin datos detrás): misma decisión que
+        // maybeDatosPago, calculada ANTES de emitir. Ver sinPromesaDeDatosColgada.
+        if (RE_PROMETE_PAGO.test(salida)) {
+          try {
+            const _li = String(ctx.last_input ?? "");
+            const _ops = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
+            const _eligioMulti = _ops.length > 1 && !!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim();
+            const _vanASalir = _eligioMulti || RE_PIDE_DATOS.test(_li) || RE_ANUNCIA_PAGO.test(_li)
+              || /^\s*(yape|plin|transferencia|dep[oó]sito|bcp|bbva|interbank|scotiabank)\s*[.!]?\s*$/i.test(_li)
+              || await intencionDeCompra(db, run.contact_id, _li)
+              || await respondeSiALosDatos(db, run.contact_id, _li);
+            if (!_vanASalir) {
+              const _antesPr = salida;
+              salida = sinPromesaDeDatosColgada(salida, _ops.length <= 1);
+              if (salida !== _antesPr) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "🫥 Prometía los datos y no iban a salir",
+                  `Sin intención de compra todavía: «${_antesPr.slice(0, 120)}»`).catch(() => {});
+              }
+            }
+          } catch (_) { /* sin datos para decidir → se envía tal cual */ }
+        }
         // 📦❓ Y si preguntó CÓMO le llega, se le contesta. Va primero: es lo que preguntó ÉL,
         // y el resto del mensaje (precios, cierre) es lo que queremos decirle nosotros.
         if (RE_PREGUNTA_COMO_LLEGA.test(String(ctx.last_input ?? "")) &&
