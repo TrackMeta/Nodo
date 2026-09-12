@@ -19745,10 +19745,17 @@ async function handoffAlVender(db: SupabaseClient, channelId: string, contactId:
   // con su propio mensaje → sin el aviso el bot se pausaba en SILENCIO y el cliente que acaba
   // de pagar y escribe "¿cuándo llega?" caía en dead-air (peor fuera de horario). Todas las
   // demás llamadas a pasarAHumano ya pasan aviso; esta era la única sin él.
-  // 💬 Con aviso al cliente: el «Mensaje al pasar a un asesor» del panel (IA → Atención al
-  // cliente), o el texto por defecto si está vacío. Va DESPUÉS del acceso en digital (ver
-  // entregarOpcion). Lo apagué un rato por un malentendido con Rodrigo (2026-09-12): él
-  // pedía quitar «(en horario)» de la ETIQUETA del panel, no el mensaje.
+  // 💬 Con aviso al cliente, y con su propio texto si el dueño lo escribió: «Mensaje al
+  // concretar la venta» (IA → Atención al cliente, `humano.aviso_venta`). Vacío → el
+  // «Mensaje al pasar a un asesor» general, y si ese también está vacío, el de fábrica. Va
+  // DESPUÉS del acceso en digital (ver entregarOpcion). El texto propio se manda tal cual,
+  // sin la lógica de horario: es el cierre de la compra, no un «ahora no hay nadie».
+  const _txtVenta = String((ch as any)?.pedidos_config?.humano?.aviso_venta ?? "").trim();
+  if (_txtVenta) {
+    await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: false });
+    await deliverMessage(db, channelId, contactId, _txtVenta).catch(() => {});
+    return;
+  }
   await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: true });
 }
 
