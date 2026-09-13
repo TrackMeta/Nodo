@@ -571,8 +571,8 @@ function renderVendedor(b){
       </div>
     </div>
     <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Retraso de respuesta del bot</span></div>
-      <div class="desc">Si el cliente envía varios mensajes seguidos, el bot espera este tiempo y los agrupa en una sola respuesta. <b>0</b> = responde de inmediato. Aplica solo a conversaciones individuales.</div>
+      <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Espera antes de responder</span></div>
+      <div class="desc">Cuando llega un mensaje, el bot espera este tiempo por si el cliente sigue escribiendo, y contesta una sola vez a todo junto. No es lo que tarda en responder: es una espera que se <b>suma</b> a los segundos que la IA usa para escribir. <b>0</b> = contesta cada mensaje al toque (a «hola» y «cuánto cuesta» seguidos les llegan dos respuestas). Solo en conversaciones individuales.</div>
       <label>Segundos</label>
       <input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:140px"/>
     </div>
