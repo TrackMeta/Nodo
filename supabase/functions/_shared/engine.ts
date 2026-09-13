@@ -19084,8 +19084,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto") {
         const _crudo = String(result ?? "").trim();
         if (_crudo && String(salida ?? "").trim() !== _crudo && !String(salida ?? "").includes(_crudo)) {
+          // También lo que SALIÓ: sin eso, un mensaje que un guard dejó vacío (medido en
+          // C-estafa-2: la IA escribió cuatro frases y al cliente no le llegó nada) se veía
+          // igual que uno recortado a medias, y no había forma de saber cuál de los veinte fue.
+          const _fin = String(salida ?? "").trim();
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🔬 Lo que escribió la IA antes de los retoques",
-            `«${_crudo.slice(0, 400)}»`).catch(() => {});
+            `«${_crudo.slice(0, 300)}»\n→ salió: ${_fin ? `«${_fin.slice(0, 200)}»` : "NADA (vacío)"}`).catch(() => {});
         }
       }
       const handoff = await emitIaText(db, run, salida, ctx);
