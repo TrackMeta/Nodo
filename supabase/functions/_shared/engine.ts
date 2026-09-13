@@ -17587,16 +17587,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // operador la apagó, NO se extrae ni se persiste el perfil (ni se gastan tokens ni se
     // acumula PII del cliente que creía no estar guardando). Antes la escritura corría
     // SIEMPRE, ignorando el nivel — solo la lectura lo respetaba.
+    // ⏱️ SIN FRENAR LA RESPUESTA. Este análisis tardaba 2 a 4 s (medido con cronómetro el
+    // 2026-09-12: un turno con memoria salía en 11-12 s y uno sin ella en 7) y se esperaba ANTES
+    // de mandar el mensaje, que no lo necesita para nada. Arranca acá, en paralelo con los
+    // retoques y el envío, y se espera recién al final del nodo —cuando la respuesta ya salió—
+    // para que el isolate no lo corte a medias. Si falla, no pasa nada: siempre fue defensivo.
     if (op === "generar_texto" && (run as any)._memNivel !== "off") {
-      await actualizarMemoriaIA(db, {
-        channelId: run.channel_id, contactId: run.contact_id,
-        provider, apiKey: ai.api_key, model: ai.model || undefined, thread: await historial(db, run),
-        // Dónde vive NO va al perfil, pero sí hay que pasarlo: si no, el nombre de su tierra
-        // pasa por "algo que contó de sí mismo". Medido: dijo "Para Madre de Dios" y la ficha
-        // quedó con «Compra para su madre».
-        lugares: [ctx.ciudad, ctx.sede, ctx.zona_nombre, ctx.distrito, ctx.departamento]
-          .map((x) => String(x ?? "").trim()).filter(Boolean),
-      }).catch(() => {});
+      (run as any)._memPromesa = (async () => {
+        await actualizarMemoriaIA(db, {
+          channelId: run.channel_id, contactId: run.contact_id,
+          provider, apiKey: ai.api_key, model: ai.model || undefined, thread: await historial(db, run),
+          // Dónde vive NO va al perfil, pero sí hay que pasarlo: si no, el nombre de su tierra
+          // pasa por "algo que contó de sí mismo". Medido: dijo "Para Madre de Dios" y la ficha
+          // quedó con «Compra para su madre».
+          lugares: [ctx.ciudad, ctx.sede, ctx.zona_nombre, ctx.distrito, ctx.departamento]
+            .map((x) => String(x ?? "").trim()).filter(Boolean),
+        });
+      })().catch(() => {});
     }
     // El OCR YA LEE el banco, la operación y el monto — pero se perdían: el
     // nodo solo guardaba el texto crudo ("PAGO_OK"). Si el comprobante trae un
@@ -19173,6 +19180,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // ("y por último…", un link), justo tras decir "te paso con una persona". Los handoffs
       // deterministas (pideHumano/reclamo/condición sin salida) ya cierran así; el [[humano]]
       // inline de la IA era el único que dejaba el flujo corriendo.
+      // ⏱️ La memoria del cliente arrancó antes de enviar (ver arriba): se espera recién acá,
+      // con la respuesta ya en camino, para que el isolate no la corte a medias.
+      if ((run as any)._memPromesa) { await (run as any)._memPromesa; delete (run as any)._memPromesa; }
       if (handoff) { run.estado = "completado"; return; }
     }
 
