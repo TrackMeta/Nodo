@@ -3840,7 +3840,7 @@ function conPeticionFinal(texto: string, peticion: string, dato?: string): strin
 // Guia Experta, D-pdescuento). Este modelo separa oraciones con emoji: la cabeza frena
 // también en «¿ ¡», el salto de línea y los pictogramas. Misma piedra que la coletilla.
 const RE_PERMISO_PAGO =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*¿?\s*te\s+(paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|comparta|doy|d[eé])\s+(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…\n]*[.!?…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*¿?\s*te\s+(paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|comparta|doy|d[eé])\s+(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // "Te lo mando HOY mismo" cuando el sistema ya calculó que en esa zona hoy no alcanza.
 // El prompt lo prohíbe con todas las letras ("no prometas que llega hoy bajo ninguna
 // circunstancia") y el modelo lo dijo igual: medido en la simulación, ofreció "¿confirmo
@@ -3895,7 +3895,7 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
   // 🔴 Tercera pasada. «En breve te llegará EL ADELANTO de S/ 20 para que confirmes»: sin
   // ninguna de las palabras del medio (datos/mensaje/número), porque nombra directamente lo
   // que va a llegar. Se permite que el medio no esté cuando el objeto ya es el pago mismo.
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n]*[.!?…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n\p{Extended_Pictographic}]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // 🔴 «Te llega a domicilio en Lima, pagas al recibir y puedes revisar antes de pagar» NO es
 // un anuncio de datos: es la explicación de la contraentrega, justo lo que el cliente de Lima
 // necesita oír. «Te llega» es también el verbo de la ENTREGA, y con «pagar» en la misma
@@ -3936,7 +3936,7 @@ function sinAnuncioDePago(texto: string): string {
 // fallaba en silencio y AL CLIENTE NO LE LLEGABA NADA. Medido en C-estafa-2: la IA escribió
 // cuatro frases y salió el vacío. Regla: toda regex con un emoji y un cuantificador lleva `u`.
 const RE_FRASE_PROMETE_DATOS =
-  /(?:\b(?:perfecto|listo|claro|dale|genial|ya|bueno)[,!]?\s+)?\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n]*[.!?…]?[ \t]*👇?/giu;
+  /(?:\b(?:perfecto|listo|claro|dale|genial|ya|bueno)[,!]?\s+)?\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?[ \t]*👇?/giu;
 function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
   const t = String(texto ?? "");
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
@@ -3962,7 +3962,7 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
 // ✅ Si el negocio SÍ tiene prueba social en la ficha (reseñas, "más vendido", testimonios),
 // la frase se respeta: entonces no la está inventando, la está usando.
 const RE_PRUEBA_SOCIAL =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:(?:much[oa]s|vari[oa]s|cientos|miles|otr[oa]s|nuestr[oa]s|un mont[oó]n)\s+(?:de\s+)?(?:clientes?|compradores?|usuarios?|personas)|(?:el|la)\s+m[aá]s\s+vendid[oa]|best\s?seller|todos\s+(?:quedan|est[aá]n)\s+(?:satisfech|content|encantad))\b[^.!?…\n]*[.!?…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:(?:much[oa]s|vari[oa]s|cientos|miles|otr[oa]s|nuestr[oa]s|un mont[oó]n)\s+(?:de\s+)?(?:clientes?|compradores?|usuarios?|personas)|(?:el|la)\s+m[aá]s\s+vendid[oa]|best\s?seller|todos\s+(?:quedan|est[aá]n)\s+(?:satisfech|content|encantad))\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // Lo que, si está en la ficha, convierte la frase en un dato del negocio y no en un invento.
 const RE_FICHA_TRAE_PRUEBA = /(clientes?|compradores?|rese[nñ]as?|testimoni|valoraci|calificaci|m[aá]s vendid|satisfech|estrellas)/i;
 function sinPruebaSocialInventada(texto: string, ficha: string): string {
@@ -4029,7 +4029,7 @@ function sinPreguntaDeRelleno(texto: string): string {
 // ⚠️ Sin `\b` detrás de «recibí»: la frontera ASCII no existe después de una vocal con tilde
 // (medido: «lo recibí.» no casaba). Se cierra con lookahead unicode y la bandera `u`.
 const RE_PAGO_DADO_POR_RECIBIDO =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:(?:ya\s+)?(?:lo|la|los)\s+recib[ií](?![\p{L}\p{N}])|recib[ií]\s+(?:tu|el|la|su)\s+(?:pago|adelanto|yape|plin|transferencia|dep[oó]sito)|(?:pago|adelanto|yape|plin)\s+(?:recibido|confirmado|validado|verificado)|ya\s+(?:me\s+)?lleg[oó]\s+(?:tu|el)\s+(?:pago|yape|plin|adelanto)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:confirmado|validado|registrado|verificado))(?![\p{L}\p{N}])[^.!?…\n]*[.!?…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:(?:ya\s+)?(?:lo|la|los)\s+recib[ií](?![\p{L}\p{N}])|recib[ií]\s+(?:tu|el|la|su)\s+(?:pago|adelanto|yape|plin|transferencia|dep[oó]sito)|(?:pago|adelanto|yape|plin)\s+(?:recibido|confirmado|validado|verificado)|ya\s+(?:me\s+)?lleg[oó]\s+(?:tu|el)\s+(?:pago|yape|plin|adelanto)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:confirmado|validado|registrado|verificado))(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 const RE_DICE_QUE_PAGO =
   /\b(ya (te |le |les )?(yape[eéo]|yapi[eé]|plin[eé]e?|plineo|deposit[eéo]|transfer[ií]|transfiero|pagu[eé]|pague|hice (el|la|mi) (yape|pago|dep[oó]sito|transferencia|plin))|(acabo|acabamos) de (yapear|pagar|depositar|transferir|plinear|hacer (el|la) (yape|pago|transferencia|dep[oó]sito))|reci[eé]n (te )?(yape[eé]|pagu[eé]|deposit[eé]|transfer[ií])|ya (te |le )?(mand[eé]|hice) (el|la|mi) (yape|pago|transferencia|dep[oó]sito)|ya est[aá] (pagado|yapeado|depositado|transferido)|ya (lo |la )?pagu[eé])\b/i;
 
@@ -4398,7 +4398,7 @@ function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): str
 // la IA la escribe por su cuenta, pero no confundir una cosa con la otra: buscar la frase
 // en el texto de la IA no es buscar quién la escribe.
 const RE_DATO_INVENTADO =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato|qu[eé] es lo que m[aá]s te frena)\b[^.!?…\n]*[.!?…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(con (ese|este|el) (último |ultimo )?dato|con eso te lo dejo (cerrado|listo)|(solo |sólo )?d(ime|ame) el monto( exacto)?|me confirmas el monto|ind[ií]came el monto|cu[aá]l ser[ií]a el monto|falta (ese|un) dato|qu[eé] es lo que m[aá]s te frena)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // Pedir el nombre/DNI/dirección ES pasar a cerrar: si a esa altura el cliente
 // todavía no dijo cuántas unidades lleva, la venta se cierra por la más barata
 // sin que él se entere de que había un pack.
@@ -5246,7 +5246,7 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false, sePegaSeguro = f
 // contesta algo («sí, en Chiclayo tenemos oficina») no casa y se queda. Si no queda nada, sale
 // el bloque del motor solo, que ya trae encabezado, lista y pregunta.
 const RE_ANUNCIA_SEDES =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:tenemos|hay|contamos\s+con|cuento\s+con|manejamos|trabajamos\s+con)\s+(?:varias|algunas|muchas|distintas|diferentes|estas|las|sus)?\s*(?:sedes|oficinas|agencias)\b[^.!?…\n]*[.!?…]?[ \t]*(?:\p{Extended_Pictographic}️?)*/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:tenemos|hay|contamos\s+con|cuento\s+con|manejamos|trabajamos\s+con)\s+(?:varias|algunas|muchas|distintas|diferentes|estas|las|sus)?\s*(?:sedes|oficinas|agencias)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?[ \t]*(?:\p{Extended_Pictographic}️?)*/giu;
 function sinAnuncioDeSedes(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_SEDES.lastIndex = 0;
@@ -5734,7 +5734,7 @@ function conCierre(texto: string, cierre: string): string {
 // Prohibirlo por prompt funcionó una vez de dos, así que la oferta repetida se recorta y
 // se cambia por una pregunta que lo haga hablar a ÉL. Rotan para no volverse otra muletilla.
 const RE_OFERTA_CIERRE =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(te (paso|pase|env[ií]o|env[ií]e|mando) los datos|pasarte los datos|quieres que te (pase|env[ií]e|mande)|te lo (dejo|preparo|mando) listo|lo dejo listo|lo confirmo y te lo mando|te lo confirmo y lo mando|lo confirmo entonces)\b[^.!?…\n]*[?.!…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(te (paso|pase|env[ií]o|env[ií]e|mando) los datos|pasarte los datos|quieres que te (pase|env[ií]e|mande)|te lo (dejo|preparo|mando) listo|lo dejo listo|lo confirmo y te lo mando|te lo confirmo y lo mando|lo confirmo entonces)\b[^.!?…\n\p{Extended_Pictographic}]*[?.!…]?/giu;
 const PREGUNTAS_DESCUBRIR = [
   "¿Qué es lo que más te frena para empezar?",
   "¿Hay algo puntual que te esté haciendo dudar?",
@@ -5851,7 +5851,7 @@ const RE_PROMETE_ARCHIVO =
   /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b/i;
 
 const RE_LINK_FANTASMA =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n]*[.!?…]?/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 
 // Quita las frases que prometen un enlace inventado. Si al sacarlas el mensaje se
 // queda en nada, se cae a pedir el detalle y pasar a una persona: mejor eso que
