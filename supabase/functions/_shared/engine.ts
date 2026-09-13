@@ -3787,8 +3787,13 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
 // perdida que ni siquiera figura como pendiente. Como regla de prompt falló dos veces
 // seguidas, se recorta por código (regla del proyecto): se quitan SOLO las frases que
 // afirman el cierre, no el resto del mensaje.
+// 🔴 «El protocolo completo ESTÁ LISTO PARA darte fuerza real» no es un cierre falso: es el
+// producto, no el pedido. Casaba con «está listo», y como la IA escribe sin puntos —separa
+// con emojis— el mensaje entero era «una oración», se borraba completo y salía solo el cierre
+// de repuesto («Te paso los datos para el pago 👇») a quien había pedido una muestra gratis.
+// Medido en C3-gratis-1 con el evento 🔬. «Listo para …» queda fuera; el pedido sigue dentro.
 const RE_FALSO_CIERRE =
-  /(qued[oó]|queda|est[aá]|dej[oé]|dejo)\s+(todo\s+)?(confirmad|list[oa])|pedido\s+(confirmad|registrad|anotad)|confirmo\s+tu\s+pedido|tu\s+pedido\s+(ya\s+)?(est[aá]|qued)/i;
+  /(qued[oó]|queda|est[aá]|dej[oé]|dejo)\s+(todo\s+)?(confirmad\w*|list[oa])(?!\s+para\b)|pedido\s+(confirmad|registrad|anotad)|confirmo\s+tu\s+pedido|tu\s+pedido\s+(ya\s+)?(est[aá]|qued)/i;
 // Respuesta que no pide NADA teniendo datos pendientes: un acuse suelto ("Perfecto, un par
 // talla 38 negras por S/ 129.") deja al cliente sin saber qué sigue y la venta se enfría con
 // todo a favor. Se le pega la petición que toca. Por código porque como regla de prompt no
@@ -5755,7 +5760,9 @@ function sinOfertaRepetida(texto: string, usadas: string[]): string {
 function sinFalsoCierre(texto: string, cierre: string): string {
   const t = String(texto ?? "");
   if (!RE_FALSO_CIERRE.test(t)) return texto;
-  const frases = t.split(/(?<=[.!?…])\s+/);
+  // Por oración… y también por emoji seguido de mayúscula, que es como este modelo separa
+  // sus frases: sin eso, un mensaje sin puntos era UNA oración y se iba entero.
+  const frases = t.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
   const limpio = frases.filter((f) => !RE_FALSO_CIERRE.test(f)).join(" ").replace(/\s+/g, " ").trim();
   // Si al quitarlas casi no queda mensaje (a veces TODO el texto era el anuncio falso), se
   // cierra con la frase honesta que toca según el motivo: así el cliente no se queda sin
