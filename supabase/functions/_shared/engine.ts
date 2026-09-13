@@ -3914,7 +3914,9 @@ function sinAnuncioDePago(texto: string): string {
   const limpio = t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) || RE_ORACION_DE_ENTREGA.test(m) ? m : " "))
     // Solo espacios y tabs: \s se come los saltos de línea y pega la lista de datos en un
     // renglón (ya pasó con sinDespachar).
-    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
+    // La flecha «👇» que apuntaba al anuncio quitado, sola al final del renglón.
+    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").trim();
   // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una
   // vacía. El piso es bajo a propósito: lo que suele quedar es el acuse («¡Listo, Bertha!»),
   // que es un mensaje perfectamente válido porque los datos vienen en la burbuja siguiente.
@@ -3948,7 +3950,9 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
     .replace(/[,;:]\s*(?=\n|$)/g, "").replace(/\s+y\s*(?=\n|$)/g, "")
     // El «¿» que abría la pregunta quitada, colgando delante de los emojis del cierre — solo o
     // con las pocas palabras que la introducían («¿Vamos con todo y 🪖📋», medido en C2-gratis-1).
-    .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "").trim();
+    .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
+    // Y la flecha «👇» que apuntaba a los datos que ya no vienen (C5-estafa-1: «…ni trucos 🪖💪 👇»).
+    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").trim();
   if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
