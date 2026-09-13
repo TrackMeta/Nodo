@@ -5215,6 +5215,21 @@ function sinListaDeSedesDeLaIA(texto: string, yaSeSabe = false, sePegaSeguro = f
     ? { texto: limpio, habia: true } : { texto: t, habia: false };
 }
 
+// 📍 «EN *CHICLAYO* TENEMOS VARIAS SEDES DE SHALOM 📍» y, debajo, «En *Chiclayo* tenemos sedes en
+// estos distritos 👇». La IA anuncia la lista y el motor la pega con su propio encabezado: la
+// misma frase dos veces, una encima de la otra. Medido en Chiclayo, 2 de 2, al preguntar «¿qué
+// sedes hay?». Se quita la oración que SOLO anuncia (plural: sedes/oficinas/agencias); una que
+// contesta algo («sí, en Chiclayo tenemos oficina») no casa y se queda. Si no queda nada, sale
+// el bloque del motor solo, que ya trae encabezado, lista y pregunta.
+const RE_ANUNCIA_SEDES =
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:tenemos|hay|contamos\s+con|cuento\s+con|manejamos|trabajamos\s+con)\s+(?:varias|algunas|muchas|distintas|diferentes|estas|las|sus)?\s*(?:sedes|oficinas|agencias)\b[^.!?…\n]*[.!?…]?[ \t]*(?:\p{Extended_Pictographic}️?)*/giu;
+function sinAnuncioDeSedes(texto: string): string {
+  const t = String(texto ?? "");
+  RE_ANUNCIA_SEDES.lastIndex = 0;
+  if (!RE_ANUNCIA_SEDES.test(t)) return t;
+  RE_ANUNCIA_SEDES.lastIndex = 0;
+  return t.replace(RE_ANUNCIA_SEDES, " ").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
 function conAgencias(texto: string, lista: string, forzar = false): string {
   const t = String(texto ?? "");
   if (!lista || !(forzar || RE_PIDE_SEDE.test(t))) return t;
@@ -5237,7 +5252,8 @@ function conAgencias(texto: string, lista: string, forzar = false): string {
   // en casi cualquier mensaje; usarlo como prueba de que la lista ya est\u00e1 es garantizar que
   // no salga nunca en las ciudades cuyo distrito se llama igual que ellas.
   if (!forzar && nombres.some((n) => sinT(t).includes(sinT(n)))) return t;
-  return t.trimEnd() + "\n\n" + lista;
+  // Sin texto de la IA (se le quitó el anuncio de la lista), va el bloque solo.
+  return t.trim() ? t.trimEnd() + "\n\n" + lista : lista;
 }
 
 // 📍 Las sedes escritas DE CORRIDO —"puede ser Ciudad de Dios, Guadalupe La Libertad,
@@ -18274,8 +18290,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   "La escribió la IA con referencias inventadas; va la del motor").catch(() => {});
               }
             }
+            // 📍 Y sin el anuncio de la lista que el motor está por pegar con su propio
+            // encabezado (ver sinAnuncioDeSedes). Se decide con el texto de ANTES del corte, y
+            // si se cortó se fuerza el pegado: la frase quitada podía ser la única que casaba
+            // con RE_PIDE_SEDE.
+            let _anuncioQuitado = false;
+            if (_bl.texto && (_seguro || _sinIA.habia || RE_PIDE_SEDE.test(salida))) {
+              const _sinAn = sinAnuncioDeSedes(salida);
+              if (_sinAn !== salida) {
+                salida = _sinAn; _anuncioQuitado = true;
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se quitó su anuncio de la lista",
+                  "«Tenemos varias sedes…» encima del encabezado del motor: la misma frase dos veces").catch(() => {});
+              }
+            }
             const _antes = salida;
-            salida = conAgencias(salida, _bl.texto, _seguro || _sinIA.habia);
+            salida = conAgencias(salida, _bl.texto, _seguro || _sinIA.habia || _anuncioQuitado);
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, _bl.cat, _bl.ev, _bl.det).catch(() => {});
             }
