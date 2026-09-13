@@ -669,11 +669,18 @@ async function runEngineInner(
     // la dio por contestada —«Perfecto, que tengas taladro te ayuda…»— poniéndole al cliente
     // en la boca una respuesta que nunca dio.
     // Si además de la clave escribió algo suyo, se reinyecta como siempre: para eso está.
+    // 🔑 Y se mira lo que escribió SIN la palabra clave. «Hola, QUIERO EL PROTOCOLO de
+    // calistenia»: el «quiero» es de la clave del anuncio, no una decisión de compra, pero
+    // contaba como intención, se reinyectaba, la IA soltaba «te paso los datos para el pago»
+    // detrás del rotador, el motor (con razón) no los mandaba y al cliente le llegaba un
+    // «¿La quieres? 🙂» pelado. Medido 8 de 8 en la ronda C2- de Calistenia.
+    const _txtSinClave = decision.keyword
+      ? sinLaPalabraClave(event.text, decision.keyword) : String(event.text ?? "");
     if (event.type === "message" && !soloLaPalabraClave(event.text, decision.keyword) &&
-        (traePregunta(event.text) || RE_QUIERE_COMPRAR.test(String(event.text ?? "")) ||
-         RE_ANUNCIA_PAGO.test(String(event.text ?? "")) ||
-         RE_YA_PAGO.test(String(event.text ?? "")) ||
-         RE_CONDICION.test(String(event.text ?? "")))) {
+        (traePregunta(_txtSinClave) || RE_QUIERE_COMPRAR.test(_txtSinClave) ||
+         RE_ANUNCIA_PAGO.test(_txtSinClave) ||
+         RE_YA_PAGO.test(_txtSinClave) ||
+         RE_CONDICION.test(_txtSinClave))) {
       reinyectarTrasArranque = true;
     }
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
@@ -3858,6 +3865,9 @@ function sinPedirPermisoPago(texto: string): string {
   // "acá te paso el Yape: 977533352" también matchea, y borrarla dejaría al cliente sin
   // número al que pagar. Si la frase tiene un número largo o un link, se respeta entera.
   const limpio = t.replace(RE_PERMISO_PAGO, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
+    // El «¿» que abría la pregunta quitada, con las pocas palabras que la introducían
+    // («¿Vamos con todo y 🪖📋»): la cabeza de la regex frena en «¿» y no se lo llevaba.
+    .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     .replace(/\s{2,}/g, " ").trim();
   return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
 }
@@ -3931,8 +3941,9 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
     // La coma o la «y» que quedaron colgando delante de lo que se quitó.
     .replace(/[,;:]\s*(?=\n|$)/g, "").replace(/\s+y\s*(?=\n|$)/g, "")
-    // El «¿» que abría la pregunta quitada, colgando delante de los emojis del cierre.
-    .replace(/[¿¡]\s*(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "").trim();
+    // El «¿» que abría la pregunta quitada, colgando delante de los emojis del cierre — solo o
+    // con las pocas palabras que la introducían («¿Vamos con todo y 🪖📋», medido en C2-gratis-1).
+    .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "").trim();
   if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
