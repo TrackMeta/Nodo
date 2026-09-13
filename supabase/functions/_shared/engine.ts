@@ -3930,7 +3930,9 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
   const limpio = t.replace(RE_FRASE_PROMETE_DATOS, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
     // La coma o la «y» que quedaron colgando delante de lo que se quitó.
-    .replace(/[,;:]\s*(?=\n|$)/g, "").replace(/\s+y\s*(?=\n|$)/g, "").trim();
+    .replace(/[,;:]\s*(?=\n|$)/g, "").replace(/\s+y\s*(?=\n|$)/g, "")
+    // El «¿» que abría la pregunta quitada, colgando delante de los emojis del cierre.
+    .replace(/[¿¡]\s*(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "").trim();
   if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
