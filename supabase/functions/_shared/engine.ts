@@ -3914,8 +3914,14 @@ function sinAnuncioDePago(texto: string): string {
 // ⚠️ Se corta desde «te paso» hasta el fin de la frase, NUNCA lo de antes: la primera versión
 // arrancaba en `[^.!?]*` y, como el modelo escribe «El precio es *S/19* 💰 Te paso los datos
 // 👇» sin punto en medio, se llevaba el precio y al cliente le llegó solo «¿La quieres?».
+// 🔴 CON `u`, SÍ O SÍ. Sin la bandera, «👇?» hace opcional solo la SEGUNDA mitad del emoji
+// (un emoji son dos unidades UTF-16): el patrón se comía la primera mitad del emoji que
+// viniera después —«¿Te paso los datos para que empieces ya? 💪»— y dejaba un surrogate suelto.
+// Un texto así no se puede guardar en Postgres (UTF-8 inválido): el insert del mensaje
+// fallaba en silencio y AL CLIENTE NO LE LLEGABA NADA. Medido en C-estafa-2: la IA escribió
+// cuatro frases y salió el vacío. Regla: toda regex con un emoji y un cuantificador lleva `u`.
 const RE_FRASE_PROMETE_DATOS =
-  /(?:\b(?:perfecto|listo|claro|dale|genial|ya|bueno)[,!]?\s+)?\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n]*[.!?…]?[ \t]*👇?/gi;
+  /(?:\b(?:perfecto|listo|claro|dale|genial|ya|bueno)[,!]?\s+)?\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n]*[.!?…]?[ \t]*👇?/giu;
 function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
   const t = String(texto ?? "");
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
