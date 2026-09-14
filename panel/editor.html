@@ -276,6 +276,23 @@ async function boot(){
   window.addEventListener("beforeunload",(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue=""; } });
   $("backBtn").onclick = async ()=>{ if(st.dirty && !await confirmDialog({title:"Cambios sin guardar",message:"Tienes cambios en este flujo que no guardaste. Si sales, se pierden.",confirmText:"Salir sin guardar",cancelText:"Seguir editando",danger:true})) return; st.dirty=false; st.flowId=null; showOverview(); loadFlows(); };
   $("delFlowBtn").onclick = deleteFlow;
+  // 🔴 EDITAR EL CONTENIDO DE UN NODO TAMBIÉN ES UN CAMBIO SIN GUARDAR.
+  // Medido en el editor real (2026-09-14): abrí el nodo «Pedir el adelanto», escribí dentro
+  // de su mensaje, pulsé «Flujos» y salió a la lista SIN avisar — el texto se perdió en
+  // silencio y la BD quedó igual. Lo mismo desde la vista Contenido / EDITOR IA, que es
+  // justo la pantalla hecha para que alguien edite los mensajes sin tocar el lienzo.
+  // El motivo: `st.dirty` solo lo ponía `pushHistory()`, que se llama al mover, crear,
+  // borrar o conectar nodos —cosas del LIENZO— y nunca al escribir en un campo. Así que el
+  // guard de salida y el `beforeunload` existían pero no se armaban nunca para el caso más
+  // común de todos: cambiar lo que el bot dice. Y Deshacer tampoco alcanzaba esas ediciones
+  // (el botón se quedaba gris mientras escribías).
+  // Va por DELEGACIÓN en los dos paneles en vez de en los ~40 callbacks de los builders:
+  // uno nuevo que se olvide de marcar el cambio vuelve a abrir el mismo agujero.
+  for (const id of ["cfg","contentView"]) {
+    const host=$(id); if(!host) continue;
+    host.addEventListener("input", touchEdit, true);
+    host.addEventListener("change", touchEdit, true);
+  }
   $("viewToggle").querySelectorAll(".segb").forEach((b)=> b.onclick=()=>setView(b.dataset.v));
   $("editorIaBtn").onclick=()=>setView(st.view==="editorIA"?"estructura":"editorIA");
 }
@@ -323,6 +340,13 @@ function setView(v){
   $("contentView").style.display = content ? "block" : "none";
   $("palette").style.display = content ? "none" : "";
   $("cfg").style.display = content ? "none" : "block";
+  // En Contenido / EDITOR IA no hay lienzo: alejar, acercar, encuadrar y auto-organizar no
+  // tienen sobre qué actuar y quedaban ahí abajo como botones muertos. Deshacer y Rehacer se
+  // QUEDAN: desde el fix de `touchEdit` también cubren lo que se escribe en estas vistas.
+  if(zoomCtl){
+    zoomCtl.querySelectorAll('[data-z="in"],[data-z="out"],[data-z="fit"],[data-z="org"],.zpct,.zsep')
+      .forEach((el)=>{ el.style.display = content ? "none" : ""; });
+  }
   if(content) renderContent();
 }
 
@@ -740,6 +764,18 @@ function pushHistory(){
   st.dirty=true; // hay cambios sin guardar (se limpia en resetHistory tras cargar y en save)
 }
 function resetHistory(){ histStack=[]; histIdx=-1; pushHistory(); st.dirty=false; } // baseline limpio tras cargar
+// Escribir en un campo del inspector o de la vista Contenido (ver el enganche por delegación).
+// `st.dirty` se marca EN EL ACTO —el guard de salida no puede esperar a un debounce: se sale
+// con un clic— y el snapshot del historial se empuja al parar de teclear, para que Deshacer
+// vuelva a la frase entera y no letra por letra (y para no llenar el stack de 60 con una
+// sola frase). `histLock` está para no anotar los cambios que hace `restoreFlow` al deshacer.
+let _editTimer=null;
+function touchEdit(){
+  if(histLock||!st.flowId) return;
+  st.dirty=true;
+  clearTimeout(_editTimer);
+  _editTimer=setTimeout(()=>{ _editTimer=null; pushHistory(); }, 700);
+}
 function undo(){ if(histIdx<=0) return; histIdx--; restoreFlow(histStack[histIdx]); paintHistory(); }
 function redo(){ if(histIdx>=histStack.length-1) return; histIdx++; restoreFlow(histStack[histIdx]); paintHistory(); }
 function paintHistory(){ zoomCtl?._setHistory?.(histIdx>0, histIdx<histStack.length-1); }
@@ -871,7 +907,14 @@ function appendCommon(m, form){
   if($("handles")) renderHandles(m);
   // Eliminar
   const del=document.createElement("button"); del.className="del"; del.textContent="Eliminar nodo";
-  del.onclick=()=>{
+  del.onclick=async()=>{
+    // Eliminar un disparador y eliminar un flujo preguntan antes; eliminar un nodo no, y el
+    // botón está a ancho completo y en rojo justo debajo de los campos que acabas de editar.
+    // Se recupera con Ctrl+Z y no toca la BD hasta Guardar, pero eso hay que saberlo: el
+    // aviso cuesta un clic y evita rehacer medio flujo.
+    if(!await confirmDialog({title:"Eliminar bloque",
+      message:`¿Eliminar «${m.nombre||NODE_TYPES[m.tipo]?.label||m.tipo}»? Se quitan también sus conexiones. Puedes deshacerlo con Ctrl+Z mientras no guardes.`,
+      confirmText:"Eliminar", cancelText:"Cancelar", danger:true})) return;
     const eraInicial=!!m.es_inicial;
     editor.removeNodeId("node-"+m.dfId); delete st.model[m.uuid]; delete st.dfToUuid[m.dfId];
     // Si se borró el nodo inicial, auto-promover otro (el primero que quede) para
