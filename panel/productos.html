@@ -248,7 +248,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, isDirty } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
@@ -281,7 +281,19 @@ async function boot(){
   $("pSearch").oninput = renderCards;
   $("saveBtn").onclick = saveProduct;
   $("delBtn").onclick = deleteProduct;
-  $("backBtn").onclick = ()=>{ st.prod=null; showGrid(); loadProducts(); };
+  // 🔴 «Volver a productos» se saltaba el aviso de cambios sin guardar. Medido (2026-09-14):
+  // cambié el costo del Adaptador PRO, pulsé este botón y volvió a la grilla SIN preguntar —
+  // el cambio se perdió. Y no era que la bandera fallara: `isDirty()` devolvía true. El guard
+  // de shell.js cubre la navegación entre PÁGINAS (el rail, cambiar de bot, el botón atrás del
+  // navegador), y este botón no cambia de página: hace su propia vuelta a la grilla dentro de
+  // productos.html, así que nunca pasaba por la puerta. Mismo desenlace que en el editor de
+  // flujos, distinta causa: allá no se levantaba la bandera, acá nadie la miraba.
+  $("backBtn").onclick = async ()=>{
+    if(isDirty() && !await confirmDialog({title:"Cambios sin guardar",
+      message:"Hiciste cambios en este producto que no guardaste. Si sales, se pierden.",
+      confirmText:"Salir sin guardar", cancelText:"Seguir editando", danger:true})) return;
+    markClean(); st.prod=null; showGrid(); loadProducts();
+  };
   await loadProducts();
   // Hook de automatización para el harness de regresión (scripts/regresion-ventas.js):
   // permite abrir un producto y generar su flujo de venta con el generador REAL, sin
