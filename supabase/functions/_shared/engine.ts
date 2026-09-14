@@ -10414,11 +10414,16 @@ async function maybeDatosPago(
       // no puede depender de que la IA haya prometido el número en su texto. Medido: sin
       // esto, «sí, la quiero» → «El precio es S/19.» y ningún número al que pagar.
       || (!!digital?.unico && RE_QUIERE_COMPRAR.test(_textoSinKw));
-    // Si lo ÚNICO que hubo fue la pregunta por el medio, hace falta la intención aparte —y
-    // se recuerda, porque más abajo hay que comprobar que ese medio exista antes de mandar
-    // nada: si no lo tenemos, el número no sale y la respuesta la da la IA con la lista real.
+    // Preguntar por un medio que SÍ tenemos ya es pedir dónde pagar: la respuesta completa a
+    // «¿puedo pagar con Plin?» es «sí, a este número», y partirla en dos turnos no ayuda a
+    // nadie. Primero lo até a `intencionDeCompra` y salió mal, medido: la IA contestó «pagas
+    // con Plin al mismo número de Yape que te paso enseguida» y el número NO salió, porque el
+    // cliente todavía no había dicho «lo quiero» — la promesa colgada de siempre. Se recuerda
+    // el motivo porque abajo hay que comprobar que ese medio exista: si no lo tenemos, el
+    // número no sale y contesta la IA con la lista real (medido: «¿Interbank o PayPal?» →
+    // «aceptamos solo Yape, Plin o transferencia BCP»).
     const soloPorMetodo = !pidio && !!metodoPreg;
-    if (soloPorMetodo) pidio = await intencionDeCompra(db, contactId, texto);
+    if (soloPorMetodo) pidio = true;
     if (!pidio) {
       const { data: ins } = await db.from("messages").select("content")
         .eq("contact_id", contactId).eq("direction", "in")
@@ -16214,15 +16219,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (dudaDeSalud(String(ctx.last_input ?? ""))) {
       parts.push("## ⚕️ Te está preguntando si puede usarlo con su condición\n" +
         "Dijo: \"" + String(ctx.last_input ?? "").slice(0, 200) + "\"\n" +
-        "1. Contéstale ESO primero y con lo que dice la ficha del producto. Es lo único que le importa ahora mismo.\n" +
+        "1. Contéstale ESO primero y con lo que dice la ficha del producto. Es lo único que le importa ahora mismo. " +
+        "Si su condición no tiene NADA que ver con lo que vendes (una herramienta, un accesorio), dilo en una línea " +
+        "tranquila y sigue la venta con normalidad: no le hagas un interrogatorio médico por una hipertensión que no " +
+        "pinta nada con un adaptador de taladro.\n" +
         "2. Si la ficha no lo cubre, ni lo niegues ni te lo inventes: dile con naturalidad que en su caso lo mejor " +
-        "es que lo confirme con su médico, y cuéntale lo que el producto SÍ hace, que es lo que sí sabes.\n" +
+        "es que lo confirme con su médico. ⛔ Y NO TERMINES AHÍ — mandarlo al médico y callarte apaga el chat. En " +
+        "esa MISMA respuesta cuéntale lo que el producto SÍ hace y cómo se adapta a alguien como él (niveles, " +
+        "progresiones, que se va a su ritmo… lo que diga la ficha), que es lo que sí sabes de verdad.\n" +
         "3. ⛔⛔ En ESTE mensaje no le pidas el pago, ni sus datos, ni le preguntes «¿te paso los datos?». Todavía " +
         "no sabe si esto es para él: cobrarle ahora es pedirle plata a alguien que te preguntó por su salud, y así " +
         "se cierran las ventas que después se caen en reclamo.\n" +
         "4. ⛔ No eres médico y no lo simules: nada de diagnosticar, prometer que se le cura, que se le quita el " +
         "dolor ni que puede dejar un tratamiento. Eso no lo puede prometer ni el negocio.\n" +
-        "5. Terminas ofreciéndole resolver la duda, no la venta. Si él después dice que igual lo quiere, ahí sí se cierra.");
+        "5. Cierra con una pregunta abierta que lo acerque a decidir y que tenga que ver con EL PRODUCTO en su caso " +
+        "(«¿puedes hacer sentadillas sin dolor?», «¿para qué lo quieres usar?»), nunca con la venta ni con su " +
+        "enfermedad por curiosidad — preguntarle «¿desde cuándo tienes hipertensión?» para venderle una herramienta " +
+        "es meterse donde no te llaman. Medido: un «cualquier duda, aquí estoy» deja la conversación muerta y el " +
+        "cliente no vuelve. Si él después dice que igual lo quiere, ahí sí se cierra.");
     }
     if (ctx.zona_entrega) {
       const L: string[] = [];
