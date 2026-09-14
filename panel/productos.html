@@ -2396,11 +2396,19 @@ async function renderInicio(){
   const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").ok?"Palabra clave + mensajes listos":"Falta una palabra clave",warn:!est("activacion").ok,tone:"ia"});
 
   // Poner a vender
-  const sellTxt = pct>=100 ? "Todo listo — genera el flujo y tu bot empieza a vender." : "Genera el flujo de venta con IA: vende, toma los datos conversando y crea el pedido.";
+  // Con el flujo ya creado, «Regenerar» dejó de ser algo que tengas que decidir tú: Guardar
+  // lo pone al día solo (ver sincronizarFlujo). Así que el botón grande desaparece y queda
+  // una salida discreta para el caso raro — rehacerlo desde cero a propósito.
+  const sellTxt = fVenta
+    ? "Tu bot ya vende este producto. Lo que guardes acá se aplica solo — no tienes que rehacer nada."
+    : (pct>=100 ? "Todo listo — genera el flujo y tu bot empieza a vender."
+                : "Genera el flujo de venta con IA: vende, toma los datos conversando y crea el pedido.");
   const sellCard = `<div class="card sell-card" style="margin-bottom:0">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${sellTxt}</div>
       <div id="saludBox"></div>
-      <button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">${fVenta?"Regenerar flujo de venta":"Poner a vender"}</button>
+      ${fVenta
+        ? `<button class="btn" id="genFlow" style="height:32px;font-size:12.5px;margin-top:12px;color:var(--muted)">Rehacer el flujo desde cero</button>`
+        : `<button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">Poner a vender</button>`}
       ${fVenta && fVenta.estado!=="activo" ? `
         <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.5">
           <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
@@ -2896,6 +2904,79 @@ async function generarFlujoFisico(flowId, N, E){
 // flujos de un producto). Sirve para avisar antes de reescribir o borrar lo que tienen
 // debajo de los pies. Si la consulta falla devuelve 0: es un aviso extra, no puede ser el
 // motivo de que no se pueda regenerar un flujo.
+// ══ El flujo se mantiene al día SOLO ═══════════════════════════════════════════
+// El flujo de venta es una COPIA congelada de la ficha: el generador escribe dentro de sus
+// bloques la forma de la venta (qué datos se piden, las ramas, los extras). Todo lo demás
+// —precios, lo que la IA sabe del producto, stock, objeciones, el link de entrega— lo lee el
+// motor de la base cada vez que contesta, así que con Guardar ya está vendiendo con eso.
+// El problema no era el botón «Regenerar»: era que había que SABER cuál de los dos casos era
+// el tuyo. Rodrigo: «un solo botón debería considerar todo». Tiene razón — y es calculable,
+// no hay nada que adivinar. Guardar compara el sello de lo estructural contra el que dejó el
+// último generado y, si difieren, actualiza el flujo. Solo abre la boca cuando hay algo que
+// TÚ tienes que decidir: conversaciones a mitad del flujo (se van a un humano) o un flujo que
+// editaste a mano en el editor visual (se perdería tu edición).
+//
+// 🔒 El sello se calcula por DESCARTE, no por lista blanca: entra todo lo del config salvo lo
+// que sabemos que el motor lee en vivo. Si mañana alguien agrega una clave y se olvida de
+// esto, el peor caso es una actualización de más — nunca un flujo desfasado en silencio,
+// que es como se pierde plata sin que nadie se entere.
+const CONTENIDO_EN_VIVO = new Set([
+  "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
+  "costo","empaque","stock","atributos","remarketing_seqs","entrega","entrega_mensaje",
+  "regalos","adelanto","adelanto_min","memoria","intencion","reglas","limites","conocimiento",
+  "horario","demora","_flujo_sello",
+]);
+function selloEstructura(){
+  const cfg = st.prod?.config || {};
+  const est = {};
+  for (const k of Object.keys(cfg).sort()) if (!CONTENIDO_EN_VIVO.has(k)) est[k] = cfg[k];
+  return JSON.stringify({ tipo: st.prod?.tipo || "digital", est });
+}
+// Huella de los bloques del flujo, SIN los ids (cambian en cada generación) y sin depender
+// del orden en que los devuelva la base. Sirve para una sola pregunta: ¿esto sigue siendo lo
+// que dejó el generador, o alguien entró a editarlo?
+function _hash(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))|0; return String(h); }
+async function hashNodos(flowId){
+  const { data } = await supa.from("flow_nodes").select("tipo,nombre,config,es_inicial").eq("flow_id",flowId);
+  return _hash((data||[]).map(n=>`${n.tipo}|${n.nombre}|${n.es_inicial?1:0}|${JSON.stringify(n.config)}`).sort().join("\n"));
+}
+// Deja constancia de con qué ficha se generó el flujo y de cómo quedaron sus bloques.
+async function sellarFlujo(flowId){
+  try{
+    const sello = { sello: selloEstructura(), nodos: await hashNodos(flowId), at: new Date().toISOString() };
+    st.prod.config = { ...(st.prod.config||{}), _flujo_sello: sello };
+    await supa.from("products").update({ config: st.prod.config }).eq("id", st.prod.id);
+  }catch(_){ /* el sello es una ayuda, no puede tumbar el guardado */ }
+}
+// Corre DESPUÉS de guardar el producto. Silencioso salvo que haya algo que decidir.
+async function sincronizarFlujo(){
+  const fVenta = st.receta?.fVenta;
+  if(!fVenta || !st.prod?.id) return;                      // todavía no puso a vender
+  const guardado = (st.prod.config||{})._flujo_sello;
+  // Flujo generado ANTES de que existiera el sello: se sella y se da por bueno. Regenerar de
+  // entrada el flujo de cada producto que ya vende, sin que nadie lo pida, sería peor.
+  if(!guardado){ await sellarFlujo(fVenta.id); return; }
+  if(guardado.sello === selloEstructura()) return;          // nada estructural cambió
+  const [vivas, hoy] = await Promise.all([charlasVivas(fVenta.id), hashNodos(fVenta.id)]);
+  const aMano = !!(guardado.nodos && guardado.nodos !== hoy);
+  if(!vivas && !aMano){
+    await generarFlujoVenta(true);                          // en silencio: no hay nada que decidir
+    toast("Guardado. El bot ya vende con los cambios");
+    return;
+  }
+  const motivos = []
+    .concat(vivas ? [`${icon("alert")} Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo: al actualizarlo ${vivas===1?"pasa":"pasan"} a un humano y ${vivas===1?"tendrás":"tendrás"} que retomar${vivas===1?"la":"las"} tú.`] : [])
+    .concat(aMano ? [`${icon("alert")} Este flujo lo <b>editaste a mano</b> en el editor visual. Al actualizarlo se reescribe entero y esos cambios se pierden.`] : []);
+  const ok = await confirmDialog({
+    title: "Tu cambio necesita actualizar el flujo",
+    messageHtml: "Lo que cambiaste afecta cómo trabaja el bot (qué datos pide o por dónde lleva la venta), " +
+      "no solo lo que dice. Hasta que se actualice, sigue vendiendo como antes.<br><br>" + motivos.join("<br><br>"),
+    confirmText: "Actualizar ahora", cancelText: "Ahora no", danger: true,
+  });
+  if(!ok){ toast("Guardado. El flujo sigue como estaba — puedes actualizarlo cuando quieras"); return; }
+  await generarFlujoVenta(true);
+  toast("Listo, el bot ya vende con los cambios");
+}
 async function charlasVivas(flowId, flowIds){
   try{
     const ids = flowIds || (flowId?[flowId]:[]);
@@ -2977,7 +3058,10 @@ async function generarFlujoVenta(skipConfirm){
     if((st.prod.tipo||"digital")==="fisico"){
       await generarFlujoFisico(flowId, N, E);
       await enlazarInicialesConVenta(flowId);
-      toast("Flujo de venta generado");
+      await sellarFlujo(flowId);
+      // Sin toast cuando lo pide el código (sincronizarFlujo o el harness): el que llama ya
+      // dice lo suyo, y dos avisos seguidos para una sola acción se leen como un error.
+      if(skipConfirm!==true) toast("Flujo de venta generado");
       st.tab="inicio"; renderDetail();
       return;
     }
@@ -3240,7 +3324,8 @@ async function generarFlujoVenta(skipConfirm){
     }
 
     await enlazarInicialesConVenta(flowId);
-    toast("Flujo de venta generado");
+    await sellarFlujo(flowId);
+    if(skipConfirm!==true) toast("Flujo de venta generado");
     st.tab="inicio"; renderDetail();
   }catch(e){ toast("Error al generar: "+(e.message||e),true); }
 }
@@ -4293,7 +4378,7 @@ async function saveProduct(){
   if(st.prod.id && st.tipoGuardado && (st.prod.tipo||"digital")!==st.tipoGuardado){
     const nuevo=(st.prod.tipo||"digital")==="fisico"?"Físico":"Digital", viejo=st.tipoGuardado==="fisico"?"Físico":"Digital";
     const ok=await confirmDialog({ title:"Cambiaste el tipo de producto",
-      message:`Pasó de ${viejo} a ${nuevo}. El flujo de venta ya generado SIGUE entregando como ${viejo.toLowerCase()} hasta que lo REGENERES (botón "Armar/Regenerar flujo"). ¿Guardar igual?`,
+      message:`Pasó de ${viejo} a ${nuevo}. Es el cambio más grande que hay: el flujo de venta se rehará entero al guardar (un ${nuevo.toLowerCase()} no se vende igual que un ${viejo.toLowerCase()}). ¿Guardar igual?`,
       confirmText:"Guardar", cancelText:"Cancelar", danger:true });
     if(!ok) return;
   }
@@ -4442,6 +4527,9 @@ async function saveProduct(){
     if(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node){ await saveActivacion({silent:true}); }
   }catch(_){ /* si algo falló, saveActivacion ya avisó con su propio toast */ }
   markClean(); toast("Guardado"); loadProducts();
+  // Y el flujo se pone al día solo si hacía falta (ver sincronizarFlujo). Va al FINAL y
+  // sin `await` que bloquee lo de arriba: guardar ya terminó y no puede fallar por esto.
+  sincronizarFlujo().catch(()=>{});
 }
 // ════════════════════════════════════════════════════════════════════
 // ASISTENTE "Armar con IA" (capa Crea): brief → borrador del producto.
