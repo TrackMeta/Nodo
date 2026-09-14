@@ -1804,6 +1804,27 @@ const RE_COMO_PAGA =
 // afirmar o negar nada sobre ella.
 const RE_CONDICION =
   /\b(acn[eé]|espinillas?|barros|ros[aá]cea|melasma|cloasma|pa[ñn]o|manchas?|pecas|vit[ií]ligo|psoriasis|eccema|dermatitis|estr[ií]as|cicatri\w*|quemadur\w*|arrugas?|ojeras|verrugas?|hongos|caspa|alopecia|celulitis|patas de gallo|papada|flacidez|varices|v[aá]rices)\b/i;
+// ⚕️ DUDA DE SALUD: «tengo una lesión en la rodilla, ¿igual puedo?», «¿sirve si estoy
+// embarazada?», «soy hipertenso». No es una objeción de precio ni una excusa para no
+// comprar: es alguien preguntando si esto le sirve A ÉL o si le puede hacer daño. Medido en
+// la corrida del Calistenia: el cliente contó su lesión y el bot contestó con una frase
+// general y cerró con «¿te paso los datos para el pago?» — le pidió el Yape a alguien que
+// preguntaba por su rodilla. El prompt del producto lo prohíbe con todas las letras y el
+// modelo lo hizo igual: es la enésima regla de prompt que no alcanza, así que se corrige
+// por código (ver el guard que le quita el cierre y el bloque que le ordena responderla).
+// Cobrarle sin contestarle no solo se lee fatal: es la vía directa al reclamo y la
+// devolución, y el negocio termina pagando una venta que nunca debió cerrarse así.
+const RE_COND_SALUD =
+  /\b(lesi[oó]n\w*|lesionad\w+|me\s+oper\w+|operad[oa]|cirug[ií]a|hernia\w*|artrosis|artritis|tendinitis|menisco|lumbalgia|ci[aá]tica|escoliosis|fractur\w+|desgarro\w*|dolor(?:es)?\s+(?:de|en)\s+\w+|me\s+duele\w*\s+(?:la|el|mi)\b|embaraz\w+|gestando|lactan\w+|diabet\w+|hipertens\w+|presi[oó]n\s+alta|card[ií]ac\w+|del\s+coraz[oó]n|epilep\w+|asma|al[eé]rgic\w+|alergia\w*|marcapasos|sobrepeso|obesidad|v[eé]rtigo|migra[ñn]a\w*|tiroides|anemia|post\s?parto|ces[aá]rea|prolapso|v[aá]rices|osteoporosis)\b/i;
+// La condición sola no basta: tiene que estar hablando de SÍ MISMO o preguntando. Sin esto,
+// «me duele pagar tanto» entraba como consulta médica. Con esto, no.
+const RE_HABLA_DE_SI =
+  /\b(tengo|tuve|sufro|padezco|soy|estoy|me\s+(?:duele|operaron|lesion\w*|diagnostic\w*)|mi\s+(?:rodilla|espalda|hombro|cadera|columna|doctor|m[eé]dico|traumat[oó]logo))\b/i;
+function dudaDeSalud(text?: string | null): boolean {
+  const t = String(text ?? "");
+  if (!t.trim() || t.length > 400) return false;
+  return RE_COND_SALUD.test(t) && (t.includes("?") || RE_HABLA_DE_SI.test(t));
+}
 // 👤 «Mi mamá», «su esposa», «la señora»: un parentesco, no un nombre. Se cuela cuando el
 // cliente dice quién recibe sin decir cómo se llama, y termina impreso en el rótulo.
 const RE_PARENTESCO =
@@ -10200,6 +10221,64 @@ const RE_PIDE_DATOS =
   /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|(p[aá]same|pasame|m[aá]ndame|mandame|env[ií]ame|enviame|d[aá]me|dame|me pasas|me mandas|me env[ií]as|me das)[^.?!\n]{0,24}(yape|plin|n[uú]mero|nro|cuenta|datos)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero)|para (yapear|plinear|depositar|transferir))\b/i;
 const RE_ANUNCIA_PAGO =
   /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero|plin)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero))\b/i;
+// 💳 PREGUNTA POR UN MEDIO DE PAGO CONCRETO: «¿aceptan Plin?», «¿puedo pagar con
+// transferencia?», «¿solo yape?». Es un tercer caso que no cubría ninguna de las dos listas
+// de arriba —RE_PIDE_DATOS quiere el dato EN PANTALLA, RE_ANUNCIA_PAGO avisa que ya va a
+// pagar— y por eso se caía entre las dos. Medido en la corrida del Calistenia (60 chats):
+// «¿puedo pagar con Plin?» → «¡Sí, claro! Sin problema 🙌» y ahí terminaba el mensaje: ni el
+// número, ni el monto, ni qué hacer después. El cliente que ya tenía la billetera abierta se
+// queda mirando la pantalla, y es el peor momento para dejarlo solo.
+// Se CAPTURA el medio, no solo se detecta: hay que poder comprobarlo contra los que el
+// negocio tiene cargados de verdad. Decir que sí a un Plin que no existe es peor que callar
+// — el cliente lo intenta, no le entra, y vuelve pensando que le mintieron.
+const _MEDIOS_PAGO =
+  "(yape|plin|transferencia|transferencias|dep[oó]sito|dep[oó]sitos|bcp|bbva|interbank|scotiabank|banco de la naci[oó]n|banco|cci|paypal)";
+// ⛔ A propósito NO entran acá tarjeta / POS / efectivo: esos no dependen del bloque de datos
+// de pago sino de la MODALIDAD de entrega (contraentrega en Lima, agencia en provincia) y ya
+// los contestan RE_COMO_PAGA y las ramas de zona. Meterlos acá sería contestar dos veces.
+const RE_ACEPTAN_METODO = new RegExp(
+  "\\b(?:acept\\w+|recib\\w+|manej\\w+|tien\\w+|hay|trabaj\\w+\\s+con|us\\w+)\\s+(?:solo\\s+|[uo]\\s+)?" + _MEDIOS_PAGO + "\\b" +
+  "|\\b(?:pag\\w+|yape\\w*|plin\\w*|transfer\\w+|deposit\\w+)\\s+(?:por|con|v[ií]a|mediante)\\s+" + _MEDIOS_PAGO + "\\b" +
+  "|\\b(?:puedo|podr[ií]a|se\\s+puede|podr[ií]amos|puedes)\\s+(?:\\w+\\s+){0,2}(?:por|con|v[ií]a|mediante)\\s+" + _MEDIOS_PAGO + "\\b" +
+  "|\\bsolo\\s+(?:aceptan\\s+|hay\\s+|tienen\\s+)?" + _MEDIOS_PAGO + "\\b",
+  "i");
+// Devuelve el medio por el que pregunta, o "" si no está preguntando por ninguno.
+// ⚠️ El que YA pagó o el que ANUNCIA que va a pagar no está preguntando: «ya pagué por yape»
+// y «voy a pagar con plin» casan la regex igual (el verbo y el medio están los dos), y
+// tratarlos como pregunta les contestaría «sí, aceptamos Yape» a quien acaba de mandar la
+// plata. Esos dos caminos ya existen y ya funcionan: acá se les cede el paso.
+function metodoQuePregunta(texto: string): string {
+  const t = String(texto ?? "");
+  if (!t.trim() || RE_YA_PAGO.test(t) || RE_ANUNCIA_PAGO.test(t)) return "";
+  const m = RE_ACEPTAN_METODO.exec(t);
+  return m ? (m.slice(1).find(Boolean) ?? "").toLowerCase() : "";
+}
+// ¿El negocio acepta ese medio? Se responde contra el bloque `datos_pago` REAL, que es la
+// única fuente: lo que no está cargado ahí, no existe. `null` = no hay bloque configurado,
+// o sea que no se puede afirmar ni negar nada (y el llamador se calla).
+function aceptaMetodo(dp: string, metodo: string): boolean | null {
+  const sinTil = (x: string) => String(x ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const t = sinTil(dp), m = sinTil(metodo);
+  if (!t.trim() || !m) return null;
+  if (t.includes(m)) return true;
+  // «Transferencia» / «depósito» no son una marca: los cumple cualquier cuenta de banco
+  // que esté en el bloque. Preguntar «¿puedo hacer una transferencia?» con el BCP cargado
+  // es un sí, aunque la palabra «transferencia» no aparezca escrita en ningún lado.
+  if (/^(transferencia|transferencias|deposito|depositos|cci|banco)$/.test(m)) {
+    return /\b(cci|cuenta|bcp|bbva|interbank|scotiabank|banco|interbancaria)\b/.test(t);
+  }
+  return false;
+}
+// Los medios del bloque en limpio («Yape», «Plin», «BCP») para poder nombrárselos al
+// cliente sin que la IA se los invente. Son los títulos de cada párrafo del bloque.
+function mediosDelBloque(dp: string): string[] {
+  const out: string[] = [];
+  for (const bloque of String(dp ?? "").split(/\n\s*\n/)) {
+    const titulo = (bloque.split("\n")[0] ?? "").replace(/[*_~✅•·]/g, "").replace(/\s+/g, " ").trim();
+    if (titulo && titulo.length <= 40 && !/\d{6,}/.test(titulo)) out.push(titulo);
+  }
+  return out;
+}
 // La IA ANUNCIA que va a pasar los datos de pago… y no los pasa. Medido: "Te paso los
 // datos para que puedas hacer el pago." y ahí terminaba el mensaje. Prometer y no cumplir
 // deja al cliente esperando igual que no decir nada.
@@ -10314,6 +10393,17 @@ async function maybeDatosPago(
     const soloMetodo = /^\s*(yape|plin|transferencia|dep[oó]sito|efectivo|bcp|bbva|interbank|scotiabank)\s*[.!]?\s*$/i
       .test(String(texto ?? "").trim());
     const loPide = RE_PIDE_DATOS.test(texto) || soloMetodo;
+    // 💳 «¿Aceptan Plin?» — preguntar por el MEDIO es preguntar dónde pagar, pero solo vale
+    // si ese medio está cargado de verdad (se comprueba abajo, contra `dp`) y si el cliente
+    // ya mostró intención: al que todavía está averiguando, mandarle el número es el error
+    // que ya se midió 2 de 2 («nombró el producto» → Yape de S/79 a quien solo preguntaba).
+    const metodoPreg = metodoQuePregunta(texto);
+    // ⚕️ Al que pregunta si puede usarlo con su lesión NO se le manda el número, aunque la
+    // IA lo haya prometido en su texto: el guard de salida le quita esa promesa, y sin este
+    // corte el motor la cumpliría igual — al cliente le llegaría el Yape justo después de
+    // preguntar por su rodilla, que es lo que veníamos a evitar. Si él mismo pide los datos
+    // o anuncia que va a pagar, manda él: ahí ya decidió y el número sale como siempre.
+    if (dudaDeSalud(texto) && !loPide && !metodoPreg && !RE_ANUNCIA_PAGO.test(texto)) return;
     // 🔑 Sin la palabra clave del anuncio: «QUIERO LA PLANTILLA» no es «la quiero».
     const _textoSinKw = await sinKeywordsDelCanal(db, channelId, texto);
     let pidio = yaEligio || loPide || RE_ANUNCIA_PAGO.test(texto)
@@ -10324,6 +10414,11 @@ async function maybeDatosPago(
       // no puede depender de que la IA haya prometido el número en su texto. Medido: sin
       // esto, «sí, la quiero» → «El precio es S/19.» y ningún número al que pagar.
       || (!!digital?.unico && RE_QUIERE_COMPRAR.test(_textoSinKw));
+    // Si lo ÚNICO que hubo fue la pregunta por el medio, hace falta la intención aparte —y
+    // se recuerda, porque más abajo hay que comprobar que ese medio exista antes de mandar
+    // nada: si no lo tenemos, el número no sale y la respuesta la da la IA con la lista real.
+    const soloPorMetodo = !pidio && !!metodoPreg;
+    if (soloPorMetodo) pidio = await intencionDeCompra(db, contactId, texto);
     if (!pidio) {
       const { data: ins } = await db.from("messages").select("content")
         .eq("contact_id", contactId).eq("direction", "in")
@@ -10347,7 +10442,7 @@ async function maybeDatosPago(
     // provincia, que es donde hay un adelanto real que cobrar. En Lima se paga al recibir.
     const _esDigital = String((p as any)?.tipo ?? "") === "digital";
     if (!_esDigital) {
-      if (!(loPide || RE_ANUNCIA_PAGO.test(texto))) return;
+      if (!(loPide || metodoPreg || RE_ANUNCIA_PAGO.test(texto))) return;
       if (String(fisico?.zona ?? "") !== "provincia") return;
     }
     const { data: f } = await db.from("custom_fields").select("valor")
@@ -10366,6 +10461,11 @@ async function maybeDatosPago(
         "Se configura en Campos → datos_pago (modo fijo). La venta está frenada acá.").catch(() => {});
       return;
     }
+    // 💳 Preguntó por un medio que NO tenemos («¿aceptan PayPal?»): mandarle el bloque
+    // sería contestar otra cosa —le llegaría el Yape a quien preguntó por PayPal, como si
+    // no lo hubiéramos leído—. Se calla el motor y contesta la IA, que en este turno lleva
+    // la lista real de medios en el prompt (ver el bloque «Te preguntó si aceptas…»).
+    if (soloPorMetodo && aceptaMetodo(dp, metodoPreg) !== true) return;
     const nums = dp.match(/\d{6,}/g) ?? [];
     const { data: outs } = await db.from("messages").select("content")
       .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
@@ -16064,7 +16164,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // pagar con tarjeta cuando me lo entreguen?» → «¿desde qué distrito o ciudad nos
     // escribes?», y del pago ni una palabra. Se contesta lo que sí es cierto para las dos
     // zonas y se le pide la ciudad EN EL MISMO mensaje.
-    if (!ctx.zona_entrega && RE_COMO_PAGA.test(String(ctx.last_input ?? ""))) {
+    const _preguntoPagoSinZona = !ctx.zona_entrega && RE_COMO_PAGA.test(String(ctx.last_input ?? ""));
+    if (_preguntoPagoSinZona) {
       parts.push("## 💳 Te preguntó cómo se paga y aún no sabes de dónde es\n" +
         "⛔⛔ PROHIBIDO decirle que SÍ o que NO se puede pagar con **tarjeta**, POS, Yape, Plin o " +
         "transferencia. Todavía no sabes su zona y ese dato depende de ella: si te adelantas, le " +
@@ -16074,6 +16175,54 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "en Lima lo pagas cuando lo recibes, y a provincia va por agencia con un adelanto y el resto " +
         "cuando llega a la agencia. ¿De qué distrito o ciudad me escribes?»\n" +
         "Ni una palabra más sobre medios de pago hasta que te diga su zona.");
+    }
+    // 💳 Preguntó por UN medio concreto («¿aceptan Plin?», «¿se puede por transferencia?»).
+    // Medido en la corrida del Calistenia: contestaba «¡Sí, claro! Sin problema 🙌» y cerraba
+    // ahí — un sí que no verificó contra nada y que no lleva a ninguna parte. Acá se le da
+    // masticada la verdad del bloque `datos_pago`, que es la única fuente de qué se acepta:
+    // lo que no está cargado ahí no existe. Si no hay bloque no se dice nada (ni sí ni no).
+    // No pisa al bloque de arriba: ese contesta al que pregunta CÓMO se paga sin saber su
+    // zona, y contestar las dos cosas en el mismo turno sería decirlo todo dos veces.
+    if (!_preguntoPagoSinZona) {
+      const _metodo = metodoQuePregunta(String(ctx.last_input ?? ""));
+      const _dpm = String(ctx.datos_pago ?? "").trim();
+      const _acepta = _metodo ? aceptaMetodo(_dpm, _metodo) : null;
+      if (_metodo && _acepta !== null) {
+        const _lista = mediosDelBloque(_dpm);
+        const _enLetras = _lista.length
+          ? _lista.slice(0, 4).join(", ").replace(/, ([^,]*)$/, " y $1")
+          : "los que tenemos cargados";
+        parts.push("## 💳 Te preguntó si aceptas **" + _metodo + "**\n" +
+          (_acepta
+            ? "SÍ lo aceptamos (está entre nuestros medios de pago). Confírmaselo en una línea, con naturalidad, y " +
+              "sigue de una con el paso que falta para cerrar.\n" +
+              "⛔ NO escribas el número ni el titular: no los tienes y no te los inventes. Si ya está decidido, el " +
+              "sistema le manda los datos enseguida, con el número en su propia línea para que lo copie de un toque.\n"
+            : "NO trabajamos con eso. Dilo sin rodeos y sin disculparte tres veces, y pásale enseguida los que SÍ " +
+              "aceptamos: " + _enLetras + ". ⛔ No le ofrezcas un medio que no esté en esa lista.\n") +
+          "⛔⛔ PROHIBIDO contestar «sí, sin problema» (o «no» a secas) y terminar el mensaje ahí. El que pregunta " +
+          "por el medio de pago ya tiene la billetera en la mano: si tu respuesta no lo deja sabiendo QUÉ HACE " +
+          "AHORA, lo dejaste parado. Medido en 60 chats: «¿puedo pagar con Plin?» → «¡Sí, claro! Sin problema 🙌» " +
+          "y el chat se murió ahí.");
+      }
+    }
+    // ⚕️ Contó una condición de salud («tengo una lesión en la rodilla, ¿igual puedo?»).
+    // Es la pregunta que decide la compra Y la que decide si esto le hace daño, así que va
+    // antes que cualquier cierre. El recorte del cierre lo hace el código igual (ver el
+    // guard de `dudaDeSalud`); esto es para que el mensaje que sí sale conteste lo que él
+    // preguntó, en vez de una frase general que sirve para cualquiera.
+    if (dudaDeSalud(String(ctx.last_input ?? ""))) {
+      parts.push("## ⚕️ Te está preguntando si puede usarlo con su condición\n" +
+        "Dijo: \"" + String(ctx.last_input ?? "").slice(0, 200) + "\"\n" +
+        "1. Contéstale ESO primero y con lo que dice la ficha del producto. Es lo único que le importa ahora mismo.\n" +
+        "2. Si la ficha no lo cubre, ni lo niegues ni te lo inventes: dile con naturalidad que en su caso lo mejor " +
+        "es que lo confirme con su médico, y cuéntale lo que el producto SÍ hace, que es lo que sí sabes.\n" +
+        "3. ⛔⛔ En ESTE mensaje no le pidas el pago, ni sus datos, ni le preguntes «¿te paso los datos?». Todavía " +
+        "no sabe si esto es para él: cobrarle ahora es pedirle plata a alguien que te preguntó por su salud, y así " +
+        "se cierran las ventas que después se caen en reclamo.\n" +
+        "4. ⛔ No eres médico y no lo simules: nada de diagnosticar, prometer que se le cura, que se le quita el " +
+        "dolor ni que puede dejar un tratamiento. Eso no lo puede prometer ni el negocio.\n" +
+        "5. Terminas ofreciéndole resolver la duda, no la venta. Si él después dice que igual lo quiere, ahí sí se cierra.");
     }
     if (ctx.zona_entrega) {
       const L: string[] = [];
@@ -18863,6 +19012,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ? _sinOferta : "Claro, tómate tu tiempo 🙂 Cualquier cosa, acá estoy.";
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🤫 Insistía al que lo va a pensar",
             `Se quitó la oferta del número: «${_antesP.slice(0, 120)}»`).catch(() => {});
+        }
+      }
+      // ⚕️ Al que preguntó por su salud no se le cobra en el mismo mensaje. La regla está en
+      // el prompt del producto (el de ChatLevel la trae con todas las letras) y el modelo la
+      // rompió igual: medido en la corrida del Calistenia, el cliente contó su lesión de
+      // rodilla y el bot cerró con «¿te paso los datos para el pago?». Se le quita la oferta
+      // del número y la petición de datos; el resto del mensaje —la respuesta a su duda— sale
+      // intacto. Si al quitarlos no queda mensaje, NO se toca nada: dejarlo mudo justo acá
+      // sería peor que el cierre inoportuno, y el evento queda para verlo en la Timeline.
+      // Dos excepciones: si ya hay pedido, la duda es post-venta y el cobro ya pasó; y si en
+      // el mismo mensaje dice que lo quiere, ya decidió él —no hay que protegerlo de su
+      // propia compra.
+      if (op === "generar_texto" && dudaDeSalud(String(ctx.last_input ?? "")) &&
+          String(ctx.pedido_creado ?? "") !== "si" &&
+          !RE_QUIERE_COMPRAR.test(String(ctx.last_input ?? ""))) {
+        const _antesS = salida;
+        const _sinCobro = sinPedirLosDatos(sinPedirPermisoPago(salida));
+        if (_sinCobro !== salida && _sinCobro.replace(/[\s\p{P}\p{S}]/gu, "").length >= 25) {
+          salida = _sinCobro;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "⚕️ Cobraba al que preguntó por su salud",
+            `Se quitó el cierre de pago: «${_antesS.slice(0, 120)}»`).catch(() => {});
         }
       }
       // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
