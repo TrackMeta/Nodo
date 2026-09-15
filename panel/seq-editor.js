@@ -168,6 +168,8 @@ export function mountStepsEditor(el, opts){
   })();
   const durTxt = (s) => { const { val,u }=splitDur(s); const n=Number(u);
     return val+" "+(n===86400?(val===1?"día":"días"):n===3600?(val===1?"hora":"horas"):(val===1?"minuto":"minutos")); };
+  // «a LAS 3 horas» pero «a LOS 6 minutos»: la preposición va con el género de la unidad.
+  const aLa = (s) => (Number(splitDur(s).u)===3600 ? "a las " : "a los ") + durTxt(s);
 
   el.innerHTML = `<div class="se-journey" style="overflow-x:auto;padding:2px 2px 10px"></div><div class="se-body"></div>`;
   const jBox = el.querySelector(".se-journey");
@@ -245,14 +247,14 @@ export function mountStepsEditor(el, opts){
             // Del 2º toque en adelante el choque es SEGURO: el paso anterior ya fue un mensaje
             // automático, así que el reloj del tope está corriendo sí o sí.
             ? `Tu <b>tope de frecuencia</b> es de ${durTxt(topeSeg)}: aunque acá pongas
-               <b>${durTxt(paso.umbral_silencio_seg)}</b>, este toque saldrá recién a las ${durTxt(topeSeg)}
+               <b>${durTxt(paso.umbral_silencio_seg)}</b>, este toque saldrá recién ${aLa(topeSeg)}
                del toque anterior.`
             // En el PRIMERO depende: si el cliente no recibió ningún automático antes, sale a su
             // hora. Decirle «saldrá tarde» sin ese matiz sería asustarlo de gratis — y un aviso
             // que exagera se termina ignorando, que es peor que no tenerlo.
             : `Ojo con tu <b>tope de frecuencia</b> (${durTxt(topeSeg)}): si el cliente ya recibió otro
-               mensaje automático hace poco —otra secuencia, una campaña—, este toque no saldrá a los
-               <b>${durTxt(paso.umbral_silencio_seg)}</b>, sino cuando se cumpla el tope.`}
+               mensaje automático hace poco —otra secuencia, una campaña—, este toque no saldrá
+               <b>${aLa(paso.umbral_silencio_seg)}</b>, sino cuando se cumpla el tope.`}
           <span style="color:var(--muted)">Se cambia en Productos → el producto → Reenganche.</span>
         </div>
       </div>` : ``}
