@@ -163,7 +163,7 @@
           <rect x="518" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)"/>
           <text x="530" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">06</text>
           <text x="530" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Pegar 4 datos</text>
-          <text x="530" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">y guardar</text>
+          <text x="530" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">guardar y listo</text>
         </g>
         <!-- final · Nodo -->
         <g>
@@ -291,6 +291,9 @@
           <li><strong>Access token</strong> — el permanente del paso 7.</li>
           <li><strong>App Secret</strong> — Configuración de la app → Básica → «Clave secreta de la app» → Mostrar.</li>
         </ul>
+        <p>Los cuatro no están en la misma pantalla de Meta, así que puedes guardar cada vez que consigas uno: solo se manda lo que tocaste, nada se pisa.</p>
+        <p><strong>Y acá es donde se termina la conexión.</strong> Al darle a <strong>Guardar datos del número</strong> con los cuatro puestos, Nodo hace por su cuenta los dos trámites que te saltaste: enciende el interruptor del paso 4 y registra el número del paso 5. Después te dice qué hizo — y si tuvo que registrar, te muestra el PIN que le puso para que lo anotes.</p>
+        <p>Si algo no le sale, te dice el motivo que le dio Meta, que es justo lo que los botones de Meta no te cuentan. Y si ya estaba todo hecho, no toca nada.</p>
         <div class="ojo">
           <span class="t">Sin el App Secret no entra nada</span>
           <p>El webhook de Nodo rechaza con 401 cualquier mensaje que no venga firmado. Meta te lo entrega, Nodo lo descarta y tú no ves nada en la Bandeja — con todo lo demás en verde.</p>
