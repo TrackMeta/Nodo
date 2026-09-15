@@ -267,7 +267,7 @@ function renderWA(){
     if(tok) body.access_token=tok;
     if(sec) body.app_secret=sec;
     if(!Object.keys(body).length){ toast("No cambiaste nada"); return; }
-    save(e.target, body);
+    guardarYTerminarWA(e.target, body);
   };
   // Copiar al portapapeles (URL fija por data-copy; verify token = valor vivo del input).
   $("waCard").querySelectorAll(".copybtn[data-copy]").forEach(b=>{
@@ -470,6 +470,52 @@ function pintarWA(r){
   box.querySelectorAll("button[data-fix]").forEach(b=>{
     b.onclick=()=>arreglarWA(b.getAttribute("data-fix"), b);
   });
+}
+// Guardar los datos del número NO es "guardar un formulario": es terminar de conectar.
+// Así que después de guardar, Nodo hace los dos trámites que faltan en Meta (suscribir la
+// app, registrar el número) y te cuenta qué hizo. Un solo botón, y el usuario nunca tiene
+// que aprender las palabras "suscribir" ni "registrar" — ni saber que existe el Explorador
+// de la API. Si todavía faltan datos, no hay nada que terminar y se comporta como antes.
+async function guardarYTerminarWA(btn, body){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  try{
+    await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...body });
+    btn.textContent="Terminando…";
+    await terminarWA();
+    await load();
+  }catch(e){ toast(e.message||"error",true); }
+  btn.disabled=false; btn.textContent=old;
+}
+// `pin` solo llega en el reintento, cuando el número ya tenía verificación en dos pasos.
+async function terminarWA(pin){
+  let r;
+  try{ r=await callFn("channel-config",{ action:"whatsapp_finish", channel_id:st.channelId, ...(pin?{pin}:{}) }); }
+  catch(e){ toast(`Guardado, pero no pude terminar la conexión: ${e.message||""}`,true); return; }
+  if(!r.listo){ toast("Guardado"); return; }  // aún faltan datos: no hay nada que terminar
+
+  // Meta pide SU pin (2FA puesta desde antes) y Nodo no puede adivinarlo.
+  if(!pin && (r.fallo||[]).some(f=>f.necesita_pin)){
+    const p=await askText({ title:"Ese número ya tiene un PIN",
+      message:"Tiene la verificación en dos pasos activada desde antes. Escribe el PIN de 6 dígitos que le pusiste — Nodo no puede adivinarlo.",
+      label:"PIN", placeholder:"123456" });
+    if(p) return terminarWA(p.trim());
+  }
+
+  const NOMBRE={ suscribir:"conecté la entrada de mensajes", registrar:"registré el número" };
+  const hizo=(r.hecho||[]).map(h=>NOMBRE[h]||h);
+  const falló=(r.fallo||[]).filter(f=>!f.necesita_pin||pin);
+  if(falló.length){
+    toast(`Guardado, pero Meta rechazó ${falló.map(f=>NOMBRE[f.que]||f.que).join(" y ")}: ${falló[0].motivo}`,true);
+    return;
+  }
+  if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"); return; }
+  if(r.pin){
+    await askText({ title:"Listo, el número quedó conectado",
+      messageHtml:`Guardé los datos y ${hizo.join(" y ")}. Para registrarlo, Meta pide una verificación en dos pasos: Nodo le puso este PIN. <b>Anótalo</b> — te lo van a pedir si algún día migras el número, y Nodo no lo guarda.`,
+      label:"PIN de 6 dígitos", value:r.pin, confirmText:"Ya lo anoté" });
+    return;
+  }
+  toast(`Guardado · ${hizo.join(" y ")}`);
 }
 // Ejecuta en Meta el trámite que falta. Si el número ya tenía verificación en dos pasos,
 // Meta pide SU pin y Nodo no puede inventarlo: se lo pedimos al dueño y reintentamos.

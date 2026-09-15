@@ -13,6 +13,32 @@ import { matchSegment, BATCH } from "../_shared/campaigns.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
+const GRAPH_V = "v25.0";
+// Dos ayudantes para hablar con Meta con el token del canal. Devuelven {status, body} y
+// nunca lanzan: un timeout o una caída de red se leen igual que un error de Meta.
+async function metaGet(token: string, path: string) {
+  try {
+    const r = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_V}/${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return { status: r.status, body: await r.json().catch(() => ({})) as any };
+  } catch (e) {
+    return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } as any };
+  }
+}
+async function metaPost(token: string, path: string, payload?: Record<string, unknown>) {
+  try {
+    const r = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_V}/${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    return { status: r.status, body: await r.json().catch(() => ({})) as any };
+  } catch (e) {
+    return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } as any };
+  }
+}
+const pinNuevo = () => String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
 // Campos planos del canal editables desde el panel.
 const PLAIN = ["phone_number_id", "waba_id", "verify_token", "pixel_id", "page_id"];
 // Secretos → Vault.
@@ -52,7 +78,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -297,6 +323,61 @@ Deno.serve(async (req) => {
         webhook: { app_secret: !!secrets?.app_secret, verify_token: !!(c as any)?.verify_token },
         suscripcion,
       });
+    }
+
+    // ── Terminar la conexión ───────────────────────────────────────────────────────────
+    // Se llama justo DESPUÉS de guardar los datos del número. Si ya están los cuatro, Nodo
+    // hace por su cuenta los dos trámites que faltan —suscribir la app y registrar el
+    // número— en vez de mandar al usuario de vuelta a Meta a buscar un interruptor
+    // escondido y a pelearse con un «se produjo un error» que no dice nada.
+    // Es lo que hace un instalador: no te enseña las palabras, te deja el aparato andando.
+    // Solo toca lo que falta: si ya estaba suscrita o ya estaba registrado, no llama.
+    if (action === "whatsapp_finish") {
+      const { data: c } = await db.from("channels")
+        .select("phone_number_id, waba_id").eq("id", channel_id).maybeSingle();
+      const phoneId = (c as any)?.phone_number_id;
+      const wabaId = (c as any)?.waba_id;
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.access_token;
+
+      // Sin lo mínimo no hay nada que terminar: se guardó un pedazo y falta el resto.
+      const falta: string[] = [];
+      if (!phoneId) falta.push("Phone Number ID");
+      if (!token) falta.push("Access token");
+      if (falta.length) return json({ ok: true, listo: false, falta });
+
+      const hecho: string[] = [];
+      const fallo: { que: string; motivo: string; necesita_pin?: boolean }[] = [];
+      let pin: string | null = null;
+
+      // 1) Suscribir la app a la cuenta (sin esto no ENTRA ningún mensaje).
+      if (wabaId) {
+        const sub = await metaGet(token, `${wabaId}/subscribed_apps`);
+        const yaEsta = sub.status === 200 && Array.isArray(sub.body?.data) && sub.body.data.length > 0;
+        if (!yaEsta) {
+          const r = await metaPost(token, `${wabaId}/subscribed_apps`);
+          if (r.status === 200 && r.body?.success) hecho.push("suscribir");
+          else fallo.push({ que: "suscribir", motivo: String(r.body?.error?.message ?? "Meta no aceptó la suscripción.") });
+        }
+      }
+
+      // 2) Registrar el número en la Cloud API (sin esto no SALE ninguno).
+      const num = await metaGet(token, `${phoneId}?fields=platform_type`);
+      if (num.status === 200 && num.body?.platform_type !== "CLOUD_API") {
+        const dado = String(body.pin ?? "").trim();
+        if (dado && !/^\d{6}$/.test(dado)) return json({ error: "pin_invalido", detalle: "El PIN son 6 dígitos." }, 400);
+        const usar = dado || pinNuevo();
+        const r = await metaPost(token, `${phoneId}/register`, { messaging_product: "whatsapp", pin: usar });
+        if (r.status === 200 && r.body?.success) {
+          hecho.push("registrar");
+          if (!dado) pin = usar; // solo se devuelve el que inventó Nodo, para que lo anote
+        } else {
+          const msg = String(r.body?.error?.message ?? "Meta no aceptó el registro.");
+          fallo.push({ que: "registrar", motivo: msg, necesita_pin: /pin|two[- ]step/i.test(msg) });
+        }
+      }
+
+      return json({ ok: true, listo: true, hecho, fallo, pin });
     }
 
     // ── Los dos trámites que el usuario hacía a mano en Meta ───────────────────────────
