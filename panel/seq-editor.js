@@ -241,9 +241,18 @@ export function mountStepsEditor(el, opts){
       <div style="margin-top:9px;display:flex;gap:8px;align-items:flex-start;border:1px solid var(--amber,#f0a92b);background:rgba(240,169,43,.10);border-radius:9px;padding:8px 10px">
         <span style="color:var(--amber,#f0a92b);flex:none;font-size:13px;line-height:1.3">⚠</span>
         <div style="font-size:11.5px;line-height:1.55;color:var(--text)">
-          Tu <b>tope de frecuencia</b> es de ${durTxt(topeSeg)}: aunque acá pongas
-          <b>${durTxt(paso.umbral_silencio_seg)}</b>, este toque saldrá recién cuando se cumpla ese tope
-          desde el último mensaje automático que recibió el cliente.
+          ${i>0
+            // Del 2º toque en adelante el choque es SEGURO: el paso anterior ya fue un mensaje
+            // automático, así que el reloj del tope está corriendo sí o sí.
+            ? `Tu <b>tope de frecuencia</b> es de ${durTxt(topeSeg)}: aunque acá pongas
+               <b>${durTxt(paso.umbral_silencio_seg)}</b>, este toque saldrá recién a las ${durTxt(topeSeg)}
+               del toque anterior.`
+            // En el PRIMERO depende: si el cliente no recibió ningún automático antes, sale a su
+            // hora. Decirle «saldrá tarde» sin ese matiz sería asustarlo de gratis — y un aviso
+            // que exagera se termina ignorando, que es peor que no tenerlo.
+            : `Ojo con tu <b>tope de frecuencia</b> (${durTxt(topeSeg)}): si el cliente ya recibió otro
+               mensaje automático hace poco —otra secuencia, una campaña—, este toque no saldrá a los
+               <b>${durTxt(paso.umbral_silencio_seg)}</b>, sino cuando se cumpla el tope.`}
           <span style="color:var(--muted)">Se cambia en Productos → el producto → Reenganche.</span>
         </div>
       </div>` : ``}
