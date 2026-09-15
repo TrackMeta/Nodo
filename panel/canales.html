@@ -45,14 +45,10 @@
      Va junto a la nota del paso, no suelta debajo, y es más chica que los botones
      de abajo: esos guardan la tarjeta entera, esta solo este campo. Sobre la caja
      gris el .btn normal es transparente y se pierde — acá lleva superficie propia. */
-  .pasoact{display:flex;gap:14px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-top:10px}
-  .pasoact .mh{flex:1;min-width:230px;margin:0}
-  .btn.mini{height:34px;padding:0 13px;border-radius:9px;font-size:12.5px;font-weight:600;
-            display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none;
-            background:var(--surface);box-shadow:var(--shadow-1)}
-  .btn.mini svg{width:14px;height:14px;opacity:.75}
+  .pasoact{display:flex;justify-content:flex-start;margin-top:12px}
+  .btn.mini{height:34px;padding:0 14px;border-radius:9px;font-size:12.5px;font-weight:600;
+            white-space:nowrap;background:var(--surface);box-shadow:var(--shadow-1)}
   .btn.mini:hover{background:var(--brand-bg);border-color:var(--brand-border);color:var(--brand-2)}
-  .btn.mini:hover svg{opacity:1}
   .metabox{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin:14px 0 4px}
   .metabox .mt{font-weight:700;font-size:12.5px;margin-bottom:2px}
   .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
@@ -197,11 +193,9 @@ function renderWA(){
           <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
           <button class="copybtn" id="w_verify_copy" title="Copiar">${icon("copy")}</button>
         </div>
-        <div class="pasoact">
-          <div class="mh">Elige el token que quieras (cualquier frase); tiene que ser <b>el mismo</b> aquí y en Meta.
-            <b>Guárdalo acá antes de verificar en Meta</b>: Meta viene a buscarlo a Nodo, y si todavía no está guardado responde «no se pudo verificar» sin decir por qué.</div>
-          <button class="btn mini" id="saveVerify">${icon("check")} Guardar token</button>
-        </div>
+        <div class="mh" style="margin:8px 0 0">Elige el token que quieras (cualquier frase); tiene que ser <b>el mismo</b> aquí y en Meta.
+          <b>Guárdalo acá antes de verificar en Meta</b>: Meta viene a buscarlo a Nodo, y si todavía no está guardado responde «no se pudo verificar» sin decir por qué.</div>
+        <div class="pasoact"><button class="btn mini" id="saveVerify">Guardar token</button></div>
       </div>
 
       <div class="metabox">
