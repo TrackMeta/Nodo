@@ -162,7 +162,7 @@
         <g>
           <rect x="518" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)"/>
           <text x="530" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">06</text>
-          <text x="530" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Pegar 4 datos</text>
+          <text x="530" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Token + Secret</text>
           <text x="530" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">guardar y listo</text>
         </g>
         <!-- final · Nodo -->
@@ -283,16 +283,16 @@
     <div class="paso">
       <div class="n">8</div>
       <div class="cuerpo">
-        <h2>Copia los cuatro datos a Nodo</h2>
-        <p class="donde">Nodo → Canales → bloque 2 → Guardar datos del número</p>
+        <h2>Pega el token y el App Secret en Nodo</h2>
+        <p class="donde">Nodo → Canales → bloque 2</p>
+        <p>Son los dos únicos datos que tienes que ir a buscar, porque son secretos:</p>
         <ul>
-          <li><strong>Phone Number ID</strong> — junto a tu número, en Configuración de la API. Sin esto, los mensajes no encuentran a qué canal pertenecen.</li>
-          <li><strong>WABA ID</strong> — el identificador de tu cuenta de WhatsApp Business.</li>
           <li><strong>Access token</strong> — el permanente del paso 7.</li>
           <li><strong>App Secret</strong> — Configuración de la app → Básica → «Clave secreta de la app» → Mostrar.</li>
         </ul>
-        <p>Los cuatro no están en la misma pantalla de Meta, así que puedes guardar cada vez que consigas uno: solo se manda lo que tocaste, nada se pisa.</p>
-        <p><strong>Y acá es donde se termina la conexión.</strong> Al darle a <strong>Guardar datos del número</strong> con los cuatro puestos, Nodo hace por su cuenta los dos trámites que te saltaste: enciende el interruptor del paso 4 y registra el número del paso 5. Después te dice qué hizo — y si tuvo que registrar, te muestra el PIN que le puso para que lo anotes.</p>
+        <p>Con el token pegado, dale a <strong>Buscar mis datos</strong>: Nodo le pregunta a Meta de qué cuenta es ese token y rellena solo el <strong>Phone Number ID</strong> y el <strong>WABA ID</strong>. Si el token alcanza varios números, te deja elegir cuál atiende en este canal.</p>
+        <p>Esos dos IDs no son secretos, son etiquetas — y copiarlos a mano es de donde salen los errores más tontos. No hace falta que los escribas.</p>
+        <p><strong>Y acá es donde se termina la conexión.</strong> Al darle a <strong>Guardar datos del número</strong> con los cuatro campos llenos, Nodo hace por su cuenta los dos trámites que te saltaste: enciende el interruptor del paso 4 y registra el número del paso 5. Después te dice qué hizo — y si tuvo que registrar, te muestra el PIN que le puso para que lo anotes.</p>
         <p>Si algo no le sale, te dice el motivo que le dio Meta, que es justo lo que los botones de Meta no te cuentan. Y si ya estaba todo hecho, no toca nada.</p>
         <div class="ojo">
           <span class="t">Sin el App Secret no entra nada</span>
