@@ -99,6 +99,14 @@
   .req h3{color:var(--text)}
   .req p{font-size:14.5px;color:var(--muted);margin:0}
 
+  /* ── Mapa del recorrido ───────────────────────── */
+  .mapa{margin-top:46px}
+  .mapa-sub{color:var(--muted);max-width:62ch;margin:8px 0 0;font-size:15.5px}
+  .mapawrap{
+    margin-top:18px;overflow-x:auto;background:var(--surface);
+    border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);
+  }
+
   /* ── Pasos ────────────────────────────────────── */
   .pasos{margin-top:46px;display:flex;flex-direction:column;gap:30px}
   .paso{display:grid;grid-template-columns:44px 1fr;gap:18px;align-items:start}
@@ -203,6 +211,82 @@
     <div class="req">
       <h3>Cuenta de Meta Business</h3>
       <p>El «portfolio comercial». Si no tienes, el asistente te deja crearlo con el nombre real de tu negocio.</p>
+    </div>
+  </section>
+
+  <section class="mapa">
+    <h2>El recorrido, de un vistazo</h2>
+    <p class="mapa-sub">Lo que más confunde no es cada paso, sino <strong>dónde</strong> se hace cada uno. La conexión va y viene entre dos sitios tres veces.</p>
+    <div class="mapawrap">
+      <svg viewBox="0 0 860 300" role="img" aria-label="Diagrama del recorrido: seis pasos alternando entre Meta y Nodo, de crear la app a la prueba final" style="min-width:680px;width:100%;height:auto">
+        <!-- carriles -->
+        <rect x="118" y="26" width="726" height="92" rx="12" fill="var(--surface-2)"/>
+        <rect x="118" y="182" width="726" height="92" rx="12" fill="var(--accent-soft)"/>
+        <text x="16" y="66" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.6" fill="var(--muted)">EN META</text>
+        <text x="16" y="84" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--muted)">developers.facebook.com</text>
+        <text x="16" y="222" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.6" fill="var(--accent)">EN NODO</text>
+        <text x="16" y="240" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--muted)">tu panel → Canales</text>
+
+        <!-- trazo del recorrido: Meta → Nodo → Meta → Nodo -->
+        <path d="M188 118 L188 150 L318 150 L318 182" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M318 274 L318 150 L448 150 L448 118" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M708 118 L708 150 L578 150 L578 182" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M448 72 L578 72" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M578 72 L708 72" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M578 228 L708 228" fill="none" stroke="var(--line)" stroke-width="2"/>
+
+        <!-- paso 1 · Meta -->
+        <g>
+          <rect x="128" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="140" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">01</text>
+          <text x="140" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Crear la app</text>
+          <text x="140" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">caso de uso WhatsApp</text>
+        </g>
+        <!-- paso 2 · Nodo -->
+        <g>
+          <rect x="258" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)"/>
+          <text x="270" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">02</text>
+          <text x="270" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Guardar token</text>
+          <text x="270" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">de verificación</text>
+        </g>
+        <!-- paso 3 · Meta -->
+        <g>
+          <rect x="388" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="400" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">03</text>
+          <text x="400" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Webhook</text>
+          <text x="400" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">verificar + suscribir</text>
+        </g>
+        <!-- paso 4 · Meta -->
+        <g>
+          <rect x="518" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="530" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">04</text>
+          <text x="530" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Número</text>
+          <text x="530" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">registrar + PIN</text>
+        </g>
+        <!-- paso 5 · Meta -->
+        <g>
+          <rect x="648" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="660" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">05</text>
+          <text x="660" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Token + Secret</text>
+          <text x="660" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">y publicar la app</text>
+        </g>
+        <!-- paso 6 · Nodo -->
+        <g>
+          <rect x="518" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)"/>
+          <text x="530" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">06</text>
+          <text x="530" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Pegar 4 datos</text>
+          <text x="530" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">y guardar</text>
+        </g>
+        <!-- final · Nodo -->
+        <g>
+          <rect x="648" y="196" width="120" height="64" rx="9" fill="var(--accent)"/>
+          <text x="660" y="224" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="700" fill="var(--surface)">Escríbete</text>
+          <text x="660" y="243" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--surface)">y mira la Bandeja</text>
+        </g>
+
+        <!-- nota del cruce clave -->
+        <text x="258" y="176" font-family="Source Sans 3, sans-serif" font-size="11.5" font-style="italic" fill="var(--warn)">el 02 va antes que el 03, o Meta no verifica</text>
+      </svg>
     </div>
   </section>
 
