@@ -121,7 +121,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, SUPABASE_URL } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, askChoice, SUPABASE_URL } from "./shell.js";
 const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channel:{}, secrets:{} };
@@ -201,13 +201,14 @@ function renderWA(){
 
       <div class="metabox">
         <div class="mt">2 · Datos del número (Meta → WhatsApp → Configuración de la API)</div>
-        <div class="mh">Esto se llena <b>después</b> de verificar el webhook, y los cuatro datos no viven en la misma pantalla de Meta: los dos IDs en Configuración de la API, el App Secret en Configuración → Básica de la app, y el token permanente en business.facebook.com. Guarda cada vez que consigas uno — solo se manda lo que tocaste, nada se pisa.</div>
-        <div class="row" style="margin-top:8px">
-          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
-          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="para recibir mensajes"/></div>
-        </div>
+        <div class="mh">Esto se llena <b>después</b> de verificar el webhook. De los cuatro, los dos que de verdad tienes que ir a buscar son el <b>Access token</b> (business.facebook.com) y el <b>App Secret</b> (Configuración → Básica de la app): pega el token, dale a <b>Buscar mis datos</b> y los dos IDs los trae Nodo. Guarda cada vez que consigas uno — solo se manda lo que tocaste, nada se pisa.</div>
         <label>Access token ${badge(s.access_token)}</label>
         <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente)')}"/>
+        <div class="pasoact"><button class="btn mini" id="waBuscar">Buscar mis datos</button></div>
+        <div class="row" style="margin-top:8px">
+          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba"/></div>
+          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="lo trae el botón de arriba"/></div>
+        </div>
         <label>App Secret ${badge(s.app_secret)}</label>
         <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
       </div>
@@ -282,6 +283,7 @@ function renderWA(){
   });
   const vcopy=$("w_verify_copy");
   if(vcopy) vcopy.onclick=()=>{ const v=$("w_verify").value.trim(); v?copiar(v):toast("Escribe primero un verify token",true); };
+  $("waBuscar").onclick=(e)=>buscarDatosWA(e.target);
   $("waTest").onclick=(e)=>probarWA(e.target);
   const disc=$("waDisc"); if(disc) disc.onclick=()=>desconectarWA(disc);
   // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
@@ -477,6 +479,35 @@ function pintarWA(r){
   box.querySelectorAll("button[data-fix]").forEach(b=>{
     b.onclick=()=>arreglarWA(b.getAttribute("data-fix"), b);
   });
+}
+// El Phone Number ID y el WABA ID no son secretos: son etiquetas, y el token que acabas de
+// pegar ya dice a qué cuenta pertenece. Así que se los preguntamos a Meta en vez de pedirte
+// que los copies — que es de donde salen los errores más tontos (Chrome llegó a rellenar el
+// Phone Number ID con el nombre de una empresa guardada). Solo lee; no toca nada.
+async function buscarDatosWA(btn){
+  const tok=$("w_token").value.trim();  // vacío = usa el que ya está en Vault
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Buscando…";
+  try{
+    const r=await callFn("channel-config",{ action:"whatsapp_descubrir", channel_id:st.channelId, ...(tok?{token:tok}:{}) });
+    // Aplanado: lo que el usuario elige es un NÚMERO, y el WABA viene de arrastre.
+    const opciones=(r.cuentas||[]).flatMap(cu=>(cu.numeros||[]).map(n=>({ ...n, waba_id:cu.waba_id, waba:cu.nombre })));
+    if(!opciones.length){
+      toast(r.motivo || "El token no lleva ningún número de WhatsApp asociado.", true);
+    }else{
+      let el=opciones[0];
+      if(opciones.length>1){
+        const v=await askChoice({ title:"¿Cuál de tus números?",
+          message:"Este token da acceso a varios. Elige el que va a atender en este canal.",
+          options:opciones.map(o=>({ value:o.id, label:o.telefono||o.id, desc:`${o.nombre||"sin nombre"} · cuenta ${o.waba||o.waba_id}` })) });
+        if(!v){ btn.disabled=false; btn.textContent=old; return; }
+        el=opciones.find(o=>o.id===v);
+      }
+      $("w_phone").value=el.id;
+      $("w_waba").value=el.waba_id;
+      toast(`Encontrado: ${el.telefono||el.id}. Dale a Guardar datos del número.`);
+    }
+  }catch(e){ toast(e.message||"Meta no reconoció el token",true); }
+  btn.disabled=false; btn.textContent=old;
 }
 // Guardar los datos del número NO es "guardar un formulario": es terminar de conectar.
 // Así que después de guardar, Nodo hace los dos trámites que faltan en Meta (suscribir la

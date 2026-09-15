@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -323,6 +323,59 @@ Deno.serve(async (req) => {
         webhook: { app_secret: !!secrets?.app_secret, verify_token: !!(c as any)?.verify_token },
         suscripcion,
       });
+    }
+
+    // ── Averiguar los IDs a partir del token ───────────────────────────────────────────
+    // El Phone Number ID y el WABA ID no son secretos: son etiquetas, y el token que el
+    // usuario acaba de pegar YA dice a qué cuenta pertenece. Copiarlos a mano es trabajo
+    // que Meta puede contestar — y es de donde salen los errores más tontos (Chrome llegó
+    // a autocompletar el Phone Number ID con el nombre de una empresa guardada, "Square",
+    // y eso rompía el canal en silencio; ver la validación numérica en el panel).
+    // Todo acá es de SOLO LECTURA: mira, no toca.
+    if (action === "whatsapp_descubrir") {
+      // El token puede venir recién escrito (aún sin guardar) o estar ya en Vault.
+      const tokenDado = String(body.token ?? "").trim();
+      const token = tokenDado || (await getChannelSecrets(db, channel_id))?.access_token;
+      if (!token) return json({ error: "falta_token", detalle: "Pega primero el Access token." }, 400);
+
+      // De qué WABAs habla este token. granular_scopes trae, por permiso, los ids de los
+      // activos que el token puede tocar: ahí está la cuenta de WhatsApp Business.
+      const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+      if (dbg.status !== 200 || dbg.body?.error) {
+        return json({ error: "meta", detalle: String(dbg.body?.error?.message ?? "Meta no reconoció el token.") }, 400);
+      }
+      const scopes = (dbg.body?.data?.granular_scopes ?? []) as any[];
+      const ids = new Set<string>();
+      for (const s of scopes) {
+        if (s?.scope === "whatsapp_business_management" || s?.scope === "whatsapp_business_messaging") {
+          for (const t of (s.target_ids ?? [])) ids.add(String(t));
+        }
+      }
+      // Sin granular_scopes (tokens viejos o con acceso a todo) queda el WABA ya guardado.
+      if (!ids.size) {
+        const { data: c } = await db.from("channels").select("waba_id").eq("id", channel_id).maybeSingle();
+        if ((c as any)?.waba_id) ids.add(String((c as any).waba_id));
+      }
+      if (!ids.size) {
+        return json({ ok: true, cuentas: [], motivo: "El token no declara ninguna cuenta de WhatsApp Business. Suele pasar cuando se generó ANTES de asignarle los activos al usuario del sistema." });
+      }
+
+      const cuentas: any[] = [];
+      for (const waba of ids) {
+        const [info, nums] = await Promise.all([
+          metaGet(token, `${waba}?fields=name`),
+          metaGet(token, `${waba}/phone_numbers?fields=id,display_phone_number,verified_name`),
+        ]);
+        cuentas.push({
+          waba_id: waba,
+          nombre: info.status === 200 ? (info.body?.name ?? null) : null,
+          numeros: (nums.body?.data ?? []).map((n: any) => ({
+            id: String(n.id), telefono: n.display_phone_number ?? null, nombre: n.verified_name ?? null,
+          })),
+          error: nums.status === 200 ? null : String(nums.body?.error?.message ?? "no se pudieron listar los números"),
+        });
+      }
+      return json({ ok: true, cuentas });
     }
 
     // ── Terminar la conexión ───────────────────────────────────────────────────────────
