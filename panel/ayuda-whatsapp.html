@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<!-- Respeta el tema elegido en el panel (shell.js lo guarda en nodo.theme; por defecto oscuro). -->
+<script>document.documentElement.dataset.theme = localStorage.getItem("nodo.theme") || "dark";</script>
+<title>Conectar WhatsApp a Nodo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root{
+    --ground:#f5f7f8;
+    --surface:#ffffff;
+    --surface-2:#eef1f3;
+    --text:#161b21;
+    --muted:#5f6b76;
+    --line:#dde3e7;
+    --accent:#0e7a56;
+    --accent-soft:#e3f2ec;
+    --warn:#9a6414;
+    --warn-soft:#fbf1df;
+    --warn-line:#e8d3ad;
+    --mono-bg:#eceff1;
+    --shadow:0 1px 2px rgba(22,27,33,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#10141a;
+      --surface:#171d25;
+      --surface-2:#1e262f;
+      --text:#e7edf2;
+      --muted:#97a3ae;
+      --line:#2b343e;
+      --accent:#48c294;
+      --accent-soft:#16302a;
+      --warn:#e4b263;
+      --warn-soft:#2c2417;
+      --warn-line:#4a3c22;
+      --mono-bg:#1c242d;
+      --shadow:none;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#10141a;
+    --surface:#171d25;
+    --surface-2:#1e262f;
+    --text:#e7edf2;
+    --muted:#97a3ae;
+    --line:#2b343e;
+    --accent:#48c294;
+    --accent-soft:#16302a;
+    --warn:#e4b263;
+    --warn-soft:#2c2417;
+    --warn-line:#4a3c22;
+    --mono-bg:#1c242d;
+    --shadow:none;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--ground);color:var(--text);
+    font-family:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:16.5px;line-height:1.62;
+  }
+  .page{max-width:800px;margin:0 auto;padding-block:38px 90px;padding-left:20px;padding-right:20px}
+
+  /* ── Encabezado ───────────────────────────────── */
+  .head{display:flex;flex-direction:column;gap:10px;padding-bottom:26px;border-bottom:1px solid var(--line)}
+  h1{
+    font-family:"Bricolage Grotesque",system-ui,sans-serif;
+    font-weight:700;font-size:clamp(30px,5.2vw,42px);line-height:1.08;
+    letter-spacing:-.022em;margin:0;text-wrap:balance;
+  }
+  .kicker{
+    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11.5px;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0;
+  }
+  .lede{margin:2px 0 0;color:var(--muted);max-width:62ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{
+    font-size:12.5px;color:var(--muted);background:var(--surface-2);
+    border:1px solid var(--line);border-radius:999px;padding:3px 11px;
+  }
+
+  h2{
+    font-family:"Bricolage Grotesque",system-ui,sans-serif;
+    font-weight:700;font-size:21px;letter-spacing:-.012em;
+    margin:0;text-wrap:balance;
+  }
+  h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:600;font-size:16px;margin:0 0 6px}
+  p{margin:0 0 12px}
+  p:last-child{margin-bottom:0}
+  a{color:var(--accent)}
+  strong{font-weight:600}
+
+  /* ── Requisitos ───────────────────────────────── */
+  .antes{margin-top:34px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+  .req{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:15px 16px;box-shadow:var(--shadow)}
+  .req h3{color:var(--text)}
+  .req p{font-size:14.5px;color:var(--muted);margin:0}
+
+  /* ── Pasos ────────────────────────────────────── */
+  .pasos{margin-top:46px;display:flex;flex-direction:column;gap:30px}
+  .paso{display:grid;grid-template-columns:44px 1fr;gap:18px;align-items:start}
+  .n{
+    font-family:"JetBrains Mono",ui-monospace,monospace;font-weight:700;font-size:14px;
+    width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);border:1px solid var(--line);
+    font-variant-numeric:tabular-nums;
+  }
+  .cuerpo{min-width:0}
+  .donde{
+    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px;color:var(--muted);
+    margin:5px 0 10px;
+  }
+  .paso p{font-size:15.5px}
+  ul{margin:8px 0 0;padding-left:19px}
+  li{margin:5px 0;font-size:15.5px}
+
+  /* ── Datos para copiar ────────────────────────── */
+  .dato{
+    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13.5px;
+    background:var(--mono-bg);border:1px solid var(--line);border-radius:8px;
+    padding:11px 13px;margin:11px 0;overflow-x:auto;white-space:pre;color:var(--text);
+  }
+  code{
+    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.88em;
+    background:var(--mono-bg);border-radius:4px;padding:1px 5px;
+  }
+
+  /* ── Avisos ───────────────────────────────────── */
+  .ojo{
+    background:var(--warn-soft);border:1px solid var(--warn-line);
+    border-radius:9px;padding:12px 14px;margin:13px 0 0;
+  }
+  .ojo .t{
+    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--warn);
+    display:block;margin-bottom:5px;
+  }
+  .ojo p{font-size:14.5px;margin:0}
+  .ojo p + p{margin-top:8px}
+
+  /* ── Diagnóstico ──────────────────────────────── */
+  .seccion{margin-top:58px;padding-top:30px;border-top:1px solid var(--line)}
+  .tablawrap{overflow-x:auto;margin-top:18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:14.5px}
+  th{
+    text-align:left;font-family:"JetBrains Mono",ui-monospace,monospace;
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    font-weight:400;padding:11px 14px;border-bottom:1px solid var(--line);
+  }
+  td{padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;width:31%}
+  td:nth-child(2){color:var(--muted);width:30%}
+
+  /* ── Checklist ────────────────────────────────── */
+  .check{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 18px;box-shadow:var(--shadow)}
+  .check .item{display:flex;gap:11px;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--line);font-size:15px}
+  .check .item:last-child{border-bottom:none}
+  .box{
+    flex:none;width:15px;height:15px;border:1.5px solid var(--accent);border-radius:4px;
+    display:inline-block;transform:translateY(2px);
+  }
+
+  footer{
+    margin-top:58px;padding-top:22px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:13.5px;
+  }
+
+  @media (max-width:520px){
+    .paso{grid-template-columns:32px 1fr;gap:13px}
+    .n{width:30px;height:30px;font-size:12.5px}
+  }
+</style>
+
+</head>
+<body>
+<div class="page">
+
+  <header class="head">
+    <p style="margin:0 0 4px"><a href="canales.html" style="font-size:14px;text-decoration:none">&larr; Volver a Canales</a></p>
+    <p class="kicker">Nodo · Puesta en marcha</p>
+    <h1>Conectar WhatsApp a Nodo</h1>
+    <p class="lede">Los pasos reales para poner un número de WhatsApp Business a responder desde Nodo, en el orden que funciona — con las trampas que ninguna guía oficial menciona.</p>
+    <div class="meta">
+      <span class="chip">~45 minutos</span>
+      <span class="chip">Sin conocimientos técnicos</span>
+      <span class="chip">Probado el 15·09·2026</span>
+    </div>
+  </header>
+
+  <section class="antes">
+    <div class="req">
+      <h3>Un número libre</h3>
+      <p>Que <strong>no tenga WhatsApp activo</strong>. Si lo tiene, elimina la cuenta desde la app antes de empezar — desinstalar no basta.</p>
+    </div>
+    <div class="req">
+      <h3>Una tarjeta</h3>
+      <p>Meta la pide para enviar mensajes. Sin método de pago, el registro del número puede fallar.</p>
+    </div>
+    <div class="req">
+      <h3>Cuenta de Meta Business</h3>
+      <p>El «portfolio comercial». Si no tienes, el asistente te deja crearlo con el nombre real de tu negocio.</p>
+    </div>
+  </section>
+
+  <div class="pasos">
+
+    <div class="paso">
+      <div class="n">1</div>
+      <div class="cuerpo">
+        <h2>Crea la app en Meta</h2>
+        <p class="donde">developers.facebook.com → Mis apps → Crear app</p>
+        <p>La «app» no es algo que tus clientes vean: es el permiso que deja a Nodo mandar y recibir mensajes por tu número. Ponle el nombre de tu negocio.</p>
+        <p>Cuando pregunte los casos de uso, marca <strong>solo</strong> «Conectarte con los clientes a través de WhatsApp». En «Negocio», elige tu portfolio comercial.</p>
+        <div class="ojo">
+          <span class="t">Ojo</span>
+          <p>«Negocio no verificado» no te bloquea: puedes conectar y vender igual, con un tope de ~250 conversaciones nuevas al día. La verificación tarda días, así que arráncala aparte si piensas escalar con anuncios.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">2</div>
+      <div class="cuerpo">
+        <h2>Guarda el token de verificación en Nodo</h2>
+        <p class="donde">Nodo → selector de bot → tu canal → Canales</p>
+        <p>Inventa una frase cualquiera (por ejemplo <code>nodo-mi-negocio-2026</code>), ponla en <strong>Token de verificación</strong> y dale a <strong>Guardar WhatsApp</strong>.</p>
+        <p>Copia también la URL que Nodo te muestra ahí:</p>
+        <div class="dato">https://ahoxdyffbwjlshmdezwi.supabase.co/functions/v1/whatsapp-webhook</div>
+        <div class="ojo">
+          <span class="t">Este es el paso que todos hacen al revés</span>
+          <p>Cuando Meta verifique el webhook, va a buscar en la base de Nodo un canal con <em>exactamente</em> ese token. Si no lo guardaste antes, Meta responde «no se pudo verificar» y no explica por qué.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">3</div>
+      <div class="cuerpo">
+        <h2>Enlaza el webhook en Meta</h2>
+        <p class="donde">Casos de uso → Personalizar → Paso 2: Configuración de producción → Configurar webhooks</p>
+        <p>Pega la URL y el mismo token que guardaste en Nodo, y dale a <strong>Verificar y guardar</strong>. Debería ponerse en verde al instante.</p>
+        <p>Si falla, casi siempre es un espacio de más al copiar el token, o que te saltaste el Guardar del paso 2.</p>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">4</div>
+      <div class="cuerpo">
+        <h2>Enciende «Suscribir webhooks»</h2>
+        <p class="donde">Mismo Paso 2 → Registra tu número → interruptor a la derecha del nombre de tu cuenta</p>
+        <p>Es un interruptor aparte, y viene apagado.</p>
+        <div class="ojo">
+          <span class="t">No es lo mismo que el paso anterior</span>
+          <p>Verificar el webhook y suscribirlo son dos cosas distintas. Si te saltas este interruptor, todo se ve verde y <strong>no llega ni un mensaje</strong>. Es el error más común de toda la conexión.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">5</div>
+      <div class="cuerpo">
+        <h2>Agrega tu número y regístralo</h2>
+        <p class="donde">Mismo Paso 2 → Agregar número nuevo → Registrar</p>
+        <p>Meta te regala un <strong>número de prueba</strong>: no lo uses. Solo escribe a 5 contactos que registres a mano y no sirve para vender.</p>
+        <p>Agrega tu número real, verifícalo por SMS, y dale a <strong>Registrar</strong>. Te pedirá crear un <strong>PIN de 6 dígitos</strong> — anótalo donde no lo pierdas: te lo van a pedir si algún día migras el número.</p>
+        <p>Al registrarlo, ese número deja de poder usarse en la app de WhatsApp de un celular. Pasa a vivir en la API y se atiende desde Nodo.</p>
+        <div class="ojo">
+          <span class="t">Si sale «Se produjo un error durante el registro»</span>
+          <p>El botón del panel no dice el motivo. Regístralo por la API, que sí lo dice: <strong>Herramientas → Explorador de la API Graph</strong>, elige tu app, genera un token con los permisos <code>whatsapp_business_management</code> y <code>whatsapp_business_messaging</code>, pon el método en <strong>POST</strong> y en la ruta:</p>
+          <div class="dato">&lt;PHONE_NUMBER_ID&gt;/register?messaging_product=whatsapp&amp;pin=123456</div>
+          <p><code>{"success": true}</code> significa que quedó registrado. Si devuelve un error, ahí sí viene con el motivo exacto — normalmente que el número sigue «Pendiente» de revisión del nombre, y entonces toca esperar a Meta.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">6</div>
+      <div class="cuerpo">
+        <h2>Agrega el método de pago</h2>
+        <p class="donde">Mismo Paso 2 → Agrega la información de pago</p>
+        <p>Es una de las tareas del asistente y conviene no dejarla para el final: en varias cuentas, Meta no deja registrar el número hasta que hay una tarjeta cargada.</p>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">7</div>
+      <div class="cuerpo">
+        <h2>Genera el token que no caduca</h2>
+        <p class="donde">business.facebook.com → Configuración del negocio → Usuarios del sistema</p>
+        <p>Crea un usuario del sistema con rol <strong>Admin</strong> (ponle un nombre que reconozcas en un año, como «Nodo WhatsApp»). Después, y en este orden:</p>
+        <ul>
+          <li><strong>Agregar activos</strong> → tu <em>app</em> y tu <em>cuenta de WhatsApp (WABA)</em>, las dos con control total.</li>
+          <li><strong>Generar nuevo token</strong> → tu app → caducidad <strong>Nunca</strong> → permisos <code>whatsapp_business_messaging</code> y <code>whatsapp_business_management</code>.</li>
+          <li>Cópialo en ese momento: Meta lo muestra <strong>una sola vez</strong>.</li>
+        </ul>
+        <div class="ojo">
+          <span class="t">Dos trampas seguidas</span>
+          <p>El token que Meta te muestra en la pantalla de la API <strong>caduca en 24 horas</strong>. Si usas ese, el bot deja de responder al día siguiente sin motivo aparente.</p>
+          <p>Y si generas el token <em>antes</em> de asignar los activos, sale «válido» pero sin permiso sobre tu número: al enviar, Meta responde con un error que no se parece en nada a la causa.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">8</div>
+      <div class="cuerpo">
+        <h2>Copia los cuatro datos a Nodo</h2>
+        <p class="donde">Nodo → Canales → Guardar WhatsApp</p>
+        <ul>
+          <li><strong>Phone Number ID</strong> — junto a tu número, en Configuración de la API. Sin esto, los mensajes no encuentran a qué canal pertenecen.</li>
+          <li><strong>WABA ID</strong> — el identificador de tu cuenta de WhatsApp Business.</li>
+          <li><strong>Access token</strong> — el permanente del paso 7.</li>
+          <li><strong>App Secret</strong> — Configuración de la app → Básica → «Clave secreta de la app» → Mostrar.</li>
+        </ul>
+        <div class="ojo">
+          <span class="t">Sin el App Secret no entra nada</span>
+          <p>El webhook de Nodo rechaza con 401 cualquier mensaje que no venga firmado. Meta te lo entrega, Nodo lo descarta y tú no ves nada en la Bandeja — con todo lo demás en verde.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">9</div>
+      <div class="cuerpo">
+        <h2>Publica la app</h2>
+        <p class="donde">Menú izquierdo de la app → Publicar</p>
+        <p>Te va a pedir una <strong>URL de política de privacidad</strong>. Es el único requisito real para un caso de uso de WhatsApp; el resto ya lo cumpliste.</p>
+        <p>Si no tienes una, la de este negocio está publicada acá y sirve de modelo:</p>
+        <div class="dato">https://trackmeta.github.io/Nodo/privacidad.html</div>
+        <p style="color:var(--muted);font-size:14.5px">Cada negocio necesita <strong>la suya</strong>, con su propio nombre y su correo de contacto: es el documento al que un cliente acude para pedir sus datos o su baja, y lo firma tu empresa.</p>
+        <div class="ojo">
+          <span class="t">Mientras la app esté sin publicar, no llegan mensajes reales</span>
+          <p>Meta solo entrega webhooks de prueba a las apps sin publicar. Puedes tener el número registrado, el webhook verde y los cuatro datos correctos — y aun así escribirte a ti mismo y que no aparezca nada.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="n">10</div>
+      <div class="cuerpo">
+        <h2>Pruébalo con tu propio celular</h2>
+        <p>Escríbele «Hola» al número desde tu teléfono y abre la <strong>Bandeja</strong> de Nodo, en ese canal.</p>
+        <p>Si tu mensaje aparece ahí, la conexión está hecha. Ese es el único tramo que no se puede probar de antemano, y se comprueba en cinco minutos antes de gastar un sol en anuncios.</p>
+        <div class="ojo">
+          <span class="t">Que no te responda no significa que esté roto</span>
+          <p>Un canal recién creado no hereda nada: sin clave de IA, sin datos de pago y sin productos, el bot recibe tu mensaje y lo deja en la Bandeja — que es lo correcto cuando no sabe qué decir. Llenar el canal es el paso siguiente, no parte de la conexión.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="seccion">
+    <h2>Cuando algo no funciona</h2>
+    <p style="margin-top:8px;color:var(--muted);max-width:62ch">Los síntomas de esta lista salieron de conexiones reales. El mensaje que muestra Meta casi nunca apunta a la causa.</p>
+    <div class="tablawrap">
+      <table>
+        <thead>
+          <tr><th>Lo que ves</th><th>Lo que en realidad pasa</th><th>Cómo se arregla</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>«No se pudo verificar» el webhook</td>
+            <td>El token no está guardado en Nodo, o no coincide</td>
+            <td>Guarda el token en Nodo primero; revisa espacios al copiar</td>
+          </tr>
+          <tr>
+            <td>Webhook verde, pero no llega nada</td>
+            <td>Falta el interruptor «Suscribir webhooks», o la app sigue sin publicar</td>
+            <td>Enciende el interruptor y publica la app</td>
+          </tr>
+          <tr>
+            <td>«Se produjo un error durante el registro»</td>
+            <td>El número está «Pendiente» de revisión, o el chip aún tiene WhatsApp</td>
+            <td>Regístralo por el Explorador de la API para ver el motivo real</td>
+          </tr>
+          <tr>
+            <td>Funcionó ayer y hoy no responde</td>
+            <td>Usaste el token temporal de 24 horas</td>
+            <td>Genera el permanente con un usuario del sistema</td>
+          </tr>
+          <tr>
+            <td>Meta entrega, Nodo no muestra nada</td>
+            <td>Falta el App Secret: el webhook rechaza con 401</td>
+            <td>Pega el App Secret en Nodo y guarda</td>
+          </tr>
+          <tr>
+            <td>«Sin permiso» al enviar</td>
+            <td>El token se generó antes de asignar los activos</td>
+            <td>Asigna app y WABA al usuario del sistema; el token sigue sirviendo</td>
+          </tr>
+          <tr>
+            <td>El mensaje entra pero el bot no contesta</td>
+            <td>El canal está vacío: sin clave de IA ni productos</td>
+            <td>Configura el canal — no es un fallo de la conexión</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="seccion">
+    <h2>Antes de anunciar</h2>
+    <p style="margin-top:8px;color:var(--muted);max-width:62ch">Conectar es una cosa; vender bien, otra. Esto es lo que conviene tener listo antes de mandar tráfico pagado al número.</p>
+    <div class="check">
+      <div class="item"><span class="box"></span><span>La <strong>clave de IA</strong> del canal, o el bot no puede responder ni leer comprobantes.</span></div>
+      <div class="item"><span class="box"></span><span>Los <strong>datos de pago</strong> (tu Yape, Plin o cuenta), o promete el número y no llega nada.</span></div>
+      <div class="item"><span class="box"></span><span>Al menos <strong>un producto</strong> con precio, ficha y palabra clave.</span></div>
+      <div class="item"><span class="box"></span><span><strong>Plantillas aprobadas</strong> para avisar fuera de las 24 horas: sin ellas, el cliente no se entera de que despachaste.</span></div>
+      <div class="item"><span class="box"></span><span><strong>Telegram conectado</strong>, que es donde te enteras de lo que falla.</span></div>
+      <div class="item"><span class="box"></span><span>Los <strong>tiempos de reenganche</strong> en horas, no en minutos.</span></div>
+      <div class="item"><span class="box"></span><span>Una <strong>compra completa de prueba</strong> hecha por ti: saludo, precio, datos, pago y comprobante.</span></div>
+    </div>
+  </section>
+
+  <footer>
+    Nodo · Guía de conexión de WhatsApp Cloud API. Las pantallas de Meta cambian seguido: los nombres de los botones pueden variar, pero el orden de los pasos y las trampas se mantienen.
+  </footer>
+
+</div>
+</body>
+</html>
