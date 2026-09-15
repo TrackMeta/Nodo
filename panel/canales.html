@@ -190,12 +190,13 @@ function renderWA(){
         </div>
         <label>Token de verificación</label>
         <div class="copyrow">
-          <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
+          <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="dale al botón y Nodo lo inventa"/>
           <button class="copybtn" id="w_verify_copy" title="Copiar">${icon("copy")}</button>
         </div>
-        <div class="mh" style="margin:8px 0 0">Elige el token que quieras (cualquier frase); tiene que ser <b>el mismo</b> aquí y en Meta.
-          <b>Guárdalo acá antes de verificar en Meta</b>: Meta viene a buscarlo a Nodo, y si todavía no está guardado responde «no se pudo verificar» sin decir por qué.</div>
-        <div class="pasoact"><button class="btn mini" id="saveVerify">Guardar token</button></div>
+        <div class="mh" style="margin:8px 0 0">Es una frase secreta que tiene que ser <b>la misma</b> acá y en Meta; da igual cuál sea.
+          Déjalo vacío y Nodo la inventa. Se guarda primero y se copia después — en ese orden, porque Meta viene a buscarla a Nodo,
+          y si todavía no está guardada responde «no se pudo verificar» sin decir por qué.</div>
+        <div class="pasoact"><button class="btn mini" id="saveVerify">${(c.verify_token||"").trim()?"Guardar token":"Generar y guardar"}</button></div>
       </div>
 
       <div class="metabox">
@@ -241,9 +242,15 @@ function renderWA(){
   // cuatro datos del número recién existen después. Con un solo botón abajo, el bloque 1
   // parecía parte del mismo formulario de un tiro — y guardarlo tarde es justo el error
   // que hace que Meta conteste «no se pudo verificar». Cada momento tiene su botón.
+  // El token de verificación es una frase secreta cualquiera: no hay NADA que decidir ahí,
+  // así que si el campo está vacío lo inventa Nodo. Y lo genera dentro del guardado, no al
+  // pintar la tarjeta: así es imposible copiarlo a Meta antes de que esté guardado — que es
+  // exactamente el orden que hace fallar la verificación.
+  const nuevoVerify=()=>"nodo-"+[...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,"0")).join("");
+  const syncVerifyBtn=()=>{ const b=$("saveVerify"); if(b) b.textContent=$("w_verify").value.trim()?"Guardar token":"Generar y guardar"; };
+  $("w_verify").addEventListener("input", syncVerifyBtn);
   $("saveVerify").onclick=(e)=>{
-    const v=$("w_verify").value.trim();
-    if(!v){ toast("Escribe primero un token de verificación",true); return; }
+    const v=$("w_verify").value.trim() || nuevoVerify();
     if(v===String(orig.verify_token).trim()){ toast("Ese token ya está guardado"); return; }
     save(e.target, { verify_token:v });
   };
