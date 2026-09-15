@@ -1,218 +1,106 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<!-- Respeta el tema elegido en el panel (shell.js lo guarda en nodo.theme; por defecto oscuro). -->
-<script>document.documentElement.dataset.theme = localStorage.getItem("nodo.theme") || "dark";</script>
-<title>Conectar WhatsApp a Nodo</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;700&display=swap">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Conectar WhatsApp</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
 <style>
-  :root{
-    --ground:#f5f7f8;
-    --surface:#ffffff;
-    --surface-2:#eef1f3;
-    --text:#161b21;
-    --muted:#5f6b76;
-    --line:#dde3e7;
-    --accent:#0e7a56;
-    --accent-soft:#e3f2ec;
-    --warn:#9a6414;
-    --warn-soft:#fbf1df;
-    --warn-line:#e8d3ad;
-    --mono-bg:#eceff1;
-    --shadow:0 1px 2px rgba(22,27,33,.05);
-  }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --ground:#10141a;
-      --surface:#171d25;
-      --surface-2:#1e262f;
-      --text:#e7edf2;
-      --muted:#97a3ae;
-      --line:#2b343e;
-      --accent:#48c294;
-      --accent-soft:#16302a;
-      --warn:#e4b263;
-      --warn-soft:#2c2417;
-      --warn-line:#4a3c22;
-      --mono-bg:#1c242d;
-      --shadow:none;
-    }
-  }
-  :root[data-theme="dark"]{
-    --ground:#10141a;
-    --surface:#171d25;
-    --surface-2:#1e262f;
-    --text:#e7edf2;
-    --muted:#97a3ae;
-    --line:#2b343e;
-    --accent:#48c294;
-    --accent-soft:#16302a;
-    --warn:#e4b263;
-    --warn-soft:#2c2417;
-    --warn-line:#4a3c22;
-    --mono-bg:#1c242d;
-    --shadow:none;
-  }
+  /* Los tokens (color, tipografía, anchos) los pone shell.css: esta página
+     solo los consume. Aquí viven las piezas propias de la guía. */
+  .guia{--nodo-max:840px; --mono:var(--font-mono)}
+  .guia p{line-height:1.62;margin:0 0 12px}
+  .guia p:last-child{margin-bottom:0}
+  .guia h2{font-size:18px;margin:0;letter-spacing:-.01em}
+  .guia h3{font-size:14.5px;margin:0 0 5px}
 
-  *{box-sizing:border-box}
-  body{
-    margin:0;background:var(--ground);color:var(--text);
-    font-family:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
-    font-size:16.5px;line-height:1.62;
-  }
-  .page{max-width:800px;margin:0 auto;padding-block:38px 90px;padding-left:20px;padding-right:20px}
+  /* Requisitos */
+  .antes{margin-top:26px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+  .req{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:14px 15px}
+  .req p{font-size:13px;color:var(--muted);margin:0;line-height:1.55}
 
-  /* ── Encabezado ───────────────────────────────── */
-  .head{display:flex;flex-direction:column;gap:10px;padding-bottom:26px;border-bottom:1px solid var(--line)}
-  h1{
-    font-family:"Bricolage Grotesque",system-ui,sans-serif;
-    font-weight:700;font-size:clamp(30px,5.2vw,42px);line-height:1.08;
-    letter-spacing:-.022em;margin:0;text-wrap:balance;
-  }
-  .kicker{
-    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11.5px;
-    letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0;
-  }
-  .lede{margin:2px 0 0;color:var(--muted);max-width:62ch}
-  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
-  .chip{
-    font-size:12.5px;color:var(--muted);background:var(--surface-2);
-    border:1px solid var(--line);border-radius:999px;padding:3px 11px;
-  }
+  /* Mapa */
+  .mapa{margin-top:38px}
+  .mapa-sub{color:var(--muted);max-width:64ch;margin:8px 0 0;font-size:13.5px}
+  .mapawrap{margin-top:16px;overflow-x:auto;background:var(--surface);
+            border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  /* tokens que usa el SVG */
+  .mapawrap svg{--accent:var(--green);--accent-soft:var(--green-bg);
+                --line:var(--border-strong);--warn:var(--amber)}
 
-  h2{
-    font-family:"Bricolage Grotesque",system-ui,sans-serif;
-    font-weight:700;font-size:21px;letter-spacing:-.012em;
-    margin:0;text-wrap:balance;
-  }
-  h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:600;font-size:16px;margin:0 0 6px}
-  p{margin:0 0 12px}
-  p:last-child{margin-bottom:0}
-  a{color:var(--accent)}
-  strong{font-weight:600}
-
-  /* ── Requisitos ───────────────────────────────── */
-  .antes{margin-top:34px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
-  .req{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:15px 16px;box-shadow:var(--shadow)}
-  .req h3{color:var(--text)}
-  .req p{font-size:14.5px;color:var(--muted);margin:0}
-
-  /* ── Mapa del recorrido ───────────────────────── */
-  .mapa{margin-top:46px}
-  .mapa-sub{color:var(--muted);max-width:62ch;margin:8px 0 0;font-size:15.5px}
-  .mapawrap{
-    margin-top:18px;overflow-x:auto;background:var(--surface);
-    border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);
-  }
-
-  /* ── Pasos ────────────────────────────────────── */
-  .pasos{margin-top:46px;display:flex;flex-direction:column;gap:30px}
-  .paso{display:grid;grid-template-columns:44px 1fr;gap:18px;align-items:start}
-  .n{
-    font-family:"JetBrains Mono",ui-monospace,monospace;font-weight:700;font-size:14px;
-    width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    background:var(--accent-soft);color:var(--accent);border:1px solid var(--line);
-    font-variant-numeric:tabular-nums;
-  }
+  /* Pasos */
+  .pasos{margin-top:42px;display:flex;flex-direction:column;gap:28px}
+  .paso{display:grid;grid-template-columns:40px 1fr;gap:16px;align-items:start}
+  .n{font-family:var(--mono);font-weight:700;font-size:13px;width:34px;height:34px;border-radius:50%;
+     display:flex;align-items:center;justify-content:center;background:var(--green-bg);
+     color:var(--green);border:1px solid var(--border);font-variant-numeric:tabular-nums}
   .cuerpo{min-width:0}
-  .donde{
-    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px;color:var(--muted);
-    margin:5px 0 10px;
-  }
-  .paso p{font-size:15.5px}
-  ul{margin:8px 0 0;padding-left:19px}
-  li{margin:5px 0;font-size:15.5px}
+  .donde{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin:5px 0 10px;line-height:1.5}
+  .paso p,.paso li{font-size:13.5px}
+  .guia ul{margin:8px 0 0;padding-left:18px}
+  .guia li{margin:5px 0;line-height:1.6}
 
-  /* ── Datos para copiar ────────────────────────── */
-  .dato{
-    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13.5px;
-    background:var(--mono-bg);border:1px solid var(--line);border-radius:8px;
-    padding:11px 13px;margin:11px 0;overflow-x:auto;white-space:pre;color:var(--text);
-  }
-  code{
-    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.88em;
-    background:var(--mono-bg);border-radius:4px;padding:1px 5px;
-  }
+  /* Datos para copiar */
+  .dato{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);
+        border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:10px 0;
+        overflow-x:auto;white-space:pre;color:var(--text)}
+  code{font-family:var(--mono);font-size:.9em;background:var(--surface-2);border-radius:4px;padding:1px 5px}
 
-  /* ── Avisos ───────────────────────────────────── */
-  .ojo{
-    background:var(--warn-soft);border:1px solid var(--warn-line);
-    border-radius:9px;padding:12px 14px;margin:13px 0 0;
-  }
-  .ojo .t{
-    font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;
-    letter-spacing:.1em;text-transform:uppercase;color:var(--warn);
-    display:block;margin-bottom:5px;
-  }
-  .ojo p{font-size:14.5px;margin:0}
+  /* Avisos */
+  .ojo{background:var(--amber-bg);border:1px solid var(--amber);border-radius:10px;
+       padding:11px 13px;margin:12px 0 0}
+  .ojo .t{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+          color:var(--amber);display:block;margin-bottom:5px}
+  .ojo p{font-size:13px;margin:0;line-height:1.6}
   .ojo p + p{margin-top:8px}
 
-  /* ── Diagnóstico ──────────────────────────────── */
-  .seccion{margin-top:58px;padding-top:30px;border-top:1px solid var(--line)}
-  .tablawrap{overflow-x:auto;margin-top:18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-  table{border-collapse:collapse;width:100%;min-width:640px;font-size:14.5px}
-  th{
-    text-align:left;font-family:"JetBrains Mono",ui-monospace,monospace;
-    font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
-    font-weight:400;padding:11px 14px;border-bottom:1px solid var(--line);
-  }
-  td{padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  /* Diagnóstico */
+  .seccion{margin-top:50px;padding-top:28px;border-top:1px solid var(--border)}
+  .tablawrap{overflow-x:auto;margin-top:16px;border:1px solid var(--border);
+             border-radius:11px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:13px}
+  th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+     text-transform:uppercase;color:var(--faint);font-weight:400;padding:10px 13px;
+     border-bottom:1px solid var(--border)}
+  td{padding:12px 13px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
   tr:last-child td{border-bottom:none}
   td:first-child{font-weight:600;width:31%}
   td:nth-child(2){color:var(--muted);width:30%}
 
-  /* ── Checklist ────────────────────────────────── */
-  .check{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 18px;box-shadow:var(--shadow)}
-  .check .item{display:flex;gap:11px;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--line);font-size:15px}
-  .check .item:last-child{border-bottom:none}
-  .box{
-    flex:none;width:15px;height:15px;border:1.5px solid var(--accent);border-radius:4px;
-    display:inline-block;transform:translateY(2px);
-  }
-
-  footer{
-    margin-top:58px;padding-top:22px;border-top:1px solid var(--line);
-    color:var(--muted);font-size:13.5px;
-  }
-
-  @media (max-width:520px){
-    .paso{grid-template-columns:32px 1fr;gap:13px}
-    .n{width:30px;height:30px;font-size:12.5px}
-  }
+  .cierre{margin-top:34px;color:var(--faint);font-size:12.5px;line-height:1.6}
+  @media (max-width:520px){ .paso{grid-template-columns:30px 1fr;gap:12px}
+                            .n{width:28px;height:28px;font-size:12px} }
 </style>
-
 </head>
 <body>
-<div class="page">
+<div class="nodo-page">
+  <div class="nodo-wrap guia">
 
-  <header class="head">
-    <p style="margin:0 0 4px"><a href="canales.html" style="font-size:14px;text-decoration:none">&larr; Volver a Canales</a></p>
-    <p class="kicker">Nodo · Puesta en marcha</p>
-    <h1>Conectar WhatsApp a Nodo</h1>
-    <p class="lede">Los pasos reales para poner un número de WhatsApp Business a responder desde Nodo, en el orden que funciona — con las trampas que ninguna guía oficial menciona.</p>
-    <div class="meta">
-      <span class="chip">~45 minutos</span>
-      <span class="chip">Sin conocimientos técnicos</span>
-      <span class="chip">Probado el 15·09·2026</span>
-    </div>
-  </header>
+    <button class="nodo-back" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a Canales</button>
 
-  <section class="antes">
-    <div class="req">
-      <h3>Un número libre</h3>
-      <p>Que <strong>no tenga WhatsApp activo</strong>. Si lo tiene, elimina la cuenta desde la app antes de empezar — desinstalar no basta.</p>
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Conectar WhatsApp</h1>
+        <p class="nodo-lead">Los pasos reales para poner un número de WhatsApp Business a responder desde Nodo, en el orden que funciona — con las trampas que ninguna guía oficial menciona.</p>
+      </div>
     </div>
-    <div class="req">
-      <h3>Una tarjeta</h3>
-      <p>Meta la pide para enviar mensajes. Sin método de pago, el registro del número puede fallar.</p>
-    </div>
-    <div class="req">
-      <h3>Cuenta de Meta Business</h3>
-      <p>El «portfolio comercial». Si no tienes, el asistente te deja crearlo con el nombre real de tu negocio.</p>
-    </div>
-  </section>
+
+    <section class="antes">
+      <div class="req">
+        <h3>Un número libre</h3>
+        <p>Que <strong>no tenga WhatsApp activo</strong>. Si lo tiene, elimina la cuenta desde la app antes de empezar — desinstalar no basta.</p>
+      </div>
+      <div class="req">
+        <h3>Una tarjeta</h3>
+        <p>Meta la pide para enviar mensajes. Sin método de pago, el registro del número puede fallar.</p>
+      </div>
+      <div class="req">
+        <h3>Cuenta de Meta Business</h3>
+        <p>El «portfolio comercial». Si no tienes, el asistente te deja crearlo con el nombre real de tu negocio.</p>
+      </div>
+    </section>
 
   <section class="mapa">
     <h2>El recorrido, de un vistazo</h2>
@@ -289,7 +177,6 @@
       </svg>
     </div>
   </section>
-
   <div class="pasos">
 
     <div class="paso">
@@ -438,8 +325,8 @@
 
   </div>
 
-  <section class="seccion">
-    <h2>Cuando algo no funciona</h2>
+    <section class="seccion">
+      <h2>Cuando algo no funciona</h2>
     <p style="margin-top:8px;color:var(--muted);max-width:62ch">Los síntomas de esta lista salieron de conexiones reales. El mensaje que muestra Meta casi nunca apunta a la causa.</p>
     <div class="tablawrap">
       <table>
@@ -487,24 +374,15 @@
     </div>
   </section>
 
-  <section class="seccion">
-    <h2>Antes de anunciar</h2>
-    <p style="margin-top:8px;color:var(--muted);max-width:62ch">Conectar es una cosa; vender bien, otra. Esto es lo que conviene tener listo antes de mandar tráfico pagado al número.</p>
-    <div class="check">
-      <div class="item"><span class="box"></span><span>La <strong>clave de IA</strong> del canal, o el bot no puede responder ni leer comprobantes.</span></div>
-      <div class="item"><span class="box"></span><span>Los <strong>datos de pago</strong> (tu Yape, Plin o cuenta), o promete el número y no llega nada.</span></div>
-      <div class="item"><span class="box"></span><span>Al menos <strong>un producto</strong> con precio, ficha y palabra clave.</span></div>
-      <div class="item"><span class="box"></span><span><strong>Plantillas aprobadas</strong> para avisar fuera de las 24 horas: sin ellas, el cliente no se entera de que despachaste.</span></div>
-      <div class="item"><span class="box"></span><span><strong>Telegram conectado</strong>, que es donde te enteras de lo que falla.</span></div>
-      <div class="item"><span class="box"></span><span>Los <strong>tiempos de reenganche</strong> en horas, no en minutos.</span></div>
-      <div class="item"><span class="box"></span><span>Una <strong>compra completa de prueba</strong> hecha por ti: saludo, precio, datos, pago y comprobante.</span></div>
-    </div>
-  </section>
+    <p class="cierre">Las pantallas de Meta cambian seguido: los nombres de los botones pueden variar, pero el orden de los pasos y las trampas se mantienen.</p>
 
-  <footer>
-    Nodo · Guía de conexión de WhatsApp Cloud API. Las pantallas de Meta cambian seguido: los nombres de los botones pueden variar, pero el orden de los pasos y las trampas se mantienen.
-  </footer>
-
+  </div>
 </div>
+
+<script type="module">
+  import { mountShell } from "./shell.js";
+  await mountShell({ active:"canales" });
+  document.getElementById("backBtn").onclick = () => { location.href = "canales.html"; };
+</script>
 </body>
 </html>
