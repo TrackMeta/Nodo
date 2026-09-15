@@ -403,9 +403,21 @@ async function operaComando(){
   try{
     const undo=await operaExec(act);
     if($("opCmd")) $("opCmd").value="";
-    msg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;font-size:12.5px"><span style="color:var(--green,#22c079);font-weight:700">${icon("check")} Hecho.</span><a href="#" id="opUndo" style="color:var(--brand)">Deshacer</a></div>`;
-    const un=$("opUndo"); if(un) un.onclick=async(e)=>{ e.preventDefault(); un.textContent="Deshaciendo…"; try{ await undo(); toast("Deshecho"); msg.innerHTML=""; load(); }catch(_){ toast("No se pudo deshacer",true); } };
-    load();
+    // 🔴 El «Deshacer» va DESPUÉS de refrescar, y sobre el nodo nuevo. Antes se pintaba aquí y
+    // enseguida se llamaba a `load()`, que termina en `renderAsesor()` → reescribe el panel
+    // entero y se lleva el #opMsg recién puesto. Medido (2026-09-14, comando «pon el precio de
+    // la faja en 89»): el cambio se aplicó bien pero el «Deshacer» duró lo que tardó el
+    // refresco; en el DOM no quedaba ni rastro. Una red de seguridad que se borra sola no es
+    // una red: es justo lo que hace que uno no se anime a usar el copiloto.
+    await load();
+    const msg2=$("opMsg");   // tras el repintado, `msg` es un nodo huérfano
+    if(msg2){
+      msg2.innerHTML=`<div style="display:flex;align-items:center;gap:12px;font-size:12.5px"><span style="color:var(--green,#22c079);font-weight:700">${icon("check")} Hecho.</span><a href="#" id="opUndo" style="color:var(--brand)">Deshacer</a></div>`;
+      const un=$("opUndo");
+      if(un) un.onclick=async(e)=>{ e.preventDefault(); un.textContent="Deshaciendo…";
+        try{ await undo(); toast("Deshecho"); await load(); const m3=$("opMsg"); if(m3) m3.innerHTML=""; }
+        catch(_){ toast("No se pudo deshacer",true); } };
+    }
   }catch(e){ msg.innerHTML=`<span style="color:#e2564a;font-size:12.5px">No se pudo ejecutar: ${esc(String((e&&e.message)||e))}</span>`; }
 }
 async function operaExec(a){
