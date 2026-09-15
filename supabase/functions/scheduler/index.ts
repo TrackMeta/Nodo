@@ -603,7 +603,13 @@ async function enHorario(channelId: string): Promise<boolean> {
       horarioCache.set(channelId, cfg);
     }
     const r = cfg?.remarketing;
-    if (!r || r.activo === false || !r.desde || !r.hasta) return true; // sin restricción
+    // 🔴 `activo !== true`, no `activo === false`. El panel pinta ese switch con `rm.activo?'on':''`
+    // —o sea, sin el campo se ve APAGADO— y el motor hacía lo contrario: sin el campo, aplicaba la
+    // ventana. Los dos leyendo el mismo dato al revés. Se destapó al guardar el anti-spam: ese botón
+    // escribe también `desde`/`hasta` con los valores por defecto de sus inputs (09:00–21:00), así
+    // que el canal se quedaba con un horario que el dueño VE apagado y el remarketing se callaba de
+    // noche sin que nadie lo hubiera pedido. Manda lo que muestra la pantalla.
+    if (!r || r.activo !== true || !r.desde || !r.hasta) return true; // sin restricción
     const tz = cfg?.timezone || "America/Lima";
     const hhmm = new Intl.DateTimeFormat("es-PE", {
       timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
@@ -628,7 +634,7 @@ async function minutosHastaApertura(channelId: string): Promise<number | null> {
       horarioCache.set(channelId, cfg);
     }
     const r = cfg?.remarketing;
-    if (!r || r.activo === false || !r.desde) return null;
+    if (!r || r.activo !== true || !r.desde) return null;   // mismo criterio que enHorario
     const tz = cfg?.timezone || "America/Lima";
     const hhmm = new Intl.DateTimeFormat("es-PE", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
       .format(new Date()).replace(/^24/, "00");
