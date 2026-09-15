@@ -227,6 +227,7 @@
         <div class="ojo">
           <span class="t">No es lo mismo que el paso anterior</span>
           <p>Verificar el webhook y suscribirlo son dos cosas distintas. Si te saltas este interruptor, todo se ve verde y <strong>no llega ni un mensaje</strong>. Es el error más común de toda la conexión.</p>
+          <p><strong>O no lo hagas acá.</strong> Una vez que Nodo tenga el token (paso 8), dale a <strong>Probar conexión</strong>: si el interruptor está apagado, te lo dice con un botón <strong>Suscribir ahora</strong> al lado que lo enciende por ti. Es lo mismo, sin volver a Meta.</p>
         </div>
       </div>
     </div>
@@ -241,9 +242,11 @@
         <p>Al registrarlo, ese número deja de poder usarse en la app de WhatsApp de un celular. Pasa a vivir en la API y se atiende desde Nodo.</p>
         <div class="ojo">
           <span class="t">Si sale «Se produjo un error durante el registro»</span>
-          <p>El botón del panel no dice el motivo. Regístralo por la API, que sí lo dice: <strong>Herramientas → Explorador de la API Graph</strong>, elige tu app, genera un token con los permisos <code>whatsapp_business_management</code> y <code>whatsapp_business_messaging</code>, pon el método en <strong>POST</strong> y en la ruta:</p>
+          <p>El botón de Meta no dice el motivo. <strong>Déjalo y sigue.</strong> Cuando llegues al paso 8 y Nodo tenga el token, dale a <strong>Probar conexión</strong>: si el número no está registrado te lo dice con un botón <strong>Registrar ahora</strong> que lo hace por ti — y si Meta lo rechaza, te muestra el motivo real, que es justo lo que el botón de Meta te esconde.</p>
+          <p>El PIN de 6 dígitos lo genera Nodo y te lo muestra para que lo anotes. Si ese número ya tenía uno de antes, te lo pedirá: Nodo no puede adivinarlo.</p>
+          <p>Si aun así quieres verlo a mano, la ruta por el <strong>Explorador de la API Graph</strong> (Herramientas, con un token que tenga <code>whatsapp_business_management</code> y <code>whatsapp_business_messaging</code>) es <strong>POST</strong> a:</p>
           <div class="dato">&lt;PHONE_NUMBER_ID&gt;/register?messaging_product=whatsapp&amp;pin=123456</div>
-          <p><code>{"success": true}</code> significa que quedó registrado. Si devuelve un error, ahí sí viene con el motivo exacto — normalmente que el número sigue «Pendiente» de revisión del nombre, y entonces toca esperar a Meta.</p>
+          <p>El motivo más común es que el número sigue «Pendiente» de revisión del nombre, y entonces toca esperar a Meta — eso no lo arregla ningún botón.</p>
         </div>
       </div>
     </div>
@@ -342,12 +345,12 @@
           <tr>
             <td>Webhook verde, pero no llega nada</td>
             <td>Falta el interruptor «Suscribir webhooks», o la app sigue sin publicar</td>
-            <td>Enciende el interruptor y publica la app</td>
+            <td><b>Probar conexión</b> → «Suscribir ahora»; y publica la app</td>
           </tr>
           <tr>
             <td>«Se produjo un error durante el registro»</td>
             <td>El número está «Pendiente» de revisión, o el chip aún tiene WhatsApp</td>
-            <td>Regístralo por el Explorador de la API para ver el motivo real</td>
+            <td><b>Probar conexión</b> → «Registrar ahora»: dice el motivo real</td>
           </tr>
           <tr>
             <td>Funcionó ayer y hoy no responde</td>
