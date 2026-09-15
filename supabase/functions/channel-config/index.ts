@@ -50,7 +50,9 @@ Deno.serve(async (req) => {
   const esAdmin = await userIsChannelAdmin(db, uid, channel_id);
   // template_submit crea/envía una plantilla a Meta con el access_token del canal (cambia
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
+  // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
+  // número): mismo criterio que el resto de acciones de conexión, solo admin.
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -262,7 +264,10 @@ Deno.serve(async (req) => {
       };
 
       // 1) El número: valida token + phone_number_id de un solo tiro.
-      const num = await g(`${phoneId}?fields=verified_name,display_phone_number,quality_rating,code_verification_status`);
+      // `platform_type` dice si el número está REGISTRADO en la Cloud API ("CLOUD_API") o
+      // si sigue en el limbo de "agregado pero sin registrar" — el estado en el que el
+      // webhook está verde, los datos correctos, y aun así no entra ni sale un mensaje.
+      const num = await g(`${phoneId}?fields=verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,status`);
       const numOk = num.status === 200 && !num.body?.error;
 
       // 2) Suscripción de la app a la WABA (necesaria para RECIBIR mensajes).
@@ -284,11 +289,71 @@ Deno.serve(async (req) => {
           telefono: (num.body as any).display_phone_number ?? null,
           calidad: (num.body as any).quality_rating ?? null,
           verificado: (num.body as any).code_verification_status ?? null,
+          plataforma: (num.body as any).platform_type ?? null,
+          estado: (num.body as any).status ?? null,
         } : null,
+        registrado: numOk ? ((num.body as any).platform_type === "CLOUD_API") : null,
         numero_error: numOk ? null : ((num.body as any)?.error?.message ?? "Meta rechazó el token o el Phone Number ID"),
         webhook: { app_secret: !!secrets?.app_secret, verify_token: !!(c as any)?.verify_token },
         suscripcion,
       });
+    }
+
+    // ── Los dos trámites que el usuario hacía a mano en Meta ───────────────────────────
+    // Encender la suscripción a «messages» y registrar el número en la Cloud API. Los dos
+    // fallan sin decir por qué (el interruptor viene apagado y nadie avisa; el botón
+    // «Registrar» contesta «se produjo un error» a secas), y los dos son puro trámite: no
+    // hay nada que decidir. Nodo tiene el access_token del canal —la MISMA llave con la
+    // que envía mensajes— así que puede hacerlos por su cuenta.
+    // Se ofrecen como botón dentro del diagnóstico, no al guardar: son escrituras en la
+    // cuenta de Meta del cliente y las dispara él, viendo antes qué va a pasar.
+    if (action === "whatsapp_fix") {
+      const que = String(body.que ?? "");
+      if (que !== "suscribir" && que !== "registrar") return json({ error: "que_invalido" }, 400);
+
+      const { data: c } = await db.from("channels")
+        .select("phone_number_id, waba_id").eq("id", channel_id).maybeSingle();
+      const phoneId = (c as any)?.phone_number_id;
+      const wabaId = (c as any)?.waba_id;
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.access_token;
+      if (!token) return json({ error: "falta_token", detalle: "Guarda primero el Access token." }, 400);
+
+      const V = "v25.0";
+      const post = async (path: string, payload?: Record<string, unknown>) => {
+        try {
+          const r = await fetchConTimeout(`https://graph.facebook.com/${V}/${path}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: payload ? JSON.stringify(payload) : undefined,
+          });
+          return { status: r.status, body: await r.json().catch(() => ({})) };
+        } catch (e) {
+          return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } };
+        }
+      };
+
+      if (que === "suscribir") {
+        if (!wabaId) return json({ error: "falta_waba", detalle: "Guarda primero el WABA ID." }, 400);
+        const r = await post(`${wabaId}/subscribed_apps`);
+        if (r.status === 200 && (r.body as any)?.success) return json({ ok: true, hecho: "suscribir" });
+        return json({ error: "meta", detalle: (r.body as any)?.error?.message ?? "Meta no aceptó la suscripción." }, 400);
+      }
+
+      // Registrar. El PIN es la verificación en dos pasos del número: si es nuevo lo
+      // genera Nodo y se lo DEVUELVE al panel para que el dueño lo anote — no se guarda
+      // acá: es suyo, y Meta se lo va a pedir el día que migre el número a otro sitio.
+      // Si el número ya tenía 2FA con otro PIN, Nodo no puede adivinarlo → lo pide.
+      if (!phoneId) return json({ error: "falta_phone", detalle: "Guarda primero el Phone Number ID." }, 400);
+      const pinDado = String(body.pin ?? "").trim();
+      if (pinDado && !/^\d{6}$/.test(pinDado)) return json({ error: "pin_invalido", detalle: "El PIN son 6 dígitos." }, 400);
+      const pin = pinDado || String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+      const r = await post(`${phoneId}/register`, { messaging_product: "whatsapp", pin });
+      if (r.status === 200 && (r.body as any)?.success) {
+        return json({ ok: true, hecho: "registrar", pin, pin_generado: !pinDado });
+      }
+      const msg = String((r.body as any)?.error?.message ?? "Meta no aceptó el registro.");
+      return json({ error: "meta", detalle: msg, necesita_pin: /pin|two[- ]step/i.test(msg) }, 400);
     }
 
     if (action === "templates_sync") {

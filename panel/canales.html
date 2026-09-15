@@ -121,7 +121,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, SUPABASE_URL } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, SUPABASE_URL } from "./shell.js";
 const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channel:{}, secrets:{} };
@@ -409,11 +409,15 @@ function pintarWA(r){
   const box=$("waDiag"); if(!box) return;
   // Refresca la tarjeta bonita del número con lo que acaba de decir Meta.
   const hero=$("waNumHero"); if(hero){ if(r.numero) pintarHero(hero,r.numero); else hero.innerHTML=""; }
-  const fila=(ok,txt,ayuda)=>`
+  // `arregla` = lo que Nodo puede hacer solo en Meta con el token que ya tiene. Va como
+  // botón en la fila del problema: donde te enteras del fallo es donde se resuelve, sin
+  // mandarte de vuelta a Meta ni al Explorador de la API.
+  const fila=(ok,txt,ayuda,arregla)=>`
     <div style="display:flex;gap:8px;align-items:flex-start;margin-top:7px">
       <span style="flex:0 0 16px;line-height:1.5;color:${ok?"var(--green)":"var(--amber)"}">${icon(ok?"flag":"alert")}</span>
-      <span style="font-size:12.5px;line-height:1.5">${txt}
-      ${ayuda?`<div style="color:var(--faint);font-size:11.5px;margin-top:1px">${ayuda}</div>`:""}</span>
+      <span style="font-size:12.5px;line-height:1.5;flex:1;min-width:0">${txt}
+      ${ayuda?`<div style="color:var(--faint);font-size:11.5px;margin-top:1px">${ayuda}</div>`:""}
+      ${arregla?`<div style="margin-top:8px"><button class="btn mini" data-fix="${arregla.que}">${esc(arregla.lbl)}</button></div>`:""}</span>
     </div>`;
   const filas=[];
   if(!r.configurado){
@@ -445,12 +449,51 @@ function pintarWA(r){
     }else{
       filas.push(r.suscripcion.suscrito
         ? fila(true, "La app está suscrita a la cuenta (los mensajes entrantes llegarán)")
-        : fila(false, "La app NO está suscrita a la WABA", "En Meta → WhatsApp → Configuración → Webhook, suscríbete al campo <b>messages</b>."));
+        : fila(false, "La app NO está suscrita a la cuenta",
+               "Es el interruptor que viene apagado y que nadie avisa: todo se ve verde y no entra ni un mensaje.",
+               { que:"suscribir", lbl:"Suscribir ahora" }));
     }
   }else{
     filas.push(fila(true, "Suscripción no comprobada", "Agrega el WABA ID arriba para verificar automáticamente que la app recibe mensajes."));
   }
+  // 4) Registro del número en la Cloud API. Un número «agregado pero sin registrar» deja
+  //    todo lo demás en verde y aun así no manda ni recibe: es el estado que en Meta sale
+  //    como «se produjo un error durante el registro» sin decir cuál.
+  if(r.registrado===false){
+    filas.push(fila(false, "El número no está registrado en la Cloud API",
+      "Sigue en la app de WhatsApp o quedó a medio registrar. Hasta que se registre, no entra ni sale ningún mensaje.",
+      { que:"registrar", lbl:"Registrar ahora" }));
+  }else if(r.registrado===true){
+    filas.push(fila(true, "El número está registrado en la Cloud API"));
+  }
   box.innerHTML=`<div style="border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-top:10px;background:var(--surface)">${filas.join("")}</div>`;
+  box.querySelectorAll("button[data-fix]").forEach(b=>{
+    b.onclick=()=>arreglarWA(b.getAttribute("data-fix"), b);
+  });
+}
+// Ejecuta en Meta el trámite que falta. Si el número ya tenía verificación en dos pasos,
+// Meta pide SU pin y Nodo no puede inventarlo: se lo pedimos al dueño y reintentamos.
+async function arreglarWA(que, btn, pin){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Haciéndolo…";
+  try{
+    const r=await callFn("channel-config",{ action:"whatsapp_fix", channel_id:st.channelId, que, ...(pin?{pin}:{}) });
+    if(r.hecho==="registrar" && r.pin_generado){
+      await askText({ title:"Número registrado", messageHtml:"Meta pide una verificación en dos pasos. Nodo le puso este PIN al número — <b>anótalo</b>: te lo va a pedir si algún día migras el número a otro sitio. Nodo no lo guarda.", label:"PIN de 6 dígitos", value:r.pin, confirmText:"Ya lo anoté" });
+    }else{
+      toast("Listo");
+    }
+  }catch(err){
+    // El backend marca necesita_pin cuando el mensaje de Meta habla del PIN.
+    if(que==="registrar" && !pin && /pin|two[- ]step|dos pasos/i.test(err.message||"")){
+      const p=await askText({ title:"Ese número ya tiene un PIN", message:"Tiene la verificación en dos pasos activada desde antes. Escribe el PIN de 6 dígitos que le pusiste — Nodo no puede adivinarlo.", label:"PIN", placeholder:"123456" });
+      btn.disabled=false; btn.textContent=old;
+      if(p) return arreglarWA(que, btn, p.trim());
+      return;
+    }
+    toast(err.message||"Meta no lo aceptó",true);
+  }
+  btn.disabled=false; btn.textContent=old;
+  const t=$("waTest"); if(t) probarWA(t); // vuelve a medir: el diagnóstico no se cree nada
 }
 function renderTG(){
   const c=st.channel||{}, s=st.secrets||{};
