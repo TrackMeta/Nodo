@@ -4475,7 +4475,19 @@ function sinSedeConfirmada(texto: string, ciudad: string): string {
   // El nombre son 1 a 3 palabras, no "hasta el proximo punto": con un rango abierto se
   // comia media frase ("en la sede de la plaza  El adelanto es S/ 20 y el resto") y al
   // reemplazarlo se llevaba puesto el monto del adelanto.
-  const RE = /\b(en|a|para)\s+(?:la\s+)?(?:sede|oficina|agencia)\s+(?:de\s+)?(?:shalom\s+)?(?:de\s+|en\s+)(?:la\s+|el\s+)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+){0,2}/gi;
+  // 🔴 El «en» del complemento también abre un PLAZO, no solo un nombre de oficina. Medido
+  // (2026-09-14, cliente de Trujillo preguntando a qué hora le llega): la IA escribió «el
+  // paquete suele estar en la agencia Shalom EN 1 A 2 DÍAS desde que lo despachamos» y este
+  // guard leyó «1 a 2» como el nombre de la sede —tres palabras, y los dígitos entraban en la
+  // clase— así que lo cambió por la ciudad: al cliente le llegó «estar en la agencia Shalom de
+  // Trujillo DÍAS desde que te lo mandamos». El plazo, que es justo lo que había preguntado,
+  // desapareció y quedó un «días» huérfano. El evento 🔬 lo dejó a la vista comparando el
+  // crudo con lo enviado. Es el mismo tropiezo del comentario de RE_PIDE_ELEGIR_SEDE: una
+  // frase que RESPONDE tratada como si nombrara una oficina.
+  // Los tres lookaheads descartan el complemento temporal —«en 2 días», «en 1 a 2 días», «en
+  // 24 horas», «en unos días», «en días hábiles»— sin tocar las sedes que empiezan por número
+  // («de 28 de Julio» sigue recortándose, que en Perú son direcciones de verdad).
+  const RE = /\b(en|a|para)\s+(?:la\s+)?(?:sede|oficina|agencia)\s+(?:de\s+)?(?:shalom\s+)?(?:de\s+|en\s+)(?:la\s+|el\s+)?(?!\d+\s*(?:a|-|–|hasta)?\s*\d*\s*(?:d[ií]as?|semanas?|horas?|hrs?|h)\b)(?!(?:un[oa]s?|pocos|varios|algunos|m[aá]ximo|aprox\w*)\s+(?:d[ií]as?|semanas?|horas?|hrs?)\b)(?!(?:d[ií]as?|semanas?|horas?|hrs?)\b)[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+){0,2}/gi;
   if (!RE.test(t)) return t;
   RE.lastIndex = 0;
   t = t.replace(RE, (_m, prep) => `${prep} la agencia${dest ? " de " + dest : ""}`);
