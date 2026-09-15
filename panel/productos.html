@@ -248,7 +248,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, isDirty } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
@@ -4715,6 +4715,13 @@ async function armAplicar(d){
     st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:(Number(x.precio)>0?String(x.precio):""), cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
   }
   prodSync(); st.tab="inicio"; renderDetail(); armClose();
+  // 🔴 Y queda marcado como CAMBIO SIN GUARDAR. El guard de shell.js vigila `input`/`change`,
+  // o sea lo que TECLEA una persona; esto escribe el formulario por código, así que no lo veía.
+  // Medido (2026-09-14): 37 segundos de IA para armar pitch, detalle, reglas, límites, 5 FAQ,
+  // 12 objeciones y 2 variantes → «Aplicar borrador» → «Volver a productos» → se fue SIN
+  // preguntar y se perdió todo. De esta familia es el que más duele: no es una frase tecleada,
+  // es trabajo que costó tiempo y tokens.
+  markDirty();
   toast("Borrador aplicado — revisa y Guarda cambios");
 }
 // Wiring del asistente (los elementos son HTML estático, ya existen).

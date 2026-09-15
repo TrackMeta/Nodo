@@ -104,7 +104,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, confirmDialog } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
@@ -847,6 +847,7 @@ async function armAplicar(d){
   st.tab="conocimiento";
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento"));
   render(); armClose();
+  markDirty();   // igual que en productos: el borrador entra por código y el guard no lo ve
   toast("Borrador aplicado — revisa y Guarda el conocimiento");
 }
 if($("armFab")) $("armFab").onclick=armOpen;
