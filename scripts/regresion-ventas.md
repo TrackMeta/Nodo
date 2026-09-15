@@ -28,7 +28,7 @@ await NodoRegresion.clean();                 // solo limpiar el canal
 >
 > ⚠️ **Google Sheets:** si el canal tiene una hoja conectada (Canales → Sheets), cada pedido de prueba se sincroniza a esa hoja y puede disparar el Apps Script que la procesa. El `clean()` borra los pedidos de la BD pero **no** de la hoja → quedan filas de prueba ahí. Corre el harness en un canal **sin** hoja conectada (o desconéctala mientras pruebas y limpia esas filas a mano).
 
-## Qué cubre (10 casos)
+## Qué cubre (los casos)
 
 | Caso | Verifica |
 |------|----------|
@@ -42,6 +42,7 @@ await NodoRegresion.clean();                 // solo limpiar el canal
 | Digital Premium | entrega los **2 links** + monto 199 |
 | **Dead-air** al declinar extra | el bot **acusa** ("queda tal cual") en vez de quedar mudo (**regresión fix dead-air**) |
 | Prospecto no compra | queda `interesado`, sin pedido |
+| **Provincia: el plazo no se lo come el guard de la sede** | sede inventada + «¿en cuántos días llega?» en el MISMO mensaje → el plazo sale con su número, sin «días» huérfano (**regresión 2026-09-14**) |
 
 Las aserciones se apoyan en el **estado de la BD** (pedido, monto, stock, zona, bandera) y en **regex** sobre los mensajes, no en el texto exacto de la IA, para tolerar su no-determinismo.
 

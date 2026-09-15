@@ -397,6 +397,38 @@
         await patch("channels", `id=eq.${CH}`, { entregas: entBak, pedidos_config: pcBak });
       }
     } },
+
+    { name: "Provincia: el plazo NO se lo come el guard de la sede", run: async () => {
+      // Regresión del 2026-09-14. `sinSedeConfirmada` recorta el sintagma con el que la IA da
+      // por buena una sede que el cliente inventó («en la agencia Shalom DE la plaza») y lo
+      // cambia por la ciudad, que es lo único verificado. Aceptaba «de» o «en» como enganche
+      // — pero el «en» también abre un PLAZO, y el nombre admitía dígitos: «en la agencia
+      // Shalom en 1 a 2 días» se leyó como si «1 a 2» fuera el nombre de la oficina. Al
+      // cliente de Trujillo le llegó «estar en la agencia Shalom de Trujillo DÍAS desde que te
+      // lo mandamos»: desapareció justo el dato que había preguntado y quedó un «días» suelto.
+      // Este caso mete las dos cosas en un solo mensaje —sede inventada Y pregunta por el
+      // plazo—, que es donde se rompía.
+      const chRow = (await sel("channels", `select=entregas&id=eq.${CH}`))[0];
+      const entBak = JSON.parse(JSON.stringify(chRow.entregas ?? {}));
+      const ent = JSON.parse(JSON.stringify(chRow.entregas ?? {})); ent.provincia_demora = { min: 1, max: 2 };
+      await patch("channels", `id=eq.${CH}`, { entregas: ent });
+      try {
+        const wa = "519990000015";
+        await send(wa, N(wa), "hola quiero las zapatillas runner"); await sleep(1400);
+        await send(wa, N(wa), "soy de Tarapoto, ¿en cuántos días llega a la agencia del mercado?"); await sleep(2800);
+        const txt = (await outMsgs(wa, 4)).join("\n");
+        // El síntoma exacto: «de <Ciudad> días» / «en <Ciudad> días», sin número por ningún lado.
+        const roto = /\b(?:de|en)\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]*\s+d[ií]as?\b/.test(txt);
+        // Y la red más ancha: si habla de días, que diga CUÁNTOS. Un «días» sin número no le
+        // sirve a nadie, lo haya recortado este guard o cualquier otro que venga después.
+        const hablaDePlazo = /d[ií]as?\b/i.test(txt);
+        const conNumero = /\d+\s*(?:a\s*\d+\s*)?d[ií]as?\b/i.test(txt);
+        return [
+          ck(!roto, roto ? "salió «de <Ciudad> días» — el guard se comió el plazo [REGRESIÓN]" : "sin «días» huérfano tras la ciudad"),
+          ck(!hablaDePlazo || conNumero, conNumero ? "el plazo sale con su número" : "dice «días» sin decir cuántos"),
+        ];
+      } finally { await patch("channels", `id=eq.${CH}`, { entregas: entBak }); }
+    } },
   ];
 
   function report(results) {
