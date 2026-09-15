@@ -184,11 +184,14 @@ function renderWA(){
           <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="una frase secreta que tú eliges"/>
           <button class="copybtn" id="w_verify_copy" title="Copiar">${icon("copy")}</button>
         </div>
-        <div class="mh" style="margin:8px 0 0">Elige el token que quieras (cualquier frase); tiene que ser <b>el mismo</b> aquí y en Meta. Guarda con el botón de abajo para conservarlo.</div>
+        <div class="mh" style="margin:8px 0 0">Elige el token que quieras (cualquier frase); tiene que ser <b>el mismo</b> aquí y en Meta.
+          <b>Guárdalo acá antes de verificar en Meta</b>: Meta viene a buscarlo a Nodo, y si todavía no está guardado responde «no se pudo verificar» sin decir por qué.</div>
+        <div class="acts" style="margin:12px 0 0"><button class="btn" id="saveVerify">Guardar token</button></div>
       </div>
 
       <div class="metabox">
         <div class="mt">2 · Datos del número (Meta → WhatsApp → Configuración de la API)</div>
+        <div class="mh">Esto se llena <b>después</b> de verificar el webhook, y los cuatro datos no viven en la misma pantalla de Meta: los dos IDs en Configuración de la API, el App Secret en Configuración → Básica de la app, y el token permanente en business.facebook.com. Guarda cada vez que consigas uno — solo se manda lo que tocaste, nada se pisa.</div>
         <div class="row" style="margin-top:8px">
           <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="123456789012345"/></div>
           <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="para recibir mensajes"/></div>
@@ -212,7 +215,7 @@ function renderWA(){
       </div>
 
       <div class="acts">
-        <button class="btn primary" id="saveWA">Guardar WhatsApp</button>
+        <button class="btn primary" id="saveWA">Guardar datos del número</button>
         <button class="btn" id="waTest">Probar conexión</button>
         ${conn?`<button class="btn danger" id="waDisc" style="margin-left:auto" title="Quitar este número para conectar otro (p.ej. tras un baneo)">Desconectar número</button>`:""}
       </div>
@@ -224,6 +227,17 @@ function renderWA(){
   // guardaría igual — y en el backend un "" se convierte en null, o sea que te
   // BORRA la credencial que ya tenías.
   const orig={ phone_number_id:c.phone_number_id??"", waba_id:c.waba_id??"", verify_token:c.verify_token??"" };
+  // Conectar WhatsApp son DOS momentos con una vuelta a Meta en medio: el token de
+  // verificación tiene que estar guardado ANTES de que Meta verifique el webhook, y los
+  // cuatro datos del número recién existen después. Con un solo botón abajo, el bloque 1
+  // parecía parte del mismo formulario de un tiro — y guardarlo tarde es justo el error
+  // que hace que Meta conteste «no se pudo verificar». Cada momento tiene su botón.
+  $("saveVerify").onclick=(e)=>{
+    const v=$("w_verify").value.trim();
+    if(!v){ toast("Escribe primero un token de verificación",true); return; }
+    if(v===String(orig.verify_token).trim()){ toast("Ese token ya está guardado"); return; }
+    save(e.target, { verify_token:v });
+  };
   $("saveWA").onclick=(e)=>{
     const body={};
     for(const [k,id] of [["phone_number_id","w_phone"],["waba_id","w_waba"],["verify_token","w_verify"]]){
