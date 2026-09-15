@@ -21,7 +21,13 @@ const db = serviceClient();
 // deliberadas, NO se frenan pero SÍ marcan el timestamp (así un envío del negocio
 // suprime el nudge automático de ese día). Los avisos transaccionales de pedido
 // (guía, clave, "llegó a agencia") NO cuentan: son mensajes que el cliente espera.
+// 18 h es el DEFECTO; el negocio puede poner otro número desde Productos → Reenganche
+// (`channels.remarketing.antispam_horas`) o apagarlo del todo. Era todo-o-nada —o 18 h o
+// ninguno— y eso empuja a apagarlo entero al que solo quería dos toques en el día, que es
+// justo el que más necesita el tope. Se acota entre 1 y 72 h: por debajo de una hora deja de
+// ser un freno, y por encima de tres días la secuencia no termina nunca.
 const ANTISPAM_MS = 18 * 3600 * 1000;
+const ANTISPAM_MIN_MS = 1 * 3600 * 1000, ANTISPAM_MAX_MS = 72 * 3600 * 1000;
 // Un flow_run 'esperando' cuenta como "conversación activa" (y pausa el
 // remarketing) SOLO mientras sea RECIENTE. Los flujos de venta terminan en un nodo
 // `pregunta`/`ia` esperando la respuesta del cliente y NO ponen timeout que cierre
@@ -31,8 +37,8 @@ const ANTISPAM_MS = 18 * 3600 * 1000;
 // se considera conversación abandonada y ya NO bloquea. (El propio temporizador del
 // paso ya garantiza que el cliente lleva ≥ umbral callado antes de llegar acá.)
 const RUN_STALE_MS = 3 * 3600 * 1000;
-const tocoMktReciente = (c: any, now: number) =>
-  !!c?.ultimo_auto_msg_at && (now - new Date(c.ultimo_auto_msg_at).getTime()) < ANTISPAM_MS;
+const tocoMktReciente = (c: any, now: number, ms = ANTISPAM_MS) =>
+  !!c?.ultimo_auto_msg_at && (now - new Date(c.ultimo_auto_msg_at).getTime()) < ms;
 async function marcarTocoMkt(contactId: string) {
   await db.from("contacts").update({ ultimo_auto_msg_at: new Date().toISOString() })
     .eq("id", contactId).then(() => {}, () => {}); // best-effort (columna 0056)
@@ -423,7 +429,8 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
           .select("no_remarketing, bot_activo, ultimo_auto_msg_at").eq("id", (o as any).contact_id).maybeSingle();
         if ((c as any)?.no_remarketing === true) continue;
         if ((c as any)?.bot_activo === false) continue; // lo tomó un humano
-        if (await antispamOn((o as any).channel_id) && tocoMktReciente(c, now)) continue; // anti-spam (si está activo): ya recibió un envío automático hace poco
+        const _asNudge = await antispamMs((o as any).channel_id);
+        if (_asNudge && tocoMktReciente(c, now, _asNudge)) continue; // anti-spam (si está activo): ya recibió un envío automático hace poco
         if (!await enHorario(chId)) continue;
         try {
           // Fuera de la ventana de 24h el texto libre lo rechaza Meta (el cliente
@@ -638,7 +645,10 @@ async function minutosHastaApertura(channelId: string): Promise<number | null> {
 // ¿El anti-spam de 18h está activo en este canal? Recomendado ON (protege el
 // número de un baneo por sobre-envío), pero el negocio puede apagarlo. Default
 // ON si no está configurado. Reusa el caché de la config de remarketing.
-async function antispamOn(channelId: string): Promise<boolean> {
+// Milisegundos de enfriamiento de este canal. 0 = el negocio lo apagó (no hay tope).
+// Ante cualquier duda se devuelve el defecto: si no se puede leer la config, se protege el
+// número, no al revés.
+async function antispamMs(channelId: string): Promise<number> {
   try {
     let cfg = horarioCache.get(channelId);
     if (cfg === undefined) {
@@ -646,8 +656,11 @@ async function antispamOn(channelId: string): Promise<boolean> {
       cfg = data ?? null;
       horarioCache.set(channelId, cfg);
     }
-    return (cfg?.remarketing?.antispam ?? true) !== false;
-  } catch (_) { return true; }
+    if ((cfg?.remarketing?.antispam ?? true) === false) return 0;
+    const h = Number(cfg?.remarketing?.antispam_horas);
+    if (!Number.isFinite(h) || h <= 0) return ANTISPAM_MS;
+    return Math.min(ANTISPAM_MAX_MS, Math.max(ANTISPAM_MIN_MS, h * 3600 * 1000));
+  } catch (_) { return ANTISPAM_MS; }
 }
 
 // Secuencias leídas en este tick. Se limpia al inicio de cada invocación (ver arriba): dura
@@ -800,9 +813,10 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // se posterga al próximo tick — no se pierde el paso, solo espera.
   // Ya recibió un toque automático hace poco. Se sabe exactamente cuándo se libera: cuando
   // el último toque cumpla ANTISPAM_MS.
-  if (await antispamOn(s.channel_id) && tocoMktReciente(c, now)) {
+  const _asMs = await antispamMs(s.channel_id);
+  if (_asMs && tocoMktReciente(c, now, _asMs)) {
     const desde = new Date((c as any).ultimo_auto_msg_at).getTime();
-    await posponer(s.id, ANTISPAM_MS - (now - desde));
+    await posponer(s.id, _asMs - (now - desde));
     return false;
   }
 

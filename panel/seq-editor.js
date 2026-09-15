@@ -148,6 +148,26 @@ export function mountStepsEditor(el, opts){
   const actions = opts.actions || { enabled:false };
   if(!Array.isArray(seq.pasos)) seq.pasos = [];
   let sel = 0;
+  // ⏱️ EL TOPE DE FRECUENCIA MANDA SOBRE ESTA ESPERA, Y HAY QUE DECIRLO ACÁ.
+  // El anti-spam del canal (Productos → Reenganche) impide más de un mensaje automático cada
+  // N horas. Si acá configuras «cada 6 min», el toque NO sale a los 6 min: sale cuando se
+  // cumplan las N horas. Eso ya pasaba —medido: con umbrales de 3 y 6 min los tres leads
+  // quedaron con el paso 2 programado a 18,00 h exactas— y la pantalla no lo decía en ningún
+  // lado: escribías un número y el sistema hacía otra cosa, en silencio. Es la misma familia
+  // de las perillas que mienten. Se carga una vez y se repinta cuando llega.
+  let topeSeg = null;   // null = todavía no se sabe · 0 = el negocio lo apagó
+  (async () => {
+    if(!channelId) return;
+    try{
+      const { data } = await supa.from("channels").select("remarketing").eq("id", channelId).maybeSingle();
+      const r = data?.remarketing || {};
+      topeSeg = r.antispam === false ? 0
+        : Math.min(72, Math.max(1, Math.round(Number(r.antispam_horas)) || 18)) * 3600;
+      paintOne();
+    }catch(_){ /* sin config → no se avisa nada, mejor callar que asustar de más */ }
+  })();
+  const durTxt = (s) => { const { val,u }=splitDur(s); const n=Number(u);
+    return val+" "+(n===86400?(val===1?"día":"días"):n===3600?(val===1?"hora":"horas"):(val===1?"minuto":"minutos")); };
 
   el.innerHTML = `<div class="se-journey" style="overflow-x:auto;padding:2px 2px 10px"></div><div class="se-body"></div>`;
   const jBox = el.querySelector(".se-journey");
@@ -217,6 +237,16 @@ export function mountStepsEditor(el, opts){
         <span style="flex:1"></span>
         <button class="iconbtn se-del" title="Quitar toque" style="flex:none">${icon("trash")}</button>
       </div>
+      ${topeSeg && Number(paso.umbral_silencio_seg||0) < topeSeg ? `
+      <div style="margin-top:9px;display:flex;gap:8px;align-items:flex-start;border:1px solid var(--amber,#f0a92b);background:rgba(240,169,43,.10);border-radius:9px;padding:8px 10px">
+        <span style="color:var(--amber,#f0a92b);flex:none;font-size:13px;line-height:1.3">⚠</span>
+        <div style="font-size:11.5px;line-height:1.55;color:var(--text)">
+          Tu <b>tope de frecuencia</b> es de ${durTxt(topeSeg)}: aunque acá pongas
+          <b>${durTxt(paso.umbral_silencio_seg)}</b>, este toque saldrá recién cuando se cumpla ese tope
+          desde el último mensaje automático que recibió el cliente.
+          <span style="color:var(--muted)">Se cambia en Productos → el producto → Reenganche.</span>
+        </div>
+      </div>` : ``}
       ${actions.enabled?`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Acción</div>
         <select class="sel se-act" style="width:100%;height:36px">
           <option value="mensaje" ${mode==="mensaje"?"selected":""}>Enviar mensaje (texto/multimedia, dentro de 24h)</option>

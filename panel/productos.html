@@ -1604,8 +1604,11 @@ async function renderRemarketing(host){
       </div>
       <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <span class="sw ${rm.antispam!==false?'on':''}" id="asTog" style="margin-top:2px"></span>
-        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Anti-spam · máximo 1 mensaje automático cada 18 h <span style="font-size:9.5px;color:var(--green,var(--green));font-weight:800;letter-spacing:.4px;border:1px solid var(--green,var(--green));border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
-          <div style="font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5">Protege tu número de un <b>baneo de WhatsApp</b> por sobre-envío: coordina secuencias, nudges y campañas para no encimarlos. Los avisos del pedido (va en camino, etc.) no cuentan. Apágalo solo si sabes lo que haces.</div></div>
+        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Anti-spam · máximo 1 mensaje automático cada
+            <input class="in" id="asHoras" type="number" min="1" max="72" value="${esc(rm.antispam_horas ?? 18)}" style="width:62px;height:28px;padding:2px 6px;text-align:center" ${rm.antispam===false?"disabled":""}/> h
+            <span style="font-size:9.5px;color:var(--green,var(--green));font-weight:800;letter-spacing:.4px;border:1px solid var(--green,var(--green));border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
+          <div style="font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5">Protege tu número de un <b>baneo de WhatsApp</b> por sobre-envío: coordina secuencias, nudges y campañas para no encimarlos. Los avisos del pedido (va en camino, etc.) no cuentan. Apágalo solo si sabes lo que haces.
+            <b>Manda sobre la espera que pongas en cada secuencia:</b> si un toque está configurado más seguido que esto, sale cuando se cumplan las horas de acá.</div></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
         <button class="btn primary" id="hrSave" style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar horario y anti-spam</button>
@@ -1624,7 +1627,19 @@ async function renderRemarketing(host){
   const hrSw=$("hrTog");
   if(hrSw) hrSw.onclick=()=>{ rm.activo=!rm.activo; hrSw.classList.toggle("on",rm.activo); $("hrRange").style.display=rm.activo?"flex":"none"; };
   const asSw=$("asTog");
-  if(asSw) asSw.onclick=()=>{ rm.antispam=(rm.antispam===false); asSw.classList.toggle("on",rm.antispam!==false); };
+  if(asSw) asSw.onclick=()=>{
+    rm.antispam=(rm.antispam===false); asSw.classList.toggle("on",rm.antispam!==false);
+    const inp=$("asHoras"); if(inp) inp.disabled=(rm.antispam===false);   // apagado, el número no pinta nada
+  };
+  // Las horas se acotan a 1-72 igual que en el motor: por debajo de una hora deja de ser un
+  // freno y por encima de tres días la secuencia no termina nunca. Si el input queda vacío o
+  // con algo raro, se vuelve al defecto de 18 en vez de guardar basura.
+  const asH=$("asHoras");
+  if(asH) asH.onchange=()=>{
+    const n=Math.round(Number(asH.value));
+    rm.antispam_horas = Number.isFinite(n) && n>0 ? Math.min(72, Math.max(1, n)) : 18;
+    asH.value=rm.antispam_horas;
+  };
   if($("hrSave")) $("hrSave").onclick=async(e)=>{
     rm.desde=$("hrDesde")?.value||rm.desde; rm.hasta=$("hrHasta")?.value||rm.hasta;
     if(rm.activo && rm.desde && rm.hasta && rm.hasta<=rm.desde){ toast("La hora final debe ser mayor a la inicial",true); return; }
