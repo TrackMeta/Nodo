@@ -49,6 +49,17 @@
   .btn.mini{height:34px;padding:0 14px;border-radius:9px;font-size:12.5px;font-weight:600;
             white-space:nowrap;background:var(--surface);box-shadow:var(--shadow-1)}
   .btn.mini:hover{background:var(--brand-bg);border-color:var(--brand-border);color:var(--brand-2)}
+  /* Lo que Nodo ya hace solo, pero sigue siendo cierto y a veces hace falta ver:
+     plegado, no borrado. No compite con el único paso que sí es del usuario. */
+  .avanzado{margin:14px 0 4px;border:1px solid var(--border);border-radius:12px;padding:0 15px}
+  .avanzado[open]{padding-bottom:14px}
+  .avanzado>summary{cursor:pointer;list-style:none;padding:12px 0;font-size:12.5px;
+    font-weight:600;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .avanzado>summary::-webkit-details-marker{display:none}
+  .avanzado>summary::before{content:"";width:0;height:0;border:4.5px solid transparent;
+    border-left-color:var(--muted);transition:transform .15s;transform-origin:2px 50%}
+  .avanzado[open]>summary::before{transform:rotate(90deg)}
+  .avanzado>summary:hover{color:var(--text)}
   .metabox{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin:14px 0 4px}
   .metabox .mt{font-weight:700;font-size:12.5px;margin-bottom:2px}
   .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
@@ -181,29 +192,10 @@ function renderWA(){
         <a href="ayuda-whatsapp.html" style="color:var(--brand);white-space:nowrap">¿Primera vez? Guía paso a paso &rarr;</a></div>
 
       <div class="metabox">
-        <div class="mt">1 · Configura el webhook en Meta</div>
-        <div class="mh">Ve a <b>Meta → WhatsApp → Configuración → Webhook → Editar</b> y pega estos dos valores. Después pulsa <b>Verificar y guardar</b> y suscríbete al campo <b>messages</b>.</div>
-        <label>URL de devolución de llamada</label>
-        <div class="copyrow">
-          <input class="in" id="w_hook" readonly value="${esc(WEBHOOK_URL)}"/>
-          <button class="copybtn" data-copy="${esc(WEBHOOK_URL)}" title="Copiar">${icon("copy")}</button>
-        </div>
-        <label>Token de verificación</label>
-        <div class="copyrow">
-          <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="dale al botón y Nodo lo inventa"/>
-          <button class="copybtn" id="w_verify_copy" title="Copiar">${icon("copy")}</button>
-        </div>
-        <div class="mh" style="margin:8px 0 0">Es una frase secreta que tiene que ser <b>la misma</b> acá y en Meta; da igual cuál sea.
-          Déjalo vacío y Nodo la inventa. Se guarda primero y se copia después — en ese orden, porque Meta viene a buscarla a Nodo,
-          y si todavía no está guardada responde «no se pudo verificar» sin decir por qué.</div>
-        <div class="pasoact"><button class="btn mini" id="saveVerify">${(c.verify_token||"").trim()?"Guardar token":"Generar y guardar"}</button></div>
-      </div>
-
-      <div class="metabox">
-        <div class="mt">2 · Datos del número (Meta → WhatsApp → Configuración de la API)</div>
-        <div class="mh">Esto se llena <b>después</b> de verificar el webhook. De los cuatro, los dos que de verdad tienes que ir a buscar son el <b>Access token</b> (business.facebook.com) y el <b>App Secret</b> (Configuración → Básica de la app): pega el token, dale a <b>Buscar mis datos</b> y los dos IDs los trae Nodo. Guarda cada vez que consigas uno — solo se manda lo que tocaste, nada se pisa.</div>
+        <div class="mt">Conectar el número</div>
+        <div class="mh">Solo dos datos, y son los dos que hay que ir a buscar porque son secretos: el <b>Access token</b> (business.facebook.com &rarr; Usuarios del sistema) y el <b>App Secret</b> (Configuración &rarr; Básica de la app). Los dos IDs los trae Nodo.</div>
         <label>Access token ${badge(s.access_token)}</label>
-        <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente)')}"/>
+        <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente, no el de 24 h)')}"/>
         <div class="pasoact"><button class="btn mini" id="waBuscar">Buscar mis datos</button></div>
         <div class="row" style="margin-top:8px">
           <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba"/></div>
@@ -211,10 +203,11 @@ function renderWA(){
         </div>
         <label>App Secret ${badge(s.app_secret)}</label>
         <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
+        <div class="mh" style="margin:10px 0 0">Al guardar, Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. No hay nada más que hacer allá.</div>
       </div>
 
       <div class="metabox">
-        <div class="mt">3 · Comportamiento del bot</div>
+        <div class="mt">Comportamiento del bot</div>
         <div class="adsrow">
           <span class="ads-ic">${icon("megaphone")}</span>
           <span class="ads-tx">
@@ -225,8 +218,26 @@ function renderWA(){
         </div>
       </div>
 
+      <details class="avanzado">
+        <summary>Configuración manual del webhook</summary>
+        <div class="mh" style="margin:10px 0 0">Nodo configura esto solo al guardar. Está acá por si prefieres hacerlo a mano en Meta
+          (<b>WhatsApp → Configuración → Webhook → Editar</b>, y suscribirte al campo <b>messages</b>), o para comprobar qué se envió.</div>
+        <label>URL de devolución de llamada</label>
+        <div class="copyrow">
+          <input class="in" id="w_hook" readonly value="${esc(WEBHOOK_URL)}"/>
+          <button class="copybtn" data-copy="${esc(WEBHOOK_URL)}" title="Copiar">${icon("copy")}</button>
+        </div>
+        <label>Token de verificación</label>
+        <div class="copyrow">
+          <input class="in" id="w_verify" ${NOFILL} value="${esc(c.verify_token)}" placeholder="vacío = Nodo lo inventa al conectar"/>
+          <button class="copybtn" id="w_verify_copy" title="Copiar">${icon("copy")}</button>
+        </div>
+        <div class="mh" style="margin:8px 0 0">Una frase secreta cualquiera, la misma acá y en Meta. Si la vas a pegar allá, <b>guárdala antes</b>: Meta viene a buscarla a Nodo, y si todavía no está guardada responde «no se pudo verificar» sin decir por qué.</div>
+        <div class="pasoact"><button class="btn mini" id="saveVerify">${(c.verify_token||"").trim()?"Guardar token":"Generar y guardar"}</button></div>
+      </details>
+
       <div class="acts">
-        <button class="btn primary" id="saveWA">Guardar datos del número</button>
+        <button class="btn primary" id="saveWA">Guardar y conectar</button>
         <button class="btn" id="waTest">Probar conexión</button>
         ${conn?`<button class="btn danger" id="waDisc" style="margin-left:auto" title="Quitar este número para conectar otro (p.ej. tras un baneo)">Desconectar número</button>`:""}
       </div>
