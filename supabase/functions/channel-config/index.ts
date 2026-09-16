@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -823,6 +823,49 @@ Deno.serve(async (req) => {
         .update({ phone_number_id: null, waba_id: null }).eq("id", channel_id);
       if (e1) return json({ error: "desconectar", detalle: e1.message }, 400);
       return json({ ok: true });
+    }
+
+    // ── Qué se llevaría por delante borrar este bot ────────────────────────────────────
+    // Se cuenta ANTES y se le enseña al usuario. Un "esto no se puede deshacer" genérico
+    // no informa de nada; «2.480 conversaciones y 312 pedidos» sí.
+    if (action === "channel_delete_preview") {
+      const cuenta = async (tabla: string) => {
+        const { count, error } = await db.from(tabla).select("id", { count: "exact", head: true }).eq("channel_id", channel_id);
+        return error ? null : (count ?? 0);
+      };
+      const [contactos, conversaciones, mensajes, pedidos, productos, flujos] = await Promise.all(
+        ["contacts", "conversations", "messages", "orders", "products", "flows"].map(cuenta),
+      );
+      const { data: c } = await db.from("channels").select("nombre, activo").eq("id", channel_id).maybeSingle();
+      return json({ ok: true, nombre: (c as any)?.nombre ?? "", archivado: (c as any)?.activo === false,
+        cuentas: { contactos, conversaciones, mensajes, pedidos, productos, flujos } });
+    }
+
+    // ── Eliminar un bot ────────────────────────────────────────────────────────────────
+    // Irreversible y en cascada: de channels cuelgan más de treinta tablas. Por eso solo se
+    // permite sobre un bot YA ARCHIVADO — así el camino obliga a apagarlo, comprobar que no
+    // lo necesitas, y recién entonces borrarlo. Y el nombre se comprueba ACÁ, no solo en el
+    // panel: un cliente de la API no pasa por el diálogo.
+    if (action === "channel_delete") {
+      const { data: c } = await db.from("channels").select("nombre, activo, account_id").eq("id", channel_id).maybeSingle();
+      if (!c) return json({ error: "canal_invalido" }, 400);
+      if ((c as any).activo !== false) {
+        return json({ error: "no_archivado", detalle: "Primero archiva el bot. Solo se puede eliminar uno que ya esté apagado." }, 400);
+      }
+      const nombre = String((c as any).nombre ?? "");
+      if (String(body.confirmar ?? "").trim().toLowerCase() !== nombre.trim().toLowerCase()) {
+        return json({ error: "nombre_no_coincide", detalle: "El nombre no coincide — no se borró nada." }, 400);
+      }
+      // Los secretos del Vault NO cuelgan de channels por clave foránea (channel_secrets
+      // guarda ids, y las filas cifradas viven en vault.secrets): si no se borran acá, el
+      // token de Meta y el App Secret quedarían vivos y huérfanos después de borrar el bot.
+      for (const kind of ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"]) {
+        await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind }).then(() => {}, () => {});
+      }
+      const { error } = await db.from("channels").delete().eq("id", channel_id);
+      if (error) return json({ error: "borrar", detalle: error.message }, 400);
+      // Los archivos en Storage ya no los referencia nadie: los barre media-gc en su cron.
+      return json({ ok: true, borrado: nombre });
     }
 
     return json({ error: "accion_invalida" }, 400);

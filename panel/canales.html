@@ -349,15 +349,55 @@ async function renderArchivo(){
       ${arch.length?`
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
           <div class="mt" style="font-weight:700;font-size:12.5px;margin-bottom:10px">Bots archivados</div>
-          ${arch.map(c=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
-            <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600">${esc(c.nombre)}</span>
-            <button class="btn mini" data-rea="${esc(c.id)}">Reactivar</button></div>`).join("")}
+          ${arch.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
+            <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600" data-nm>${esc(c.nombre)}</span>
+            <button class="btn mini" data-rea="${esc(c.id)}">Reactivar</button>
+            <button class="btn mini" data-del="${esc(c.id)}" style="color:#f04747;border-color:rgba(240,71,71,.45)" title="Eliminar para siempre">Eliminar</button></div>`).join("")}
+          <div class="desc" style="margin-top:12px">Eliminar <b>no se puede deshacer</b> y se lleva todo lo del bot: contactos,
+            conversaciones, pedidos, productos y flujos. Solo aparece en los archivados — un bot en uso no se puede borrar.</div>
         </div>`:""}
     </div>`;
   $("archBtn").onclick=(e)=>archivarBot(e.target);
   box.querySelectorAll("[data-rea]").forEach(b=>{
-    b.onclick=()=>reactivarBot(b.getAttribute("data-rea"), b.previousElementSibling.textContent, b);
+    b.onclick=()=>reactivarBot(b.getAttribute("data-rea"), b.parentElement.querySelector("[data-nm]").textContent, b);
   });
+  box.querySelectorAll("[data-del]").forEach(b=>{
+    b.onclick=()=>eliminarBot(b.getAttribute("data-del"), b.parentElement.querySelector("[data-nm]").textContent, b);
+  });
+}
+// Eliminar de verdad. Solo sobre un bot ya archivado: el camino obliga a apagarlo,
+// comprobar que no lo necesitas, y recién entonces borrarlo. Antes de preguntar se
+// CUENTA lo que hay dentro — un «esto no se puede deshacer» genérico no informa de
+// nada; «2.480 conversaciones y 312 pedidos» sí.
+async function eliminarBot(id, nombre, btn){
+  const old=btn.textContent; btn.disabled=true; btn.textContent="…";
+  let pv;
+  try{ pv=await callFn("channel-config",{ action:"channel_delete_preview", channel_id:id }); }
+  catch(e){ toast(e.message||"No se pudo leer el bot",true); btn.disabled=false; btn.textContent=old; return; }
+  btn.disabled=false; btn.textContent=old;
+  const n=(x)=> x==null ? "?" : Number(x).toLocaleString("es-PE");
+  const c=pv.cuentas||{};
+  const filas=[["contactos",c.contactos],["conversaciones",c.conversaciones],["mensajes",c.mensajes],
+               ["pedidos",c.pedidos],["productos",c.productos],["flujos",c.flujos]]
+    .filter(([,v])=>v)   // no se listan los que están en cero: ensucian y no asustan de nada
+    .map(([k,v])=>`<b>${n(v)}</b> ${k}`).join("<br>");
+  const v=await askText({ title:`Eliminar «${nombre}» para siempre`,
+    messageHtml:`Esto <b>no se puede deshacer</b> y no hay copia de seguridad.<br><br>
+      ${filas?`Se borra ahora mismo:<br>${filas}<br><br>`:"Este bot está vacío: no tiene contactos, pedidos ni productos.<br><br>"}
+      Si solo quieres que deje de funcionar, <b>ya está archivado</b> — no hace falta borrarlo.<br><br>
+      Escribe <b>${esc(nombre)}</b> para confirmar.`,
+    label:"Nombre del bot", placeholder:nombre, confirmText:"Eliminar para siempre" });
+  if(v===null) return;
+  if(v.trim().toLowerCase()!==nombre.trim().toLowerCase()){ toast("El nombre no coincide — no se borró nada",true); return; }
+  btn.disabled=true; btn.textContent="Eliminando…";
+  try{
+    await callFn("channel-config",{ action:"channel_delete", channel_id:id, confirmar:v.trim() });
+    toast(`«${nombre}» se eliminó`);
+    await renderArchivo();
+  }catch(err){
+    toast(err.message||"No se pudo eliminar",true);
+    btn.disabled=false; btn.textContent=old;
+  }
 }
 async function archivarBot(btn){
   // Se exige escribir el nombre: archivar no borra, pero apaga un negocio entero, y el
