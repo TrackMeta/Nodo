@@ -5,8 +5,9 @@
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/db.ts";
 import { fetchMediaBytes } from "../_shared/meta.ts";
+import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
-import { runEngine, avisarEnvioFallido, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, esAlucinacionSTT, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -325,7 +326,7 @@ async function processInbound(
   // «[image]» pelados y el operador no podía ni oír ni ver lo que el cliente mandó. Se
   // archiva SIEMPRE, en segundo plano y aparte del motor. Va ANTES del corte por bot en pausa.
   if (MEDIA_ARCHIVABLE.has(type) && content?.media_id) {
-    const t = archivarMediaEntrante(channelId, contact.id, msg.id, type, content);
+    const t = archivarMediaEntrante(channelId, contact.id, msg.id, type, content, (contact as any).bot_activo === false);
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(t);
     else await t;
   }
@@ -567,7 +568,10 @@ function extPorMime(mime: string, tipo: string): string {
   return tipo === "image" || tipo === "sticker" ? "jpg" : tipo === "audio" ? "ogg" : tipo === "video" ? "mp4" : "bin";
 }
 
-async function archivarMediaEntrante(channelId: string, contactId: string, wamid: string, tipo: string, content: any): Promise<void> {
+// `botEnPausa`: con el bot activo, el MOTOR transcribe la nota de voz (y la usa para
+// responder); con el bot en pausa el motor no corre y el audio se quedaba mudo para el
+// operador. En ese caso se transcribe acá, una sola vez, para que la lea en la Bandeja.
+async function archivarMediaEntrante(channelId: string, contactId: string, wamid: string, tipo: string, content: any, botEnPausa = false): Promise<void> {
   try {
     const mediaId = String(content?.media_id ?? "");
     if (!mediaId) return;
@@ -593,9 +597,34 @@ async function archivarMediaEntrante(channelId: string, contactId: string, wamid
     const { data: m } = await db.from("messages").select("id, content").eq("wamid", wamid).eq("channel_id", channelId).maybeSingle();
     if (!m) return;
     const c = ((m as any).content ?? {}) as Record<string, unknown>;
-    if (c.media_url) return;
-    await db.from("messages").update({ content: { ...c, media_url: signed.signedUrl, mime } }).eq("id", (m as any).id);
+    if (!c.media_url) {
+      await db.from("messages").update({ content: { ...c, media_url: signed.signedUrl, mime } }).eq("id", (m as any).id);
+    }
+    if (tipo === "audio" && botEnPausa) await transcribirParaOperador(channelId, contactId, String((m as any).id), bytes, mime);
   } catch (e) {
     console.error("[webhook] archivar media:", (e as any)?.message ?? e);
+  }
+}
+
+// Nota de voz con el bot en PAUSA: el motor no la va a escuchar, así que se transcribe acá
+// (Whisper, con la clave de OpenAI del canal) y queda bajo el audio en la Bandeja, en la
+// vista previa de la lista y en Actividad. Sin clave de OpenAI no hace nada: el operador
+// igual tiene el reproductor. Con el bot activo NO se llama: lo hace el motor (una vez).
+async function transcribirParaOperador(channelId: string, contactId: string, msgId: string, bytes: Uint8Array, mime: string): Promise<void> {
+  try {
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: "openai" });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) return;
+    const texto = String(await transcribeAudio(ai.api_key, bytes, mime, { db, channelId }) ?? "").trim();
+    if (esAlucinacionSTT(texto)) {
+      await db.from("contact_events").insert({ channel_id: channelId, contact_id: contactId, tipo: "nota", titulo: "🎙️ Audio sin voz", detalle: "No se entendió nada en la nota de voz" }).then(() => {}, () => {});
+      return;
+    }
+    const { data: m } = await db.from("messages").select("content").eq("id", msgId).maybeSingle();
+    await db.from("messages").update({ content: { ...(((m as any)?.content ?? {}) as Record<string, unknown>), transcription: texto } }).eq("id", msgId);
+    await db.from("contacts").update({ last_input: texto }).eq("id", contactId);
+    await db.from("contact_events").insert({ channel_id: channelId, contact_id: contactId, tipo: "nota", titulo: "🎙️ Audio transcrito", detalle: texto.slice(0, 140) }).then(() => {}, () => {});
+  } catch (e) {
+    console.error("[webhook] transcribir para operador:", (e as any)?.message ?? e);
   }
 }

@@ -6336,7 +6336,7 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
 // lo honesto y lo que el motor ya sabe hacer.
 const RE_STT_FANTASMA =
   /^\W*(subt[ií]tulos?\b.*|subtitulado\b.*|traducci[oó]n y subt[ií]tulos.*|amara\.org.*|gracias por (ver|mirar)( el)? (video|v[ií]deo).*|¡?gracias por su atenci[oó]n[.!]?|suscr[ií]b(ete|anse).*|www\.[\w.-]+|\.{2,}|[¿?¡!.,\-–—\s]*)\W*$/i;
-function esAlucinacionSTT(texto?: string | null): boolean {
+export function esAlucinacionSTT(texto?: string | null): boolean {
   const t = String(texto ?? "").trim();
   if (!t) return true;
   if (RE_STT_FANTASMA.test(t)) return true;
