@@ -307,9 +307,36 @@ Deno.serve(async (req) => {
         }
       }
 
+      // 3) ¿La app de Meta apunta su webhook a Nodo, y a los campos que hacen falta?
+      //    Es lo único de la conexión que vivía SOLO en la pantalla de Meta: desde acá no
+      //    se veía, así que un webhook apuntando a otro sitio (o sin el campo `messages`)
+      //    era invisible. El app_id sale de debug_token; el app access token, de juntarlo
+      //    con el App Secret que el usuario ya pegó.
+      let appHook: { comprobado: boolean; apunta_aqui?: boolean; url?: string | null; campos?: string[]; error?: string } | null = null;
+      if (secrets?.app_secret) {
+        const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+        const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
+        if (appId) {
+          const callback = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook`;
+          const subs = await metaGet(`${appId}|${secrets.app_secret}`, `${appId}/subscriptions`);
+          if (subs.status === 200 && Array.isArray(subs.body?.data)) {
+            const wa = subs.body.data.find((s: any) => s?.object === "whatsapp_business_account");
+            appHook = {
+              comprobado: true,
+              apunta_aqui: wa?.callback_url === callback,
+              url: wa?.callback_url ?? null,
+              campos: (wa?.fields ?? []).map((f: any) => f?.name ?? f),
+            };
+          } else {
+            appHook = { comprobado: false, error: String(subs.body?.error?.message ?? "no se pudo consultar") };
+          }
+        }
+      }
+
       return json({
         ok: true,
         configurado: true,
+        app_webhook: appHook,
         numero: numOk ? {
           nombre: (num.body as any).verified_name ?? null,
           telefono: (num.body as any).display_phone_number ?? null,
@@ -402,6 +429,56 @@ Deno.serve(async (req) => {
       const hecho: string[] = [];
       const fallo: { que: string; motivo: string; necesita_pin?: boolean }[] = [];
       let pin: string | null = null;
+
+      // 0) El webhook de la app. Esto es lo que antes se hacía a mano en dos pasos: generar
+      //    una frase, guardarla, irse a Meta, pegar la URL y la frase, y darle a «Verificar
+      //    y guardar» — con la trampa de que si la guardabas DESPUÉS, Meta contestaba «no se
+      //    pudo verificar» sin decir por qué. Acá el orden es imposible de invertir.
+      //    Necesita un app access token (`{app_id}|{app_secret}`): el app_id lo devuelve
+      //    debug_token —así que no hay que pedírselo al usuario— y el App Secret ya lo pegó.
+      const appSecret = secrets?.app_secret;
+      if (appSecret) {
+        const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+        const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
+        if (appId) {
+          const appToken = `${appId}|${appSecret}`;
+          const callback = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook`;
+          const subs = await metaGet(appToken, `${appId}/subscriptions`);
+          const wa = (subs.body?.data ?? []).find((s: any) => s?.object === "whatsapp_business_account");
+          const campos: string[] = (wa?.fields ?? []).map((f: any) => String(f?.name ?? f));
+          // 🔴 El POST REEMPLAZA la lista de campos, no la amplía. Suscribirse solo a los dos
+          // que Nodo necesita borraría los que Meta pone por defecto desde su panel
+          // (account_alerts, phone_number_quality_update…), que son los avisos de que tu
+          // número está en riesgo. Se manda la UNIÓN de lo que ya había con lo que hace falta.
+          const QUIERO = ["messages", "message_template_status_update"];
+          const DEFECTO = ["account_alerts", "account_review_update", "account_update",
+            "message_template_quality_update", "phone_number_name_update",
+            "phone_number_quality_update", "security"];
+          const finales = [...new Set([...(campos.length ? campos : DEFECTO), ...QUIERO])];
+          const yaEsta = wa?.callback_url === callback && QUIERO.every((f) => campos.includes(f));
+          if (!yaEsta) {
+            // El verify_token tiene que estar GUARDADO antes del POST: Meta llama al webhook
+            // durante esa misma llamada y el webhook lo busca en la tabla de canales.
+            const { data: cv } = await db.from("channels").select("verify_token").eq("id", channel_id).maybeSingle();
+            let verify = String((cv as any)?.verify_token ?? "").trim();
+            if (!verify) {
+              verify = "nodo-" + [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+              const { error } = await db.from("channels").update({ verify_token: verify }).eq("id", channel_id);
+              if (error) verify = "";
+            }
+            if (verify) {
+              const r = await metaPost(appToken, `${appId}/subscriptions`, {
+                object: "whatsapp_business_account",
+                callback_url: callback,
+                verify_token: verify,
+                fields: finales.join(","),
+              });
+              if (r.status === 200 && r.body?.success) hecho.push("webhook");
+              else fallo.push({ que: "webhook", motivo: String(r.body?.error?.message ?? "Meta no aceptó la URL del webhook.") });
+            }
+          }
+        }
+      }
 
       // 1) Suscribir la app a la cuenta (sin esto no ENTRA ningún mensaje).
       if (wabaId) {

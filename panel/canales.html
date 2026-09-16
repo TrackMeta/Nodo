@@ -450,7 +450,24 @@ function pintarWA(r){
     : fila(false, "Falta el App Secret", "Sin él, Nodo rechaza los webhooks de Meta. Está en Meta → Configuración → Básica."));
   filas.push(r.webhook?.verify_token
     ? fila(true, "Verify token guardado")
-    : fila(false, "Falta el verify token", "Escríbelo arriba (el mismo que pongas en Meta) y guarda."));
+    : fila(false, "Falta el verify token", "Dale a «Generar y guardar» arriba y Nodo lo inventa."));
+  // ¿A dónde apunta el webhook de la app? Vivía SOLO en la pantalla de Meta: si apuntaba a
+  // otro sitio, o le faltaba el campo `messages`, desde acá era invisible y todo lo demás
+  // salía verde. Lo arregla el guardado del bloque 2.
+  if(r.app_webhook){
+    if(!r.app_webhook.comprobado){
+      filas.push(fila(false, "No se pudo consultar el webhook de la app", esc(r.app_webhook.error||"")));
+    }else if(!r.app_webhook.apunta_aqui){
+      filas.push(fila(false, "El webhook de la app NO apunta a Nodo",
+        r.app_webhook.url ? `Apunta a <code>${esc(r.app_webhook.url)}</code>. Guarda los datos del número y Nodo lo corrige.`
+                          : "No hay webhook configurado. Guarda los datos del número y Nodo lo configura."));
+    }else if(!(r.app_webhook.campos||[]).includes("messages")){
+      filas.push(fila(false, "El webhook apunta a Nodo pero no está suscrito a «messages»",
+        "Sin ese campo no llega ningún mensaje. Guarda los datos del número y Nodo lo agrega."));
+    }else{
+      filas.push(fila(true, "El webhook de la app apunta a Nodo", `campos: ${esc((r.app_webhook.campos||[]).join(", "))}`));
+    }
+  }
   // 3) Suscripción de la app a la WABA (solo si hay WABA ID).
   if(r.suscripcion){
     if(!r.suscripcion.comprobado){
@@ -539,7 +556,7 @@ async function terminarWA(pin){
     if(p) return terminarWA(p.trim());
   }
 
-  const NOMBRE={ suscribir:"conecté la entrada de mensajes", registrar:"registré el número" };
+  const NOMBRE={ webhook:"configuré el webhook en Meta", suscribir:"conecté la entrada de mensajes", registrar:"registré el número" };
   const hizo=(r.hecho||[]).map(h=>NOMBRE[h]||h);
   const falló=(r.fallo||[]).filter(f=>!f.necesita_pin||pin);
   if(falló.length){
