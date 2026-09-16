@@ -28,6 +28,10 @@
   h3{font-size:16px;margin:0 0 4px;font-weight:700}
   .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:660px}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  /* Tres perillas de días, una al lado de otra; se apilan solas en pantalla angosta. */
+  .row3{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+  .row3 .in{width:100%;margin-top:6px}
+  .row3 .hint{display:block;font-size:11.5px;color:var(--faint);line-height:1.5;margin-top:5px}
   .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
   .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
   .chd .ico svg{width:22px;height:22px}
@@ -426,6 +430,7 @@ function renderEntregas(b){
   const E=st.ent;
   E.dias=E.dias||{}; E.horario=E.horario||{};
   if(!Array.isArray(E.feriados_fechas)) E.feriados_fechas=[];
+  const P=E.parado=E.parado||{};
   E.costos=E.costos||{}; E.costos.grupos=E.costos.grupos||{}; E.costos.zonas=E.costos.zonas||{};
   E.aereo=(E.aereo&&typeof E.aereo==="object")?E.aereo:{};
   if(!Array.isArray(E.aereo.destinos)) E.aereo.destinos=String(E.aereo.destinos||"").split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
@@ -483,6 +488,29 @@ function renderEntregas(b){
       <label style="margin-top:16px">Feriados</label>
       <div id="ferList" style="margin-top:4px"></div>
       <button class="btn" id="ferAdd" style="height:32px;margin-top:8px">+ Feriado</button>
+    </div>
+    <div class="card">
+      ${cardHd("clock","Cuándo avisarte que un pedido está parado","#ef4444")}
+      <p class="sub">Pedidos ya vendidos que nadie movió. En <b>Pedidos</b> se marcan en rojo y tienen su propio filtro.
+        El caro es <b>en agencia</b>: Shalom guarda el paquete unos días y después lo devuelve — flete pagado y una venta
+        hecha que se cae. <b>0 = no vigilar</b> ese estado.</p>
+      <div class="row3">
+        <div>
+          <label style="margin:0">Esperando el adelanto</label>
+          <input class="in" id="parEsp" type="number" min="0" step="1" placeholder="2" value="${esc(P.esperando_adelanto??"")}"/>
+          <span class="hint">Días sin que pague la seña. Vacío = 2.</span>
+        </div>
+        <div>
+          <label style="margin:0">En camino (despachado)</label>
+          <input class="in" id="parDesp" type="number" min="0" step="1" placeholder="3" value="${esc(P.despachado??"")}"/>
+          <span class="hint">Cuánto tarda tu courier hasta la agencia. Vacío = 3.</span>
+        </div>
+        <div>
+          <label style="margin:0">En agencia sin recoger</label>
+          <input class="in" id="parAg" type="number" min="0" step="1" placeholder="5" value="${esc(P.en_agencia??"")}"/>
+          <span class="hint">Ponlo <b>antes</b> de los días que Shalom guarda el paquete. Vacío = 5.</span>
+        </div>
+      </div>
     </div>
     <div class="card">
       ${cardHd("dollar","Adelanto de provincia","#22c079")}
@@ -584,6 +612,13 @@ function renderEntregas(b){
   $("coMerc").oninput=(ev)=>{ E.courier.shalom.mercaderia = ev.target.value.trim(); };
   b.querySelectorAll(".co-med").forEach(inp=> inp.oninput=(ev)=>{ const k=ev.target.dataset.k, v=ev.target.value; E.courier.shalom[k]= v===""?undefined:Number(v); });
   $("entCorte").onchange=(ev)=>{ E.corte=ev.target.value; };
+  // Días para marcar un pedido como parado. Vacío = borra la clave y vuelve al valor
+  // por defecto del panel; 0 = "no vigiles este estado" y SÍ se guarda (son cosas
+  // distintas: no haber elegido no es lo mismo que haber elegido que no).
+  [["parEsp","esperando_adelanto"],["parDesp","despachado"],["parAg","en_agencia"]].forEach(([id,k])=>{
+    $(id).onchange=(ev)=>{ const v=ev.target.value.trim();
+      if(v==="") delete P[k]; else P[k]=Math.max(0,Math.round(Number(v)||0)); };
+  });
   $("entDesde").onchange=(ev)=>{ E.horario.desde=ev.target.value; };
   $("entHasta").onchange=(ev)=>{ E.horario.hasta=ev.target.value; };
   $("ferAdd").onclick=()=>{ E.feriados_fechas.push(""); paintFeriados(); };
@@ -739,6 +774,8 @@ function paintZonas(){
 async function guardarEntregas(){
   const E=st.ent;
   E.feriados_fechas=(E.feriados_fechas||[]).filter(Boolean);
+  // Un objeto `parado` vacío no aporta nada: se va, y el panel usa sus valores por defecto.
+  if(E.parado && !Object.keys(E.parado).length) delete E.parado;
   // ⏱️ Demora a provincia: fuera las excepciones a medio llenar (un destino sin días, o
   // días sin destino, no dice nada y el motor tendría que adivinar a qué se refieren).
   if(E.provincia_demora){

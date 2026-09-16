@@ -200,12 +200,36 @@ import { inicioDeHoyTZ } from "./date-range.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", entregas:null, rt:null };
+const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", soloParados:false, entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 // ── Ciclo de vida del pedido físico ────────────────────────────────
 // Lima es cosa de horas (motorizado, contraentrega); provincia es cosa de días
 // (adelanto, agencia, guía, saldo, clave). Un tablero por operación.
+// ── Pedidos parados ────────────────────────────────────────────────
+// Los 18 avisos del sistema tienen todos la misma forma: PASÓ algo → te aviso.
+// Ninguno mira lo contrario: NO pasó nada y ya lleva demasiado. Estos tres estados
+// son los que se atascan, y el que cuesta plata es «en agencia»: Shalom guarda el
+// paquete unos días y después lo devuelve — flete pagado y venta hecha que se cae.
+// Los días los pone el dueño en Negocio → Entrega; acá van los valores por defecto.
+const PARADO_DEF={ esperando_adelanto:2, despachado:3, en_agencia:5 };
+const PARADO_TX={
+  esperando_adelanto:(d)=>`sin adelanto hace ${d} día${d>1?"s":""}`,
+  despachado:(d)=>`en camino hace ${d} día${d>1?"s":""} · ¿ya llegó a la agencia?`,
+  en_agencia:(d)=>`en agencia hace ${d} día${d>1?"s":""} · Shalom lo puede devolver`,
+};
+function diasParado(o){
+  const cfg=(st.entregas&&st.entregas.parado)||{};
+  const tope=Number(cfg[o.estado] ?? PARADO_DEF[o.estado]);
+  if(!Number.isFinite(tope)||tope<=0) return null;   // 0 o vacío = no vigilar este estado
+  // Desde la última vez que ALGUIEN lo movió, no desde que nació: un pedido que
+  // acabas de despachar no lleva parado los días que llevaba esperando el adelanto.
+  const base=o.estado==="esperando_adelanto" ? (o.created_at||o.updated_at) : (o.updated_at||o.created_at);
+  const dias=Math.floor((Date.now()-new Date(base||Date.now()).getTime())/86400000);
+  return { dias, tope, pasado:dias>=tope, texto:(PARADO_TX[o.estado]||((d)=>`parado hace ${d} d`))(dias) };
+}
+const estaParado=(o)=>{ const p=diasParado(o); return !!(p&&p.pasado); };
+
 const KB_LIMA=[
   ["star","Por confirmar",["carrito"]],
   ["box","Confirmado",["confirmado"]],
@@ -519,11 +543,21 @@ function render(){
     // → el del ADELANTO. Antes esperando_adelanto entraba SIEMPRE, así que la cola se
     // llenaba de leads que nunca pagaron nada.
     return hayPagoPorValidar(o); }).length;
+  // Pedidos parados de ESTE tablero: los que nadie movió en más días de los que
+  // tolera el negocio. Es el único contador que cuenta algo que NO pasó.
+  const nParados=zList.filter(o=>!FIN.has(o.estado) && estaParado(o)).length;
   const zbar=$("kbzona");
   zbar.innerHTML=tab("lima","truck","Lima",nLima)+tab("provincia","building","Provincia",nProv)
+    +(nParados?`<button class="kz paradosb ${st.soloParados?"on":""}" id="kbParados"
+        style="display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:10px;cursor:pointer;
+        border:1.5px solid ${st.soloParados?"var(--red)":"rgba(239,68,68,.45)"};
+        background:${st.soloParados?"var(--red)":"transparent"};color:${st.soloParados?"#fff":"var(--red)"};
+        font-weight:700;font-size:13px" title="Pedidos que nadie movió hace demasiado. Los días se ajustan en Negocio → Entrega.">&#9203;
+        ${nParados} parado${nParados>1?"s":""}</button>`:"")
     +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
        ${nTurno===1?"1 pago por validar":`${nTurno} pagos por validar`}</a>`:"");
-  zbar.querySelectorAll(".kz").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; const em=$("exportMenu"); if(em) em.classList.remove("show"); render(); });
+  zbar.querySelectorAll(".kz:not(.paradosb)").forEach(b=> b.onclick=()=>{ st.kbZona=b.dataset.z; st.soloParados=false; const em=$("exportMenu"); if(em) em.classList.remove("show"); render(); });
+  const pb=$("kbParados"); if(pb) pb.onclick=()=>{ st.soloParados=!st.soloParados; render(); };
 
   box.innerHTML="";
   box.classList.toggle("vacio", !zList.length);
@@ -539,7 +573,8 @@ function render(){
     return;
   }
   cols.forEach(([ic,label,estados])=>{
-    const items=zList.filter(o=>estados.includes(o.estado));
+    let items=zList.filter(o=>estados.includes(o.estado));
+    if(st.soloParados) items=items.filter(estaParado);
     const col=document.createElement("div"); col.className="kcol";
     // Acción "En lote" SOLO en la columna "Confirmado" de provincia (la que junta
     // adelanto_validado + por_despachar: registrar guías de varios a la vez) y cuando
@@ -613,8 +648,7 @@ function kcard(o){
   // rojo a partir de 2 días para que la columna no se llene de leads muertos sin
   // que nadie lo note (la auto-limpieza es opt-in a propósito — auto-cancelar
   // sería peligroso — así que al menos la staleness se ve de un vistazo).
-  const diasEsp = o.estado==="esperando_adelanto"
-    ? Math.floor((Date.now()-new Date(o.created_at||Date.now()).getTime())/86400000) : -1;
+  const par = diasParado(o);
 
   // Botón principal: si el estado se resuelve en "Pagos por validar" (validar pago),
   // el botón salta allá; si no, avanza el pedido en el mismo tablero.
@@ -638,7 +672,7 @@ function kcard(o){
       ${enTurno?`<span class="kc-turno">PAGO POR VALIDAR</span>`:""}
     </div>
     <div class="kc-money">${moneyLine}</div>
-    ${diasEsp>=0?`<div style="font-size:11.5px;margin-top:3px;font-weight:${diasEsp>=2?"700":"500"};color:${diasEsp>=2?"var(--red)":"var(--faint)"}">⏳ ${diasEsp<1?"esperando el adelanto (hoy)":`sin adelanto hace ${diasEsp} día${diasEsp>1?"s":""}`}</div>`:""}
+    ${par?`<div style="font-size:11.5px;margin-top:3px;font-weight:${par.pasado?"700":"500"};color:${par.pasado?"var(--red)":"var(--faint)"}">&#9203; ${par.dias<1?"movido hoy":esc(par.texto)}</div>`:""}
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
     ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>${icon("alert")} Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
     ${s.distrito_por_confirmar?`<button class="kc-warn" data-cfdist>${icon("alert")} Confirmar distrito<br><span style="font-weight:500;opacity:.85">cambió su dirección y sigue en ${esc(s.distrito||"—")}</span></button>`:""}
