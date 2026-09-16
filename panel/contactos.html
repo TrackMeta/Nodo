@@ -212,7 +212,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos, recargaConFreno } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos, recargaConFreno, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -569,11 +569,25 @@ async function saveContact(){
   if(error){ toast(error.message,true); return; }
   $("modal").classList.remove("show"); toast("Contacto guardado"); await load();
 }
+// Los archivos que mandó el contacto (fotos, audios, comprobantes) viven en Storage y no
+// se van con la cascada de la base. Se piden DESPUÉS de borrar en la base, best-effort:
+// si falla, el contacto igual quedó eliminado y se avisa.
+async function borrarArchivosDe(ids, ch){
+  try{
+    const { data:{ session } }=await supa.auth.getSession();
+    const r=await fetch(`${SUPABASE_URL}/functions/v1/channel-config`,{ method:"POST",
+      headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${session?.access_token||SUPABASE_ANON_KEY}` },
+      body:JSON.stringify({ action:"contact_files_delete", channel_id:ch, contact_ids:ids, modo:"todo" }) });
+    const o=await r.json().catch(()=>null);
+    if(!r.ok||!o||!o.ok) return " · sus archivos no se pudieron borrar";
+    return o.borrados?` · ${o.borrados} archivo(s) borrados`:"";
+  }catch(_){ return " · sus archivos no se pudieron borrar"; }
+}
 async function removeContact(c){
-  if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación e historial.`,confirmText:"Eliminar",danger:true})) return;
+  if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación, historial y archivos.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("contacts").delete().eq("id",c.id);
   if(error){ toast(error.message,true); return; }
-  st.sel.delete(c.id); toast("Contacto eliminado"); await load();
+  st.sel.delete(c.id); toast("Contacto eliminado"+await borrarArchivosDe([c.id], c.channel_id||st.channelId)); await load();
 }
 
 // ── Acciones en lote ──
@@ -644,11 +658,12 @@ async function bulk(act){
     exportCsv(st.contacts.filter(c=>st.sel.has(c.id))); return;
   }
   if(act==="del"){
-    if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones e historial. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
+    if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones, historial y archivos. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
     let error=null;
     for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
-    st.sel.clear(); toast(`${ids.length} eliminado(s)`); await load(); return;
+    const extra=await borrarArchivosDe(ids, ch);
+    st.sel.clear(); toast(`${ids.length} eliminado(s)${extra}`); await load(); return;
   }
 }
 

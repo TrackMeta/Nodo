@@ -6,7 +6,7 @@
 //   Acciones: status | save | whatsapp_test | whatsapp_disconnect | …
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsChannelAdmin, accountOfChannel } from "../_shared/db.ts";
 import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 import { matchSegment, BATCH } from "../_shared/campaigns.ts";
@@ -859,6 +859,61 @@ Deno.serve(async (req) => {
         .update({ phone_number_id: null, waba_id: null }).eq("id", channel_id);
       if (e1) return json({ error: "desconectar", detalle: e1.message }, 400);
       return json({ ok: true });
+    }
+
+    // ── Archivos de uno o varios contactos (Eliminar chat / Eliminar contacto) ────────────
+    // Lo que mandaron los clientes vive en `comprobantes` bajo <cuenta>/<contacto>/, y ese
+    // bucket no lo barre nadie: borrar el chat o el contacto dejaba fotos, audios y Yapes
+    // huérfanos para siempre. El panel llama acá DESPUÉS de borrar en la base.
+    //   · modo "todo": se borró el CONTACTO → se va toda su carpeta.
+    //   · modo "chat": se borró solo el CHAT; el contacto y sus PEDIDOS siguen → se conserva
+    //     todo archivo que un pedido (shipping) o un campo del contacto siga referenciando,
+    //     que es justo el comprobante del pago. Se borra el resto (audios, fotos sueltas).
+    // Multi-tenant por construcción: la carpeta sale de la cuenta del canal del que llama.
+    // Lo que envió el negocio (bucket `media`) no se toca: lo barre media-gc cuando ya nada
+    // lo referencia (una respuesta rápida puede reusar el mismo archivo).
+    if (action === "contact_files_delete") {
+      const ids: string[] = (Array.isArray(body.contact_ids) ? body.contact_ids : [])
+        .map((x: unknown) => String(x)).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 500);
+      const modo = body.modo === "chat" ? "chat" : "todo";
+      if (!ids.length) return json({ ok: true, borrados: 0, conservados: 0, fallidos: 0, bytes: 0 });
+      const acc = (await accountOfChannel(db, channel_id)) || "misc";
+      const nombres: string[] = []; let bytes = 0;
+      for (let i = 0; i < ids.length; i += 200) {
+        const prefijos = ids.slice(i, i + 200).map((id) => `${acc}/${id}/`);
+        for (let desde = 0; ; desde += 1000) {
+          const { data, error } = await db.rpc("nodo_objetos_por_prefijo", { p_bucket: "comprobantes", p_prefijos: prefijos, p_limite: 1000, p_desde: desde });
+          if (error) return json({ error: "listar", detalle: error.message }, 500);
+          const pag = (data ?? []) as Array<{ nombre: string; bytes: number }>;
+          for (const o of pag) { nombres.push(o.nombre); bytes += Number(o.bytes) || 0; }
+          if (pag.length < 1000 || desde > 200_000) break;
+        }
+      }
+      let aBorrar = nombres;
+      if (modo === "chat" && nombres.length) {
+        const textos: string[] = [];
+        for (let i = 0; i < ids.length; i += 200) {
+          const trozo = ids.slice(i, i + 200);
+          for (const [tabla, col] of [["orders", "shipping"], ["contact_field_values", "value"]] as const) {
+            for (let desde = 0; ; desde += 1000) {
+              const { data, error } = await db.from(tabla).select(col).in("contact_id", trozo).range(desde, desde + 999);
+              // No poder comprobar una referencia es exactamente cuando NO se debe borrar.
+              if (error) return json({ error: "verificar", detalle: `${tabla}: ${error.message}` }, 500);
+              for (const f of (data ?? []) as Array<Record<string, unknown>>) textos.push(JSON.stringify(f[col] ?? ""));
+              if ((data?.length ?? 0) < 1000) break;
+            }
+          }
+        }
+        const txt = textos.join("\n");
+        aBorrar = nombres.filter((n) => !txt.includes(n));
+      }
+      let borrados = 0, fallidos = 0;
+      for (let i = 0; i < aBorrar.length; i += 100) {
+        const lote = aBorrar.slice(i, i + 100);
+        const { error: re } = await db.storage.from("comprobantes").remove(lote);
+        if (re) { fallidos += lote.length; console.error("[contact_files_delete]", re.message); } else borrados += lote.length;
+      }
+      return json({ ok: true, borrados, fallidos, conservados: nombres.length - aBorrar.length, bytes });
     }
 
     // ── Qué se llevaría por delante borrar este bot ────────────────────────────────────

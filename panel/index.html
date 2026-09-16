@@ -1599,7 +1599,11 @@ async function actionHandler(a){
     if(e1||e2){ toast("No se pudo eliminar el chat: "+((e1||e2).message),true); return; }
     // Sin mensajes ya no "envió imagen": el sello lo pone un trigger al insertar y nadie lo quitaba.
     await supa.from("contacts").update({ ultima_imagen_at:null }).eq("id",cid);
-    toast("Chat eliminado"); backToList(); loadConversations(); return; }
+    // Sus archivos (fotos, audios, adjuntos) se van con el chat; se conserva el comprobante
+    // que algún pedido siga usando. Best-effort: si falla, el chat igual quedó borrado.
+    let ar=null; try{ const r=await callFn("channel-config",{ action:"contact_files_delete", channel_id:state.channelId, contact_ids:[cid], modo:"chat" }); ar=await r.json().catch(()=>null); }catch(_){}
+    toast(`Chat eliminado${ar&&ar.borrados?` · ${ar.borrados} archivo(s) borrados`:""}${ar&&ar.conservados?` · ${ar.conservados} comprobante(s) de pedidos conservados`:""}`);
+    backToList(); loadConversations(); return; }
 }
 async function exportMessages(){
   // Paginado: un chat largo se cortaba en 1000 mensajes y el archivo salía incompleto sin
