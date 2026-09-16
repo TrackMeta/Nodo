@@ -375,9 +375,10 @@ Deno.serve(async (req) => {
           return json({ error: "ultimo_canal", detalle: "Es tu único bot activo. Crea otro antes de archivar este." }, 400);
         }
       }
-      const { error } = await db.from("channels").update({ activo: archivar }).eq("id", channel_id);
+      // archivar = apagar: `activo` es lo CONTRARIO de estar archivado.
+      const { error } = await db.from("channels").update({ activo: !archivar }).eq("id", channel_id);
       if (error) return json({ error: "guardar", detalle: error.message }, 400);
-      return json({ ok: true, activo: archivar });
+      return json({ ok: true, archivado: archivar, activo: !archivar });
     }
 
     // ── Averiguar los IDs a partir del token ───────────────────────────────────────────
