@@ -359,6 +359,15 @@
   .emgrid button:hover{background:var(--surface-2)}
   .msg img,.msg video{max-width:230px;border-radius:10px;display:block}
   .msg audio{max-width:230px}
+  /* Ubicación compartida por WhatsApp: mapa pequeño + enlace para abrirla. */
+  .msg .ubi{width:260px;max-width:100%;white-space:normal}
+  .msg .ubi iframe{display:block;width:100%;height:150px;border:0;border-radius:10px;background:var(--surface-2)}
+  .msg .ubi .ubi-t{display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:600}
+  .msg .ubi .ubi-t .ico{width:15px;height:15px;flex:none}
+  .msg .ubi .ubi-d{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .msg .ubi a.ubi-o{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:var(--brand);text-decoration:none}
+  .msg .ubi a.ubi-o:hover{text-decoration:underline}
+  .conv .pv .ico{width:13px;height:13px;vertical-align:-2px;margin-right:2px}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
   .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
@@ -1227,7 +1236,7 @@ function renderConversations(){
       <div class="avwrap"><div class="av">${initials(c.nombre, c.wa_id)}</div>${pEmoji}</div>
       <div class="body">
         <div class="r1"><span class="nm">${esc(c.nombre||c.wa_id)}</span><span class="tm">${rel(cv.updated_at)}</span></div>
-        <div class="r1"><span class="pv">${esc(c.last_input||"")}</span>${cv.no_leidos>0?`<span class="badge">${cv.no_leidos}</span>`:""}</div>
+        <div class="r1"><span class="pv">${previewText(c)}</span>${cv.no_leidos>0?`<span class="badge">${cv.no_leidos}</span>`:""}</div>
         <div class="dots">${dots}</div>
       </div>`;
     el.onclick = () => openChat(c);
@@ -1575,7 +1584,7 @@ async function exportMessages(){
   // que le falte la mitad y parezca entera es justo lo que no puede pasar.
   const { data }=await pageAll((f,t)=>supa.from("messages").select("direction,type,content,ts")
     .eq("contact_id",state.contactId).order("ts",{ascending:true}).order("id",{ascending:true}).range(f,t));
-  const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Nodo"; const txt=m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
+  const lines=(data||[]).map(m=>{ const who=m.direction==="in"?"Cliente":"Nodo"; const u=ubiInfo(m); const txt=u?`Ubicación compartida${u.lugar?" — "+u.lugar:""}${u.ok?" "+u.gmaps:""}`:(m.content?.text||m.content?.caption||m.content?.title||(m.content?.media_url?`[${m.type}] ${m.content.media_url}`:`[${m.type}]`)); return `[${new Date(m.ts).toLocaleString("es-PE")}] ${who}: ${txt}`; });
   const blob=new Blob([`Conversación con ${state.contactName||""}\n\n`+lines.join("\n")],{type:"text/plain;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`chat_${(state.contactName||state.contactId).toString().replace(/\W+/g,"_")}.txt`; a.click(); URL.revokeObjectURL(a.href);
   toast("Mensajes exportados");
@@ -1796,7 +1805,48 @@ function statusTick(s, animate){
 // javascript:/vbscript: (aunque hoy siempre viene de Meta/Storage) no debe
 // llegar nunca a un atributo — defensa en profundidad contra XSS.
 function safeUrl(u){ return /^\s*(https?:|data:)/i.test(String(u||"")) ? String(u) : "#"; }
+// Ubicación compartida por WhatsApp. Llega como type:"location" con {lat,lng,name,address}
+// y SIN texto, así que la burbuja pintaba "[location]" a secas y el operador no tenía ni
+// mapa ni enlace: la información más precisa que puede mandar un cliente para un delivery
+// se veía como un error. Un lugar (con nombre/dirección) muestra ese texto; un pin suelto,
+// las coordenadas. En los dos casos: mapa chico y "Abrir en Google Maps".
+function ubiInfo(m){
+  if(m?.type!=="location") return null;
+  const c = m.content||{};
+  let lat = Number(c.lat), lng = Number(c.lng);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)){
+    // Filas viejas o del chat de prueba que solo guardaron el texto "[ubicación] -12.1, -77.0".
+    const mm = /(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/.exec(String(c.text||""));
+    if(mm){ lat=Number(mm[1]); lng=Number(mm[2]); }
+  }
+  const ok = Number.isFinite(lat)&&Number.isFinite(lng);
+  const lugar = [c.name,c.address].map(x=>String(x??"").trim()).filter(Boolean).join(" · ");
+  return { ok, lat, lng, lugar, gmaps: ok?`https://maps.google.com/?q=${lat},${lng}`:"" };
+}
+function ubiHtml(m){
+  const u = ubiInfo(m); if(!u) return null;
+  if(!u.ok) return `<div class="ubi"><div class="ubi-t">${icon("pin")} Ubicación compartida</div><div class="ubi-d">${esc(u.lugar||"Sin coordenadas")}</div></div>`;
+  const d = 0.004;
+  const bbox = `${(u.lng-d).toFixed(6)},${(u.lat-d*0.75).toFixed(6)},${(u.lng+d).toFixed(6)},${(u.lat+d*0.75).toFixed(6)}`;
+  const osm = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${u.lat},${u.lng}`;
+  const coords = `${u.lat.toFixed(6)}, ${u.lng.toFixed(6)}`;
+  return `<div class="ubi"><iframe src="${esc(osm)}" loading="lazy" title="Mapa de la ubicación compartida"></iframe>`
+    + `<div class="ubi-t">${icon("pin")} ${u.lugar?esc(u.lugar):"Ubicación compartida"}</div>`
+    + `<div class="ubi-d">${esc(coords)}</div>`
+    + `<a class="ubi-o" href="${esc(u.gmaps)}" target="_blank" rel="noopener noreferrer">Abrir en Google Maps ↗</a></div>`;
+}
+// Vista previa en la lista de chats: el motor deja en last_input "[ubicación] -12.1, -77.0",
+// que como resumen no dice nada. Se muestra el lugar si lo hay o "Ubicación compartida".
+function previewText(c){
+  const t = String(c.last_input||"");
+  const mm = /^\[ubicaci[oó]n\]\s*(.*)$/i.exec(t);
+  if(!mm) return esc(t);
+  const resto = mm[1].trim();
+  const esPin = !resto || /^-?\d{1,3}\.\d+[,\s]+-?\d{1,3}\.\d+$/.test(resto);
+  return `${icon("pin")} ${esPin?"Ubicación compartida":esc(resto)}`;
+}
 function mediaHtml(m){
+  if(m.type==="location") return ubiHtml(m);
   const url = m.content?.media_url; if(!url) return null;
   const cap = m.content?.caption ? `<div style="margin-top:5px">${waFmt(m.content.caption)}</div>` : "";
   const u = esc(safeUrl(url));
