@@ -44,6 +44,42 @@ const PLAIN = ["phone_number_id", "waba_id", "verify_token", "pixel_id", "page_i
 // Secretos → Vault.
 const SECRETS = ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"];
 
+// Inventario de los archivos de Storage de UN bot (nombres por bucket + bytes totales).
+//   · `media`         → acct/<cuenta>/chat/<canal>/…  (lo que envió: adjuntos, productos, biblioteca)
+//   · `comprobantes`  → <cuenta>/<contacto>/…         (lo que le mandaron sus clientes)
+// Lista por prefijo con la RPC nodo_objetos_por_prefijo (0095), paginando de a 1000. Las
+// fichas de Shalom viven en acct/misc/chat/misc/ y no caen bajo ningún canal real.
+async function archivosDelBot(db: ReturnType<typeof serviceClient>, channelId: string, accountId: string | null) {
+  const acc = accountId || "misc";
+  const listar = async (bucket: string, prefijos: string[]) => {
+    const out: string[] = []; let bytes = 0;
+    if (!prefijos.length) return { out, bytes };
+    for (let i = 0; i < prefijos.length; i += 200) {
+      const trozo = prefijos.slice(i, i + 200);
+      for (let desde = 0; ; desde += 1000) {
+        const { data, error } = await db.rpc("nodo_objetos_por_prefijo", { p_bucket: bucket, p_prefijos: trozo, p_limite: 1000, p_desde: desde });
+        if (error) throw new Error(`${bucket}: ${error.message}`);
+        const pag = (data ?? []) as Array<{ nombre: string; bytes: number }>;
+        for (const o of pag) { out.push(o.nombre); bytes += Number(o.bytes) || 0; }
+        if (pag.length < 1000) break;
+        if (desde > 200_000) break; // tope de seguridad
+      }
+    }
+    return { out, bytes };
+  };
+  // Contactos del canal (paginado: PostgREST corta en 1000).
+  const contactos: string[] = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await db.from("contacts").select("id").eq("channel_id", channelId).order("id", { ascending: true }).range(desde, desde + 999);
+    if (error) throw new Error(`contacts: ${error.message}`);
+    for (const c of (data ?? []) as Array<{ id: string }>) contactos.push(c.id);
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  const m = await listar("media", [`acct/${acc}/chat/${channelId}/`]);
+  const c = await listar("comprobantes", contactos.map((id) => `${acc}/${id}/`));
+  return { media: m.out, comprobantes: c.out, bytes: m.bytes + c.bytes };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -828,6 +864,9 @@ Deno.serve(async (req) => {
     // ── Qué se llevaría por delante borrar este bot ────────────────────────────────────
     // Se cuenta ANTES y se le enseña al usuario. Un "esto no se puede deshacer" genérico
     // no informa de nada; «2.480 conversaciones y 312 pedidos» sí.
+    // Incluye los archivos de Storage: los que envió el bot viven en `media` bajo
+    // acct/<cuenta>/chat/<canal>/, y los que le mandaron sus clientes en `comprobantes`
+    // bajo <cuenta>/<contacto>/ (por eso hace falta la lista de contactos).
     if (action === "channel_delete_preview") {
       const cuenta = async (tabla: string) => {
         const { count, error } = await db.from(tabla).select("id", { count: "exact", head: true }).eq("channel_id", channel_id);
@@ -836,9 +875,11 @@ Deno.serve(async (req) => {
       const [contactos, conversaciones, mensajes, pedidos, productos, flujos] = await Promise.all(
         ["contacts", "conversations", "messages", "orders", "products", "flows"].map(cuenta),
       );
-      const { data: c } = await db.from("channels").select("nombre, activo").eq("id", channel_id).maybeSingle();
+      const { data: c } = await db.from("channels").select("nombre, activo, account_id").eq("id", channel_id).maybeSingle();
+      const arch = await archivosDelBot(db, channel_id, (c as any)?.account_id ?? null).catch(() => null);
       return json({ ok: true, nombre: (c as any)?.nombre ?? "", archivado: (c as any)?.activo === false,
-        cuentas: { contactos, conversaciones, mensajes, pedidos, productos, flujos } });
+        cuentas: { contactos, conversaciones, mensajes, pedidos, productos, flujos },
+        archivos: arch ? { n: arch.media.length + arch.comprobantes.length, bytes: arch.bytes } : null });
     }
 
     // ── Eliminar un bot ────────────────────────────────────────────────────────────────
@@ -862,10 +903,28 @@ Deno.serve(async (req) => {
       for (const kind of ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"]) {
         await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind }).then(() => {}, () => {});
       }
+      // Los archivos se inventarían ANTES de borrar: el bucket de comprobantes se organiza por
+      // contacto, y los contactos se van en la cascada. Se borran DESPUÉS de que el canal se
+      // fue de verdad, así un fallo en la base no deja un bot vivo sin sus archivos.
+      const arch = await archivosDelBot(db, channel_id, (c as any).account_id ?? null).catch((e) => {
+        console.error("[channel_delete] inventario de archivos:", (e as any)?.message ?? e); return null;
+      });
       const { error } = await db.from("channels").delete().eq("id", channel_id);
       if (error) return json({ error: "borrar", detalle: error.message }, 400);
-      // Los archivos en Storage ya no los referencia nadie: los barre media-gc en su cron.
-      return json({ ok: true, borrado: nombre });
+      // El recolector nocturno solo barre `media`; lo que mandaron los clientes (comprobantes,
+      // fotos, audios) no lo barre nadie. Borrar el bot es borrar también lo suyo.
+      let borrados = 0, fallidos = 0;
+      if (arch) {
+        for (const [bucket, nombres] of [["media", arch.media], ["comprobantes", arch.comprobantes]] as const) {
+          for (let i = 0; i < nombres.length; i += 100) {
+            const lote = nombres.slice(i, i + 100);
+            const { error: re } = await db.storage.from(bucket).remove(lote);
+            if (re) { fallidos += lote.length; console.error(`[channel_delete] storage ${bucket}:`, re.message); }
+            else borrados += lote.length;
+          }
+        }
+      }
+      return json({ ok: true, borrado: nombre, archivos: { borrados, fallidos, bytes: arch?.bytes ?? 0 } });
     }
 
     return json({ error: "accion_invalida" }, 400);

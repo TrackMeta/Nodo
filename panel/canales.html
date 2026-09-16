@@ -377,10 +377,15 @@ async function eliminarBot(id, nombre, btn){
   btn.disabled=false; btn.textContent=old;
   const n=(x)=> x==null ? "?" : Number(x).toLocaleString("es-PE");
   const c=pv.cuentas||{};
+  const mb=(b)=> b>=1048576 ? `${(b/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(b/1024))} KB`;
+  const a=pv.archivos;
   const filas=[["contactos",c.contactos],["conversaciones",c.conversaciones],["mensajes",c.mensajes],
                ["pedidos",c.pedidos],["productos",c.productos],["flujos",c.flujos]]
     .filter(([,v])=>v)   // no se listan los que están en cero: ensucian y no asustan de nada
-    .map(([k,v])=>`<b>${n(v)}</b> ${k}`).join("<br>");
+    .map(([k,v])=>`<b>${n(v)}</b> ${k}`)
+    // Los archivos de Storage (fotos, audios, comprobantes, adjuntos) se van con el bot.
+    .concat(a&&a.n ? [`<b>${n(a.n)}</b> archivos (${mb(a.bytes||0)}: fotos, audios, comprobantes y adjuntos)`] : [])
+    .join("<br>");
   const v=await askText({ title:`Eliminar «${nombre}» para siempre`,
     messageHtml:`Esto <b>no se puede deshacer</b> y no hay copia de seguridad.<br><br>
       ${filas?`Se borra ahora mismo:<br>${filas}<br><br>`:"Este bot está vacío: no tiene contactos, pedidos ni productos.<br><br>"}
@@ -391,8 +396,9 @@ async function eliminarBot(id, nombre, btn){
   if(v.trim().toLowerCase()!==nombre.trim().toLowerCase()){ toast("El nombre no coincide — no se borró nada",true); return; }
   btn.disabled=true; btn.textContent="Eliminando…";
   try{
-    await callFn("channel-config",{ action:"channel_delete", channel_id:id, confirmar:v.trim() });
-    toast(`«${nombre}» se eliminó`);
+    const r=await callFn("channel-config",{ action:"channel_delete", channel_id:id, confirmar:v.trim() });
+    const ar=r&&r.archivos;
+    toast(`«${nombre}» se eliminó${ar&&ar.borrados?` con ${n(ar.borrados)} archivos`:""}${ar&&ar.fallidos?` · ${n(ar.fallidos)} archivos no se pudieron borrar`:""}`, !!(ar&&ar.fallidos));
     await renderArchivo();
   }catch(err){
     toast(err.message||"No se pudo eliminar",true);
