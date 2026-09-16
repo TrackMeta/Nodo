@@ -128,6 +128,7 @@
       <span class="ico">＋</span>
       <div><b style="color:var(--text);font-size:14px">Más canales próximamente</b><br>Instagram, Messenger y otros se podrán conectar aquí.</div>
     </div>
+    <div id="archCard"></div>
   </div>
 </div>
 
@@ -151,10 +152,11 @@ async function load(){
   // un miembro podría usar para forjar el webhook y aprobar pagos — migración 0073 lo
   // revoca). El booleano "Copiloto activo" viene del endpoint status (st.secrets.copiloto).
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",st.channelId).maybeSingle();
+    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
-    .select("phone_number_id,waba_id,verify_token,ia_router").eq("id",st.channelId).maybeSingle()); }
+    .select("nombre,phone_number_id,waba_id,verify_token,ia_router").eq("id",st.channelId).maybeSingle()); }
   st.channel=ch||{};
+  st.channelNombre=st.channel.nombre||"";
   st.secrets={};
   try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
   // Una sola guarda para todo lo que pinta esta seccion, en vez de una por render:
@@ -162,7 +164,7 @@ async function load(){
   // lecturas por `supa` las cancela shell.js al salir, pero la de arriba va por Edge
   // Function y esas no se pueden cancelar a ciegas (muchas escriben).
   if(!$("waCard")) return;
-  renderWA(); renderTG();
+  renderWA(); renderTG(); renderArchivo();
 }
 function badge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
 function ph(on,hint){ return on?'•••••••• guardado':hint; }
@@ -323,6 +325,75 @@ async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado"); }
   catch{ toast("No se pudo copiar — selecciónalo a mano",true); }
 }
+// ── Archivar un bot ────────────────────────────────────────────────────────────────
+// No hay "eliminar" a propósito: de un canal cuelgan en cascada más de treinta tablas
+// (contactos, conversaciones, mensajes, pedidos, productos, flujos, pagos, atribución),
+// así que borrar la fila se lleva el historial entero de un negocio, de golpe y sin
+// papelera. Archivar lo apaga —el webhook y el motor lo ignoran— y deja todo intacto.
+async function renderArchivo(){
+  const box=$("archCard"); if(!box) return;
+  let arch=[];
+  try{
+    const { data }=await supa.from("channels").select("id,nombre").eq("activo",false).order("nombre");
+    arch=data||[];
+  }catch(_){}
+  if(!$("archCard")) return;  // te fuiste de la pantalla mientras cargaba
+  box.innerHTML=`
+    <div class="card" style="border-color:rgba(240,71,71,.28)">
+      <div class="chd"><span class="ico" style="background:rgba(240,71,71,.1);color:#f04747">${icon("alert")}</span>
+        <div><div class="nm">Dar de baja este bot</div><div class="sub2">Se apaga, no se borra</div></div></div>
+      <div class="desc">Archivar <b>${esc(st.channelNombre||"este bot")}</b> lo deja fuera de servicio: deja de responder,
+        de gastar y de aparecer en el selector. <b>No se borra nada</b> — contactos, conversaciones, pedidos, productos y
+        flujos quedan tal cual, y puedes reactivarlo cuando quieras desde esta misma lista.</div>
+      <div class="acts"><button class="btn danger" id="archBtn">Archivar este bot</button></div>
+      ${arch.length?`
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="mt" style="font-weight:700;font-size:12.5px;margin-bottom:10px">Bots archivados</div>
+          ${arch.map(c=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+            <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600">${esc(c.nombre)}</span>
+            <button class="btn mini" data-rea="${esc(c.id)}">Reactivar</button></div>`).join("")}
+        </div>`:""}
+    </div>`;
+  $("archBtn").onclick=(e)=>archivarBot(e.target);
+  box.querySelectorAll("[data-rea]").forEach(b=>{
+    b.onclick=()=>reactivarBot(b.getAttribute("data-rea"), b.previousElementSibling.textContent, b);
+  });
+}
+async function archivarBot(btn){
+  // Se exige escribir el nombre: archivar no borra, pero apaga un negocio entero, y el
+  // clic de confirmación solo comprueba que sepas hacer clic — no que sepas cuál elegiste.
+  const nombre=st.channelNombre||"";
+  const v=await askText({ title:`Archivar «${nombre}»`,
+    messageHtml:`Este bot <b>deja de responder</b> a partir de ahora y desaparece del selector.<br><br>
+      <b>No se borra nada</b>: contactos, conversaciones, pedidos, productos y flujos quedan intactos, y lo puedes
+      reactivar desde Canales, en cualquier otro bot.<br><br>Escribe <b>${esc(nombre)}</b> para confirmar.`,
+    label:"Nombre del bot", placeholder:nombre, confirmText:"Archivar" });
+  if(v===null) return;
+  if(v.trim().toLowerCase()!==nombre.trim().toLowerCase()){ toast("El nombre no coincide — no se archivó nada",true); return; }
+  btn.disabled=true; btn.textContent="Archivando…";
+  try{
+    await callFn("channel-config",{ action:"channel_archive", channel_id:st.channelId, archivar:true });
+    toast(`«${nombre}» quedó archivado`);
+    // El shell solo lista los activos: se recarga para que salte al primero que quede.
+    try{ localStorage.removeItem("nodo.channelId"); }catch(_){}
+    location.href="canales.html";
+  }catch(err){
+    toast(err.message||"No se pudo archivar",true);
+    btn.disabled=false; btn.textContent="Archivar este bot";
+  }
+}
+async function reactivarBot(id, nombre, btn){
+  btn.disabled=true; btn.textContent="Reactivando…";
+  try{
+    await callFn("channel-config",{ action:"channel_archive", channel_id:id, archivar:false });
+    toast(`«${nombre}» volvió a estar activo`);
+    location.reload();   // el selector del shell se arma al cargar
+  }catch(err){
+    toast(err.message||"No se pudo reactivar",true);
+    btn.disabled=false; btn.textContent="Reactivar";
+  }
+}
+
 // Desconectar el número (para poner otro tras un baneo). NO borra datos del
 // canal — solo quita phone_number_id/waba_id + los secretos del número.
 async function desconectarWA(btn){

@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -350,6 +350,34 @@ Deno.serve(async (req) => {
         webhook: { app_secret: !!secrets?.app_secret, verify_token: !!(c as any)?.verify_token },
         suscripcion,
       });
+    }
+
+    // ── Archivar / reactivar un bot ────────────────────────────────────────────────────
+    // NO hay "eliminar" a propósito: de channels cuelgan en cascada más de treinta tablas
+    // (contactos, conversaciones, mensajes, pedidos, productos, flujos, pagos, atribución…),
+    // así que borrar la fila se lleva el historial entero de un negocio, de golpe y sin
+    // papelera. `activo=false` apaga el bot —el webhook y el motor lo ignoran, deja de
+    // responder y de gastar— y deja todo lo demás intacto y recuperable.
+    if (action === "channel_archive") {
+      const archivar = body.archivar !== false;
+      if (archivar) {
+        // Que no te quedes sin ninguno: el panel entero se cuelga de tener un canal activo
+        // (el selector, la Bandeja, los reportes), y un usuario sin canales no tendría cómo
+        // volver a entrar a reactivar el que archivó.
+        // Se cuenta dentro de SU cuenta: `db` es service_role y salta RLS, así que sin el
+        // filtro por account_id los canales de otro negocio harían de red de seguridad — el
+        // usuario archivaría el último suyo y se quedaría fuera.
+        const { data: cAct } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
+        const cuenta = (cAct as any)?.account_id;
+        const { data: activos } = await db.from("channels").select("id").eq("activo", true).eq("account_id", cuenta ?? "");
+        const otros = (activos ?? []).filter((c: any) => c.id !== channel_id);
+        if (!otros.length) {
+          return json({ error: "ultimo_canal", detalle: "Es tu único bot activo. Crea otro antes de archivar este." }, 400);
+        }
+      }
+      const { error } = await db.from("channels").update({ activo: archivar }).eq("id", channel_id);
+      if (error) return json({ error: "guardar", detalle: error.message }, 400);
+      return json({ ok: true, activo: archivar });
     }
 
     // ── Averiguar los IDs a partir del token ───────────────────────────────────────────
