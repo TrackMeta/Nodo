@@ -1320,10 +1320,12 @@ function prefixLook(wa, map, def){ const w=(wa||"").replace(/\D/g,""); for(const
 function localTime(wa){ try{ return new Intl.DateTimeFormat("es",{timeZone:prefixLook(wa,TZ_BY_PREFIX,"America/Lima"),hour:"2-digit",minute:"2-digit"}).format(new Date()); }catch(_){ return "—"; } }
 function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(ts)); }catch(_){ return "—"; } }
 function mediaThumb(m){ const u=esc(safeUrl(m.content.media_url));
-  if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" loading="lazy" style="cursor:zoom-in"/>`;
-  if(m.type==="video") return `<video data-light="${u}" data-lk="video" src="${u}" style="cursor:zoom-in"></video>`;
-  if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">${icon("mic")}</a>`;
-  return `<a href="${u}" target="_blank" title="Archivo">${icon("file")}</a>`; }
+  // Tooltip con qué es, nombre, tamaño y fecha: en la cuadrícula un icono solo no dice nada.
+  const tt=esc([(MEDIA_LABEL[m.type]||[])[1]||m.type, m.content?.filename, fmtBytes(m.content?.size), fmtDate(m.ts), m.direction==="in"?"del cliente":"enviado"].filter(Boolean).join(" · "));
+  if(m.type==="image"||m.type==="sticker") return `<img data-light="${u}" data-lk="image" src="${u}" loading="lazy" decoding="async" title="${tt}" style="cursor:zoom-in"/>`;
+  if(m.type==="video") return `<video data-light="${u}" data-lk="video" src="${u}" preload="metadata" title="${tt}" style="cursor:zoom-in"></video>`;
+  if(m.type==="audio") return `<a href="${u}" target="_blank" rel="noopener" title="${tt}">${icon("mic")}</a>`;
+  return `<a href="${u}" target="_blank" rel="noopener" download="${esc(m.content?.filename||"archivo")}" title="${tt}">${icon("file")}</a>`; }
 
 async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
@@ -1426,7 +1428,7 @@ function renderContactPanel(){
   ];
   const autoBody = autoRows.length ? autoRows.join("") : '<div class="cempty">Ninguna automatización activa</div>';
   const techBody = techFields.length ? techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("") : '<div class="cempty">Sin candados internos</div>';
-  const mediaBody = media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>` : '<div class="cempty">Sin archivos enviados</div>';
+  const mediaBody = media.length ? `<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>${media.length>12?`<div class="cempty">Se muestran los 12 más recientes de ${media.length}</div>`:""}` : '<div class="cempty">Sin archivos en este chat</div>';
   const nodosBody = nodos.length ? nodos.slice(0,15).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">El motor registrará aquí los nodos ejecutados</div>';
   const errsBody = errs.length ? errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join("") : '<div class="cempty">Sin errores registrados</div>';
   // diagBody/advBody van DESPUÉS de nodosBody/errsBody (son const: evita el temporal dead zone)
