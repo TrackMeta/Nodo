@@ -577,9 +577,22 @@ async function archivarMediaEntrante(channelId: string, contactId: string, wamid
     if (!mediaId) return;
     const secrets = await getChannelSecrets(db, channelId);
     if (!secrets?.access_token) return;
-    const { bytes, mime: mimeCrudo } = await fetchMediaBytes(mediaId, secrets.access_token);
-    if (!bytes?.length) return;
-    if (bytes.length > MEDIA_MAX_BYTES) { console.warn(`[webhook] media ${tipo} de ${bytes.length} bytes: demasiado grande, no se archiva`); return; }
+    let bajada: { bytes: Uint8Array; mime: string };
+    try {
+      bajada = await fetchMediaBytes(mediaId, secrets.access_token);
+    } catch (e) {
+      // Token vencido, media caducado en Meta (duran ~30 días), red. Se deja el motivo en
+      // el mensaje para que la Bandeja no muestre un «cargando» eterno.
+      await marcarErrorMedia(channelId, wamid, "No se pudo descargar de WhatsApp");
+      throw e;
+    }
+    const { bytes, mime: mimeCrudo } = bajada;
+    if (!bytes?.length) { await marcarErrorMedia(channelId, wamid, "WhatsApp devolvió un archivo vacío"); return; }
+    if (bytes.length > MEDIA_MAX_BYTES) {
+      console.warn(`[webhook] media ${tipo} de ${bytes.length} bytes: demasiado grande, no se archiva`);
+      await marcarErrorMedia(channelId, wamid, `Archivo de ${(bytes.length / 1048576).toFixed(1)} MB: supera el máximo de ${MEDIA_MAX_BYTES / 1048576} MB, pídeselo por otro medio`);
+      return;
+    }
     // "audio/ogg; codecs=opus" → el bucket quiere el mime pelado.
     const mime = String(mimeCrudo || content?.mime_type || "application/octet-stream").split(";")[0].trim();
     const acc = await accountOfChannel(db, channelId);
@@ -589,21 +602,34 @@ async function archivarMediaEntrante(channelId: string, contactId: string, wamid
       await db.storage.createBucket(MEDIA_BUCKET, { public: false }).catch(() => {});
       up = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
     }
-    if (up.error) { console.error("[webhook] archivar media upload:", up.error.message); return; }
+    if (up.error) { console.error("[webhook] archivar media upload:", up.error.message); await marcarErrorMedia(channelId, wamid, "No se pudo guardar el archivo"); return; }
     const { data: signed } = await db.storage.from(MEDIA_BUCKET).createSignedUrl(path, MEDIA_SIGNED_TTL);
-    if (!signed?.signedUrl) return;
+    if (!signed?.signedUrl) { await marcarErrorMedia(channelId, wamid, "No se pudo generar el enlace del archivo"); return; }
     // Se lee la fila de nuevo: si el motor ya le colgó su propia URL (OCR) o una
     // transcripción mientras tanto, no se pisa nada, solo se agrega lo que falta.
     const { data: m } = await db.from("messages").select("id, content").eq("wamid", wamid).eq("channel_id", channelId).maybeSingle();
     if (!m) return;
     const c = ((m as any).content ?? {}) as Record<string, unknown>;
     if (!c.media_url) {
-      await db.from("messages").update({ content: { ...c, media_url: signed.signedUrl, mime } }).eq("id", (m as any).id);
+      // `size` en bytes: la Bandeja lo muestra junto al archivo y sirve para medir espacio.
+      await db.from("messages").update({ content: { ...c, media_url: signed.signedUrl, mime, size: bytes.length, storage_path: `${MEDIA_BUCKET}/${path}` } }).eq("id", (m as any).id);
     }
     if (tipo === "audio" && botEnPausa) await transcribirParaOperador(channelId, contactId, String((m as any).id), bytes, mime);
   } catch (e) {
     console.error("[webhook] archivar media:", (e as any)?.message ?? e);
   }
+}
+
+// Deja en el mensaje por qué no hay archivo, para que la Bandeja lo diga en vez de
+// quedarse en «Cargando desde WhatsApp…». No pisa una URL que sí se haya conseguido.
+async function marcarErrorMedia(channelId: string, wamid: string, motivo: string): Promise<void> {
+  try {
+    const { data: m } = await db.from("messages").select("id, content").eq("wamid", wamid).eq("channel_id", channelId).maybeSingle();
+    if (!m) return;
+    const c = ((m as any).content ?? {}) as Record<string, unknown>;
+    if (c.media_url) return;
+    await db.from("messages").update({ content: { ...c, media_error: motivo } }).eq("id", (m as any).id);
+  } catch (_) { /* best-effort */ }
 }
 
 // Nota de voz con el bot en PAUSA: el motor no la va a escuchar, así que se transcribe acá

@@ -371,6 +371,16 @@
   .msg .ubi a.ubi-o{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:var(--brand);text-decoration:none}
   .msg .ubi a.ubi-o:hover{text-decoration:underline}
   .conv .pv .ico{width:13px;height:13px;vertical-align:-2px;margin-right:2px}
+  /* Media sin archivo (cargando / no disponible) y pie con tamaño. */
+  .msg .mph{min-width:170px;white-space:normal}
+  .msg .mph .mph-t{display:flex;align-items:center;gap:6px;font-weight:600}
+  .msg .mph .mph-t .ico{width:15px;height:15px;flex:none}
+  .msg .mph .mph-d{font-size:12px;color:var(--muted);margin-top:2px}
+  .msg .mph.err .mph-d{color:var(--red)}
+  .msg .mmeta{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);margin-top:4px;white-space:normal}
+  .msg .mmeta .ico{width:13px;height:13px;flex:none}
+  .msg img.stk{max-width:140px;background:transparent}
+  .msg a.file .fsz{margin-left:6px;font-size:11.5px;color:var(--muted)}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
   .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
@@ -1862,21 +1872,43 @@ function ubiHtml(m){
 // que como resumen no dice nada. Se muestra el lugar si lo hay o "Ubicación compartida".
 function previewText(c){
   const t = String(c.last_input||"");
+  // «[audio]», «[image]», «[document]»… es lo que deja el webhook cuando el media no
+  // trae texto. En la lista se muestra como lo diría una persona.
+  const mt = /^\[(image|sticker|audio|video|document)\]$/i.exec(t.trim());
+  if(mt){ const l=MEDIA_LABEL[mt[1].toLowerCase()]; return `${icon(l[0])} ${l[1]}`; }
   const mm = /^\[ubicaci[oó]n\]\s*(.*)$/i.exec(t);
   if(!mm) return esc(t);
   const resto = mm[1].trim();
   const esPin = !resto || /^-?\d{1,3}\.\d+[,\s]+-?\d{1,3}\.\d+$/.test(resto);
   return `${icon("pin")} ${esPin?"Ubicación compartida":esc(resto)}`;
 }
+// Etiqueta humana por tipo de media (para la lista, el hilo y el export).
+const MEDIA_LABEL = { image:["image","Foto"], sticker:["image","Sticker"], audio:["mic","Nota de voz"], video:["video","Video"], document:["file","Archivo"] };
+function fmtBytes(n){ n=Number(n); if(!Number.isFinite(n)||n<=0) return ""; if(n<1024) return `${n} B`; if(n<1048576) return `${(n/1024).toFixed(0)} KB`; return `${(n/1048576).toFixed(1)} MB`; }
 function mediaHtml(m){
   if(m.type==="location") return ubiHtml(m);
-  const url = m.content?.media_url; if(!url) return null;
+  const lab = MEDIA_LABEL[m.type];
+  const url = m.content?.media_url;
   const cap = m.content?.caption ? `<div style="margin-top:5px">${waFmt(m.content.caption)}</div>` : "";
+  if(!url){
+    if(!lab) return null;
+    // Media SIN archivo todavía: el webhook lo está bajando de WhatsApp (tarda unos
+    // segundos y la burbuja se repinta sola), no se pudo (queda el motivo en
+    // content.media_error) o es un mensaje de antes de que se archivaran. Antes se veía
+    // «[audio]» pelado, como si fuera un error del panel.
+    const err = m.content?.media_error;
+    const reciente = m.ts && (Date.now() - new Date(m.ts).getTime()) < 3*60*1000;
+    const nota = err ? esc(err) : (m.content?.media_id && reciente ? "Cargando desde WhatsApp…" : "Archivo no disponible");
+    return `<div class="mph${err?" err":""}"><div class="mph-t">${icon(lab[0])} ${lab[1]}</div><div class="mph-d">${nota}</div></div>${cap}`;
+  }
   const u = esc(safeUrl(url));
-  if(m.type==="image"||m.type==="sticker") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" style="cursor:zoom-in"/>${cap}`;
-  if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
-  if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
-  return `<a class="file" href="${u}" target="_blank">${icon("file")} ${esc(m.content?.filename||"archivo")}</a>${cap}`;
+  const size = fmtBytes(m.content?.size);
+  if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" loading="lazy" decoding="async" style="cursor:zoom-in"/>${cap}`;
+  if(m.type==="sticker") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" loading="lazy" decoding="async" class="stk" style="cursor:zoom-in"/>${cap}`;
+  if(m.type==="audio") return `<audio controls preload="metadata" src="${u}"></audio>${size?`<div class="mmeta">${icon("mic")} Nota de voz · ${size}</div>`:""}${cap}`;
+  if(m.type==="video") return `<video controls preload="metadata" playsinline src="${u}"></video>${size?`<div class="mmeta">${icon("video")} Video · ${size}</div>`:""}${cap}`;
+  const fn = esc(m.content?.filename||"archivo");
+  return `<a class="file" href="${u}" target="_blank" rel="noopener" download="${fn}" title="Descargar">${icon("file")} <span class="fn">${fn}</span>${size?`<span class="fsz">${size}</span>`:""}</a>${cap}`;
 }
 
 // Visor de multimedia (lightbox): las imágenes/videos abren en una ventana dentro
